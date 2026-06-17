@@ -1,0 +1,73 @@
+{
+  "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+  "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+  "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+  "_qikvrt_rights_holder": "Ingolf Lohmann",
+  "_qikvrt_license": "CC-BY-NC-ND-4.0",
+  "_qikvrt_legal_metadata_visibility": "top_level",
+  "_qikvrt_applies_to_json_data_reports_results": true,
+  "id": "QALL_TEMPLATE_ADAPTIVE_TARGET",
+  "status": "IMPLEMENTED",
+  "template_ready": true,
+  "default_target_mode": "AUTO_DETECT",
+  "target_detection_order": [
+    "environment variables QALL_OWNER/QALL_REPO/QALL_BRANCH",
+    "GitHub Actions environment GITHUB_REPOSITORY/GITHUB_REF_NAME",
+    "local .git/config remote origin URL",
+    "local QALL_TARGET.json",
+    "interactive target prompt only if no repository context exists"
+  ],
+  "comfort_rule": "If the repository was created from a GitHub template and cloned locally, only the GitHub token is required.",
+  "zip_download_boundary": "If downloaded as a ZIP without .git metadata, owner/repo cannot be inferred; user must provide target or QALL_TARGET.json.",
+  "no_stale_target_rule": "Do not silently persist to Goldkelch/qik-vrt after template instantiation unless that is the detected or configured target.",
+  "template_clone_acceptance_test_required": true,
+  "template_clone_acceptance_test": {
+    "id": "QALL_TEMPLATE_CLONE_ACCEPTANCE",
+    "status": "REQUIRED_FOR_DELIVERY",
+    "test_name": "template_clone_target_autodetect",
+    "purpose": "Verify that a repository created from a GitHub template and cloned locally auto-adapts owner/repo/branch from .git/config.",
+    "acceptance_criteria": {
+      "auto_detect_owner_repo_branch": true,
+      "no_stale_origin_repository": true,
+      "only_token_missing_blocks_when_token_absent": true,
+      "local_outputs_created_before_token_block": true,
+      "resolved_target_embedded_in_REPO_OUT": true,
+      "github_success_not_claimed_without_token": true
+    },
+    "current_test_mode": "LOCAL_GIT_CLONE_CONTEXT_SIMULATION_IN_LINUX_SANDBOX",
+    "current_test_result": "PASS",
+    "real_github_network_clone_claimed": false,
+    "future_bundle_rule": "No bundle release without this acceptance test or explicit BLOCK explaining why it cannot run."
+  },
+  "delivery_structure": {
+    "id": "QALL_DELIVERY_STRUCTURE",
+    "status": "IMPLEMENTED",
+    "visible_root": [
+      "START.bat",
+      "RUN.ps1",
+      "RUN.sh",
+      "LINUX.sh",
+      "START.command",
+      "README.md",
+      "LOGS/"
+    ],
+    "payload": "_payload/",
+    "internal": "_internal/",
+    "logs": "LOGS/",
+    "rule": "Start files and log/results are visible together; implementation details are under _internal.",
+    "github_success_claimed": false,
+    "windows_runtime_claimed": false,
+    "macos_runtime_claimed": false
+  },
+  "delivery_logs_next_to_start_files": true,
+  "unnecessary_details_hidden_under_internal": true,
+  "legal": {
+    "SPDX-License-Identifier": "CC-BY-NC-ND-4.0",
+    "copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_assignment": "embedded_top_level_json_metadata",
+    "applies_to_json_data_reports_results": true,
+    "urheber_rechteinhaber": "Ingolf Lohmann"
+  }
+}
