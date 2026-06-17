@@ -1,0 +1,1011 @@
+{
+  "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+  "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+  "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+  "_qikvrt_rights_holder": "Ingolf Lohmann",
+  "_qikvrt_license": "CC-BY-NC-ND-4.0",
+  "_qikvrt_legal_metadata_visibility": "top_level",
+  "_qikvrt_applies_to_json_data_reports_results": true,
+  "id": "QALL_TEMPLATE_CLONE_ACCEPTANCE",
+  "status": "REQUIRED_FOR_DELIVERY",
+  "test_name": "template_clone_target_autodetect",
+  "purpose": "Verify that a repository created from a GitHub template and cloned locally auto-adapts owner/repo/branch from .git/config.",
+  "acceptance_criteria": {
+    "auto_detect_owner_repo_branch": true,
+    "no_stale_origin_repository": true,
+    "only_token_missing_blocks_when_token_absent": true,
+    "local_outputs_created_before_token_block": true,
+    "resolved_target_embedded_in_REPO_OUT": true,
+    "github_success_not_claimed_without_token": true
+  },
+  "current_test_mode": "LOCAL_GIT_CLONE_CONTEXT_SIMULATION_IN_LINUX_SANDBOX",
+  "current_test_result": "PASS",
+  "real_github_network_clone_claimed": false,
+  "future_bundle_rule": "No bundle release without this acceptance test or explicit BLOCK explaining why it cannot run.",
+  "delivery_structure": {
+    "id": "QALL_DELIVERY_STRUCTURE",
+    "status": "IMPLEMENTED",
+    "visible_root": [
+      "START.bat",
+      "RUN.ps1",
+      "RUN.sh",
+      "LINUX.sh",
+      "START.command",
+      "README.md",
+      "LOGS/"
+    ],
+    "payload": "_payload/",
+    "internal": "_internal/",
+    "logs": "LOGS/",
+    "rule": "Start files and log/results are visible together; implementation details are under _internal.",
+    "github_success_claimed": false,
+    "windows_runtime_claimed": false,
+    "macos_runtime_claimed": false
+  },
+  "delivery_logs_next_to_start_files": true,
+  "unnecessary_details_hidden_under_internal": true,
+  "minroot_three_script_rule": {
+    "id": "QALL_MINROOT_THREE_SCRIPT_DELIVERY",
+    "status": "IMPLEMENTED",
+    "root_script_files": [
+      "WINDOWS.bat",
+      "LINUX.sh",
+      "MACOS.command"
+    ],
+    "root_allowed_directories": [
+      "LOGS",
+      "_internal",
+      "_payload"
+    ],
+    "forbidden_root_files": "all files except the three platform script files",
+    "logs": "LOGS/",
+    "payload": "_payload/",
+    "internal": "_internal/",
+    "learning": "Root must not expose unnecessary detail; exactly one platform script per target platform is visible."
+  },
+  "license_ini_delivery_rule": {
+    "id": "QALL_LICENSE_INI_DELIVERY",
+    "status": "IMPLEMENTED",
+    "root_files": [
+      "WINDOWS.bat",
+      "LINUX.sh",
+      "MACOS.command",
+      "README.md",
+      "QALL.ini"
+    ],
+    "root_directories": [
+      "LOGS",
+      "_payload"
+    ],
+    "payload_contains_internal": true,
+    "internal_path": "_payload/_internal",
+    "author": "Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "content_license": "CC-BY-NC-ND-4.0",
+    "software_license": "Apache-2.0",
+    "ini_file": "QALL.ini",
+    "readme_file": "README.md",
+    "rule": "README and INI are allowed on root besides three platform scripts; internal is subset of payload."
+  },
+  "internal_is_subset_of_payload": true,
+  "root_readme_and_ini_required": true,
+  "cross_platform_fix_mirror_rule": {
+    "id": "QALL_CROSS_PLATFORM_FIX_MIRROR",
+    "status": "IMPLEMENTED",
+    "rule": "Every Linux sandbox bugfix must be mirrored to Windows and macOS where relevant.",
+    "findings": [
+      {
+        "id": "F012_WINDOWS_INI_FIX_NOT_FULLY_MIRRORED",
+        "severity": "BLOCK_RELEASE_UNTIL_FIXED",
+        "finding": "Linux INI/persist=false logic existed, but Windows RUN.ps1 was not guaranteed to implement equivalent robust INI behavior.",
+        "required_fix": "Rewrite/patch Windows RUN.ps1 to parse QALL.ini, support MANUAL target and persist=false, same logs and payload/internal paths."
+      }
+    ],
+    "fixes": [
+      "Windows RUN.ps1 now implements same QALL.ini MANUAL target logic as Linux RUN.sh.",
+      "Windows RUN.ps1 now implements same persist=false GitHub skip behavior as Linux RUN.sh.",
+      "Windows RUN.ps1 writes same LOGS/TARGET.json, LOGS/REPO_OUT.zip, LOGS/STATUS.txt.",
+      "macOS launcher delegates to same fixed _payload/_internal/RUN.sh with root argument.",
+      "GitHub target list includes CROSSFIX metadata."
+    ],
+    "acceptance": {
+      "linux_runtime_test_required": true,
+      "windows_static_parity_required": true,
+      "macos_static_parity_required": true,
+      "no_unmirrored_linux_fix_allowed": true
+    }
+  },
+  "unmirrored_linux_fix_is_reflexive_error": true,
+  "license_acceptance_gate": {
+    "id": "QALL_LICENSE_ACCEPTANCE_GATE",
+    "status": "IMPLEMENTED",
+    "required_before_every_repository_persistence_change": true,
+    "applies_to_counterparty_types": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION",
+      "OTHER"
+    ],
+    "author": "Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "licenses": {
+      "software_scripts": "Apache-2.0",
+      "non_software_qikvrt_content": "CC-BY-NC-ND-4.0"
+    },
+    "acceptance_record": "LOGS/LICENSE_ACCEPTANCE_RECORD.json",
+    "repository_record": "LICENSE_ACCEPTANCE_RECORD.json",
+    "github_persistence_rule": "No GitHub API PUT/push may occur unless acceptance was obtained for the concrete persistence action.",
+    "blocker_error_class": "REPOSITORY_PERSISTENCE_WITHOUT_LICENSE_ACCEPTANCE",
+    "valid_acceptance_phrases": [
+      "JA",
+      "YES",
+      "I ACCEPT",
+      "ICH AKZEPTIERE"
+    ],
+    "counterparty_type_must_be_recorded": true
+  },
+  "acceptance_required_before_every_repository_persistence_change": true,
+  "applies_to_artificial_cognitive_natural_and_legal_counterparties": true,
+  "acceptance_missing_blocker_error_class": "REPOSITORY_PERSISTENCE_WITHOUT_LICENSE_ACCEPTANCE",
+  "strict_acceptance_gate": {
+    "id": "QALL_STRICT_LICENSE_ACCEPTANCE_GATE",
+    "status": "IMPLEMENTED",
+    "strict_exact_phrase": "ICH AKZEPTIERE",
+    "ambiguous_input_policy": "BLOCK",
+    "accepted_inputs": [
+      "ICH AKZEPTIERE"
+    ],
+    "rejected_examples": [
+      "",
+      "ja",
+      "JA",
+      "yes",
+      "YES",
+      "ok",
+      "OK",
+      "verstanden",
+      "weiter",
+      "I ACCEPT"
+    ],
+    "applies_to_events": [
+      "CLONE",
+      "DOWNLOAD",
+      "USE",
+      "MERGE",
+      "REPOSITORY_PERSISTENCE",
+      "GITHUB_WRITE"
+    ],
+    "preserve_in_github_repository": true,
+    "preserve_in_all_clones": true,
+    "preserve_on_download": true,
+    "preserve_on_use": true,
+    "preserve_on_merge": true,
+    "blocker_error_classes": [
+      "AMBIGUOUS_LICENSE_ACCEPTANCE_INPUT",
+      "STRICT_ACCEPTANCE_GATE_MISSING_IN_CLONE",
+      "MERGE_WITHOUT_STRICT_LICENSE_ACCEPTANCE"
+    ],
+    "author": "Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "licenses": {
+      "software_scripts": "Apache-2.0",
+      "non_software_qikvrt_content": "CC-BY-NC-ND-4.0"
+    }
+  },
+  "ambiguous_acceptance_input_blocks": true,
+  "strict_acceptance_must_survive_clone_download_use_merge": true,
+  "strict_counterparty_type_gate": {
+    "id": "QALL_STRICT_COUNTERPARTY_TYPE_GATE",
+    "status": "IMPLEMENTED",
+    "valid_counterparty_types": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION",
+      "OTHER"
+    ],
+    "ambiguous_counterparty_type_policy": "BLOCK",
+    "type_required_before_license_acceptance": true,
+    "type_required_before_repository_persistence": true,
+    "preserve_in_github_repository": true,
+    "preserve_in_all_clones": true,
+    "preserve_on_download": true,
+    "preserve_on_use": true,
+    "preserve_on_merge": true,
+    "blocker_error_classes": [
+      "AMBIGUOUS_COUNTERPARTY_TYPE_INPUT",
+      "MISSING_COUNTERPARTY_TYPE",
+      "STRICT_COUNTERPARTY_TYPE_GATE_MISSING_IN_CLONE",
+      "MERGE_WITHOUT_STRICT_COUNTERPARTY_TYPE_GATE"
+    ],
+    "author": "Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "licenses": {
+      "software_scripts": "Apache-2.0",
+      "non_software_qikvrt_content": "CC-BY-NC-ND-4.0"
+    }
+  },
+  "ambiguous_counterparty_type_blocks": true,
+  "strict_counterparty_type_must_survive_clone_download_use_merge": true,
+  "other_counterparty_description_gate": {
+    "id": "QALL_OTHER_COUNTERPARTY_DESCRIPTION_GATE",
+    "status": "IMPLEMENTED",
+    "standard_selectable_defaults": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION"
+    ],
+    "valid_counterparty_types": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION",
+      "OTHER"
+    ],
+    "other_allowed": true,
+    "other_requires_description": true,
+    "other_description_field": "counterparty_other_description",
+    "other_description_must_be_nonempty": true,
+    "other_description_must_be_persisted_in_acceptance_record": true,
+    "blocker_error_classes": [
+      "OTHER_COUNTERPARTY_DESCRIPTION_MISSING",
+      "OTHER_COUNTERPARTY_DESCRIPTION_AMBIGUOUS",
+      "OTHER_COUNTERPARTY_DESCRIPTION_NOT_PERSISTED"
+    ],
+    "preserve_in_github_repository": true,
+    "preserve_in_all_clones": true,
+    "preserve_on_download": true,
+    "preserve_on_use": true,
+    "preserve_on_merge": true
+  },
+  "other_requires_description_and_persistence": true,
+  "standard_counterparty_types": [
+    "NATURAL_PERSON",
+    "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "LEGAL_PERSON",
+    "ORGANIZATION"
+  ],
+  "reflexive_finding_workflow_standard": {
+    "id": "QALL_REFLEXIVE_FINDING_WORKFLOW_STANDARD",
+    "status": "IMPLEMENTED",
+    "standard_rule": "If the delivered bundle does not work immediately for the user, every finding is a reflexive error class.",
+    "applies_to_events": [
+      "DOWNLOAD",
+      "UNZIP",
+      "START",
+      "CONFIGURATION",
+      "LICENSE_ACCEPTANCE",
+      "COUNTERPARTY_TYPE_CLASSIFICATION",
+      "OTHER_COUNTERPARTY_DESCRIPTION",
+      "LOGGING",
+      "LOCAL_REPRODUCTION",
+      "GITHUB_PERSISTENCE",
+      "TEMPLATE_USE",
+      "CLONE",
+      "MERGE",
+      "REUSE"
+    ],
+    "mandatory_correction_layers": [
+      "ROOT_DELIVERY_STRUCTURE",
+      "PAYLOAD",
+      "INTERNAL_SCRIPTS",
+      "WINDOWS",
+      "LINUX",
+      "MACOS",
+      "GITHUB_PERSISTENCE_PATH",
+      "TEMPLATE_CLONE_DOWNLOAD_USE_MERGE_PRESERVATION",
+      "LICENSE_COPYRIGHT_GUARD",
+      "STRICT_ACCEPTANCE_GATE",
+      "STRICT_COUNTERPARTY_TYPE_GATE",
+      "OTHER_COUNTERPARTY_DESCRIPTION_GATE",
+      "POLICY",
+      "MAP",
+      "LEARN",
+      "ACCEPT",
+      "SYNC",
+      "REPORTS",
+      "TESTS"
+    ],
+    "forbidden_fix_classes": [
+      "ISOLATED_HOTFIX",
+      "LINUX_ONLY_FIX_WHEN_CROSS_PLATFORM_RELEVANT",
+      "UNMIRRORED_WINDOWS_MACOS_GITHUB_CLONE_FIX",
+      "FALSE_PASS_AFTER_LOCAL_ONLY_PATCH",
+      "UNPERSISTED_LEARNING"
+    ],
+    "required_process": [
+      "NAME_FINDING",
+      "CLASSIFY_AS_REFLEXIVE_ERROR_CLASS",
+      "LOCATE_CAUSE",
+      "CORRECT_ALL_RELEVANT_LAYERS",
+      "MIRROR_WINDOWS_LINUX_MACOS_WHERE_RELEVANT",
+      "UPDATE_GITHUB_TEMPLATE_CLONE_MERGE_PRESERVATION",
+      "UPDATE_LICENSE_AND_ACCEPTANCE_GATES_IF_RELEVANT",
+      "UPDATE_POLICY_MAP_LEARN_ACCEPT_SYNC_REPORTS",
+      "RUN_TESTS",
+      "DELIVER_ONLY_ON_PASS"
+    ],
+    "blocker_error_class": "USER_TEST_FINDING_NOT_REFLEXIVELY_CORRECTED",
+    "release_rule": "No new bundle release after a user finding unless the reflexive workflow record and all relevant layer corrections are persisted."
+  },
+  "user_test_findings_are_reflexive_error_classes": true,
+  "isolated_hotfix_allowed": false,
+  "bilingual_ui_user_info_standard": {
+    "id": "QALL_BILINGUAL_UI_USER_INFO_STANDARD",
+    "status": "IMPLEMENTED",
+    "languages": [
+      "de",
+      "en"
+    ],
+    "rule": {
+      "de": "Alle interaktiven Benutzeroberflächen und alle nutzergerichteten Bundle-Informationen müssen zweisprachig Deutsch/Englisch sein.",
+      "en": "All interactive user interfaces and all user-facing bundle information must be bilingual German/English."
+    },
+    "applies_to": [
+      "WINDOWS.bat messages",
+      "LINUX.sh messages",
+      "MACOS.command messages",
+      "RUN.sh prompts",
+      "RUN.ps1 prompts",
+      "README.md",
+      "NOTICE",
+      "QALL.ini comments",
+      "license acceptance notices",
+      "counterparty type notices",
+      "OTHER description prompts",
+      "block/done messages",
+      "user-facing logs/status explanations"
+    ],
+    "machine_artifact_boundary": {
+      "de": "Maschinenlesbare JSON-/Manifest-Artefakte dürfen technisch bleiben, müssen aber für nutzerrelevante Aussagen zweisprachige Begleitinformationen tragen.",
+      "en": "Machine-readable JSON/manifest artifacts may remain technical, but user-relevant statements must carry bilingual companion information."
+    },
+    "blocker_error_class": "USER_FACING_TEXT_NOT_BILINGUAL_DE_EN",
+    "preserve_in_clones_download_use_merge": true
+  },
+  "user_facing_text_must_be_bilingual_de_en": true,
+  "bilingual_ui_inheritance_gate": {
+    "id": "QALL_BILINGUAL_UI_INHERITANCE_GATE",
+    "status": "IMPLEMENTED",
+    "property": "BILINGUAL_UI_USER_INFO_DE_EN",
+    "inheritance_required": true,
+    "must_be_inherited_by": [
+      "CLONE",
+      "DOWNLOAD",
+      "FORK",
+      "TEMPLATE_INSTANCE",
+      "MERGE",
+      "RELEASE",
+      "REPACKAGE",
+      "BUILD_ARTIFACT",
+      "LOCAL_REPRODUCTION",
+      "GITHUB_PERSISTENCE_OUTPUT",
+      "REPOSITORY_PAYLOAD",
+      "FOLLOW_UP_BUNDLE"
+    ],
+    "required_files": [
+      "BILINGUAL_UI_USER_INFO_STANDARD.json",
+      "BILINGUAL_UI_USER_INFO_STANDARD.md",
+      "BILINGUAL_UI_INHERITANCE_GATE.json",
+      "BILINGUAL_UI_INHERITANCE_GATE.md"
+    ],
+    "required_user_facing_languages": [
+      "de",
+      "en"
+    ],
+    "blocker_error_classes": [
+      "BILINGUAL_UI_INHERITANCE_MISSING",
+      "DERIVED_ARTIFACT_USER_INFO_NOT_BILINGUAL_DE_EN",
+      "CLONE_OR_MERGE_DROPPED_BILINGUAL_UI_STANDARD"
+    ],
+    "release_rule": "No derived artifact may be released unless bilingual DE/EN UI and user-information inheritance is preserved."
+  },
+  "derived_artifacts_must_inherit_bilingual_ui_de_en": true,
+  "official_license_refresh_and_file_enrichment_gate": {
+    "id": "QALL_OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE",
+    "status": "IMPLEMENTED",
+    "official_license_sources": {
+      "Apache-2.0": {
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "target_file": "LICENSES/Apache-2.0.txt",
+        "applies_to": "software/script/source-code components"
+      },
+      "CC-BY-NC-ND-4.0": {
+        "url": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.txt",
+        "target_file": "LICENSES/CC-BY-NC-ND-4.0.txt",
+        "applies_to": "non-software QIK-VRT content, documentation, policy, mapping, learning and bundle user information"
+      }
+    },
+    "refresh_before_repository_persistence": true,
+    "refresh_overwrites_existing_license_files": true,
+    "block_if_official_license_refresh_fails_before_persistence": true,
+    "all_files_must_be_enriched_or_manifest_covered_before_persistence": true,
+    "source_code_requires_embedded_spdx_copyright_marker": true,
+    "non_source_files_require_embedded_or_manifest_license_assignment": true,
+    "binary_payloads_require_manifest_coverage": true,
+    "preserve_in_clones_download_use_merge": true,
+    "blocker_error_classes": [
+      "OFFICIAL_LICENSE_REFRESH_FAILED",
+      "OFFICIAL_LICENSE_FILE_NOT_OVERWRITTEN",
+      "FILE_LICENSE_ENRICHMENT_MISSING",
+      "SOURCE_FILE_WITHOUT_SPDX_OR_COPYRIGHT",
+      "PERSISTENCE_WITH_STALE_LICENSE_FILE"
+    ]
+  },
+  "official_license_files_overwrite_local_copies_before_persistence": true,
+  "all_files_enriched_or_manifest_covered_before_persistence": true,
+  "license_refresh_file_enrichment_inheritance_gate": {
+    "id": "QALL_LICENSE_REFRESH_FILE_ENRICHMENT_INHERITANCE_GATE",
+    "status": "IMPLEMENTED",
+    "inherited_behavior": "OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_BEFORE_PERSISTENCE",
+    "inheritance_is_mandatory": true,
+    "applies_to": [
+      "ALL_GITHUB_REPOSITORY_CLONES",
+      "ALL_QIK_VRT_REPOSITORIES",
+      "FORKS",
+      "TEMPLATE_INSTANCES",
+      "DOWNLOADS",
+      "MERGES",
+      "RELEASES",
+      "REPACKAGES",
+      "BUILD_ARTIFACTS",
+      "LOCAL_REPRODUCTIONS",
+      "FOLLOW_UP_BUNDLES",
+      "DERIVED_REPOSITORY_STRUCTURES",
+      "EVERYTHING_BUILT_UPON_OR_EMERGING_FROM_QIK_VRT_REPOSITORIES"
+    ],
+    "must_preserve": [
+      "OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.json",
+      "OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.md",
+      "OFFICIAL_LICENSE_SOURCES.json",
+      "LICENSES/Apache-2.0.txt refresh from official source before persistence",
+      "LICENSES/CC-BY-NC-ND-4.0.txt refresh from official source before persistence",
+      "FILE_LICENSE_ENRICHMENT_REPORT.tsv",
+      "LICENSE_REFRESH_AND_ENRICHMENT_RECORD.json",
+      "SPDX/copyright enrichment for source files",
+      "manifest coverage for all other files"
+    ],
+    "official_sources": {
+      "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "CC-BY-NC-ND-4.0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.txt"
+    },
+    "blocker_error_classes": [
+      "LICENSE_REFRESH_INHERITANCE_MISSING",
+      "QIKVRT_REPOSITORY_WITHOUT_LICENSE_REFRESH_INHERITANCE",
+      "DERIVED_ARTIFACT_WITHOUT_FILE_LICENSE_ENRICHMENT",
+      "CLONE_OR_MERGE_DROPPED_OFFICIAL_LICENSE_REFRESH_GATE"
+    ],
+    "release_rule": "No QIK-VRT repository, clone, merge, release, repackage, build artifact, local reproduction, or follow-up bundle is releasable if this inheritance gate is missing or disabled."
+  },
+  "official_license_refresh_file_enrichment_must_inherit_to_all_qikvrt_repositories_and_derivatives": true,
+  "license_refresh_file_enrichment_inheritance_required": true,
+  "reflection_layer_complete": true,
+  "reflexive_error_fixed": "LICENSE_REFRESH_INHERITANCE_REFLECTION_LAYER_INCOMPLETE",
+  "reflexive_license_enrichment_fix": {
+    "id": "QALL_REFLEXIVE_LICENSE_ENRICHMENT_FIX",
+    "created_utc": "2026-06-17T16:09:47+00:00",
+    "status": "IMPLEMENTED",
+    "finding": "Root WINDOWS.bat lacked embedded copyright/license marker.",
+    "reflexive_error_class": "ROOT_WINDOWS_BATCH_WITHOUT_EMBEDDED_COPYRIGHT_LICENSE_MARKER",
+    "required_embedded_marker_extensions": [
+      ".bat",
+      ".command",
+      ".ps1",
+      ".py",
+      ".sh"
+    ],
+    "scope": [
+      "root delivery files",
+      "payload",
+      "internal scripts",
+      "repository payload",
+      "GitHub persistence path",
+      "clone/merge/download/use preservation",
+      "policy/map/learn/accept/sync/reports/tests"
+    ],
+    "rule": "Every source/script file must carry embedded SPDX/copyright/author markers; all other files must carry embedded legal metadata/headers or manifest coverage.",
+    "blocker_error_classes": [
+      "ROOT_WINDOWS_BATCH_WITHOUT_EMBEDDED_COPYRIGHT_LICENSE_MARKER",
+      "SOURCE_FILE_WITHOUT_EMBEDDED_COPYRIGHT_LICENSE_MARKER",
+      "ROOT_SCRIPT_WITHOUT_EMBEDDED_LICENSE_MARKER",
+      "REPOSITORY_PAYLOAD_SOURCE_FILE_NOT_ENRICHED"
+    ]
+  },
+  "all_source_files_require_embedded_license_copyright_markers": true,
+  "root_scripts_require_embedded_markers": true,
+  "full_license_enrichment_reflexive_fix": {
+    "id": "QALL_FULL_LICENSE_ENRICHMENT_REFLEXIVE_FIX",
+    "created_utc": "2026-06-17T16:18:07+00:00",
+    "status": "IMPLEMENTED",
+    "reflexive_error_classes": [
+      "JSON_AND_RESULT_FILES_WITHOUT_COPYRIGHT_LICENSE_METADATA",
+      "OFFICIAL_LICENSE_FILES_NOT_PLACED_IN_LICENSES_DIRECTORY",
+      "HUMAN_READABLE_FILE_HEADER_WITHOUT_BLANK_LINE"
+    ],
+    "findings": [
+      "JSON/data/result files also require embedded or manifest-based legal metadata.",
+      "LICENSES directory must contain actual current official Apache-2.0 and CC-BY-NC-ND-4.0 license texts.",
+      "Human-readable files should contain a blank line after the legal header."
+    ],
+    "correction_scope": [
+      "root",
+      "payload",
+      "internal scripts",
+      "repository payload",
+      "GitHub persistence path",
+      "clone/merge/download/use preservation",
+      "policy",
+      "learn",
+      "map",
+      "accept",
+      "sync",
+      "reports",
+      "tests"
+    ],
+    "official_license_hashes": {
+      "Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "CC-BY-NC-ND-4.0.txt": "38762e3777f4ec00a6f769062a7c3f704fb78ce08303ecff88558da4c49cf9ea"
+    },
+    "human_readable_header_blank_line_required": true,
+    "json_legal_metadata_required": true,
+    "all_qikvrt_outputs_covered": true
+  },
+  "json_data_reports_results_require_legal_metadata_or_manifest_coverage": true,
+  "human_readable_files_require_blank_line_after_header": true,
+  "license_folder_contains_actual_official_license_texts": true,
+  "rights_metadata_visibility_fix": {
+    "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+    "_qikvrt_rights_holder": "Ingolf Lohmann",
+    "_qikvrt_license": "CC-BY-NC-ND-4.0",
+    "id": "QALL_RIGHTS_METADATA_VISIBILITY_FIX",
+    "created_utc": "2026-06-17T16:23:16+00:00",
+    "status": "IMPLEMENTED",
+    "reflexive_error_classes": [
+      "JSON_LEGAL_METADATA_NOT_VISIBLE_OR_TOP_LEVEL",
+      "SOURCE_HEADER_MISSTATES_RIGHTS_HOLDER_AS_AUTHOR"
+    ],
+    "corrections": [
+      "JSON files receive explicit top-level legal metadata fields.",
+      "Source/script headers use Urheber/Rechteinhaber and Rights-Holder instead of Author.",
+      "Human-readable headers keep a blank line after legal header."
+    ]
+  },
+  "json_requires_top_level_qikvrt_legal_metadata": true,
+  "source_headers_use_rights_holder_not_author": true,
+  "legal": {
+    "SPDX-License-Identifier": "CC-BY-NC-ND-4.0",
+    "copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_assignment": "embedded_top_level_json_metadata",
+    "applies_to_json_data_reports_results": true,
+    "urheber_rechteinhaber": "Ingolf Lohmann"
+  },
+  "global_retroactive_rights_metadata_enforcement_gate": {
+    "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+    "_qikvrt_rights_holder": "Ingolf Lohmann",
+    "_qikvrt_license": "CC-BY-NC-ND-4.0",
+    "id": "GLOBAL_RETROACTIVE_QIKVRT_RIGHTS_METADATA_ENFORCEMENT_GATE",
+    "status": "IMPLEMENTED",
+    "scope": "GLOBAL_RETROACTIVE_AND_INHERITED",
+    "applies_to": [
+      "currently_generated_bundle",
+      "already_existing_github_qikvrt_repository",
+      "already_existing_qikvrt_repository",
+      "all_existing_files_in_those_repositories",
+      "all_future_files",
+      "json_files",
+      "source_code",
+      "scripts",
+      "data",
+      "logs",
+      "reports",
+      "build_results",
+      "archives",
+      "repository_payloads",
+      "GitHub clones",
+      "forks",
+      "templates",
+      "merges",
+      "releases",
+      "repackages",
+      "local reproductions",
+      "follow_up_bundles",
+      "everything arising from or through a GitHub QIK-VRT repository"
+    ],
+    "must_enforce": [
+      "JSON top-level legal metadata",
+      "source/script headers use Urheber/Rechteinhaber and Rights-Holder, not misleading Author",
+      "human readable header blank line",
+      "official license files in LICENSES/",
+      "manifest coverage for binary/opaque artifacts",
+      "audit record before any repository persistence"
+    ],
+    "blocker_error_class": "GLOBAL_RETROACTIVE_QIKVRT_RIGHTS_METADATA_ENFORCEMENT_MISSING",
+    "release_rule": "No QIK-VRT repository, clone, derivative, persistence action, or follow-up bundle is releasable unless retroactive rights/license metadata enforcement has been applied or explicitly blocked with findings."
+  },
+  "applies_to_existing_github_qikvrt_repositories": true,
+  "applies_to_existing_qikvrt_repositories": true,
+  "applies_to_all_derivatives": true,
+  "sandbox_github_combinatorial_validation_gate": {
+    "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+    "_qikvrt_rights_holder": "Ingolf Lohmann",
+    "_qikvrt_license": "CC-BY-NC-ND-4.0",
+    "id": "SANDBOX_GITHUB_COMBINATORIAL_VALIDATION_GATE",
+    "status": "PASS",
+    "real_external_github_validation": "NOT_EXECUTED",
+    "sandbox_simulated_github_validation": "PASS",
+    "case_count": 18,
+    "case_results": [
+      {
+        "case": "existing_repo_mixed_missing",
+        "kind": "EXISTING_QIKVRT_REPOSITORY",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 5,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "json_nested_legal_missing_top",
+        "kind": "JSON_BACKFILL",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "source_author_header_misstated",
+        "kind": "SOURCE_HEADER_FIX",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "human_blankline_missing",
+        "kind": "HUMAN_BLANKLINE_FIX",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "clone_case",
+        "kind": "CLONE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "fork_case",
+        "kind": "FORK",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "template_instance_case",
+        "kind": "TEMPLATE_INSTANCE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "merge_case",
+        "kind": "MERGE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "release_case",
+        "kind": "RELEASE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "repackage_case",
+        "kind": "REPACKAGE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "build_artifact_case",
+        "kind": "BUILD_ARTIFACT",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "local_reproduction_case",
+        "kind": "LOCAL_REPRODUCTION",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "follow_up_bundle_case",
+        "kind": "FOLLOW_UP_BUNDLE",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 3,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "already_compliant_no_false_positive",
+        "kind": "FALSE_POSITIVE_GUARD",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 0,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true,
+          "good_json_unchanged": true,
+          "good_py_unchanged": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "git_dir_ignored",
+        "kind": "FALSE_POSITIVE_GIT_DIR",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true,
+          "git_dir_ignored": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "binary_not_header_modified",
+        "kind": "FALSE_POSITIVE_BINARY_GUARD",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true,
+          "binary_png_unchanged": true,
+          "binary_zip_unchanged": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "author_word_in_body_preserved",
+        "kind": "FALSE_POSITIVE_BODY_AUTHOR",
+        "expected": "PASS",
+        "record_status": "PASS",
+        "changed_count": 1,
+        "verification_failures": [],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true,
+          "body_author_text_preserved": true
+        },
+        "status": "PASS"
+      },
+      {
+        "case": "malformed_json_blocks",
+        "kind": "NEGATIVE_MALFORMED_JSON",
+        "expected": "BLOCK",
+        "record_status": "BLOCK",
+        "changed_count": 1,
+        "verification_failures": [
+          {
+            "path": "bad.json",
+            "error": "json_parse_error"
+          }
+        ],
+        "checks": {
+          "record_status_expected": true,
+          "changed_count_min": true,
+          "verify_failures_expected": true,
+          "malformed_json_blocks": true
+        },
+        "status": "PASS"
+      }
+    ],
+    "blocker_error_classes": [
+      "GITHUB_BEHAVIOR_NOT_COMPREHENSIVELY_SANDBOX_VALIDATED_BEFORE_CLAIM",
+      "COMPLIANT_JSON_FALSE_POSITIVE_MODIFICATION",
+      "COMPLIANT_HEADER_WITHOUT_BLANKLINE_FALSE_PASS"
+    ],
+    "boundary": "Sandbox simulation only; no real external GitHub mutation claimed."
+  },
+  "real_external_github_validation": "NOT_EXECUTED",
+  "sandbox_simulated_github_validation": "PASS",
+  "mandatory_automated_combinatorial_validation_before_done_gate": {
+    "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+    "_qikvrt_rights_holder": "Ingolf Lohmann",
+    "_qikvrt_license": "CC-BY-NC-ND-4.0",
+    "id": "MANDATORY_AUTOMATED_COMBINATORIAL_VALIDATION_BEFORE_DONE_GATE",
+    "status": "IMPLEMENTED",
+    "mandatory_in_all_qikvrt_contexts": true,
+    "rule_de": "Nichts darf als erledigt, DONE, PASS, freigegeben oder abgeschlossen gemeldet werden, wenn es nicht durch automatische Tests in vollständig deklarierter und lückenlos abgedeckter Kombinatorik innerhalb des erklärten Scopes validiert wurde.",
+    "rule_en": "Nothing may be reported as completed, DONE, PASS, released, or closed unless it has been validated by automated tests with fully declared and gapless combinatorial coverage within the declared scope.",
+    "minimum_required_test_dimensions": [
+      "positive_cases",
+      "negative_cases",
+      "false_positive_guards",
+      "false_negative_guards",
+      "boundary_cases",
+      "malformed_input_cases",
+      "already_compliant_noop_cases",
+      "inheritance_cases",
+      "clone_cases",
+      "fork_cases",
+      "template_instance_cases",
+      "merge_cases",
+      "release_cases",
+      "repackage_cases",
+      "build_artifact_cases",
+      "local_reproduction_cases",
+      "follow_up_bundle_cases",
+      "existing_repository_backfill_cases",
+      "repository_payload_cases",
+      "GitHub_persistence_path_cases",
+      "license_refresh_cases",
+      "rights_metadata_cases",
+      "bilingual_ui_cases",
+      "counterparty_acceptance_cases",
+      "OTHER_description_cases"
+    ],
+    "scope_declaration_required": true,
+    "automated_test_report_required": true,
+    "all_declared_cases_must_pass": true,
+    "no_manual_assertion_can_replace_test": true,
+    "if_not_validated_status_must_be": [
+      "CONTINUE",
+      "BLOCK"
+    ],
+    "forbidden_status_without_validation": [
+      "DONE",
+      "PASS",
+      "RELEASED",
+      "CLOSED",
+      "ERLEDIGT",
+      "FREIGEGEBEN",
+      "ABGESCHLOSSEN"
+    ],
+    "blocker_error_class": "DONE_REPORTED_WITHOUT_FULL_AUTOMATED_COMBINATORIAL_VALIDATION",
+    "boundary": "A finite test matrix must explicitly declare its scope. Claims beyond tested scope are not allowed."
+  },
+  "done_pass_forbidden_without_automated_scope_declared_combinatorial_validation": true,
+  "ascii_safe_source_and_script_text_gate": {
+    "_qikvrt_spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "_qikvrt_copyright": "Copyright (c) 2026 Ingolf Lohmann",
+    "_qikvrt_urheber_rechteinhaber": "Ingolf Lohmann",
+    "_qikvrt_rights_holder": "Ingolf Lohmann",
+    "_qikvrt_license": "CC-BY-NC-ND-4.0",
+    "id": "ASCII_SAFE_SOURCE_AND_SCRIPT_TEXT_GATE",
+    "status": "IMPLEMENTED",
+    "rule_de": "Source-Code und ausfuehrungsnahe Skriptdateien muessen ASCII-sicher sein. Deutsche Umlaute und sonstige nicht-ASCII-Zeichen sind dort zu vermeiden.",
+    "rule_en": "Source code and execution-near script files must be ASCII-safe. German umlauts and other non-ASCII characters must be avoided there.",
+    "applies_to_extensions": [
+      ".bat",
+      ".command",
+      ".ps1",
+      ".py",
+      ".sh"
+    ],
+    "docs_may_remain_bilingual_unicode": true,
+    "source_headers_use": [
+      "SPDX-License-Identifier",
+      "Copyright",
+      "Urheber/Rechteinhaber",
+      "Rights-Holder"
+    ],
+    "source_headers_must_not_use": [
+      "Author"
+    ],
+    "blocker_error_class": "SOURCE_SCRIPT_CONTAINS_NON_ASCII_OR_UMLAUT_IN_EXECUTION_NEAR_TEXT"
+  },
+  "source_script_files_must_be_ascii_safe": true
+}
