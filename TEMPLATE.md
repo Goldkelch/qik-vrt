@@ -1,5 +1,8 @@
-<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
-<!-- Copyright (c) 2026 Ingolf Lohmann; Urheber/Rechteinhaber / Rights-Holder: Ingolf Lohmann -->
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+Author/Rights holder: Ingolf Lohmann.
+-->
 
 # TEMPLATE
 
