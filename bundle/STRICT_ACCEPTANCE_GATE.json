@@ -1,0 +1,294 @@
+{
+  "id": "QALL_STRICT_LICENSE_ACCEPTANCE_GATE",
+  "status": "IMPLEMENTED",
+  "strict_exact_phrase": "ICH AKZEPTIERE",
+  "ambiguous_input_policy": "BLOCK",
+  "accepted_inputs": [
+    "ICH AKZEPTIERE"
+  ],
+  "rejected_examples": [
+    "",
+    "ja",
+    "JA",
+    "yes",
+    "YES",
+    "ok",
+    "OK",
+    "verstanden",
+    "weiter",
+    "I ACCEPT"
+  ],
+  "applies_to_events": [
+    "CLONE",
+    "DOWNLOAD",
+    "USE",
+    "MERGE",
+    "REPOSITORY_PERSISTENCE",
+    "GITHUB_WRITE"
+  ],
+  "preserve_in_github_repository": true,
+  "preserve_in_all_clones": true,
+  "preserve_on_download": true,
+  "preserve_on_use": true,
+  "preserve_on_merge": true,
+  "blocker_error_classes": [
+    "AMBIGUOUS_LICENSE_ACCEPTANCE_INPUT",
+    "STRICT_ACCEPTANCE_GATE_MISSING_IN_CLONE",
+    "MERGE_WITHOUT_STRICT_LICENSE_ACCEPTANCE"
+  ],
+  "author": "Ingolf Lohmann",
+  "rights_holder": "Ingolf Lohmann",
+  "licenses": {
+    "software_scripts": "Apache-2.0",
+    "non_software_qikvrt_content": "CC-BY-NC-ND-4.0"
+  },
+  "strict_counterparty_type_gate": {
+    "id": "QALL_STRICT_COUNTERPARTY_TYPE_GATE",
+    "status": "IMPLEMENTED",
+    "valid_counterparty_types": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION",
+      "OTHER"
+    ],
+    "ambiguous_counterparty_type_policy": "BLOCK",
+    "type_required_before_license_acceptance": true,
+    "type_required_before_repository_persistence": true,
+    "preserve_in_github_repository": true,
+    "preserve_in_all_clones": true,
+    "preserve_on_download": true,
+    "preserve_on_use": true,
+    "preserve_on_merge": true,
+    "blocker_error_classes": [
+      "AMBIGUOUS_COUNTERPARTY_TYPE_INPUT",
+      "MISSING_COUNTERPARTY_TYPE",
+      "STRICT_COUNTERPARTY_TYPE_GATE_MISSING_IN_CLONE",
+      "MERGE_WITHOUT_STRICT_COUNTERPARTY_TYPE_GATE"
+    ],
+    "author": "Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "licenses": {
+      "software_scripts": "Apache-2.0",
+      "non_software_qikvrt_content": "CC-BY-NC-ND-4.0"
+    }
+  },
+  "ambiguous_counterparty_type_blocks": true,
+  "strict_counterparty_type_must_survive_clone_download_use_merge": true,
+  "other_counterparty_description_gate": {
+    "id": "QALL_OTHER_COUNTERPARTY_DESCRIPTION_GATE",
+    "status": "IMPLEMENTED",
+    "standard_selectable_defaults": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION"
+    ],
+    "valid_counterparty_types": [
+      "NATURAL_PERSON",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "LEGAL_PERSON",
+      "ORGANIZATION",
+      "OTHER"
+    ],
+    "other_allowed": true,
+    "other_requires_description": true,
+    "other_description_field": "counterparty_other_description",
+    "other_description_must_be_nonempty": true,
+    "other_description_must_be_persisted_in_acceptance_record": true,
+    "blocker_error_classes": [
+      "OTHER_COUNTERPARTY_DESCRIPTION_MISSING",
+      "OTHER_COUNTERPARTY_DESCRIPTION_AMBIGUOUS",
+      "OTHER_COUNTERPARTY_DESCRIPTION_NOT_PERSISTED"
+    ],
+    "preserve_in_github_repository": true,
+    "preserve_in_all_clones": true,
+    "preserve_on_download": true,
+    "preserve_on_use": true,
+    "preserve_on_merge": true
+  },
+  "other_requires_description_and_persistence": true,
+  "standard_counterparty_types": [
+    "NATURAL_PERSON",
+    "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "LEGAL_PERSON",
+    "ORGANIZATION"
+  ],
+  "reflexive_finding_workflow_standard": {
+    "id": "QALL_REFLEXIVE_FINDING_WORKFLOW_STANDARD",
+    "status": "IMPLEMENTED",
+    "standard_rule": "If the delivered bundle does not work immediately for the user, every finding is a reflexive error class.",
+    "applies_to_events": [
+      "DOWNLOAD",
+      "UNZIP",
+      "START",
+      "CONFIGURATION",
+      "LICENSE_ACCEPTANCE",
+      "COUNTERPARTY_TYPE_CLASSIFICATION",
+      "OTHER_COUNTERPARTY_DESCRIPTION",
+      "LOGGING",
+      "LOCAL_REPRODUCTION",
+      "GITHUB_PERSISTENCE",
+      "TEMPLATE_USE",
+      "CLONE",
+      "MERGE",
+      "REUSE"
+    ],
+    "mandatory_correction_layers": [
+      "ROOT_DELIVERY_STRUCTURE",
+      "PAYLOAD",
+      "INTERNAL_SCRIPTS",
+      "WINDOWS",
+      "LINUX",
+      "MACOS",
+      "GITHUB_PERSISTENCE_PATH",
+      "TEMPLATE_CLONE_DOWNLOAD_USE_MERGE_PRESERVATION",
+      "LICENSE_COPYRIGHT_GUARD",
+      "STRICT_ACCEPTANCE_GATE",
+      "STRICT_COUNTERPARTY_TYPE_GATE",
+      "OTHER_COUNTERPARTY_DESCRIPTION_GATE",
+      "POLICY",
+      "MAP",
+      "LEARN",
+      "ACCEPT",
+      "SYNC",
+      "REPORTS",
+      "TESTS"
+    ],
+    "forbidden_fix_classes": [
+      "ISOLATED_HOTFIX",
+      "LINUX_ONLY_FIX_WHEN_CROSS_PLATFORM_RELEVANT",
+      "UNMIRRORED_WINDOWS_MACOS_GITHUB_CLONE_FIX",
+      "FALSE_PASS_AFTER_LOCAL_ONLY_PATCH",
+      "UNPERSISTED_LEARNING"
+    ],
+    "required_process": [
+      "NAME_FINDING",
+      "CLASSIFY_AS_REFLEXIVE_ERROR_CLASS",
+      "LOCATE_CAUSE",
+      "CORRECT_ALL_RELEVANT_LAYERS",
+      "MIRROR_WINDOWS_LINUX_MACOS_WHERE_RELEVANT",
+      "UPDATE_GITHUB_TEMPLATE_CLONE_MERGE_PRESERVATION",
+      "UPDATE_LICENSE_AND_ACCEPTANCE_GATES_IF_RELEVANT",
+      "UPDATE_POLICY_MAP_LEARN_ACCEPT_SYNC_REPORTS",
+      "RUN_TESTS",
+      "DELIVER_ONLY_ON_PASS"
+    ],
+    "blocker_error_class": "USER_TEST_FINDING_NOT_REFLEXIVELY_CORRECTED",
+    "release_rule": "No new bundle release after a user finding unless the reflexive workflow record and all relevant layer corrections are persisted."
+  },
+  "user_test_findings_are_reflexive_error_classes": true,
+  "isolated_hotfix_allowed": false,
+  "bilingual_ui_user_info_standard": {
+    "id": "QALL_BILINGUAL_UI_USER_INFO_STANDARD",
+    "status": "IMPLEMENTED",
+    "languages": [
+      "de",
+      "en"
+    ],
+    "rule": {
+      "de": "Alle interaktiven Benutzeroberflächen und alle nutzergerichteten Bundle-Informationen müssen zweisprachig Deutsch/Englisch sein.",
+      "en": "All interactive user interfaces and all user-facing bundle information must be bilingual German/English."
+    },
+    "applies_to": [
+      "WINDOWS.bat messages",
+      "LINUX.sh messages",
+      "MACOS.command messages",
+      "RUN.sh prompts",
+      "RUN.ps1 prompts",
+      "README.md",
+      "NOTICE",
+      "QALL.ini comments",
+      "license acceptance notices",
+      "counterparty type notices",
+      "OTHER description prompts",
+      "block/done messages",
+      "user-facing logs/status explanations"
+    ],
+    "machine_artifact_boundary": {
+      "de": "Maschinenlesbare JSON-/Manifest-Artefakte dürfen technisch bleiben, müssen aber für nutzerrelevante Aussagen zweisprachige Begleitinformationen tragen.",
+      "en": "Machine-readable JSON/manifest artifacts may remain technical, but user-relevant statements must carry bilingual companion information."
+    },
+    "blocker_error_class": "USER_FACING_TEXT_NOT_BILINGUAL_DE_EN",
+    "preserve_in_clones_download_use_merge": true
+  },
+  "user_facing_text_must_be_bilingual_de_en": true,
+  "bilingual_ui_inheritance_gate": {
+    "id": "QALL_BILINGUAL_UI_INHERITANCE_GATE",
+    "status": "IMPLEMENTED",
+    "property": "BILINGUAL_UI_USER_INFO_DE_EN",
+    "inheritance_required": true,
+    "must_be_inherited_by": [
+      "CLONE",
+      "DOWNLOAD",
+      "FORK",
+      "TEMPLATE_INSTANCE",
+      "MERGE",
+      "RELEASE",
+      "REPACKAGE",
+      "BUILD_ARTIFACT",
+      "LOCAL_REPRODUCTION",
+      "GITHUB_PERSISTENCE_OUTPUT",
+      "REPOSITORY_PAYLOAD",
+      "FOLLOW_UP_BUNDLE"
+    ],
+    "required_files": [
+      "BILINGUAL_UI_USER_INFO_STANDARD.json",
+      "BILINGUAL_UI_USER_INFO_STANDARD.md",
+      "BILINGUAL_UI_INHERITANCE_GATE.json",
+      "BILINGUAL_UI_INHERITANCE_GATE.md"
+    ],
+    "required_user_facing_languages": [
+      "de",
+      "en"
+    ],
+    "blocker_error_classes": [
+      "BILINGUAL_UI_INHERITANCE_MISSING",
+      "DERIVED_ARTIFACT_USER_INFO_NOT_BILINGUAL_DE_EN",
+      "CLONE_OR_MERGE_DROPPED_BILINGUAL_UI_STANDARD"
+    ],
+    "release_rule": "No derived artifact may be released unless bilingual DE/EN UI and user-information inheritance is preserved."
+  },
+  "derived_artifacts_must_inherit_bilingual_ui_de_en": true,
+  "official_license_refresh_and_file_enrichment_gate": {
+    "id": "QALL_OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE",
+    "status": "IMPLEMENTED",
+    "official_license_sources": {
+      "Apache-2.0": {
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "target_file": "LICENSES/Apache-2.0.txt",
+        "applies_to": "software/script/source-code components"
+      },
+      "CC-BY-NC-ND-4.0": {
+        "url": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.txt",
+        "target_file": "LICENSES/CC-BY-NC-ND-4.0.txt",
+        "applies_to": "non-software QIK-VRT content, documentation, policy, mapping, learning and bundle user information"
+      }
+    },
+    "refresh_before_repository_persistence": true,
+    "refresh_overwrites_existing_license_files": true,
+    "block_if_official_license_refresh_fails_before_persistence": true,
+    "all_files_must_be_enriched_or_manifest_covered_before_persistence": true,
+    "source_code_requires_embedded_spdx_copyright_marker": true,
+    "non_source_files_require_embedded_or_manifest_license_assignment": true,
+    "binary_payloads_require_manifest_coverage": true,
+    "preserve_in_clones_download_use_merge": true,
+    "blocker_error_classes": [
+      "OFFICIAL_LICENSE_REFRESH_FAILED",
+      "OFFICIAL_LICENSE_FILE_NOT_OVERWRITTEN",
+      "FILE_LICENSE_ENRICHMENT_MISSING",
+      "SOURCE_FILE_WITHOUT_SPDX_OR_COPYRIGHT",
+      "PERSISTENCE_WITH_STALE_LICENSE_FILE"
+    ]
+  },
+  "official_license_files_overwrite_local_copies_before_persistence": true,
+  "all_files_enriched_or_manifest_covered_before_persistence": true,
+  "qikvrt_file_license_notice": {
+    "spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "copyright": "Copyright (c) 2026 Ingolf Lohmann.",
+    "urheber_rechteinhaber": "Ingolf Lohmann",
+    "lizenz_und_urheberrechtsinformationen_vererben_sich": true,
+    "vererbung": "Klone, QIK-VRT-Repositories, Templates, Forks, Releases, Repackages und Folgeartefakte.",
+    "non_regression": "Gut bleibt stets zugleich besser."
+  }
+}
