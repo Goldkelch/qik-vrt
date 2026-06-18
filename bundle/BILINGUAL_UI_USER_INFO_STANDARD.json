@@ -1,0 +1,111 @@
+{
+  "id": "QALL_BILINGUAL_UI_USER_INFO_STANDARD",
+  "status": "IMPLEMENTED",
+  "languages": [
+    "de",
+    "en"
+  ],
+  "rule": {
+    "de": "Alle interaktiven Benutzeroberflächen und alle nutzergerichteten Bundle-Informationen müssen zweisprachig Deutsch/Englisch sein.",
+    "en": "All interactive user interfaces and all user-facing bundle information must be bilingual German/English."
+  },
+  "applies_to": [
+    "WINDOWS.bat messages",
+    "LINUX.sh messages",
+    "MACOS.command messages",
+    "RUN.sh prompts",
+    "RUN.ps1 prompts",
+    "README.md",
+    "NOTICE",
+    "QALL.ini comments",
+    "license acceptance notices",
+    "counterparty type notices",
+    "OTHER description prompts",
+    "block/done messages",
+    "user-facing logs/status explanations"
+  ],
+  "machine_artifact_boundary": {
+    "de": "Maschinenlesbare JSON-/Manifest-Artefakte dürfen technisch bleiben, müssen aber für nutzerrelevante Aussagen zweisprachige Begleitinformationen tragen.",
+    "en": "Machine-readable JSON/manifest artifacts may remain technical, but user-relevant statements must carry bilingual companion information."
+  },
+  "blocker_error_class": "USER_FACING_TEXT_NOT_BILINGUAL_DE_EN",
+  "preserve_in_clones_download_use_merge": true,
+  "bilingual_ui_inheritance_gate": {
+    "id": "QALL_BILINGUAL_UI_INHERITANCE_GATE",
+    "status": "IMPLEMENTED",
+    "property": "BILINGUAL_UI_USER_INFO_DE_EN",
+    "inheritance_required": true,
+    "must_be_inherited_by": [
+      "CLONE",
+      "DOWNLOAD",
+      "FORK",
+      "TEMPLATE_INSTANCE",
+      "MERGE",
+      "RELEASE",
+      "REPACKAGE",
+      "BUILD_ARTIFACT",
+      "LOCAL_REPRODUCTION",
+      "GITHUB_PERSISTENCE_OUTPUT",
+      "REPOSITORY_PAYLOAD",
+      "FOLLOW_UP_BUNDLE"
+    ],
+    "required_files": [
+      "BILINGUAL_UI_USER_INFO_STANDARD.json",
+      "BILINGUAL_UI_USER_INFO_STANDARD.md",
+      "BILINGUAL_UI_INHERITANCE_GATE.json",
+      "BILINGUAL_UI_INHERITANCE_GATE.md"
+    ],
+    "required_user_facing_languages": [
+      "de",
+      "en"
+    ],
+    "blocker_error_classes": [
+      "BILINGUAL_UI_INHERITANCE_MISSING",
+      "DERIVED_ARTIFACT_USER_INFO_NOT_BILINGUAL_DE_EN",
+      "CLONE_OR_MERGE_DROPPED_BILINGUAL_UI_STANDARD"
+    ],
+    "release_rule": "No derived artifact may be released unless bilingual DE/EN UI and user-information inheritance is preserved."
+  },
+  "derived_artifacts_must_inherit_bilingual_ui_de_en": true,
+  "official_license_refresh_and_file_enrichment_gate": {
+    "id": "QALL_OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE",
+    "status": "IMPLEMENTED",
+    "official_license_sources": {
+      "Apache-2.0": {
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "target_file": "LICENSES/Apache-2.0.txt",
+        "applies_to": "software/script/source-code components"
+      },
+      "CC-BY-NC-ND-4.0": {
+        "url": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.txt",
+        "target_file": "LICENSES/CC-BY-NC-ND-4.0.txt",
+        "applies_to": "non-software QIK-VRT content, documentation, policy, mapping, learning and bundle user information"
+      }
+    },
+    "refresh_before_repository_persistence": true,
+    "refresh_overwrites_existing_license_files": true,
+    "block_if_official_license_refresh_fails_before_persistence": true,
+    "all_files_must_be_enriched_or_manifest_covered_before_persistence": true,
+    "source_code_requires_embedded_spdx_copyright_marker": true,
+    "non_source_files_require_embedded_or_manifest_license_assignment": true,
+    "binary_payloads_require_manifest_coverage": true,
+    "preserve_in_clones_download_use_merge": true,
+    "blocker_error_classes": [
+      "OFFICIAL_LICENSE_REFRESH_FAILED",
+      "OFFICIAL_LICENSE_FILE_NOT_OVERWRITTEN",
+      "FILE_LICENSE_ENRICHMENT_MISSING",
+      "SOURCE_FILE_WITHOUT_SPDX_OR_COPYRIGHT",
+      "PERSISTENCE_WITH_STALE_LICENSE_FILE"
+    ]
+  },
+  "official_license_files_overwrite_local_copies_before_persistence": true,
+  "all_files_enriched_or_manifest_covered_before_persistence": true,
+  "qikvrt_file_license_notice": {
+    "spdx_license_identifier": "CC-BY-NC-ND-4.0",
+    "copyright": "Copyright (c) 2026 Ingolf Lohmann.",
+    "urheber_rechteinhaber": "Ingolf Lohmann",
+    "lizenz_und_urheberrechtsinformationen_vererben_sich": true,
+    "vererbung": "Klone, QIK-VRT-Repositories, Templates, Forks, Releases, Repackages und Folgeartefakte.",
+    "non_regression": "Gut bleibt stets zugleich besser."
+  }
+}
