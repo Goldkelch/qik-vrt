@@ -1,5 +1,8 @@
-<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
-<!-- Copyright (c) 2026 Ingolf Lohmann; Urheber/Rechteinhaber / Rights-Holder: Ingolf Lohmann -->
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+Author/Rights holder: Ingolf Lohmann.
+-->
 
 # LEARN
 
@@ -204,88 +207,20 @@ Vor jeder Repository-Persistenz werden die offiziellen Lizenzdateien von Apache-
 
 Before every repository persistence, official Apache-2.0 and CC-BY-NC-ND-4.0 license files are refreshed and local copies overwritten. All files are enriched with license/copyright information or manifested.
 
-## L022_LICENSE_REFRESH_FILE_ENRICHMENT_INHERITANCE_REQUIRED
+## L022_GITHUB_DOMAIN_FACTORY_AND_INHERITANCE
 
-Official-License-Refresh und File-Enrichment vererben sich zwingend auf alle GitHub-Klone, alle QIK-VRT-Repositories und alles daraus Hervorgehende.
+Deutsch: Eine neue GitHub-Domäne ist eine reale Repository-/GitHub-Persistenzwirkung. Deshalb muss die Erstellung trockenlauf-fähig, streng akzeptanzpflichtig, gegenstellentyp-geprüft, zweisprachig, auditierbar und in Klonen/Ableitungen vererbbar sein.
 
-Official license refresh and file enrichment are mandatorily inherited by all GitHub clones, all QIK-VRT repositories and all derivatives.
+English: A new GitHub domain is a real repository/GitHub persistence effect. Therefore creation must support dry-run, strict acceptance, counterparty validation, bilingual UI, auditability, and inheritance in clones/derivatives.
 
+## OFFICIAL_LICENSE_PLACEHOLDER_AND_HEADER_FIX
 
-## REFLEXIVE_LICENSE_ENRICHMENT_FIX / Reflexive Lizenz-Anreicherung
+Deutsch: Offizielle Lizenztexte und Datei-Header/-Notices müssen vor Delivery materialisiert sein. Platzhalter oder bloße spätere Fetch-Versprechen sind BLOCK.
 
-Deutsch:
-`WINDOWS.bat` im Root ohne eingebetteten Urheberrechts-/Lizenzmarker ist als reflexive Fehlerklasse `ROOT_WINDOWS_BATCH_WITHOUT_EMBEDDED_COPYRIGHT_LICENSE_MARKER` eingestuft und durch Root, Payload, interne Skripte, Repository-Payload, GitHub-/Clone-/Merge-Pfade, Policy, Map, Learn, Accept, Sync, Reports und Tests korrigiert.
+English: Official license texts and file headers/notices must be materialized before delivery. Placeholders or mere later-fetch promises are BLOCK.
 
-English:
-Root `WINDOWS.bat` without embedded copyright/license marker is classified as reflexive error class `ROOT_WINDOWS_BATCH_WITHOUT_EMBEDDED_COPYRIGHT_LICENSE_MARKER` and corrected across root, payload, internal scripts, repository payload, GitHub/clone/merge paths, policy, map, learn, accept, sync, reports and tests.
+## RECURSIVE_LICENSE_AND_UMLAUT_LAYER
 
+Deutsch: Sourcecode bleibt ohne deutsche Umlaute. Nicht-Software-Dokumente verwenden deutsche Umlaute korrekt. Lizenz- und Urheberrechtsinformationen werden rekursiv in allen Repository-Dateien ergänzt oder manifestiert.
 
-## FULL_LICENSE_ENRICHMENT_REFLEXIVE_FIX / vollständige Lizenz-Anreicherung
-
-Deutsch:
-JSON-Dateien, Daten, Reports, Resultate und alle sonstigen QIK-VRT-Artefakte werden mit eingebetteten oder manifestierten Urheberrechts-/Lizenzinformationen versehen. Menschenlesbare Dateien erhalten nach dem Header mindestens eine Leerzeile. `LICENSES/` enthält die tatsächlichen offiziellen Lizenztexte für Apache-2.0 und CC-BY-NC-ND-4.0.
-
-English:
-JSON files, data, reports, results and all other QIK-VRT artifacts receive embedded or manifested copyright/license information. Human-readable files receive at least one blank line after the header. `LICENSES/` contains the actual official license texts for Apache-2.0 and CC-BY-NC-ND-4.0.
-
-Reflexive error classes:
-```text
-JSON_AND_RESULT_FILES_WITHOUT_COPYRIGHT_LICENSE_METADATA
-OFFICIAL_LICENSE_FILES_NOT_PLACED_IN_LICENSES_DIRECTORY
-HUMAN_READABLE_FILE_HEADER_WITHOUT_BLANK_LINE
-```
-
-
-## RIGHTS_METADATA_VISIBILITY_FIX
-
-Deutsch:
-JSON-Dateien müssen Top-Level-Rechtsmetadaten tragen. Source-/Skriptdateien dürfen Ingolf Lohmann im Header nicht irreführend als `Author` bezeichnen, sondern als `Urheber/Rechteinhaber` und `Rights-Holder`.
-
-English:
-JSON files must carry top-level legal metadata. Source/script files must not misleadingly identify Ingolf Lohmann as `Author` in the header, but as `Urheber/Rechteinhaber` and `Rights-Holder`.
-
-Reflexive error classes:
-```text
-JSON_LEGAL_METADATA_NOT_VISIBLE_OR_TOP_LEVEL
-SOURCE_HEADER_MISSTATES_RIGHTS_HOLDER_AS_AUTHOR
-```
-
-
-## GLOBAL_RETROACTIVE_QIKVRT_RIGHTS_METADATA_ENFORCEMENT
-
-Deutsch:
-Diese Rechte-/Lizenz-Metadatenpflicht gilt rückwirkend für bestehende GitHub-QIK-VRT-Repositories, bestehende QIK-VRT-Repositories und alles, was daraus entsteht. Fehlende Anwendung ist `GLOBAL_RETROACTIVE_QIKVRT_RIGHTS_METADATA_ENFORCEMENT_MISSING`.
-
-English:
-This rights/license metadata requirement applies retroactively to existing GitHub QIK-VRT repositories, existing QIK-VRT repositories and everything derived from them. Missing application is `GLOBAL_RETROACTIVE_QIKVRT_RIGHTS_METADATA_ENFORCEMENT_MISSING`.
-
-
-## SANDBOX_GITHUB_COMBINATORIAL_VALIDATION_GATE_FINAL
-
-Deutsch:
-Die GitHub-/Repository-Verhaltensvalidierung wurde als Sandbox-Simulationsmatrix nachgeholt, inklusive Positivfällen, Negativfall, False-Positive-Schutz und Derivaten. Reale externe GitHub-Mutation bleibt `NOT_EXECUTED`.
-
-English:
-GitHub/repository behavior validation was completed as a sandbox simulation matrix, including positive cases, negative case, false-positive guards and derivatives. Real external GitHub mutation remains `NOT_EXECUTED`.
-
-
-## MANDATORY_AUTOMATED_COMBINATORIAL_VALIDATION_BEFORE_DONE_GATE
-
-Deutsch:
-Kein QIK-VRT-Kontext darf DONE/PASS/erledigt melden, wenn keine automatische, scope-deklarierte Kombinatorikvalidierung bestanden wurde. Manuelle Behauptung ersetzt keine Tests.
-
-English:
-No QIK-VRT context may report DONE/PASS/completed unless an automated, scope-declared combinatorial validation has passed. Manual assertion cannot replace tests.
-
-Blocker: `DONE_REPORTED_WITHOUT_FULL_AUTOMATED_COMBINATORIAL_VALIDATION`
-
-
-## ASCII_SAFE_SOURCE_AND_SCRIPT_TEXT_GATE
-
-Deutsch:
-Source-Code und ausfuehrungsnahe Skriptdateien muessen ASCII-sicher bleiben. Deutsche Umlaute und sonstige nicht-ASCII-Zeichen sind dort Blocker.
-
-English:
-Source code and execution-near script files must remain ASCII-safe. German umlauts and other non-ASCII characters are blockers there.
-
-Blocker: `SOURCE_SCRIPT_CONTAINS_NON_ASCII_OR_UMLAUT_IN_EXECUTION_NEAR_TEXT`
+English: Source code remains free of German umlauts. Non-software documents use German umlauts correctly. License and copyright information is recursively added to or manifested for all repository files.
