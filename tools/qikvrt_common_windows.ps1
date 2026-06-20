@@ -74,3 +74,20 @@ function Assert-GitInvocationLayer {
   if (Test-QikvrtGitRemoteExists 'origin') { QContinue "origin already exists during Git invocation selftest" } else { QPass "safe missing-origin probe ok" }
   QPass "Git invocation and safe origin probe layer selftest ok"
 }
+
+
+function Test-QikvrtGitHubReleaseExists {
+  param([string]$Tag)
+  if ([string]::IsNullOrWhiteSpace($Tag)) { QFail "GitHub release existence check blocked: empty tag" }
+  # Use cmd.exe redirection to avoid PowerShell NativeCommandError when gh writes "release not found" to stderr.
+  & cmd.exe /d /c "gh release view $Tag >NUL 2>NUL"
+  $rc = $LASTEXITCODE
+  if ($rc -eq 0) { return $true }
+  return $false
+}
+function Assert-QikvrtGitHubReleaseProbeLayer {
+  $probeSource = (Get-Command Test-QikvrtGitHubReleaseExists -ErrorAction Stop).ScriptBlock.ToString()
+  if ($probeSource -notmatch 'cmd.exe') { QFail 'safe GitHub release probe must use cmd.exe redirection' }
+  QPass 'GitHub release probe layer selftest ok'
+}
+

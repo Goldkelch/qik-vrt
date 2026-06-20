@@ -1,0 +1,12 @@
+{
+  "version": "V45.20",
+  "source_failure_version": "V45.19",
+  "error_class": "BLOCK_GH_RELEASE_VIEW_NATIVE_COMMAND_ERROR_BEFORE_RELEASE_CREATE",
+  "observed_failure": "After main push and immutable tag v45.19 were created, gh release view v45.19 emitted `release not found`; PowerShell treated stderr as NativeCommandError and stopped before gh release create could run.",
+  "symptom": "gh.exe : release not found",
+  "repair": "Use a safe GitHub release-existence probe via cmd.exe with stdout/stderr redirected; missing release becomes expected CONTINUE path and triggers gh release create.",
+  "no_force_tag_update": true,
+  "no_asset_clobber": true,
+  "owner_acceptance_required_before_remote_effect": true,
+  "timestamp_utc": "2026-06-20T17:24:05.989421+00:00"
+}

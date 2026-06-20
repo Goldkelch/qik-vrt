@@ -1,0 +1,56 @@
+{
+  "version": "V45.20",
+  "title": "QIK-VRT V45.20 document persistence and Release probe repair",
+  "status": "DOCUMENT_PERSISTENCE_AND_RELEASE_PROBE_REPAIR_READY",
+  "documents": [
+    {
+      "path": "documents/qikvrt_quantengravitation/QIKVRT_Fixpunktbeweis_final.pdf",
+      "sha256": "bf6521828db3ea52d67868b1c8ba09b0c0256562f684231df6833b1f68c2d55e",
+      "bytes": 240385
+    },
+    {
+      "path": "documents/qikvrt_quantengravitation/QIKVRT_Quantenkausalitaet_Quantengravitation_Vorlesung_Semester1.pdf",
+      "sha256": "32895b7f36c0b2aaca679b27298a8eee824196391dd2125423f08f37ea24e08d",
+      "bytes": 135423
+    },
+    {
+      "path": "documents/qikvrt_quantengravitation/quantengravitation_bekannte_mathematik_physik_semester2_v5.pdf",
+      "sha256": "377bc53f444e12aeaedc237a71a4eec64c1c76d49dc2b2a9a9debfef72fcab1c",
+      "bytes": 143664
+    },
+    {
+      "path": "documents/qikvrt_quantengravitation/quantengravitation_semester3_abschluss_beweis_v3.pdf",
+      "sha256": "0e7e17798a764299a4228df15f77ff1a623aedaa768f067c7889f67c83204a4b",
+      "bytes": 141774
+    }
+  ],
+  "bundle": {
+    "path": "dist/QIKVRT_V45_20_DOCUMENTS_BUNDLE.zip",
+    "sha256": "bafb3727b08bb130b415235aea56e2afc9f151ff89319d0eb577186ad372b0f9"
+  },
+  "persisted_layers": [
+    "documents",
+    "dist_bundle",
+    "sha256",
+    "manifest",
+    "evidence_ledger",
+    "audit",
+    "release_notes",
+    "windows_verify",
+    "windows_github_release_wrapper"
+  ],
+  "v45_17_failure_repaired": {
+    "error_class": "BLOCK_GIT_INVOCATION_EMPTY_ARGUMENT_VECTOR_FROM_POWERSHELL_ARGS_COLLISION",
+    "observed_behavior": "Run-Git called git with empty argument vector; git printed generic usage and wrapper blocked with args=",
+    "root_cause": "PowerShell helper used parameter name $args / array invocation pattern that could collapse command arguments.",
+    "repair": "V45.20 replaces it with Invoke-QikvrtGit using ValueFromRemainingArguments and non-reserved parameter name $GitArgs; no zero-argument git call allowed."
+  },
+  "previous_context": [
+    "V45.16 real GitHub release done",
+    "V45.17 local document persistence verify passed, remote run blocked at empty git args"
+  ],
+  "created_utc": "2026-06-20T17:17:14.293054+00:00",
+  "repaired_error_class": "BLOCK_GH_RELEASE_VIEW_NATIVE_COMMAND_ERROR_BEFORE_RELEASE_CREATE",
+  "documents_persisted": true,
+  "timestamp_utc": "2026-06-20T17:24:05.993350+00:00"
+}
