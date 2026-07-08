@@ -20,13 +20,27 @@ jobs:
       - name: Run QIKVRT Seed Mesh Audit Export
         run: sh tools/qikvrt_seed_mesh_audit_export.sh
       - name: Commit QIKVRT outputs
+        shell: sh
         run: |
+          set -eu
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add audit evidence || true
+          git add audit docs evidence || true
           if git diff --cached --quiet; then
             echo "QIKVRT_NO_CHANGES"
-          else
-            git commit -m "QIKVRT 4AU QIKVRT Seed Mesh Audit Export $QIKVRT_RUN_ID"
-            git push
+            exit 0
           fi
+          git commit -m "QIKVRT 4AU1 Seed Mesh Audit Export $QIKVRT_RUN_ID"
+          branch="${GITHUB_REF_NAME:-main}"
+          n=1
+          while [ "$n" -le 5 ]; do
+            echo "QIKVRT_PUSH_ATTEMPT $n branch=$branch"
+            if git pull --rebase --autostash origin "$branch" && git push origin "HEAD:$branch"; then
+              echo "QIKVRT_PUSH_PASS attempt=$n"
+              exit 0
+            fi
+            n=$((n+1))
+            sleep 5
+          done
+          echo "BLOCK QIKVRT_PUSH_FAILED_AFTER_RETRY"
+          exit 44
