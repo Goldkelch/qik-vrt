@@ -1,33 +1,32 @@
 name: QIKVRT Seed Mesh Maintenance
-
 on:
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: QIKVRT run id
+        required: false
+        type: string
   schedule:
     - cron: '37 */6 * * *'
-
 permissions:
   contents: write
-
-defaults:
-  run:
-    shell: sh
-
 jobs:
-  seed-mesh-maintenance:
+  run:
     runs-on: ubuntu-latest
+    env:
+      QIKVRT_RUN_ID: ${{ inputs.run_id || github.run_id }}
     steps:
-      - name: Checkout seed repository
-        uses: actions/checkout@v4
-      - name: Run autonomous seed mesh maintenance
+      - uses: actions/checkout@v4
+      - name: Run QIKVRT Seed Mesh Maintenance
         run: sh tools/qikvrt_seed_mesh_maintenance.sh
-      - name: Persist seed mesh maintenance outputs
+      - name: Commit QIKVRT outputs
         run: |
-          git config user.name "qikvrt-actions"
-          git config user.email "qikvrt-actions@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add registry evidence || true
           if git diff --cached --quiet; then
-            echo "QIKVRT_SEED_MESH_MAINTENANCE_COMMIT no_changes"
+            echo "QIKVRT_NO_CHANGES"
           else
-            git commit -m "QIKVRT autonomous seed mesh maintenance"
+            git commit -m "QIKVRT 4AU QIKVRT Seed Mesh Maintenance $QIKVRT_RUN_ID"
             git push
           fi
