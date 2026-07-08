@@ -25,6 +25,7 @@ cat > docs/qikvrt_mesh_dashboard.html <<HTML
 <ul>
 <li><code>registry/NODEMESH_INDEX.json</code></li>
 <li><code>registry/NODEMESH_STATUS.json</code></li>
+<li><code>registry/NODEMESH_REVALIDATION.json</code></li>
 <li><code>audit/QIKVRT_MESH_AUDIT_REPORT.md</code></li>
 <li><code>evidence/seed_mesh_maintenance/LATEST.json</code></li>
 </ul>
@@ -46,7 +47,8 @@ MD
 EVID="evidence/seed_dashboard/runs/$RUN_ID.json"
 cat > "$EVID" <<JSON
 {
-  "qikvrt_event": "SEED_DASHBOARD_PUBLISH_4AU",
+  "qikvrt_event": "SEED_DASHBOARD_PUBLISH_4AV1",
+  "revalidation_path": "registry/NODEMESH_REVALIDATION.json",
   "generated_utc": "$UTC",
   "run_id": "$RUN_ID",
   "status": "PASS",
