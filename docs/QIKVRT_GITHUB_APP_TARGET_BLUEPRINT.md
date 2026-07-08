@@ -1,6 +1,6 @@
 # QIK-VRT GitHub App Target Blueprint
 
-4AU still uses owner-provided installation tokens for bootstrapping. Product operation should move to a GitHub App with repository-scoped installation, least privilege, and short-lived installation tokens.
+4AV1 still uses owner-provided installation tokens for bootstrapping. Product operation should move to a GitHub App with repository-scoped installation, least privilege, and short-lived installation tokens.
 
 Required target permissions:
 
