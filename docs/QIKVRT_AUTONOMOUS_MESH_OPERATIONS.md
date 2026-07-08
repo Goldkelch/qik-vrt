@@ -1,12 +1,5 @@
-# QIKVRT V2.13.4AT Seed Autonomous Mesh Operations
+# QIK-VRT Autonomous Mesh Operations
 
-Seed role responsibilities:
+4AU adds lifecycle hardening: renewal, heartbeat expiry, Seed status aggregation, Seed audit export, and a human readable dashboard.
 
-1. Read only authorized node request URLs from `registry/KNOWN_NODE_REQUESTS.tsv`.
-2. Validate node declaration and safety boundaries.
-3. Persist canonical node entry under `registry/nodes/<GUID>.json`.
-4. Persist central aggregate index under `registry/NODEMESH_INDEX.json`.
-5. Persist liveness/status aggregate under `registry/NODEMESH_STATUS.json`.
-6. Persist evidence under `evidence/seed_acceptance/` and `evidence/seed_mesh_maintenance/`.
-
-Boundaries: no global scanning, no self propagation, no foreign repository mutation, no token persistence.
+Core boundary: every repository writes only to itself. The Seed reads only authorized known Node URLs listed in `registry/KNOWN_NODE_REQUESTS.tsv`.
