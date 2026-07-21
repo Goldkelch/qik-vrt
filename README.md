@@ -77,6 +77,12 @@ the effect haltpoint, evidence boundaries, the personal starting chronology,
 and the interdisciplinary argument, is published as
 [Die Spirale des entscheidenden Unterschieds](docs/Die_Spirale_des_entscheidenden_Unterschieds.md).
 
+The 62-page scientific Version 3.0 on the Mandelbrot set, recursive connection
+order, dimensional physical correspondence, and retrocausality is available as
+a [verifiable publication bundle](docs/publications/2026-07-21-mandelbrot-retrocausality/README.md)
+with the [rendered PDF](docs/publications/2026-07-21-mandelbrot-retrocausality/Mandelbrot_Anschlussordnung_Physik_Retrokausalitaet_V3_2026-07-21.pdf),
+LaTeX source, bibliography, and SHA-256 checksums.
+
 ## Current runnable core
 
 - `src/qikvrt_effect_ack.py` — pure five-state reference state machine,
