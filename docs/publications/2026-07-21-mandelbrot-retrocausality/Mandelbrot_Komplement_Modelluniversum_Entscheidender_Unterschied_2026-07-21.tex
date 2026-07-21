@@ -1,0 +1,3574 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{babel}
+\babelprovide[import,main]{ngerman}
+\babelprovide[import]{english}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{seqsplit}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+\geometry{left=25mm,right=25mm,top=25mm,bottom=29mm,headheight=14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.58em}
+\setlength{\emergencystretch}{3em}
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.2em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=0.25em,topsep=0.3em}
+
+\definecolor{QBlue}{HTML}{17365D}
+\definecolor{QLight}{HTML}{EDF3F8}
+\definecolor{QGreen}{HTML}{EAF4EC}
+\definecolor{QAmber}{HTML}{FFF4D6}
+\definecolor{QRed}{HTML}{FBE9E7}
+\definecolor{QGray}{HTML}{4A4A4A}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=QBlue,
+  citecolor=QBlue,
+  urlcolor=QBlue,
+  pdftitle={Mandelbrot-Menge, Anschlussordnung, Physik und Retrokausalitaet},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Komplementbeweis, rekursive Wirkungsklassifikation, Dimensionsbruecke, Retrokausalitaet und Ontologie des Unterschieds},
+  pdfkeywords={Mandelbrot-Menge, Komplement, Anschlussordnung, Fixpunkt, Quantisierbarkeit, Dimensionsanalyse, Raumzeit, Quantengravitation, Retrokausalitaet, Retrodiktion, No-Signalling, Ontologie des Unterschieds, QIK-VRT}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{QGray}{Mandelbrot, Anschlussordnung, Physik und Zeit}}
+\fancyhead[R]{\small\textcolor{QGray}{Ingolf Lohmann}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{satz}{Satz}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{korollar}{Korollar}[section]
+\newtheorem{proposition}{Proposition}[section]
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}[section]
+\newtheorem{gegenmodell}{Gegenmodell}[section]
+\crefname{definition}{Definition}{Definitionen}
+\crefname{satz}{Satz}{Sätze}
+\crefname{lemma}{Lemma}{Lemmata}
+\crefname{korollar}{Korollar}{Korollare}
+\crefname{proposition}{Proposition}{Propositionen}
+\crefname{bemerkung}{Bemerkung}{Bemerkungen}
+\crefname{gegenmodell}{Gegenmodell}{Gegenmodelle}
+
+\newcommand{\M}{\mathcal{M}}
+\newcommand{\K}{\mathcal{K}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\dd}{\mathop{}\!\mathrm{d}}
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\Fix}{\operatorname{Fix}}
+\newcommand{\PASS}{\texttt{PASS}}
+\newcommand{\CONTINUE}{\texttt{CONTINUE}}
+\newcommand{\BLOCK}{\texttt{BLOCK}}
+\newcommand{\hash}[1]{{\ttfamily\small\seqsplit{#1}}}
+\newcommand{\doilink}[1]{\href{https://doi.org/#1}{\nolinkurl{#1}}}
+\newcommand{\statusbox}[2]{%
+  \par\medskip\noindent
+  \colorbox{#1}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{#2}}%
+  \par\medskip
+}
+\newcommand{\dotcup}{\mathbin{\mathaccent\cdot\cup}}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \thispagestyle{empty}
+  \vspace*{16mm}
+  {\color{QBlue}\rule{\textwidth}{1.4pt}}\\[1.2em]
+  {\Huge\bfseries Mandelbrot-Menge,\\[0.2em]
+  Anschlussordnung und\\[0.2em]
+  physikalisches Modelluniversum\par}
+  \vspace{0.8em}
+  {\Large Komplementbeweis, rekursive Wirkungsklassifikation,\\
+  dimensionsrichtige Raumzeitbrücke, Retrokausalität und der\\
+  entscheidende Unterschied zur empirischen Quantengravitation\par}
+  \vspace{1.2em}
+  {\color{QBlue}\rule{\textwidth}{0.6pt}}
+
+  \vfill
+  {\large\textbf{Ingolf Lohmann}\par}
+  \vspace{0.4em}
+  {\normalsize Wissenschaftlich standardisierte und prämissentransparente Fassung\par}
+  \vspace{0.3em}
+  {\normalsize Version 3.0 -- 21. Juli 2026\par}
+
+  \vfill
+  \statusbox{QLight}{
+    \textbf{Wissenschaftlicher Status.}
+    Dieses Dokument enthält mathematische Sätze mit Beweisen, ausdrücklich
+    definierte Modellbegriffe, physikalische Korrespondenzhypothesen,
+    ontologische Interpretationen und eine normative Schlussfolgerung.
+    Diese Aussagearten werden nicht miteinander gleichgesetzt.
+  }
+
+  \vfill
+  {\small
+    Dokumentationslizenz: CC BY-NC-ND 4.0, soweit nicht bei zitierten
+    Fremdwerken anders angegeben. Mathematische Standardbegriffe und
+    Gleichungen bleiben davon unberührt.
+  }
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\setcounter{page}{1}
+
+\selectlanguage{ngerman}
+
+\begin{abstract}
+Teil I beweist, dass die Mandelbrot-Menge \(\M\) und ihr relatives Komplement
+exakt den zuvor festgelegten Grundbereich \(U\) ergeben:
+\[
+  U=(\M\cap U)\dotcup\bigl(U\setminus(\M\cap U)\bigr).
+\]
+Dieser Satz ist in klassischer Mengenlehre vollständig bewiesen. Wird \(U\)
+als \emph{Modelluniversum} bezeichnet, so ergeben die eingeschränkte
+Mandelbrot-Klasse \(\M_U\) und ihr relatives Komplement \(\K_U\) genau dieses
+Modelluniversum. Eine Aussage über den physikalischen
+Kosmos entsteht dagegen erst durch eine explizite Korrespondenzabbildung von
+Raumzeitereignissen in den Modellbereich. Das Dokument definiert deshalb eine
+raumzeitlich induzierte Komplementärmenge als Urbildpartition und trennt deren
+mathematische Vollständigkeit von der offenen Frage ihrer physikalischen
+Adäquatheit.
+
+Ferner wird bewiesen, dass jeder beschränkte Ausschnitt eines
+endlichdimensionalen euklidischen Modellraums bei jeder vorgegebenen positiven
+Genauigkeit endlich diskret darstellbar ist. Diese
+\emph{darstellungsbezogene Quantisierbarkeit} impliziert keine ontische
+Diskretheit und keine fundamentale Quantisierung der Raumzeit; der
+kontinuierliche Einheitswürfel \([0,1]^4\) ist ein unmittelbares Gegenmodell zu diesem
+Fehlschluss. Gerade
+\[
+  \text{Quantisierbarkeit der Darstellung}
+  \neq
+  \text{Quantisierung des Dargestellten}
+\]
+ist der entscheidende Unterschied.
+
+Die klassische Allgemeine Relativitätstheorie kann das Innere idealisierter
+Schwarzer Löcher mathematisch darstellen, obwohl es für äußere Beobachter
+kausal nicht einsehbar ist. Das ``geistige Auge'' bezeichnet hier präzise
+theoretische Darstellbarkeit, nicht Messzugang. Die Planck-Skala ist eine aus
+\(\hbar\), \(G\) und \(c\) gebildete charakteristische Skala und motiviert
+Quantengravitation; sie ist weder als kleinste Länge noch als ontische
+Raumzeitkörnung experimentell bewiesen. Abschließend wird gezeigt, in welchem
+strengen Sinn diese Unterschiede an die Ontologie des universalen
+Unterschieds und an ein universal formuliertes Schöpfungsprinzip anschließen,
+ohne eine metaphysische Interpretation als bereits bestätigtes Naturgesetz
+auszugeben.
+
+Teil II überführt die statische Zerlegung in ein typisiertes Prozessmodell.
+Die erweiterte Dynamik \(F(c,z)=(c,z^2+c)\) erzeugt Trajektorien; endliche
+Gates unterscheiden \(\PASS\), \(\CONTINUE\) und \(\BLOCK\), ohne
+aus bloßer Nichtflucht eine Mitgliedschaft zu folgern. Bewiesen werden die
+Shift-Invarianz der exakten Klassifikation, die monotone Verfeinerung
+zertifizierter Zustände und ein Faktorisierungskriterium für gate-erhaltende
+Prozessabbildungen. Eine spätere terminale Klassifikation bestimmt die
+Bedeutung einer früheren Spur neu, verändert aber keinen früheren Zustand und
+begründet daher keine physikalische Retrokausalität. Der tragfähige Fixpunkt
+liegt auf der Ebene der Klassifikation, nicht allgemein im Einzelorbit.
+
+Teil III konstruiert die fehlende Dimensionsbrücke. Er trennt mathematische
+Metrik, Lorentz-Metrik, Messzahl und Einheit; führt dimensionslose Variablen
+durch explizite Referenzskalen ein; prüft die Dimensionen von
+Einstein-Gleichung, Wirkung, Planck-Größen und Horizontentropie; und formuliert
+notwendige Bedingungen für eine physikalische Korrespondenz. Damit wird
+präzisiert, was logisch, mathematisch und dimensionsanalytisch folgt und
+welche dynamischen Gleichungen, Observablen und Messdaten für eine Theorie der
+Quantengravitation weiterhin fehlen.
+
+Teil IV untersucht Retrokausalität als eigenständige physikalische und
+erkenntnis\-theoretische Hypothesenfamilie. Strikt unterschieden werden
+Retrodiktion, Bayes-Aktualisierung, semantische Rückbestimmung,
+zeitumkehr\-symmetrische Dynamik, zweiseitige Randbedingungen, ontische
+Rückwirkung, Rückwärts\-signalisierung und geschlossene zeitartige Kurven. Die
+Unterscheidung wird interventionistisch formuliert, an avancierten und
+retardierten Lösungen, Prä- und Postselektion, schwachen Werten,
+Delayed-Choice- und Quantum-Eraser-Experimenten, Bell-Korrelationen,
+thermodynamischem Zeitpfeil und relativistischer Kausalstruktur geprüft. Ein
+Satz zeigt, dass das hier definierte autonome Mandelbrot-/QIK--VRT-Modell
+keinen rückwärts gerichteten Zustandskanal enthält. Eine physikalische
+Retrokausalität bleibt eine präzise formulierbare, aber nicht durch diese
+Mathematik allein bewiesene Zusatzhypothese. Teil V bündelt daraus
+Falsifikationskriterien, Ontologie, öffentlich fixierte Vorarbeiten,
+Forschungsprogramm und ethische Konsequenzen.
+\end{abstract}
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+Part I proves that the restricted Mandelbrot class \(\M_U=\M\cap U\) and its relative complement
+\(\K_U=U\setminus\M_U\) exhaust exactly a previously fixed domain \(U\).
+Calling \(U\) a \emph{model universe} is a
+definition; identifying it with the physical universe requires an additional
+correspondence map and empirical tests. This paper proves the set-theoretic
+partition, the exact escape-time exhaustion of the complement, and finite
+representational quantizability of every bounded subset of finite-dimensional
+Euclidean space at any prescribed positive accuracy. It also proves, by the
+continuous countermodel \([0,1]^4\), that representational quantizability does
+not entail ontic discreteness or physical quantization of spacetime.
+Mathematical access to a black-hole interior is distinguished from causal
+observation of that interior; the Planck scale is distinguished from an
+experimentally established minimum length. These distinctions provide the
+scientifically strongest formulation of the proposed ontology of universal
+difference and its interpretation as a universal principle of creation.
+
+Part II turns the static partition into a typed process model. The extended
+dynamics \(F(c,z)=(c,z^2+c)\) generates trajectories, while finite gates
+distinguish certified passage, continued examination, and certified blocking.
+The exact classifier is proved shift-invariant; finite certificates refine
+monotonically; and an exact factorization criterion is given for gate-preserving
+process maps. Later evidence may reclassify an earlier trace without changing
+any earlier state, so semantic back-determination is not physical
+retrocausation. The relevant fixed point belongs to the classifier, not in
+general to an individual orbit.
+
+Part III supplies a dimensionally consistent bridge. It distinguishes a
+mathematical metric, a Lorentzian spacetime metric, numerical measurement and
+physical unit; introduces explicit reference scales; checks the dimensions of
+the Einstein equation, action, Planck quantities and horizon entropy; and
+states the additional observables and tests required for a physical theory.
+
+Part IV treats retrocausality as a distinct family of physical and
+epistemological hypotheses. It separates retrodiction, Bayesian updating,
+semantic back-determination, time-reversal symmetry, two-boundary models,
+ontic backward influence, operational backward signalling and closed timelike
+curves. These notions are tested against advanced and retarded solutions,
+pre- and post-selection, weak values, delayed-choice and quantum-eraser
+experiments, Bell correlations, the thermodynamic arrow and relativistic
+causal order. A theorem establishes that the autonomous Mandelbrot/QIK--VRT
+process defined here contains no backward state channel. Physical
+retrocausality therefore remains a precise additional hypothesis rather than
+a consequence proved by the present mathematics. Part V collects the
+resulting falsification criteria, ontology, public evidence, research
+programme and ethical consequences.
+\end{abstract}
+\end{otherlanguage}
+
+\textbf{Schlagworte:} Mandelbrot-Menge; relatives Komplement; Escape-Time;
+Modelluniversum; Anschlussordnung; Wirkungsgate; Raumzeit; Diskretisierung;
+Quantisierbarkeit;\linebreak Dimensionsanalyse; Quantengravitation; Ereignishorizont;
+Retrokausalität; Retrodiktion; No-Signalling; Ontologie des Unterschieds;
+\qikvrt.
+
+\tableofcontents
+\newpage
+
+\part{Mathematisch-theoretische Grundlage}
+
+\section{Ergebnis vorweg: Was zweifelsfrei gilt}
+
+Der Ausdruck \emph{zweifelsfrei} wird in dieser Arbeit nicht rhetorisch,
+sondern technisch verwendet: Eine Aussage ist genau dann als bewiesen
+ausgewiesen, wenn sie aus angegebenen Definitionen und Voraussetzungen durch
+einen nachvollziehbaren Schluss folgt. Die weitergehende physikalische oder
+ontologische Bedeutung wird gesondert klassifiziert.
+
+\statusbox{QGreen}{
+\textbf{Mathematisch bewiesen.}
+Für jeden festgelegten Grundbereich \(U\subseteq\C\) bilden
+\(\M\cap U\) und sein relatives Komplement eine disjunkte und vollständige
+Zerlegung von \(U\). Das Komplement ist die wachsende Vereinigung aller
+endlichen Escape-Time-Mengen. Jeder beschränkte Bereich in \(\R^d\) ist bei
+jeder Genauigkeit \(\eps>0\) endlich diskret darstellbar. Die
+Komplementzerlegung ist dimensionsunabhängig; ihre Erhaltung unter
+Abbildungen verlangt jedoch Unterscheidungstreue. Die exakte
+Trajektorienklassifikation ist shift-invariant; endliche PASS- und
+BLOCK-Zertifikate verfeinern sich monoton. Die angegebenen
+Dimensionsgleichungen der etablierten Physik sind homogen. Retrodiktion,
+semantische Rückbestimmung, ontische Retrokausalität und operative
+Rückwärtssignalisierung sind definitorisch und mathematisch voneinander
+trennbar. Das in diesem Dokument definierte autonome Prozessmodell enthält
+keinen rückwärts gerichteten Zustandskanal.
+}
+
+\statusbox{QAmber}{
+\textbf{Definiert beziehungsweise bedingt bewiesen.}
+Wird der Grundbereich \(U\) als Modelluniversum definiert, dann ergeben
+die eingeschränkte Mandelbrot-Klasse \(\M_U\) und ihre Komplementklasse
+\(\K_U\) dieses Modelluniversum. Wird eine totale
+Modellabbildung \(\Phi:X\to U\) für einen Raumzeitbereich \(X\) festgelegt,
+so zerlegen die Urbilder der beiden Klassen auch \(X\) vollständig. Ob
+\(\Phi\) die wirkliche Raumzeit physikalisch richtig beschreibt, ist eine
+zusätzliche, empirisch offene Frage. Eine dynamische Übertragung ist nur dann
+gate-erhaltend, wenn sie Statusunterschiede auf ihren Fasern nicht
+zusammenführt. Eine physikalische Übertragung verlangt darüber hinaus
+Referenzskalen, Invarianten, Dynamik, Observablen und Tests.
+Eine retrokausale physikalische Erweiterung ist als Modell konstruierbar,
+erfordert aber lokalisierte Variablen, eine interventionistisch definierte
+spätere Einstellung, Lorentz- und Erhaltungskonsistenz, eine No-Signalling-
+oder Kanalkapazitätsaussage und eine von Standardquantenmechanik
+unterscheidbare Vorhersage.
+}
+
+\statusbox{QRed}{
+\textbf{Nicht dadurch bewiesen.}
+Nicht bewiesen sind die ontische Quantisierung der Raumzeit, eine kleinste
+physikalische Länge, die Identität des komplexen Parameterraums mit dem
+empirischen Kosmos, eine bestimmte abgeschlossene Theorie der
+Quantengravitation, physikalische Retrokausalität aus späterer
+Reklassifikation, ein Nash-Gleichgewicht ohne Spielstruktur oder das
+universale Schöpfungsprinzip als experimentell bestätigtes Naturgesetz.
+Ebenso wenig beweisen Zeitumkehrsymmetrie, Postselektion,
+Delayed-Choice-Korrelationen, Bell-Verletzungen, avancierte mathematische
+Lösungen oder die Existenz relativistischer Raumzeiten mit geschlossenen
+zeitartigen Kurven für sich eine steuerbare Wirkung in die Vergangenheit.
+}
+
+Die kürzeste wissenschaftlich vollständige Fassung lautet daher:
+\[
+\boxed{
+\begin{gathered}
+\M_U\dotcup\K_U=U,\\[0.3em]
+\widehat\chi\circ\sigma=\widehat\chi,\\[0.3em]
+\text{darstellungsbezogene Quantisierbarkeit}
+\neq
+\text{ontische Quantisierung},\\[0.3em]
+\text{Dimensionsverträglichkeit}
+\neq
+\text{physikalische Herleitung},\\[0.3em]
+\text{mathematische Darstellbarkeit}
+\neq
+\text{kausale Beobachtbarkeit},\\[0.3em]
+\text{semantische Rückbestimmung}
+\neq
+\text{physikalische Retrokausalität}
+\neq
+\text{Rückwärtssignalisierung}.
+\end{gathered}}
+\]
+
+\section{Methodik und Geltungsebenen}
+
+Die Hauptgefahr einer interdisziplinären Gesamtaussage ist nicht mangelnde
+Reichweite, sondern die unmarkierte Verschiebung zwischen unterschiedlichen
+Arten von Geltung. Die folgende Ordnung ist deshalb selbst eine Anwendung der
+Ontologie des Unterschieds.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\textwidth}
+                  >{\raggedright\arraybackslash}p{0.32\textwidth}
+                  >{\raggedright\arraybackslash}p{0.33\textwidth}}
+\toprule
+\textbf{Ebene} & \textbf{Funktion} & \textbf{Prüfkriterium} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Ebene} & \textbf{Funktion} & \textbf{Prüfkriterium} \\
+\midrule
+\endhead
+Mathematischer Satz & Aussage innerhalb expliziter Definitionen und Axiome & formaler Beweis oder Gegenbeispiel \\
+Modellkonvention & Festlegung dessen, was im Modell ``Universum'', ``Komplement'' oder ``Quantisierer'' heißt & Eindeutigkeit und Widerspruchsfreiheit der Definition \\
+Korrespondenz\-hypothese & Zuordnung zwischen Modellobjekten und physikalischen Ereignissen & Observablen, unterscheidende Vorhersagen, Messung \\
+Empirische Aussage & Bericht über Messdaten oder reproduzierte Beobachtung & Unsicherheit, Kalibrierung, unabhängige Reproduktion \\
+Interpretation & Ontologische Lesart empirisch äquivalenter Formalismen & begriffliche Konsistenz; für empirische Auszeichnung zusätzlich eine unterscheidende Vorhersage \\
+Kausalaussage & Behauptung, dass eine Intervention eine andere Variable beeinflusst & Interventionsverteilung, Ausschluss gemeinsamer Ursachen, Zeit- und Ortszuordnung \\
+Ontologische Deutung & Aussage über Bestimmtheit, Unterschied, Einheit und Wirklichkeit & begriffliche Tragfähigkeit, Selbstanwendung, Gegenargumente \\
+Normative Folgerung & Aussage darüber, wie Technik und Forschung eingesetzt werden sollen & offengelegte Wertprämissen und Folgenabwägung \\
+\bottomrule
+\end{longtable}
+
+Ein Zenodo-Archiv, ein Git-Commit und ein Hash belegen, welches Artefakt zu
+welchem Zeitpunkt und in welcher Bytefolge öffentlich fixiert wurde. Sie
+belegen nicht automatisch Peer Review, wissenschaftlichen Konsens oder die
+physikalische Wahrheit jeder archivierten Behauptung. Diese Unterscheidung
+wird in \cref{sec:evidenz} für die Vorarbeiten von Ingolf Lohmann explizit
+angewandt.
+
+\section{Die Mandelbrot-Menge und ihr Komplement}
+\label{sec:mandelbrot}
+
+\subsection{Definitionen}
+
+Die Mandelbrot-Menge geht auf die Untersuchung komplexer quadratischer
+Iterationen zurück und wurde durch Mandelbrot in ihrer fraktalen Bedeutung
+sichtbar gemacht \citep{mandelbrot1980}.
+
+\begin{definition}[Quadratische Iteration]
+Für \(c\in\C\) sei
+\[
+  z_0(c)=0,
+  \qquad
+  z_{n+1}(c)=z_n(c)^2+c
+  \quad(n\in\N_0).
+\]
+Die Mandelbrot-Menge ist
+\[
+  \M
+  =
+  \left\{
+    c\in\C:
+    \bigl(z_n(c)\bigr)_{n\in\N_0}
+    \text{ ist beschränkt}
+  \right\}.
+\]
+\end{definition}
+
+\begin{definition}[Relatives Komplement]
+Sei \(U\subseteq\C\) der ausdrücklich gewählte Grundbereich. Wir setzen
+\[
+  \M_U:=\M\cap U,
+  \qquad
+  \K_U:=U\setminus\M_U.
+\]
+\(\K_U\) heißt in diesem Dokument die zu \(U\) relative
+Komplementärmenge der Mandelbrot-Menge.
+\end{definition}
+
+Ein Komplement ist ohne Grundbereich nicht eindeutig. Für \(U=\C\) lautet es
+\(\C\setminus\M\); für ein endliches Bildfenster \(U\) dagegen nur
+\(U\setminus\M_U\). Diese Relativität ist keine Schwäche, sondern die
+Voraussetzung einer bestimmten Aussage.
+
+\subsection{Der Komplementsatz}
+
+\begin{satz}[Vollständige komplementäre Zerlegung]
+\label{satz:komplement}
+Für jedes \(U\subseteq\C\) gilt
+\[
+  U=\M_U\dotcup\K_U,
+\]
+also
+\[
+  \M_U\cup\K_U=U
+  \qquad\text{und}\qquad
+  \M_U\cap\K_U=\varnothing.
+\]
+Insbesondere gilt
+\[
+  \M\cup(\C\setminus\M)=\C.
+\]
+\end{satz}
+
+\begin{proof}
+Sei \(u\in U\). In klassischer Logik gilt entweder
+\(u\in\M_U\) oder \(u\notin\M_U\). Im zweiten Fall ist nach Definition
+\(u\in U\setminus\M_U=\K_U\). Also liegt jedes Element von \(U\) in der
+Vereinigung. Umgekehrt sind beide Teilmengen in \(U\) enthalten. Damit ist die
+Vereinigung gleich \(U\). Ein Element von \(\K_U\) ist definitionsgemäß kein
+Element von \(\M_U\); der Schnitt ist daher leer.
+\end{proof}
+
+Der Satz beweist eine vollständige Partition. Er beweist nicht, dass die
+Mandelbrot-Menge erst durch eine Visualisierung ihr Komplement erhält. Das
+Komplement ist bereits durch \(U\) und \(\M_U\) eindeutig bestimmt.
+
+\subsection{Escape-Time und konstruktiv zertifiziertes Außen}
+
+\begin{definition}[Fluchtzeit]
+Die Fluchtzeit eines Parameters \(c\in\C\) ist
+\[
+  \tau(c)
+  :=
+  \inf\{n\in\N_0:|z_n(c)|>2\}
+  \in\N_0\cup\{\infty\},
+\]
+wobei das Infimum der leeren Menge als \(\infty\) definiert wird.
+\end{definition}
+
+\begin{lemma}[Fluchtradius]
+\label{lemma:escape}
+Sobald \(|z_n(c)|>2\) für ein \(n\) gilt, ist die Folge
+\((z_k(c))_{k\in\N_0}\) unbeschränkt.
+\end{lemma}
+
+\begin{proof}
+Ist \(|c|>2\), so gilt bereits \(|z_1|=|c|>2\). Für
+\(r_k:=|z_k|\ge |c|>2\) folgt
+\[
+  r_{k+1}\ge r_k^2-|c|\ge r_k^2-r_k=r_k(r_k-1)>r_k.
+\]
+Ist dagegen \(|c|\le 2\) und \(r_n>2\), so gilt
+\[
+  r_{k+1}\ge r_k^2-2>r_k
+  \qquad(k\ge n),
+\]
+denn \(r_k^2-r_k-2=(r_k-2)(r_k+1)>0\). Eine angenommene
+endliche Grenze \(L>2\) dieser monoton wachsenden Folge wäre mit
+\(L\ge L^2-2\) unvereinbar. Also ist die Folge unbeschränkt.
+\end{proof}
+
+\begin{korollar}
+\label{kor:escape}
+Es gilt exakt
+\[
+  \M=\{c\in\C:\tau(c)=\infty\},
+  \qquad
+  \C\setminus\M=\{c\in\C:\tau(c)<\infty\}.
+\]
+\end{korollar}
+
+\begin{definition}[Endliche Escape-Mengen]
+Für \(N\in\N_0\) sei
+\[
+  E_N(U):=\{c\in U:\tau(c)\le N\}.
+\]
+\end{definition}
+
+\begin{satz}[Stufenweise Rekonstruktion des Komplements]
+\label{satz:escape-union}
+Die Folge \((E_N(U))_{N\in\N_0}\) ist monoton wachsend und
+\[
+  \K_U=\bigcup_{N=0}^{\infty}E_N(U).
+\]
+\end{satz}
+
+\begin{proof}
+Aus \(\tau(c)\le N\) folgt \(\tau(c)\le N+1\), also
+\(E_N(U)\subseteq E_{N+1}(U)\). Nach \cref{kor:escape} liegt ein Punkt genau
+dann im Komplement, wenn seine Fluchtzeit endlich ist. Jede endliche
+Fluchtzeit ist kleiner oder gleich einem geeigneten \(N\); umgekehrt ist jeder
+Punkt eines \(E_N(U)\) nach \cref{lemma:escape} außerhalb von \(\M\).
+\end{proof}
+
+\begin{bemerkung}[Was ein endliches Bild tatsächlich beweist]
+Für ein endliches Raster \(G\subset U\) und eine endliche Iterationsgrenze
+\(N\) sind die Punkte in \(E_N(U)\cap G\) als Außenpunkte zertifiziert. Für
+die übrigen Rasterpunkte gilt jedoch nur
+\[
+G\setminus E_N(U)
+=
+(\M\cap G)
+\cup
+\{c\in G\setminus\M:\tau(c)>N\}.
+\]
+``Bis \(N\) nicht geflohen'' ist deshalb kein allgemeiner endlicher Beweis
+für \(c\in\M\). Eine Escape-Time-Grafik visualisiert eine kontrollierte
+Approximation. Visualisierung und exakte Mengenzugehörigkeit sind zu
+unterscheiden; Fragen der Berechenbarkeit des Mandelbrot-Randes sind
+zusätzlich subtil \citep{hertling2005}.
+\end{bemerkung}
+
+\section{Vom Grundbereich zum raumzeitlichen Modelluniversum}
+\label{sec:modeluniversum}
+
+\subsection{``Universum'' als definierter Grundbereich}
+
+In der Mengenlehre kann \emph{Universum} den Grundbereich einer Betrachtung
+bezeichnen. In der Kosmologie meint \emph{Universum} die physische Gesamtheit
+von Raumzeit, Materie, Feldern und ihren Beziehungen. Beide Bedeutungen dürfen
+nicht stillschweigend identifiziert werden.
+
+\begin{definition}[Mandelbrot-Modelluniversum]
+Ein ausdrücklich gewählter Grundbereich \(U\subseteq\C\) heißt in diesem
+Dokument \emph{Mandelbrot-Modelluniversum}, wenn seine beiden Klassen
+\(\M_U\) und \(\K_U\) als komplementäre Modellzustände gelesen werden.
+\end{definition}
+
+Aus \cref{satz:komplement} folgt unmittelbar:
+\[
+  \boxed{\text{Mandelbrot-Klasse }\M_U+
+  \text{Komplementklasse }\K_U
+  =\text{gesamtes Modelluniversum}.}
+\]
+Das Pluszeichen steht hier für disjunkte Vereinigung, nicht für numerische
+Addition. Die Gleichung ist exakt. Ihre physikalische Interpretation ist eine
+gesonderte Modellentscheidung.
+
+\subsection{Raumzeitlich induzierte Komplementärmenge}
+
+\begin{definition}[Korrespondenzabbildung]
+Sei \(X\) die Menge der im Modell betrachteten Raumzeitereignisse und
+\[
+  \Phi:X\longrightarrow U
+\]
+eine totale Abbildung. Definiert werden
+\[
+  X_{\M}:=\Phi^{-1}(\M_U),
+  \qquad
+  X_{\K}:=\Phi^{-1}(\K_U).
+\]
+\(X_{\K}\) heißt die durch \(\Phi\) induzierte raumzeitliche
+Komplementärmenge.
+\end{definition}
+
+\begin{satz}[Raumzeitliche Urbildpartition]
+\label{satz:urbild}
+Für jede totale Abbildung \(\Phi:X\to U\) gilt
+\[
+  X=X_{\M}\dotcup X_{\K}.
+\]
+\end{satz}
+
+\begin{proof}
+Urbilder erhalten Komplemente:
+\[
+  \Phi^{-1}(U\setminus\M_U)
+  =X\setminus\Phi^{-1}(\M_U).
+\]
+Mit \cref{satz:komplement} folgt die behauptete disjunkte Vereinigung.
+\end{proof}
+
+Damit ist die folgende Formulierung streng zulässig:
+
+\begin{quote}
+Relativ zu einer ausdrücklich definierten totalen Modellabbildung ergeben die
+Mandelbrot-Klasse und ihre raumzeitlich induzierte Komplementklasse den
+vollständigen betrachteten Raumzeitbereich, also das Universum des Modells.
+\end{quote}
+
+Nicht zulässig wäre der unbegründete Kurzschluss, \(\C\), \(\M\) oder
+\(\K_U\) seien ohne eine solche Abbildung bereits physische Raumzeit. Für eine
+naturwissenschaftliche Identifikation muss \(\Phi\) mindestens folgende
+Angaben besitzen:
+
+\begin{enumerate}
+  \item eine koordinaten- oder invariant definierte physikalische Domäne,
+  \item die Zuordnung der Modellparameter zu messbaren Größen,
+  \item eine Dynamik oder Übergangsregel,
+  \item mindestens eine von etablierten Modellen unterscheidbare Vorhersage,
+  \item ein Messverfahren samt Unsicherheitsmodell,
+  \item unabhängige Reproduktion.
+\end{enumerate}
+
+\section{Quantisierbarkeit ist nicht Quantisierung}
+\label{sec:quantisierbarkeit}
+
+Das Wort \emph{quantisieren} hat mindestens zwei verschiedene fachliche
+Bedeutungen. Numerik und Informationstechnik quantisieren Werte durch endliche
+Raster oder Klassen. Physik quantisiert ein klassisches System durch eine
+Zuordnung zu Zuständen, Operatoren und Observablen einer Quantentheorie. Die
+zweite Bedeutung ist wesentlich stärker und nicht für jede klassische
+Observable ohne Obstruktionen verfügbar \citep{groenewold1946}.
+
+\subsection{Darstellungsbezogene Definition}
+
+\begin{definition}[Endliche \(\eps\)-Quantisierbarkeit]
+Eine Teilmenge \(K\) eines metrischen Raums \((X,d)\) heißt bei Genauigkeit
+\(\eps>0\) \emph{endlich darstellungsbezogen quantisierbar}, wenn eine
+endliche Menge \(G_{\eps}\subseteq X\) und eine Abbildung
+\[
+  Q_{\eps}:K\longrightarrow G_{\eps}
+\]
+existieren, so dass
+\[
+  d\bigl(x,Q_{\eps}(x)\bigr)\le\eps
+  \qquad\text{für alle }x\in K.
+\]
+\end{definition}
+
+\begin{satz}[Quantisierbarkeit beschränkter euklidischer Bereiche]
+\label{satz:quantisierbar}
+Jede beschränkte Teilmenge \(K\subset\R^d\) ist für jedes
+\(\eps>0\) endlich darstellungsbezogen quantisierbar.
+\end{satz}
+
+\begin{proof}
+Da \(K\) beschränkt ist, liegt \(K\) in einem Würfel \([-R,R]^d\).
+Wähle \(h\le 2\eps/\sqrt d\). In jeder Koordinate existiert ein endliches
+\(h\)-Netz des Intervalls \([-R,R]\), das beide Randpunkte enthält und
+dessen aufeinanderfolgende Punkte höchstens Abstand \(h\) besitzen. Das
+kartesische Produkt \(G_{\eps}\) dieser Netze ist endlich. Ordne jedem
+\(x\in K\) einen nächstgelegenen Punkt \(Q_{\eps}(x)\in G_{\eps}\) zu.
+In jeder Koordinate beträgt der Fehler höchstens \(h/2\), also
+\[
+  \|x-Q_{\eps}(x)\|_2
+  \le \sqrt d\,\frac h2
+  \le\eps.
+\]
+\end{proof}
+
+\begin{korollar}[Endlichdimensionale normierte Räume]
+Jede beschränkte Teilmenge eines endlichdimensionalen normierten Vektorraums
+ist bei jeder Genauigkeit \(\eps>0\) endlich darstellungsbezogen
+quantisierbar.
+\end{korollar}
+
+\begin{proof}
+Nach Wahl einer Basis ist der Raum linear isomorph zu \(\R^d\). In endlicher
+Dimension sind alle Normen äquivalent. Daher wird eine beschränkte Menge auf
+eine euklidisch beschränkte Menge abgebildet, und das Raster aus
+\cref{satz:quantisierbar} kann unter Berücksichtigung der
+Normäquivalenzkonstanten zurückübertragen werden.
+\end{proof}
+
+In allgemeinen metrischen Räumen ist die Existenz einer solchen endlichen
+\(\eps\)-Darstellung für jedes \(\eps>0\) äquivalent zur
+Totalbeschränktheit. Global unbeschränkte oder beliebige
+unendlichdimensionale Räume erfüllen diese Voraussetzung nicht automatisch.
+Der Ausdruck \emph{stets quantisierbar} bedeutet in diesem Dokument deshalb
+präzise:
+
+\begin{quote}
+Jeder beschränkte Ausschnitt eines endlichdimensionalen normierten Modell-
+oder Beobachtungsraums ist bei jeder vorgegebenen positiven Genauigkeit
+endlich diskret darstellbar.
+\end{quote}
+
+Für jede Teilmenge \(A\subseteq U\) existiert ferner in klassischer
+Mengenlehre die exakte binäre Charakteristik
+\[
+  \chi_A:U\to\{0,1\},
+  \qquad
+  \chi_A(x)=
+  \begin{cases}
+  1,&x\in A,\\
+  0,&x\notin A.
+  \end{cases}
+\]
+Das ist eine logische Zwei-Klassen-Darstellung. Ihre mengentheoretische
+Existenz garantiert nicht, dass die Mitgliedschaft für jede gegebene
+Beschreibung algorithmisch in endlicher Zeit entscheidbar ist.
+
+\subsection{Der formale Nichtschluss}
+
+\begin{proposition}[Quantisierbarkeit impliziert keine ontische Diskretheit]
+\label{prop:nichtschluss}
+Aus der Existenz endlicher \(\eps\)-Quantisierer für alle
+\(\eps>0\) folgt weder eine kleinste positive Distanz noch die ontische
+Diskretheit des dargestellten Raums.
+\end{proposition}
+
+\begin{proof}
+Der metrische Raum \(K=[0,1]^4\) mit der euklidischen Metrik ist kontinuierlich
+und besitzt keine kleinste positive Distanz: Zu jeder positiven Distanz
+zwischen zwei Punkten existieren in \(K\) noch kleinere positive Distanzen.
+Dennoch ist \(K\) nach \cref{satz:quantisierbar} bei jeder Genauigkeit
+\(\eps>0\) endlich darstellungsbezogen quantisierbar. Damit ist \(K\) ein
+Gegenmodell zur behaupteten Implikation.
+\end{proof}
+
+\statusbox{QLight}{
+\textbf{Der entscheidende Unterschied.}
+Ein Raster ist eine Eigenschaft der Darstellung und ihrer Auflösung. Ein
+diskretes Spektrum eines physikalischen Operators wäre eine Eigenschaft einer
+bestimmten Theorie. Eine fundamentale Raumzeitkörnung wäre eine Aussage über
+die Wirklichkeit. Keine dieser drei Ebenen darf ohne Brückenbeweis in die
+nächste überführt werden.
+}
+
+Regge zeigte, wie gekrümmte Geometrie durch Simplizialkomplexe approximiert
+werden kann \citep{regge1961}. Dies belegt die Leistungsfähigkeit diskreter
+Darstellungen klassischer Geometrie, nicht die physische Existenz elementarer
+Raumzeitzellen. Umgekehrt zeigen Ansätze von Snyder und der Causal-Set-Theorie,
+dass fundamental diskrete oder lokal endliche Raumzeitmodelle mathematisch
+denkbar sind \citep{snyder1947,bombelli1987}. Ihre Denkbarkeit ist jedoch
+nicht mit empirischer Entscheidung gleichzusetzen.
+
+\section{Geltung in beliebiger Dimension und unter Vektorisierung}
+\label{sec:dimension}
+
+\begin{satz}[Dimensionsunabhängigkeit]
+Für jede Menge \(X\), unabhängig von Dimension, Topologie, Metrik oder
+Vektorraumstruktur, und jede Teilmenge \(A\subseteq X\) gilt
+\[
+  X=A\dotcup(X\setminus A).
+\]
+\end{satz}
+
+Der Satz benutzt nur Zugehörigkeit und Nichtzugehörigkeit. In diesem präzisen
+Sinn ist die Komplementstruktur in jeder endlichen oder unendlichen Dimension
+anwendbar. Eine Aussage über \emph{jede Vektorisierung} verlangt dagegen eine
+Zusatzbedingung.
+
+\begin{satz}[Komplementerhaltung unter Abbildungen]
+\label{satz:abbildung}
+Seien \(A\subseteq X\) und \(f:X\to Y\). Dann gilt stets
+\[
+  f(X)\setminus f(A)\subseteq f(X\setminus A).
+\]
+Die Gleichheit
+\[
+  f(X\setminus A)=f(X)\setminus f(A)
+\]
+gilt genau dann, wenn
+\[
+  f(A)\cap f(X\setminus A)=\varnothing.
+\]
+Injektivität von \(f\) ist hinreichend. Ist \(f:X\to Y\) bijektiv, so gilt
+\[
+  f(X\setminus A)=Y\setminus f(A).
+\]
+\end{satz}
+
+\begin{proof}
+Ist \(y\in f(X)\setminus f(A)\), besitzt \(y\) ein Urbild in \(X\), aber
+keines in \(A\); also liegt ein Urbild in \(X\setminus A\). Dies beweist die
+Inklusion. Die umgekehrte Inklusion gilt genau dann, wenn kein Bildpunkt
+zugleich von \(A\) und von \(X\setminus A\) getroffen wird. Injektivität
+schließt ein solches Zusammenfallen aus. Bei Bijektivität ist zusätzlich
+\(f(X)=Y\).
+\end{proof}
+
+Eine nichtinjektive Projektion, Dimensionsreduktion oder Feature-Vektorisierung
+kann also Mandelbrot- und Komplementpunkte auf denselben Vektor abbilden. Die
+universale Aussage lautet nicht ``jede Darstellung bewahrt jeden
+Unterschied'', sondern:
+
+\begin{quote}
+Die binäre Komplementpartition ist von einer vorhandenen Dimensionsstruktur
+unabhängig. Ihre eindeutige Übertragung unter einer Vektorisierung wird nur
+durch injektive beziehungsweise anderweitig klassentrennende Darstellungen
+garantiert. Urbilder einer totalen Modellabbildung bewahren sie stets.
+\end{quote}
+
+\part{Rekursive Anschlussordnung und selbstbegrenzte Klassifikation}
+
+\section{Vom statischen Komplement zum geprüften Prozess}
+\label{sec:dynamische-synthese}
+
+Der Komplementsatz
+\[
+  U=\M_U\dotcup\K_U
+\]
+beschreibt zunächst eine statische Partition des Parameterraums. Die
+quadratische Iteration enthält zusätzlich eine dynamische Struktur: Zu jedem
+Parameter \(c\) gehört eine vollständige Anschlussgeschichte. Erst auf dieser
+Ebene werden endliche Prüfung, fortgesetzte Unbestimmtheit, zertifizierter
+Ausschluss und asymptotische Klassifikation unterscheidbar.
+
+\subsection{Erweiterter Zustandsraum und Mandelbrot-Trajektorien}
+
+\begin{definition}[Erweiterte Mandelbrot-Dynamik]
+Sei \(U\subseteq\C\). Auf dem erweiterten Zustandsraum
+\[
+  Y_U:=U\times\C
+\]
+definieren wir
+\[
+  F:Y_U\longrightarrow Y_U,
+  \qquad
+  F(c,z):=(c,z^2+c),
+\]
+sowie die Initialeinbettung
+\[
+  \iota:U\longrightarrow Y_U,
+  \qquad
+  \iota(c):=(c,0).
+\]
+Die zu \(c\) gehörende Zustandstrajektorie ist
+\[
+  \Gamma_c:=\bigl(F^n(\iota(c))\bigr)_{n\in\N_0}.
+\]
+Für die Projektion \(\pi_z(c,z):=z\) gilt
+\[
+  \pi_z\!\left(F^n(\iota(c))\right)=z_n(c).
+\]
+\end{definition}
+
+Diese Formulierung trennt den konstanten Parameter \(c\) vom iterierten
+Zustand \(z_n\). Die Rekursion wird damit zu einem autonomen diskreten
+dynamischen System.
+
+\begin{definition}[Trajektorienraum und Shift]
+Sei
+\[
+  \Sigma_U:=\left\{\sigma^k\Gamma_c:c\in U,\ k\in\N_0\right\},
+\]
+wobei der Linksshift durch
+\[
+  \sigma(x_0,x_1,x_2,\ldots):=(x_1,x_2,x_3,\ldots)
+\]
+gegeben ist.
+\end{definition}
+
+\begin{definition}[Exakte Trajektorienklassifikation]
+Für \(\gamma=(x_n)_{n\in\N_0}\in\Sigma_U\) setzen wir
+\[
+  \widehat\chi(\gamma):=
+  \begin{cases}
+    \PASS,&\sup_{n\in\N_0}|\pi_z(x_n)|<\infty,\\[0.25em]
+    \BLOCK,&\sup_{n\in\N_0}|\pi_z(x_n)|=\infty.
+  \end{cases}
+\]
+Für unverschobene Trajektorien gilt somit
+\[
+  \widehat\chi(\Gamma_c)=
+  \begin{cases}
+    \PASS,&c\in\M_U,\\
+    \BLOCK,&c\in\K_U.
+  \end{cases}
+\]
+\end{definition}
+
+\begin{satz}[Shift-Invarianz der exakten Klassifikation]
+\label{satz:shift-invarianz}
+Für alle \(\gamma\in\Sigma_U\) und \(k\in\N_0\) gilt
+\[
+  \widehat\chi(\sigma^k\gamma)=\widehat\chi(\gamma).
+\]
+\end{satz}
+
+\begin{proof}
+Das Entfernen endlich vieler Folgenglieder ändert weder Beschränktheit noch
+Unbeschränktheit einer Folge. Daher besitzen \(\gamma\) und jeder endliche
+Tail \(\sigma^k\gamma\) denselben Klassifikationsstatus.
+\end{proof}
+
+Sei \(\mathcal S\) der Pullback-Operator auf statuswertigen Funktionen,
+\[
+  (\mathcal S h)(\gamma):=h(\sigma\gamma).
+\]
+Aus \cref{satz:shift-invarianz} folgt
+\[
+  \boxed{\mathcal S\widehat\chi=\widehat\chi},
+  \qquad
+  \widehat\chi\in\Fix(\mathcal S).
+\]
+Die exakte Klassifikation ist damit ein Fixpunkt des auf
+\emph{Klassifikatoren} wirkenden Shiftoperators.
+
+\begin{bemerkung}[Kein allgemeiner Orbit-Fixpunkt]
+Diese Fixpunktaussage betrifft nicht die einzelnen Zustandstrajektorien. Aus
+\(\sigma\Gamma_c=\Gamma_c\) würde wegen \(z_0=0\) bereits \(z_1=c=0\)
+folgen. Unter den auf \(z_0=0\) initialisierten Mandelbrot-Trajektorien ist
+daher nur \(c=0\) shift-fixiert. Andere Parameter können periodische,
+präperiodische, beschränkte nichtperiodische oder unbeschränkte Verläufe
+erzeugen. Der mathematisch tragfähige Fixpunkt ist die unter endlicher
+Verschiebung stabile Klassifikationsordnung, nicht ein vermeintlich
+konvergierender Einzelorbit.
+\end{bemerkung}
+
+\subsection{Endliche Gate-Zustände}
+
+Ein endlicher Rechenlauf kann Flucht positiv zertifizieren, im Allgemeinen
+aber nicht allein aus ausgebliebener Flucht die Zugehörigkeit zur
+Mandelbrot-Menge beweisen. Für eine wissenschaftlich korrekte
+Dreizustandslogik muss \(\PASS\) deshalb ebenfalls an ein positives
+Zertifikat gebunden werden.
+
+\begin{definition}[Zulässige PASS-Zertifikate]
+Eine Familie \((P_N)_{N\in\N_0}\) heißt zulässige Familie endlicher
+PASS-Zertifikate, wenn
+\[
+  P_N\subseteq\M_U
+  \qquad\text{und}\qquad
+  P_N\subseteq P_{N+1}
+\]
+für alle \(N\) gelten. Die Aufnahme \(c\in P_N\) muss durch einen gültigen
+Mitgliedschaftsnachweis begründet sein und darf nicht allein auf
+\(\tau(c)>N\) beruhen.
+\end{definition}
+
+\begin{definition}[Endliches Anschlussgate]
+Für \(N\in\N_0\) sei
+\[
+  \mathcal A_N:U\longrightarrow\{\PASS,\CONTINUE,\BLOCK\}
+\]
+durch
+\[
+  \mathcal A_N(c):=
+  \begin{cases}
+    \BLOCK,&\tau(c)\le N,\\
+    \PASS,&c\in P_N,\\
+    \CONTINUE,&\text{sonst}
+  \end{cases}
+\]
+definiert.
+\end{definition}
+
+Da \(P_N\subseteq\M_U\) und \(E_N(U)\subseteq\K_U\) gilt, können die
+ersten beiden Fälle nicht gleichzeitig eintreten.
+
+\begin{satz}[Korrektheit und monotone Verfeinerung]
+\label{satz:gate-korrektheit}
+Das endliche Anschlussgate besitzt folgende Eigenschaften:
+\begin{enumerate}
+  \item \(\mathcal A_N(c)=\PASS\) impliziert \(c\in\M_U\);
+  \item \(\mathcal A_N(c)=\BLOCK\) impliziert \(c\in\K_U\);
+  \item ein einmal erreichter Status \(\PASS\) oder \(\BLOCK\) bleibt bei
+        allen späteren Stufen erhalten;
+  \item \(\CONTINUE\) bezeichnet weder Mitgliedschaft noch
+        Nichtmitgliedschaft, sondern den gegenwärtig nicht abgeschlossenen
+        Prüfzustand.
+\end{enumerate}
+\end{satz}
+
+\begin{proof}
+Die ersten beiden Aussagen folgen aus \(P_N\subseteq\M_U\) und dem
+Fluchtradiuslemma. Wegen \(P_N\subseteq P_{N+1}\) bleibt ein
+PASS-Zertifikat gültig. Wegen \(E_N(U)\subseteq E_{N+1}(U)\) bleibt auch
+ein BLOCK-Zertifikat gültig. Für einen Punkt außerhalb beider
+Zertifikatsmengen ist auf Stufe \(N\) noch keine terminale Folgerung zulässig.
+\end{proof}
+
+Die Informationsordnung der Statuswerte ist daher nicht linear, sondern
+verzweigt:
+\[
+  \CONTINUE\preccurlyeq\PASS,
+  \qquad
+  \CONTINUE\preccurlyeq\BLOCK,
+\]
+während \(\PASS\) und \(\BLOCK\) unvergleichbar bleiben.
+
+\begin{satz}[Exterior-Vollständigkeit und bedingte Gesamtvollständigkeit]
+\label{satz:gate-vollstaendigkeit}
+Für jedes \(c\in\K_U\) existiert ein endliches \(N_0\), sodass
+\[
+  \mathcal A_N(c)=\BLOCK
+  \qquad\text{für alle }N\ge N_0.
+\]
+Für jedes \(c\in\M_U\) wird dagegen genau dann nach endlich vielen Stufen
+\(\PASS\) erreicht, wenn
+\[
+  c\in\bigcup_{N=0}^{\infty}P_N.
+\]
+Insbesondere wird das Gate auf ganz \(U\) genau dann schließlich terminal,
+wenn \(\bigcup_NP_N=\M_U\).
+\end{satz}
+
+\begin{proof}
+Für \(c\in\K_U\) ist \(\tau(c)<\infty\). Mit \(N_0=\tau(c)\) gilt daher
+\(c\in E_N(U)\) für alle \(N\ge N_0\). Die PASS-Aussage folgt unmittelbar
+aus der Definition der wachsenden Zertifikatsfamilie.
+\end{proof}
+
+Ohne einen zusätzlich bewiesenen Vollständigkeitssatz
+\(\bigcup_NP_N=\M_U\) dürfen Punkte der Mandelbrot-Menge dauerhaft im Status
+\(\CONTINUE\) verbleiben. Das ist kein Fehler des Gates, sondern die
+korrekte Darstellung begrenzter endlicher Evidenz.
+
+\subsection{Der formale Null-Eins-Übergang}
+
+Die Entstehung eines endlichen Fluchtzertifikats kann als monotone boolesche
+Folge dargestellt werden:
+\[
+  b_N(c):=\mathbf 1_{E_N(U)}(c),
+  \qquad b_N(c)\le b_{N+1}(c).
+\]
+Für \(c\in\K_U\) erfolgt bei \(N=\tau(c)\) genau ein irreversibler
+Zertifikatsübergang
+\[
+  0\longrightarrow1.
+\]
+Für \(c\in\M_U\) bleibt \(b_N(c)=0\) für alle \(N\).
+
+\begin{bemerkung}
+Vor der Flucht bedeutet \(b_N(c)=0\) lediglich: Bis Stufe \(N\) liegt kein
+Fluchtzertifikat vor. Der Wert \(0\) ist deshalb kein positiver Beweis für
+\(c\in\M_U\). Der Übergang \(0\to1\) bezeichnet hier präzise die Entstehung
+eines unterscheidbaren Außenzertifikats und nicht ohne weitere Prämissen einen
+kosmologischen Schöpfungsakt. Ebenso startet der konkrete Mandelbrot-Orbit bei
+\(z_0=0\) mit \(z_1=c\), nicht allgemein mit \(z_1=1\); \(0\to1\) ist hier
+ein Code für das Auftreten eines Unterschieds, kein Ersatz für die Dynamik.
+\end{bemerkung}
+
+\subsection{Grenze als Instabilitätsort der Klassifikation}
+
+\begin{satz}[Grenze und Statusdiskontinuität]
+\label{satz:grenzklassifikation}
+Versehen wir \(\{\PASS,\BLOCK\}\) mit der diskreten Topologie. Dann ist
+die exakte Parameterklassifikation
+\[
+  \chi_U(c):=
+  \begin{cases}
+    \PASS,&c\in\M_U,\\
+    \BLOCK,&c\in\K_U
+  \end{cases}
+\]
+genau an den Punkten des relativen Randes \(\partial_U\M_U\) unstetig.
+\end{satz}
+
+\begin{proof}
+Im relativen Inneren von \(\M_U\) ist \(\chi_U\) lokal konstant \(\PASS\).
+Da \(\M\) abgeschlossen ist, ist \(\K_U\) relativ offen; dort ist
+\(\chi_U\) lokal konstant \(\BLOCK\). An jedem Randpunkt schneidet jede
+relative Umgebung beide Klassen. Das Urbild eines einzelnen diskreten Status
+kann dort keine Umgebung des Randpunktes enthalten. Folglich ist \(\chi_U\)
+genau am Rand unstetig.
+\end{proof}
+
+Die fraktale Grenze ist damit ein mathematischer Entscheidungshorizont:
+Beliebig kleine Parameteränderungen können dort unterschiedliche exakte
+Klassen treffen. Der Ausdruck bezeichnet keine Gleichsetzung mit einem
+physikalischen Ereignishorizont.
+
+\subsection{Semantische Rückbestimmung ohne Retrokausalität}
+
+Für einen Parameter \(c\) seien
+\[
+  \Pi_N(c):=(z_0(c),z_1(c),\ldots,z_N(c))
+\]
+die bis zur Stufe \(N\) bekannten Trajektorienpräfixe. Eine spätere Prüfstufe
+ersetzt \(\Pi_N(c)\) nicht, sondern erweitert sie zu \(\Pi_{N+1}(c)\).
+
+\begin{proposition}[Epistemische, nicht dynamische Rückbestimmung]
+\label{prop:rueckbestimmung}
+Wechselt der Gate-Status bei wachsendem \(N\) von \(\CONTINUE\) zu
+\(\PASS\) oder \(\BLOCK\), so ändert sich kein früherer Zustand
+\(z_k(c)\). Geändert wird ausschließlich die anhand einer erweiterten
+Informationsbasis zulässige Klassifikation der bereits vorliegenden Spur.
+\end{proposition}
+
+\begin{proof}
+Die Rekursion bestimmt jedes \(z_k(c)\) eindeutig aus \(c\) und \(z_0=0\).
+Eine spätere Berechnung verändert diese Werte nicht. Sie kann lediglich ein
+zuvor fehlendes Flucht- oder Mitgliedschaftszertifikat verfügbar machen.
+\end{proof}
+
+Die logische Asymmetrie lautet
+\[
+  c\notin\M\iff\exists n\in\N_0:\ |z_n(c)|>2,
+  \qquad
+  c\in\M\iff\forall n\in\N_0:\ |z_n(c)|\le2.
+\]
+Ein späteres Glied kann daher eine zuvor offene Außenfrage endlich
+entscheiden. Dies ist eine \emph{semantische Rückbestimmung} der gesamten
+Spur, keine physikalische Wirkung aus der Zukunft auf frühere Systemzustände.
+Die vollständige begriffliche, quantenphysikalische und relativistische
+Abgrenzung folgt in \cref{sec:retrokausalitaet}.
+
+\subsection{Das Prozessmodelluniversum}
+
+\begin{definition}[Mandelbrot-Prozessmodelluniversum]
+Das dynamische Mandelbrot-Prozessmodelluniversum über \(U\) ist das Tupel
+\[
+  \mathfrak U_U:=
+  \left(Y_U,F,\iota,\Sigma_U,\sigma,
+  (\mathcal A_N)_{N\in\N_0},\widehat\chi,
+  \M_U,\K_U,\partial_U\M_U\right).
+\]
+\end{definition}
+
+Dieses Tupel enthält nicht nur die fertige Partition, sondern zugleich
+\[
+\begin{gathered}
+\text{Initialisierung}
+\longrightarrow\text{Iteration}
+\longrightarrow\text{endliche Evidenz}
+\\
+\longrightarrow\text{Gate-Status}
+\longrightarrow\text{exakte Klasse}
+\longrightarrow\text{Grenzstruktur}.
+\end{gathered}
+\]
+In diesem präzisen Sinn erzeugt dieselbe Rekursion die Anschlussgeschichte,
+die zertifizierbare Außenklasse, die beschränkte Klasse und die gemeinsame
+Grenze. Sie erzeugt jedoch nicht allein den gewählten Grundbereich \(U\), die
+Interpretation der Klassen oder eine physikalische Raumzeitkorrespondenz.
+
+\section{Vom Mandelbrot-Prozess zu einem allgemeinen Wirkraum}
+\label{sec:wirkraum-korrespondenz}
+
+\subsection{Typisierte Wirkraumstruktur}
+
+Die symbolische Schreibweise
+\[
+  \mathcal W=\mathcal A
+  (\mathcal R\times\mathcal T\times\mathcal C_{\mathrm{caus}}\times\mathcal I)
+\]
+wird erst dann mathematisch bestimmt, wenn die beteiligten Mengen und der Typ
+von \(\mathcal A\) angegeben sind.
+
+\begin{definition}[Allgemeines Wirkraummodell]
+Seien \(\mathcal R\), \(\mathcal T\), \(\mathcal C_{\mathrm{caus}}\) und
+\(\mathcal I\) Mengen geometrisch-relationaler, temporaler, kausaler und
+informationeller Zustandsdaten. Der rohe Zustandsraum sei
+\[
+  S:=\mathcal R\times\mathcal T\times
+  \mathcal C_{\mathrm{caus}}\times\mathcal I.
+\]
+Ein allgemeines Wirkraummodell ist ein Tupel
+\[
+  \mathsf G:=\bigl(S,G,\Sigma_G,(\mathcal B_N)_{N\in\N_0},
+  \mathcal B_\infty\bigr),
+\]
+wobei \(G:S\to S\) eine Übergangsdynamik, \(\Sigma_G\) der von \(G\)
+erzeugte Trajektorienraum, \(\mathcal B_N\) endliche Gates und
+\(\mathcal B_\infty\) die terminale Klassifikation sind.
+\end{definition}
+
+Das kartesische Produkt erzeugt weder Kausalität noch Dynamik. Diese entstehen
+erst durch Relationen auf den Faktoren, Kompatibilitätsbedingungen, die
+Übergangsabbildung \(G\) und die Gate-Regeln.
+
+\subsection{Semikonjugation und Gate-Erhaltung}
+
+Sei
+\[
+  Y_U^{\mathrm{rch}}:=
+  \{F^n(\iota(c)):c\in U,\ n\in\N_0\}
+\]
+der erreichbare Mandelbrot-Zustandsraum.
+
+\begin{definition}[Dynamische Semikonjugation]
+Eine Abbildung \(\phi:Y_U^{\mathrm{rch}}\to S\) heißt Semikonjugation von
+\(F\) nach \(G\), wenn
+\[
+  \boxed{G\circ\phi=\phi\circ F}.
+\]
+Sie induziert auf Trajektorien die koordinatenweise Abbildung
+\[
+  \Phi_\infty:\Sigma_U\longrightarrow\Sigma_G,
+  \qquad
+  \Phi_\infty((x_n)_n):=(\phi(x_n))_n,
+\]
+und erfüllt \(\Phi_\infty\circ\sigma=\sigma\circ\Phi_\infty\).
+\end{definition}
+
+Eine Semikonjugation erhält die Übergangsfolge. Sie darf jedoch verschiedene
+Mandelbrot-Zustände identifizieren und beweist daher weder metrische noch
+physikalische Gleichwertigkeit.
+
+\begin{definition}[Gate-erhaltende Prozessabbildung]
+Die Semikonjugation \(\phi\) heißt gate-erhaltend, wenn für alle
+\(\gamma\in\Sigma_U\) und \(N\in\N_0\)
+\[
+  \mathcal B_N(\Phi_\infty(\gamma))=\mathcal A_N(\gamma)
+\]
+gilt und zusätzlich
+\[
+  \mathcal B_\infty(\Phi_\infty(\gamma))=\widehat\chi(\gamma).
+\]
+Dabei bezeichnet \(\mathcal A_N(\gamma)\) das auf den in \(\gamma\)
+gespeicherten Parameter angewandte Mandelbrot-Gate.
+\end{definition}
+
+\begin{satz}[Faktorisierungskriterium für Gate-Erhaltung]
+\label{satz:gate-faktorisierung}
+Sei \(\Phi_\infty:\Sigma_U\to\Sigma_G\) eine Trajektorienabbildung. Für
+ein festes \(N\) existiert genau dann ein deterministisches Gate
+\(\mathcal B_N\) auf \(\Phi_\infty(\Sigma_U)\) mit
+\[
+  \mathcal A_N=\mathcal B_N\circ\Phi_\infty,
+\]
+wenn \(\mathcal A_N\) auf jeder Faser von \(\Phi_\infty\) konstant ist.
+\end{satz}
+
+\begin{proof}
+Existiert \(\mathcal B_N\), folgt die Faserkonstanz durch Einsetzen. Gilt sie
+umgekehrt, definieren wir für \(\eta\in\Phi_\infty(\Sigma_U)\)
+\(\mathcal B_N(\eta):=\mathcal A_N(\gamma)\), wobei \(\gamma\) ein
+beliebiges Urbild von \(\eta\) ist. Die Faserkonstanz garantiert die
+Unabhängigkeit von der Wahl des Urbildes.
+\end{proof}
+
+Identifiziert \(\Phi_\infty\) zwei Trajektorien mit unterschiedlichen
+PASS-, CONTINUE- oder BLOCK-Zuständen, kann auf dem Bildraum kein
+deterministisches Gate die ursprüngliche Klassifikation vollständig erhalten.
+Das minimale Kriterium einer nicht bloß metaphorischen Übertragung lautet
+daher
+\[
+  \boxed{\text{Dynamikerhaltung}+\text{Gate-Erhaltung}+
+  \text{Klassentrennung}.}
+\]
+Für eine physikalische Korrespondenz treten Dimensions-, Metrik-, Symmetrie-,
+Kausal- und Observablenerhaltung hinzu.
+
+\subsection{Erreichbarkeitsordnung und physikalische Kausalität}
+
+Auf einem diskreten dynamischen System kann die Erreichbarkeitsrelation
+\[
+  x\preccurlyeq_F y
+  \quad:\Longleftrightarrow\quad
+  \exists k\in\N_0:\ y=F^k(x)
+\]
+definiert werden. Aus der Semikonjugation folgt
+\[
+  x\preccurlyeq_F y
+  \Longrightarrow
+  \phi(x)\preccurlyeq_G\phi(y).
+\]
+Diese Relation ist zunächst eine rechnerische Anschlussordnung. Sie ist nicht
+automatisch die physikalische Kausalrelation einer Lorentz-Mannigfaltigkeit.
+Dafür müsste zusätzlich gezeigt werden, dass die Bildzustände
+Raumzeitereignisse repräsentieren und zum Beispiel
+\[
+  x\preccurlyeq_F y
+  \Longrightarrow
+  \phi(y)\in J^+(\phi(x))
+\]
+mit einer empirisch bestimmten Lichtkegelstruktur gilt.
+
+\subsection{Limes, Fixpunkt und Nash-Begriff}
+
+\statusbox{QAmber}{
+\textbf{Limes- und Fixpunktwarnung.}
+Der Ausdruck
+\[
+  \Fix\!\left(\mathcal A\!\left(\lim_{n\to\infty}G^n(s)\right)\right)
+\]
+ist nur definiert, wenn der Limes in einer angegebenen Topologie existiert,
+der Typ von \(\mathcal A\) feststeht und der Operator des Fixpunkts benannt
+ist. Chaotische, periodische und bloß beschränkte Trajektorien müssen keinen
+Zustandslimes besitzen. Eine stabile Klassifikation kann dennoch existieren.
+}
+
+Die für die Mandelbrot-Dynamik ohne Orbitkonvergenz gültige Verdichtung ist
+\[
+  \boxed{\widehat\chi\in\Fix(\mathcal S)},
+  \qquad (\mathcal S h)(\gamma)=h(\sigma\gamma).
+\]
+
+Der Ausdruck \emph{Nash-stabil} verlangt darüber hinaus ein explizites Spiel
+aus Spielern, Strategieräumen und Nutzenfunktionen sowie für eine
+Stabilitätsaussage eine Anpassungsdynamik. Ein Strategieprofil \(s^*\) ist
+Nash-Gleichgewicht genau dann, wenn kein Spieler durch einseitige Abweichung
+seinen Nutzen erhöhen kann \citep{nash1950}. Aus Mandelbrot-Iteration,
+Semikonjugation oder Shift-Fixpunkt allein folgt kein Nash-Gleichgewicht.
+Ohne Spielstruktur ist daher \emph{shift-invariante Klassifikation} die hier
+bewiesene und wissenschaftlich präzise Bezeichnung.
+
+\subsection{Selbstanwendung als Wahrheits- und Wirkungsgate}
+
+Die Prozessgrammatik lässt sich auf ihre eigenen Aussagen anwenden. Für eine
+Behauptung \(p\), eine Evidenzmenge \(E\) und ein explizites Prüfverfahren
+\(V\) sei
+\[
+  H(p,E,V)\in\{\PASS,\CONTINUE,\BLOCK\}.
+\]
+Ein soundes Gate erfüllt mindestens
+\[
+\begin{aligned}
+H(p,E,V)=\PASS
+&\Longrightarrow\text{gültiger Beleg für }p,\\
+H(p,E,V)=\BLOCK
+&\Longrightarrow\text{Widerlegung oder verletzte Freigabebedingung},\\
+H(p,E,V)=\CONTINUE
+&\Longrightarrow\text{vorhandene Evidenz ist nicht terminal}.
+\end{aligned}
+\]
+Praktisch wird dazu die Aussage nach Gegenstand, Kontext, Quelle, Beleg,
+Schluss, Grenze und möglicher Wirkung zerlegt. Herkunft, Widerspruch,
+Anschluss und Geltungsgrad werden getrennt geprüft; erst dann wird eine
+Wirkung freigegeben oder blockiert. Das Gate erzeugt keine Wahrheit. Es
+verhindert den Schluss von fehlender Widerlegung auf erwiesene Wahrheit und
+macht die Geltungsgrenze revisionsfähig.
+
+\subsection{Ergebnis des zweiten Teils}
+
+Der dynamische Kern lässt sich ohne Kategorienvermischung zusammenfassen:
+\[
+\boxed{
+\begin{gathered}
+  c\longmapsto\Gamma_c
+  \longmapsto(\mathcal A_N(c))_{N\in\N_0}
+  \longmapsto\widehat\chi(\Gamma_c),\\[0.3em]
+  \widehat\chi\circ\sigma=\widehat\chi,\\[0.3em]
+  G\circ\phi=\phi\circ F,\\[0.3em]
+  \mathcal B_N\circ\Phi_\infty=\mathcal A_N
+  \quad\text{nur bei gate-konstanten Fasern}.
+\end{gathered}}
+\]
+Bewiesen sind damit die dynamische Prozessdarstellung, die shift-invariante
+Endklassifikation, die sounde endliche Gate-Logik, die semantische
+Rückbestimmung und die exakten Bedingungen einer gate-erhaltenden
+Semikonjugation. Noch nicht bewiesen ist, dass ein bestimmter physikalischer
+Wirkraum eine solche Semikonjugation mit den zusätzlich erforderlichen
+metrischen, dimensionalen, kausalen und beobachtbaren Eigenschaften besitzt.
+
+\part{Dimensionsrichtige physikalische Konkretisierung}
+
+\section{Ereignishorizont, theoretischer Blick und Planck-Skala}
+\label{sec:physik}
+
+\subsection{Mathematischer Zugang hinter den Horizont}
+
+In einer geeigneten konformen Vervollständigung einer asymptotisch flachen
+Raumzeit wird der zukünftige Ereignishorizont unter den üblichen globalen
+Voraussetzungen als Grenze des kausalen Vergangenheitsbereichs der
+zukünftigen Nullunendlichkeit definiert \citep{wald1984}:
+\[
+  \mathcal H^+=\partial J^{-}(\mathcal I^+).
+\]
+In Schwarzschild-Koordinaten erscheinen die Metrikkomponenten bei
+\(r=2GM/c^2\) singulär. Reguläre Eddington--Finkelstein- und
+Kruskal--Szekeres-Koordinaten zeigen, dass es sich dort in der
+Schwarzschild-Lösung um eine Koordinatensingularität handelt und die
+klassische Lösung regulär über den Horizont fortgesetzt werden kann
+\citep{finkelstein1958,kruskal1960}. Damit lässt sich das Innere eines
+idealisierten klassischen Schwarzen Lochs mathematisch beschreiben und in
+Kausaldiagrammen darstellen.
+
+Diese mathematische Fortsetzbarkeit bestätigt die innere Konsistenz der
+idealisierten klassischen Lösung. Sie ist kein empirischer Nachweis dafür,
+dass das Innere eines realen astrophysikalischen Schwarzen Lochs in allen
+Regimen exakt durch diese Fortsetzung beschrieben wird.
+
+Dies rechtfertigt die Metapher, mit dem \emph{geistigen Auge} hinter den
+Ereignishorizont zu blicken, wenn sie exakt als theoretische Modellierung
+verstanden wird. Sie bedeutet nicht, dass ein äußerer Beobachter Licht oder
+Messdaten aus dem Inneren eines zukünftigen Ereignishorizonts empfangen kann.
+Oppenheimer und Snyder beschrieben bereits den gravitativen Kollaps und seine
+kausale Abschließung im klassischen Modell \citep{oppenheimer1939}.
+
+Auch die Bilder des Event Horizon Telescope zeigen nicht das Innere. Sie
+rekonstruieren horizon-nahe Radioemission und eine zentrale
+Helligkeitsdepression, die mit dem erwarteten Schatten eines Kerr-Schwarzen
+Lochs vereinbar ist \citep{eht2019i,eht2019vi}. Damit gilt:
+\[
+  \boxed{
+  \text{mathematische Darstellbarkeit des Inneren}
+  \neq
+  \text{kausale Beobachtbarkeit des Inneren}.}
+\]
+
+\subsection{Was die Planck-Skala besagt}
+
+Die Planck-Länge ist
+\[
+  \ell_{\mathrm P}=\sqrt{\frac{\hbar G}{c^3}}
+  \approx 1.616255\times10^{-35}\,\mathrm m,
+\]
+wobei die Naturkonstanten nach dem CODATA-Referenzrahmen zu verwenden sind
+\citep{codata2022}. Sie kombiniert die Quantenskala \(\hbar\), die
+Gravitationskonstante \(G\) und die Lichtgeschwindigkeit \(c\). Deshalb ist
+sie eine natürliche charakteristische Skala für die Frage, wie
+Quantentheorie und dynamische Raumzeit zusammenwirken.
+
+Aus dieser Dimensionskombination folgt nicht, dass \(\ell_{\mathrm P}\) eine
+experimentell bestätigte kleinste Länge, eine räumliche Zelle oder ein
+Ereignishorizont ist. Verschiedene Quantengravitationsprogramme formulieren
+unterschiedliche Begriffe von Diskretheit, Minimalität und Kontinuum
+\citep{hossenfelder2013}. Die Allgemeine Relativitätstheorie bleibt bei
+gewöhnlichen Energien als effektive Feldtheorie sinnvoll behandelbar
+\citep{donoghue1994}; die hochenergetische fundamentale Vervollständigung ist
+dadurch nicht ausgewählt.
+
+Der epistemische Kontrast ist gleichwohl fruchtbar:
+
+\begin{itemize}
+  \item Hinter einem klassischen Ereignishorizont ist die Geometrie innerhalb
+  einer Theorie mathematisch fortsetzbar, während der äußere Messzugang kausal
+  begrenzt ist.
+  \item Im Planck-Regime fehlt eine empirisch bestätigte gemeinsame Theorie
+  von Quantendynamik und Gravitation. Die Schwierigkeit liegt nicht in einem
+  bewiesenen ``innerhalb'' einer kleinsten Zelle, sondern in Theorie,
+  Skalenreichweite und experimenteller Zugänglichkeit.
+\end{itemize}
+
+Diese beiden Grenzen sind nicht symmetrische physikalische Horizonte. Sie sind
+verschiedene Arten von Grenze: kausale Grenze einer gegebenen Raumzeitlösung
+einerseits, offene Theorie- und Messgrenze andererseits.
+
+\section{Vom dimensionslosen Modell zur messbaren Physik}
+\label{sec:dimensionsbruecke}
+
+\statusbox{QLight}{
+\textbf{Status dieses Teils.}
+Die folgenden Dimensionsgleichungen, Definitionen der Raumzeitmetrik,
+Einstein-Gleichungen, Planck-Einheiten und Beziehungen der
+Schwarzloch-Thermodynamik gehören zur etablierten mathematischen Physik. Die
+Übertragung der rekursiven Mandelbrot- und Anschlussordnung auf diese Größen
+ist dagegen eine ausdrücklich definierte Korrespondenzhypothese.
+Dimensionsrichtigkeit ist notwendig, aber nicht hinreichend für physikalische
+Wahrheit.
+}
+
+\subsection{Größe, Zahlenwert, Einheit und Dimension}
+
+Eine physikalische Größe \(q\) ist von ihrem Zahlenwert und ihrer Einheit zu
+unterscheiden. Relativ zu einer gewählten Einheit \(u_q\) gilt
+\[
+  q=\{q\}_{u_q}\,u_q.
+\]
+Der Zahlenwert \(\{q\}_{u_q}\) ändert sich bei einem Einheitenwechsel; die
+physikalische Größe soll davon unberührt bleiben. Das Internationale
+Einheitensystem legt die einheitliche metrologische Darstellung fest
+\citep{bipm2026si}. Die Dimension einer Größe kann als Produkt von
+Basisdimensionen geschrieben werden:
+\[
+  \dim(q)=\mathsf L^{\alpha}\mathsf T^{\beta}\mathsf M^{\gamma}
+  \boldsymbol\Theta^{\delta}\cdots,
+\]
+wobei \(\mathsf L,\mathsf T,\mathsf M,\boldsymbol\Theta\) Länge, Zeit,
+Masse und thermodynamische Temperatur bezeichnen.
+
+\begin{proposition}[Dimensionshomogenität]
+Eine einheitenunabhängige physikalische Gleichung muss dimensionshomogen
+sein: Addierbare Terme besitzen dieselbe Dimension, und Argumente von
+Funktionen wie \(\exp\), \(\log\), \(\sin\) oder \(\cos\) müssen
+dimensionslos sein.
+\end{proposition}
+
+\begin{proof}
+Bei einer unabhängigen Skalierung der Basiseinheiten transformiert jeder Term
+entsprechend seinem Dimensionsvektor. Verschiedene Dimensionsvektoren erhalten
+verschiedene Skalierungsfaktoren und können daher nicht einheitenunabhängig
+addiert oder gleichgesetzt werden. Ein nicht dimensionsloses
+Funktionsargument würde seinen Zahlenwert allein durch den Einheitenwechsel
+ändern und damit fälschlich den Funktionswert verändern. Dies ist der Kern der
+Dimensionsanalyse \citep{buckingham1914}.
+\end{proof}
+
+Die Umkehrung gilt nicht. Dimensionshomogenität schließt einen Teil
+unzulässiger Formeln aus, wählt aber nicht eindeutig das richtige Naturgesetz:
+\[
+  \boxed{
+  \text{Dimensionsverträglichkeit}
+  \neq\text{dynamische Herleitung}
+  \neq\text{empirische Bestätigung}.}
+\]
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.29\textwidth}
+                  >{\raggedright\arraybackslash}p{0.23\textwidth}
+                  >{\raggedright\arraybackslash}p{0.38\textwidth}}
+\toprule
+\textbf{Größe} & \textbf{SI-Einheit} & \textbf{Rolle} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Größe} & \textbf{SI-Einheit} & \textbf{Rolle} \\
+\midrule
+\endhead
+räumliche Koordinate \(x^i\) & \(\mathrm m\) & koordinatenabhängige Darstellung \\
+Koordinate \(x^0=ct\) & \(\mathrm m\) & alle vier Koordinaten gleich dimensioniert \\
+Eigenzeit \(\tau\) & \(\mathrm s\) & entlang einer zeitartigen Weltlinie \\
+Energie \(E\) & \(\mathrm J=\mathrm{kg\,m^2\,s^{-2}}\) & physikalische Observable \\
+Wirkung \(S\) & \(\mathrm{J\,s}\) & nicht mit Entropie zu verwechseln \\
+Temperatur \(T\) & \(\mathrm K\) & thermodynamische Temperatur \\
+Entropie \(S_{\mathrm{th}}\) & \(\mathrm{J\,K^{-1}}\) & \(S_{\mathrm{th}}/k_{\mathrm B}\) dimensionslos \\
+Information \(I\) & \(1\) & Bit oder Nat legt die Logarithmusbasis fest \\
+Skalarkrümmung \(R\) & \(\mathrm{m^{-2}}\) & bei längendimensionalen Koordinaten \\
+Stress-Energie \(T_{\mu\nu}\) & \(\mathrm{J\,m^{-3}}\) & im lokalen orthonormalen Bezugssystem \\
+\bottomrule
+\end{longtable}
+
+Tensor-Komponenten können bei allgemeinen Koordinatenwechseln andere
+Einheitendarstellungen annehmen. Belastbare Aussagen werden deshalb
+tensorial oder durch Invarianten formuliert.
+
+\section{Mathematische Metrik und Lorentz-Metrik}
+\label{sec:metriken-physik}
+
+Die im Quantisierbarkeitssatz verwendete Metrik
+\[
+  d:Y\times Y\longrightarrow[0,\infty)
+\]
+ist positiv definit: \(d(p,q)=0\) gilt genau dann, wenn \(p=q\). Eine
+Raumzeitmetrik ist dagegen ein Lorentzsches Tensorfeld \(g_{\mu\nu}\), hier
+mit Signatur \((-+++)\). Bei der Koordinatenkonvention \(x^0=ct\) gilt
+\[
+  \dd s^2=g_{\mu\nu}\,\dd x^\mu\dd x^\nu,
+  \qquad [\dd s^2]=\mathrm{m^2},
+  \qquad [g_{\mu\nu}]=1.
+\]
+Für eine zeitartige Kurve ist \(\dd s^2<0\), und ihre Eigenzeit lautet
+\[
+  \dd\tau=\frac{1}{c}\sqrt{-\dd s^2}.
+\]
+Auf einer raumartigen Hyperfläche mit induzierter positiv definiter Metrik
+\(h_{ij}\) erhält man dagegen \(\dd\ell^2=h_{ij}\dd x^i\dd x^j\)
+\citep{wald1984}.
+
+\begin{proposition}[Lorentz-Intervall ist keine Abstandsfunktion]
+Das Lorentzsche Linienelement definiert auf der Menge der
+Raumzeitereignisse keine Metrik im Sinn eines positiv definiten metrischen
+Raums.
+\end{proposition}
+
+\begin{proof}
+Zwei verschiedene, lichtartig getrennte Ereignisse können \(\dd s^2=0\)
+besitzen; für zeitartige Trennungen ist \(\dd s^2<0\). Damit sind positive
+Definitheit und die Trennung verschiedener Punkte verletzt.
+\end{proof}
+
+Für numerische Konvergenz und endliche \(\eps\)-Netze wird daher eine
+zusätzliche positive Darstellungsmetrik benötigt. Die Lorentz-Metrik bestimmt
+dagegen Lichtkegel, Eigenzeiten und die kausale Klassifikation von
+Trennungen. Beide Objekte heißen ``Metrik'', erfüllen aber verschiedene
+mathematische Aufgaben.
+
+\section{Dimensionslose Mandelbrot-Dynamik und Kalibrierung}
+\label{sec:nondimensionalisierung}
+
+Die Standarditeration
+\[
+  z_{n+1}=z_n^2+c
+\]
+ist dimensionshomogen, wenn \(z_n\) und \(c\) dimensionslose komplexe Zahlen
+sind. Wollte man \(z_n\) unmittelbar als dimensionsbehaftete Größe \(Z_n\)
+interpretieren, wäre \(Z_{n+1}=Z_n^2+C\) im Allgemeinen unzulässig. Sei
+daher \(Q_*>0\) eine Referenzgröße derselben Dimension wie \(Z_n\) und
+\(C\). Die dimensionsrichtige Gleichung lautet
+\[
+  Z_{n+1}=\frac{Z_n^2}{Q_*}+C.
+\]
+Mit \(z_n=Z_n/Q_*\) und \(c=C/Q_*\) folgt exakt die dimensionslose
+Mandelbrot-Iteration. Das Escape-Kriterium \(|z_n|>2\) entspricht in dieser
+Skalierung \(|Z_n|>2Q_*\). Die Wahl von \(Q_*\) gehört zum
+Korrespondenzmodell und darf nicht verborgen werden.
+
+Sollen mehrere Größen verschiedener Dimensionen in einen komplexen Parameter
+eingehen, müssen sie zuerst einzeln normiert werden. Für Observablen \(q_a\)
+und Referenzskalen \(q_{a,*}>0\) sei
+\[
+  \xi_a(X)=\frac{q_a(X)}{q_{a,*}}.
+\]
+Eine dimensionsrichtige Parameterabbildung hat dann beispielsweise die Form
+\[
+  \chi(X)=u(\xi_1(X),\ldots,\xi_k(X))
+  +\mathrm i\,v(\xi_1(X),\ldots,\xi_k(X))\in\C,
+\]
+wobei \(u\) und \(v\) dimensionslose reelle Funktionen sind. Geeignete
+invariante Argumente können, abhängig vom System, sein:
+\[
+  \ell_*^2R,\qquad
+  \ell_*^4R_{\mu\nu}R^{\mu\nu},\qquad
+  \ell_*^4R_{\mu\nu\rho\sigma}R^{\mu\nu\rho\sigma},\qquad
+  \frac{E}{E_*},\qquad
+  \frac{\tau}{t_*},\qquad
+  \frac{S_{\mathrm{th}}}{k_{\mathrm B}}.
+\]
+Energie und Eigenzeit verlangen zusätzlich die Angabe eines Beobachters oder
+einer Weltlinie.
+
+\begin{bemerkung}[Dimensionsrichtigkeit zeichnet keine Abbildung aus]
+Bereits
+\[
+  \chi_{\alpha,\beta}(X)=
+  \alpha\ell_*^2R(X)+\mathrm i\,\beta\frac{E(X)}{E_*}
+\]
+ist für beliebige dimensionslose \(\alpha,\beta\) dimensionsrichtig. Daraus
+folgt weder, dass diese Abbildung physikalisch ausgezeichnet ist, noch dass
+ihre Mandelbrot-Klassifikation eine Naturklasse beschreibt. Dafür sind
+Symmetrien, Dynamik, Observablen und Tests erforderlich.
+\end{bemerkung}
+
+Auch der Iterationsindex \(n\) ist dimensionslos. Eine Gleichsetzung mit
+physikalischer Zeit verlangt eine weitere Definition,
+\[
+  \tau_N=\sum_{n=0}^{N-1}\Delta\tau_n,
+  \qquad [\Delta\tau_n]=\mathrm s.
+\]
+Insbesondere folgt aus einer diskreten Iterationsfolge kein fundamentaler
+Zeittakt. Die Festlegung \(\Delta\tau_n=t_{\mathrm P}\) wäre eine zusätzliche
+Hypothese, keine Konsequenz des Algorithmus.
+
+\subsection{Positive Metrik auf dem Beobachtungsraum}
+
+Für Mess- und Konvergenzfragen kann ein dimensionsloses Darstellungsmaß
+definiert werden:
+\[
+  d_*(X,Y)^2=
+  \sum_{a=1}^{k}w_a
+  \left(\frac{q_a(X)-q_a(Y)}{q_{a,*}}\right)^2,
+  \qquad w_a>0.
+\]
+Es ist eine Metrik, wenn die ausgewählten Observablen die betrachteten
+Zustände trennen; andernfalls ist es nur eine Pseudometrik. Aus
+\(d_*(X,Y)\le\eps\) folgt für jede Komponente
+\[
+  |q_a(X)-q_a(Y)|\le
+  \frac{\eps}{\sqrt{w_a}}q_{a,*}.
+\]
+Damit wird die abstrakte Genauigkeit \(\eps\) in konkrete Auflösungen in
+Metern, Sekunden oder Joule übersetzt. Die Wahl von \(q_{a,*}\) und \(w_a\)
+ist eine dokumentierte Mess- und Modellkonvention, kein Beweis fundamentaler
+Körnung.
+
+Für mehr als zwei reelle Freiheitsgrade ist ein einzelnes \(c\in\C\) im
+Allgemeinen nicht injektiv. Eine höherdimensionale physikalische Theorie
+benötigt deshalb eine Familie von Parametern, etwa einen Zustand in \(\C^d\),
+oder eine offengelegte Merkmalsprojektion samt quantifiziertem
+Informationsverlust. Dies konkretisiert die Bedingung der
+Klassentrennung aus \cref{satz:abbildung,satz:gate-faktorisierung}.
+
+\section{Physikalische Typisierung der Wirkraumfaktoren und des Gates}
+\label{sec:rtcia-typen}
+
+Die Kurzform
+\[
+  \mathcal W=\mathcal A
+  (\mathcal R\times\mathcal T\times\mathcal C_{\mathrm{caus}}\times\mathcal I)
+\]
+ist dimensionsrichtig zu lesen, wenn \(\times\) ein kartesisches Produkt
+typisierter Strukturen und keine Multiplikation von Zahlenwerten bezeichnet.
+Formal ist
+\[
+  \mathcal A:\mathfrak R\times\mathfrak T\times\mathfrak C\times
+  \mathfrak I\longrightarrow\mathfrak S
+\]
+eine Bewertungs- oder Freigabeabbildung in einen Statusraum \(\mathfrak S\).
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.15\textwidth}
+                  >{\raggedright\arraybackslash}p{0.31\textwidth}
+                  >{\raggedright\arraybackslash}p{0.43\textwidth}}
+\toprule
+\textbf{Symbol} & \textbf{Mathematischer Typ} & \textbf{Physikalische Einheit oder Bedeutung} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symbol} & \textbf{Mathematischer Typ} & \textbf{Physikalische Einheit oder Bedeutung} \\
+\midrule
+\endhead
+\(\mathcal R\) & Relation, Metrik- oder Geometriefeld & keine einzelne SI-Einheit; Längen in \(\mathrm m\), Krümmungen in \(\mathrm{m^{-2}}\) \\
+\(\mathcal T\) & Ordnungsrelation oder Folgenindex & \(n\) dimensionslos; Eigenzeit und Zeitabstand in \(\mathrm s\) \\
+\(\mathcal C_{\mathrm{caus}}\) & Prädikat, Übergangskern oder Operator & Boolescher Status und Wahrscheinlichkeit dimensionslos; Zeitgenerator gegebenenfalls \(\mathrm{s^{-1}}\) \\
+\(\mathcal I\) & Informationsmaß oder Evidenzstruktur & Shannon-Information dimensionslos in Bit oder Nat; thermodynamische Entropie gegebenenfalls \(S_{\mathrm{th}}=k_{\mathrm B}I\) in \(\mathrm{J\,K^{-1}}\) \citep{shannon1948a} \\
+\(\mathcal A\) & Gate- oder Prüfabbildung & keine SI-Einheit; liefert Status oder typisierte Wirkung \\
+\(\mathcal W\) & akzeptierter Zustand oder Wirkung & Einheit hängt vom Zieltyp ab; nicht automatisch die SI-Einheit Watt \\
+\bottomrule
+\end{longtable}
+
+Auch in einer Eigenwertgleichung
+\[
+  \widehat{\mathcal C}\lvert\psi\rangle
+  =\lambda\lvert\psi\rangle
+\]
+wird die Einheit von \(\lambda\) durch den Operatortyp festgelegt. Für einen
+Projektor ist \(\lambda\in\{0,1\}\) dimensionslos, für einen Hamiltonoperator
+ist \(\lambda\) eine Energie in Joule, und für einen Zeitgenerator kann
+\(\lambda\) die Einheit \(\mathrm{s^{-1}}\) besitzen. Eine universale
+``Wirkstärke'' ist deshalb erst nach Angabe des Operators bestimmt.
+
+\section{Geometrie, Materie und Quantenphase}
+\label{sec:physikalische-kopplung}
+
+\subsection{Einstein-Gleichung und kausale Struktur}
+
+Mit der festgelegten Koordinatenkonvention lauten die Einstein-Gleichungen
+\citep{einstein1916,wald1984}
+\[
+  G_{\mu\nu}+\Lambda g_{\mu\nu}
+  =\frac{8\pi G}{c^4}T_{\mu\nu}.
+\]
+Im lokalen orthonormalen Bezugssystem gilt
+\[
+  [G_{\mu\nu}]=[\Lambda]=\mathrm{m^{-2}},
+  \qquad [T_{\mu\nu}]=\mathrm{J\,m^{-3}},
+\]
+und
+\[
+  \left[\frac{G}{c^4}T_{\mu\nu}\right]=\mathrm{m^{-2}}.
+\]
+Die Gleichung ist also dimensionshomogen. Ihre physikalische Aussage geht
+darüber hinaus: Materie- und Feldzustände tragen Stress-Energie; die
+gekoppelte Geometrie bestimmt ihrerseits Lichtkegel, Eigenzeiten und die
+kovariante Ausbreitung der Materiefelder. Die Einstein-Materie-Theorie ist
+daher ein gekoppeltes Anfangswertproblem, nicht bloß eine einseitige Kette
+``Materie verursacht Geometrie''.
+
+Die geometrische Bianchi-Identität
+\[
+  \nabla^\mu G_{\mu\nu}=0
+\]
+führt zusammen mit den Einstein-Gleichungen bei konstantem \(\Lambda\) zu
+\[
+  \nabla^\mu T_{\mu\nu}=0.
+\]
+Eine physikalische Anschlussregel, die diese lokale kovariante
+Energie-Impuls-Erhaltung verletzt, wäre nicht ohne zusätzliche neue Dynamik
+mit der Allgemeinen Relativitätstheorie vereinbar.
+
+\subsection{Wirkungsprinzip und Quantenskala}
+
+Für \(x^0=ct\) kann die Einstein--Hilbert-Wirkung geschrieben werden als
+\[
+  S_{\mathrm{EH}}[g,\Psi]
+  =\frac{c^3}{16\pi G}
+  \int(R-2\Lambda)\sqrt{-g}\,\dd^4x
+  +S_{\mathrm m}[g,\Psi].
+\]
+Da \([\dd^4x]=\mathrm{m^4}\), \([R]=\mathrm{m^{-2}}\) und
+\([c^3/G]=\mathrm{kg\,s^{-1}}\), besitzt \(S_{\mathrm{EH}}\) die Einheit
+\[
+  [S_{\mathrm{EH}}]=\mathrm{kg\,m^2\,s^{-1}}=\mathrm{J\,s}.
+\]
+Die Variation nach \(g_{\mu\nu}\) und den Materiefeldern \(\Psi\) ergibt
+die gekoppelten Feldgleichungen.
+
+In einer quantenmechanischen Beschreibung tritt die Wirkung in der
+dimensionslosen Phase
+\[
+  \exp\!\left(\frac{\mathrm iS}{\hbar}\right)
+\]
+auf \citep{feynman1948}. Hier vermittelt \(\hbar\) zwischen Wirkung und
+Quantenphase. Entsprechend sind
+\[
+  E=\hbar\omega,
+  \qquad p=\hbar k,
+\]
+mit \([\omega]=\mathrm{s^{-1}}\) und \([k]=\mathrm{m^{-1}}\)
+dimensionshomogen.
+
+Damit ist ein präziser Standardanschluss gegeben: Die Lorentz-Metrik liefert
+geometrische und kausale Struktur, \(T_{\mu\nu}\) repräsentiert
+Energie-Impuls, das Wirkungsprinzip erzeugt die gekoppelte Dynamik, und
+\(S/\hbar\) bildet die dimensionslose Größe der Quantenphase. Daraus folgt
+noch keine bestimmte Theorie der Quantengravitation.
+
+\section{Planck-Einheiten: natürliche Skalen, keine bewiesenen Gitterabstände}
+\label{sec:planck-einheiten}
+
+Aus \(\hbar\), \(G\) und \(c\) entstehen die dimensionsrichtigen
+Planck-Einheiten \citep{codata2022}:
+\[
+\begin{aligned}
+  \ell_{\mathrm P}&=\sqrt{\frac{\hbar G}{c^3}},
+  & [\ell_{\mathrm P}]&=\mathrm m,\\
+  t_{\mathrm P}&=\sqrt{\frac{\hbar G}{c^5}}
+  =\frac{\ell_{\mathrm P}}{c},
+  & [t_{\mathrm P}]&=\mathrm s,\\
+  m_{\mathrm P}&=\sqrt{\frac{\hbar c}{G}},
+  & [m_{\mathrm P}]&=\mathrm{kg},\\
+  E_{\mathrm P}&=m_{\mathrm P}c^2
+  =\sqrt{\frac{\hbar c^5}{G}},
+  & [E_{\mathrm P}]&=\mathrm J.
+\end{aligned}
+\]
+In ihnen treten Quantenwirkung und Gravitation sowie die relativistische
+Kausalgeschwindigkeit gemeinsam auf. Sie liefern natürliche Normierungen
+\[
+  \widetilde\ell=\frac{\ell}{\ell_{\mathrm P}},
+  \qquad
+  \widetilde\tau=\frac{\tau}{t_{\mathrm P}},
+  \qquad
+  \widetilde E=\frac{E}{E_{\mathrm P}}.
+\]
+Nicht daraus folgt dagegen
+\[
+  \ell=n\ell_{\mathrm P},
+  \qquad \tau=nt_{\mathrm P}
+  \qquad(n\in\mathbb Z)
+\]
+für alle Längen oder Zeiten. Eine solche Spektral- oder Gitteraussage
+benötigt einen definierten Operator, ein Zustandsspektrum und messbare
+Konsequenzen. Die Planck-Einheiten sind charakteristische Skalen, keine
+bereits nachgewiesenen Raumzeitatome \citep{hossenfelder2013}.
+
+\section{Schwarzloch-Thermodynamik als physikalische Brücke}
+\label{sec:horizont-information}
+
+Für ein ungeladenes, nichtrotierendes Schwarzschild-Loch gilt
+\[
+  r_{\mathrm s}=\frac{2GM}{c^2},
+  \qquad A_{\mathrm H}=4\pi r_{\mathrm s}^2.
+\]
+Die Bekenstein--Hawking-Entropie lautet \citep{bekenstein1973,hawking1975}
+\[
+  S_{\mathrm{BH}}
+  =\frac{k_{\mathrm B}c^3A_{\mathrm H}}{4G\hbar}
+  =\frac{k_{\mathrm B}A_{\mathrm H}}{4\ell_{\mathrm P}^2},
+  \qquad [S_{\mathrm{BH}}]=\mathrm{J\,K^{-1}}.
+\]
+Der dimensionslose Entropiezähler in Nat und in Bit ist
+\[
+  I_{\mathrm{BH}}^{(\mathrm{nat})}
+  =\frac{S_{\mathrm{BH}}}{k_{\mathrm B}}
+  =\frac{A_{\mathrm H}}{4\ell_{\mathrm P}^2},
+  \qquad
+  I_{\mathrm{BH}}^{(\mathrm{bit})}
+  =\frac{S_{\mathrm{BH}}}{k_{\mathrm B}\ln2}.
+\]
+Damit sind zwei Oberflächendichten zu unterscheiden:
+\[
+  \frac{\dd S_{\mathrm{BH}}}{\dd A_{\mathrm H}}
+  =\frac{k_{\mathrm B}}{4\ell_{\mathrm P}^2}
+  \quad\left[\frac{\mathrm J}{\mathrm{K\,m^2}}\right],
+\]
+und
+\[
+  \frac{\dd I_{\mathrm{BH}}^{(\mathrm{nat})}}{\dd A_{\mathrm H}}
+  =\frac{1}{4\ell_{\mathrm P}^2}
+  \quad[\mathrm{m^{-2}}].
+\]
+Ein Ausdruck \(I_{\mathrm{horizon}}=\Delta S/\Delta A\) bezeichnet daher,
+wenn \(S\) thermodynamische Entropie ist, zunächst \emph{Entropie pro
+Fläche}. Erst die Division durch \(k_{\mathrm B}\) ergibt eine
+dimensionslose Zustandszählung pro Fläche.
+
+Die Hawking-Temperatur ist
+\[
+  T_{\mathrm H}=\frac{\hbar c^3}{8\pi GMk_{\mathrm B}}.
+\]
+Für die Schwarzschild-Familie gilt konsistent
+\[
+  \dd(Mc^2)=T_{\mathrm H}\,\dd S_{\mathrm{BH}}.
+\]
+Hier treffen Geometrie \((A_{\mathrm H})\), Gravitation \((G)\),
+Quantentheorie \((\hbar)\) und Thermodynamik
+\((k_{\mathrm B},T_{\mathrm H})\) in einer quantitativ bestimmten Relation
+zusammen. Dies ist eine zentrale Brücke, aber noch keine vollständige
+mikroskopische Quantengravitation.
+
+Auch das Landauer-Prinzip ist eng zu begrenzen: Für die logisch irreversible
+Löschung eines Bits in einem thermischen Umfeld bei Temperatur \(T\) gilt im
+idealen quasistatischen Grenzfall
+\[
+  Q_{\min}=k_{\mathrm B}T\ln2
+\]
+\citep{landauer1961}. Die Formel behauptet weder, dass jedes Bit diese
+Energie besitzt, noch dass abstrakte Information unabhängig von einem
+physischen Träger gravitiert. In der etablierten Allgemeinen
+Relativitätstheorie koppelt der Stress-Energie-Tensor des Trägers an die
+Geometrie, nicht ein semantischer Informationsgehalt als selbständige
+Quellenart.
+
+\section{Ein physikalisch typisiertes Anschluss- und Gatemodell}
+\label{sec:phys-gate}
+
+Die Anschlussidee kann als prüfbare numerische Architektur formuliert werden,
+ohne sie bereits mit einer fundamentalen Naturdynamik gleichzusetzen. Sei
+\(\Sigma_n\) eine Folge raumartiger Hyperflächen und
+\[
+  X_n=\bigl(h_{ij}^{(n)},K_{ij}^{(n)},\Psi_n,\Pi_n;D_n\bigr)
+\]
+der Zustandsdatensatz aus induzierter räumlicher Metrik \(h_{ij}\),
+extrinsischer Krümmung \(K_{ij}\), Materiefeldern \(\Psi\), ihren kanonischen
+Daten \(\Pi\) und Messdaten \(D_n\). Ein Evolutionsoperator erzeugt zunächst
+nur einen Kandidaten:
+\[
+  \widehat X_{n+1}=G_{\Delta\tau_n}(X_n),
+  \qquad [\Delta\tau_n]=\mathrm s.
+\]
+Ein physikalisches Gate prüft anschließend
+\[
+  \mathcal A_{\mathrm{phys}}:
+  (X_n,\widehat X_{n+1},D_n)
+  \longrightarrow\{\PASS,\CONTINUE,\BLOCK\}.
+\]
+
+Seien \(C_a(\widehat X_{n+1})\) die Residuen der relevanten
+Zwangs-, Erhaltungs- und Evolutionsgleichungen und \(C_{a,*}>0\) vorab
+festgelegte Referenzgrößen derselben jeweiligen Dimension. Dann sind
+\[
+  r_a:=\frac{\lVert C_a(\widehat X_{n+1})\rVert}{C_{a,*}}
+\]
+dimensionslos. Zusammen mit normierten Messunsicherheiten \(u_b\), einer
+Toleranz \(\eta\) und einem separaten Test der durch \(g_{\mu\nu}\)
+bestimmten kausalen Abhängigkeit kann ein schematisches Gate lauten:
+\[
+\mathcal A_{\mathrm{phys}}=\PASS
+\Longleftrightarrow
+\max\{r_a,u_b\}\le\eta
+\quad\text{und alle notwendigen Kausalbedingungen sind erfüllt}.
+\]
+Die Größen \(C_{a,*}\), die Normen, \(\eta\) und die geprüften Bedingungen
+müssen vor der Auswertung dokumentiert werden; andernfalls wäre das Gate
+nicht reproduzierbar.
+
+Der freigegebene Schritt lautet
+\[
+  X_{n+1}=\operatorname{Commit}
+  \bigl(\widehat X_{n+1}\mid
+  \mathcal A_{\mathrm{phys}}=\PASS\bigr).
+\]
+Dies ist eine wissenschaftlich sinnvolle Wirkungshaltepunkt-Architektur: Ein
+berechneter Zustand gilt nicht allein aufgrund seiner Berechenbarkeit als
+physikalisch zulässig.
+
+Ein physikalisch relevanter Fixpunkt \(X^*\) muss mindestens erfüllen
+\[
+  G_{\Delta\tau}(X^*)=X^*,
+  \qquad
+  \mathcal A_{\mathrm{phys}}(X^*,X^*,D)=\PASS.
+\]
+Führt ein blockierter Kandidat lediglich dazu, dass der alte Zustand
+unverändert gespeichert bleibt, entsteht ebenfalls ein administrativer
+Fixpunkt. Dieser ist kein Nachweis einer stationären Lösung:
+\[
+  \boxed{
+  \text{Unverändertheit durch BLOCK}
+  \neq
+  \text{physikalisch freigegebener Fixpunkt}.}
+\]
+
+Werden Raum und Zeit numerisch mit Gitterweiten \(h\) und \(\Delta\tau\)
+diskretisiert, verlangt die Validierung eine Konvergenzaussage der Form
+\[
+  \lim_{h,\Delta\tau\to0}
+  \bigl\|X^{(h,\Delta\tau)}-X\bigr\|_*=0
+\]
+sowie Stabilitäts- und Konsistenztests. Solange sich das Raster im
+Grenzübergang verfeinern lässt, ist es eine Darstellungsmethode. Ein
+fundamentales Raumzeitquant wäre erst durch ein Spektrum physikalischer
+Observablen und messbare Konsequenzen begründet.
+
+\section{Explizite physikalische Korrespondenz zur Mandelbrot-Dynamik}
+\label{sec:phys-semikonjugation}
+
+Für eine dynamische physikalische Interpretation genügt eine bloße Zuordnung
+\(X\mapsto c\) nicht. Sei \(\mathfrak X\) ein physikalischer Zustandsraum,
+\(G_{\Delta\tau}:\mathfrak X\to\mathfrak X\) die Zeitentwicklung und
+\[
+  \Phi:\mathfrak X\longrightarrow Y_U
+\]
+eine aus dimensionslosen, möglichst koordinateninvarianten Observablen
+gebildete Abbildung. Eine exakte dynamische Korrespondenz verlangt mindestens
+\[
+  \boxed{\Phi\circ G_{\Delta\tau}=F\circ\Phi.}
+\]
+Diese Richtung kodiert physikalische Zustände im Modell. Sie ist von der in
+Teil II betrachteten Realisierungsrichtung
+\(G\circ\phi=\phi\circ F\) zu unterscheiden. Existieren beide Abbildungen
+als zueinander inverse Bijektionen, liegt eine Konjugation vor; eine bloße
+Semikonjugation darf Informationen verlieren.
+
+Für eine angenäherte Korrespondenz wird ein vorab normiertes Residuum
+benötigt:
+\[
+  \delta_\Phi(X)=d_{Y_U}
+  \bigl(\Phi(G_{\Delta\tau}X),F(\Phi(X))\bigr),
+  \qquad \delta_\Phi(X)\le\eta_\Phi.
+\]
+Die positive Metrik \(d_{Y_U}\), die Toleranz \(\eta_\Phi\) und der
+Gültigkeitsbereich sind vor dem Test festzulegen.
+
+Soll die Mandelbrot-Klassifikation eine physikalische
+Fortsetzbarkeitsklasse darstellen, ist zusätzlich Gate-Verträglichkeit nötig:
+\[
+  \mathcal A_{\mathrm{phys}}(X)
+  =\mathcal A_{\M}(\Phi(X))
+\]
+für die beanspruchte Klasse von Zuständen. Diese Bedingung ist wesentlich
+stärker als eine visuelle Ähnlichkeit von Fraktalen und physikalischen
+Strukturen. Die Hypothese zerfällt daher in drei unabhängige Prüfaufgaben:
+
+\begin{enumerate}
+  \item \textbf{Dimension und Invarianz:} \(\Phi\) besteht aus
+  wohldefinierten dimensionslosen Observablen und ist nicht bloß ein Effekt
+  willkürlicher Koordinatenwahl.
+  \item \textbf{Dynamik:} Semikonjugation oder quantitativ begrenztes
+  Residuum gelten für Lösungen der physikalischen Gleichungen.
+  \item \textbf{Klassifikation:} PASS-, CONTINUE- und BLOCK-Klassen stimmen
+  mit einer unabhängig messbaren physikalischen Eigenschaft überein.
+\end{enumerate}
+
+Ohne diese Nachweise bleibt die Mandelbrot-Struktur ein mathematisch
+anschlussfähiges Modell und eine Heuristik. Mit ihnen würde sie zu einer
+konkret prüfbaren physikalischen Korrespondenzhypothese.
+
+\section{Was beruht auf was? Logische, metrische und kausale Pfeile}
+\label{sec:kausalkette}
+
+Die Pfeile des Gesamtmodells dürfen nicht sämtlich als physikalische Ursachen
+gelesen werden. Mindestens fünf Relationstypen sind zu unterscheiden:
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\textwidth}
+                  >{\raggedright\arraybackslash}p{0.29\textwidth}
+                  >{\raggedright\arraybackslash}p{0.38\textwidth}}
+\toprule
+\textbf{Relation} & \textbf{Beispiel} & \textbf{Bedeutung} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Relation} & \textbf{Beispiel} & \textbf{Bedeutung} \\
+\midrule
+\endhead
+transzendentale Voraussetzung & Unterschied \(\to\) Bestimmbarkeit & ohne unterscheidbare Zustände keine bestimmte Aussage; kein zeitlicher Naturprozess behauptet \\
+metrologische Repräsentation & Größe \(q\), Einheit \(u_q\), Zahlenwert & Kalibrierung erzeugt eine Darstellung, nicht das gemessene Phänomen \\
+konstitutive Geometrie & \(g_{\mu\nu}\to\) Eigenzeiten und Lichtkegel & die Metrik definiert im Modell räumlich-zeitliche und kausale Relationen \\
+dynamische Kopplung & \((g_{\mu\nu},T_{\mu\nu})\to\) Entwicklung & Einstein- und Materiegleichungen bestimmen aus Anfangsdaten zulässige Entwicklungen \\
+epistemische oder technische Freigabe & Kandidat und Evidenz \(\to\) Status & das Gate verursacht die Freigabe einer berechneten Wirkung, nicht den zugrunde liegenden Naturprozess \\
+\bottomrule
+\end{longtable}
+
+Die physikalisch belastbare Kette kann deshalb so geschrieben werden:
+\[
+\boxed{
+\begin{gathered}
+\text{Wirkung }S[g,\Psi]+\text{ Anfangs- und Randdaten}
+\\
+\Downarrow\ \text{Variation und Feldgleichungen}
+\\
+(g_{\mu\nu},\Psi,T_{\mu\nu})
+\\
+\Downarrow\ \text{kausale Dynamik}
+\\
+\text{physikalische Observablen }q_a
+\\
+\Downarrow\ \text{Messung und Normierung}
+\\
+\xi_a=q_a/q_{a,*}
+\\
+\Downarrow\ \text{definierte Korrespondenz }\Phi
+\\
+\text{dimensionsloser Modellzustand}
+\\
+\Downarrow\ \text{Iteration und Gate}
+\\
+\text{Modellklassifikation und freigegebene Folgewirkung}.
+\end{gathered}}
+\]
+
+Die SI-Einheiten stehen auf der Seite der Messung und Kalibrierung. Sie
+verursachen weder Raumzeit noch Energie. Die Metrik legt innerhalb der Theorie
+fest, welche Ereignisse kausal verbunden sein können. Die gekoppelte Dynamik
+und die Anfangs- und Randdaten legen fest, welche Entwicklung modelliert
+wird. Ein QIK--VRT-Gate kann anschließend steuern, ob ein berechnetes Ergebnis
+als technische Wirkung freigegeben wird.
+
+Für Information gilt entsprechend
+\[
+  \text{abstrakter Informationsgehalt}
+  \neq\text{physischer Träger}
+  \neq T_{\mu\nu}\text{ des Trägers}.
+\]
+Dass ein physischer Speicher oder ein Signal gravitiert, folgt aus seinem
+Energie-Impuls. Eine zusätzliche direkte Kopplung semantischer Information an
+die Raumzeit ist in der etablierten Einstein-Theorie nicht enthalten und
+müsste als neue Dynamik formuliert und getestet werden. Ebenso ist die
+spätere Neuklassifikation früherer Iterationswerte keine physikalische
+Rückwärtskausalität. Sie verändert den epistemischen Status einer Spur, nicht
+deren frühere Zustandswerte.
+
+\clearpage
+\part{Retrokausalität: Begriffe, Modelle, Tests und Konsequenzen}
+
+\section{Retrokausalität: Begriffe, Modelle und empirische Grenzen}
+\label{sec:retrokausalitaet}
+
+Der Ausdruck \emph{Retrokausalität} wird in Physik, Philosophie,
+Quantenfundamenten und populärwissenschaftlicher Darstellung in mehreren
+verschiedenen Bedeutungen verwendet. Ohne eine explizite Typisierung kann
+derselbe Ausdruck eine harmlose nachträgliche Neubewertung, eine
+zeitumkehrsymmetrische Gleichung, eine Zwei-Randwertformulierung, eine
+ontologische Abhängigkeit von späteren Bedingungen oder sogar einen
+kontrollierbaren Nachrichtenkanal in die Vergangenheit bezeichnen. Diese
+Bedeutungen sind weder logisch noch empirisch gleichwertig.
+
+Der vorliegende Abschnitt trennt deshalb drei Leitfragen:
+\begin{enumerate}
+  \item \emph{Was wird mathematisch oder begrifflich behauptet?}
+  \item \emph{Welche physikalische Abhängigkeit würde daraus folgen?}
+  \item \emph{Welche Beobachtung könnte diese Abhängigkeit von einer bloßen
+  Korrelation, Nachselektion oder gewöhnlichen Vorwärtskausalität
+  unterscheiden?}
+\end{enumerate}
+Die stärkste wissenschaftlich belastbare Kurzform lautet
+\[
+\boxed{
+\begin{gathered}
+\text{Rückschluss}\neq\text{Rückwirkung},\\
+\text{Zeitumkehrsymmetrie}\neq\text{Retrokausalität},\\
+\text{retrokausale Modellierung}\neq
+\text{rückwärts gerichtete Signalisierung}.
+\end{gathered}}
+\]
+
+\subsection{Minimaldefinitionen: Zustand, Evidenz, Intervention und Signal}
+
+Seien \(t_1<t_2\) zwei physikalisch geordnete Zeitpunkte. Wir unterscheiden:
+\begin{itemize}
+  \item \(X_{t_1}\): einen früheren ontischen oder modellierten Zustand;
+  \item \(R_{t_1}\): einen zum Zeitpunkt \(t_1\) erzeugten und gegen spätere
+  Veränderung gesicherten Mess- oder Datenrecord;
+  \item \(A_{t_2}\): eine später gewählte experimentelle Einstellung;
+  \item \(Y_{t_2}\): ein späteres Messergebnis;
+  \item \(\Lambda\): offengelegte Vorbedingungen und mögliche gemeinsame
+  Ursachen.
+\end{itemize}
+
+Eine statistische Abhängigkeit
+\[
+  \mathbb P(X_{t_1}\mid A_{t_2}=a)
+  \neq
+  \mathbb P(X_{t_1}\mid A_{t_2}=a')
+\]
+beweist für sich genommen keine Kausalität. Sie kann durch gemeinsame
+Ursachen, Auswahlverzerrung, Datenleckage, Nachselektion oder eine
+unvollständige Modellierung entstehen. Der interventionistische Unterschied
+zwischen Beobachtung und Eingriff wird durch den
+\(\operatorname{do}\)-Operator markiert \citep{Pearl2009}. Eine
+\emph{retrokausale Zustandsabhängigkeit} läge in einem bestimmten Modell vor,
+wenn für \(t_1<t_2\) und sonst festgehaltene Randbedingungen
+\begin{equation}
+\label{eq:retro-ontisch}
+  \mathbb P\!\left(X_{t_1}\mid
+  \operatorname{do}(A_{t_2}=a),\Lambda\right)
+  \neq
+  \mathbb P\!\left(X_{t_1}\mid
+  \operatorname{do}(A_{t_2}=a'),\Lambda\right)
+\end{equation}
+gälte und die Differenz nicht über einen gewöhnlichen vorwärts gerichteten
+Pfad oder eine gemeinsame Ursache vermittelt wäre.
+
+Davon nochmals verschieden ist eine \emph{operative rückwärts gerichtete
+Signalisierung}. Sie verlangt, dass ein frei kontrollierter späterer Eingriff
+die Verteilung eines früher zugänglichen Records verändert:
+\begin{equation}
+\label{eq:retro-signal}
+  \mathbb P\!\left(R_{t_1}=r\mid
+  \operatorname{do}(A_{t_2}=a)\right)
+  \neq
+  \mathbb P\!\left(R_{t_1}=r\mid
+  \operatorname{do}(A_{t_2}=a')\right).
+\end{equation}
+Erst wenn \(a\) als Nachricht codiert und aus \(R_{t_1}\) mit einer über
+Zufall hinausgehenden Zuverlässigkeit vor \(t_2\) decodiert werden könnte,
+bestünde ein nutzbarer Rückwärtskanal. Eine ontologische Interpretation kann
+also retrokausal sein, ohne \cref{eq:retro-signal} zu erfüllen.
+
+\begin{definition}[Semantische Rückbestimmung]
+Eine semantische Rückbestimmung liegt vor, wenn spätere Evidenz die zulässige
+Klassifikation oder Bedeutung einer früher erzeugten Spur verändert, ohne
+deren damaligen physischen Zustand oder ihren gesicherten Record zu ändern.
+\end{definition}
+
+\begin{definition}[Physikalische Retrokausalität]
+Physikalische Retrokausalität bezeichnet hier eine modellierte oder reale
+kausale Abhängigkeit eines früheren physischen Zustands von einer späteren
+Randbedingung, Einstellung oder einem späteren Ereignis, die nicht vollständig
+auf gewöhnliche Vorwärtskausalität, gemeinsame Ursachen oder
+Konditionierung zurückgeführt werden kann.
+\end{definition}
+
+\begin{definition}[Rückwärtssignalisierung]
+Rückwärtssignalisierung ist die kontrollierbare Übertragung einer frei
+wählbaren Nachricht zu einem früheren, dort bereits auslesbaren Record. Sie
+ist stärker als eine retrokausale Ontologie und stärker als eine
+zeit-symmetrische mathematische Beschreibung.
+\end{definition}
+
+Diese Definitionen verhindern zwei symmetrische Fehlschlüsse. Aus dem Fehlen
+eines Rückwärtskanals folgt nicht, dass jede zeit-symmetrische oder
+retrokausale Interpretation widersprüchlich wäre. Aus der mathematischen
+Konsistenz einer solchen Interpretation folgt umgekehrt kein experimenteller
+Nachweis einer Wirkung in die Vergangenheit.
+
+\subsection{Eine Taxonomie zeitlicher Rückbezüge}
+
+Die folgende Tabelle ordnet die gebräuchlichsten Bedeutungen nach dem Objekt,
+das sich tatsächlich ändert.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\textwidth}
+                  >{\raggedright\arraybackslash}p{0.29\textwidth}
+                  >{\raggedright\arraybackslash}p{0.39\textwidth}}
+\toprule
+\textbf{Begriff} & \textbf{Was ändert sich?} & \textbf{Was folgt daraus nicht?} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Begriff} & \textbf{Was ändert sich?} & \textbf{Was folgt daraus nicht?} \\
+\midrule
+\endhead
+semantische Rückbestimmung & Klassifikation einer unveränderten früheren Spur & keine Änderung des früheren Zustands oder Records \\
+Retrodiktion oder Smoothing & Wahrscheinlichkeitsurteil über einen früheren verborgenen Zustand & keine physische Rückwirkung der späteren Daten \\
+Nachselektion & Zusammensetzung des später betrachteten Teilensembles & keine Änderung der unbedingten früheren Stichprobe \\
+Zeitumkehrinvarianz & Form der Gleichung unter einer Zeitumkehrtransformation & keine Aussage, welche Randbedingung physisch realisiert ist \\
+Zwei-Randwertproblem & zulässige Geschichte wird durch Anfangs- und Enddaten eingeschränkt & kein frei kontrollierbarer Rückwärtskanal \\
+avancierte Lösung & mathematische Lösung mit Unterstützung aus der zeitlichen Zukunft & keine automatische physikalische Auswahl dieser Lösung \\
+ontische Retrokausalität & früherer Modellzustand hängt von späterer Bedingung ab & keine automatische Beobachtbarkeit oder Signalisierung \\
+Rückwärts\-signalisierung & früherer zugänglicher Record trägt eine später frei gewählte Nachricht & keine etablierte Konsequenz der Standardquantenmechanik \\
+geschlossene zeitartige Kurve & Weltlinie kehrt in ihre eigene kausale Vergangenheit zurück & keine Gleichsetzung mit bloßer Vor-/Nachselektion \\
+indefinite Kausalordnung & Prozesse besitzen keine feste globale Reihenfolge bestimmter Operationen & nicht notwendig eine Wirkung in die eigene Vergangenheit \\
+\bottomrule
+\end{longtable}
+
+Besonders häufig wird Konditionierung mit Kausalität verwechselt. Für einen
+früheren Zustand \(X\), frühere Daten \(D_1\) und spätere Daten \(D_2\) gilt
+nach Bayes
+\begin{equation}
+\label{eq:smoothing}
+ \mathbb P(X\mid D_1,D_2)
+ =\frac{\mathbb P(D_2\mid X,D_1)\,
+              \mathbb P(X\mid D_1)}
+             {\mathbb P(D_2\mid D_1)}.
+\end{equation}
+Der Übergang von \(\mathbb P(X\mid D_1)\) zu
+\(\mathbb P(X\mid D_1,D_2)\) verändert ein Informationsurteil. Er schreibt
+keine neue Bewegungsgleichung für den bereits vergangenen Zustand. In
+Signalverarbeitung, Navigation und Zustandsrekonstruktion ist dieses
+\emph{Smoothing} alltäglich und nützlich; gerade deshalb darf es nicht als
+experimenteller Nachweis physikalischer Retrokausalität ausgegeben werden.
+
+\subsection{Relativistische Kausalstruktur und Zeitordnung}
+
+In einer zeit-orientierten Lorentz-Mannigfaltigkeit
+\((\mathcal X,g_{\mu\nu})\) bezeichnet \(J^+(p)\) die Menge der durch
+zukünftig gerichtete zeit- oder lichtartige Kurven von \(p\) erreichbaren
+Ereignisse; \(J^-(p)\) bezeichnet die entsprechende kausale Vergangenheit.
+Die Kausalrelation ist damit nicht eine beliebige Pfeilrichtung in einem
+Diagramm, sondern wird durch die Lichtkegelstruktur der Metrik bestimmt
+\citep{wald1984}.
+
+Für zwei Ereignisse \(p,q\) sind mindestens drei Fälle zu unterscheiden:
+\begin{align*}
+ q\in I^+(p) &\quad\text{zeitartig erreichbar},\\
+ q\in J^+(p)\setminus I^+(p) &\quad\text{lichtartig erreichbar},\\
+ q\notin J^+(p)\cup J^-(p) &\quad\text{raumartig getrennt}.
+\end{align*}
+Die Reihenfolge raumartig getrennter Ereignisse kann von der Wahl des
+Inertialsystems abhängen. Daraus folgt keine physische Rückwirkung: Eine
+invariante Signalaussage verlangt einen kausalen Übertragungspfad. Umgekehrt
+kann eine hypothetische kontrollierbare Überlichtgeschwindigkeit zusammen mit
+Lorentz-Symmetrie in geeigneten Bezugssystemen zu kausalen Schleifen führen.
+Deshalb sind Überlichtsignalisierung, Retrokausalität und geschlossene
+zeitartige Kurven eng verwandt, aber nicht definitorisch identisch.
+
+Auf einer global hyperbolischen Raumzeit kann eine Cauchyfläche so gewählt
+werden, dass geeignete hyperbolische Feldgleichungen aus Anfangsdaten eine
+wohlgestellte Entwicklung besitzen. Dies ist die Standardstruktur eines
+Vorwärtsproblems. Eine mathematische Theorie kann stattdessen Randdaten an
+mehreren Zeiten verwenden. Dann wird eine ganze Geschichte als Lösung eines
+Randwertproblems bestimmt. Das Wort ``bestimmt'' bezeichnet zunächst eine
+globale mathematische Einschränkung; es legt noch nicht fest, welcher Rand als
+wirkende Ursache und welcher als Wirkung interpretiert wird.
+
+\begin{bemerkung}[Koordinaten- und Kausalrichtung]
+Ein negativer Koordinaten\-zeitschritt, eine rückwärts parametrisierte Kurve oder
+das formale Invertieren eines Evolutionsoperators beweist keine
+Retrokausalität. Physikalisch relevant sind invariant definierte
+Kausalbeziehungen, Randbedingungen und die Möglichkeit operationaler
+Interventionen.
+\end{bemerkung}
+
+\subsection{Zeitumkehrsymmetrie, Bewegungsgesetz und thermodynamischer Pfeil}
+
+Sei eine Dynamik durch einen Fluss \(U_t\) auf einem Zustandsraum beschrieben.
+Eine Zeitumkehroperation \(\Theta\) erfüllt in einem zeitumkehrinvarianten
+Modell beispielsweise
+\begin{equation}
+\label{eq:time-reversal}
+  \Theta U_t\Theta^{-1}=U_{-t}.
+\end{equation}
+Diese Gleichung besagt: Zu einer zulässigen Geschichte gehört unter
+geeigneter Transformation der zeitungeraden Größen eine zeitumgekehrte
+zulässige Geschichte. Sie besagt nicht, dass in einer gegebenen realisierten
+Geschichte spätere freie Entscheidungen frühere Zustände erzeugen.
+Zeitumkehrinvarianz ist zudem keine universelle Eigenschaft aller beobachteten
+Prozesse: Die BABAR-Kollaboration berichtete eine direkte Beobachtung von
+T-Verletzung im neutralen \(B\)-Meson-System \citep{BABAR2012}. Auch daraus
+folgt jedoch weder Zeitreise noch ein steuerbarer Rückwärtskanal.
+
+Mindestens vier Ebenen sind zu trennen:
+\begin{enumerate}
+  \item die Symmetrie des Bewegungsgesetzes;
+  \item die Symmetrie oder Asymmetrie konkreter Rand- und Anfangsdaten;
+  \item der thermodynamische Zeitpfeil makroskopischer Prozesse;
+  \item die epistemische Richtung, in der Records erzeugt und ausgewertet
+  werden.
+\end{enumerate}
+Ein mikroskopisch reversibles Gesetz kann mit makroskopisch irreversibler
+Recordbildung vereinbar sein. Der thermodynamische Pfeil wird in statistischen
+Beschreibungen wesentlich durch besondere Randbedingungen und die enorme
+Asymmetrie zwischen typischen Mikro- und Makrozuständen bestimmt. Ein
+gespeicherter Record ist ein physischer Zustand; sein Erzeugen, Kopieren oder
+Löschen besitzt Trägerdynamik und kann thermodynamische Kosten haben
+\citep{landauer1961}. Dass der Inhalt eines Records später anders bewertet
+wird, ist davon zu unterscheiden. Modelle entgegengesetzter
+thermodynamischer Zeitpfeile sind mathematisch untersuchbar
+\citep{Schulman1999}; sie verlangen besondere Randbedingungen und sind kein
+Nachweis, dass solche makroskopischen Pfeile in unserem beobachtbaren Bereich
+tatsächlich zusammentreffen.
+
+Auch eine formal unitäre Quantendynamik
+\[
+  \lvert\psi(t_2)\rangle
+  =U(t_2,t_1)\lvert\psi(t_1)\rangle,
+  \qquad
+  U(t_1,t_2)=U(t_2,t_1)^{-1},
+\]
+ist invertierbar, solange das geschlossene System und der Hamiltonoperator
+bekannt sind. Die rechnerische Rekonstruktion von
+\(\lvert\psi(t_1)\rangle\) aus späteren Daten ist keine Nachricht, die bei
+\(t_1\) empfangen wurde. Invertierbarkeit ist eine Eigenschaft der
+mathematischen Dynamik, Retrokausalität eine Aussage über die Richtung
+physischer Abhängigkeit.
+
+\subsection{Retardierte und avancierte Lösungen klassischer Feldgleichungen}
+
+Für eine lineare Feldgleichung schematischer Form
+\begin{equation}
+\label{eq:field-green}
+  L\phi(x)=j(x)
+\end{equation}
+kann eine Lösung mittels einer Greenschen Funktion geschrieben werden:
+\[
+  \phi(x)=\phi_{\mathrm h}(x)
+  +\int G(x,x')j(x')\,\dd x'.
+\]
+Eine retardierte Greensche Funktion \(G_{\mathrm{ret}}\) besitzt nur dann
+Unterstützung, wenn \(x'\) in der kausalen Vergangenheit von \(x\) liegt. Eine
+avancierte Greensche Funktion \(G_{\mathrm{adv}}\) verwendet demgegenüber
+Quellenanteile aus der kausalen Zukunft. Beide können mathematisch dieselbe
+lokale Differentialgleichung lösen; ihre physikalische Bedeutung wird durch
+Randbedingungen und die Wahl der Lösungsklasse bestimmt.
+
+Die Wheeler--Feynman-Absorbertheorie kombiniert retardierte und avancierte
+Anteile in einer direkten Teilchenwechselwirkung
+\citep{WheelerFeynman1945,WheelerFeynman1949}. Ihr historischer und
+konzeptioneller Wert liegt gerade darin, dass eine zeit-symmetrische
+Mikrodynamik und eine beobachtete Strahlungsasymmetrie nicht durch bloßes
+Anschauen der lokalen Gleichung auseinandergehalten werden können. Benötigt
+werden globale Absorberbedingungen und eine Analyse dessen, welche
+beobachtbaren Freiheitsgrade verfügbar sind.
+
+Die Existenz einer avancierten mathematischen Lösung beweist daher weder ihre
+Realisierung in der Natur noch einen frei nutzbaren Rückwärtskanal. Umgekehrt
+ist die bloße Ungewohntheit avancierten Verhaltens kein mathematischer
+Widerspruch. Wissenschaftlich zu entscheiden ist, welche Randbedingungen die
+Natur realisiert und ob daraus von der Standardbeschreibung unterscheidbare
+Messwerte folgen.
+
+\subsection{Vor- und Nachselektion in der Quantenmechanik}
+
+In einem vor- und nachselektierten Experiment werde ein System zum Zeitpunkt
+\(t_i\) im Zustand \(\lvert\psi_i\rangle\) präpariert und zum späteren
+Zeitpunkt \(t_f\) auf \(\lvert\psi_f\rangle\) nachselektiert. Für eine ideale
+Zwischenmessung mit Projektoren \(P_k\) ergibt die
+Aharonov--Bergmann--Lebowitz-Regel
+\citep{AharonovBergmannLebowitz1964}
+\begin{equation}
+\label{eq:abl}
+ \mathbb P(a_k\mid\psi_i,\psi_f)
+ =
+ \frac{
+ \left|\langle\psi_f\rvert U(t_f,t)P_kU(t,t_i)
+ \lvert\psi_i\rangle\right|^2}
+ {\displaystyle
+ \sum_j
+ \left|\langle\psi_f\rvert U(t_f,t)P_jU(t,t_i)
+ \lvert\psi_i\rangle\right|^2}.
+\end{equation}
+Die spätere Auswahl \(\psi_f\) steht in dieser bedingten Wahrscheinlichkeit
+explizit. Das ist mathematisch unstrittig. Es bedeutet zunächst, dass sich die
+Statistik des Teilensembles mit festgelegtem Endergebnis von der Statistik des
+Gesamtensembles unterscheidet.
+
+Entsprechend kann für einen Operator \(A\) der schwache Wert
+\begin{equation}
+\label{eq:weak-value}
+  A_w=
+  \frac{\langle\psi_f\rvert A\lvert\psi_i\rangle}
+       {\langle\psi_f\mid\psi_i\rangle}
+\end{equation}
+definiert werden. Schwache Werte können außerhalb des Eigenwertspektrums von
+\(A\) liegen. Dies ist kein Beweis dafür, dass ein einzelnes System vor der
+Nachselektion eine klassische, anomale Eigenschaft besessen habe. Die
+physikalische Interpretation hängt vom Messmodell, von der Ensemblebildung
+und vom gewählten ontologischen Rahmen ab
+\citep{AharonovAlbertVaidman1988,Pusey2014}.
+
+Der Zwei-Zustands-Vektor-Formalismus behandelt Vor- und Nachselektion
+zeit-symmetrisch. Andere Interpretationen lesen dieselben bedingten
+Wahrscheinlichkeiten ohne ontische Rückwirkung. Solange beide dieselben
+beobachtbaren Verteilungen vorhersagen, entscheidet das Experiment nicht
+zwischen ihnen. Eine Interpretation wird erst zu einer empirisch
+ausgezeichneten Theorie, wenn sie eine unterscheidende Vorhersage liefert.
+
+\subsection{Delayed Choice und Quantum Eraser}
+
+Experimente mit verzögerter Wahl zeigen, dass die später gewählte
+Messanordnung bestimmt, welche gemeinsame Statistik sinnvoll ausgewertet
+wird. Beim Delayed-Choice-Quantum-Eraser werden frühere Detektionsereignisse
+nach später verfügbaren, korrelierten Partnerergebnissen sortiert
+\citep{ScullyDruehl1982,KimEtAl2000}. In den nachselektierten Teilmengen können Interferenzmuster
+sichtbar werden, die in der unbedingten Summe verschwinden.
+Realisierungen von Wheelers verzögerter Wahl und verzögert gewähltem
+Entanglement Swapping bestätigen die kontextabhängigen
+Korrelationsvorhersagen der Quantenmechanik
+\citep{JacquesEtAl2007,MaEtAl2012}; sie stellen für sich keine frühere
+lokale Nachricht bereit.
+
+Seien \(R\) die früheren Detektordaten, \(B\) die spätere Basiswahl und \(Y\)
+das spätere Partnerergebnis. Dann können durchaus
+\[
+  \mathbb P(R\mid B,Y)
+  \neq
+  \mathbb P(R)
+\]
+und unterschiedliche konditionierte Muster auftreten. Für einen
+rückwärtsgerichteten Signalkanal wäre jedoch eine Abhängigkeit der bereits
+lokal verfügbaren Marginalverteilung von der frei gewählten Basis erforderlich:
+\begin{equation}
+\label{eq:no-back-signal}
+  \mathbb P(R\mid\operatorname{do}(B=b))
+  =
+  \mathbb P(R\mid\operatorname{do}(B=b'))
+  =\mathbb P(R).
+\end{equation}
+In der Standardquantenmechanik bleibt diese No-signalling-Bedingung erhalten.
+Das Muster entsteht erst durch den späteren Vergleich der Records und die
+Auswahl korrelierter Teilensembles. Die früher gespeicherten Klicks werden
+nicht überschrieben.
+
+\statusbox{QAmber}{
+\textbf{Interpretationsgrenze verzögerter Wahl.}
+Delayed-Choice-Experimente schließen naive klassische Geschichten aus, in
+denen ein Quantensystem unabhängig vom gesamten Messkontext stets eine
+vorab festgelegte klassische Eigenschaft trägt. Sie beweisen jedoch keine
+kontrollierbare Änderung eines früheren Records und keine Nachricht aus der
+Zukunft.
+}
+
+\subsection{Bell-Korrelationen und retrokausale verborgene Variablen}
+
+Für zwei räumlich getrennte Messstationen seien \(x,y\) die Einstellungen,
+\(A,B\) die Ergebnisse und \(\lambda\) verborgene Variablen. Ein lokal
+faktorisierendes Modell besitzt die Form
+\begin{equation}
+\label{eq:bell-factor}
+ \mathbb P(A,B\mid x,y)
+ =\int\dd\lambda\,
+ \rho(\lambda\mid x,y)
+ \mathbb P(A\mid x,\lambda)
+ \mathbb P(B\mid y,\lambda).
+\end{equation}
+Die übliche Messunabhängigkeit setzt
+\begin{equation}
+\label{eq:measurement-independence}
+  \rho(\lambda\mid x,y)=\rho(\lambda).
+\end{equation}
+Bell-Verletzungen zeigen, dass nicht alle gemeinsam verwendeten Annahmen
+einer lokal-kausalen verborgenen-Variablen-Erklärung beibehalten werden
+können \citep{Bell1964}. Retrokausale Modelle erlauben, dass spätere Einstellungen \(x,y\) an
+der Bestimmung früherer oder zwischenliegender \(\lambda\)-Werte beteiligt
+sind. Dadurch kann \cref{eq:measurement-independence} verletzt werden, ohne
+eine unmittelbare räumliche Fernwirkung als fundamentalen Mechanismus zu
+postulieren \citep{LeiferPusey2017,WhartonArgaman2020}.
+
+Diese Strategie ist logisch und mathematisch ernst zu nehmen. Sie ist aber
+nicht schon durch eine Bell-Verletzung bewiesen. Dieselben beobachtbaren
+Korrelationen können in verschiedenen Interpretationen oder Ontologien
+repräsentiert werden. Ein retrokausales Modell muss insbesondere erklären:
+\begin{itemize}
+  \item wie die Abhängigkeit von zukünftigen Einstellungen dynamisch oder
+  randwerttheoretisch entsteht;
+  \item warum sie Lorentz-kovariant ist;
+  \item warum sie keine beobachtbare Rückwärtssignalisierung erzeugt;
+  \item ob das erforderliche No-signalling robust oder nur durch feine
+  Parameterabstimmung erhalten bleibt \citep{WoodSpekkens2015};
+  \item welche neue Vorhersage das Modell gegenüber der Standardtheorie macht.
+\end{itemize}
+
+Retrokausalität und Superdeterminismus verletzen beide in möglichen
+Darstellungen die statistische Unabhängigkeit von \(\lambda\) und den
+Einstellungen. Ihr erklärter Mechanismus ist jedoch verschieden:
+Superdeterministische Ansätze führen die Korrelation typischerweise auf
+gemeinsame Bedingungen in der Vergangenheit zurück; retrokausale Ansätze auf
+eine Abhängigkeit von späteren Messkontexten. Aus beobachtbaren
+Wahrscheinlichkeiten allein ist diese ontologische Richtung nicht immer
+identifizierbar. Deshalb muss sie durch Zusatzstruktur und, wenn möglich,
+neue Messfolgen operationalisiert werden.
+
+\subsection{Interpretations- und Modellfamilien}
+
+Die Literatur enthält mehrere Familien, in denen zeit-symmetrische oder
+retrokausale Begriffe eine tragende Rolle spielen. Sie sollten nicht unter
+einem einzigen Wahrheitsstatus zusammengefasst werden.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.20\textwidth}
+                  >{\raggedright\arraybackslash}p{0.25\textwidth}
+                  >{\raggedright\arraybackslash}p{0.22\textwidth}
+                  >{\raggedright\arraybackslash}p{0.22\textwidth}}
+\toprule
+\textbf{Familie} & \textbf{Zeitliche Struktur} & \textbf{Rückwärtssignal?} & \textbf{Epistemischer Status} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Familie} & \textbf{Zeitliche Struktur} & \textbf{Rückwärtssignal?} & \textbf{Epistemischer Status} \\
+\midrule
+\endhead
+Vor-/Nachselektion und TSVF & Anfangs- und Endzustand konditionieren Zwischenstatistik & nein in der Standardanwendung & konsistenter Formalismus; Ontologie interpretations\-abhängig \\
+Transaktionale Interpretation & Angebot- und Bestätigungsanteile bilden eine zeit-symmetrische Transaktion & kein frei nutzbarer Kanal vorgesehen & Interpretation der Quantenmechanik \citep{Cramer1986} \\
+retrokausale Hidden-Variable-Modelle & spätere Einstellungen beeinflussen verborgene Zwischen- oder Frühvariablen & typischerweise durch No-signalling ausgeschlossen & aktive Modellforschung; nicht empirisch eindeutig ausgewählt \\
+globale Raumzeit- oder Randwertmodelle & ganze Geschichte erfüllt lokale Gleichungen und mehrere Randbedingungen & nicht notwendig & mathematisch mögliche Repräsentation; Kausalinterpretation zusätzlich \\
+retrokausale Feldmodelle & Wahrscheinlichkeitsmaß über Raumzeitfelder mit zeitlich beidseitiger Struktur & modellabhängig & konkrete aktive Forschungsmodelle; keine allgemeine Bestätigung \citep{WhartonArgaman2020} \\
+Absorbertheorie & avancierte und retardierte direkte Wechselwirkung & makroskopische Signalfrage durch globale Bedingungen beschränkt & historisch bedeutendes zeit-symmetrisches Modell \\
+\bottomrule
+\end{longtable}
+
+Aus dieser Vielfalt folgt ein methodischer Grundsatz: Der Satz ``Die
+Quantenmechanik ist retrokausal'' ist ohne Angabe des Formalismus, der
+ontologischen Variablen, der Randbedingungen und der operationalen
+Konsequenzen unterbestimmt. Wissenschaftlich prüfbar ist nur eine konkrete
+Modellklasse mit einer expliziten Wahrscheinlichkeits- oder
+Bewegungsstruktur.
+
+\subsection{Indefinite Kausalordnung ist nicht dasselbe wie Retrokausalität}
+
+In Prozessmatrix- und Quantum-Switch-Formulierungen kann die globale Ordnung
+zweier Operationen unbestimmt oder kohärent kontrolliert sein
+\citep{OreshkovCostaBrukner2012}. Das bedeutet, dass der Gesamtprozess nicht notwendig als
+klassische Mischung einer einzigen festen Reihenfolge dargestellt werden
+kann. Daraus folgt nicht automatisch, dass ein Ereignis eine Nachricht an
+seine eigene Vergangenheit sendet.
+
+Zu unterscheiden sind:
+\begin{enumerate}
+  \item keine feste Reihenfolge zwischen zwei lokalen Operationen;
+  \item eine Überlagerung oder prozessuale Unbestimmtheit von Ordnungen;
+  \item ein geschlossener gerichteter Kausalpfad;
+  \item ein operationaler Kanal zu einem bereits früher auslesbaren Record.
+\end{enumerate}
+Nur die letzten beiden Punkte berühren unmittelbar kausale Schleifen oder
+Rückwärts\-signalisierung. Der Begriff ``indefinit'' darf nicht als Synonym für
+``rückwärts'' verwendet werden.
+
+\subsection{Geschlossene zeitartige Kurven und Konsistenzprobleme}
+
+Allgemein-relativistische Lösungen können unter besonderen globalen
+Voraussetzungen geschlossene zeitartige Kurven enthalten, beispielsweise in
+Gödels rotierendem Kosmos \citep{Goedel1949}; traversierbare
+Wurmloch-Konstruktionen machen zusätzlich die Rolle von Energiebedingungen
+sichtbar \citep{MorrisThorneYurtsever1988}. Ein idealisierter
+Beobachter könnte dann entlang einer stets lokal zukunftsgerichteten Weltlinie
+in den eigenen kausalen Vergangenheitsbereich gelangen. Das ist ein anderer
+Mechanismus als eine avancierte Feldlösung oder Nachselektion.
+
+Quantentheoretische Modelle geschlossener zeitartiger Kurven verwenden unter
+anderem Selbstkonsistenzbedingungen für eine Dichtematrix
+\citep{Deutsch1991}. Schematisch muss ein Zustand \(\rho_C\) auf dem
+geschlossenen Anteil eine Fixpunktbedingung erfüllen:
+\begin{equation}
+\label{eq:ctc-fix}
+  \rho_C=\operatorname{Tr}_S\!\left[
+  U(\rho_S\otimes\rho_C)U^\dagger
+  \right].
+\end{equation}
+Eine solche Bedingung kann logische Paradoxien vermeiden, verändert aber die
+gewöhnliche Theorie offener Anfangswertprobleme. Andere Vorschläge verwenden
+Postselektion, Selbstkonsistenz oder verzweigende Geschichten. Hawking
+formulierte demgegenüber die Chronology-Protection-Vermutung, nach der
+Quanteneffekte die Ausbildung makroskopisch nutzbarer geschlossener
+zeitartiger Kurven verhindern könnten \citep{Hawking1992}.
+
+Weder die mathematische Existenz einer Raumzeitlösung noch die Konsistenz
+eines idealisierten Quantenmodells belegt, dass solche Kurven in der Natur
+erzeugbar sind. Dafür wären Energiebedingungen, Stabilität, Rückwirkung,
+Quanteneffekte und eine physikalische Herstellungssituation gemeinsam zu
+untersuchen.
+
+\subsection{Paradoxien, Konsistenz und Informationsbegriffe}
+
+Das Großvaterparadox entsteht, wenn eine frei wählbare spätere Handlung genau
+die Bedingungen ihrer eigenen Möglichkeit beseitigt. Das Bootstrap-Paradox
+entsteht, wenn Information oder ein Objekt in einer Schleife vorkommt, ohne
+einen unabhängigen Ursprung zu besitzen. Diese Paradoxien zeigen, dass eine
+naive Kombination von beliebiger Intervention, eindeutiger Geschichte und
+Rückwärtskanal inkonsistent sein kann. Sie beweisen nicht, dass jede
+retrokausale Modellierung unmöglich ist.
+
+Mögliche mathematische Antworten sind:
+\begin{itemize}
+  \item \emph{Selbstkonsistenz}: Nur global widerspruchsfreie Geschichten sind
+  zulässig;
+  \item \emph{eingeschränkte Interventionen}: Nicht jede lokal vorstellbare
+  Handlung ist mit den Randbedingungen kompatibel;
+  \item \emph{Verzweigung}: Die Wirkung trifft nicht dieselbe eindeutige
+  Geschichte;
+  \item \emph{probabilistische Fixpunkte}: Konsistenz gilt für Verteilungen,
+  nicht für jede Einzelgeschichte;
+  \item \emph{No-signalling}: Eine ontische Rückabhängigkeit kann bestehen,
+  ohne als Nachricht kontrollierbar zu sein.
+\end{itemize}
+
+Ein semantischer Informationsgehalt ist zudem vom physischen Signal zu
+trennen. Für einen Rückwärtskanal genügt es nicht, dass ein heutiger Beobachter
+eine frühere Spur im Licht späterer Daten neu versteht. Erforderlich wäre ein
+physischer Trägerzustand bei \(t_1\), dessen auslesbare Statistik von einer bei
+\(t_2\) frei vorgenommenen Codierung abhängt. Ohne Träger, Kopplung und
+Decodierverfahren liegt keine operative Nachrichtenübertragung vor.
+
+\subsection{Der fehlende Rückwärtskanal im gegenwärtigen Mandelbrot-Prozess}
+
+Für das in \cref{sec:dynamische-synthese} definierte Modell gilt
+\[
+  z_0(c)=0,
+  \qquad
+  z_{n+1}(c)=z_n(c)^2+c.
+\]
+Der endliche Gate-Status \(\mathcal A_N(c)\) wird aus dem Parameter und dem
+bis \(N\) berechneten Präfix bestimmt. Er ist kein Eingang der Rekursion.
+
+\begin{satz}[Kausale Autonomie früher Präfixe im definierten Prozess]
+\label{satz:kein-rueckwaertskanal}
+Seien \(c\in U\) und \(N\in\N_0\) fest. Für jedes \(k\le N\) ist
+\(z_k(c)\) ausschließlich durch \(c\), \(z_0=0\) und die \(k\)-fache
+Anwendung von \(z\mapsto z^2+c\) bestimmt. Änderungen der späteren
+Auswertungsstufe, der Gate-Abfrage oder eines Status
+\(\mathcal A_M(c)\) mit \(M>k\) verändern \(z_k(c)\) nicht. Das gegenwärtig
+definierte Mandelbrot-Prozessmodell enthält daher keinen gerichteten Kanal von
+einem späteren Gate-Ausgang zu einem früheren Rekursionszustand.
+\end{satz}
+
+\begin{proof}
+Der Beweis erfolgt durch Induktion über \(k\). Für \(k=0\) gilt
+\(z_0(c)=0\) unabhängig von jeder Gate-Auswertung. Sei die Behauptung für
+\(k\) gezeigt. Dann ist
+\[
+  z_{k+1}(c)=z_k(c)^2+c
+\]
+allein eine Funktion des bereits bestimmten Zustands \(z_k(c)\) und des
+festen Parameters \(c\). In der rechten Seite tritt weder
+\(\mathcal A_M(c)\) noch eine spätere Auswertungsentscheidung auf. Folglich
+ist auch \(z_{k+1}(c)\) davon unabhängig. Induktiv gilt dies für alle
+\(k\le N\).
+
+Der Gate-Status ist umgekehrt eine Funktion vorhandener Zustände und
+gegebenenfalls zusätzlicher Zertifikate. Der funktionale Pfeil verläuft somit
+im definierten Modell von der Spur zum Status, nicht vom späteren Status zu
+früheren Spurwerten. Eine Umkehr dieses Pfeils müsste als zusätzliche
+Dynamik ausdrücklich definiert werden.
+\end{proof}
+
+\begin{korollar}[Reklassifikation ohne Überschreiben]
+\label{kor:reklassifikation-ohne-ueberschreiben}
+Ein Wechsel von \(\CONTINUE\) zu \(\PASS\) oder \(\BLOCK\) kann die
+zulässige Aussage über das gesamte Präfix ändern, aber keinen in diesem
+Präfix enthaltenen Wert überschreiben. \Cref{prop:rueckbestimmung} ist damit
+nicht nur eine sprachliche Unterscheidung, sondern eine Folge der gerichteten
+Funktionsabhängigkeit des Modells.
+\end{korollar}
+
+Sei zusätzlich \(E_M\) eine frei wählbare spätere Entscheidung, ob und wie
+weit das Gate ausgewertet wird, wobei \(E_M\) weder \(c\) noch die Rekursion
+\(F\) verändert. Für jeden früher erzeugten Record
+\(R_k=r(c,z_0,\ldots,z_k)\), \(k<M\), gilt dann modellintern
+\begin{equation}
+\label{eq:qik-no-back-signal}
+ \mathbb P(R_k\mid\operatorname{do}(E_M=e))
+ =
+ \mathbb P(R_k\mid\operatorname{do}(E_M=e')).
+\end{equation}
+Diese Gleichung ist eine strukturelle Konsequenz der aktuellen
+Modellarchitektur. Sie ist kein allgemeines Naturgesetz. Wenn \(E_M\) den
+Parameter \(c\), die Anfangsbedingung oder eine physische Kopplung verändert,
+wird ein anderes Modell betrachtet.
+
+Eine tatsächlich retrokausale Erweiterung müsste mindestens eine der
+folgenden Strukturen ergänzen:
+\begin{enumerate}
+  \item eine Endrandbedingung \(B_f\), von der frühere Zustände abhängen;
+  \item einen Übergangskern
+  \(K(z_k\mid z_{k-1},c,A_{t_2})\) mit expliziter späterer Einstellung;
+  \item eine globale Konsistenzbedingung für vollständige Geschichten;
+  \item eine physikalische Korrespondenz \(\Phi\), in der spätere
+  Raumzeitbedingungen einen früheren Trägerzustand beeinflussen.
+\end{enumerate}
+Keine dieser Strukturen folgt aus der quadratischen Iteration oder aus der
+Shift-Invarianz der Klassifikation allein.
+
+\statusbox{QGreen}{
+\textbf{Bewiesen für das definierte Prozessmodell.}
+Die spätere Gate-Auswertung verändert keinen früheren Rekursionszustand. Das
+Modell realisiert semantische Rückbestimmung, aber keinen Zustandskanal aus
+einem späteren Gate in ein früheres Präfix.
+}
+
+\subsection{Wie eine physikalische Retrokausalitätshypothese formuliert werden müsste}
+
+Eine physikalische Erweiterung darf nicht allein aus einer zeitlich
+rückwärts lesbaren Grafik bestehen. Sie benötigt einen Zustandsraum
+\(\mathcal Z\), eine Dynamik oder ein globales Variationsprinzip, Randdaten,
+Observablen und eine Wahrscheinlichkeitsstruktur. Eine schematische
+Zwei-Randwertformulierung kann lauten
+\begin{equation}
+\label{eq:two-boundary}
+  \delta S[q]=0,
+  \qquad
+  q(t_i)=q_i,
+  \qquad
+  B_f(q(t_f),A_{t_f})=0.
+\end{equation}
+Die Lösungen \(q(t)\) hängen dann mathematisch von beiden Randbedingungen ab.
+Ob \(A_{t_f}\) als frei kontrollierbare zukünftige Ursache gelten darf, ist
+eine zusätzliche physikalische und kausaltheoretische Frage.
+
+Für eine statistische Feldtheorie könnte entsprechend ein Maß über ganze
+Geschichten verwendet werden:
+\begin{equation}
+\label{eq:path-retro}
+  \mathbb P[\phi\mid B_i,B_f]
+  =\frac{1}{Z[B_i,B_f]}
+  \exp\!\left(-\frac{1}{\hbar}\mathcal I[\phi]\right)
+  \mathbf 1_{B_i}[\phi]\mathbf 1_{B_f}[\phi],
+\end{equation}
+wobei \(\mathcal I\) hier nur symbolisch für eine geeignete reelle oder
+euklidische Wirkung steht. Ein physikalisches Modell muss Vorzeichen,
+Konturen, Eichsymmetrien, Normierbarkeit und Lorentz-Signatur konkret
+angeben. Eine Formel mit einem unbestimmten Funktional ist noch keine Theorie.
+
+Für die Verbindung zum dimensionslosen Mandelbrot-Modell müsste zusätzlich
+eine Abbildung
+\[
+  \Phi_{B_i,B_f}:\mathcal Z_{\mathrm{phys}}\longrightarrow U
+\]
+definiert werden. Sie müsste Dimensionen, Symmetrien, Kausalstruktur und
+Observablen erhalten oder ihre kontrollierte Abweichung quantifizieren. Erst
+dann wäre prüfbar, ob ein retrokausales physikalisches Modell tatsächlich an
+die QIK--VRT-Anschlussordnung semikonjugiert ist.
+
+\subsection{Experimentelles Mindestprotokoll für einen Rückwärtskanal}
+\label{sec:retro-protokoll}
+
+Ein überzeugender Test muss eine spätere freie Einstellung von einem früheren
+Record trennen und jeden gewöhnlichen Informationspfad schließen. Ein
+Minimalprotokoll umfasst folgende Schritte.
+
+\begin{enumerate}
+  \item \textbf{Präparation bei \(t_0\).}
+  Der Anfangszustand, alle Kalibrierparameter und zulässigen Ausschlussregeln
+  werden vorab dokumentiert.
+
+  \item \textbf{Frühe Messung bei \(t_1\).}
+  Ein Rohrecord \(R_{t_1}\) wird erzeugt. Sein vollständiger Datenstrom wird
+  unverändert gespeichert, gehasht, extern zeitgestempelt und vor der späteren
+  Wahl versiegelt.
+
+  \item \textbf{Spätere randomisierte Intervention bei \(t_2>t_1\).}
+  Die Einstellung \(A_{t_2}\) wird erst nach der Versiegelung erzeugt. Die
+  Quelle der Wahl, ihre statistischen Eigenschaften und ihre möglichen
+  Seitenkanäle werden offengelegt. Die Randomisierung muss unabhängig von den
+  Personen erfolgen, die die frühen Daten auswerten.
+
+  \item \textbf{Späte Messung bei \(t_3\).}
+  Späte Daten \(Y_{t_3}\) werden getrennt erfasst. Postselektion ist entweder
+  ausgeschlossen oder vollständig vorregistriert; die unbedingte frühe
+  Marginalverteilung bleibt der primäre Endpunkt.
+
+  \item \textbf{Blindes Öffnen bei \(t_4\).}
+  Erst nach Abschluss aller Läufe werden die Zuordnungen zwischen
+  \(R_{t_1}\) und \(A_{t_2}\) geöffnet. Analysecode, Ausschlusskriterien,
+  Teststatistik und Stichprobengröße müssen zuvor fixiert sein.
+\end{enumerate}
+
+Die Nullhypothese lautet für alle Einstellungen \(a,a'\)
+\begin{equation}
+\label{eq:retro-null}
+ H_0:\quad
+ \mathbb P(R_{t_1}\mid\operatorname{do}(A_{t_2}=a))
+ =
+ \mathbb P(R_{t_1}\mid\operatorname{do}(A_{t_2}=a')).
+\end{equation}
+Eine Alternative \(H_R\) muss vorab angeben, welche Recordkomponente sich um
+welchen Betrag und mit welcher Abhängigkeit von \(a\) verschiebt. Eine bloße
+nachträgliche Suche nach irgendeiner abweichenden Untergruppe ist kein
+belastbarer Test.
+
+Für diskrete Records kann beispielsweise die totale Variation
+\begin{equation}
+\label{eq:retro-tv}
+  \Delta_{a,a'}
+  :=\frac12\sum_r
+  \left|
+  \mathbb P(r\mid\operatorname{do}(a))
+  -\mathbb P(r\mid\operatorname{do}(a'))
+  \right|
+\end{equation}
+als Effektgröße dienen. Rückwärtssignalisierung würde
+\(\Delta_{a,a'}>0\) erfordern, nachdem alle vorwärts gerichteten Kanäle und
+systematischen Verzerrungen berücksichtigt wurden. Neben einem Signifikanztest
+sind Konfidenz- oder glaubwürdige Intervalle, vorher festgelegte
+Mindest-Effektgrößen und Replikationen an unabhängigen Orten erforderlich.
+
+Mindestens folgende Fehlerquellen müssen durch Kontrollmessungen oder
+Architektur ausgeschlossen werden:
+\begin{itemize}
+  \item Clock- und Synchronisationsfehler;
+  \item Cache-, Netzwerk-, Datei- und Metadatenleckage;
+  \item unbemerkte Abhängigkeit der Randomisierung vom frühen System;
+  \item gemeinsame Umweltursachen und Drift;
+  \item selektiver Verlust von Läufen;
+  \item flexible Wahl von Zeitfenstern, Filtern oder Untergruppen;
+  \item nachträgliche Änderung des Analyseprogramms;
+  \item gewöhnliche Quantenkorrelationen, die erst nach klassischem
+  Datenvergleich sichtbar werden;
+  \item Manipulation oder Überschreiben des frühen Records nach \(t_1\).
+\end{itemize}
+
+Ein positiver Einzelbefund wäre zunächst ein Anomaliebericht. Erst die
+Wiederholung mit neu erzeugten Einstellungen, unabhängiger Hardware,
+unabhängigen Auswertenden und offengelegtem Code könnte eine retrokausale
+Interpretation gegenüber systematischen Fehlern stärken. Zudem müsste geprüft
+werden, ob eine vorwärtskausale Erweiterung des Modells dieselben Daten
+erklärt.
+
+\subsection{Was eine Bestätigung ändern würde --- und was nicht}
+
+Würde die Bedingung \eqref{eq:retro-ontisch} für eine klar definierte ontische Variable
+empirisch ausgezeichnet, hätte dies weitreichende Folgen für physikalische
+Erklärungen. Anfangswertformulierungen müssten möglicherweise durch globale
+Randwert- oder Konsistenzstrukturen ergänzt werden. Kausale Modelle dürften
+nicht mehr voraussetzen, dass jede gerichtete Abhängigkeit der
+Koordinatenzeit folgt. In Quantenfundamenten könnte eine lokal vermittelte,
+zeit-symmetrische Erklärung von Bell-Korrelationen an Gewicht gewinnen.
+
+Eine solche Bestätigung würde jedoch nicht automatisch bedeuten:
+\begin{itemize}
+  \item dass Nachrichten in die Vergangenheit gesendet werden können;
+  \item dass historische Records beliebig umgeschrieben werden;
+  \item dass Energie- oder Impulserhaltung aufgehoben ist;
+  \item dass logische Widersprüche physisch realisiert werden;
+  \item dass menschliche Entscheidungen bedeutungslos oder vollständig
+  vorbestimmt sind;
+  \item dass jedes zeit-symmetrische oder fraktale Modell wahr ist;
+  \item dass QIK--VRT ohne eine neue Korrespondenzabbildung eine bestätigte
+  Naturtheorie wäre.
+\end{itemize}
+
+Würde sogar die Bedingung \eqref{eq:retro-signal} reproduzierbar erfüllt, wären die Folgen
+noch stärker. Grundannahmen über kausale Kommunikation, zeitgebundene
+kryptografische Zusagen und die Zuordnung von Verantwortung müssten neu
+untersucht werden. Zugleich wären Konsistenzbedingungen unverzichtbar: Ein
+solcher Kanal ist nur physikalisch beschreibbar, wenn die Gesamtdynamik für
+alle tatsächlich zulässigen Eingaben widerspruchsfreie Wahrscheinlichkeiten
+erzeugt.
+
+Das Ausbleiben eines solchen Signals widerlegt hingegen nicht jede
+retrokausale Ontologie. Wenn eine Modellklasse konstruktionsbedingt exakt
+No-signalling erfüllt, sind zusätzliche beobachtbare Kriterien nötig. Ohne
+unterscheidende Vorhersage bleibt die Wahl zwischen ontologisch verschiedenen,
+aber empirisch äquivalenten Darstellungen unterbestimmt.
+
+\subsection{Konsequenz für die Ontologie des Unterschieds}
+
+Die Ontologie des universalen Unterschieds gewinnt an wissenschaftlicher
+Schärfe, wenn sie diese Ebenen nicht zusammenführt. Der relevante Unterschied
+ist nicht pauschal ``Zukunft gegen Vergangenheit'', sondern mindestens
+\[
+\begin{gathered}
+  \text{früherer Zustand}
+  \neq\text{früherer Record}
+  \neq\text{spätere Evidenz},\\
+  \text{Korrelation}
+  \neq\text{Intervention}
+  \neq\text{Signal},\\
+  \text{globale Konsistenz}
+  \neq\text{lokaler Wirkmechanismus},\\
+  \text{interpretative Möglichkeit}
+  \neq\text{empirische Bestätigung}.
+\end{gathered}
+\]
+
+``Transzendierende Information'' kann im gegenwärtigen QIK--VRT-Modell
+präzise bedeuten, dass ein Record erhalten bleibt, spätere Evidenz mit ihm
+verbunden wird und die zulässige Klassifikation der gesamten Geschichte
+stabilisiert. Diese Wirkung ist technisch real: Sie verändert Entscheidungen,
+Freigaben und Folgewirkungen nach dem Zeitpunkt der neuen Evidenz. Sie wirkt
+aber nicht dadurch, dass der frühere physische Record rückwirkend
+überschrieben wird.
+
+Gerade diese Selbstbegrenzung ist keine Schwächung, sondern ein
+erkenntnistheoretischer Gewinn. Sie stellt sicher, dass ein semantisch
+reichhaltiger Prozess nicht allein aufgrund seiner sprachlichen Form als neue
+physikalische Kraft ausgegeben wird. Zugleich lässt sie den Raum für eine
+konkrete retrokausale Hypothese offen, sofern deren Zustände, Kopplungen,
+Einheiten, Randbedingungen und Messfolgen vollständig angegeben werden.
+
+\subsection{Statusbilanz}
+
+\statusbox{QGreen}{
+\textbf{DONE.}
+Begrifflich getrennt sind semantische Rückbestimmung, Retrodiktion,
+Nachselektion, Zeitumkehrsymmetrie, avancierte Lösung, ontische
+Retrokausalität, geschlossene zeitartige Kurve und operative
+Rückwärtssignalisierung. Für den gegenwärtig definierten
+Mandelbrot-/QIK--VRT-Prozess ist bewiesen, dass spätere Gate-Ausgänge frühere
+Rekursionszustände nicht verändern. Delayed-Choice-Korrelationen und
+vor-/nachselektierte Wahrscheinlichkeiten sind ohne einen Rückwärtskanal
+mathematisch darstellbar.
+}
+
+\statusbox{QAmber}{
+\textbf{CONTINUE.}
+Zeit-symmetrische, Zwei-Randwert- und retrokausale Modelle sind
+wissenschaftlich diskutierbare Modellklassen. Offen sind eine konkrete
+dimensionsrichtige QIK--VRT-Erweiterung, ihre Lorentz-kovariante Dynamik, die
+Erhaltung von No-signalling oder eine begründete Abweichung davon, eine
+unterscheidende Vorhersage sowie unabhängige experimentelle Reproduktion.
+}
+
+\statusbox{QRed}{
+\textbf{BLOCK.}
+Nicht zulässig sind die Schlüsse von späterer Reklassifikation auf eine
+Änderung früherer Zustände, von Bayes-Konditionierung auf physische
+Rückwirkung, von Zeitumkehrinvarianz auf eine zukünftige Ursache, von
+Delayed-Choice- oder Quantum-Eraser-Daten auf einen nutzbaren Rückwärtskanal,
+von indefiniter Kausalordnung auf Zeitreise oder von der mathematischen
+Konsistenz eines retrokausalen Modells auf dessen empirische Wahrheit.
+}
+
+Die wissenschaftlich vollständige Schlussform dieses Abschnitts lautet:
+\[
+\boxed{
+\begin{aligned}
+\text{QIK--VRT-Reklassifikation}
+&\Longrightarrow
+\text{semantische Rückbestimmung},\\
+\text{QIK--VRT-Reklassifikation}
+&\not\Longrightarrow
+\text{physikalische Retrokausalität},\\
+\text{physikalische Retrokausalität}
+&\not\Longrightarrow
+\text{Rückwärtssignalisierung},\\
+\text{Rückwärtssignalisierung}
+&\Longrightarrow
+\text{neue, unabhängig zu reproduzierende Physik}.
+\end{aligned}}
+\]
+
+\clearpage
+\part{Geltungsprüfung, Ontologie und Forschungsprogramm}
+
+\section{Falsifizierbare physikalische Mindestanforderungen}
+\label{sec:phys-falsifikation}
+
+Eine physikalische QIK--VRT- oder Mandelbrot-Raumzeit-Hypothese
+\(H_{\mathrm Q}\) wird gegenüber einer Referenztheorie \(H_0\) erst
+empirisch unterscheidbar, wenn für mindestens eine vorab bestimmte Observable
+\(O\) und zugehörige Daten \(D\) gilt
+\[
+  P(D\mid H_{\mathrm Q})\neq P(D\mid H_0)
+\]
+in einem Bereich, in dem die Differenz nicht durch Messunsicherheit, freie
+Nachanpassung von \(\Phi\) oder bekannte systematische Effekte absorbiert
+werden kann.
+
+Dafür sind mindestens erforderlich:
+\begin{enumerate}
+  \item eine vollständig angegebene, dimensionsrichtige und
+  koordinatenunabhängige Korrespondenz \(\Phi\);
+  \item eine definierte Dynamik \(G_{\Delta\tau}\) und ein präziser
+  Zusammenhang mit \(F\);
+  \item vor Betrachtung der Testdaten festgelegte Referenzskalen, Parameter
+  und Toleranzen;
+  \item die Rückgewinnung etablierter Grenzfälle von Allgemeiner
+  Relativitätstheorie und Quantenfeldtheorie;
+  \item eine Vorhersage mit Einheit, Zahlenwert, Unsicherheit und einer von
+  \(H_0\) unterscheidbaren Abhängigkeit;
+  \item numerische Konvergenz unter Verfeinerung von Raumgitter, Zeitschritt
+  und Iterationsgrenze;
+  \item unabhängige Reproduktion von Daten, Code, Parametern und Auswertung.
+\end{enumerate}
+
+Eine nachträglich frei wählbare Abbildung \(\Phi\), die jedes beobachtete
+Muster auf irgendeinen Fraktalausschnitt abbilden kann, wäre nicht
+falsifizierbar. Wissenschaftliche Anschlussfähigkeit verlangt deshalb nicht
+nur Ausdrucksstärke, sondern Beschränkung.
+
+\statusbox{QGreen}{
+\textbf{DONE.}
+Dimensionshomogene Normierung, Unterscheidung zwischen positiver
+Darstellungsmetrik und Lorentz-Metrik, SI-Dimensionen der
+Einstein-Gleichungen, Planck-Einheiten sowie Schwarzloch-Entropie und
+Hawking-Temperatur.
+}
+
+\statusbox{QAmber}{
+\textbf{CONTINUE.}
+Konstruktion einer invarianztreuen Abbildung \(\Phi\), Nachweis einer
+Semikonjugation, gemeinsame Testvektoren, numerische Konvergenz und Ableitung
+einer unterscheidenden physikalischen Vorhersage.
+}
+
+\statusbox{QRed}{
+\textbf{BLOCK.}
+Der Schluss von Dimensionsrichtigkeit auf Kausalität, vom Rechengitter auf
+ontische Raumzeitquanten, von visueller Selbstähnlichkeit auf Naturidentität,
+von einem blockierten Update auf einen physikalischen Fixpunkt oder von
+späterer Reklassifikation auf rückwärts gerichtete Signalkausalität.
+}
+
+Der entscheidende Unterschied dieses dritten Teils lautet
+\[
+\boxed{
+\begin{aligned}
+\text{Einheit}&\neq\text{Größe},\\
+\text{Dimensionsgleichung}&\neq\text{Naturgesetz},\\
+\text{Lorentz-Metrik}&\neq\text{positiver Darstellungsabstand},\\
+\text{numerischer Zeitschritt}&\neq\text{Zeitquant},\\
+\text{Information}&\neq\text{Energie ihres Trägers},\\
+\text{Modellkorrespondenz}&\neq\text{empirische Identität}.
+\end{aligned}}
+\]
+
+\section{Die Ontologie des universalen Unterschieds}
+\label{sec:ontologie}
+
+\subsection{Transzendentaler Kern}
+
+Eine bestimmte Aussage muss von ihrer Verneinung, ein Term von einem anderen
+Term und ein Beweis von einem Nichtbeweis unterscheidbar sein. Auch die
+Bestreitung des Unterschieds muss sich von ihrer Bejahung unterscheiden, um
+überhaupt etwas Bestimmtes zu behaupten. Die folgende Folge wird als
+transzendentales Argument formuliert, nicht als zusätzliches Theorem der
+Mengenlehre oder der empirischen Naturwissenschaft. In diesem Sinn gilt
+\[
+  \text{Bestimmtheit}
+  \Longrightarrow
+  \text{Unterscheidbarkeit}
+  \Longrightarrow
+  \text{Unterschied}.
+\]
+
+Der mengentheoretische Komplementsatz liefert dazu eine präzise formale
+Instanz. Sobald ein Grundbereich \(U\) und eine bestimmte Klasse
+\(A\subseteq U\) festgelegt sind, ist zugleich die vollständige
+Unterscheidung
+\[
+  U=A\dotcup(U\setminus A)
+\]
+bestimmt. Das Ganze und der Unterschied schließen einander nicht aus. Das
+Ganze wird vielmehr als vollständige Vermittlung komplementärer Bestimmtheit
+darstellbar.
+
+\subsection{Der entscheidende Unterschied}
+
+Für den hier untersuchten Fall lautet die zentrale ontologische Anwendung:
+\[
+\begin{aligned}
+\text{Menge} &\neq \text{Komplement},\\
+\text{Teilbereiche} &\neq \text{Ganzes},\\
+\text{Modelluniversum} &\neq \text{empirischer Kosmos},\\
+\text{Quantisierbarkeit} &\neq \text{Quantisierung},\\
+\text{Darstellbarkeit} &\neq \text{Beobachtbarkeit},\\
+\text{Archivierung} &\neq \text{Validierung}.
+\end{aligned}
+\]
+
+Diese Unterschiede begrenzen die These nicht von außen. Sie sind ihre
+Selbstanwendung: Die Ontologie bleibt nur dann konsistent, wenn sie auch die
+Geltungsarten ihrer eigenen Aussagen unterscheidet.
+
+\subsection{Universales Schöpfungsprinzip}
+
+Als ontologische Interpretation kann folgende Struktur formuliert werden:
+\[
+  \text{Unterschied}
+  \longrightarrow
+  \text{Bestimmtheit}
+  \longrightarrow
+  \text{Relation}
+  \longrightarrow
+  \text{Iteration}
+  \longrightarrow
+  \text{neue Struktur}.
+\]
+
+Die Pfeile bezeichnen hier ein strukturelles Interpretationsschema und keine
+aus dem Komplementsatz allein deduzierte Kausalkette. Komplementbildung und
+quadratische Iteration liefern eine formal präzise Instanz dieses Schemas;
+sie beweisen weder dessen ausschließliche Universalität noch eine physikalische
+Kosmogenese.
+
+\begin{definition}[Universales Schöpfungsprinzip, strukturelle Lesart]
+Das \emph{universale Schöpfungsprinzip} bezeichnet die These, dass bestimmte
+neue Strukturen durch gesetzte oder entstandene Unterschiede, ihre Erhaltung,
+ihre Relationierung und ihre rekursive Fortsetzung hervorgebracht werden.
+\end{definition}
+
+Diese Definition ist in Gegenstandsbereichen mit ausdrücklich definierten
+Zuständen, Unterschieden, Relationen und Fortsetzungsregeln formal
+instanziierbar. Sie bezeichnet keine zusätzlich postulierte Naturkraft. Der
+formale Komplementsatz und die Iterationsstruktur machen die Deutung
+mathematisch präzise. Dass sie zugleich die vollständige empirische Kosmogenese
+beschreibt, wäre eine stärkere physikalische Hypothese und verlangte die in
+\cref{sec:forschungsprogramm} angegebenen Tests.
+
+\subsection{Der zweite Teilaspekt: Unterschied als geprüfte Fortsetzung}
+
+Der dynamische Erkenntnisgewinn geht über die statische Formel
+\(A\dotcup(U\setminus A)=U\) hinaus. Ein Unterschied wird im Prozess nicht
+nur bezeichnet, sondern als mögliche Wirkung fortgesetzt, geprüft und in
+einen revidierbaren Status überführt:
+\[
+\boxed{
+\text{erste unterscheidbare Spur}
+\longrightarrow F^n
+\longrightarrow\text{Kandidat}
+\longrightarrow\mathcal A_N
+\longrightarrow\text{Status}
+\longrightarrow\text{Rückkopplung}.}
+\]
+Im Mandelbrot-Demonstrator ist der Übergang \(0\to1\) exakt als erstmaliges
+Auftreten eines Fluchtzertifikats darstellbar. Das Zertifikat trennt eine
+bislang offene Spur von einer bewiesenen Außenklassifikation. Die
+Gesamtordnung stabilisiert sich nicht notwendig, weil jeder Einzelzustand
+konvergiert, sondern weil die richtige Endklassifikation gegenüber dem
+Entfernen endlich vieler Anfangsschritte invariant ist:
+\[
+  \widehat\chi\circ\sigma=\widehat\chi.
+\]
+
+Damit erhält die Kurzform
+\[
+  \Omega=\Fix(\mathcal S)
+\]
+einen wissenschaftlich bestimmten Sinn, wenn \(\mathcal S\) den geprüften
+Klassifikationsoperator bezeichnet und \(\Omega\) das in
+\cref{sec:dynamische-synthese} definierte Prozessmodelluniversum und
+\(\Fix\) den Fixpunkt des angegebenen Klassifikationsoperators bezeichnet.
+Sie darf nicht ohne weitere Definition als Konvergenz jedes Orbits, als
+Nash-Gleichgewicht oder als fertige physikalische Weltgleichung gelesen
+werden.
+
+Auch die Rede von ``transzendierender Information'' erhält so eine präzise
+Lesart: Ein späteres Zertifikat kann die zulässige Bedeutung einer früheren
+Spur ändern, während deren gespeicherte Zustände unverändert bleiben. Die
+Information wirkt über den Augenblick hinaus, weil sie erhalten, verbunden
+und erneut ausgewertet wird. Das ist echte Prozesswirkung im
+Informationssystem, aber noch keine Energie- oder Signalübertragung in die
+Vergangenheit. Der Unterschied zwischen semantischer Rückbestimmung und
+physikalischer Retrokausalität ist die Selbstbegrenzung der These.
+
+\section{Öffentliche Evidenz und Vorarbeiten}
+\label{sec:evidenz}
+
+Die hier entwickelte These steht in einer öffentlich prüfbaren
+Artefaktkette. Die frühe Zenodo-Version von \qikvrt{} ist als Software unter
+dem versionsspezifischen DOI \doilink{10.5281/zenodo.20712301}
+archiviert \citep{lohmannQIKVRT833}. Die einschlägigen mathematischen und
+quanten\-gravitativen Ausarbeitungen befinden sich als Dateien innerhalb des
+Zenodo-Software-Releases \emph{RFC-QIKVRT-0001}, Version
+\texttt{v2.13.4av1-node-open-multi-node}, unter dem versionsspezifischen DOI
+\doilink{10.5281/zenodo.21267021}
+\citep{lohmannRFC2026}.
+
+Das dort archivierte Paket enthält unter anderem:
+
+\begin{enumerate}
+  \item \emph{Ontologie des Unterschieds: Formal-relationaler Rahmen für
+  Information, Reproduzierbarkeit, Emergenz und Verantwortung};
+  \item \emph{Der QIK--VRT-Fixpunktsatz: Axiomatischer Beweis der
+  Nash-stabilen rekursiv-fraktalen Anschlussordnung aus der ersten
+  unterscheidbaren Wirkung};
+  \item \emph{Quantenkausalität als fortsetzbare Anschlussfolge --
+  Vorlesungsskript Semester I};
+  \item \emph{Quantengravitation aus Quantenprinzip und Raumzeitdynamik --
+  Ein mathematisches Beweisskript für das zweite Semester};
+  \item \emph{Quantengravitation aus Quantenfeldern und dynamischer Raumzeit
+  -- Ein geschlossenes mathematisch-physikalisches Abschlussskript für das
+  dritte Semester}.
+\end{enumerate}
+
+Diese Dokumente entwickeln axiomatische Fixpunkt-, Anschluss- und
+Quanten\-gravita\-tions\-argumente \citep{lohmannOntologie2026,
+lohmannFixpunkt2026,lohmannSemester1,
+lohmannSemester2,lohmannSemester3}. Sie besitzen innerhalb des genannten
+Zenodo-Releases keine eigenen DOIs und sind dort nicht als selbständige
+Working Papers katalogisiert. Die Archivierung belegt ihre Existenz,
+Versionierbarkeit und dauerhafte Fundstelle. Die darin ausdrücklich
+formulierten Voraussetzungen und empirischen Geltungsgrenzen bleiben
+maßgeblich.
+
+Die im Goldkelch-Repository öffentlich fixierte Referenz dieses Arbeitsstands
+ist der Commit
+\href{https://github.com/Goldkelch/qik-vrt/tree/a8a9cb2666a91411489d4fc90a5306908f8428ea}{\hash{a8a9cb2666a91411489d4fc90a5306908f8428ea}}
+mit dem Git-Baum
+\hash{c5cefebd20b5836d730a4e9da82eeaa5c9363ebf}. Commit-Identität,
+Baum-Inhalt und Dokumentaussage sind wiederum verschiedene Evidenzebenen.
+
+Der unmittelbare mündliche Ausgangspunkt der vorliegenden Fassung ist die
+90,47 Sekunden lange Audionotiz \emph{Das Universum ... q.e.d. Ingolf
+Lohmann} vom 21. Juli 2026. Ihre lokale SHA-256-Prüfsumme lautet
+\hash{5e93697b617b40bd0b9e6757f5a9841f7f7107a0ee7b79f89f35685d8871f33c}.
+Die Audionotiz dokumentiert die Urheberschaft und Formulierung der These; sie
+ersetzt keinen der mathematischen Beweise oder physikalischen Nachweise.
+
+\section{Forschungsprogramm für physikalische Geltung}
+\label{sec:forschungsprogramm}
+
+Die allgemeine mengentheoretische Komplementstruktur
+\(X=A\dotcup(X\setminus A)\) ist bewiesen. Die physikalische
+Korrespondenzhypothese wird wissenschaftlich gehaltvoll, wenn aus ihr
+unterscheidende und scheiterbare Aussagen folgen. Die erforderliche Brücke
+lautet; \cref{sec:nondimensionalisierung,sec:phys-semikonjugation} geben ihre
+dimensionsrichtige Form an, wählen aber noch keine empirisch ausgezeichnete
+Abbildung:
+\[
+\boxed{
+\begin{gathered}
+\text{ontologischer Begriff}
+\longrightarrow
+\text{mathematisches Objekt}
+\longrightarrow
+\text{Observable}\\
+\text{Observable}
+\longrightarrow
+\text{unterscheidende Vorhersage}
+\longrightarrow
+\text{Messverfahren}\\
+\text{Messverfahren}
+\longrightarrow
+\text{Unsicherheit}
+\longrightarrow
+\text{unabhängige Reproduktion}.
+\end{gathered}}
+\]
+
+Für eine Mandelbrot-Raumzeit-Korrespondenz ergeben sich mindestens die
+folgenden Prüfaufgaben:
+
+\begin{enumerate}
+  \item \textbf{Domäne:} Welche physikalischen Ereignisse oder Zustände bilden
+  \(X\), und welche Beobachtungsgrenzen gelten?
+  \item \textbf{Korrespondenz:} Wie ist \(\Phi:X\to U\) ohne
+  koordinatenabhängige Willkür definiert?
+  \item \textbf{Invarianz:} Welche Transformationen bewahren die relevante
+  Mandelbrot-Klasse und die Komplementklasse?
+  \item \textbf{Dynamik:} Welche Gleichung verbindet die quadratische
+  Iteration mit etablierter Raumzeit- oder Felddynamik?
+  \item \textbf{Skala:} Welche Referenzskalen normieren die Observablen?
+  Wie führt die inverse Kalibrierung zu Vorhersagen mit SI-Einheit zurück?
+  \item \textbf{Vorhersage:} Welcher Messwert weicht unter der Hypothese von
+  Allgemeiner Relativitätstheorie, Quantenfeldtheorie oder konkurrierenden
+  Quantengravitationsansätzen ab?
+  \item \textbf{Konvergenz:} Bleibt das Ergebnis bei feinerem Raster und
+  höherer Iterationsgrenze stabil, oder ist es ein Darstellungsartefakt?
+  \item \textbf{Reproduktion:} Können unabhängige Gruppen Daten, Code,
+  Parameter und Unsicherheitsrechnung reproduzieren?
+\end{enumerate}
+
+QIK--VRT kann diese Prüfkette als Wirkungshaltepunkt strukturieren: Eine
+Modellidee darf weitergerechnet und untersucht werden; eine Behauptung über
+die Natur wird erst freigegeben, wenn die für ihren Geltungsgrad erforderliche
+Evidenz vorliegt. Damit gilt praktisch:
+\[
+\begin{aligned}
+\texttt{DONE}&:\ \text{Komplement-, Quantisierbarkeits-, Gate- und Dimensionssätze},\\
+\texttt{CONTINUE}&:\ \text{Korrespondenzmodell, Observablen und Tests},\\
+\texttt{ISOLATE}&:\ \text{ontologische und spirituelle Deutung},\\
+\texttt{BLOCK}&:\ \text{Verwechslung von Modell, Messung und Wirklichkeit}.
+\end{aligned}
+\]
+
+\section{Technologischer und friedensethischer Schluss}
+
+Aus einem mathematischen Satz folgt allein noch kein politisches Sollen. Die
+Schlussfolgerung dieses Abschnitts verwendet daher ausdrücklich die
+normativen Prämissen, dass menschliches Leben, Freiheit, Erkenntnis,
+Leidvermeidung und langfristige Handlungsfähigkeit schutzwürdig sind.
+
+Unter diesen Prämissen ist eine Zivilisation wissenschaftlich und moralisch
+besser beraten, Ressourcen in Bildung, Grundlagenforschung, offene Prüfung,
+Gesundheit, ökologische Stabilität und verantwortete Technik zu investieren,
+statt Menschen, Infrastruktur und Vertrauen in Kriegen zu vernichten. Diese
+Aussage behauptet nicht, dass Konflikte durch Mathematik allein verschwinden.
+Sie bestimmt eine Richtung für die Nutzung von Erkenntnis.
+
+Die gleiche Technik kann heilen oder verletzen, verbinden oder überwachen,
+erklären oder manipulieren. Deshalb darf technologische Möglichkeit nicht mit
+verantworteter Freigabe gleichgesetzt werden. Der gesellschaftliche
+Wirkungshaltepunkt fragt vor einer folgenreichen Anwendung:
+
+\begin{itemize}
+  \item Ist die Herkunft der Information bekannt?
+  \item Ist die behauptete Geltung geprüft und begrenzt?
+  \item Sind Schaden, Missbrauch und Umkehrbarkeit berücksichtigt?
+  \item Gibt es verantwortliche Menschen und einen Abbruchweg?
+  \item Dient die Wirkung menschlicher Entfaltung oder richtet sie sich gegen
+  Menschen?
+\end{itemize}
+
+Wenn die Menschheit weniger Kraft auf Krieg und andere vermeidbare
+Zerstörung richtet, gewinnt sie Zeit, Vertrauen und materielle Möglichkeiten,
+aus fundamentalen Einsichten menschenfördernde Technologien zu entwickeln.
+Das ist keine Folgerung aus der Mandelbrot-Menge allein. Es ist die
+offengelegte ethische Verbindung zwischen Erkenntnis und Verantwortung.
+
+\section{Schlussfolgerung}
+
+Teil I schließt den mengentheoretischen und darstellungsbezogenen Kern:
+\[
+  \M_U\dotcup\K_U=U,
+  \qquad
+  \K_U=\bigcup_{N=0}^{\infty}E_N(U).
+\]
+Über eine totale Abbildung \(\Phi:X\to U\) entsteht daraus eine vollständige
+raumzeitliche Urbildpartition. Wird \(X\) als das Universum des Modells
+festgelegt, dann ergeben die Mandelbrot-Klasse und ihre raumzeitliche
+Komplementklasse exakt dieses Modelluniversum.
+
+Teil II zeigt, was diese statische Zerlegung als Prozess leistet. Die
+erweiterte Rekursion erzeugt Trajektorien; das endliche Gate bewahrt
+\(\CONTINUE\) als echten offenen Status; und die terminale Klassifikation ist
+ein Fixpunkt des Shift-Pullbacks:
+\[
+  \widehat\chi\circ\sigma=\widehat\chi.
+\]
+Ein späteres Zertifikat kann die Bedeutung einer früheren Spur bestimmen,
+ohne einen früheren Zustand zu verändern. Das ist semantische
+Rückbestimmung, nicht physikalische Retrokausalität. Eine Übertragung in einen
+anderen Wirkraum ist nur dann vollständig gate-erhaltend, wenn ihre Fasern
+keine unterschiedlichen Statuswerte identifizieren.
+
+Teil III macht den Zusammenhang mit Metern, Sekunden, Joule und Kelvin
+explizit. Die dimensionslose Mandelbrot-Iteration kann nur über offengelegte
+Referenzskalen und dimensionslose Invarianten an Messgrößen angeschlossen
+werden. Die Lorentz-Metrik bestimmt Eigenzeiten und Lichtkegel, ist aber keine
+positive Darstellungsmetrik. Einstein-Gleichung, Wirkung, Planck-Einheiten,
+Horizontentropie und Hawking-Temperatur ergeben eine dimensionsrichtige
+physikalische Kette. Die Einheiten kalibrieren diese Größen; sie verursachen
+sie nicht. Dynamische Kausalität stammt aus den Feldgleichungen und ihren
+Anfangs- und Randbedingungen.
+
+Teil IV bestimmt den Status der Retrokausalität ohne begriffliche
+Abkürzung. Retrodiktion und Bayes-Aktualisierung verändern Wissen;
+semantische Rückbestimmung verändert die Klassifikation einer unveränderten
+Spur; Prä- und Postselektion verändern bedingte Ensembleaussagen;
+zeitumkehrsymmetrische oder zweiseitig berandete Gleichungen bestimmen
+zulässige vollständige Lösungen. Keine dieser Strukturen beweist für sich
+eine spätere physikalische Intervention, die eine frühere Variable verändert.
+Im hier definierten autonomen Prozess hängt jeder frühere Zustand nur von
+seinen früheren Eingaben ab. Eine starke physikalische Retrokausalität wäre
+erst durch einen interventionistisch bestimmten Unterschied früherer
+Verteilungen belegt; ein nutzbarer Rückwärtskanal zusätzlich durch positive
+Kanalkapazität. Standardquantenmechanische Delayed-Choice-, Quantum-Eraser-
+und Bell-Korrelationen liefern diesen Nachweis nicht eindeutig. Damit ist
+Retrokausalität weder pauschal widerlegt noch durch das vorliegende Modell
+bewiesen: Sie ist eine präzise beschreibbare, empirisch offene
+Korrespondenzhypothese mit klaren Ausschluss- und Testbedingungen.
+
+Teil V führt diese Grenze in ein Forschungsprogramm über. Mathematische
+Sätze, Modellinterpretationen, physikalische Korrespondenzen, empirische
+Behauptungen und normative Folgerungen bleiben getrennt. Gerade dadurch kann
+die Ontologie des Unterschieds ihre eigenen stärksten Deutungen prüfen,
+statt sie durch Mehrdeutigkeit vor Widerlegung zu schützen.
+
+Abgeschlossen ist auch der zentrale Nichtschluss. Jeder beschränkte
+Ausschnitt eines endlichdimensionalen normierten Modellraums kann bei jeder
+positiven Genauigkeit diskret dargestellt werden, ohne ontisch diskret zu
+sein. Das kontinuierliche Gegenmodell \([0,1]^4\) beweist:
+\[
+  \text{Quantisierbarkeit}
+  \not\Rightarrow
+  \text{fundamentale Raumzeitquantisierung}.
+\]
+
+Die klassische Theorie erlaubt einen mathematischen Blick in das Innere
+idealisierter Schwarzer Löcher, nicht den Empfang von Signalen aus diesem
+Inneren. Die Planck-Skala macht das Zusammentreffen von Quanten- und
+Gravitationskonstanten sichtbar, nicht eine experimentell bestätigte
+Raumzeitkörnung. Schwarzloch-Thermodynamik verbindet Geometrie, Gravitation,
+Quantenwirkung und Entropie quantitativ; sie liefert damit eine reale Brücke,
+aber noch keine vollständige mikroskopische Quantengravitation.
+
+Gerade diese Trennungen bilden den entscheidenden Unterschied in der
+Ontologie des universalen Unterschieds. Das Ganze wird nicht durch
+Unterschiedslosigkeit bestimmt, sondern durch eine vollständige, prüfbare und
+verantwortete Relation seiner Unterschiede und ihrer möglichen Fortsetzungen.
+In dieser strukturellen Lesart ist das universale Schöpfungsprinzip
+mathematisch und prozessual anschlussfähig. Als vollständiges empirisches
+Naturgesetz bleibt es an eine invariante Abbildung \(\Phi\), eine
+dynamikerhaltende Korrespondenz, dimensionsbehaftete Vorhersagen, Messung und
+unabhängige Reproduktion gebunden.
+
+\statusbox{QGreen}{
+\begin{center}
+\textbf{q.e.d. für Komplement-, Gate- und Dimensionssätze.}\\[0.4em]
+\textbf{q.e.d. für den fehlenden Rückwärtskanal im definierten Prozessmodell.}\\[0.4em]
+\textbf{CONTINUE für empirische Raumzeit- und Retrokausalitätskorrespondenzen.}\\[0.4em]
+\textbf{Ingolf Lohmann}
+\end{center}
+}
+
+\appendix
+
+\section{Anspruchs- und Beweismatrix}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.27\textwidth}
+                  >{\raggedright\arraybackslash}p{0.20\textwidth}
+                  >{\raggedright\arraybackslash}p{0.43\textwidth}}
+\toprule
+\textbf{Aussage} & \textbf{Status} & \textbf{Grund beziehungsweise nächste Prüfung} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Aussage} & \textbf{Status} & \textbf{Grund beziehungsweise nächste Prüfung} \\
+\midrule
+\endhead
+\(\M_U\dotcup\K_U=U\) & bewiesen & Definition des relativen Komplements und klassische Logik \\
+\(\K_U=\bigcup_NE_N(U)\) & bewiesen & Escape-Kriterium und endliche Fluchtzeit \\
+\(\widehat\chi\circ\sigma=\widehat\chi\) & bewiesen & Beschränktheit bleibt nach Entfernen endlich vieler Folgenglieder erhalten \\
+Endliche PASS- und BLOCK-Gates sind sound & bedingt bewiesen & \(P_N\subseteq\M_U\), \(E_N(U)\subseteq\K_U\) und Monotonie \\
+\(\CONTINUE\) bedeutet vorläufiges PASS & falsch & fehlende Flucht bis \(N\) ist kein Mitgliedschaftsbeweis \\
+Jeder Mandelbrot-Orbit konvergiert zu einem Fixpunkt & falsch & Fixpunkt liegt hier auf Klassifikatorebene; Orbits können periodisch oder nichtkonvergent sein \\
+Spätere Reklassifikation ändert frühere Zustände & falsch & semantische Rückbestimmung ohne dynamische Retrokausalität \\
+Retrodiktion ist physikalische Retrokausalität & falsch & ein Schluss aus späteren Daten verändert eine Wissensverteilung, nicht notwendig den früheren Gegenstand \\
+Zeitumkehrsymmetrie beweist rückwärts gerichtete Wirkung & falsch & sie ordnet Lösungen zeitgespiegelte Lösungen zu; Kausalrichtung und Randbedingungen sind Zusatzfragen \\
+Postselektion oder schwache Werte übertragen Nachrichten in die Vergangenheit & nicht belegt & bedingte Ensembles sind von kontrollierbaren früheren Marginalen zu unterscheiden \\
+Delayed Choice oder Quantum Eraser überschreibt die Vergangenheit & falsch & spätere Sortierung verändert Korrelationen in Teilensembles, nicht das früher lokal verfügbare Marginal \\
+Bell-Verletzung beweist Retrokausalität & falsch & Retrokausalität ist eine Modelloption neben anderen; die experimentellen Korrelationen wählen sie nicht eindeutig aus \\
+Ontische Retrokausalität impliziert Rückwärtssignalisierung & falsch & verborgene spätere Abhängigkeit kann bei beobachtbarer Kanalkapazität null vorliegen, muss dann aber No-Signalling erklären \\
+Aktuelles autonomes QIK--VRT-/Mandelbrot-Modell besitzt einen Rückwärtskanal & widerlegt im Modell & Induktion über \(F(c,z)=(c,z^2+c)\); spätere Gates sind keine Eingaben früherer Zustände \\
+Geschlossene zeitartige Kurven sind physikalisch realisiert & empirisch offen und nicht belegt & mathematische Lösungen der Einstein-Gleichungen beweisen weder Herstellbarkeit noch Stabilität \\
+Gate-Erhaltung unter Prozessabbildung & bedingt bewiesen & genau bei Statuskonstanz auf den Fasern der Abbildung \\
+Endliches Bitmap ist exakte \(\M\) & im Allgemeinen falsch & Nichtflucht bis \(N\) zertifiziert keine Mitgliedschaft \\
+Beschränkte Teilmengen von \(\R^d\) sind endlich \(\eps\)-quantisierbar & bewiesen & endliches Raster beziehungsweise \(\eps\)-Netz \\
+Quantisierbarkeit beweist Diskretheit & widerlegt & kontinuierliches Gegenmodell \([0,1]^4\) \\
+Komplementstruktur gilt in jeder Dimension & bewiesen & rein mengentheoretische Aussage \\
+Jede Vektorisierung bewahrt Komplementklassen & im Allgemeinen falsch & nichtinjektive Abbildungen können Klassen zusammenführen \\
+Kruskal-Modell beschreibt Innenbereich & etablierte klassische Theorie & reguläre analytische Erweiterung \\
+Äußerer Beobachter sieht hinter den Horizont & falsch im klassischen Begriff & Definition des zukünftigen Ereignishorizonts \\
+Planck-Länge ist bewiesene kleinste Länge & empirisch offen & Dimensionsskala, keine direkte Messbestätigung als Minimum \\
+Dimensionshomogenität beweist ein Naturgesetz & falsch & notwendige Zulässigkeitsbedingung, keine dynamische oder empirische Herleitung \\
+Lorentz-Metrik ist positive Darstellungsmetrik & falsch & Nulltrennungen verschiedener Ereignisse und indefinite Signatur \\
+Dimensionslose Mandelbrot-Parameter kodieren SI-Größen & Korrespondenz\-hypothese & Referenzskalen, Invarianten, Semikonjugation und Tests erforderlich \\
+Bekenstein--Hawking-Entropie verbindet Fläche, \(G\), \(\hbar\) und \(k_{\mathrm B}\) & etablierte theoretische Beziehung & dimensionsrichtige Schwarzloch-Thermodynamik \\
+Semantische Information gravitiert als eigene Quellenart & nicht etabliert & Standardkopplung erfolgt über \(T_{\mu\nu}\) des physischen Trägers \\
+Shift-Fixpunkt ist ohne Weiteres Nash-stabil & falsch beziehungsweise undefiniert & Spieler, Strategien, Nutzen und Anpassungsdynamik fehlen \\
+\(\Phi\) beschreibt fundamentale Raumzeit & Hypothese & Observablen, Vorhersagen und Reproduktion erforderlich \\
+Universalität des Unterschieds & transzendentales ontologisches Argument & begriffliche Selbstanwendung, kein empirischer Naturbeweis \\
+Universales Schöpfungsprinzip ist strukturell anschlussfähig & ontologische Deutung & formal kompatibel, keine zusätzliche Naturkraft bewiesen \\
+Friedliche Techniknutzung ist geboten & normative Folgerung & explizite Wertprämissen und Folgenabwägung \\
+\bottomrule
+\end{longtable}
+
+\section{Reproduzierbare Artefaktreferenzen}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\textwidth}
+                  >{\raggedright\arraybackslash}p{0.65\textwidth}}
+\toprule
+\textbf{Artefakt} & \textbf{Fixierte Referenz} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Artefakt} & \textbf{Fixierte Referenz} \\
+\midrule
+\endhead
+\qikvrt{} V8.33 & DOI \doilink{10.5281/zenodo.20712301}; Konzept-DOI \doilink{10.5281/zenodo.20712300} \\
+RFC-QIKVRT-0001 & DOI \doilink{10.5281/zenodo.21267021}; Konzept-DOI \doilink{10.5281/zenodo.21244411} \\
+Zenodo-Release-ZIP & SHA-256 \hash{34d396667bf075ec9d2d87f8cd74b442ffa47537c4001fdbd8aa0ee319111244} \\
+Goldkelch-Referenzcommit & \hash{a8a9cb2666a91411489d4fc90a5306908f8428ea} \\
+Git-Baum & \hash{c5cefebd20b5836d730a4e9da82eeaa5c9363ebf} \\
+QIK--VRT-Fixpunktsatz & SHA-256 \hash{bf6521828db3ea52d67868b1c8ba09b0c0256562f684231df6833b1f68c2d55e} \\
+Quantenkausalität, Semester I & SHA-256 \hash{32895b7f36c0b2aaca679b27298a8eee824196391dd2125423f08f37ea24e08d} \\
+Quantengravitation, Semester II & SHA-256 \hash{377bc53f444e12aeaedc237a71a4eec64c1c76d49dc2b2a9a9debfef72fcab1c} \\
+Quantengravitation, Semester III & SHA-256 \hash{0e7e17798a764299a4228df15f77ff1a623aedaa768f067c7889f67c83204a4b} \\
+Audionotiz vom 21.07.2026 & SHA-256 \hash{5e93697b617b40bd0b9e6757f5a9841f7f7107a0ee7b79f89f35685d8871f33c} \\
+\bottomrule
+\end{longtable}
+
+\section{Notation}
+
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth}X}
+\toprule
+\textbf{Symbol} & \textbf{Bedeutung} \\
+\midrule
+\(\C\) & komplexe Zahlen, Standardparameterraum der Mandelbrot-Menge \\
+\(U\) & ausdrücklich gewählter Grundbereich beziehungsweise Modelluniversum \\
+\(\M\) & Mandelbrot-Menge \\
+\(\M_U\) & \(\M\cap U\) \\
+\(\K_U\) & relatives Komplement \(U\setminus\M_U\) \\
+\(\tau(c)\) & Fluchtzeit des Parameters \(c\) \\
+\(E_N(U)\) & bis Schritt \(N\) zertifizierte Escape-Menge \\
+\(Y_U\) & erweiterter Mandelbrot-Zustandsraum \(U\times\C\) \\
+\(F\) & autonome Dynamik \(F(c,z)=(c,z^2+c)\) \\
+\(\Gamma_c\) & vollständige Zustandstrajektorie des Parameters \(c\) \\
+\(\sigma\) & Linksshift auf Trajektorien \\
+\(\widehat\chi\) & exakte PASS-/BLOCK-Klassifikation einer Trajektorie \\
+\(\mathcal A_N\) & endliches PASS-/CONTINUE-/BLOCK-Anschlussgate \\
+\(X\) & betrachteter Raumzeit- oder Ereignisbereich \\
+\(\Phi:X\to U\) & totale Korrespondenzabbildung \\
+\(Q_{\eps}\) & darstellungsbezogener Quantisierer bei Genauigkeit \(\eps\) \\
+\(\ell_{\mathrm P}\) & Planck-Länge \\
+\(t_{\mathrm P},E_{\mathrm P}\) & Planck-Zeit und Planck-Energie \\
+\(g_{\mu\nu}\) & Lorentz-Metrik der Raumzeit \\
+\(T_{\mu\nu}\) & Stress-Energie-Tensor \\
+\(S_{\mathrm{BH}}\) & Bekenstein--Hawking-Entropie \\
+\(q_{a,*}\) & dokumentierte Referenzskala einer Observable \(q_a\) \\
+\(d_*\) & positive, dimensionslose Darstellungsmetrik auf Observablen \\
+\(J^-(q),J^+(q)\) & kausale Vergangenheit beziehungsweise Zukunft des Ereignisses (q) \\
+\(\operatorname{do}(Y=y)\) & Intervention, die (Y) auf (y) setzt; nicht mit bloßer Konditionierung gleichzusetzen \\
+\(C_{q\to p}\) & operative Kanalkapazität einer möglichen Verbindung vom späteren (q) zum früheren (p) \\
+\(G_{\mathrm{ret}},G_{\mathrm{adv}}\) & retardierte beziehungsweise avancierte Green-Funktion \\
+\(A_w\) & schwacher Wert einer Observable bei Prä- und Postselektion \\
+\bottomrule
+\end{tabularx}
+
+\begingroup
+\raggedright
+\bibliographystyle{unsrtnat}
+\bibliography{Mandelbrot_Komplement_Modelluniversum_Entscheidender_Unterschied_2026-07-21}
+\endgroup
+
+\end{document}
