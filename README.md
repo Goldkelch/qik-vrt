@@ -1,5 +1,14 @@
 # QIK-VRT
 
+[![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
+[![Release](https://img.shields.io/badge/release-v2026.07.20--wirkungshaltepunkt--evolution-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.20-wirkungshaltepunkt-evolution)
+[![License: source--available](https://img.shields.io/badge/code-PolyForm%20Noncommercial-orange)](LICENSE)
+
+![QIK-VRT — five-state auditable effect release](docs/assets/qikvrt-social-preview.png)
+
+**`TRANSPORT_ACK != EFFECT_ACK` — technical success is not yet accountable
+effect release.**
+
 QIK-VRT is a research implementation of an **effect haltpoint**: successful
 transport, computation, or storage does not by itself authorize an ordinary
 downstream effect. A bounded decision gate records provenance, context, risk,
@@ -19,8 +28,35 @@ The core invariant is:
 
 ```text
 TRANSPORT_ACK != EFFECT_ACK
-ordinary_release(result) == (result.effect_state == EFFECT_ACK_DONE)
+ordinary_release(result) == (result.state == EFFECT_ACK_DONE)
 ```
+
+## One-minute evaluator path
+
+```bash
+python3 examples/effect_haltpoint_demo.py
+make test
+```
+
+The demonstration uses no network, credential, or external service. It shows
+open checks, controlled isolation, responsible blocking, and a fully bound
+`DONE`; only the final result has `ordinary_release=true`.
+
+- [Competition and evaluator entry point](docs/competition/README.md)
+- [Evidence matrix](docs/competition/EVIDENCE.md)
+- [Current authority map](docs/CURRENT_AUTHORITY.md)
+- [Project site](https://goldkelch.github.io/qik-vrt/)
+
+### Fixed release evidence
+
+| Item | Verified value |
+|---|---|
+| Release | `v2026.07.20-wirkungshaltepunkt-evolution` |
+| Commit | `a8a9cb2666a91411489d4fc90a5306908f8428ea` |
+| Tree | `c5cefebd20b5836d730a4e9da82eeaa5c9363ebf` |
+| Local reference tests | 102/102 in nine modules |
+| Hosted CI | [successful run 29764193906](https://github.com/Goldkelch/qik-vrt/actions/runs/29764193906) |
+| GitHub Pages | [successful build and deploy 29764192834](https://github.com/Goldkelch/qik-vrt/actions/runs/29764192834) |
 
 ## Scope of the claim
 
@@ -76,6 +112,12 @@ Run the complete local gate:
 
 ```bash
 make test
+```
+
+Run the short state-transition demonstration separately:
+
+```bash
+python3 examples/effect_haltpoint_demo.py
 ```
 
 The gate compiles the active Python entry points and runs integrity, launcher,
@@ -191,8 +233,10 @@ key pair all pass validation. An invalid configuration returns HTTP 503 and
   effect, and must match GitHub's reported remote SHA-256 and size afterward.
 - A local hash chain detects later changes only when at least one trusted hash
   or signature is retained outside the writable chain.
-- Remote GitHub workflow execution and external platform persistence are not
-  proven by a local test run.
+- Remote GitHub workflow execution and Pages publication for the fixed release
+  are independently evidenced by the hosted run links above. A local test run
+  alone would not prove those external effects, and no claim is made for every
+  possible remote integration.
 - Legal, medical, psychological, physical, ethical, or historical conclusions
   require their own evidence and qualified review; software structure does
   not make an input claim true.
@@ -205,7 +249,8 @@ narrow: the files named above, the active tests, the canonical integrity
 manifest, the OpenAPI contract, and the current status. Cumulative delivery,
 acceptance, or audit reports from earlier versions are retained for provenance
 but must not be read as current certification unless [STATUS.md](STATUS.md)
-expressly names them.
+expressly names them. See [docs/CURRENT_AUTHORITY.md](docs/CURRENT_AUTHORITY.md)
+for a compact map.
 
 ## Licensing
 
@@ -225,5 +270,13 @@ The licenses do not merge and grant no rights the licensor does not hold. See
 [LICENSE](LICENSE), [LICENSE_TRANSITION.md](LICENSE_TRANSITION.md),
 [LICENSE_NOTICE.md](LICENSE_NOTICE.md), and
 [COMMERCIAL_USE_POLICY.md](COMMERCIAL_USE_POLICY.md).
+
+## Community and security
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing incorporation of code
+or documentation; separate written contribution terms are required before a
+merge. See [SECURITY.md](SECURITY.md), [SUPPORT.md](SUPPORT.md),
+[GOVERNANCE.md](GOVERNANCE.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+for the current reporting, support, decision, and participation boundaries.
 
 Copyright 2026 Ingolf Lohmann.

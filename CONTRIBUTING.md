@@ -20,3 +20,31 @@ commercial relicensing permission.
 Unsolicited submissions remain the submitter's responsibility and create no
 presumption of acceptance, assignment, confidentiality, or commercial license.
 Third-party material must keep its original license and attribution.
+
+## Before proposing a change
+
+1. Identify the exact current file, behavior, or claim boundary involved.
+2. For a software defect, record the full commit SHA, minimal sanitized input,
+   expected result, observed result, and possible downstream effect.
+3. Run the no-network demonstration when relevant:
+
+   ```bash
+   python3 examples/effect_haltpoint_demo.py
+   ```
+
+4. Run the complete verification gate:
+
+   ```bash
+   make test
+   ```
+
+5. Separate observation, inference, hypothesis, formal derivation, executable
+   behavior, and empirical claim. Include primary sources or reproducible
+   evidence for the exact level under review.
+6. Do not include credentials, personal data, confidential material, or
+   non-public vulnerability details. Follow `SECURITY.md` for security reports.
+
+Issues may be used to establish whether a change should be explored. A pull
+request is appropriate only after its scope and provenance are clear. Neither
+an issue nor a pull request overrides the separate written contribution terms
+required above.

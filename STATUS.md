@@ -1,6 +1,6 @@
 # Verification status
 
-**Snapshot date:** 2026-07-20
+**Snapshot date:** 2026-07-21
 
 **Baseline inspected:** public checkout at commit
 `8ae1884116221087bdcc75eed9905bb80bdd9e95`, followed by the repair set carried
@@ -50,10 +50,28 @@ completed.
 The final local `make test`, canonical integrity verification, and the real
 authorization-bound launcher `master-gate` all pass on this workspace state.
 
-## Not demonstrated by the local run
+## Demonstrated remotely for the fixed public release
 
-- A live GitHub Actions run, remote persistence, repository upload, release,
-  or Zenodo ingestion.
+- Public release tag
+  [`v2026.07.20-wirkungshaltepunkt-evolution`](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.20-wirkungshaltepunkt-evolution)
+  resolves to commit `a8a9cb2666a91411489d4fc90a5306908f8428ea`.
+- That commit carries tree
+  `c5cefebd20b5836d730a4e9da82eeaa5c9363ebf`.
+- [QIKVRT-CI run 29764193906](https://github.com/Goldkelch/qik-vrt/actions/runs/29764193906)
+  completed successfully; its test job and every recorded step concluded
+  `success`.
+- [GitHub Pages run 29764192834](https://github.com/Goldkelch/qik-vrt/actions/runs/29764192834)
+  completed successfully; build, status reporting, and deployment concluded
+  `success`.
+- The main document's recorded SHA-256 is
+  `b4d3601c831db8bb70704a3dbed1e95deb47779de9a15bac8ea463f2693f89fe`.
+- The `ingolf-lohmann/qik-vrt` mirror carries the same content tree at commit
+  `5ecd01c3f2ed2a5222d2de22686f64dfcfcf1c92`. This proves mirror content
+  equality for that tree, not independent third-party reproduction.
+
+## Not demonstrated
+
+- Zenodo ingestion or a DOI for this exact release.
 - Non-bypassability across every possible downstream software or hardware
   integration.
 - Production internet-service hardening, independent security audit, formal
@@ -74,9 +92,9 @@ reproduction, and adoption.
 
 The public baseline commit named above does not contain the complete repaired
 state described here. The exact repaired state is the content tree of the
-repository commit containing this status; it must not be attributed
-retroactively to the baseline. Remote branch, release, CI, and archival status
-remain separately verifiable external effects.
+fixed public release commit named above; it must not be attributed
+retroactively to the baseline. Branch, release, CI, Pages, mirror, and future
+archival status remain separately verifiable external effects.
 
 ## Current authority
 

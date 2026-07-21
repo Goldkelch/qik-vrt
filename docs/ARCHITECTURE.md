@@ -46,7 +46,15 @@ POST https://api.github.com/repos/{owner}/{repo}/dispatches
 ## Boundaries
 
 ```text
-REMOTE_GITHUB_PERSISTENCE = NOT_EXECUTED_IN_SANDBOX
-REMOTE_BYTE_EXACT_ASSET_HASH = NOT_CONFIRMED
-LIVE_GITHUB_ACTIONS_RUN = REQUIRES_OWNER_UPLOAD_AND_DISPATCH
+FIXED_RELEASE_COMMIT = a8a9cb2666a91411489d4fc90a5306908f8428ea
+FIXED_RELEASE_TREE = c5cefebd20b5836d730a4e9da82eeaa5c9363ebf
+LIVE_GITHUB_ACTIONS_RUN = SUCCESS (run 29764193906)
+GITHUB_PAGES_BUILD_AND_DEPLOY = SUCCESS (run 29764192834)
+ZENODO_DOI_FOR_EXACT_RELEASE = OPEN
+INDEPENDENT_THIRD_PARTY_REPRODUCTION = OPEN
 ```
+
+These hosted results establish the named GitHub effects only. They do not
+establish non-bypassability in every integration, production hardening,
+external adoption, or empirical validation of claims outside the executable
+software boundary.

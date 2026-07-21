@@ -1,6 +1,6 @@
-# Local verification summary
+# Local and hosted verification summary
 
-**Snapshot date:** 2026-07-20
+**Snapshot date:** 2026-07-21
 
 **Public baseline inspected:** `8ae1884116221087bdcc75eed9905bb80bdd9e95`
 
@@ -49,6 +49,28 @@ The 102 tests cover:
 | seed/import workflows | 12 |
 | TCP/IP end-to-end adapter | 1 |
 
+## Hosted evidence
+
+The fixed release commit is
+`a8a9cb2666a91411489d4fc90a5306908f8428ea`, with tree
+`c5cefebd20b5836d730a4e9da82eeaa5c9363ebf` and tag
+`v2026.07.20-wirkungshaltepunkt-evolution`.
+
+```text
+GITHUB_ACTIONS_RUN = 29764193906
+GITHUB_ACTIONS_TEST_JOB = SUCCESS
+GITHUB_PAGES_RUN = 29764192834
+GITHUB_PAGES_BUILD = SUCCESS
+GITHUB_PAGES_DEPLOY = SUCCESS
+PUBLIC_RELEASE = CONFIRMED
+ZENODO_DOI_FOR_EXACT_RELEASE = OPEN
+INDEPENDENT_THIRD_PARTY_REPRODUCTION = OPEN
+```
+
+The hosted CI run is
+<https://github.com/Goldkelch/qik-vrt/actions/runs/29764193906> and the Pages
+run is <https://github.com/Goldkelch/qik-vrt/actions/runs/29764192834>.
+
 The tests establish local behavior for the bounded reference implementation,
 including all five normative `EFFECT_ACK` states and DONE-only ordinary
 release. The repaired runtime also bounds subprocess output and time, binds
@@ -60,8 +82,10 @@ and size. The subprocess bound covers descendant process groups; integrity
 locking is crash-recoverable; authorization inputs and records are bounded and
 symlink-safe; and arbitrary captured bytes remain valid JSONL. These properties
 are covered by local tests or static workflow
-inspection. The local results do not themselves establish remote publication, a live GitHub Actions run,
-Zenodo ingestion, external adoption, production certification, or the truth of
+inspection. The local results do not themselves establish remote publication;
+that distinct effect is evidenced above by the public commit, release, CI, and
+Pages records. Neither the local nor hosted results establish Zenodo ingestion,
+external adoption, production certification, or the truth of
 scientific, legal, medical, psychological, historical, religious, or personal
 claims stored in repository documents.
 
