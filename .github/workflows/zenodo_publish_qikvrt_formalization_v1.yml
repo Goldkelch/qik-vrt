@@ -1,0 +1,58 @@
+name: Publish QIK-VRT Formalization v1.0.0 to Zenodo
+
+on:
+  push:
+    branches:
+      - automation/zenodo-qikvrt-formalization-v1-20260722
+    paths:
+      - .github/workflows/zenodo_publish_qikvrt_formalization_v1.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenodo-qikvrt-formalization-v1-20260722-one-shot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.run_attempt == 1 && github.event.head_commit.message == 'Publish QIK-VRT Formalization v1.0.0 to Zenodo [one-shot-20260722]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+    steps:
+      - name: Check out the immutable publication branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify the exact release archive
+        run: bash tools/build_qikvrt_formalization_v1_release.sh
+
+      - name: Verify files, hashes, provenance and metadata without mutation
+        run: python3 tools/zenodo_publish_qikvrt_formalization_v1.py --prepare
+
+      - name: Create, upload, publish and publicly verify the Zenodo record
+        run: python3 tools/zenodo_publish_qikvrt_formalization_v1.py --publish
+
+      - name: Add DOI and record URL to the run summary
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = json.loads(Path('zenodo-formalization-publication-receipt.json').read_text('utf-8'))
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as stream:
+              stream.write('# Zenodo formalization publication verified\n\n')
+              stream.write(f"- DOI: [{receipt['doi']}]({receipt['doi_url']})\n")
+              stream.write(f"- Record: [{receipt['record_id']}]({receipt['record_url']})\n")
+              stream.write(f"- Status: `{receipt['status']}`\n")
+          PY
+
+      - name: Preserve the non-secret publication receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenodo-formalization-publication-receipt
+          path: zenodo-formalization-publication-receipt.json
+          if-no-files-found: warn
+          retention-days: 90
