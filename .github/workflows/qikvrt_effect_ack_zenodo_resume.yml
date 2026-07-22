@@ -1,0 +1,435 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT EFFECT_ACK Zenodo resume
+
+on:
+  push:
+    branches:
+      - automation/effect-ack-universality-zenodo-resume-20260722
+    paths:
+      - .github/workflows/qikvrt_effect_ack_zenodo_resume.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-effect-ack-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  resume:
+    name: Resume exact DOI-bound Zenodo finalization
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the two-commit resume branch without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind resume interpreter to CPython 3.12.13 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Validate exact parent, tags, reservation and hash-bound tools
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          repository = "Goldkelch/qik-vrt"
+          branch = "automation/effect-ack-universality-zenodo-resume-20260722"
+          source_commit = "c852ee04b1a5e10507f0b38d214c3ce13ad9947c"
+          source_tree = "ba8db1016e792545bce6bde0da03eaf52b3d9f00"
+          tag = "v2026.07.22-effect-ack-universality-1.0.0"
+          tag_message = (
+              "QIK-VRT EFFECT_ACK universality 1.0.0\n\n"
+              "Reviewed scientific artifact, bounded executable proof, reproducible "
+              "IETF rendering, and adaptive-runtime evidence. No GitHub Release object. "
+              "No Datatracker submission."
+          )
+          expected_tagger = {
+              "name": "Ingolf Lohmann",
+              "email": "ingolf.lohmann@live.com",
+              "date": "2026-07-22T00:00:00Z",
+          }
+          expected_tags = {
+              "Goldkelch/qik-vrt": {
+                  "object": "1679c04d70422592cc24997f9824e2ea31ca81fd",
+                  "commit": source_commit,
+              },
+              "ingolf-lohmann/qik-vrt": {
+                  "object": "7256fcd05f7fd50502bcfdcb56692d9b80ad51d5",
+                  "commit": "5e67f63b2269152fb4efad07d4705dae40caeb26",
+              },
+          }
+          expected_hashes = {
+              "tools/qikvrt_zenodo_actions.py":
+                  "8ce5df311dde78f0ae7bf6cb8a0729ceaff5f43ce50a3c74f50016b45ffae1e7",
+              "tools/qikvrt_build_zenodo_manifest.py":
+                  "04e674df4f8d8dc3a3c898055787635e2149b0348d526d41d0a54729b7fc5fc6",
+              "release/effect-ack-universality-zenodo.json":
+                  "237fa6eaa5ec7f24848c2a44ffff92ec7a1840358aa695e60d6c8e85d76f7d74",
+          }
+          reservation_sha = "f9ecceeb3b594bd28e04999b8ffdce2c2967945635e644b0934a132d3b8e7c46"
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          def api(repo, path, *, missing_ok=False):
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "qikvrt-effect-ack-zenodo-resume-validator",
+              }
+              if repo == repository:
+                  headers["Authorization"] = f"Bearer {os.environ['GH_API_TOKEN']}"
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/{path}", headers=headers
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise
+
+          if os.environ["EVENT_REF"] != f"refs/heads/{branch}":
+              fail("unexpected resume ref")
+          if os.environ["EVENT_FORCED"] != "false":
+              fail("forced resume push is forbidden")
+          if os.environ["EVENT_BEFORE"] != source_commit:
+              fail("resume push did not advance directly from the exact source commit")
+          if os.environ["EVENT_AFTER"] != os.environ["GITHUB_SHA"]:
+              fail("resume event does not bind the checked-out commit")
+          parents = subprocess.run(
+              ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+              check=True, text=True, stdout=subprocess.PIPE,
+          ).stdout.strip().split()
+          if parents != [os.environ["GITHUB_SHA"], source_commit]:
+              fail("resume commit must have the exact source commit as its only parent")
+          changed = subprocess.run(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^", "HEAD"],
+              check=True, text=True, stdout=subprocess.PIPE,
+          ).stdout.splitlines()
+          if changed != [".github/workflows/qikvrt_effect_ack_zenodo_resume.yml"]:
+              fail("resume commit changed anything except its one-time workflow")
+          branch_head = api(repository, f"git/ref/heads/{branch}")["object"]["sha"]
+          if branch_head != os.environ["GITHUB_SHA"]:
+              fail("resume branch advanced after this event")
+          main_head = api(repository, "git/ref/heads/main")["object"]["sha"]
+          if main_head != source_commit:
+              fail("main differs from the authorized tagged source")
+          if api(repository, f"git/commits/{source_commit}")["tree"]["sha"] != source_tree:
+              fail("authorized source commit has the wrong tree")
+          for path, expected in expected_hashes.items():
+              if hashlib.sha256(Path(path).read_bytes()).hexdigest() != expected:
+                  fail(f"hash-bound source differs: {path}")
+
+          encoded_tag = urllib.parse.quote(tag, safe="")
+          for repo, expected in expected_tags.items():
+              ref = api(repo, f"git/ref/tags/{encoded_tag}")
+              ref_object = ref.get("object", {})
+              if (
+                  ref_object.get("type") != "tag"
+                  or ref_object.get("sha") != expected["object"]
+              ):
+                  fail(f"annotated tag ref differs in {repo}")
+              annotated = api(repo, f"git/tags/{expected['object']}")
+              target = annotated.get("object", {})
+              if (
+                  annotated.get("tag") != tag
+                  or annotated.get("message") != tag_message
+                  or annotated.get("tagger") != expected_tagger
+                  or target.get("type") != "commit"
+                  or target.get("sha") != expected["commit"]
+              ):
+                  fail(f"annotated tag object differs in {repo}")
+              if api(repo, f"git/commits/{expected['commit']}")["tree"]["sha"] != source_tree:
+                  fail(f"annotated tag tree differs in {repo}")
+              if api(repo, f"releases/tags/{encoded_tag}", missing_ok=True) is not None:
+                  fail(f"GitHub Release object exists in {repo}")
+
+          state_path = "release-state/effect-ack-universality/zenodo-reservation.json"
+          query = urllib.parse.urlencode({"ref": "qikvrt/zenodo-state"})
+          state = api(repository, f"contents/{state_path}?{query}")
+          reservation = base64.b64decode("".join(state["content"].split()), validate=True)
+          if hashlib.sha256(reservation).hexdigest() != reservation_sha:
+              fail("public reservation evidence differs")
+          reservation_value = json.loads(reservation)
+          if (
+              reservation_value.get("phase") != "reserved"
+              or reservation_value.get("paper", {}).get("doi") != "10.5281/zenodo.21498773"
+              or reservation_value.get("software", {}).get("doi") != "10.5281/zenodo.21498774"
+          ):
+              fail("reservation evidence has the wrong phase or DOI values")
+          output = Path(".qikvrt/release/effect-ack-universality/zenodo-reservation.json")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_bytes(reservation)
+          PY
+
+      - name: Run the complete gate on the exact tagged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/qikvrt-resume-source"
+          git worktree add --detach "$source_root" c852ee04b1a5e10507f0b38d214c3ce13ad9947c
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 make -C "$source_root" test
+
+      - name: Build the deterministic exact-tree manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tools/qikvrt_build_zenodo_manifest.py \
+            --repository-root . \
+            --template release/effect-ack-universality-zenodo.json \
+            --source-commit c852ee04b1a5e10507f0b38d214c3ce13ad9947c \
+            --source-tree ba8db1016e792545bce6bde0da03eaf52b3d9f00 \
+            --output-directory .qikvrt/release/effect-ack-universality \
+            --result .qikvrt/release/effect-ack-universality/zenodo-final-manifest.json
+
+      - name: Add the reserved software DOI to transient metadata and revalidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import json
+          from pathlib import Path
+          from tools.qikvrt_zenodo_actions import (
+              _validate_final_dois,
+              validate_manifest,
+              verify_manifest_files,
+          )
+
+          root = Path(".").resolve()
+          path = Path(".qikvrt/release/effect-ack-universality/zenodo-final-manifest.json")
+          manifest = json.loads(path.read_text(encoding="utf-8"))
+          doi = "10.5281/zenodo.21498774"
+          if manifest.get("reserved_dois", {}).get("software") != doi:
+              raise SystemExit("BLOCK: generated manifest has the wrong reserved software DOI")
+          metadata = manifest["software"]["metadata"]
+          if metadata.get("doi") is not None:
+              raise SystemExit("BLOCK: transient metadata must not claim an external DOI field")
+          notes = metadata.get("notes")
+          if not isinstance(notes, str) or not notes:
+              raise SystemExit("BLOCK: generated software notes are absent")
+          prefix = "Reserved DOI for this software version:"
+          sentence = f"{prefix} {doi}."
+          if prefix in notes and sentence not in notes:
+              raise SystemExit("BLOCK: transient metadata contains a conflicting self-DOI note")
+          if sentence not in notes:
+              metadata["notes"] = notes + " " + sentence
+          path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          normalized = validate_manifest(manifest, root, final=True)
+          verified = verify_manifest_files(
+              normalized, root, "qikvrt-no-secret-local-validation-sentinel"
+          )
+          reservation = json.loads(
+              Path(".qikvrt/release/effect-ack-universality/zenodo-reservation.json")
+              .read_text(encoding="utf-8")
+          )
+          _validate_final_dois(normalized, reservation, verified)
+          PY
+
+      - name: Finalize both reserved Zenodo depositions idempotently
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$ZENODO_ACCESS_TOKEN" || { echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable'; exit 1; }
+          python -B tools/qikvrt_zenodo_actions.py finalize \
+            --manifest .qikvrt/release/effect-ack-universality/zenodo-final-manifest.json \
+            --reservation .qikvrt/release/effect-ack-universality/zenodo-reservation.json \
+            --result .qikvrt/release/effect-ack-universality/zenodo-finalization.json \
+            --base-url https://zenodo.org/api \
+            --repository-root .
+
+      - name: Validate and materialize non-secret public evidence
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          final_path = Path(".qikvrt/release/effect-ack-universality/zenodo-finalization.json")
+          manifest_path = Path(".qikvrt/release/effect-ack-universality/zenodo-final-manifest.json")
+          raw = final_path.read_bytes()
+          token = os.environ["ZENODO_ACCESS_TOKEN"].encode()
+          if not raw or token in raw:
+              raise SystemExit("BLOCK: absent final result or secret material detected")
+          result = json.loads(raw)
+          if (
+              result.get("schema_version") != 1
+              or result.get("phase") != "published"
+              or result.get("release_id") != "2026-07-22-effect-ack-universality-1.0.0"
+              or result.get("tag") != "v2026.07.22-effect-ack-universality-1.0.0"
+              or result.get("repositories") != ["Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt"]
+              or result.get("datatracker_submitted") is not False
+              or result.get("github_release_created") is not False
+              or result.get("paper", {}).get("doi") != "10.5281/zenodo.21498773"
+              or result.get("software", {}).get("doi") != "10.5281/zenodo.21498774"
+          ):
+              raise SystemExit("BLOCK: final client result has an invalid effect envelope")
+          manifest_raw = manifest_path.read_bytes()
+          manifest = json.loads(manifest_raw)
+          manifest_sha256 = hashlib.sha256(manifest_raw).hexdigest()
+          if result.get("final_manifest_sha256") != manifest_sha256:
+              raise SystemExit("BLOCK: result does not bind the transient final manifest")
+          forbidden = re.compile(
+              r"(?:access.?token|authorization.?header|bearer.?token|client.?secret|credential)",
+              re.I,
+          )
+          def inspect(value):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      if forbidden.search(str(key)):
+                          raise SystemExit("BLOCK: secret-shaped key in public evidence")
+                      inspect(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      inspect(child)
+          deposited_files = {
+              kind: [
+                  {name: entry[name] for name in ("name", "size", "md5", "sha256")}
+                  for entry in manifest[kind]["files"]
+              ]
+              for kind in ("paper", "software")
+          }
+          public = {
+              "schema": "qikvrt_effect_ack_zenodo_finalization_evidence_v1",
+              "client_result": result,
+              "final_manifest_sha256": manifest_sha256,
+              "deposited_files": deposited_files,
+              "repository": "Goldkelch/qik-vrt",
+              "tag": "v2026.07.22-effect-ack-universality-1.0.0",
+              "tag_object_sha": "1679c04d70422592cc24997f9824e2ea31ca81fd",
+              "target_commit": "c852ee04b1a5e10507f0b38d214c3ce13ad9947c",
+              "target_tree": "ba8db1016e792545bce6bde0da03eaf52b3d9f00",
+              "mirror_annotated_tag_verified": True,
+              "github_release_object_absence_verified_at_tag_effect": True,
+              "datatracker_submission_performed": False,
+          }
+          inspect(public)
+          Path(".qikvrt/release/effect-ack-universality/zenodo-finalization-evidence.json").write_text(
+              json.dumps(public, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Persist public finalization evidence with the correct update endpoint
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          repository = "Goldkelch/qik-vrt"
+          branch = "qikvrt/zenodo-state"
+          state_path = "release-state/effect-ack-universality/zenodo-finalization.json"
+          content = Path(
+              ".qikvrt/release/effect-ack-universality/zenodo-finalization-evidence.json"
+          ).read_bytes()
+          base = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "qikvrt-effect-ack-zenodo-resume-state-writer",
+          }
+          def api(method, path, body=None, *, missing_ok=False):
+              data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+              request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise
+          query = urllib.parse.urlencode({"ref": branch})
+          existing = api("GET", f"/contents/{state_path}?{query}", missing_ok=True)
+          if existing is not None:
+              encoded = existing.get("content")
+              if not isinstance(encoded, str):
+                  raise SystemExit("BLOCK: existing finalization evidence is not a file")
+              current = base64.b64decode("".join(encoded.split()), validate=True)
+              if current != content:
+                  raise SystemExit("BLOCK: conflicting finalization evidence already exists")
+              raise SystemExit(0)
+          get_ref = "/git/ref/heads/" + branch
+          update_ref = "/git/refs/heads/" + branch
+          ref = api("GET", get_ref)
+          parent = ref["object"]["sha"]
+          base_tree = api("GET", f"/git/commits/{parent}")["tree"]["sha"]
+          blob = api("POST", "/git/blobs", {
+              "content": base64.b64encode(content).decode("ascii"),
+              "encoding": "base64",
+          })["sha"]
+          tree = api("POST", "/git/trees", {
+              "base_tree": base_tree,
+              "tree": [{"path": state_path, "mode": "100644", "type": "blob", "sha": blob}],
+          })["sha"]
+          if tree != base_tree:
+              commit = api("POST", "/git/commits", {
+                  "message": "Record EFFECT_ACK Zenodo finalization evidence",
+                  "tree": tree,
+                  "parents": [parent],
+                  "author": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"},
+                  "committer": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"},
+              })["sha"]
+              api("PATCH", update_ref, {"sha": commit, "force": False})
+          PY
+
+      - name: Upload non-secret finalization evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: effect-ack-zenodo-resume-${{ github.sha }}
+          path: |
+            .qikvrt/release/effect-ack-universality/zenodo-finalization-evidence.json
+            .qikvrt/release/effect-ack-universality/zenodo-final-manifest.json
+            .qikvrt/release/effect-ack-universality/qik-vrt-effect-ack-source-export-provenance.json
+            .qikvrt/release/effect-ack-universality/qik-vrt-v2026.07.22-effect-ack-universality-1.0.0-source.tar.gz.sha256
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
