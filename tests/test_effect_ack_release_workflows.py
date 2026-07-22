@@ -169,6 +169,12 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("gh version $Version (2026-07-02)", windows_bootstrap)
         self.assertIn("^gh version 2\\.96\\.0", posix_bootstrap)
         self.assertIn("[regex]::Escape($Version)", windows_bootstrap)
+        self.assertNotIn(
+            '"gh_${Version}_windows_${Arch}\\bin\\gh.exe"',
+            windows_bootstrap,
+        )
+        self.assertIn("Join-Path $verifyDir 'bin\\gh.exe'", windows_bootstrap)
+        self.assertIn("Join-Path $ExtractDir 'bin\\gh.exe'", windows_bootstrap)
 
     def test_embedded_python_is_syntactically_valid(self) -> None:
         pattern = re.compile(r"python -B - <<'PY'\n(.*?)\n\s*PY(?:\n|$)", re.S)

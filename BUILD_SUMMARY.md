@@ -62,7 +62,7 @@ exercised separately with the locked renderer:
 | license transition and exact official text | 5 |
 | seed/import workflows | 12 |
 | TCP/IP end-to-end adapter | 1 |
-| release-workflow structure | 6 |
+| release-workflow structure | 7 |
 | Zenodo reserve/finalize client | 17 |
 | deterministic Zenodo manifest builder | 2 |
 

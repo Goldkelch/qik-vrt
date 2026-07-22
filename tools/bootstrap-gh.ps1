@@ -115,7 +115,9 @@ function Assert-CachedDerivation([string]$Candidate, [string]$CachedArchive, [st
     New-Item -ItemType Directory -Path $verifyDir | Out-Null
     try {
         Expand-Archive -LiteralPath $CachedArchive -DestinationPath $verifyDir
-        $derived = Join-Path $verifyDir "gh_${Version}_windows_${Arch}\bin\gh.exe"
+        # Official Windows archives place the executable at bin\gh.exe. Do
+        # not infer their layout from the differently shaped POSIX archives.
+        $derived = Join-Path $verifyDir 'bin\gh.exe'
         if (-not (Test-Path -LiteralPath $derived -PathType Leaf)) {
             Stop-Block 'repo-anchored archive does not contain the expected GitHub CLI executable'
         }
@@ -224,7 +226,7 @@ try {
 } catch {
     Stop-Block "GitHub CLI archive extraction failed: $($_.Exception.Message)"
 }
-$ExtractedGh = Join-Path $ExtractDir "gh_${Version}_windows_${Arch}\bin\gh.exe"
+$ExtractedGh = Join-Path $ExtractDir 'bin\gh.exe'
 if (-not (Test-ExactVersion $ExtractedGh)) { Stop-Block 'extracted GitHub CLI failed the exact-version execution check' }
 
 $Stage = Join-Path $script:TempDir 'stage'

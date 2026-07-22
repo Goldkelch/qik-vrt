@@ -35,6 +35,10 @@ version. Byte identity remains controlled by the platform-specific committed
 archive SHA-256 and, for every cached executable, fresh re-extraction and byte
 comparison.
 
+The locked Windows ZIP assets use the upstream root-relative `bin/gh.exe`
+layout. The Windows bootstrap verifies that exact layout instead of assuming
+the directory prefix used by other archive formats.
+
 Authentication is deliberately outside this runtime definition. Neither
 `GH_TOKEN`, `GITHUB_TOKEN`, nor the state produced by `gh auth login` may be
 committed or cached by these scripts.

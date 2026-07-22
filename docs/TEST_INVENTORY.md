@@ -15,7 +15,7 @@ and the C90/shell gates are exercised separately by `make test`.
 | `tests/test_license_transition.py` | 5 |
 | `tests/test_seed_workflows.py` | 12 |
 | `tests/test_tcpip_e2e.py` | 1 |
-| `tests/test_effect_ack_release_workflows.py` | 6 |
+| `tests/test_effect_ack_release_workflows.py` | 7 |
 | `tests/test_zenodo_actions.py` | 17 |
 | `tests/test_zenodo_manifest_builder.py` | 2 |
 | **Total** | **128** |
