@@ -1,0 +1,1120 @@
+
+
+
+
+Network Working Group                                         I. Lohmann
+Internet-Draft                                    Independent Researcher
+Intended status: Experimental                               22 July 2026
+Expires: 23 January 2027
+
+
+ QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization
+                         for Downstream Effect
+                   draft-lohmann-qikvrt-effect-ack-01
+
+Abstract
+
+   Transport acknowledgements establish technical receipt; they do not
+   establish that a received information unit is understood, policy-
+   compliant, or authorized to produce a downstream effect.  This
+   document defines an Experimental application-layer control record,
+   called EFFECT_ACK, that separates receipt from effect authorization.
+
+   The protocol has five closed version-1 outcomes.  Ordinary downstream
+   release is permitted only for EFFECT_ACK_DONE and only after
+   validation of the record, its policy and evidence bindings, its
+   freshness, and its authenticated origin.  This document specifies the
+   state-selection algorithm, version handling, a deterministic JSON
+   representation, hash chaining, timeout behavior, conformance
+   requirements, and security and privacy boundaries.
+
+   This protocol does not modify TCP, QUIC, or the OSI model; does not
+   solve the halting problem; and does not establish the truth of
+   external evidence.  It provides a machine-checkable authorization
+   boundary under explicitly stated deployment assumptions.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 23 January 2027.
+
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 1]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.1.  Goals . . . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.2.  Non-Goals . . . . . . . . . . . . . . . . . . . . . . . .   4
+   2.  Conventions and Definitions . . . . . . . . . . . . . . . . .   4
+   3.  Architecture and Trust Boundary . . . . . . . . . . . . . . .   5
+   4.  Version-1 State Model . . . . . . . . . . . . . . . . . . . .   5
+     4.1.  DONE Predicate  . . . . . . . . . . . . . . . . . . . . .   6
+     4.2.  State Selection and Priority  . . . . . . . . . . . . . .   7
+     4.3.  Re-evaluation and State Transitions . . . . . . . . . . .   8
+   5.  Wire Representation . . . . . . . . . . . . . . . . . . . . .   8
+     5.1.  Responsibility Record . . . . . . . . . . . . . . . . . .   9
+     5.2.  Canonical JSON and Protocol Hash  . . . . . . . . . . . .  11
+     5.3.  Version Chain Validation  . . . . . . . . . . . . . . . .  12
+   6.  Version Negotiation and Unknown Values  . . . . . . . . . . .  12
+   7.  Timeouts and Bounded Evaluation . . . . . . . . . . . . . . .  13
+   8.  Policy and Evidence Binding . . . . . . . . . . . . . . . . .  13
+   9.  Conformance Requirements  . . . . . . . . . . . . . . . . . .  14
+     9.1.  Wire Conformance  . . . . . . . . . . . . . . . . . . . .  14
+     9.2.  Gate Conformance  . . . . . . . . . . . . . . . . . . . .  14
+     9.3.  Deployment Conformance  . . . . . . . . . . . . . . . . .  14
+     9.4.  Test Vectors  . . . . . . . . . . . . . . . . . . . . . .  14
+   10. Implementation Status . . . . . . . . . . . . . . . . . . . .  15
+   11. Security Considerations . . . . . . . . . . . . . . . . . . .  15
+   12. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  16
+   13. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  17
+   14. Formal and Empirical Boundary . . . . . . . . . . . . . . . .  17
+   15. Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  17
+   16. Normative References  . . . . . . . . . . . . . . . . . . . .  17
+   Appendix A.  Complete Version-1 CDDL  . . . . . . . . . . . . . .  18
+   Appendix B.  Changes from Revision -00  . . . . . . . . . . . . .  20
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  20
+
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 2]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+1.  Introduction
+
+   A transport acknowledgement answers a narrow question: did a protocol
+   unit arrive or get processed at a transport-defined boundary?  It
+   does not answer whether the content came from an authorized origin,
+   whether its meaning was reconstructed in context, whether a proposed
+   action complies with policy, or whether a responsible actor accepts
+   the remaining risk.
+
+   Systems that equate receipt or successful computation with permission
+   can trigger an effect before these questions are resolved.  Examples
+   include sending a payment, publishing content, changing an access-
+   control rule, operating an actuator, or forwarding an instruction to
+   another autonomous component.
+
+   EFFECT_ACK inserts a logical authorization gate between reception and
+   an effect executor.  The expression "Layer 4.5" is sometimes used
+   informally for this placement.  It is not a new IETF or OSI layer and
+   has no normative meaning in this document.  EFFECT_ACK is an
+   application-layer record that can be carried over an authenticated
+   application protocol.
+
+   The central invariant is:
+
+   Transport acknowledgement != authorization for downstream effect
+
+   ordinary_release(record) is true
+       if and only if
+   record.state == EFFECT_ACK_DONE
+       and the record passes every validation in this document.
+
+1.1.  Goals
+
+   *  Define a closed, deterministic version-1 state model.
+
+   *  Bind the decision to an input, a versioned policy, and required
+      evidence.
+
+   *  Fail closed on malformed, unsupported, unauthenticated, stale, or
+      timed-out decisions.
+
+   *  Provide deterministic records suitable for independent validation
+      and test vectors.
+
+   *  State precisely what a content hash proves and what it does not
+      prove.
+
+
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 3]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+1.2.  Non-Goals
+
+   *  The protocol does not determine whether arbitrary programs halt.
+
+   *  The protocol does not make a policy ethically, legally, medically,
+      or physically correct.
+
+   *  The protocol does not authenticate an origin merely by hashing a
+      record.
+
+   *  The protocol does not reverse an effect that has already occurred.
+
+   *  The protocol does not define a universal policy language or
+      evidence format.
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Input unit  An octet sequence or immutable object whose proposed
+      downstream effect is being evaluated.
+
+   Transport acknowledgement (TRANSPORT_ACK)  Evidence of receipt or
+      processing at a transport-defined boundary.  It is not effect
+      authorization.
+
+   Effect  A state change outside the evaluator, including a message,
+      write, publication, financial transaction, access-control change,
+      or actuator command.
+
+   Gate  The component that derives and validates an EFFECT_ACK record
+      before ordinary release.
+
+   Effect executor  The component capable of producing the downstream
+      effect.
+
+   Ordinary release  The normal, non-contained path from the gate to the
+      effect executor.
+
+   Policy descriptor  An immutable, versioned description of the policy
+      used for the decision.  This specification binds it by identifier,
+      version, and SHA-256 digest but does not define its language.
+
+   Evidence reference  A content digest identifying evidence held
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 4]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+      outside the EFFECT_ACK record.  A digest is not evidence
+      validation.
+
+   Effect-checkable reception  A reception for which an input identifier
+      and an input digest are available at the gate.
+
+3.  Architecture and Trust Boundary
+
+   A deployment contains at least an input receiver, a policy and
+   evidence evaluator, an EFFECT_ACK gate, and an effect executor.  The
+   gate and executor form a security boundary: the executor MUST NOT
+   treat transport success, process exit status, application return
+   values, or message presence as release permission.
+
+   The effect executor MUST accept ordinary release only when all of the
+   following are true:
+
+   1.  The wire version is supported and the record is schema-valid.
+
+   2.  The record is authenticated according to the deployment security
+       profile.
+
+   3.  The input, policy, evidence, version-chain, and freshness
+       bindings validate.
+
+   4.  The state re-derived from the normative algorithm is
+       EFFECT_ACK_DONE.
+
+   5.  The record says ordinary_release=true.
+
+   A conforming gate MUST be on every path capable of reaching the
+   protected effect.  If an alternate path can invoke the executor
+   without this validation, the deployment is not effect-gate conformant
+   even if its record generator passes unit tests.
+
+   Records SHOULD be carried over a mutually authenticated, integrity-
+   protected channel.  A deployment MAY use a separately signed
+   envelope, but the signature format and key management are outside the
+   scope of version 1.  The deployment profile MUST name the
+   authentication mechanism and the principals authorized to assert
+   policy decisions.
+
+4.  Version-1 State Model
+
+   Version 1 contains exactly the following five state strings.  A
+   receiver MUST compare them case-sensitively.
+
+   EFFECT_NACK  No effect-checkable reception exists.  No ordinary
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 5]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+      release is permitted.
+
+   EFFECT_ACK_CONTINUE  Evaluation can continue, but one or more release
+      conditions remain unsatisfied.  No ordinary release is permitted.
+
+   EFFECT_ACK_DONE  All version-1 release conditions are satisfied for
+      the bound input, policy, evidence set, and decision version.  This
+      is the only state eligible for ordinary release.
+
+   EFFECT_ACK_ISOLATE  The input or proposed effect is confined to an
+      explicitly contained review or execution environment.  Isolation
+      is not ordinary release.
+
+   EFFECT_ACK_BLOCK  The proposed effect is stopped.  Repair or review
+      requires a new, hash-linked record version.
+
+4.1.  DONE Predicate
+
+   Let CoreDone(r) be true only when every expression below is true for
+   record r.  Schema, authentication, freshness and chain validation are
+   additional consumer release checks from Section 3; they do not change
+   the core state selected from a valid evaluation snapshot.
+
+   r.transport_ack
+   and sha256_identifier(r.input_hash)
+   and r.origin_checked
+   and r.context_checked
+   and r.semantics_reconstructed
+   and r.effect_anticipated
+   and r.risk_classified
+   and r.risk_level != "UNKNOWN"
+   and r.responsibility_assigned
+   and r.responsibility_owner != ""
+   and r.connection_decided
+   and r.connection_decision == "RELEASE"
+   and r.policy_allows_release
+   and not r.deadline_exceeded
+   and r.open_questions == []
+   and r.next_required_checks == []
+   and set(r.required_evidence_refs) <= set(r.evidence_refs)
+
+
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 6]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   The policy triple is required and syntactically checked by the wire
+   schema.  Its semantic validation and validation of the referenced
+   evidence are consumer checks from Section 3.  The JSON record carries
+   check results, but an effect executor MUST NOT trust those booleans
+   solely because they are present.  It MUST validate an authenticated
+   assertion from an authorized evaluator or reperform the checks.  In
+   particular, membership of a digest in evidence_refs proves neither
+   availability nor truth of the referenced evidence.
+
+4.2.  State Selection and Priority
+
+   A producer MUST select the state using the following priority order.
+   A consumer MUST independently rederive the result.  A mismatch MUST
+   prevent ordinary release.
+
+   if record cannot be safely parsed, its version is unsupported,
+      or required authentication is absent:
+       fail closed without ordinary release
+   else if predecessor_invalid:
+       state = EFFECT_ACK_BLOCK
+   else if deadline_exceeded:
+       state = EFFECT_ACK_BLOCK
+   else if not effect_checkable_reception:
+       state = EFFECT_NACK
+   else if integrity_failure:
+       state = EFFECT_ACK_BLOCK
+   else if connection_decision == BLOCK:
+       state = EFFECT_ACK_BLOCK
+   else if connection_decision == ISOLATE:
+       state = EFFECT_ACK_ISOLATE
+   else if connection_decision == RELEASE
+           and CoreDone(record with candidate state EFFECT_ACK_DONE):
+       state = EFFECT_ACK_DONE
+   else:
+       state = EFFECT_ACK_CONTINUE
+
+   ordinary_release = (state == EFFECT_ACK_DONE)
+
+   Predecessor failure is evaluated before the local snapshot and
+   produces BLOCK.  A local timeout is next and also produces BLOCK.  In
+   exact refinement with the reference evaluator, absence of an effect-
+   checkable reception then produces NACK before local payload-integrity
+   checks.  This ordering is safe because NACK never permits release.
+   For an effect-checkable reception, integrity failure precedes
+   explicit BLOCK, explicit ISOLATE, DONE and CONTINUE.  An explicit
+   BLOCK precedes ISOLATE; ISOLATE precedes DONE and CONTINUE.  A policy
+   denial without an explicit BLOCK decision results in CONTINUE; a
+   deployment policy MAY instead require the evaluator to select BLOCK.
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 7]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+4.3.  Re-evaluation and State Transitions
+
+   A state is an outcome for one immutable record version, not mutable
+   shared state.  New evidence, a new policy, a changed decision, a
+   timeout result, or a revocation MUST create the next contiguous
+   protocol_version and MUST link it to the predecessor.
+
+      +=====================+======================================+
+      | Current             | Permitted next state                 |
+      +=====================+======================================+
+      | EFFECT_NACK         | NACK, CONTINUE, DONE, ISOLATE, BLOCK |
+      +---------------------+--------------------------------------+
+      | EFFECT_ACK_CONTINUE | NACK, CONTINUE, DONE, ISOLATE, BLOCK |
+      +---------------------+--------------------------------------+
+      | EFFECT_ACK_DONE     | NACK, CONTINUE, DONE, ISOLATE, BLOCK |
+      +---------------------+--------------------------------------+
+      | EFFECT_ACK_ISOLATE  | NACK, CONTINUE, DONE, ISOLATE, BLOCK |
+      +---------------------+--------------------------------------+
+      | EFFECT_ACK_BLOCK    | NACK, CONTINUE, DONE, ISOLATE, BLOCK |
+      +---------------------+--------------------------------------+
+
+                      Table 1: Permitted next states
+
+   Every state is a snapshot outcome, so every next state is permitted
+   when the immutable input binding is preserved and the normative
+   selection algorithm produces it.  This includes revocation from DONE
+   to any non-releasing state and recovery from BLOCK or ISOLATE after
+   the decision facts change.  An identical re-evaluation MAY return the
+   existing record without incrementing the version.  A transition to a
+   different state MUST change at least one deterministic decision field
+   and SHOULD cite the new evidence, policy version or review reason.  A
+   later non-DONE record revokes only future release; it cannot undo an
+   effect already executed.  Consumers MUST define how they discover the
+   freshest authenticated record and MUST reject a stale DONE record
+   when a newer valid version is known or required by policy.
+
+5.  Wire Representation
+
+   Version-1 messages are JSON objects as defined by [RFC8259] and
+   constrained to the I-JSON profile in [RFC7493].  Records MUST be
+   encoded as UTF-8 without a byte-order mark.  A deployment MAY carry a
+   record using application/json; this document does not allocate a new
+   media type.
+
+   The normative CDDL, using the notation from [RFC8610], appears in
+   Appendix A.  A synchronized extraction may be maintained with the
+   source of this draft as external/ietf/qikvrt-effect-ack-v1.cddl.
+   That extraction and the JSON Schema at external/ietf/qikvrt-effect-
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 8]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   ack-v1.schema.json are non-normative conformance aids.  If either
+   conflicts with this document, this document, including the CDDL in
+   Appendix A, controls.
+
+5.1.  Responsibility Record
+
+   Every version-1 record MUST contain all fields in this section.
+   Unknown fields MUST be rejected because the version-1 record is
+   closed.
+
+        +=========================+==============================+
+        | Field                   | Type and purpose             |
+        +=========================+==============================+
+        | wire_version            | Integer 1.                   |
+        +-------------------------+------------------------------+
+        | message_type            | String effect-ack-record.    |
+        +-------------------------+------------------------------+
+        | protocol_root_id        | Stable chain identifier, 1   |
+        |                         | to 256 characters.           |
+        +-------------------------+------------------------------+
+        | protocol_version        | Contiguous positive integer  |
+        |                         | within a chain.              |
+        +-------------------------+------------------------------+
+        | protocol_id             | protocol_root_id + ":v" +    |
+        |                         | protocol_version, at most    |
+        |                         | 512 characters.              |
+        +-------------------------+------------------------------+
+        | previous_protocol_id    | Previous protocol identifier |
+        |                         | of at most 512 characters,   |
+        |                         | or null for version 1.       |
+        +-------------------------+------------------------------+
+        | previous_protocol_hash  | Previous record digest, or   |
+        |                         | null for version 1.          |
+        +-------------------------+------------------------------+
+        | protocol_hash           | SHA-256 digest of the        |
+        |                         | canonical hash projection.   |
+        +-------------------------+------------------------------+
+        | input_id                | Input identifier, 1 to 256   |
+        |                         | characters.                  |
+        +-------------------------+------------------------------+
+        | input_hash              | SHA-256 digest, or           |
+        |                         | UNAVAILABLE only for NACK.   |
+        +-------------------------+------------------------------+
+        | state                   | One of the five version-1    |
+        |                         | state strings.               |
+        +-------------------------+------------------------------+
+        | transport_ack           | Boolean transport-receipt    |
+        |                         | assertion.                   |
+
+
+
+Lohmann                  Expires 23 January 2027                [Page 9]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+        +-------------------------+------------------------------+
+        | origin_checked          | Boolean origin-check         |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | context_checked         | Boolean context-check        |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | semantics_reconstructed | Boolean semantics-check      |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | effect_anticipated      | Boolean effect-analysis      |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | risk_classified         | Boolean risk-classification  |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | risk_level              | UNKNOWN, LOW, MEDIUM, HIGH,  |
+        |                         | or CRITICAL.                 |
+        +-------------------------+------------------------------+
+        | responsibility_assigned | Boolean responsibility       |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | responsibility_owner    | Responsible principal        |
+        |                         | identifier, at most 256      |
+        |                         | characters.                  |
+        +-------------------------+------------------------------+
+        | connection_decided      | Boolean decision-completion  |
+        |                         | assertion.                   |
+        +-------------------------+------------------------------+
+        | connection_decision     | UNDECIDED, CONTINUE,         |
+        |                         | RELEASE, ISOLATE, or BLOCK.  |
+        +-------------------------+------------------------------+
+        | policy_id               | Policy identifier, 1 to 256  |
+        |                         | characters.                  |
+        +-------------------------+------------------------------+
+        | policy_version          | Positive policy version.     |
+        +-------------------------+------------------------------+
+        | policy_hash             | SHA-256 digest of the exact  |
+        |                         | policy descriptor.           |
+        +-------------------------+------------------------------+
+        | policy_allows_release   | Boolean result of evaluating |
+        |                         | that policy.                 |
+        +-------------------------+------------------------------+
+        | ordinary_release        | True exactly for a valid     |
+        |                         | DONE record.                 |
+        +-------------------------+------------------------------+
+        | evaluation_timeout_ms   | Configured positive          |
+        |                         | evaluation budget in         |
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 10]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+        |                         | milliseconds.                |
+        +-------------------------+------------------------------+
+        | deadline_exceeded       | Boolean timeout result.      |
+        +-------------------------+------------------------------+
+        | reasons                 | Set-like array of reason     |
+        |                         | strings.                     |
+        +-------------------------+------------------------------+
+        | evidence_refs           | Set-like array of available  |
+        |                         | evidence digests.            |
+        +-------------------------+------------------------------+
+        | required_evidence_refs  | Set-like array of policy-    |
+        |                         | required evidence digests.   |
+        +-------------------------+------------------------------+
+        | open_questions          | Set-like array of unresolved |
+        |                         | questions.                   |
+        +-------------------------+------------------------------+
+        | next_required_checks    | Set-like array of checks     |
+        |                         | required before release.     |
+        +-------------------------+------------------------------+
+        | created_utc             | UTC timestamp conforming to  |
+        |                         | [RFC3339] and ending in Z.   |
+        +-------------------------+------------------------------+
+
+                        Table 2: Version-1 fields
+
+   A SHA-256 identifier has the exact form sha256: followed by 64
+   lowercase hexadecimal characters.  Every set-like array has at most
+   128 unique strings, each at most 1024 Unicode scalar values.
+   Producers MUST normalize and sort such arrays as described in
+   Section 5.2.
+
+5.2.  Canonical JSON and Protocol Hash
+
+   Producers and consumers MUST perform these steps in order:
+
+   1.  Parse an I-JSON object and reject duplicate member names.
+
+   2.  Normalize every member name and string value to Unicode
+       Normalization Form C (NFC) as specified by [UNICODE-NORM].
+       Reject a duplicate member name introduced by normalization.
+
+   3.  Reject floating-point values and integers outside the I-JSON
+       exact integer range.
+
+   4.  For every set-like array, remove empty items and duplicate
+       normalized strings, then sort ascending by Unicode scalar-value
+       sequence.
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 11]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   5.  Create the hash projection by removing exactly protocol_hash and
+       created_utc.
+
+   6.  Serialize the projection using the JSON Canonicalization Scheme
+       (JCS) in [RFC8785].
+
+   7.  Compute SHA-256 as specified by [RFC6234] over the resulting
+       UTF-8 octets and prefix the lowercase hexadecimal digest with
+       sha256:.
+
+   The timestamp is excluded so that volatile audit metadata does not
+   change the protocol decision identity.  Consequently, created_utc is
+   not integrity-protected by protocol_hash.  A consumer MUST NOT use
+   that timestamp as its sole freshness signal.  If timestamp integrity
+   is required, the authenticated transport or signed outer envelope
+   MUST bind the complete record including created_utc.
+
+5.3.  Version Chain Validation
+
+   For the first record, protocol_version MUST be 1 and both predecessor
+   fields MUST be null.  For each later record, the version MUST
+   increment by exactly one; both predecessor fields MUST match the
+   immediately preceding record; and protocol_root_id, input_id, and
+   input_hash MUST remain unchanged.
+
+   A producer MUST NOT attach a new record to an invalid predecessor.
+   When it can safely create an incident record, it MUST start a new
+   version-1 incident chain, select BLOCK, use a collision-resistant
+   incident root derived from bounded forensic material, and cite
+   PREVIOUS_PROTOCOL_INTEGRITY_FAILURE.  The invalid predecessor itself
+   MUST NOT be serialized into the trusted incident chain.
+
+   A self-consistent hash chain does not detect an adversary that
+   rewrites the complete chain and recomputes every digest.  A
+   deployment requiring rewrite detection MUST retain at least one
+   trusted digest outside the chain or authenticate each record with a
+   key unavailable to the rewriter.
+
+6.  Version Negotiation and Unknown Values
+
+   A deployment MAY pin version 1 without negotiation.  A deployment
+   that negotiates versions uses the following capability object before
+   sending records:
+
+   {"message_type":"effect-ack-capabilities","supported_versions":[1]}
+
+
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 12]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   The selected version is the highest mutually supported version
+   permitted by local policy.  The capability exchange and selected
+   version MUST be bound to the authenticated session transcript.  An
+   unauthenticated retry with a lower version MUST NOT cause a
+   downgrade.
+
+   A consumer receiving an unknown wire_version, unknown message_type,
+   unknown state string, or unknown decision string MUST NOT perform
+   ordinary release.  It MAY return an authenticated error that lists
+   supported versions.  It MUST NOT map an unknown state to DONE,
+   CONTINUE, or any other version-1 state.
+
+   New states or changed release semantics require a new wire version.
+   Adding an optional member to the closed version-1 record also
+   requires a new wire version.
+
+7.  Timeouts and Bounded Evaluation
+
+   The evaluator MUST use a monotonic clock for its local decision
+   budget.  evaluation_timeout_ms records the configured positive
+   budget, not a network-wide timing guarantee.  If the budget is
+   exhausted before the record, policy, evidence, and chain have been
+   validated, the producer MUST set deadline_exceeded=true, select
+   EFFECT_ACK_BLOCK, set ordinary_release=false, and include a
+   continuation or review action in next_required_checks.
+
+   A cooperative in-process deadline does not guarantee preemption under
+   CPU starvation, blocking system calls, or a compromised runtime.
+   Deployments requiring a hard wall-clock bound MUST enforce it with an
+   independent supervisor.  Failure of the supervisor or clock MUST fail
+   closed.
+
+   Timeout is not evidence that the input is malicious.  It is evidence
+   that release authorization was not completed within the configured
+   budget.
+
+8.  Policy and Evidence Binding
+
+   The producer MUST bind a decision to exactly one immutable policy
+   descriptor using policy_id, policy_version, and policy_hash.  A
+   consumer MUST obtain that descriptor from a trusted store or an
+   authenticated evaluator and verify its digest before accepting DONE.
+
+   The policy descriptor MUST determine the required evidence set or a
+   deterministic rule for deriving it.  The record's
+   required_evidence_refs MUST match that result.  DONE additionally
+   requires every required digest to occur in evidence_refs and every
+   referenced required item to pass the policy-defined validator.
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 13]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   Evidence digests MUST identify exact octets or a separately specified
+   canonical representation.  A deployment profile MUST define evidence
+   retrieval, authorization, canonicalization, validation, and
+   retention.  Absence, retrieval failure, digest mismatch, or validator
+   failure MUST prevent DONE.
+
+   The protocol deliberately separates policy binding from policy
+   correctness.  Machine validation can prove that the specified policy
+   and evidence gates were followed; it cannot prove that an externally
+   chosen policy is morally, legally, or scientifically true.
+
+9.  Conformance Requirements
+
+9.1.  Wire Conformance
+
+   A wire-conformant implementation MUST parse and emit the closed
+   version-1 record, enforce all bounds and enums, implement the
+   canonicalization and hash algorithm, validate chain linkage, and
+   reject unknown versions and states without ordinary release.
+
+9.2.  Gate Conformance
+
+   A gate-conformant implementation MUST independently rederive the
+   state, MUST make DONE the only ordinary-release state, MUST prevent
+   release on every individual failed DONE condition, and MUST apply the
+   priority rules in Section 4.2.
+
+9.3.  Deployment Conformance
+
+   A deployment-conformant system MUST additionally authenticate
+   authorized evaluators, protect every path to the executor, define
+   policy and evidence validators, enforce freshness and replay policy,
+   retain a trusted chain anchor when rewrite detection is required, and
+   document its timeout supervisor and failure model.
+
+9.4.  Test Vectors
+
+   The source repository contains machine-readable positive and negative
+   vectors under external/ietf/test-vectors/effect-ack-v1/.  At minimum,
+   a conformance suite MUST test all five states, each DONE conjunct
+   independently, priority collisions, unknown versions and states,
+   malformed and mismatched digests, policy mismatch, missing required
+   evidence, canonicalization, chain rewriting, stale DONE replay,
+   timeout, and an unauthenticated assertion.
+
+   Passing repository tests is evidence about the tested implementation
+   and revision.  It does not by itself establish deployment conformance
+   or IETF consensus.
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 14]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+10.  Implementation Status
+
+   This section is to be removed before publishing as an RFC.
+
+   This section is non-normative.
+
+   A Python reference state machine and focused conformance tests are
+   available in the public ingolf-lohmann/qik-vrt repository.  The tests
+   exercise the five-state closure, DONE-only release, individual gate
+   failures, input binding, deterministic JSON, record and chain
+   integrity, trusted anchors, cooperative deadlines, and deterministic
+   reevaluation.
+
+   The current development branch includes a QIKVRT-CJ-1 canonicalizer
+   with NFC preprocessing, I-JSON safe-integer bounds, rejection of
+   floating values, surrogates and non-string member names, and RFC 8785
+   UTF-16 code-unit member ordering, including a non-BMP ordering
+   vector.  At the time this candidate was prepared, however, the Python
+   responsibility record still represented the revision-00 flat wire
+   model and did not emit every new revision-01 field, notably the
+   explicit wire version, immutable policy triple, and recorded timeout
+   fields.  It therefore must not be claimed as fully revision-01 wire
+   conformant until that intentional gap is closed and the full suite
+   passes.
+
+   Interoperability between at least two independently developed
+   implementations remains an open publication milestone.
+
+11.  Security Considerations
+
+   The principal threat is unauthorized effect caused by treating
+   receipt or syntactic success as release permission.  Additional
+   threats include forged DONE records, policy substitution, evidence
+   omission, digest confusion, replay of stale DONE, downgrade to weaker
+   semantics, chain rewrite, alternate-path bypass, denial of service,
+   and compromise of the evaluator or executor.
+
+   SHA-256 content digests provide collision-resistant content
+   identifiers under current assumptions.  They do not authenticate a
+   principal, establish freshness, prove evidence truth, or protect a
+   fully rewritten unanchored chain.  Deployments MUST use an
+   authenticated channel or signed envelope and MUST authorize the
+   principal that can assert the policy result.
+
+
+
+
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 15]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   Consumers MUST rederive the state instead of trusting the state
+   string.  A candidate DONE with any failed predicate MUST be rejected
+   and SHOULD generate a BLOCK incident record when that can be done
+   safely.  A consumer MUST compare digests using a constant-time
+   function when digest equality is exposed to a remote adversary.
+
+   Replay controls MUST bind at least the protocol root, contiguous
+   version, input digest, policy digest, authenticated session or
+   deployment context, and a locally defined freshness rule.  Consumers
+   MUST NOT accept a known older DONE after a newer BLOCK or ISOLATE.
+
+   The gate itself can become a denial-of-service target.
+   Implementations MUST bound payload size, string length, array length,
+   recursion depth, evaluation time, policy work, and evidence
+   retrieval.  Expensive validation SHOULD occur in a contained
+   asynchronous stage while ordinary release remains blocked.
+
+   The protocol cannot protect an executor reachable around the gate, a
+   compromised policy engine, dishonest evidence providers, stolen
+   signing keys, or physical actuators that ignore the gate.  These are
+   deployment assumptions, not conclusions of the state-machine proof.
+
+12.  Privacy Considerations
+
+   Responsibility owners, input identifiers, policy identifiers, reason
+   strings, and evidence references can reveal identity, behavior,
+   organizational structure, or sensitive decisions.  A digest is not
+   anonymization: low-entropy material can be guessed and hashed.
+
+   Producers SHOULD use pseudonymous scoped identifiers, data
+   minimization, access-controlled evidence stores, and retention
+   limits.  They SHOULD avoid embedding personal data in reasons or
+   identifiers.  Evidence references SHOULD be opaque digests of high-
+   entropy or access-controlled objects rather than hashes of guessable
+   personal attributes.
+
+   Append-only audit requirements can conflict with correction and
+   erasure obligations.  Deployments MUST define a lawful retention and
+   redaction strategy before recording personal data.  A redaction
+   mechanism MUST preserve the fact that a prior item existed without
+   falsely claiming that the redacted evidence remains independently
+   verifiable.
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 16]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+13.  IANA Considerations
+
+   This document requests no IANA actions.  Version 1 is carried as
+   application/json, and its state namespace is closed.  A future
+   document that defines a dedicated media type, a new wire version, or
+   an extensible registry will include the corresponding IANA
+   registration policy.
+
+14.  Formal and Empirical Boundary
+
+   The closed enum, deterministic decision predicate, canonical
+   encoding, and release invariant are suitable for machine proof.  Such
+   a proof is conditional on the formal model and its assumptions.  It
+   can show, for example, that a conforming executor never authorizes
+   ordinary release from a non-DONE state.
+
+   A proof of the software model is not, by itself, a proof that a
+   physical effect is safe.  Physical assurance additionally requires a
+   correct hardware and operating-system implementation, trusted sensors
+   and actuators, calibrated measurements, a stated fault model, and
+   empirical validation.  The protocol can carry and enforce the result
+   of those checks; it does not replace them.
+
+15.  Acknowledgements
+
+   Automated tooling was used to check repository consistency and to
+   identify specification gaps.  All normative claims remain the
+   responsibility of the author and require community review.
+
+16.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3339]  Klyne, G. and C. Newman, "Date and Time on the Internet:
+              Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002,
+              <https://www.rfc-editor.org/info/rfc3339>.
+
+   [RFC6234]  Eastlake 3rd, D. E. and T. Hansen, "US Secure Hash
+              Algorithms (SHA and SHA-based HMAC and HKDF)", RFC 6234,
+              DOI 10.17487/RFC6234, May 2011,
+              <https://www.rfc-editor.org/info/rfc6234>.
+
+   [RFC7493]  Bray, T., Ed., "The I-JSON Message Format", RFC 7493,
+              DOI 10.17487/RFC7493, March 2015,
+              <https://www.rfc-editor.org/info/rfc7493>.
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 17]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC8259]  Bray, T., Ed., "The JavaScript Object Notation (JSON) Data
+              Interchange Format", STD 90, RFC 8259,
+              DOI 10.17487/RFC8259, December 2017,
+              <https://www.rfc-editor.org/info/rfc8259>.
+
+   [RFC8610]  Birkholz, H., Vigano, C., and C. Bormann, "Concise Data
+              Definition Language (CDDL): A Notational Convention to
+              Express Concise Binary Object Representation (CBOR) and
+              JSON Data Structures", RFC 8610, DOI 10.17487/RFC8610,
+              June 2019, <https://www.rfc-editor.org/info/rfc8610>.
+
+   [RFC8785]  Rundgren, A., Jordan, B., and S. Erdtman, "JSON
+              Canonicalization Scheme (JCS)", RFC 8785,
+              DOI 10.17487/RFC8785, June 2020,
+              <https://www.rfc-editor.org/info/rfc8785>.
+
+   [UNICODE-NORM]
+              The Unicode Consortium, "Unicode Normalization Forms",
+              Unicode Standard Annex 15, August 2025,
+              <https://www.unicode.org/reports/tr15/>.
+
+Appendix A.  Complete Version-1 CDDL
+
+   This appendix is normative.  Scalar-value length limits and semantic
+   predicates that CDDL cannot express are specified in the main body.
+
+   effect-ack-record = {
+     wire_version: 1,
+     message_type: "effect-ack-record",
+     protocol_root_id: bounded-id,
+     protocol_version: positive-int,
+     protocol_id: bounded-protocol-id,
+     previous_protocol_id: bounded-protocol-id / null,
+     previous_protocol_hash: sha256-id / null,
+     protocol_hash: sha256-id,
+     input_id: bounded-id,
+     input_hash: sha256-id / "UNAVAILABLE",
+     state: effect-state,
+     transport_ack: bool,
+     origin_checked: bool,
+     context_checked: bool,
+     semantics_reconstructed: bool,
+     effect_anticipated: bool,
+     risk_classified: bool,
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 18]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+     risk_level: risk-level,
+     responsibility_assigned: bool,
+     responsibility_owner: bounded-owner,
+     connection_decided: bool,
+     connection_decision: connection-decision,
+     policy_id: bounded-id,
+     policy_version: positive-int,
+     policy_hash: sha256-id,
+     policy_allows_release: bool,
+     ordinary_release: bool,
+     evaluation_timeout_ms: positive-timeout,
+     deadline_exceeded: bool,
+     reasons: text-set,
+     evidence_refs: digest-set,
+     required_evidence_refs: digest-set,
+     open_questions: text-set,
+     next_required_checks: text-set,
+     created_utc: utc-timestamp,
+   }
+
+   effect-state =
+       "EFFECT_NACK"
+     / "EFFECT_ACK_CONTINUE"
+     / "EFFECT_ACK_DONE"
+     / "EFFECT_ACK_ISOLATE"
+     / "EFFECT_ACK_BLOCK"
+
+   risk-level = "UNKNOWN" / "LOW" / "MEDIUM" / "HIGH" / "CRITICAL"
+
+   connection-decision =
+       "UNDECIDED" / "CONTINUE" / "RELEASE" / "ISOLATE" / "BLOCK"
+
+   sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
+   bounded-id = tstr
+   bounded-protocol-id = tstr
+   bounded-owner = tstr
+   positive-int = 1..9007199254740991
+   positive-timeout = 1..2147483647
+   utc-timestamp = tstr
+   text-set = [*128 bounded-text]
+   digest-set = [*128 sha256-id]
+   bounded-text = tstr
+
+   effect-ack-capabilities = {
+     message_type: "effect-ack-capabilities",
+     supported_versions: [1* uint],
+   }
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 19]
+
+Internet-Draft             QIK-VRT EFFECT_ACK                  July 2026
+
+
+Appendix B.  Changes from Revision -00
+
+   *  Clarified that EFFECT_ACK is an application-layer control record
+      and that "Layer 4.5" is informal.
+
+   *  Made decision, immutable policy identity, policy version and
+      digest, and required evidence normative.
+
+   *  Specified complete state priority, re-evaluation, transition,
+      freshness, and revocation rules.
+
+   *  Added a closed version-1 JSON record, CDDL and JSON Schema
+      references, an NFC plus JCS canonicalization profile, and exact
+      hash projection.
+
+   *  Added version negotiation, downgrade and unknown-value behavior.
+
+   *  Added bounded timeout and supervisor requirements.
+
+   *  Separated content integrity from authenticity and required a
+      deployment authentication profile.
+
+   *  Expanded security, privacy, conformance, implementation-status,
+      test-vector, IANA, and formal-boundary sections.
+
+Author's Address
+
+   Ingolf Lohmann
+   Independent Researcher
+   Email: ingolf.lohmann@live.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 23 January 2027               [Page 20]

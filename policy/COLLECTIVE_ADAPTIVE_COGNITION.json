@@ -1,0 +1,81 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "classification": "policy_json"
+  },
+  "schema": "qikvrt_collective_adaptive_cognition_policy_v1",
+  "policy_version": "1.0.0",
+  "mode": "MEASURE_HASH_PROPOSE_ONLY",
+  "observation_schema": "qikvrt_collective_observation_v1",
+  "output_schemas": {
+    "evidence": "qikvrt_collective_adaptive_evidence_v1",
+    "proposal": "qikvrt_collective_adaptive_proposal_v1"
+  },
+  "collective_threshold": {
+    "minimum_observations": 2,
+    "minimum_distinct_observer_identifiers": 2,
+    "observer_identifier_required": true,
+    "disagreement_must_be_preserved": true
+  },
+  "collectivity_boundary": {
+    "basis": "DISTINCT_OBSERVER_IDENTIFIERS_ONLY",
+    "organizational_independence_verified": false,
+    "causal_independence_verified": false,
+    "person_identity_verified": false,
+    "observer_identifier_authentication_verified": false,
+    "consensus_claim_allowed": false
+  },
+  "effect_boundary": {
+    "runtime_state": "EFFECT_ACK_CONTINUE",
+    "ordinary_release": false,
+    "human_review_required": true,
+    "separate_effect_ack_required": true,
+    "release_state": "EFFECT_ACK_DONE",
+    "runtime_may_issue_release_state": false,
+    "runtime_may_infer_release_state": false
+  },
+  "mandatory_checks_before_implementation": [
+    "full_repository_test_suite",
+    "provenance_and_rights_review",
+    "security_review",
+    "scientific_claim_boundary_review",
+    "downstream_effect_review",
+    "codeowner_review",
+    "responsible_human_approval",
+    "fresh_authenticated_effect_ack_evaluation"
+  ],
+  "allowed_runtime_outputs": [
+    ".qikvrt/evidence/collective-adaptive/<run-id>/evidence.json",
+    ".qikvrt/evidence/collective-adaptive/<run-id>/proposal.json"
+  ],
+  "forbidden_actions": [
+    "execute_observation_content",
+    "modify_tracked_files",
+    "modify_policy_or_runtime",
+    "commit",
+    "push",
+    "open_or_modify_pull_request",
+    "approve_or_merge",
+    "tag",
+    "release",
+    "publish",
+    "deploy",
+    "change_permissions_or_secrets",
+    "network_access",
+    "network_write",
+    "auto_install_or_update",
+    "recursive_agent_spawn",
+    "self_mutation"
+  ],
+  "input_limits": {
+    "maximum_observation_files": 64,
+    "maximum_observation_bytes_each": 262144,
+    "maximum_measurements_each": 128,
+    "maximum_findings_each": 128,
+    "maximum_recommendations_each": 64,
+    "maximum_text_characters": 4096
+  }
+}

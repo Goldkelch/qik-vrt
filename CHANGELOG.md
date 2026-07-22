@@ -8,8 +8,28 @@ Copyright (c) 2026 Ingolf Lohmann.
 This file summarizes current public milestones. Git history and release pages
 remain the authoritative detailed record.
 
-## Unreleased
+## 2026.07.22 — EFFECT_ACK universality 1.0.0
 
+- Added the EFFECT_ACK universality working paper, executable proof report,
+  exact reconstruction and inversion boundaries, and a documented conclusion
+  that Draft `-01` requires no normative change.
+- Added a strict ANSI-C90 five-state decision core with exhaustive comparison
+  against an independently structured Draft-01 priority oracle.
+- Added checksum-bound GitHub CLI and `xml2rfc` runtime contracts, rebuildable
+  cache policy, pinned CI dependencies, and platform-specific bootstraps that
+  never persist credentials.
+- Added a bounded collective-adaptive protocol: exact-key cache reuse speeds
+  later environment construction automatically, while performance observations
+  produce proposal-only evidence. Reordering requires a separately reviewed
+  implementation; tests, review, `EFFECT_ACK_DONE`, merge, publication, release
+  and tagging remain protected gates.
+- Published the scientific finding as working paper
+  [10.5281/zenodo.21498773](https://doi.org/10.5281/zenodo.21498773) and the
+  deterministic tagged source-tree export as software
+  [10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774).
+- Added annotated tag `v2026.07.22-effect-ack-universality-1.0.0` to both
+  repositories with identical content trees. No GitHub Release object and no
+  IETF Datatracker submission were created.
 - Competition-readiness documentation, community guidance, and a no-network
   effect-haltpoint demonstration were merged into `main` through
   [PR #1](https://github.com/Goldkelch/qik-vrt/pull/1) at merge commit

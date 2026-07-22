@@ -1,0 +1,556 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Working-copy source prepared on 22 July 2026.
+  The IETF Datatracker and archive, not this repository comment, determine
+  whether a revision has been submitted and its current publication status.
+-->
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     version="3"
+     ipr="trust200902"
+     category="exp"
+     submissionType="IETF"
+     docName="draft-lohmann-qikvrt-effect-ack-01"
+     tocInclude="true"
+     tocDepth="3"
+     symRefs="true"
+     sortRefs="true">
+  <front>
+    <title abbrev="QIK-VRT EFFECT_ACK">QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title>
+    <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-01"/>
+    <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann">
+      <organization>Independent Researcher</organization>
+      <address>
+        <email>ingolf.lohmann@live.com</email>
+      </address>
+    </author>
+    <date year="2026" month="July" day="22"/>
+    <area>Applications and Real-Time</area>
+    <keyword>acknowledgement</keyword>
+    <keyword>authorization</keyword>
+    <keyword>effect gate</keyword>
+    <keyword>fail closed</keyword>
+    <keyword>audit record</keyword>
+
+    <abstract>
+      <t>Transport acknowledgements establish technical receipt; they do not establish that a received information unit is understood, policy-compliant, or authorized to produce a downstream effect.  This document defines an Experimental application-layer control record, called EFFECT_ACK, that separates receipt from effect authorization.</t>
+      <t>The protocol has five closed version-1 outcomes.  Ordinary downstream release is permitted only for EFFECT_ACK_DONE and only after validation of the record, its policy and evidence bindings, its freshness, and its authenticated origin.  This document specifies the state-selection algorithm, version handling, a deterministic JSON representation, hash chaining, timeout behavior, conformance requirements, and security and privacy boundaries.</t>
+      <t>This protocol does not modify TCP, QUIC, or the OSI model; does not solve the halting problem; and does not establish the truth of external evidence.  It provides a machine-checkable authorization boundary under explicitly stated deployment assumptions.</t>
+    </abstract>
+
+  </front>
+
+  <middle>
+    <section anchor="intro">
+      <name>Introduction</name>
+      <t>A transport acknowledgement answers a narrow question: did a protocol unit arrive or get processed at a transport-defined boundary?  It does not answer whether the content came from an authorized origin, whether its meaning was reconstructed in context, whether a proposed action complies with policy, or whether a responsible actor accepts the remaining risk.</t>
+      <t>Systems that equate receipt or successful computation with permission can trigger an effect before these questions are resolved.  Examples include sending a payment, publishing content, changing an access-control rule, operating an actuator, or forwarding an instruction to another autonomous component.</t>
+      <t>EFFECT_ACK inserts a logical authorization gate between reception and an effect executor.  The expression "Layer 4.5" is sometimes used informally for this placement.  It is not a new IETF or OSI layer and has no normative meaning in this document.  EFFECT_ACK is an application-layer record that can be carried over an authenticated application protocol.</t>
+      <t>The central invariant is:</t>
+      <sourcecode type="text"><![CDATA[
+Transport acknowledgement != authorization for downstream effect
+
+ordinary_release(record) is true
+    if and only if
+record.state == EFFECT_ACK_DONE
+    and the record passes every validation in this document.
+]]></sourcecode>
+
+      <section anchor="goals">
+        <name>Goals</name>
+        <ul>
+          <li>Define a closed, deterministic version-1 state model.</li>
+          <li>Bind the decision to an input, a versioned policy, and required evidence.</li>
+          <li>Fail closed on malformed, unsupported, unauthenticated, stale, or timed-out decisions.</li>
+          <li>Provide deterministic records suitable for independent validation and test vectors.</li>
+          <li>State precisely what a content hash proves and what it does not prove.</li>
+        </ul>
+      </section>
+
+      <section anchor="non-goals">
+        <name>Non-Goals</name>
+        <ul>
+          <li>The protocol does not determine whether arbitrary programs halt.</li>
+          <li>The protocol does not make a policy ethically, legally, medically, or physically correct.</li>
+          <li>The protocol does not authenticate an origin merely by hashing a record.</li>
+          <li>The protocol does not reverse an effect that has already occurred.</li>
+          <li>The protocol does not define a universal policy language or evidence format.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section anchor="conventions">
+      <name>Conventions and Definitions</name>
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals, as shown here.</t>
+      <dl>
+        <dt>Input unit</dt>
+        <dd>An octet sequence or immutable object whose proposed downstream effect is being evaluated.</dd>
+        <dt>Transport acknowledgement (TRANSPORT_ACK)</dt>
+        <dd>Evidence of receipt or processing at a transport-defined boundary.  It is not effect authorization.</dd>
+        <dt>Effect</dt>
+        <dd>A state change outside the evaluator, including a message, write, publication, financial transaction, access-control change, or actuator command.</dd>
+        <dt>Gate</dt>
+        <dd>The component that derives and validates an EFFECT_ACK record before ordinary release.</dd>
+        <dt>Effect executor</dt>
+        <dd>The component capable of producing the downstream effect.</dd>
+        <dt>Ordinary release</dt>
+        <dd>The normal, non-contained path from the gate to the effect executor.</dd>
+        <dt>Policy descriptor</dt>
+        <dd>An immutable, versioned description of the policy used for the decision.  This specification binds it by identifier, version, and SHA-256 digest but does not define its language.</dd>
+        <dt>Evidence reference</dt>
+        <dd>A content digest identifying evidence held outside the EFFECT_ACK record.  A digest is not evidence validation.</dd>
+        <dt>Effect-checkable reception</dt>
+        <dd>A reception for which an input identifier and an input digest are available at the gate.</dd>
+      </dl>
+    </section>
+
+    <section anchor="architecture">
+      <name>Architecture and Trust Boundary</name>
+      <t>A deployment contains at least an input receiver, a policy and evidence evaluator, an EFFECT_ACK gate, and an effect executor.  The gate and executor form a security boundary: the executor MUST NOT treat transport success, process exit status, application return values, or message presence as release permission.</t>
+      <t>The effect executor MUST accept ordinary release only when all of the following are true:</t>
+      <ol>
+        <li>The wire version is supported and the record is schema-valid.</li>
+        <li>The record is authenticated according to the deployment security profile.</li>
+        <li>The input, policy, evidence, version-chain, and freshness bindings validate.</li>
+        <li>The state re-derived from the normative algorithm is EFFECT_ACK_DONE.</li>
+        <li>The record says <tt>ordinary_release=true</tt>.</li>
+      </ol>
+      <t>A conforming gate MUST be on every path capable of reaching the protected effect.  If an alternate path can invoke the executor without this validation, the deployment is not effect-gate conformant even if its record generator passes unit tests.</t>
+      <t>Records SHOULD be carried over a mutually authenticated, integrity-protected channel.  A deployment MAY use a separately signed envelope, but the signature format and key management are outside the scope of version 1.  The deployment profile MUST name the authentication mechanism and the principals authorized to assert policy decisions.</t>
+    </section>
+
+    <section anchor="states">
+      <name>Version-1 State Model</name>
+      <t>Version 1 contains exactly the following five state strings.  A receiver MUST compare them case-sensitively.</t>
+      <dl>
+        <dt>EFFECT_NACK</dt>
+        <dd>No effect-checkable reception exists.  No ordinary release is permitted.</dd>
+        <dt>EFFECT_ACK_CONTINUE</dt>
+        <dd>Evaluation can continue, but one or more release conditions remain unsatisfied.  No ordinary release is permitted.</dd>
+        <dt>EFFECT_ACK_DONE</dt>
+        <dd>All version-1 release conditions are satisfied for the bound input, policy, evidence set, and decision version.  This is the only state eligible for ordinary release.</dd>
+        <dt>EFFECT_ACK_ISOLATE</dt>
+        <dd>The input or proposed effect is confined to an explicitly contained review or execution environment.  Isolation is not ordinary release.</dd>
+        <dt>EFFECT_ACK_BLOCK</dt>
+        <dd>The proposed effect is stopped.  Repair or review requires a new, hash-linked record version.</dd>
+      </dl>
+
+      <section anchor="done-predicate">
+        <name>DONE Predicate</name>
+        <t>Let <tt>CoreDone(r)</tt> be true only when every expression below is true for record <tt>r</tt>.  Schema, authentication, freshness and chain validation are additional consumer release checks from <xref target="architecture"/>; they do not change the core state selected from a valid evaluation snapshot.</t>
+        <sourcecode type="text"><![CDATA[
+r.transport_ack
+and sha256_identifier(r.input_hash)
+and r.origin_checked
+and r.context_checked
+and r.semantics_reconstructed
+and r.effect_anticipated
+and r.risk_classified
+and r.risk_level != "UNKNOWN"
+and r.responsibility_assigned
+and r.responsibility_owner != ""
+and r.connection_decided
+and r.connection_decision == "RELEASE"
+and r.policy_allows_release
+and not r.deadline_exceeded
+and r.open_questions == []
+and r.next_required_checks == []
+and set(r.required_evidence_refs) <= set(r.evidence_refs)
+]]></sourcecode>
+        <t>The policy triple is required and syntactically checked by the wire schema.  Its semantic validation and validation of the referenced evidence are consumer checks from <xref target="architecture"/>.  The JSON record carries check results, but an effect executor MUST NOT trust those booleans solely because they are present.  It MUST validate an authenticated assertion from an authorized evaluator or reperform the checks.  In particular, membership of a digest in <tt>evidence_refs</tt> proves neither availability nor truth of the referenced evidence.</t>
+      </section>
+
+      <section anchor="selection">
+        <name>State Selection and Priority</name>
+        <t>A producer MUST select the state using the following priority order.  A consumer MUST independently rederive the result.  A mismatch MUST prevent ordinary release.</t>
+        <sourcecode type="pseudocode"><![CDATA[
+if record cannot be safely parsed, its version is unsupported,
+   or required authentication is absent:
+    fail closed without ordinary release
+else if predecessor_invalid:
+    state = EFFECT_ACK_BLOCK
+else if deadline_exceeded:
+    state = EFFECT_ACK_BLOCK
+else if not effect_checkable_reception:
+    state = EFFECT_NACK
+else if integrity_failure:
+    state = EFFECT_ACK_BLOCK
+else if connection_decision == BLOCK:
+    state = EFFECT_ACK_BLOCK
+else if connection_decision == ISOLATE:
+    state = EFFECT_ACK_ISOLATE
+else if connection_decision == RELEASE
+        and CoreDone(record with candidate state EFFECT_ACK_DONE):
+    state = EFFECT_ACK_DONE
+else:
+    state = EFFECT_ACK_CONTINUE
+
+ordinary_release = (state == EFFECT_ACK_DONE)
+]]></sourcecode>
+        <t>Predecessor failure is evaluated before the local snapshot and produces BLOCK.  A local timeout is next and also produces BLOCK.  In exact refinement with the reference evaluator, absence of an effect-checkable reception then produces NACK before local payload-integrity checks.  This ordering is safe because NACK never permits release.  For an effect-checkable reception, integrity failure precedes explicit BLOCK, explicit ISOLATE, DONE and CONTINUE.  An explicit BLOCK precedes ISOLATE; ISOLATE precedes DONE and CONTINUE.  A policy denial without an explicit BLOCK decision results in CONTINUE; a deployment policy MAY instead require the evaluator to select BLOCK.</t>
+      </section>
+
+      <section anchor="transitions">
+        <name>Re-evaluation and State Transitions</name>
+        <t>A state is an outcome for one immutable record version, not mutable shared state.  New evidence, a new policy, a changed decision, a timeout result, or a revocation MUST create the next contiguous <tt>protocol_version</tt> and MUST link it to the predecessor.</t>
+        <table anchor="transition-table">
+          <name>Permitted next states</name>
+          <thead>
+            <tr><th>Current</th><th>Permitted next state</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>EFFECT_NACK</td><td>NACK, CONTINUE, DONE, ISOLATE, BLOCK</td></tr>
+            <tr><td>EFFECT_ACK_CONTINUE</td><td>NACK, CONTINUE, DONE, ISOLATE, BLOCK</td></tr>
+            <tr><td>EFFECT_ACK_DONE</td><td>NACK, CONTINUE, DONE, ISOLATE, BLOCK</td></tr>
+            <tr><td>EFFECT_ACK_ISOLATE</td><td>NACK, CONTINUE, DONE, ISOLATE, BLOCK</td></tr>
+            <tr><td>EFFECT_ACK_BLOCK</td><td>NACK, CONTINUE, DONE, ISOLATE, BLOCK</td></tr>
+          </tbody>
+        </table>
+        <t>Every state is a snapshot outcome, so every next state is permitted when the immutable input binding is preserved and the normative selection algorithm produces it.  This includes revocation from DONE to any non-releasing state and recovery from BLOCK or ISOLATE after the decision facts change.  An identical re-evaluation MAY return the existing record without incrementing the version.  A transition to a different state MUST change at least one deterministic decision field and SHOULD cite the new evidence, policy version or review reason.  A later non-DONE record revokes only future release; it cannot undo an effect already executed.  Consumers MUST define how they discover the freshest authenticated record and MUST reject a stale DONE record when a newer valid version is known or required by policy.</t>
+      </section>
+    </section>
+
+    <section anchor="wire">
+      <name>Wire Representation</name>
+      <t>Version-1 messages are JSON objects as defined by <xref target="RFC8259"/> and constrained to the I-JSON profile in <xref target="RFC7493"/>.  Records MUST be encoded as UTF-8 without a byte-order mark.  A deployment MAY carry a record using <tt>application/json</tt>; this document does not allocate a new media type.</t>
+      <t>The normative CDDL, using the notation from <xref target="RFC8610"/>, appears in <xref target="complete-cddl"/>.  A synchronized extraction may be maintained with the source of this draft as <tt>external/ietf/qikvrt-effect-ack-v1.cddl</tt>.  That extraction and the JSON Schema at <tt>external/ietf/qikvrt-effect-ack-v1.schema.json</tt> are non-normative conformance aids.  If either conflicts with this document, this document, including the CDDL in <xref target="complete-cddl"/>, controls.</t>
+
+      <section anchor="record-fields">
+        <name>Responsibility Record</name>
+        <t>Every version-1 record MUST contain all fields in this section.  Unknown fields MUST be rejected because the version-1 record is closed.</t>
+        <table anchor="field-table">
+          <name>Version-1 fields</name>
+          <thead><tr><th>Field</th><th>Type and purpose</th></tr></thead>
+          <tbody>
+            <tr><td>wire_version</td><td>Integer 1.</td></tr>
+            <tr><td>message_type</td><td>String <tt>effect-ack-record</tt>.</td></tr>
+            <tr><td>protocol_root_id</td><td>Stable chain identifier, 1 to 256 characters.</td></tr>
+            <tr><td>protocol_version</td><td>Contiguous positive integer within a chain.</td></tr>
+            <tr><td>protocol_id</td><td><tt>protocol_root_id + ":v" + protocol_version</tt>, at most 512 characters.</td></tr>
+            <tr><td>previous_protocol_id</td><td>Previous protocol identifier of at most 512 characters, or null for version 1.</td></tr>
+            <tr><td>previous_protocol_hash</td><td>Previous record digest, or null for version 1.</td></tr>
+            <tr><td>protocol_hash</td><td>SHA-256 digest of the canonical hash projection.</td></tr>
+            <tr><td>input_id</td><td>Input identifier, 1 to 256 characters.</td></tr>
+            <tr><td>input_hash</td><td>SHA-256 digest, or <tt>UNAVAILABLE</tt> only for NACK.</td></tr>
+            <tr><td>state</td><td>One of the five version-1 state strings.</td></tr>
+            <tr><td>transport_ack</td><td>Boolean transport-receipt assertion.</td></tr>
+            <tr><td>origin_checked</td><td>Boolean origin-check assertion.</td></tr>
+            <tr><td>context_checked</td><td>Boolean context-check assertion.</td></tr>
+            <tr><td>semantics_reconstructed</td><td>Boolean semantics-check assertion.</td></tr>
+            <tr><td>effect_anticipated</td><td>Boolean effect-analysis assertion.</td></tr>
+            <tr><td>risk_classified</td><td>Boolean risk-classification assertion.</td></tr>
+            <tr><td>risk_level</td><td>UNKNOWN, LOW, MEDIUM, HIGH, or CRITICAL.</td></tr>
+            <tr><td>responsibility_assigned</td><td>Boolean responsibility assertion.</td></tr>
+            <tr><td>responsibility_owner</td><td>Responsible principal identifier, at most 256 characters.</td></tr>
+            <tr><td>connection_decided</td><td>Boolean decision-completion assertion.</td></tr>
+            <tr><td>connection_decision</td><td>UNDECIDED, CONTINUE, RELEASE, ISOLATE, or BLOCK.</td></tr>
+            <tr><td>policy_id</td><td>Policy identifier, 1 to 256 characters.</td></tr>
+            <tr><td>policy_version</td><td>Positive policy version.</td></tr>
+            <tr><td>policy_hash</td><td>SHA-256 digest of the exact policy descriptor.</td></tr>
+            <tr><td>policy_allows_release</td><td>Boolean result of evaluating that policy.</td></tr>
+            <tr><td>ordinary_release</td><td>True exactly for a valid DONE record.</td></tr>
+            <tr><td>evaluation_timeout_ms</td><td>Configured positive evaluation budget in milliseconds.</td></tr>
+            <tr><td>deadline_exceeded</td><td>Boolean timeout result.</td></tr>
+            <tr><td>reasons</td><td>Set-like array of reason strings.</td></tr>
+            <tr><td>evidence_refs</td><td>Set-like array of available evidence digests.</td></tr>
+            <tr><td>required_evidence_refs</td><td>Set-like array of policy-required evidence digests.</td></tr>
+            <tr><td>open_questions</td><td>Set-like array of unresolved questions.</td></tr>
+            <tr><td>next_required_checks</td><td>Set-like array of checks required before release.</td></tr>
+            <tr><td>created_utc</td><td>UTC timestamp conforming to <xref target="RFC3339"/> and ending in <tt>Z</tt>.</td></tr>
+          </tbody>
+        </table>
+        <t>A SHA-256 identifier has the exact form <tt>sha256:</tt> followed by 64 lowercase hexadecimal characters.  Every set-like array has at most 128 unique strings, each at most 1024 Unicode scalar values.  Producers MUST normalize and sort such arrays as described in <xref target="canonical"/>.</t>
+      </section>
+
+      <section anchor="canonical">
+        <name>Canonical JSON and Protocol Hash</name>
+        <t>Producers and consumers MUST perform these steps in order:</t>
+        <ol>
+          <li>Parse an I-JSON object and reject duplicate member names.</li>
+          <li>Normalize every member name and string value to Unicode Normalization Form C (NFC) as specified by <xref target="UNICODE-NORM"/>.  Reject a duplicate member name introduced by normalization.</li>
+          <li>Reject floating-point values and integers outside the I-JSON exact integer range.</li>
+          <li>For every set-like array, remove empty items and duplicate normalized strings, then sort ascending by Unicode scalar-value sequence.</li>
+          <li>Create the hash projection by removing exactly <tt>protocol_hash</tt> and <tt>created_utc</tt>.</li>
+          <li>Serialize the projection using the JSON Canonicalization Scheme (JCS) in <xref target="RFC8785"/>.</li>
+          <li>Compute SHA-256 as specified by <xref target="RFC6234"/> over the resulting UTF-8 octets and prefix the lowercase hexadecimal digest with <tt>sha256:</tt>.</li>
+        </ol>
+        <t>The timestamp is excluded so that volatile audit metadata does not change the protocol decision identity.  Consequently, <tt>created_utc</tt> is not integrity-protected by <tt>protocol_hash</tt>.  A consumer MUST NOT use that timestamp as its sole freshness signal.  If timestamp integrity is required, the authenticated transport or signed outer envelope MUST bind the complete record including <tt>created_utc</tt>.</t>
+      </section>
+
+      <section anchor="chain">
+        <name>Version Chain Validation</name>
+        <t>For the first record, <tt>protocol_version</tt> MUST be 1 and both predecessor fields MUST be null.  For each later record, the version MUST increment by exactly one; both predecessor fields MUST match the immediately preceding record; and <tt>protocol_root_id</tt>, <tt>input_id</tt>, and <tt>input_hash</tt> MUST remain unchanged.</t>
+        <t>A producer MUST NOT attach a new record to an invalid predecessor.  When it can safely create an incident record, it MUST start a new version-1 incident chain, select BLOCK, use a collision-resistant incident root derived from bounded forensic material, and cite <tt>PREVIOUS_PROTOCOL_INTEGRITY_FAILURE</tt>.  The invalid predecessor itself MUST NOT be serialized into the trusted incident chain.</t>
+        <t>A self-consistent hash chain does not detect an adversary that rewrites the complete chain and recomputes every digest.  A deployment requiring rewrite detection MUST retain at least one trusted digest outside the chain or authenticate each record with a key unavailable to the rewriter.</t>
+      </section>
+    </section>
+
+    <section anchor="versioning">
+      <name>Version Negotiation and Unknown Values</name>
+      <t>A deployment MAY pin version 1 without negotiation.  A deployment that negotiates versions uses the following capability object before sending records:</t>
+      <sourcecode type="json"><![CDATA[
+{"message_type":"effect-ack-capabilities","supported_versions":[1]}
+]]></sourcecode>
+      <t>The selected version is the highest mutually supported version permitted by local policy.  The capability exchange and selected version MUST be bound to the authenticated session transcript.  An unauthenticated retry with a lower version MUST NOT cause a downgrade.</t>
+      <t>A consumer receiving an unknown <tt>wire_version</tt>, unknown <tt>message_type</tt>, unknown state string, or unknown decision string MUST NOT perform ordinary release.  It MAY return an authenticated error that lists supported versions.  It MUST NOT map an unknown state to DONE, CONTINUE, or any other version-1 state.</t>
+      <t>New states or changed release semantics require a new wire version.  Adding an optional member to the closed version-1 record also requires a new wire version.</t>
+    </section>
+
+    <section anchor="timeouts">
+      <name>Timeouts and Bounded Evaluation</name>
+      <t>The evaluator MUST use a monotonic clock for its local decision budget.  <tt>evaluation_timeout_ms</tt> records the configured positive budget, not a network-wide timing guarantee.  If the budget is exhausted before the record, policy, evidence, and chain have been validated, the producer MUST set <tt>deadline_exceeded=true</tt>, select EFFECT_ACK_BLOCK, set <tt>ordinary_release=false</tt>, and include a continuation or review action in <tt>next_required_checks</tt>.</t>
+      <t>A cooperative in-process deadline does not guarantee preemption under CPU starvation, blocking system calls, or a compromised runtime.  Deployments requiring a hard wall-clock bound MUST enforce it with an independent supervisor.  Failure of the supervisor or clock MUST fail closed.</t>
+      <t>Timeout is not evidence that the input is malicious.  It is evidence that release authorization was not completed within the configured budget.</t>
+    </section>
+
+    <section anchor="policy-evidence">
+      <name>Policy and Evidence Binding</name>
+      <t>The producer MUST bind a decision to exactly one immutable policy descriptor using <tt>policy_id</tt>, <tt>policy_version</tt>, and <tt>policy_hash</tt>.  A consumer MUST obtain that descriptor from a trusted store or an authenticated evaluator and verify its digest before accepting DONE.</t>
+      <t>The policy descriptor MUST determine the required evidence set or a deterministic rule for deriving it.  The record's <tt>required_evidence_refs</tt> MUST match that result.  DONE additionally requires every required digest to occur in <tt>evidence_refs</tt> and every referenced required item to pass the policy-defined validator.</t>
+      <t>Evidence digests MUST identify exact octets or a separately specified canonical representation.  A deployment profile MUST define evidence retrieval, authorization, canonicalization, validation, and retention.  Absence, retrieval failure, digest mismatch, or validator failure MUST prevent DONE.</t>
+      <t>The protocol deliberately separates policy binding from policy correctness.  Machine validation can prove that the specified policy and evidence gates were followed; it cannot prove that an externally chosen policy is morally, legally, or scientifically true.</t>
+    </section>
+
+    <section anchor="conformance">
+      <name>Conformance Requirements</name>
+      <section anchor="wire-conformance">
+        <name>Wire Conformance</name>
+        <t>A wire-conformant implementation MUST parse and emit the closed version-1 record, enforce all bounds and enums, implement the canonicalization and hash algorithm, validate chain linkage, and reject unknown versions and states without ordinary release.</t>
+      </section>
+      <section anchor="gate-conformance">
+        <name>Gate Conformance</name>
+        <t>A gate-conformant implementation MUST independently rederive the state, MUST make DONE the only ordinary-release state, MUST prevent release on every individual failed DONE condition, and MUST apply the priority rules in <xref target="selection"/>.</t>
+      </section>
+      <section anchor="deployment-conformance">
+        <name>Deployment Conformance</name>
+        <t>A deployment-conformant system MUST additionally authenticate authorized evaluators, protect every path to the executor, define policy and evidence validators, enforce freshness and replay policy, retain a trusted chain anchor when rewrite detection is required, and document its timeout supervisor and failure model.</t>
+      </section>
+      <section anchor="test-vectors">
+        <name>Test Vectors</name>
+        <t>The source repository contains machine-readable positive and negative vectors under <tt>external/ietf/test-vectors/effect-ack-v1/</tt>.  At minimum, a conformance suite MUST test all five states, each DONE conjunct independently, priority collisions, unknown versions and states, malformed and mismatched digests, policy mismatch, missing required evidence, canonicalization, chain rewriting, stale DONE replay, timeout, and an unauthenticated assertion.</t>
+        <t>Passing repository tests is evidence about the tested implementation and revision.  It does not by itself establish deployment conformance or IETF consensus.</t>
+      </section>
+    </section>
+
+    <section anchor="implementation-status" removeInRFC="true">
+      <name>Implementation Status</name>
+      <t>This section is non-normative.</t>
+      <t>A Python reference state machine and focused conformance tests are available in the public <tt>ingolf-lohmann/qik-vrt</tt> repository.  The tests exercise the five-state closure, DONE-only release, individual gate failures, input binding, deterministic JSON, record and chain integrity, trusted anchors, cooperative deadlines, and deterministic reevaluation.</t>
+      <t>The current development branch includes a QIKVRT-CJ-1 canonicalizer with NFC preprocessing, I-JSON safe-integer bounds, rejection of floating values, surrogates and non-string member names, and RFC 8785 UTF-16 code-unit member ordering, including a non-BMP ordering vector.  At the time this candidate was prepared, however, the Python responsibility record still represented the revision-00 flat wire model and did not emit every new revision-01 field, notably the explicit wire version, immutable policy triple, and recorded timeout fields.  It therefore must not be claimed as fully revision-01 wire conformant until that intentional gap is closed and the full suite passes.</t>
+      <t>Interoperability between at least two independently developed implementations remains an open publication milestone.</t>
+    </section>
+
+    <section anchor="security">
+      <name>Security Considerations</name>
+      <t>The principal threat is unauthorized effect caused by treating receipt or syntactic success as release permission.  Additional threats include forged DONE records, policy substitution, evidence omission, digest confusion, replay of stale DONE, downgrade to weaker semantics, chain rewrite, alternate-path bypass, denial of service, and compromise of the evaluator or executor.</t>
+      <t>SHA-256 content digests provide collision-resistant content identifiers under current assumptions.  They do not authenticate a principal, establish freshness, prove evidence truth, or protect a fully rewritten unanchored chain.  Deployments MUST use an authenticated channel or signed envelope and MUST authorize the principal that can assert the policy result.</t>
+      <t>Consumers MUST rederive the state instead of trusting the state string.  A candidate DONE with any failed predicate MUST be rejected and SHOULD generate a BLOCK incident record when that can be done safely.  A consumer MUST compare digests using a constant-time function when digest equality is exposed to a remote adversary.</t>
+      <t>Replay controls MUST bind at least the protocol root, contiguous version, input digest, policy digest, authenticated session or deployment context, and a locally defined freshness rule.  Consumers MUST NOT accept a known older DONE after a newer BLOCK or ISOLATE.</t>
+      <t>The gate itself can become a denial-of-service target.  Implementations MUST bound payload size, string length, array length, recursion depth, evaluation time, policy work, and evidence retrieval.  Expensive validation SHOULD occur in a contained asynchronous stage while ordinary release remains blocked.</t>
+      <t>The protocol cannot protect an executor reachable around the gate, a compromised policy engine, dishonest evidence providers, stolen signing keys, or physical actuators that ignore the gate.  These are deployment assumptions, not conclusions of the state-machine proof.</t>
+    </section>
+
+    <section anchor="privacy">
+      <name>Privacy Considerations</name>
+      <t>Responsibility owners, input identifiers, policy identifiers, reason strings, and evidence references can reveal identity, behavior, organizational structure, or sensitive decisions.  A digest is not anonymization: low-entropy material can be guessed and hashed.</t>
+      <t>Producers SHOULD use pseudonymous scoped identifiers, data minimization, access-controlled evidence stores, and retention limits.  They SHOULD avoid embedding personal data in reasons or identifiers.  Evidence references SHOULD be opaque digests of high-entropy or access-controlled objects rather than hashes of guessable personal attributes.</t>
+      <t>Append-only audit requirements can conflict with correction and erasure obligations.  Deployments MUST define a lawful retention and redaction strategy before recording personal data.  A redaction mechanism MUST preserve the fact that a prior item existed without falsely claiming that the redacted evidence remains independently verifiable.</t>
+    </section>
+
+    <section anchor="iana">
+      <name>IANA Considerations</name>
+      <t>This document requests no IANA actions.  Version 1 is carried as <tt>application/json</tt>, and its state namespace is closed.  A future document that defines a dedicated media type, a new wire version, or an extensible registry will include the corresponding IANA registration policy.</t>
+    </section>
+
+    <section anchor="limitations">
+      <name>Formal and Empirical Boundary</name>
+      <t>The closed enum, deterministic decision predicate, canonical encoding, and release invariant are suitable for machine proof.  Such a proof is conditional on the formal model and its assumptions.  It can show, for example, that a conforming executor never authorizes ordinary release from a non-DONE state.</t>
+      <t>A proof of the software model is not, by itself, a proof that a physical effect is safe.  Physical assurance additionally requires a correct hardware and operating-system implementation, trusted sensors and actuators, calibrated measurements, a stated fault model, and empirical validation.  The protocol can carry and enforce the result of those checks; it does not replace them.</t>
+    </section>
+
+    <section anchor="acknowledgements">
+      <name>Acknowledgements</name>
+      <t>Automated tooling was used to check repository consistency and to identify specification gaps.  All normative claims remain the responsibility of the author and require community review.</t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date year="1997" month="March"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+        <seriesInfo name="DOI" value="10.17487/RFC2119"/>
+      </reference>
+      <reference anchor="RFC8174" target="https://www.rfc-editor.org/info/rfc8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date year="2017" month="May"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+      </reference>
+      <reference anchor="RFC8259" target="https://www.rfc-editor.org/info/rfc8259">
+        <front>
+          <title>The JavaScript Object Notation (JSON) Data Interchange Format</title>
+          <author initials="T." surname="Bray" fullname="Tim Bray" role="editor"/>
+          <date year="2017" month="December"/>
+        </front>
+        <seriesInfo name="STD" value="90"/>
+        <seriesInfo name="RFC" value="8259"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8259"/>
+      </reference>
+      <reference anchor="RFC7493" target="https://www.rfc-editor.org/info/rfc7493">
+        <front>
+          <title>The I-JSON Message Format</title>
+          <author initials="T." surname="Bray" fullname="Tim Bray" role="editor"/>
+          <date year="2015" month="March"/>
+        </front>
+        <seriesInfo name="RFC" value="7493"/>
+        <seriesInfo name="DOI" value="10.17487/RFC7493"/>
+      </reference>
+      <reference anchor="RFC8785" target="https://www.rfc-editor.org/info/rfc8785">
+        <front>
+          <title>JSON Canonicalization Scheme (JCS)</title>
+          <author initials="A." surname="Rundgren" fullname="Anders Rundgren"/>
+          <author initials="B." surname="Jordan" fullname="Bret Jordan"/>
+          <author initials="S." surname="Erdtman" fullname="Samuel Erdtman"/>
+          <date year="2020" month="June"/>
+        </front>
+        <seriesInfo name="RFC" value="8785"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8785"/>
+      </reference>
+      <reference anchor="RFC8610" target="https://www.rfc-editor.org/info/rfc8610">
+        <front>
+          <title>Concise Data Definition Language (CDDL): A Notational Convention to Express Concise Binary Object Representation (CBOR) and JSON Data Structures</title>
+          <author initials="H." surname="Birkholz" fullname="Henk Birkholz"/>
+          <author initials="C." surname="Vigano" fullname="Carsten Vigano"/>
+          <author initials="C." surname="Bormann" fullname="Carsten Bormann"/>
+          <date year="2019" month="June"/>
+        </front>
+        <seriesInfo name="RFC" value="8610"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8610"/>
+      </reference>
+      <reference anchor="RFC3339" target="https://www.rfc-editor.org/info/rfc3339">
+        <front>
+          <title>Date and Time on the Internet: Timestamps</title>
+          <author initials="G." surname="Klyne" fullname="Graham Klyne"/>
+          <author initials="C." surname="Newman" fullname="Chris Newman"/>
+          <date year="2002" month="July"/>
+        </front>
+        <seriesInfo name="RFC" value="3339"/>
+        <seriesInfo name="DOI" value="10.17487/RFC3339"/>
+      </reference>
+      <reference anchor="RFC6234" target="https://www.rfc-editor.org/info/rfc6234">
+        <front>
+          <title>US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)</title>
+          <author initials="D. E." surname="Eastlake 3rd" fullname="Donald E. Eastlake 3rd"/>
+          <author initials="T." surname="Hansen" fullname="Tony Hansen"/>
+          <date year="2011" month="May"/>
+        </front>
+        <seriesInfo name="RFC" value="6234"/>
+        <seriesInfo name="DOI" value="10.17487/RFC6234"/>
+      </reference>
+      <reference anchor="UNICODE-NORM" target="https://www.unicode.org/reports/tr15/">
+        <front>
+          <title>Unicode Normalization Forms</title>
+          <author><organization>The Unicode Consortium</organization></author>
+          <date year="2025" month="August"/>
+        </front>
+        <seriesInfo name="Unicode Standard Annex" value="15"/>
+      </reference>
+    </references>
+
+    <section anchor="complete-cddl">
+      <name>Complete Version-1 CDDL</name>
+      <t>This appendix is normative.  Scalar-value length limits and semantic predicates that CDDL cannot express are specified in the main body.</t>
+      <sourcecode type="cddl"><![CDATA[
+effect-ack-record = {
+  wire_version: 1,
+  message_type: "effect-ack-record",
+  protocol_root_id: bounded-id,
+  protocol_version: positive-int,
+  protocol_id: bounded-protocol-id,
+  previous_protocol_id: bounded-protocol-id / null,
+  previous_protocol_hash: sha256-id / null,
+  protocol_hash: sha256-id,
+  input_id: bounded-id,
+  input_hash: sha256-id / "UNAVAILABLE",
+  state: effect-state,
+  transport_ack: bool,
+  origin_checked: bool,
+  context_checked: bool,
+  semantics_reconstructed: bool,
+  effect_anticipated: bool,
+  risk_classified: bool,
+  risk_level: risk-level,
+  responsibility_assigned: bool,
+  responsibility_owner: bounded-owner,
+  connection_decided: bool,
+  connection_decision: connection-decision,
+  policy_id: bounded-id,
+  policy_version: positive-int,
+  policy_hash: sha256-id,
+  policy_allows_release: bool,
+  ordinary_release: bool,
+  evaluation_timeout_ms: positive-timeout,
+  deadline_exceeded: bool,
+  reasons: text-set,
+  evidence_refs: digest-set,
+  required_evidence_refs: digest-set,
+  open_questions: text-set,
+  next_required_checks: text-set,
+  created_utc: utc-timestamp,
+}
+
+effect-state =
+    "EFFECT_NACK"
+  / "EFFECT_ACK_CONTINUE"
+  / "EFFECT_ACK_DONE"
+  / "EFFECT_ACK_ISOLATE"
+  / "EFFECT_ACK_BLOCK"
+
+risk-level = "UNKNOWN" / "LOW" / "MEDIUM" / "HIGH" / "CRITICAL"
+
+connection-decision =
+    "UNDECIDED" / "CONTINUE" / "RELEASE" / "ISOLATE" / "BLOCK"
+
+sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
+bounded-id = tstr
+bounded-protocol-id = tstr
+bounded-owner = tstr
+positive-int = 1..9007199254740991
+positive-timeout = 1..2147483647
+utc-timestamp = tstr
+text-set = [*128 bounded-text]
+digest-set = [*128 sha256-id]
+bounded-text = tstr
+
+effect-ack-capabilities = {
+  message_type: "effect-ack-capabilities",
+  supported_versions: [1* uint],
+}
+]]></sourcecode>
+    </section>
+
+    <section anchor="change-log">
+      <name>Changes from Revision -00</name>
+      <ul>
+        <li>Clarified that EFFECT_ACK is an application-layer control record and that "Layer 4.5" is informal.</li>
+        <li>Made decision, immutable policy identity, policy version and digest, and required evidence normative.</li>
+        <li>Specified complete state priority, re-evaluation, transition, freshness, and revocation rules.</li>
+        <li>Added a closed version-1 JSON record, CDDL and JSON Schema references, an NFC plus JCS canonicalization profile, and exact hash projection.</li>
+        <li>Added version negotiation, downgrade and unknown-value behavior.</li>
+        <li>Added bounded timeout and supervisor requirements.</li>
+        <li>Separated content integrity from authenticity and required a deployment authentication profile.</li>
+        <li>Expanded security, privacy, conformance, implementation-status, test-vector, IANA, and formal-boundary sections.</li>
+      </ul>
+    </section>
+  </back>
+</rfc>

@@ -1,0 +1,236 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Collective Proposal Review
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-collective-review-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  collective-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate adaptive policy and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m json.tool policy/COLLECTIVE_ADAPTIVE_COGNITION.json >/dev/null
+          bash -n tools/qikvrt_adaptive_runtime.sh tests/test_adaptive_runtime.sh
+
+      - name: Run bounded adaptive-runtime positive and negative controls
+        shell: bash
+        run: bash tests/test_adaptive_runtime.sh
+
+      - name: Run mandatory repository test suite
+        run: make test
+
+      - name: Create two attributable deterministic observations
+        shell: bash
+        env:
+          QIKVRT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          QIKVRT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/runtime/collective-input
+          python3 -B - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          root = Path.cwd()
+          destination = root / ".qikvrt/runtime/collective-input"
+          sha_pattern = re.compile(r"[0-9a-f]{40}\Z")
+
+          def git(*args):
+              return subprocess.run(
+                  ["git", *args],
+                  check=True,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+              ).stdout
+
+          base = os.environ.get("QIKVRT_BASE_SHA", "")
+          head = os.environ.get("QIKVRT_HEAD_SHA", "")
+          if sha_pattern.fullmatch(base) and sha_pattern.fullmatch(head):
+              range_spec = f"{base}...{head}"
+              try:
+                  numstat = git("diff", "--numstat", range_spec)
+              except subprocess.CalledProcessError:
+                  range_spec = "HEAD^...HEAD"
+                  numstat = git("diff", "--numstat", range_spec)
+          else:
+              range_spec = "HEAD^...HEAD"
+              try:
+                  numstat = git("diff", "--numstat", range_spec)
+              except subprocess.CalledProcessError:
+                  range_spec = "tracked-files-at-HEAD"
+                  numstat = "\n".join(f"0\t0\t{path}" for path in git("ls-files").splitlines())
+
+          paths = []
+          additions = 0
+          deletions = 0
+          for line in numstat.splitlines():
+              if not line:
+                  continue
+              added, deleted, path = line.split("\t", 2)
+              paths.append(path)
+              if added.isdigit():
+                  additions += int(added)
+              if deleted.isdigit():
+                  deletions += int(deleted)
+
+          sensitive_prefixes = (
+              ".github/",
+              "policy/",
+              "src/",
+              "tools/",
+              "tests/",
+              "GOVERNANCE.md",
+              "AGENTS.md",
+          )
+          sensitive = [path for path in paths if path.startswith(sensitive_prefixes)]
+          adaptive = [
+              path
+              for path in paths
+              if "COLLECTIVE_ADAPTIVE_COGNITION" in path
+              or path.endswith("qikvrt_adaptive_runtime.sh")
+              or path.endswith("test_adaptive_runtime.sh")
+              or path.endswith("qikvrt_collective_review.yml")
+          ]
+          measured_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+          shared_recommendation = {
+              "proposal_id": "human-review-before-effect",
+              "description": "Review the measured change and its downstream effects before any implementation or release.",
+              "rationale": "Automated measurement and agreement are evidence, not effect authorization.",
+              "risk": "HIGH",
+              "finding_refs": ["review-required"],
+          }
+
+          observations = [
+              {
+                  "schema": "qikvrt_collective_observation_v1",
+                  "observation_id": "git-change-surface",
+                  "observer_id": "deterministic-git-measurer",
+                  "subject": range_spec,
+                  "measured_at_utc": measured_at,
+                  "measurements": [
+                      {"name": "changed_files", "value": len(paths), "unit": "count", "method": "git diff --numstat over the validated commit range"},
+                      {"name": "added_lines", "value": additions, "unit": "lines", "method": "sum of numeric git diff --numstat additions"},
+                      {"name": "deleted_lines", "value": deletions, "unit": "lines", "method": "sum of numeric git diff --numstat deletions"},
+                  ],
+                  "findings": [
+                      {
+                          "finding_id": "review-required",
+                          "statement": "The measured change surface requires ordinary code and effect review.",
+                          "status": "CONTINUE",
+                          "measurement_refs": ["changed_files", "added_lines", "deleted_lines"],
+                      }
+                  ],
+                  "recommendations": [shared_recommendation],
+                  "limitations": [
+                      "Line counts do not establish correctness, safety, provenance, or authorization.",
+                      "This method and the control-surface method run in one workflow job; distinct observer identifiers do not prove organizational or causal independence or consensus.",
+                  ],
+              },
+              {
+                  "schema": "qikvrt_collective_observation_v1",
+                  "observation_id": "control-surface",
+                  "observer_id": "deterministic-control-measurer",
+                  "subject": range_spec,
+                  "measured_at_utc": measured_at,
+                  "measurements": [
+                      {"name": "sensitive_files", "value": len(sensitive), "unit": "count", "method": "count of changed paths matching the disclosed sensitive-prefix set"},
+                      {"name": "adaptive_protocol_files", "value": len(adaptive), "unit": "count", "method": "count of changed paths matching the bounded adaptive protocol"},
+                      {"name": "mandatory_tests_completed", "value": True, "unit": "boolean", "method": "this step runs only after the preceding shell and make test steps succeed"},
+                  ],
+                  "findings": [
+                      {
+                          "finding_id": "review-required",
+                          "statement": "Sensitive-path measurement and successful tests do not authorize a downstream effect.",
+                          "status": "CONTINUE",
+                          "measurement_refs": ["sensitive_files", "adaptive_protocol_files", "mandatory_tests_completed"],
+                      }
+                  ],
+                  "recommendations": [shared_recommendation],
+                  "limitations": [
+                      "Path classification cannot replace semantic, security, rights, or human review.",
+                      "This method and the git-surface method share one workflow context and are not independent human or organizational reviewers.",
+                  ],
+              },
+          ]
+
+          for observation in observations:
+              path = destination / f"{observation['observation_id']}.json"
+              path.write_text(
+                  json.dumps(observation, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+                  encoding="utf-8",
+              )
+          PY
+
+      - name: Synthesize hashed proposal-only evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          tools/qikvrt_adaptive_runtime.sh \
+            --observations .qikvrt/runtime/collective-input \
+            --output ".qikvrt/evidence/collective-adaptive/${run_id}" \
+            --run-id "$run_id"
+
+      - name: Verify fail-closed proposal boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python3 -B - ".qikvrt/evidence/collective-adaptive/${run_id}" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          evidence_payload = (root / "evidence.json").read_bytes()
+          proposal = json.loads((root / "proposal.json").read_text(encoding="utf-8"))
+          if proposal["evidence_sha256"] != hashlib.sha256(evidence_payload).hexdigest():
+              raise SystemExit("evidence digest mismatch")
+          if proposal["effect_ack"]["state"] != "EFFECT_ACK_CONTINUE":
+              raise SystemExit("adaptive runtime emitted a non-CONTINUE state")
+          if proposal["effect_ack"]["ordinary_release"] is not False:
+              raise SystemExit("adaptive runtime enabled ordinary release")
+          if proposal["human_review"]["required"] is not True:
+              raise SystemExit("human review is not mandatory")
+          summary = proposal["collective_summary"]
+          if summary["organizational_independence_verified"] is not False:
+              raise SystemExit("organizational independence was falsely claimed")
+          if summary["causal_independence_verified"] is not False:
+              raise SystemExit("causal independence was falsely claimed")
+          if summary["consensus_claimed"] is not False:
+              raise SystemExit("consensus was falsely claimed")
+          PY
+
+      - name: Preserve review evidence without repository mutation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-collective-review-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/evidence/collective-adaptive/**

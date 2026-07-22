@@ -47,6 +47,7 @@ LEGACY_GLOBAL_INVENTORIES = (
     },
 )
 TRACKED_RUNTIME_STATE = {
+    "release/effect-ack-universality-request.json",
     "state/launcher_acceptance_record.json",
     "runtime/DEPENDENCIES.json",
     "runtime/PYTHON_RUNTIME_BUNDLING_ATTEMPT_V24.json",
@@ -59,6 +60,9 @@ TRANSIENT_PREFIXES = (
     ".qikvrt/runtime/",
     ".qikvrt/evidence/",
     ".qikvrt/api/",
+    ".qikvrt/toolchains/",
+    ".qikvrt/cache/",
+    ".qikvrt/release/",
 )
 MAX_IMMUTABLE_FILE_BYTES = 256 * 1024 * 1024
 MAX_INTEGRITY_METADATA_BYTES = 64 * 1024 * 1024
@@ -190,13 +194,32 @@ def classification(relative: str) -> tuple[str, bool, str]:
         return "integrity_metadata", False, "cycle_prevention"
     if relative in TRACKED_RUNTIME_STATE or any(
         relative.startswith(prefix)
-        for prefix in ("logs/", ".qikvrt/runtime/", ".qikvrt/evidence/", ".qikvrt/api/")
+        for prefix in (
+            "logs/",
+            ".qikvrt/runtime/",
+            ".qikvrt/evidence/",
+            ".qikvrt/api/",
+            ".qikvrt/toolchains/",
+            ".qikvrt/cache/",
+            ".qikvrt/release/",
+        )
     ):
         legacy = relative == "state/launcher_acceptance_record.json"
+        authorization = relative == "release/effect-ack-universality-request.json"
         return (
-            "legacy_runtime_state" if legacy else "runtime_state",
+            (
+                "legacy_runtime_state"
+                if legacy
+                else "release_authorization_state"
+                if authorization
+                else "runtime_state"
+            ),
             False,
-            "runtime_state_is_not_release_constant",
+            (
+                "authorization_marker_is_self_digest_bound_not_release_constant"
+                if authorization
+                else "runtime_state_is_not_release_constant"
+            ),
         )
     if relative.startswith("tests/"):
         return "test_source", True, ""

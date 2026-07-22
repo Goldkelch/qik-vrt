@@ -1,7 +1,7 @@
 # QIK-VRT
 
 [![QIKVRT CI](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml/badge.svg?branch=main)](https://github.com/Goldkelch/qik-vrt/actions/workflows/qikvrt_ci.yml)
-[![Release](https://img.shields.io/badge/release-v2026.07.20--wirkungshaltepunkt--evolution-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.20-wirkungshaltepunkt-evolution)
+[![Release](https://img.shields.io/badge/release-v2026.07.22--effect--ack--universality--1.0.0-1f6feb)](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0)
 [![License: source--available](https://img.shields.io/badge/code-PolyForm%20Noncommercial-orange)](LICENSE)
 
 ![QIK-VRT — five-state auditable effect release](docs/assets/qikvrt-social-preview.png)
@@ -47,16 +47,18 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 - [Current authority map](docs/CURRENT_AUTHORITY.md)
 - [Project site](https://goldkelch.github.io/qik-vrt/)
 
-### Fixed release evidence
+### Current release evidence
 
 | Item | Verified value |
 |---|---|
-| Release | `v2026.07.20-wirkungshaltepunkt-evolution` |
-| Commit | `a8a9cb2666a91411489d4fc90a5306908f8428ea` |
-| Tree | `c5cefebd20b5836d730a4e9da82eeaa5c9363ebf` |
-| Local reference tests | 102/102 in nine modules |
-| Hosted CI | [successful run 29764193906](https://github.com/Goldkelch/qik-vrt/actions/runs/29764193906) |
-| GitHub Pages | [successful build and deploy 29764192834](https://github.com/Goldkelch/qik-vrt/actions/runs/29764192834) |
+| Release | [`v2026.07.22-effect-ack-universality-1.0.0`](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0) in both repositories |
+| Working paper | [DOI 10.5281/zenodo.21498773](https://doi.org/10.5281/zenodo.21498773) |
+| Software | [DOI 10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774) |
+| Python tests | 127/127 in twelve modules with test cases |
+| ANSI-C90 model | 2,621,440 valid snapshots; 7,864,387 checks |
+| Draft rendering | Python 3.12.13 and `xml2rfc` 3.34.0; XML/TXT/HTML preserved |
+| GitHub Release object | Intentionally absent; the annotated tag is the release identity |
+| IETF Datatracker | No submission; published Draft `-01` remains byte-identical |
 
 ## Scope of the claim
 
@@ -93,6 +95,22 @@ interpretive, or normative. A reproducible local-only
 speech recognition, human correction, interpretation, and publication as
 distinct steps.
 
+The further [EFFECT_ACK universality working-paper bundle](docs/publications/2026-07-22-effect-ack-universal-effect-control/README.md)
+separates three claims that must not be conflated: a universalizable control
+process for finite accessible digital artifacts, semantic reconstruction under
+the exact observation-fibre criterion, and exact historical inversion only
+under injective observation. Its executable finite model checks 2,621,440
+state assignments and 5,242,880 consumer-admission variants. Cyberphysical
+transfer remains conditional on complete mediation, fresh authenticated
+consumer validation, a faithful executor, a disclosed physical model, and
+empirical validation; the result is not a universal decoder or unconditional
+safety proof.
+
+The exact working paper is archived under
+[DOI 10.5281/zenodo.21498773](https://doi.org/10.5281/zenodo.21498773); the
+corresponding versioned source export is archived under
+[DOI 10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774).
+
 ## Current runnable core
 
 - `src/qikvrt_effect_ack.py` — pure five-state reference state machine,
@@ -115,12 +133,28 @@ distinct steps.
   immutable third-party action pins. A restored API-state artifact is accepted
   only after its producing run is bound through GitHub's authenticated API to
   the same repository, workflow, commit, permitted event, and successful end.
+- `include/qikvrt/effect_ack.h` and `src/effect_ack_core.c` — dependency-free
+  ANSI-C90 decision core for the exact five-state, 17-conjunct Draft-01
+  abstraction; the exhaustive C oracle covers all 2,621,440 valid snapshots.
+- `runtime/toolchains/` and `tools/bootstrap-*` — versioned runtime contracts,
+  third-party provenance and checksum-gated bootstraps. Runtime binaries and
+  credentials are deliberately excluded from Git and remain rebuildable cache
+  content.
+- `AGENTS.md`, `docs/COLLECTIVE_ADAPTIVE_COGNITION.md`, and
+  `policy/COLLECTIVE_ADAPTIVE_COGNITION.json` — the bounded collective
+  improvement protocol: exact-key caches automatically accelerate later
+  environment construction, while measurements create attributable proposals
+  for separate review. They never suppress tests, mutate protected semantics,
+  reorder work without a reviewed implementation, merge, tag, release, publish,
+  or declare `EFFECT_ACK_DONE` autonomously.
 
-The active Python core uses only the standard library. The verified local
-runtime target is Python 3 on POSIX systems. Some lock and durability behavior
-uses POSIX facilities; Windows compatibility is **not claimed** for the
-current core. Historical Windows/Zenodo material remains in the repository as
-an archive and is not the current runtime authority.
+The active Python core uses only the standard library; the additional decision
+core is strict ANSI C90. The verified local integration target remains Python
+3 on POSIX systems. The C interface and checksum-gated bootstrap definitions
+are written for POSIX, macOS, and Windows, but cross-platform certification is
+**not claimed** until the corresponding hosted jobs succeed. Some lock and
+durability behavior still uses POSIX facilities. Historical Windows/Zenodo
+material remains an archive and is not the current runtime authority.
 
 ## Verify
 

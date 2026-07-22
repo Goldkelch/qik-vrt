@@ -1,4 +1,7 @@
 <!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+
 Before submitting, read CONTRIBUTING.md. Submission alone does not authorize
 incorporation and does not create confidentiality or commercial-license rights.
 -->
@@ -27,3 +30,20 @@ Describe the bounded change and the problem it addresses.
 What downstream effect can this change produce? Who is responsible for
 reviewing and authorizing that effect?
 
+## Collective-adaptive boundary
+
+Complete this section when the change uses adaptive evidence or touches
+`AGENTS.md`, the cognition policy, runtime, tests, workflow, CODEOWNERS, or
+governance:
+
+- [ ] Observations are attributable measurements; their exact bytes and
+      limitations are bound in the evidence output.
+- [ ] Structured proposals remain data only and are not executed or applied.
+- [ ] Disagreement is preserved; distinct `observer_id` values or matching
+      content are not presented as proof of different persons, organizational
+      or causal independence, consensus, truth, or authorization.
+- [ ] No auto-commit, auto-push, auto-merge, tag, release, publication,
+      deployment, self-mutation, or recursive agent spawn is introduced.
+- [ ] All required checks and code-owner review remain mandatory.
+- [ ] A responsible human and a separate, fresh, authenticated
+      `EFFECT_ACK_DONE` remain necessary before any ordinary downstream effect.

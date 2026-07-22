@@ -2,11 +2,36 @@
 # Copyright 2026 Ingolf Lohmann.
 
 PYTHON ?= python3
+CC ?= cc
+EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
 
-.PHONY: test compile launcher unit conformance security license seed e2e integrity run-api clean
+.PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test runtime-contract release-automation launcher unit conformance security license seed e2e integrity run-api clean
 
-compile:
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_validate_state_run.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_license_transition.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py
+compile: effect-ack-core-compile
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_build_zenodo_manifest.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_zenodo_actions.py tests/test_zenodo_manifest_builder.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py
+
+effect-ack-core-compile:
+	$(CC) $(EFFECT_ACK_C90_CFLAGS) -Iinclude -fsyntax-only src/effect_ack_core.c tests/test_effect_ack_core.c
+
+effect-ack-core-test: effect-ack-core-compile
+	CC="$(CC)" sh tests/test_effect_ack_core.sh
+
+scientific-bundle-test:
+	PYTHON="$(PYTHON)" sh tests/test_effect_ack_scientific_bundle.sh
+
+adaptive-cognition-test:
+	bash -n tools/qikvrt_adaptive_runtime.sh tests/test_adaptive_runtime.sh
+	bash tests/test_adaptive_runtime.sh
+
+runtime-contract:
+	sh -n tools/bootstrap-gh.sh tools/bootstrap-runtime.sh
+	sh -n tests/test_runtime_bootstrap.sh
+	sh tools/bootstrap-gh.sh --help >/dev/null
+	sh tools/bootstrap-runtime.sh --help >/dev/null
+	sh tests/test_runtime_bootstrap.sh
+
+release-automation:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_effect_ack_release_workflows tests.test_zenodo_actions tests.test_zenodo_manifest_builder
 
 integrity:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_integrity.py
@@ -34,7 +59,7 @@ seed:
 e2e:
 	$(PYTHON) tests/test_tcpip_e2e.py
 
-test: compile integrity launcher conformance unit security license seed e2e
+test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test runtime-contract release-automation launcher conformance unit security license seed e2e
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
 
 run-api:
@@ -45,4 +70,4 @@ run-api:
 	PYTHONNOUSERSITE=1 $(PYTHON) -S src/qikvrt_github_api_shim.py
 
 clean:
-	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
+	rm -rf unit_state e2e_state .qikvrt/runtime .qikvrt/evidence .qikvrt/api .qikvrt/cache .qikvrt/release logs __pycache__ src/__pycache__ scripts/__pycache__ tests/__pycache__ tools/__pycache__
