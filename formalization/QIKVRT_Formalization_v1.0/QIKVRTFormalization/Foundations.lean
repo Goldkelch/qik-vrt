@@ -25,8 +25,9 @@ def empty : Class α := fun _ => False
 def preimage (f : α → β) (B : Class β) : Class α := fun x => B (f x)
 def image (f : α → β) (A : Class α) : Class β := fun y => ∃ x, A x ∧ f x = y
 def disjoint (A B : Class α) : Prop := ∀ ⦃x⦄, A x → B x → False
+def injective (f : α → β) : Prop := ∀ ⦃x y⦄, f x = f y → x = y
 def bijective (f : α → β) : Prop :=
-  Function.Injective f ∧ ∀ y, ∃ x, f x = y
+  injective f ∧ ∀ y, ∃ x, f x = y
 
 notation:50 A " ⊆ₚ " B => subset A B
 notation:50 A " =ₚ " B => equal A B
@@ -92,7 +93,7 @@ theorem image_complement_inclusion (f : α → β) (X A : Class α) :
   refine ⟨x, ?_, hxy⟩
   exact ⟨hX, fun hA => hy.2 ⟨x, hA, hxy⟩⟩
 
-theorem injective_image_complement (f : α → β) (hf : Function.Injective f)
+theorem injective_image_complement (f : α → β) (hf : injective f)
     (X A : Class α) (hAX : A ⊆ₚ X) :
     image f (diff X A) =ₚ diff (image f X) (image f A) := by
   intro y
