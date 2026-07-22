@@ -537,8 +537,10 @@ jobs:
                   if missing_ok and error.code == 404:
                       return None
                   raise
-          ref_path = "/git/ref/" + urllib.parse.quote("heads/" + branch, safe="/")
-          ref = api("GET", ref_path, missing_ok=True)
+          encoded_ref = urllib.parse.quote("heads/" + branch, safe="/")
+          get_ref_path = "/git/ref/" + encoded_ref
+          update_ref_path = "/git/refs/" + encoded_ref
+          ref = api("GET", get_ref_path, missing_ok=True)
           parent = None if ref is None else ref["object"]["sha"]
           base_tree = None if parent is None else api("GET", f"/git/commits/{parent}")["tree"]["sha"]
           blob = api("POST", "/git/blobs", {
@@ -562,7 +564,7 @@ jobs:
           if parent is None:
               api("POST", "/git/refs", {"ref": "refs/heads/" + branch, "sha": commit})
           else:
-              api("PATCH", ref_path, {"sha": commit, "force": False})
+              api("PATCH", update_ref_path, {"sha": commit, "force": False})
           PY
 
       - name: Upload public tag verification
@@ -703,6 +705,57 @@ jobs:
             --source-tree "$SOURCE_TREE" \
             --output-directory .qikvrt/release/effect-ack-universality \
             --result .qikvrt/release/effect-ack-universality/zenodo-final-manifest.json
+
+      - name: Bind reserved software DOI into transient metadata and revalidate
+        shell: bash
+        env:
+          RESERVATION_RESULT: .qikvrt/release/effect-ack-universality/zenodo-reservation.json
+          FINAL_MANIFEST: .qikvrt/release/effect-ack-universality/zenodo-final-manifest.json
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from tools.qikvrt_zenodo_actions import (
+              _validate_final_dois,
+              validate_manifest,
+              verify_manifest_files,
+          )
+
+          root = Path(".").resolve()
+          manifest_path = Path(os.environ["FINAL_MANIFEST"])
+          reservation_path = Path(os.environ["RESERVATION_RESULT"])
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
+          reserved_doi = manifest.get("reserved_dois", {}).get("software")
+          if (
+              not isinstance(reserved_doi, str)
+              or reservation.get("software", {}).get("doi") != reserved_doi
+          ):
+              raise SystemExit("BLOCK: generated manifest does not bind the reserved software DOI")
+          metadata = manifest["software"]["metadata"]
+          if metadata.get("doi") is not None:
+              raise SystemExit("BLOCK: software metadata must not claim an external DOI field")
+          notes = metadata.get("notes")
+          if not isinstance(notes, str) or not notes:
+              raise SystemExit("BLOCK: generated software notes are absent")
+          prefix = "Reserved DOI for this software version:"
+          sentence = f"{prefix} {reserved_doi}."
+          if prefix in notes and sentence not in notes:
+              raise SystemExit("BLOCK: generated software notes contain a conflicting self-DOI")
+          if sentence not in notes:
+              metadata["notes"] = notes + " " + sentence
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          normalized = validate_manifest(manifest, root, final=True)
+          verified = verify_manifest_files(
+              normalized, root, "qikvrt-no-secret-local-validation-sentinel"
+          )
+          _validate_final_dois(normalized, reservation, verified)
+          PY
 
       - name: Finalize both Zenodo depositions through the hash-bound client
         shell: bash
@@ -855,8 +908,10 @@ jobs:
                   if missing_ok and error.code == 404:
                       return None
                   raise
-          ref_path = "/git/ref/" + urllib.parse.quote("heads/" + branch, safe="/")
-          ref = api("GET", ref_path, missing_ok=True)
+          encoded_ref = urllib.parse.quote("heads/" + branch, safe="/")
+          get_ref_path = "/git/ref/" + encoded_ref
+          update_ref_path = "/git/refs/" + encoded_ref
+          ref = api("GET", get_ref_path, missing_ok=True)
           parent = None if ref is None else ref["object"]["sha"]
           base_tree = None if parent is None else api("GET", f"/git/commits/{parent}")["tree"]["sha"]
           blob = api("POST", "/git/blobs", {
@@ -880,7 +935,7 @@ jobs:
           if parent is None:
               api("POST", "/git/refs", {"ref": "refs/heads/" + branch, "sha": commit})
           else:
-              api("PATCH", ref_path, {"sha": commit, "force": False})
+              api("PATCH", update_ref_path, {"sha": commit, "force": False})
           PY
 
       - name: Upload public Zenodo finalization evidence

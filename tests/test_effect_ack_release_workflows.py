@@ -14,6 +14,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -36,6 +37,22 @@ def run_git(root: pathlib.Path, *arguments: str) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     ).stdout.strip()
+
+
+def embedded_python_for_step(workflow: str, step_name: str) -> str:
+    start = workflow.index(f"      - name: {step_name}")
+    end = workflow.index("\n      - name:", start + 1)
+    block = workflow[start:end]
+    match = re.search(r"python -B - <<'PY'\n(.*?)\n\s*PY(?:\n|$)", block, re.S)
+    if match is None:
+        raise AssertionError(f"workflow step has no embedded Python: {step_name}")
+    lines = match.group(1).splitlines()
+    indentation = min(
+        len(line) - len(line.lstrip()) for line in lines if line.strip()
+    )
+    return "\n".join(
+        line[indentation:] if line.strip() else "" for line in lines
+    )
 
 
 class EffectAckReleaseWorkflowTests(unittest.TestCase):
@@ -115,6 +132,116 @@ class EffectAckReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("--source-tree \"$SOURCE_TREE\"", finalize)
         self.assertNotRegex(reserve, r"runner\.temp[^\n]*zenodo-reservation")
         self.assertNotRegex(finalize, r"runner\.temp[^\n]*zenodo-finalization")
+
+    def test_finalize_binds_reserved_software_doi_before_publication(self) -> None:
+        finalize = FINALIZE.read_text(encoding="utf-8")
+        build = finalize.index(
+            "Build deterministic exact-tree software archive and final manifest"
+        )
+        bind = finalize.index(
+            "Bind reserved software DOI into transient metadata and revalidate"
+        )
+        publish = finalize.index(
+            "Finalize both Zenodo depositions through the hash-bound client"
+        )
+        self.assertLess(build, bind)
+        self.assertLess(bind, publish)
+        block = finalize[bind:publish]
+        self.assertIn(
+            'reserved_doi = manifest.get("reserved_dois", {}).get("software")',
+            block,
+        )
+        self.assertIn(
+            'reservation.get("software", {}).get("doi") != reserved_doi',
+            block,
+        )
+        self.assertIn('if metadata.get("doi") is not None:', block)
+        self.assertIn('prefix = "Reserved DOI for this software version:"', block)
+        self.assertIn("normalized = validate_manifest(manifest, root, final=True)", block)
+        self.assertIn("verified = verify_manifest_files(", block)
+        self.assertIn("_validate_final_dois(normalized, reservation, verified)", block)
+        self.assertNotIn("10.5281/zenodo.", block)
+
+    def test_reserved_software_doi_binding_executes_idempotently_and_fail_closed(
+        self,
+    ) -> None:
+        step = "Bind reserved software DOI into transient metadata and revalidate"
+        source = embedded_python_for_step(
+            FINALIZE.read_text(encoding="utf-8"), step
+        )
+        doi = "10.5281/zenodo.12345678"
+        sentence = f"Reserved DOI for this software version: {doi}."
+        with tempfile.TemporaryDirectory(prefix="qikvrt-doi-binding-") as raw:
+            root = pathlib.Path(raw)
+            manifest_path = root / "manifest.json"
+            reservation_path = root / "reservation.json"
+            manifest = {
+                "reserved_dois": {"software": doi},
+                "software": {"metadata": {"notes": "Bounded release metadata."}},
+            }
+            reservation = {"software": {"doi": doi}}
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            reservation_path.write_text(json.dumps(reservation), encoding="utf-8")
+
+            def validate(value, repository_root, *, final):
+                self.assertIsInstance(repository_root, pathlib.Path)
+                self.assertTrue(final)
+                return value
+
+            def verify(value, repository_root, token):
+                self.assertEqual(value["software"]["metadata"]["notes"].count(sentence), 1)
+                self.assertIsInstance(repository_root, pathlib.Path)
+                self.assertEqual(token, "qikvrt-no-secret-local-validation-sentinel")
+                return {}
+
+            def validate_dois(value, reservation_value, verified):
+                self.assertEqual(value["reserved_dois"]["software"], doi)
+                self.assertEqual(reservation_value["software"]["doi"], doi)
+                self.assertEqual(verified, {})
+
+            environment = {
+                "FINAL_MANIFEST": os.fspath(manifest_path),
+                "RESERVATION_RESULT": os.fspath(reservation_path),
+            }
+            with mock.patch.dict(os.environ, environment), mock.patch.multiple(
+                "tools.qikvrt_zenodo_actions",
+                validate_manifest=validate,
+                verify_manifest_files=verify,
+                _validate_final_dois=validate_dois,
+            ):
+                exec(compile(source, f"{FINALIZE}:{step}", "exec"), {})
+                exec(compile(source, f"{FINALIZE}:{step}", "exec"), {})
+
+                enriched = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    enriched["software"]["metadata"]["notes"].count(sentence), 1
+                )
+                enriched["software"]["metadata"]["notes"] = (
+                    "Reserved DOI for this software version: 10.5281/zenodo.87654321."
+                )
+                manifest_path.write_text(json.dumps(enriched), encoding="utf-8")
+                with self.assertRaisesRegex(SystemExit, "conflicting self-DOI"):
+                    exec(compile(source, f"{FINALIZE}:{step}", "exec"), {})
+
+    def test_state_branch_reads_single_ref_and_patches_plural_refs(self) -> None:
+        finalize = FINALIZE.read_text(encoding="utf-8")
+        self.assertEqual(
+            finalize.count('get_ref_path = "/git/ref/" + encoded_ref'), 2
+        )
+        self.assertEqual(
+            finalize.count('update_ref_path = "/git/refs/" + encoded_ref'), 2
+        )
+        self.assertEqual(
+            finalize.count('ref = api("GET", get_ref_path, missing_ok=True)'), 2
+        )
+        self.assertEqual(
+            finalize.count(
+                'api("PATCH", update_ref_path, {"sha": commit, "force": False})'
+            ),
+            2,
+        )
+        self.assertNotIn('api("PATCH", get_ref_path', finalize)
+        self.assertNotIn('api("PATCH", ref_path', finalize)
 
     def test_workflows_pin_external_actions_by_full_sha(self) -> None:
         for path in (RESERVE, FINALIZE, ADAPTIVE_RUNTIME):
