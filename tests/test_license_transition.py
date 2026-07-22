@@ -17,37 +17,63 @@ POLYFORM_SHA256 = "ffcca38841adb694b6f380647e15f17c446a4d1656fed51a1e2041d064c94
 POLYFORM_SIZE = 4563
 
 CURRENT_SOURCE_FILES = (
+    ".github/CODEOWNERS",
+    ".github/dependabot.yml",
+    ".github/workflows/qikvrt_adaptive_runtime.yml",
     ".github/workflows/qikvrt_ci.yml",
+    ".github/workflows/qikvrt_collective_review.yml",
+    ".github/workflows/qikvrt_effect_ack_finalize.yml",
+    ".github/workflows/qikvrt_formalization_and_audio.yml",
     ".github/workflows/qikvrt_mesh_api.yml",
     ".github/workflows/qikvrt_seed_dashboard_publish.yml",
     ".github/workflows/qikvrt_seed_mesh_audit_export.yml",
     ".github/workflows/qikvrt_seed_mesh_maintenance.yml",
     ".github/workflows/qikvrt_seed_node_revalidation.yml",
     ".github/workflows/qikvrt_seed_registry_acceptance.yml",
+    ".github/workflows/qikvrt_zenodo_reserve.yml",
     "api/qikvrt_github_api.openapi.yaml",
+    "include/qikvrt/effect_ack.h",
     "Makefile",
     "docs/assets/js/qikvrt-homepage.js",
     "docs/assets/js/qikvrt-local-engine.js",
+    "docs/publications/2026-07-22-effect-ack-universal-effect-control/effect_ack_universality_proof.py",
     "qikvrt.cmd",
     "qikvrt.py",
     "qikvrt.sh",
     "scripts/qikvrt_api_client.py",
+    "src/effect_ack_core.c",
     "src/qikvrt_api_handler.py",
     "src/qikvrt_effect_ack.py",
     "src/qikvrt_github_api_shim.py",
     "tests/test_api_client.py",
+    "tests/test_adaptive_runtime.sh",
+    "tests/test_effect_ack_core.c",
+    "tests/test_effect_ack_core.sh",
+    "tests/test_effect_ack_scientific_bundle.sh",
     "tests/test_effect_ack_conformance.py",
+    "tests/test_effect_ack_release_workflows.py",
     "tests/test_handler_security.py",
     "tests/test_handler_unit.py",
     "tests/test_integrity.py",
     "tests/test_launcher_runtime.py",
     "tests/test_license_transition.py",
+    "tests/test_ietf_offline_render.py",
+    "tests/test_runtime_bootstrap.sh",
+    "tests/test_zenodo_actions.py",
+    "tests/test_zenodo_manifest_builder.py",
     "tests/test_seed_workflows.py",
     "tests/test_tcpip_e2e.py",
     "tools/__init__.py",
+    "tools/bootstrap-gh.ps1",
+    "tools/bootstrap-gh.sh",
+    "tools/bootstrap-runtime.ps1",
+    "tools/bootstrap-runtime.sh",
+    "tools/qikvrt_adaptive_runtime.sh",
+    "tools/qikvrt_build_zenodo_manifest.py",
     "tools/qikvrt_cicd_publish.py",
     "tools/qikvrt_initial_acceptance_gate.py",
     "tools/qikvrt_integrity.py",
+    "tools/qikvrt_zenodo_actions.py",
     "tools/qikvrt_master_acceptance_gate.py",
     "tools/qikvrt_runtime_logger.py",
     "tools/qikvrt_seed_common.py",
@@ -92,11 +118,15 @@ class LicenseTransitionTests(unittest.TestCase):
 
     def test_license_map_reserves_commercial_use_without_false_retroactivity(self) -> None:
         license_map = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        normalized_license_map = " ".join(license_map.split())
         transition = (ROOT / "LICENSE_TRANSITION.md").read_text(encoding="utf-8")
         self.assertIn(POLYFORM_ID, license_map)
         self.assertIn("Required Notice:", license_map)
         self.assertIn("Commercial use is not licensed", license_map)
-        self.assertIn("below `src/`, `scripts/`, `tools/`, `tests/`, and", license_map)
+        self.assertIn(
+            "below `src/`, `include/`, `scripts/`, `tools/`, `tests/`, and",
+            normalized_license_map,
+        )
         self.assertIn("documentation, website HTML/CSS/data", license_map)
         self.assertIn("No retroactive withdrawal", transition)
         self.assertIn("Third-party", transition)

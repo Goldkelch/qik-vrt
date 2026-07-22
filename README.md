@@ -93,6 +93,17 @@ interpretive, or normative. A reproducible local-only
 speech recognition, human correction, interpretation, and publication as
 distinct steps.
 
+The further [EFFECT_ACK universality working-paper bundle](docs/publications/2026-07-22-effect-ack-universal-effect-control/README.md)
+separates three claims that must not be conflated: a universalizable control
+process for finite accessible digital artifacts, semantic reconstruction under
+the exact observation-fibre criterion, and exact historical inversion only
+under injective observation. Its executable finite model checks 2,621,440
+state assignments and 5,242,880 consumer-admission variants. Cyberphysical
+transfer remains conditional on complete mediation, fresh authenticated
+consumer validation, a faithful executor, a disclosed physical model, and
+empirical validation; the result is not a universal decoder or unconditional
+safety proof.
+
 ## Current runnable core
 
 - `src/qikvrt_effect_ack.py` — pure five-state reference state machine,
@@ -115,12 +126,28 @@ distinct steps.
   immutable third-party action pins. A restored API-state artifact is accepted
   only after its producing run is bound through GitHub's authenticated API to
   the same repository, workflow, commit, permitted event, and successful end.
+- `include/qikvrt/effect_ack.h` and `src/effect_ack_core.c` — dependency-free
+  ANSI-C90 decision core for the exact five-state, 17-conjunct Draft-01
+  abstraction; the exhaustive C oracle covers all 2,621,440 valid snapshots.
+- `runtime/toolchains/` and `tools/bootstrap-*` — versioned runtime contracts,
+  third-party provenance and checksum-gated bootstraps. Runtime binaries and
+  credentials are deliberately excluded from Git and remain rebuildable cache
+  content.
+- `AGENTS.md`, `docs/COLLECTIVE_ADAPTIVE_COGNITION.md`, and
+  `policy/COLLECTIVE_ADAPTIVE_COGNITION.json` — the bounded collective
+  improvement protocol: exact-key caches automatically accelerate later
+  environment construction, while measurements create attributable proposals
+  for separate review. They never suppress tests, mutate protected semantics,
+  reorder work without a reviewed implementation, merge, tag, release, publish,
+  or declare `EFFECT_ACK_DONE` autonomously.
 
-The active Python core uses only the standard library. The verified local
-runtime target is Python 3 on POSIX systems. Some lock and durability behavior
-uses POSIX facilities; Windows compatibility is **not claimed** for the
-current core. Historical Windows/Zenodo material remains in the repository as
-an archive and is not the current runtime authority.
+The active Python core uses only the standard library; the additional decision
+core is strict ANSI C90. The verified local integration target remains Python
+3 on POSIX systems. The C interface and checksum-gated bootstrap definitions
+are written for POSIX, macOS, and Windows, but cross-platform certification is
+**not claimed** until the corresponding hosted jobs succeed. Some lock and
+durability behavior still uses POSIX facilities. Historical Windows/Zenodo
+material remains an archive and is not the current runtime authority.
 
 ## Verify
 

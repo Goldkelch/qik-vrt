@@ -1,0 +1,292 @@
+{
+  "abstractModel": {
+    "assignments": 2621440,
+    "booleanFields": 19,
+    "connectionDecisions": 5,
+    "consumerAdmissionVariants": 5242880,
+    "effectCheckableReception": "input_identifier_available AND input_digest_valid; transport_ack remains a separate CoreDone condition"
+  },
+  "boundaries": {
+    "computabilityAndResources": "EXECUTABLE RECONSTRUCTION REQUIRES EFFECTIVE COMPUTABILITY, SUFFICIENT ACCESS, AUTHORIZATION, TIME AND RESOURCES",
+    "deploymentNonBypassability": "CONDITIONAL_ON_COMPLETE_MEDIATION_AND_NO_SIDE_CHANNEL",
+    "fullDraft01WireConformance": "CONTINUE_NOT_PROVED_BY_THIS_MODEL",
+    "ietfConsensusOrRfcStatus": "NOT_CLAIMED",
+    "modelToSpecBinding": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+    "physicalSafety": "REQUIRES_HARDWARE_SENSOR_ACTUATOR_FAULT_MODEL_AND_EMPIRICAL_VALIDATION",
+    "pythonRuntimeBehavior": "NOT_PROVED_BY_ABSTRACT_ENUMERATION",
+    "semanticReconstructionEngine": "OUTSIDE_MODEL",
+    "universalHistoricalOrSemanticReconstruction": "FALSE_WITHOUT_INJECTIVE_INFORMATION_COMPLETE_OBSERVATION",
+    "universalPolicyOrEvidenceLanguage": "NOT_DEFINED_BY_DRAFT_01",
+    "universalTerminationOrEventualDONE": "NOT_PROVED"
+  },
+  "checks": [
+    {
+      "claim": "The supplied draft -01 XML contains the frozen 35-field wire record, five states, five decisions, exact 17-line CoreDone conjunction and expected state-priority anchors.",
+      "id": "SPEC-001",
+      "inspection": {
+        "bytes": 41880,
+        "connectionDecisions": [
+          "UNDECIDED",
+          "CONTINUE",
+          "RELEASE",
+          "ISOLATE",
+          "BLOCK"
+        ],
+        "coreDoneConjuncts": 17,
+        "path": "draft-lohmann-qikvrt-effect-ack-01.xml",
+        "priorityAnchors": [
+          "predecessor_invalid",
+          "deadline_exceeded",
+          "not effect_checkable_reception",
+          "integrity_failure",
+          "connection_decision == BLOCK",
+          "connection_decision == ISOLATE",
+          "connection_decision == RELEASE",
+          "state = EFFECT_ACK_CONTINUE",
+          "ordinary_release = (state == EFFECT_ACK_DONE)"
+        ],
+        "sha256": "13ff9ace408d82eaea88127343883d888795efd25e7a01d0bbee5b862e9f954b",
+        "states": [
+          "EFFECT_NACK",
+          "EFFECT_ACK_CONTINUE",
+          "EFFECT_ACK_DONE",
+          "EFFECT_ACK_ISOLATE",
+          "EFFECT_ACK_BLOCK"
+        ],
+        "wireFields": 35
+      },
+      "status": "PASS"
+    },
+    {
+      "cases": 2621440,
+      "claim": "Every abstract flag assignment selects exactly one of the five version-1 states and matches an independently structured first-match priority oracle.",
+      "id": "EA-001",
+      "priority_collision_witnesses": [
+        {
+          "case": "invalid predecessor dominates every local release fact",
+          "state": "EFFECT_ACK_BLOCK"
+        },
+        {
+          "case": "deadline dominates missing effect-checkable reception",
+          "state": "EFFECT_ACK_BLOCK"
+        },
+        {
+          "case": "missing effect-checkable reception dominates local integrity failure",
+          "state": "EFFECT_NACK"
+        },
+        {
+          "case": "integrity failure dominates an isolate decision",
+          "state": "EFFECT_ACK_BLOCK"
+        },
+        {
+          "case": "explicit block dominates otherwise complete release facts",
+          "state": "EFFECT_ACK_BLOCK"
+        },
+        {
+          "case": "explicit isolate dominates otherwise complete release facts",
+          "state": "EFFECT_ACK_ISOLATE"
+        },
+        {
+          "case": "continue decision cannot become DONE",
+          "state": "EFFECT_ACK_CONTINUE"
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "cases": 5242880,
+      "claim": "Ordinary release occurs if and only if the selected state is EFFECT_ACK_DONE and the consumer admission is valid.",
+      "id": "EA-002",
+      "status": "PASS"
+    },
+    {
+      "claim": "Transport acknowledgement is not sufficient for ordinary release: these assignments contain transport_ack=true but do not select DONE.",
+      "id": "EA-003",
+      "nonrelease_witnesses_with_transport_ack": 1310719,
+      "status": "PASS",
+      "transport_ack_only_witness_state": "EFFECT_NACK"
+    },
+    {
+      "claim": "Every abstract DONE conjunct is individually necessary in the all-DONE baseline.",
+      "conditions": [
+        "transport_ack",
+        "input_digest_valid",
+        "origin_checked",
+        "context_checked",
+        "semantics_reconstructed",
+        "effect_anticipated",
+        "risk_classified",
+        "risk_known",
+        "responsibility_assigned",
+        "responsibility_owner_present",
+        "connection_decided",
+        "connection_decision_release",
+        "policy_allows_release",
+        "deadline_not_exceeded",
+        "no_open_questions",
+        "no_next_required_checks",
+        "required_evidence_complete"
+      ],
+      "id": "EA-004",
+      "status": "PASS"
+    },
+    {
+      "assumptions": [
+        "complete mediation of every protected executor path",
+        "schema-valid, authenticated, fresh and chain-valid consumer admission",
+        "consumer rederivation of state, policy and evidence bindings",
+        "a faithful executor for any later physical interpretation"
+      ],
+      "bypass_counterexample": {
+        "alternate_path_reaches_executor": true,
+        "gate_release": false,
+        "protected_effect_command_requested": true,
+        "state": "EFFECT_ACK_CONTINUE"
+      },
+      "claim": "Under the stated assumptions, a non-DONE state cannot request ordinary execution through the protected wrapper.",
+      "conforming_cases": 10,
+      "id": "EA-005",
+      "protected_executor_invocations": 1,
+      "status": "PASS_CONDITIONAL"
+    },
+    {
+      "claim": "A present forecast may change a present decision without a later outcome acting as a backward input.",
+      "draft_gate_witness": {
+        "ordinary_release_without_effect_analysis": false,
+        "with_effect_analysis": "EFFECT_ACK_DONE",
+        "without_effect_analysis": "EFFECT_ACK_CONTINUE"
+      },
+      "id": "EA-006",
+      "illustrative_forward_causal_model": {
+        "cases": 4,
+        "forecast_changes_present_decision": true,
+        "later_outcome_is_not_a_backward_input": true
+      },
+      "semantic_boundary": "effect_anticipated asserts that effect analysis occurred; it does not standardize a forecast model or assert a favorable outcome",
+      "status": "PASS_MODEL_CONDITIONAL"
+    },
+    {
+      "boundary": "toy model only: two paths, regular-file modes and three payloads; Git history, refs, symlinks, submodules, LFS and external dependencies are outside this model",
+      "bounded_repository_models": 49,
+      "canonical_under_entry_reordering": true,
+      "claim": "The toy canonical repository codec is injective, exactly decodable and replica-stable over its complete bounded universe.",
+      "distinct_encodings": 49,
+      "id": "REP-001",
+      "pairwise_equality_encoding_comparisons": 2401,
+      "round_trips": 49,
+      "source_tagged_aggregate_round_trips": 2401,
+      "status": "PASS_BOUNDED_MODEL"
+    },
+    {
+      "claim": "In the complete finite universes tested, effect-relevant semantics factors through an observation exactly when it is constant on observation fibers; exact historical inversion requires injectivity.",
+      "exact_historical_inversion": {
+        "criterion": "an exact left inverse requires an injective observation",
+        "injective_and_left_invertible_3_to_3": 6,
+        "left_invertible_3_to_2": 0,
+        "mappings_3_to_2": 8,
+        "mappings_3_to_3": 27
+      },
+      "id": "RE-001",
+      "semantic_factorization": {
+        "criterion": "semantics is constant on every observation fiber",
+        "factorizable": 28,
+        "function_pairs_checked": 64,
+        "not_factorizable": 36
+      },
+      "status": "PASS_BOUNDED_MODEL_WITH_COUNTEREXAMPLES"
+    },
+    {
+      "claim": "Static field inspection reports whether the current Python ResponsibilityProtocol record has the exact draft -01 wire field set.",
+      "id": "RUNTIME-001",
+      "inspection": {
+        "bytes": 40709,
+        "extraNonDraft01Fields": [
+          "schema"
+        ],
+        "fullDraft01FieldSet": false,
+        "missingDraft01Fields": [
+          "deadline_exceeded",
+          "evaluation_timeout_ms",
+          "message_type",
+          "policy_hash",
+          "policy_id",
+          "policy_version",
+          "wire_version"
+        ],
+        "path": "qikvrt_effect_ack.py",
+        "responsibilityProtocolFields": 29,
+        "sha256": "046e8703d425f97bab5533b187cfd661df99567c61d395f5f61d5df8e2b7c038"
+      },
+      "status": "CONTINUE_PARTIAL_CORE_ONLY"
+    }
+  ],
+  "implementationStatus": "CONTINUE_DRAFT01_WIRE_IMPLEMENTATION",
+  "inputs": {
+    "ietfDraftText": {
+      "bytes": 46264,
+      "path": "draft-lohmann-qikvrt-effect-ack-01.txt",
+      "sha256": "ad8af57390beeb9a1316e3940b9f75c2334834376288f6f1ab018e10b0b87b16"
+    },
+    "ietfDraftXml": {
+      "bytes": 41880,
+      "connectionDecisions": [
+        "UNDECIDED",
+        "CONTINUE",
+        "RELEASE",
+        "ISOLATE",
+        "BLOCK"
+      ],
+      "coreDoneConjuncts": 17,
+      "path": "draft-lohmann-qikvrt-effect-ack-01.xml",
+      "priorityAnchors": [
+        "predecessor_invalid",
+        "deadline_exceeded",
+        "not effect_checkable_reception",
+        "integrity_failure",
+        "connection_decision == BLOCK",
+        "connection_decision == ISOLATE",
+        "connection_decision == RELEASE",
+        "state = EFFECT_ACK_CONTINUE",
+        "ordinary_release = (state == EFFECT_ACK_DONE)"
+      ],
+      "sha256": "13ff9ace408d82eaea88127343883d888795efd25e7a01d0bbee5b862e9f954b",
+      "states": [
+        "EFFECT_NACK",
+        "EFFECT_ACK_CONTINUE",
+        "EFFECT_ACK_DONE",
+        "EFFECT_ACK_ISOLATE",
+        "EFFECT_ACK_BLOCK"
+      ],
+      "wireFields": 35
+    },
+    "pythonReferenceRuntime": {
+      "bytes": 40709,
+      "extraNonDraft01Fields": [
+        "schema"
+      ],
+      "fullDraft01FieldSet": false,
+      "missingDraft01Fields": [
+        "deadline_exceeded",
+        "evaluation_timeout_ms",
+        "message_type",
+        "policy_hash",
+        "policy_id",
+        "policy_version",
+        "wire_version"
+      ],
+      "path": "qikvrt_effect_ack.py",
+      "responsibilityProtocolFields": 29,
+      "sha256": "046e8703d425f97bab5533b187cfd661df99567c61d395f5f61d5df8e2b7c038"
+    }
+  },
+  "model": "qikvrt-effect-ack-universality-proof-v1",
+  "overallStatus": "PASS_WITH_EXPLICIT_BOUNDARIES",
+  "schemaVersion": "1.0.0",
+  "stateCounts": {
+    "EFFECT_ACK_BLOCK": 2064384,
+    "EFFECT_ACK_CONTINUE": 49151,
+    "EFFECT_ACK_DONE": 1,
+    "EFFECT_ACK_ISOLATE": 16384,
+    "EFFECT_NACK": 491520
+  }
+}

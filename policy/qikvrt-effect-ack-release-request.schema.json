@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-effect-ack-release-request.schema.json",
+  "title": "QIK-VRT EFFECT_ACK release request",
+  "description": "Closed schema for the separately reviewed commit marker that can authorize reservation or finalization of the EFFECT_ACK universality release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_license",
+    "$schema_ref",
+    "schema",
+    "schema_sha256",
+    "request_id",
+    "state",
+    "confirm",
+    "authorization_payload_sha256",
+    "repository_policy",
+    "release",
+    "zenodo"
+  ],
+  "properties": {
+    "_license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["copyright", "rights_holder", "license", "license_text_ref", "classification"],
+      "properties": {
+        "copyright": {"const": "Copyright 2026 Ingolf Lohmann"},
+        "rights_holder": {"const": "Ingolf Lohmann"},
+        "license": {"const": "CC-BY-NC-ND-4.0"},
+        "license_text_ref": {"const": "LICENSES/CC-BY-NC-ND-4.0.txt"},
+        "classification": {"const": "release_authorization_json"}
+      }
+    },
+    "$schema_ref": {"const": "../policy/qikvrt-effect-ack-release-request.schema.json"},
+    "schema": {"const": "qikvrt_effect_ack_release_request_v1"},
+    "schema_sha256": {"$ref": "#/$defs/sha256"},
+    "request_id": {"const": "effect-ack-universality-2026-07-22"},
+    "state": {"enum": ["inactive", "reserve", "finalize"]},
+    "confirm": {
+      "enum": [
+        "NOT_AUTHORIZED",
+        "RESERVE_ZENODO_DRAFT_ONLY_NO_PUBLISH",
+        "FINALIZE_TAGS_AND_ZENODO_PUBLICATION"
+      ]
+    },
+    "authorization_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "repository_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_repository",
+        "mirror_repository",
+        "release_ref",
+        "reserve_ref",
+        "finalize_ref",
+        "state_branch"
+      ],
+      "properties": {
+        "authority_repository": {"const": "Goldkelch/qik-vrt"},
+        "mirror_repository": {"const": "ingolf-lohmann/qik-vrt"},
+        "release_ref": {"const": "refs/heads/main"},
+        "reserve_ref": {"const": "refs/heads/automation/effect-ack-universality-reserve-20260722"},
+        "finalize_ref": {"const": "refs/heads/automation/effect-ack-universality-finalize-20260722"},
+        "state_branch": {"const": "qikvrt/zenodo-state"}
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "tag",
+        "expected_source_commit",
+        "expected_source_tree",
+        "tagger_name",
+        "tagger_email",
+        "tagger_timestamp",
+        "tag_message"
+      ],
+      "properties": {
+        "version": {"const": "2026.07.22-effect-ack-universality-1.0.0"},
+        "tag": {"const": "v2026.07.22-effect-ack-universality-1.0.0"},
+        "expected_source_commit": {"$ref": "#/$defs/gitSha1"},
+        "expected_source_tree": {"$ref": "#/$defs/gitSha1"},
+        "tagger_name": {"const": "Ingolf Lohmann"},
+        "tagger_email": {"const": "ingolf.lohmann@live.com"},
+        "tagger_timestamp": {"const": "2026-07-22T00:00:00Z"},
+        "tag_message": {"const": "QIK-VRT EFFECT_ACK universality 1.0.0\n\nReviewed scientific artifact, bounded executable proof, reproducible IETF rendering, and adaptive-runtime evidence. No GitHub Release object. No Datatracker submission."}
+      }
+    },
+    "zenodo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client_path",
+        "client_sha256",
+        "manifest_path",
+        "manifest_sha256",
+        "reservation_state_path",
+        "reservation_evidence_sha256",
+        "paper_doi",
+        "software_doi"
+      ],
+      "properties": {
+        "client_path": {"const": "tools/qikvrt_zenodo_actions.py"},
+        "client_sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_path": {"const": "release/effect-ack-universality-zenodo.json"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "reservation_state_path": {"const": "release-state/effect-ack-universality/zenodo-reservation.json"},
+        "reservation_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "paper_doi": {"type": ["string", "null"], "pattern": "^10\\.5281/zenodo\\.[0-9]+$"},
+        "software_doi": {"type": ["string", "null"], "pattern": "^10\\.5281/zenodo\\.[0-9]+$"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "inactive"}}, "required": ["state"]},
+      "then": {
+        "properties": {
+          "confirm": {"const": "NOT_AUTHORIZED"},
+          "release": {
+            "properties": {
+              "expected_source_commit": {"const": "0000000000000000000000000000000000000000"},
+              "expected_source_tree": {"const": "0000000000000000000000000000000000000000"}
+            }
+          },
+          "zenodo": {
+            "properties": {
+              "client_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "manifest_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "reservation_evidence_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "paper_doi": {"const": null},
+              "software_doi": {"const": null}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "reserve"}}, "required": ["state"]},
+      "then": {
+        "properties": {
+          "confirm": {"const": "RESERVE_ZENODO_DRAFT_ONLY_NO_PUBLISH"},
+          "zenodo": {
+            "properties": {
+              "reservation_evidence_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "paper_doi": {"const": null},
+              "software_doi": {"const": null}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "finalize"}}, "required": ["state"]},
+      "then": {
+        "properties": {
+          "confirm": {"const": "FINALIZE_TAGS_AND_ZENODO_PUBLICATION"},
+          "zenodo": {
+            "properties": {
+              "paper_doi": {"type": "string", "pattern": "^10\\.5281/zenodo\\.[0-9]+$"},
+              "software_doi": {"type": "string", "pattern": "^10\\.5281/zenodo\\.[0-9]+$"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}

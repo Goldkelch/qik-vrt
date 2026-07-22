@@ -10,6 +10,19 @@ remain the authoritative detailed record.
 
 ## Unreleased
 
+- Added the EFFECT_ACK universality working paper, executable proof report,
+  exact reconstruction and inversion boundaries, and a documented conclusion
+  that Draft `-01` requires no normative change.
+- Added a strict ANSI-C90 five-state decision core with exhaustive comparison
+  against an independently structured Draft-01 priority oracle.
+- Added checksum-bound GitHub CLI and `xml2rfc` runtime contracts, rebuildable
+  cache policy, pinned CI dependencies, and platform-specific bootstraps that
+  never persist credentials.
+- Added a bounded collective-adaptive protocol: exact-key cache reuse speeds
+  later environment construction automatically, while performance observations
+  produce proposal-only evidence. Reordering requires a separately reviewed
+  implementation; tests, review, `EFFECT_ACK_DONE`, merge, publication, release
+  and tagging remain protected gates.
 - Competition-readiness documentation, community guidance, and a no-network
   effect-haltpoint demonstration were merged into `main` through
   [PR #1](https://github.com/Goldkelch/qik-vrt/pull/1) at merge commit
