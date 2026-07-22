@@ -1,0 +1,445 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT adaptive runtime
+
+on:
+  push:
+    paths:
+      - "runtime/toolchains/**"
+      - "runtime/CACHE_POLICY.md"
+      - "tools/bootstrap-gh.sh"
+      - "tools/bootstrap-gh.ps1"
+      - "tools/bootstrap-runtime.sh"
+      - "tools/bootstrap-runtime.ps1"
+      - "tests/test_ietf_offline_render.py"
+      - "tests/test_runtime_bootstrap.sh"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/IETF_RENDER_VALIDATION.json"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.xml"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.txt"
+      - "Makefile"
+      - ".github/workflows/qikvrt_adaptive_runtime.yml"
+      - ".github/dependabot.yml"
+  pull_request:
+    paths:
+      - "runtime/toolchains/**"
+      - "runtime/CACHE_POLICY.md"
+      - "tools/bootstrap-gh.sh"
+      - "tools/bootstrap-gh.ps1"
+      - "tools/bootstrap-runtime.sh"
+      - "tools/bootstrap-runtime.ps1"
+      - "tests/test_ietf_offline_render.py"
+      - "tests/test_runtime_bootstrap.sh"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/IETF_RENDER_VALIDATION.json"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.xml"
+      - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.txt"
+      - "Makefile"
+      - ".github/workflows/qikvrt_adaptive_runtime.yml"
+      - ".github/dependabot.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 04 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adaptive-runtime-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Contract (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            family: posix
+            exact_renderer_optional: false
+          - os: macos-15-intel
+            family: posix
+            exact_renderer_optional: true
+          - os: windows-2022
+            family: windows
+            exact_renderer_optional: true
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out reviewed bytes without persisted credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Probe exact renderer interpreter CPython 3.12.13 x64
+        id: renderer-python
+        continue-on-error: ${{ matrix.exact_renderer_optional }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Bind fallback Python 3.12 for non-renderer contract checks
+        if: steps.renderer-python.outcome == 'failure'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Export exact POSIX renderer interpreter path
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'success'
+        shell: sh
+        run: printf '%s\n' "QIKVRT_PYTHON=$pythonLocation/bin/python" >> "$GITHUB_ENV"
+
+      - name: Export exact Windows renderer interpreter path
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
+        shell: powershell
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "QIKVRT_PYTHON=$env:pythonLocation\python.exe"
+
+      - name: Validate POSIX bootstrap syntax and check-only behavior
+        if: matrix.family == 'posix'
+        shell: sh
+        run: |
+          set -eu
+          sh -n tools/bootstrap-gh.sh
+          sh -n tools/bootstrap-runtime.sh
+          sh tools/bootstrap-gh.sh --help >/dev/null
+          sh tools/bootstrap-runtime.sh --help >/dev/null
+          set +e
+          sh tools/bootstrap-runtime.sh --check-only --profile all
+          rc=$?
+          set -e
+          test "$rc" -eq 0 || test "$rc" -eq 20
+
+      - name: Validate PowerShell bootstrap syntax and check-only behavior
+        if: matrix.family == 'windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @('tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path), [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) {
+              throw "PowerShell parser rejected ${path}: $($errors -join '; ')"
+            }
+          }
+          $checkProcess = Start-Process -FilePath powershell.exe -NoNewWindow -Wait -PassThru `
+            -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', `
+              '-File', 'tools/bootstrap-runtime.ps1', '-CheckOnly', '-Profile', 'all')
+          $checkOnlyExit = $checkProcess.ExitCode
+          if ($checkOnlyExit -ne 0 -and $checkOnlyExit -ne 20) {
+            throw "Unexpected check-only exit code: $checkOnlyExit"
+          }
+
+      - name: Validate exact lock contract
+        if: matrix.os == 'ubuntu-24.04'
+        shell: sh
+        run: |
+          set -eu
+          test "$(awk -F '\t' '$1 == "gh" && $2 == "2.96.0" {count++} END {print count+0}' runtime/toolchains/TOOLCHAIN.lock.tsv)" -eq 6
+          test "$(awk -F '[=[:space:]]+' '$1 == "xml2rfc" {print $2}' runtime/toolchains/requirements-xml2rfc-3.34.0.txt)" = "3.34.0"
+          test "$(awk '/^[A-Za-z0-9_.-]+==/ {count++} END {print count+0}' runtime/toolchains/requirements-xml2rfc-3.34.0.txt)" -eq 19
+          test "$(awk -F '\t' '$1 == "python" && $2 == "3.12.13" {count++} END {print count+0}' runtime/toolchains/TOOLCHAIN.lock.tsv)" -eq 1
+
+      - name: Exercise full POSIX GH and XML installation contract
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'success'
+        shell: sh
+        run: |
+          set -eu
+          contract_cache="$RUNNER_TEMP/qikvrt-contract-runtime"
+          sh tools/bootstrap-runtime.sh --install --accept-third-party \
+            --profile ietf --cache-dir "$contract_cache"
+          test_tmp="$RUNNER_TEMP/qikvrt-runtime-test-tmp"
+          mkdir -p "$test_tmp"
+          TMPDIR="$test_tmp" QIKVRT_TEST_SOURCE_CACHE="$contract_cache" \
+            sh tests/test_runtime_bootstrap.sh
+          case "$(uname -s)" in
+            Linux) renderer_platform=linux-amd64 ;;
+            Darwin) renderer_platform=macOS-amd64 ;;
+            *) exit 1 ;;
+          esac
+          renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/xml2rfc"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+
+      - name: Exercise POSIX GH contract while exact renderer is unavailable
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'failure'
+        shell: sh
+        run: |
+          set -eu
+          contract_cache="$RUNNER_TEMP/qikvrt-contract-runtime"
+          sh tools/bootstrap-gh.sh --install --accept-third-party \
+            --cache-dir "$contract_cache"
+          test_tmp="$RUNNER_TEMP/qikvrt-runtime-test-tmp"
+          mkdir -p "$test_tmp"
+          TMPDIR="$test_tmp" QIKVRT_TEST_SOURCE_CACHE="$contract_cache" \
+            sh tests/test_runtime_bootstrap.sh
+
+      - name: Exercise full Windows GH and XML installation contract
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-BoundPowerShell([string[]]$Arguments) {
+            $process = Start-Process -FilePath powershell.exe -NoNewWindow -Wait -PassThru `
+              -ArgumentList $Arguments
+            return $process.ExitCode
+          }
+          $contractCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-runtime'
+          $installExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+            '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-runtime.ps1', `
+            '-Install', '-AcceptThirdParty', '-Profile', 'ietf', '-CacheDir', $contractCache)
+          if ($installExit -ne 0) { throw "Windows runtime install failed: $installExit" }
+
+          $renderer = Join-Path $contractCache 'xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\xml2rfc.exe'
+          & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer
+          if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer test failed: $LASTEXITCODE" }
+
+          $archive = Join-Path $contractCache 'gh\2.96.0\windows-amd64\archive\gh_2.96.0_windows_amd64.zip'
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Verified GH archive is absent' }
+          $successVersionRoot = Join-Path $contractCache 'gh\2.96.0'
+          $successStaging = @(Get-ChildItem -LiteralPath $successVersionRoot -Filter '.install-*' -Force)
+          if ($successStaging.Count -ne 0) { throw 'Successful GH install retained staging state' }
+
+          $xmlRoot = Join-Path $contractCache 'xml2rfc\3.34.0\python-3.12.13\windows-amd64'
+          $venvPython = Join-Path $xmlRoot 'venv\Scripts\python.exe'
+          $venvHashBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $venvPython).Hash
+          $env:QIKVRT_TEST_FAIL_XML_AFTER_VENV_BACKUP = '1'
+          try {
+            $xmlRollbackExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+              '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-runtime.ps1', `
+              '-Install', '-AcceptThirdParty', '-Profile', 'ietf', '-CacheDir', $contractCache)
+          } finally {
+            Remove-Item Env:QIKVRT_TEST_FAIL_XML_AFTER_VENV_BACKUP -ErrorAction SilentlyContinue
+          }
+          if ($xmlRollbackExit -eq 0) { throw 'Expected injected XML derivation failure' }
+          if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) { throw 'Prior XML venv was not restored' }
+          $venvHashAfter = (Get-FileHash -Algorithm SHA256 -LiteralPath $venvPython).Hash
+          if ($venvHashAfter -ne $venvHashBefore) { throw 'Restored XML venv differs from the prior venv' }
+          $xmlStaging = @(Get-ChildItem -LiteralPath $xmlRoot -Filter '.install-*' -Force)
+          if ($xmlStaging.Count -ne 0) { throw 'Failed XML derivation retained staging state' }
+
+          $preMoveCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-pre-move'
+          $env:QIKVRT_TEST_FAIL_GH_PRE_MOVE = '1'
+          try {
+            $preMoveExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+              '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-gh.ps1', `
+              '-Install', '-AcceptThirdParty', '-ArchiveFile', $archive, '-CacheDir', $preMoveCache)
+          } finally {
+            Remove-Item Env:QIKVRT_TEST_FAIL_GH_PRE_MOVE -ErrorAction SilentlyContinue
+          }
+          if ($preMoveExit -eq 0) { throw 'Expected injected pre-move GH failure' }
+          $preMoveTarget = Join-Path $preMoveCache 'gh\2.96.0\windows-amd64'
+          if (Test-Path -LiteralPath $preMoveTarget) { throw 'Pre-move failure created a GH cache root' }
+          $preMoveVersionRoot = Join-Path $preMoveCache 'gh\2.96.0'
+          if (Test-Path -LiteralPath $preMoveVersionRoot) {
+            $preMoveStaging = @(Get-ChildItem -LiteralPath $preMoveVersionRoot -Filter '.install-*' -Force)
+            if ($preMoveStaging.Count -ne 0) { throw 'Pre-move failure retained GH staging state' }
+          }
+
+          $rollbackCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-rollback'
+          $env:QIKVRT_TEST_FAIL_GH_FINAL_VERIFY = '1'
+          try {
+            $rollbackExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+              '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-gh.ps1', `
+              '-Install', '-AcceptThirdParty', '-ArchiveFile', $archive, '-CacheDir', $rollbackCache)
+          } finally {
+            Remove-Item Env:QIKVRT_TEST_FAIL_GH_FINAL_VERIFY -ErrorAction SilentlyContinue
+          }
+          if ($rollbackExit -ne 1) { throw "Expected rollback exit 1, got $rollbackExit" }
+          $target = Join-Path $rollbackCache 'gh\2.96.0\windows-amd64'
+          if (Test-Path -LiteralPath $target) { throw 'Failed verification retained the GH cache root' }
+          $versionRoot = Join-Path $rollbackCache 'gh\2.96.0'
+          if (Test-Path -LiteralPath $versionRoot) {
+            $staging = @(Get-ChildItem -LiteralPath $versionRoot -Filter '.install-*' -Force)
+            if ($staging.Count -ne 0) { throw 'Failed verification retained GH staging state' }
+          }
+
+      - name: Exercise Windows GH contract while exact renderer is unavailable
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'failure'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-BoundPowerShell([string[]]$Arguments) {
+            $process = Start-Process -FilePath powershell.exe -NoNewWindow -Wait -PassThru `
+              -ArgumentList $Arguments
+            return $process.ExitCode
+          }
+          $contractCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-runtime'
+          $installExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+            '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-gh.ps1', `
+            '-Install', '-AcceptThirdParty', '-CacheDir', $contractCache)
+          if ($installExit -ne 0) { throw "Windows GH install failed: $installExit" }
+
+          $archive = Join-Path $contractCache 'gh\2.96.0\windows-amd64\archive\gh_2.96.0_windows_amd64.zip'
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Verified GH archive is absent' }
+          $successVersionRoot = Join-Path $contractCache 'gh\2.96.0'
+          $successStaging = @(Get-ChildItem -LiteralPath $successVersionRoot -Filter '.install-*' -Force)
+          if ($successStaging.Count -ne 0) { throw 'Successful GH install retained staging state' }
+
+          $preMoveCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-pre-move'
+          $env:QIKVRT_TEST_FAIL_GH_PRE_MOVE = '1'
+          try {
+            $preMoveExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+              '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-gh.ps1', `
+              '-Install', '-AcceptThirdParty', '-ArchiveFile', $archive, '-CacheDir', $preMoveCache)
+          } finally {
+            Remove-Item Env:QIKVRT_TEST_FAIL_GH_PRE_MOVE -ErrorAction SilentlyContinue
+          }
+          if ($preMoveExit -eq 0) { throw 'Expected injected pre-move GH failure' }
+          $preMoveTarget = Join-Path $preMoveCache 'gh\2.96.0\windows-amd64'
+          if (Test-Path -LiteralPath $preMoveTarget) { throw 'Pre-move failure created a GH cache root' }
+          $preMoveVersionRoot = Join-Path $preMoveCache 'gh\2.96.0'
+          if (Test-Path -LiteralPath $preMoveVersionRoot) {
+            $preMoveStaging = @(Get-ChildItem -LiteralPath $preMoveVersionRoot -Filter '.install-*' -Force)
+            if ($preMoveStaging.Count -ne 0) { throw 'Pre-move failure retained GH staging state' }
+          }
+
+          $rollbackCache = Join-Path $env:RUNNER_TEMP 'qikvrt-contract-rollback'
+          $env:QIKVRT_TEST_FAIL_GH_FINAL_VERIFY = '1'
+          try {
+            $rollbackExit = Invoke-BoundPowerShell @('-NoProfile', '-NonInteractive', `
+              '-ExecutionPolicy', 'Bypass', '-File', 'tools/bootstrap-gh.ps1', `
+              '-Install', '-AcceptThirdParty', '-ArchiveFile', $archive, '-CacheDir', $rollbackCache)
+          } finally {
+            Remove-Item Env:QIKVRT_TEST_FAIL_GH_FINAL_VERIFY -ErrorAction SilentlyContinue
+          }
+          if ($rollbackExit -ne 1) { throw "Expected rollback exit 1, got $rollbackExit" }
+          $target = Join-Path $rollbackCache 'gh\2.96.0\windows-amd64'
+          if (Test-Path -LiteralPath $target) { throw 'Failed verification retained the GH cache root' }
+          $versionRoot = Join-Path $rollbackCache 'gh\2.96.0'
+          if (Test-Path -LiteralPath $versionRoot) {
+            $staging = @(Get-ChildItem -LiteralPath $versionRoot -Filter '.install-*' -Force)
+            if ($staging.Count -ne 0) { throw 'Failed verification retained GH staging state' }
+          }
+
+  warm-cache:
+    name: Warm verified cache (${{ matrix.os }})
+    needs: contract
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            family: posix
+            exact_renderer_optional: false
+          - os: macos-15-intel
+            family: posix
+            exact_renderer_optional: true
+          - os: windows-2022
+            family: windows
+            exact_renderer_optional: true
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out reviewed bytes without persisted credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Probe exact renderer interpreter CPython 3.12.13 x64
+        id: renderer-python
+        continue-on-error: ${{ matrix.exact_renderer_optional }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Bind fallback Python 3.12 for non-renderer cache checks
+        if: steps.renderer-python.outcome == 'failure'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Export exact POSIX renderer interpreter path
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'success'
+        shell: sh
+        run: printf '%s\n' "QIKVRT_PYTHON=$pythonLocation/bin/python" >> "$GITHUB_ENV"
+
+      - name: Export exact Windows renderer interpreter path
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
+        shell: powershell
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "QIKVRT_PYTHON=$env:pythonLocation\python.exe"
+
+      - name: Restore exact renderer and GH cache
+        id: exact-runtime-cache
+        if: steps.renderer-python.outcome == 'success'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .qikvrt/toolchains/gh
+            .qikvrt/toolchains/xml2rfc/3.34.0/python-3.12.13/*/wheelhouse
+          key: qikvrt-runtime-v4-py-3.12.13-success-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('runtime/toolchains/**', 'tools/bootstrap-gh.sh', 'tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.sh', 'tools/bootstrap-runtime.ps1') }}
+          enableCrossOsArchive: false
+
+      - name: Restore GH-only cache without exact renderer
+        id: gh-only-cache
+        if: steps.renderer-python.outcome == 'failure'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qikvrt/toolchains/gh
+          key: qikvrt-runtime-v4-py-3.12.13-unavailable-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('runtime/toolchains/**', 'tools/bootstrap-gh.sh', 'tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.sh', 'tools/bootstrap-runtime.ps1') }}
+          enableCrossOsArchive: false
+
+      - name: Install or verify POSIX runtime with explicit consent
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'success'
+        shell: sh
+        run: sh tools/bootstrap-runtime.sh --install --accept-third-party --profile ietf
+
+      - name: Install or verify Windows runtime with explicit consent
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
+        shell: powershell
+        run: tools/bootstrap-runtime.ps1 -Install -AcceptThirdParty -Profile ietf
+
+      - name: Revalidate exact POSIX renderer before cache publication
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'success'
+        shell: sh
+        run: |
+          set -eu
+          case "$(uname -s)" in
+            Linux) renderer_platform=linux-amd64 ;;
+            Darwin) renderer_platform=macOS-amd64 ;;
+            *) exit 1 ;;
+          esac
+          renderer=".qikvrt/toolchains/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/xml2rfc"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+
+      - name: Revalidate exact Windows renderer before cache publication
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
+        shell: powershell
+        run: |
+          $renderer = Join-Path $PWD '.qikvrt\toolchains\xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\xml2rfc.exe'
+          & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer
+          if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer cache validation failed: $LASTEXITCODE" }
+
+      - name: Install or verify POSIX GH cache without exact renderer
+        if: matrix.family == 'posix' && steps.renderer-python.outcome == 'failure'
+        shell: sh
+        run: sh tools/bootstrap-gh.sh --install --accept-third-party
+
+      - name: Install or verify Windows GH cache without exact renderer
+        if: matrix.family == 'windows' && steps.renderer-python.outcome == 'failure'
+        shell: powershell
+        run: tools/bootstrap-gh.ps1 -Install -AcceptThirdParty
+
+      - name: Save verified exact renderer and GH cache
+        if: steps.renderer-python.outcome == 'success' && steps.exact-runtime-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .qikvrt/toolchains/gh
+            .qikvrt/toolchains/xml2rfc/3.34.0/python-3.12.13/*/wheelhouse
+          key: qikvrt-runtime-v4-py-3.12.13-success-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('runtime/toolchains/**', 'tools/bootstrap-gh.sh', 'tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.sh', 'tools/bootstrap-runtime.ps1') }}
+
+      - name: Save verified GH-only cache without exact renderer
+        if: steps.renderer-python.outcome == 'failure' && steps.gh-only-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qikvrt/toolchains/gh
+          key: qikvrt-runtime-v4-py-3.12.13-unavailable-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('runtime/toolchains/**', 'tools/bootstrap-gh.sh', 'tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.sh', 'tools/bootstrap-runtime.ps1') }}

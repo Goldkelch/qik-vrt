@@ -1,0 +1,578 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT EFFECT_ACK Zenodo reserve
+
+on:
+  push:
+    branches:
+      - automation/effect-ack-universality-reserve-20260722
+    paths:
+      - release/effect-ack-universality-request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-effect-ack-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate inert or reserve marker
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      authorized: ${{ steps.marker.outputs.authorized }}
+      marker_sha256: ${{ steps.marker.outputs.marker_sha256 }}
+      source_commit: ${{ steps.marker.outputs.source_commit }}
+      source_tree: ${{ steps.marker.outputs.source_tree }}
+    steps:
+      - name: Check out the two-commit authorization branch without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind validator interpreter to CPython 3.12.13 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Validate marker commit, exact parent candidate and canonical digests
+        id: marker
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+          GITHUB_REPOSITORY_EXPECTED: Goldkelch/qik-vrt
+          WORKFLOW_PHASE: reserve
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import copy
+          import hashlib
+          import json
+          import os
+          import re
+          import stat
+          import urllib.request
+          from pathlib import Path
+
+          request_path = Path("release/effect-ack-universality-request.json")
+          schema_path = Path("policy/qikvrt-effect-ack-release-request.schema.json")
+          zeros40 = "0" * 40
+          zeros64 = "0" * 64
+          sha1_re = re.compile(r"[0-9a-f]{40}\Z")
+          sha256_re = re.compile(r"[0-9a-f]{64}\Z")
+          doi_re = re.compile(r"10\.5281/zenodo\.[0-9]+\Z")
+
+          def fail(message):
+              raise SystemExit(f"BLOCK: {message}")
+
+          def regular_file(path):
+              try:
+                  mode = path.lstat().st_mode
+              except FileNotFoundError:
+                  fail(f"required file is absent: {path}")
+              if not stat.S_ISREG(mode) or path.is_symlink():
+                  fail(f"required path is not a non-symlink regular file: {path}")
+
+          def digest(path):
+              regular_file(path)
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def exact_keys(value, expected, label):
+              if not isinstance(value, dict) or set(value) != set(expected):
+                  fail(f"{label} keys differ from the closed contract")
+
+          def require(value, expected, label):
+              if value != expected:
+                  fail(f"{label} differs from the fixed contract")
+
+          def api(path):
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/{path}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "qikvrt-effect-ack-marker-validator",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          regular_file(request_path)
+          regular_file(schema_path)
+          marker = json.loads(request_path.read_text(encoding="utf-8"))
+          schema = json.loads(schema_path.read_text(encoding="utf-8"))
+          if not isinstance(schema, dict) or schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+              fail("release schema is not the reviewed JSON Schema dialect")
+
+          exact_keys(marker, {
+              "_license", "$schema_ref", "schema", "schema_sha256", "request_id",
+              "state", "confirm", "authorization_payload_sha256", "repository_policy",
+              "release", "zenodo",
+          }, "marker")
+          exact_keys(marker["_license"], {
+              "copyright", "rights_holder", "license", "license_text_ref", "classification",
+          }, "marker._license")
+          exact_keys(marker["repository_policy"], {
+              "authority_repository", "mirror_repository", "release_ref", "reserve_ref",
+              "finalize_ref", "state_branch",
+          }, "marker.repository_policy")
+          exact_keys(marker["release"], {
+              "version", "tag", "expected_source_commit", "expected_source_tree",
+              "tagger_name", "tagger_email",
+              "tagger_timestamp", "tag_message",
+          }, "marker.release")
+          exact_keys(marker["zenodo"], {
+              "client_path", "client_sha256", "manifest_path", "manifest_sha256",
+              "reservation_state_path", "reservation_evidence_sha256", "paper_doi",
+              "software_doi",
+          }, "marker.zenodo")
+
+          fixed = {
+              "$schema_ref": "../policy/qikvrt-effect-ack-release-request.schema.json",
+              "schema": "qikvrt_effect_ack_release_request_v1",
+              "request_id": "effect-ack-universality-2026-07-22",
+          }
+          for key, expected in fixed.items():
+              require(marker[key], expected, key)
+          require(marker["repository_policy"], {
+              "authority_repository": "Goldkelch/qik-vrt",
+              "mirror_repository": "ingolf-lohmann/qik-vrt",
+              "release_ref": "refs/heads/main",
+              "reserve_ref": "refs/heads/automation/effect-ack-universality-reserve-20260722",
+              "finalize_ref": "refs/heads/automation/effect-ack-universality-finalize-20260722",
+              "state_branch": "qikvrt/zenodo-state",
+          }, "repository_policy")
+          release_fixed = {
+              "version": "2026.07.22-effect-ack-universality-1.0.0",
+              "tag": "v2026.07.22-effect-ack-universality-1.0.0",
+              "tagger_name": "Ingolf Lohmann",
+              "tagger_email": "ingolf.lohmann@live.com",
+              "tagger_timestamp": "2026-07-22T00:00:00Z",
+              "tag_message": "QIK-VRT EFFECT_ACK universality 1.0.0\n\nReviewed scientific artifact, bounded executable proof, reproducible IETF rendering, and adaptive-runtime evidence. No GitHub Release object. No Datatracker submission.",
+          }
+          for key, expected in release_fixed.items():
+              require(marker["release"][key], expected, f"release.{key}")
+          zenodo_fixed = {
+              "client_path": "tools/qikvrt_zenodo_actions.py",
+              "manifest_path": "release/effect-ack-universality-zenodo.json",
+              "reservation_state_path": "release-state/effect-ack-universality/zenodo-reservation.json",
+          }
+          for key, expected in zenodo_fixed.items():
+              require(marker["zenodo"][key], expected, f"zenodo.{key}")
+
+          if marker["schema_sha256"] != digest(schema_path):
+              fail("schema_sha256 does not bind the checked-in schema bytes")
+          if not sha256_re.fullmatch(marker["authorization_payload_sha256"]):
+              fail("authorization_payload_sha256 is not lowercase SHA-256")
+          projection = copy.deepcopy(marker)
+          projection.pop("authorization_payload_sha256")
+          canonical = json.dumps(
+              projection, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+          ).encode("utf-8")
+          calculated = hashlib.sha256(canonical).hexdigest()
+          if calculated != marker["authorization_payload_sha256"]:
+              fail("authorization payload digest mismatch")
+
+          state = marker["state"]
+          if state not in {"inactive", "reserve", "finalize"}:
+              fail("unknown marker state")
+          confirm_by_state = {
+              "inactive": "NOT_AUTHORIZED",
+              "reserve": "RESERVE_ZENODO_DRAFT_ONLY_NO_PUBLISH",
+              "finalize": "FINALIZE_TAGS_AND_ZENODO_PUBLICATION",
+          }
+          require(marker["confirm"], confirm_by_state[state], "confirm")
+          for key in ("client_sha256", "manifest_sha256", "reservation_evidence_sha256"):
+              if not sha256_re.fullmatch(marker["zenodo"][key]):
+                  fail(f"zenodo.{key} is not lowercase SHA-256")
+          source_commit = marker["release"]["expected_source_commit"]
+          source_tree = marker["release"]["expected_source_tree"]
+          if not sha1_re.fullmatch(source_commit):
+              fail("expected_source_commit is not lowercase Git SHA-1")
+          if not sha1_re.fullmatch(source_tree):
+              fail("expected_source_tree is not lowercase Git SHA-1")
+
+          if state == "inactive":
+              if source_commit != zeros40 or source_tree != zeros40:
+                  fail("inactive marker must have zero source commit and tree")
+              for key in ("client_sha256", "manifest_sha256", "reservation_evidence_sha256"):
+                  if marker["zenodo"][key] != zeros64:
+                      fail(f"inactive marker must zero zenodo.{key}")
+              if marker["zenodo"]["paper_doi"] is not None or marker["zenodo"]["software_doi"] is not None:
+                  fail("inactive marker must not carry DOI values")
+          else:
+              if source_commit == zeros40 or source_tree == zeros40:
+                  fail("active marker has no exact source commit/tree constraint")
+              client = Path(marker["zenodo"]["client_path"])
+              manifest = Path(marker["zenodo"]["manifest_path"])
+              if digest(client) != marker["zenodo"]["client_sha256"]:
+                  fail("Zenodo client digest mismatch")
+              if digest(manifest) != marker["zenodo"]["manifest_sha256"]:
+                  fail("Zenodo manifest digest mismatch")
+
+          if state == "reserve":
+              if marker["zenodo"]["reservation_evidence_sha256"] != zeros64:
+                  fail("reserve marker must not claim reservation evidence in advance")
+              if marker["zenodo"]["paper_doi"] is not None or marker["zenodo"]["software_doi"] is not None:
+                  fail("reserve marker must not claim DOI values in advance")
+          if state == "finalize":
+              if marker["zenodo"]["reservation_evidence_sha256"] == zeros64:
+                  fail("finalize marker does not bind reservation evidence")
+              for key in ("paper_doi", "software_doi"):
+                  value = marker["zenodo"][key]
+                  if not isinstance(value, str) or not doi_re.fullmatch(value):
+                      fail(f"finalize marker has no valid zenodo.{key}")
+
+          if state != os.environ["WORKFLOW_PHASE"]:
+              output = Path(os.environ["GITHUB_OUTPUT"])
+              with output.open("a", encoding="utf-8") as handle:
+                  handle.write("authorized=false\n")
+                  handle.write(f"marker_sha256={digest(request_path)}\n")
+              raise SystemExit(0)
+
+          require(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REPOSITORY_EXPECTED"], "repository")
+          require(
+              os.environ["EVENT_REF"],
+              "refs/heads/automation/effect-ack-universality-reserve-20260722",
+              "event ref",
+          )
+          require(os.environ["EVENT_FORCED"], "false", "forced-push flag")
+          after = os.environ["EVENT_AFTER"]
+          if not sha1_re.fullmatch(after) or after != os.environ["GITHUB_SHA"]:
+              fail("event after commit does not match the checked-out commit")
+          current_branch = api(
+              "git/ref/heads/automation/effect-ack-universality-reserve-20260722"
+          )["object"]["sha"]
+          require(current_branch, after, "current remote reserve-authorization branch")
+
+          import subprocess
+          parents = subprocess.run(
+              ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.strip().split()
+          if len(parents) != 2:
+              fail("authorization HEAD must have exactly one parent")
+          require(parents[1], source_commit, "authorization marker parent")
+          require(os.environ["EVENT_BEFORE"], source_commit, "push event before commit")
+          parent_tree = subprocess.run(
+              ["git", "show", "-s", "--format=%T", "HEAD^"],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.strip()
+          require(parent_tree, source_tree, "authorization marker parent tree")
+          marker_tree = subprocess.run(
+              ["git", "show", "-s", "--format=%T", "HEAD"],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.strip()
+          if marker_tree == source_tree:
+              fail("active marker commit did not produce a distinct marker tree")
+          api_parent_tree = api(f"git/commits/{source_commit}")["tree"]["sha"]
+          require(api_parent_tree, source_tree, "GitHub source tree")
+          changed = subprocess.run(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^", "HEAD"],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.splitlines()
+          require(changed, ["release/effect-ack-universality-request.json"], "authorization commit diff")
+          parent_marker_bytes = subprocess.run(
+              ["git", "show", "HEAD^:release/effect-ack-universality-request.json"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout
+          parent_marker = json.loads(parent_marker_bytes.decode("utf-8"))
+          expected_inert = copy.deepcopy(marker)
+          expected_inert["state"] = "inactive"
+          expected_inert["confirm"] = "NOT_AUTHORIZED"
+          expected_inert["release"]["expected_source_commit"] = zeros40
+          expected_inert["release"]["expected_source_tree"] = zeros40
+          expected_inert["zenodo"]["client_sha256"] = zeros64
+          expected_inert["zenodo"]["manifest_sha256"] = zeros64
+          expected_inert["zenodo"]["reservation_evidence_sha256"] = zeros64
+          expected_inert["zenodo"]["paper_doi"] = None
+          expected_inert["zenodo"]["software_doi"] = None
+          inert_projection = copy.deepcopy(expected_inert)
+          inert_projection.pop("authorization_payload_sha256")
+          expected_inert["authorization_payload_sha256"] = hashlib.sha256(
+              json.dumps(
+                  inert_projection,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              ).encode("utf-8")
+          ).hexdigest()
+          require(parent_marker, expected_inert, "inert marker in exact source parent")
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as handle:
+              handle.write("authorized=true\n")
+              handle.write(f"marker_sha256={digest(request_path)}\n")
+              handle.write(f"source_commit={source_commit}\n")
+              handle.write(f"source_tree={source_tree}\n")
+          PY
+
+      - name: Run the complete release-candidate gate on the exact parent candidate
+        if: steps.marker.outputs.authorized == 'true'
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ steps.marker.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/qikvrt-reserve-source"
+          git worktree add --detach "$source_root" "$SOURCE_COMMIT"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 make -C "$source_root" test
+
+  reserve:
+    name: Reserve Zenodo drafts without publishing
+    needs: validate
+    if: needs.validate.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the exact authorized commit without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind Zenodo client interpreter to CPython 3.12.13 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-07-22
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Revalidate authorized bytes immediately before the effect
+        shell: bash
+        env:
+          EXPECTED_MARKER_SHA256: ${{ needs.validate.outputs.marker_sha256 }}
+          EXPECTED_SOURCE_COMMIT: ${{ needs.validate.outputs.source_commit }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          marker_path = Path("release/effect-ack-universality-request.json")
+          marker_bytes = marker_path.read_bytes()
+          if hashlib.sha256(marker_bytes).hexdigest() != os.environ["EXPECTED_MARKER_SHA256"]:
+              raise SystemExit("BLOCK: marker bytes changed between validation and effect job")
+          marker = json.loads(marker_bytes)
+          if marker["state"] != "reserve" or marker["confirm"] != "RESERVE_ZENODO_DRAFT_ONLY_NO_PUBLISH":
+              raise SystemExit("BLOCK: reserve authorization is absent")
+          if marker["release"]["expected_source_commit"] != os.environ["EXPECTED_SOURCE_COMMIT"]:
+              raise SystemExit("BLOCK: source commit changed between validation and effect job")
+          for path_key, hash_key in (("client_path", "client_sha256"), ("manifest_path", "manifest_sha256")):
+              path = Path(marker["zenodo"][path_key])
+              if path.is_symlink() or not path.is_file():
+                  raise SystemExit(f"BLOCK: unsafe authorized path: {path}")
+              if hashlib.sha256(path.read_bytes()).hexdigest() != marker["zenodo"][hash_key]:
+                  raise SystemExit(f"BLOCK: authorized digest mismatch: {path}")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/git/ref/heads/automation/effect-ack-universality-reserve-20260722",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "qikvrt-effect-ack-reserve",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              current = json.load(response)["object"]["sha"]
+          if current != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: reserve authorization branch advanced")
+          import subprocess
+          parent = subprocess.run(
+              ["git", "rev-parse", "HEAD^"], check=True, text=True, stdout=subprocess.PIPE
+          ).stdout.strip()
+          if parent != os.environ["EXPECTED_SOURCE_COMMIT"]:
+              raise SystemExit("BLOCK: marker HEAD no longer has the authorized source parent")
+          PY
+
+      - name: Reserve paper and software drafts through the hash-bound client
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          RESERVATION_RESULT: .qikvrt/release/effect-ack-universality/zenodo-reservation.json
+        run: |
+          set -euo pipefail
+          test -n "$ZENODO_ACCESS_TOKEN" || { echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable'; exit 1; }
+          mkdir -p .qikvrt/release/effect-ack-universality
+          python -B tools/qikvrt_zenodo_actions.py reserve \
+            --manifest release/effect-ack-universality-zenodo.json \
+            --result "$RESERVATION_RESULT" \
+            --base-url https://zenodo.org/api \
+            --repository-root .
+
+      - name: Reject secret-bearing or published reservation output
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          RESERVATION_RESULT: .qikvrt/release/effect-ack-universality/zenodo-reservation.json
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["RESERVATION_RESULT"])
+          raw = path.read_bytes()
+          if not raw or os.environ["ZENODO_ACCESS_TOKEN"].encode() in raw:
+              raise SystemExit("BLOCK: absent reservation result or secret material detected")
+          result = json.loads(raw)
+          if not isinstance(result, dict):
+              raise SystemExit("BLOCK: reservation result is not a JSON object")
+          envelope = result.get("authorization_envelope")
+          if (
+              result.get("schema_version") != 1
+              or result.get("phase") != "reserved"
+              or result.get("api_origin") != "zenodo.org"
+              or not isinstance(envelope, dict)
+              or envelope.get("release_id") != "2026-07-22-effect-ack-universality-1.0.0"
+              or envelope.get("authorization") != {
+                  "repositories": ["Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt"],
+                  "tag": "v2026.07.22-effect-ack-universality-1.0.0",
+              }
+          ):
+              raise SystemExit("BLOCK: reservation result has an invalid authorization envelope")
+          for kind in ("paper", "software"):
+              item = result.get(kind)
+              if (
+                  not isinstance(item, dict)
+                  or not isinstance(item.get("deposition_id"), int)
+                  or item.get("deposition_id", 0) <= 0
+                  or not isinstance(item.get("doi"), str)
+                  or not re.fullmatch(r"10\.5281/zenodo\.[0-9]+", item["doi"])
+              ):
+                  raise SystemExit(f"BLOCK: reservation result has an invalid {kind} identity")
+          forbidden_key = re.compile(
+              r"(?:access.?token|authorization.?header|bearer.?token|client.?secret|credential)", re.I
+          )
+          forbidden_text = re.compile(r"(?:access_token=|authorization:\s*bearer|client_secret=)", re.I)
+
+          def inspect(value):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      if forbidden_key.search(str(key)):
+                          raise SystemExit("BLOCK: secret-shaped key in reservation result")
+                      if str(key).lower() in {"published", "submitted", "publication_performed"} and child is True:
+                          raise SystemExit("BLOCK: reserve client reported a publication effect")
+                      inspect(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      inspect(child)
+              elif isinstance(value, str) and forbidden_text.search(value):
+                  raise SystemExit("BLOCK: secret-shaped value in reservation result")
+
+          inspect(result)
+          PY
+
+      - name: Persist public reservation evidence on the dedicated state branch
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          RESERVATION_RESULT: .qikvrt/release/effect-ack-universality/zenodo-reservation.json
+          STATE_BRANCH: qikvrt/zenodo-state
+          STATE_PATH: release-state/effect-ack-universality/zenodo-reservation.json
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          branch = os.environ["STATE_BRANCH"]
+          state_path = os.environ["STATE_PATH"]
+          content = Path(os.environ["RESERVATION_RESULT"]).read_bytes()
+          base = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "qikvrt-effect-ack-state-writer",
+          }
+
+          def api(method, path, body=None, missing_ok=False):
+              data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+              request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise
+
+          ref_path = "/git/ref/" + urllib.parse.quote("heads/" + branch, safe="/")
+          ref = api("GET", ref_path, missing_ok=True)
+          parent_sha = None if ref is None else ref["object"]["sha"]
+          base_tree = None
+          if parent_sha is not None:
+              base_tree = api("GET", f"/git/commits/{parent_sha}")["tree"]["sha"]
+          blob = api("POST", "/git/blobs", {
+              "content": base64.b64encode(content).decode("ascii"),
+              "encoding": "base64",
+          })["sha"]
+          tree_body = {
+              "tree": [{"path": state_path, "mode": "100644", "type": "blob", "sha": blob}],
+          }
+          if base_tree is not None:
+              tree_body["base_tree"] = base_tree
+          tree = api("POST", "/git/trees", tree_body)["sha"]
+          if tree == base_tree:
+              raise SystemExit(0)
+          commit_body = {
+              "message": "Record EFFECT_ACK Zenodo reservation evidence",
+              "tree": tree,
+              "parents": [] if parent_sha is None else [parent_sha],
+              "author": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"},
+              "committer": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"},
+          }
+          commit = api("POST", "/git/commits", commit_body)["sha"]
+          if parent_sha is None:
+              api("POST", "/git/refs", {"ref": "refs/heads/" + branch, "sha": commit})
+          else:
+              api("PATCH", ref_path, {"sha": commit, "force": False})
+          PY
+
+      - name: Upload the public reservation evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: effect-ack-zenodo-reservation-${{ github.sha }}
+          path: .qikvrt/release/effect-ack-universality/zenodo-reservation.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30

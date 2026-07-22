@@ -1,7 +1,8 @@
 # Test inventory
 
-The fixed 2026-07-20 release discovers nine executable test modules and runs
-102 tests.
+The 2026-07-22 EFFECT_ACK-universality release discovers twelve executable
+Python test modules and runs 128 tests. The command-line offline-render checker
+and the C90/shell gates are exercised separately by `make test`.
 
 | Module | Tests |
 |---|---:|
@@ -14,7 +15,10 @@ The fixed 2026-07-20 release discovers nine executable test modules and runs
 | `tests/test_license_transition.py` | 5 |
 | `tests/test_seed_workflows.py` | 12 |
 | `tests/test_tcpip_e2e.py` | 1 |
-| **Total** | **102** |
+| `tests/test_effect_ack_release_workflows.py` | 7 |
+| `tests/test_zenodo_actions.py` | 17 |
+| `tests/test_zenodo_manifest_builder.py` | 2 |
+| **Total** | **128** |
 
 The complete gate is:
 
@@ -22,12 +26,13 @@ The complete gate is:
 make test
 ```
 
-It also performs active Python and shell syntax checks, workflow and OpenAPI
-YAML parsing, JSON parsing, license-transition verification, canonical
-integrity verification, and a final tracked-diff check. Static gates and
-executable unit/end-to-end tests remain distinct even though `make test` runs
-them as one verification path.
+It also performs strict ANSI-C90 compilation and exhaustive model comparison,
+scientific-proof regeneration, adaptive-runtime controls, active Python and
+shell syntax checks, workflow and OpenAPI YAML parsing, JSON parsing,
+license-transition verification, and canonical integrity verification. Static
+gates and executable unit/end-to-end tests remain distinct even though
+`make test` runs them as one verification path.
 
 The local result is reference conformance, not production certification. The
-corresponding hosted test job for the fixed release completed successfully in
-[GitHub Actions run 29764193906](https://github.com/Goldkelch/qik-vrt/actions/runs/29764193906).
+corresponding hosted release evidence is retained on the public
+`qikvrt/zenodo-state` branch after exact-tree CI and finalization.

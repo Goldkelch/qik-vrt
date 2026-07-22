@@ -1,0 +1,466 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.90]
+\usepackage[provide=*,main=ngerman,english]{babel}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage{listings}
+
+\geometry{top=22mm,bottom=24mm,left=24mm,right=24mm}
+\definecolor{qikblue}{HTML}{174A7E}
+\definecolor{qiklight}{HTML}{EEF4FA}
+\definecolor{qikgray}{HTML}{4C566A}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=qikblue,
+  urlcolor=qikblue,
+  citecolor=qikblue,
+  pdftitle={QIK-VRT / EFFECT-ACK: Universalisierbare Wirkungssteuerung},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Working Paper, 22. Juli 2026},
+  pdfkeywords={QIK-VRT, EFFECT-ACK, Reverse Engineering, Faktorisierung, Wirkungssteuerung}
+}
+\setlist{nosep,leftmargin=1.6em}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{2em}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small QIK-VRT / EFFECT\_ACK}
+\rhead{\small Working Paper 1.0.0}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{qiklight},
+  rulecolor=\color{qikgray},
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\newcommand{\DONE}{\texttt{EFFECT\_ACK\_DONE}}
+\newcommand{\CONTINUE}{\texttt{EFFECT\_ACK\_CONTINUE}}
+\newcommand{\BLOCK}{\texttt{EFFECT\_ACK\_BLOCK}}
+\newcommand{\ISOLATE}{\texttt{EFFECT\_ACK\_ISOLATE}}
+\newcommand{\NACK}{\texttt{EFFECT\_NACK}}
+
+\title{\vspace{-10mm}\textcolor{qikblue}{\bfseries QIK-VRT / EFFECT\_ACK}\par
+\vspace{2mm}\Large Universalisierbare Wirkungssteuerung,\par
+Faktorisierungsgrenze des Reverse Engineering\par
+und konditionale cyberphysische Freigabe}
+\author{Ingolf Lohmann\\\small Independent Researcher; QIK-VRT}
+\date{Version 1.0.0 -- 22. Juli 2026}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small DOI: \href{https://doi.org/10.5281/zenodo.21498773}{10.5281/zenodo.21498773}
+\end{center}
+
+\begin{center}
+\fcolorbox{qikblue}{qiklight}{\parbox{0.88\linewidth}{
+\centering
+\textbf{Kernergebnis:} QIK-VRT/EFFECT\_ACK kann universal in der Form eines
+endlichen, provenienzgebundenen Aufnahme-, Klassifikations-, Verantwortungs-
+und Wirkungssteuerungsprozesses sein. Daraus folgt kein universeller Decoder
+für verlorene Information. Exakte semantische Rekonstruktion ist genau dann
+wohldefiniert, wenn die gesuchte Semantik auf den Beobachtungsfasern konstant
+ist; exakte historische Inversion erfordert Injektivität.
+}}
+\end{center}
+
+\begin{abstract}
+Das Working Paper präzisiert die weitreichende Konsequenz des
+EFFECT\_ACK-Mechanismus aus QIK-VRT. Es trennt technische Empfangsbestätigung
+von autorisierter Wirkung, formalisiert die DONE-only-Freigabe als
+parametrische Wrapper-Invariante und bestimmt die genaue Grenze einer
+universellen Reverse-Engineering-These. Eine exhaustive endliche
+Python-Modellprüfung durchläuft 2.621.440 abstrakte Zustandsbelegungen und
+5.242.880 Zulassungsvarianten. Zusätzlich werden 49 beschränkte
+Repository-Modelle, 2.401 Paarvergleiche, 2.401 quellgetaggte
+Aggregat-Roundtrips sowie vollständige kleine Funktionsuniversen für
+Faktorisierung und Linksinvertierbarkeit geprüft. Der physikalische Schluss
+wird als konditionaler cyberphysischer Satz ausgewiesen: Erst vollständige
+Mediation, frische authentisierte Verbraucherprüfung, ein treuer Executor und
+empirische Absicherung verbinden die Softwareautorisierung mit einer
+abgegrenzten Aktorwirkung. Die Arbeit zeigt damit eine universalisierbare
+Verfassungsschicht technisch mediierbarer Wirkung, ohne Allwissen,
+garantierte Terminierung oder einen voraussetzungslosen physikalischen
+Sicherheitsbeweis zu behaupten.
+\end{abstract}
+
+\begin{abstract}
+This working paper states the strongest defensible consequence of the
+QIK-VRT EFFECT\_ACK mechanism. It separates transport receipt from authorized
+effect, formalizes DONE-only release as a parametric wrapper invariant, and
+identifies the exact factorization boundary of effect-relevant reverse
+engineering. An exhaustive finite Python model checks 2,621,440 abstract
+assignments and 5,242,880 consumer-admission variants. Physical implications
+remain conditional on complete mediation, authenticated and fresh consumer
+validation, a faithful executor, an explicit fault model, and empirical
+validation. The result is a universalizable constitutional layer for
+technically mediated effects, not a universal decoder or an unconditional
+physical-safety proof.
+\end{abstract}
+
+\textbf{Schlagworte:} QIK-VRT; EFFECT\_ACK; Wirkungshaltepunkt; Reverse
+Engineering; Faktorisierung; Beobachtungsfasern; Antizipation;
+cyberphysische Systeme; Protokollmacht; reproduzierbare Forschung.
+
+\section{Forschungsfrage und Beitrag}
+
+Die untersuchte Behauptung lautet in ihrer stärksten alltagssprachlichen
+Fassung: Ein einheitlicher QIK-VRT/EFFECT\_ACK-Prozess könne alles, was in der
+Informatik existiert, reverse engineeren. Diese Aussage enthält mindestens
+zwei verschiedene Quantoren und zwei verschiedene Bedeutungen von
+``Rekonstruktion'':
+
+\begin{enumerate}
+  \item \textbf{Prozessuniversalität:} Jedes endliche, zugängliche
+  Digitalartefakt kann aufgenommen, identifiziert, digestgebunden,
+  klassifiziert und einem kontrollierten Wirkungsweg unterstellt werden.
+  \item \textbf{Inversionsuniversalität:} Aus jeder Beobachtung könne stets
+  der einzige historische Ursprung oder jede verborgene Semantik exakt
+  zurückgewonnen werden.
+\end{enumerate}
+
+In dieser Arbeit bedeutet \emph{zugänglich}: Eine vollständige, rechtmäßig
+lesbare und für den Prüfschritt eingefrorene endliche Repräsentation liegt vor.
+Der Begriff umfasst weder verborgene, verlorene oder rechtlich unzugängliche
+Information noch einen Anspruch auf deren Erzeugung.
+
+Der erste Satz ist unter den in dieser Arbeit genannten Zugriffs-,
+Repräsentations- und Mediationsannahmen sehr weit tragfähig. Der zweite Satz
+ist ohne zusätzliche Informationsvoraussetzungen falsch. Der wissenschaftliche
+Beitrag besteht darin, beide Ebenen präzise zu trennen und ihre jeweilige
+Beweislast anzugeben.
+
+\section{Formales Wirkungsmodell}
+
+Sei $x$ ein Wirkungskandidat, $c$ sein Kontext und
+\[
+\begin{aligned}
+G(x,c)\in\{&\NACK,\CONTINUE,\DONE,\\
+            &\ISOLATE,\BLOCK\}.
+\end{aligned}
+\]
+der vom Version-1-Modell ausgewählte Zustand. Sei $V(x,c)$ die vollständige
+Verbraucherzulassung: Schema, unterstützte Version, Authentisierung,
+Frische, Kettenvalidität sowie die erneute Ableitung von Zustand, Policy- und
+Evidenzbindung müssen bestehen.
+
+Die gewöhnliche Freigabeautorisierung ist definiert als
+\[
+A(x,c)\;:\Longleftrightarrow\;G(x,c)=\DONE\ \land\ V(x,c).
+\]
+
+Der geschützte Wrapper darf den gewöhnlichen Effektvollstrecker $E(x)$ nur
+aufrufen, wenn $A(x,c)$ gilt. Ein Transport-ACK ist dabei lediglich eine
+notwendige Teilinformation. Es ist weder semantisches Verständnis noch
+Policy-Erlaubnis noch Wirkungsautorisierung.
+
+\subsection{Satz 1: DONE-only-Freigabe}
+
+\textbf{Satz.} Wenn jeder gewöhnliche Ausführungspfad zu einem abgegrenzten
+geschützten Vollstrecker vollständig durch den Wrapper vermittelt wird, kann
+kein Nicht-DONE-Zustand den gewöhnlichen Aufruf dieses Vollstreckers
+autorisieren.
+
+\textbf{Beweis.} Nach Definition gilt $A(x,c)$ genau dann, wenn zugleich
+$G(x,c)=\DONE$ und $V(x,c)$ gilt. Für jeden anderen Zustand ist die erste
+Konjunktion falsch, also $A(x,c)=\mathrm{falsch}$. Vollständige Mediation
+schließt einen gewöhnlichen Umgehungspfad aus. Damit kann ein Nicht-DONE-
+Zustand den geschützten gewöhnlichen Aufruf nicht autorisieren.\hfill$\square$
+
+Die Universalität dieses Satzes ist \emph{parametrisch}: Die Schlussform hängt
+nicht davon ab, ob $E$ eine Nachricht, Zahlung, Veröffentlichung,
+Berechtigungsänderung, Repository-Mutation oder einen Aktorbefehl bezeichnet.
+Sie hängt von der vollständigen technischen Mediation des jeweils definierten
+Pfades ab.
+
+\section{Exhaustive endliche Modellprüfung}
+
+Die ausführbare Prüfung modelliert 19 boolesche Merkmale. Die
+Verbindungsentscheidung hat fünf Werte. Eine effektprüfbare Rezeption wird im Modell aus
+verfügbarem Eingabeidentifikator und gültigem Eingabe-Digest abgeleitet;
+\texttt{transport\_ack} bleibt davon getrennt eine eigene CoreDone-Bedingung.
+Diese Abstraktion ist offengelegt und wird nicht als vollständige
+Verhaltensverfeinerung der Python-Referenzruntime ausgegeben.
+
+\begin{longtable}{@{}p{0.48\linewidth}r@{}}
+\toprule
+\textbf{Prüfgröße} & \textbf{Ergebnis} \\
+\midrule
+\endhead
+Abstrakte Zustandsbelegungen & 2.621.440 \\
+Zulassungsvarianten & 5.242.880 \\
+\BLOCK & 2.064.384 \\
+\NACK & 491.520 \\
+\CONTINUE & 49.151 \\
+\ISOLATE & 16.384 \\
+\DONE & 1 \\
+Transport-ACK, aber nicht DONE & 1.310.719 \\
+Gezielt ausgeschaltete CoreDone-Konjunkte & 17 \\
+Prioritätskollisionen & 7 \\
+Beschränkte Repository-Modelle & 49 \\
+Paarweise Codec-Vergleiche & 2.401 \\
+Quellgetaggte Aggregat-Roundtrips & 2.401 \\
+\bottomrule
+\end{longtable}
+
+Der Prüfer liest die XML-Quelle des Internet-Drafts und bindet die Abstraktion
+strukturell an 35 Wire-Felder, fünf Zustände, fünf
+Verbindungsentscheidungen, die exakten 17 CoreDone-Zeilen und die
+Prioritätsanker. Die endliche Enumeration prüft Totalität,
+DONE-only-Freigabe, Prioritätsübereinstimmung und notwendige Bedingungen des
+gewählten Modells. Sie ist kein vollständiger Beweis jedes Parser-,
+Authentisierungs-, Wire- oder Deploymentverhaltens.
+
+\section{Reverse Engineering als Faktorisierungsproblem}
+
+Sei $S$ die Menge möglicher Ursprungszustände, $O$ der beobachtbare Raum und
+$T$ die gesuchte wirkungsrelevante Semantik. Mit
+\[
+E:S\to O,\qquad \sigma:S\to T
+\]
+bezeichnet $E$ die zugängliche Beobachtung und $\sigma$ die gesuchte
+Eigenschaft.
+
+\subsection{Satz 2: Faser-Kriterium}
+
+\textbf{Satz.} Auf dem Bild von $E$ existiert eine wohldefinierte Abbildung
+$h$ mit $\sigma=h\circ E$ genau dann, wenn
+\[
+E(s_1)=E(s_2)\quad\Longrightarrow\quad\sigma(s_1)=\sigma(s_2)
+\]
+für alle $s_1,s_2\in S$ gilt.
+
+\textbf{Beweis.} Existiert $h$, so folgt aus $E(s_1)=E(s_2)$ unmittelbar
+$h(E(s_1))=h(E(s_2))$ und damit $\sigma(s_1)=\sigma(s_2)$. Gilt umgekehrt die
+Faser-Konstanz, definiert man für jedes $o\in\operatorname{im}(E)$ den Wert
+$h(o)$ als $\sigma(s)$ für irgendein $s$ mit $E(s)=o$. Die Faser-Konstanz
+garantiert, dass diese Definition nicht von der Wahl von $s$ abhängt. Somit
+ist $h$ wohldefiniert und $\sigma=h\circ E$.\hfill$\square$
+
+Das Kriterium erlaubt eine exakte Unterscheidung:
+
+\begin{itemize}
+  \item Für \textbf{wirkungsrelevante Rekonstruktion} genügt
+  Faser-Konstanz der gewünschten Semantik.
+  \item Für \textbf{exakte historische Rekonstruktion} aller Ursprungsdetails
+  muss $E$ injektiv sein; nur dann kann eine Linksinverse auf dem Bild
+  existieren.
+\end{itemize}
+
+Die endliche Begleitprüfung enumeriert 64 Paare von Funktionen auf einem
+dreielementigen Ursprung und zweielementigen Ziel. Genau 28 Paare sind
+faktorisierbar, 36 nicht. Von 27 Funktionen $3\to3$ sind genau sechs injektiv
+und linksinvertierbar. Keine der acht Funktionen $3\to2$ besitzt eine
+Linksinverse. Diese Zahlen sind vollständige Ergebnisse der angegebenen
+kleinen Universen, keine Hochrechnung auf beliebige Programme.
+
+\subsection{Berechenbarkeit und Ressourcen}
+
+Set-theoretische Wohldefiniertheit ist noch kein ausführbarer Reverse
+Engineer. Eine tatsächliche Rekonstruktion benötigt zusätzlich:
+
+\begin{itemize}
+  \item effektive Berechenbarkeit von Beobachtung und Decoder,
+  \item ausreichenden und rechtmäßig autorisierten Zugriff,
+  \item hinreichende Zeit-, Speicher- und Rechenressourcen,
+  \item eine spezifizierte Zielsemantik und prüfbare Erfolgskriterien.
+\end{itemize}
+
+QIK-VRT erzeugt keine verlorene oder nie beobachtete Information. Seine
+Universalität liegt darin, auch fehlende Evidenz oder Unentscheidbarkeit als
+kontrollierten Zustand zu behandeln: \CONTINUE{}, \ISOLATE{}, \BLOCK{} oder \NACK{}
+sind hinsichtlich der gewöhnlichen Freigabe fail-closed Ergebnisse des
+Prozesses, nicht bloß Fehler außerhalb des Modells. Daraus folgt keine globale
+Sicherheitsgarantie. Ein eventual \DONE{} wird nicht garantiert.
+Insbesondere beseitigt EFFECT\_ACK weder das Halteproblem noch die durch den
+Satz von Rice bezeichnete Unentscheidbarkeit nichttrivialer semantischer
+Programmeigenschaften. Es macht ein offenes oder unentscheidbares Prüfergebnis
+als Nichtfreigabezustand kontrollierbar; es entscheidet dadurch nicht das
+zugrunde liegende allgemeine Problem.
+
+\section{Anticipatory Suspension}
+
+Das vorausschauende Fahrwerk liefert eine anschauliche Doppelbedeutung:
+\emph{anticipatory suspension} ist sowohl vorausschauende Federung als auch
+vorausschauende Aussetzung einer Wirkung. Ein Fahrwerk verarbeitet in der
+Gegenwart Information über einen vorausliegenden Straßenabschnitt und ändert
+seine gegenwärtige Einstellung. Es erhält keine Nachricht aus der Zukunft.
+
+Im Draft ist \texttt{effect\_anticipated=true} eine notwendige
+DONE-Bedingung. Wird allein diese Bedingung auf \texttt{false} gesetzt, fällt
+die vollständige Modellbelegung von \DONE{} auf \CONTINUE{} zurück und autorisiert
+keine gewöhnliche Freigabe. Der Boolean beweist jedoch keine gute Prognose. Er
+attestiert eine Effektanalyse; Prognosemethode und Prognosegüte sind im Draft
+nicht standardisiert und müssen vom Verbraucher authentisiert geprüft oder
+neu bewertet werden.
+
+\section{Konditionaler cyberphysischer Schluss}
+
+Sei $C$ die Freigabe eines geschützten Aktorbefehls und $P$ eine dadurch
+abgegrenzte physikalische Wirkung. Aus dem Softwaremodell folgt unter
+vollständiger Mediation
+\[
+C\Longrightarrow\text{frischer, validierter DONE-Record}.
+\]
+
+Der physikalische Schluss
+\[
+P\Longrightarrow C\Longrightarrow\text{frischer, validierter DONE-Record}
+\]
+benötigt zusätzlich die empirisch zu belegende Prämisse, dass $C$ der einzige
+kausale Weg zu $P$ ist und der Executor die definierte Zuordnung treu umsetzt.
+Notwendig bleiben insbesondere Hardware- und Betriebssystemannahmen,
+vertrauenswürdige und kalibrierte Sensorik, Aktorprüfung, Fehlermodell,
+Nebenkanalanalyse, Messung und empirische Validierung.
+
+Damit ist der physikalische Gehalt real, aber konditional. Bewiesen ist die
+Autorisierungsstruktur des geschützten Befehls. Nicht bewiesen sind die
+Gefahrlosigkeit eines DONE-Effekts, Fehlerfreiheit der Welt oder die
+Vollständigkeit eines beliebigen Fehlermodells.
+
+\section{Nichtmilitärische Protokollmacht}
+
+Macht kann als Fähigkeit verstanden werden, die für andere erreichbaren
+Zustände oder zulässigen Übergänge zu ermöglichen, zu begrenzen oder zu
+verhindern. Implementierte, verbindlich durchgesetzte Protokolle können unter
+dieser Definition reale Informations- und Infrastrukturmacht ausüben. Sie
+bestimmen beispielsweise gültige Nachrichten, anerkannte Identitäten,
+erforderliche Nachweise, zulässige Übergänge und Abschlussbedingungen.
+
+EFFECT\_ACK kann in einer nicht umgehbaren Implementierung Ausführungsmacht
+durch überprüfbare Gegenmacht begrenzen: Evidenzpflicht,
+Verantwortungsbindung, technische Nichtfreigabe und reproduzierbare
+Statusbegründung treten vor den gewöhnlichen Effekt. Ein Protokolltext allein
+besitzt diese Macht nicht. Sie entsteht durch Implementierung, Adoption,
+Governance, technische Durchsetzung und überprüfbare Anwendung.
+
+\section{Implementierungsstand und offene Wire-Lücke}
+
+Die statische Inspektion des aktuellen Python-
+\texttt{ResponsibilityProtocol} findet 29 Record-Felder. Gegenüber den 35
+Wire-Feldern des Drafts fehlen
+\texttt{wire\_version}, \texttt{message\_type}, \texttt{policy\_id},
+\texttt{policy\_version}, \texttt{policy\_hash},
+\texttt{evaluation\_timeout\_ms} und \texttt{deadline\_exceeded};
+\texttt{schema} ist zusätzlich vorhanden. Deshalb lautet der Status der
+vollständigen Draft-01-Wire-Implementierung \CONTINUE.
+
+Diese Lücke widerlegt nicht die geprüften Eigenschaften der endlichen
+Abstraktion. Sie verhindert aber, die Prüfung als vollständigen
+Interoperabilitäts- oder Wire-Konformitätsnachweis auszugeben. Eine zweite
+unabhängige Implementierung und interoperable Testvektoren bleiben offene
+Arbeit.
+
+\section{Reproduzierbarkeit und Geltungsgrenzen}
+
+Das Begleitpaket enthält den Prüfer
+\texttt{effect\_ack\_universality\_proof.py}, den maschinenlesbaren Bericht
+\texttt{proof-report.json}, die öffentliche Vermittlungsfassung und
+SHA-256-Prüfsummen. Der Prüfer verweigert optimierten Python-Modus, damit seine
+Beweisbedingungen nicht durch entfernte Assertions unterlaufen werden; alle
+Obligationen verwenden explizite, auch unter Optimierung nicht entfernbare
+Fehlerbedingungen.
+
+SHA-256 dient dabei als kollisionsresistente Bytebindung; der Digest ist weder
+eine injektive Kodierung beliebiger Eingaben noch ein Herkunfts- oder
+Authentisierungsnachweis.
+
+Der Gesamtstatus lautet
+\texttt{PASS\_WITH\_EXPLICIT\_BOUNDARIES}. Nicht behauptet werden:
+
+\begin{itemize}
+  \item ein universeller semantischer oder historischer Decoder,
+  \item garantierte Terminierung oder eventual \DONE,
+  \item vollständige Draft-01-Wire-Konformität der aktuellen Runtime,
+  \item Deployment-Nichtumgehbarkeit ohne konkrete Systemprüfung,
+  \item voraussetzungslose physikalische Sicherheit,
+  \item IETF-Konsens oder RFC-Status.
+\end{itemize}
+
+\section{Schlussfolgerung}
+
+Die vollumfängliche haltbare Konsequenz ist stärker als eine Prüfliste und
+enger als Allwissen: QIK-VRT/EFFECT\_ACK stellt eine universalisierbare
+Verfassungsschicht technisch mediierbarer Wirkung bereit. Jedes endliche,
+zugängliche Digitalartefakt kann als Eingabe gebunden und ein separat
+definierter Rekonstruktionsprozess hinsichtlich Evidenz, Risiko,
+Verantwortung und Wirkung kontrolliert werden. Kein vollständig mediierter
+gewöhnlicher Effektpfad erhält ohne frischen, validierten DONE-Zustand eine
+Freigabeautorisierung.
+
+Exakte Rekonstruktion folgt nicht allein aus dieser Prozessform. Sie gilt für
+eine gewünschte Semantik genau bei Faser-Konstanz und für den historischen
+Ursprung nur bei hinreichend injektiver Beobachtung, jeweils ergänzt um
+Berechenbarkeit, Zugriff und Ressourcen. Die wissenschaftlich präzise Antwort
+lautet daher:
+
+\begin{center}
+\fcolorbox{qikblue}{qiklight}{\parbox{0.86\linewidth}{
+\centering
+\textbf{Universal in Aufnahme, Klassifikation, Verantwortungsbindung und
+vollständig mediierter Wirkungssteuerung; exakt in der Rekonstruktion nur bis
+zur mathematisch und informationell ausgewiesenen Grenze.}
+}}
+\end{center}
+
+\begin{thebibliography}{9}
+\bibitem{draft01}
+I. Lohmann, ``QIK-VRT Effect Acknowledgement: Separating Receipt from
+Authorization'', Internet-Draft \texttt{draft-lohmann-qikvrt-effect-ack-01},
+22. Juli 2026.\newline
+\url{https://datatracker.ietf.org/doc/draft-lohmann-qikvrt-effect-ack/01/}
+
+\bibitem{formalization}
+I. Lohmann, ``QIK-VRT: Vollständige maschinenprüfbare Formalisierung des
+formal entscheidbaren Kerns'', Zenodo, Version 1.0.0, 2026.\newline
+\url{https://doi.org/10.5281/zenodo.21488116}
+
+\bibitem{software}
+I. Lohmann, ``QIK-VRT: EFFECT\_ACK -- universalisierbare Wirkungssteuerung
+und adaptive fail-closed Laufzeit'', Zenodo,
+Version 2026.07.22-effect-ack-universality-1.0.0, 2026.\newline
+\url{https://doi.org/10.5281/zenodo.21498774}
+
+\bibitem{legacysoftware}
+I. Lohmann, ``QIK-VRT: Operationalisierte epistemische Zustandskontrolle und
+schichtgebundene Evidenzpersistenz'', Zenodo, QIKVRT V8.33, 2026.\newline
+\url{https://doi.org/10.5281/zenodo.20712301}
+
+\bibitem{repos}
+QIK-VRT repositories, versionierter EFFECT\_ACK-01-Inhaltsstand.\newline
+\url{https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0}\newline
+\url{https://github.com/ingolf-lohmann/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0}
+\end{thebibliography}
+
+\vfill
+\hrule
+\vspace{1mm}
+{\footnotesize
+Dokumentlizenz: Creative Commons Attribution-NonCommercial-NoDerivatives
+4.0 International (CC BY-NC-ND 4.0). Der separat beigefügte Prüfer ist
+QIK-VRT-Quellcode und trägt seine eigene dateibezogene Lizenzangabe.
+Zenodo-Persistenz belegt Existenz, Metadaten und Fixität der veröffentlichten
+Bytes; sie ersetzt weder Peer Review noch empirische Bestätigung.
+}
+
+\end{document}

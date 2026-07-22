@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: main
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
+    commit-message:
+      prefix: "chore(runtime)"
+
+  - package-ecosystem: npm
+    directory: "/formalization/QIKVRT_Formalization_v1.0"
+    target-branch: main
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:15"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    rebase-strategy: disabled
+    commit-message:
+      prefix: "chore(formalization-runtime)"
+
+  - package-ecosystem: npm
+    directory: "/tools/offline-audio-transcription"
+    target-branch: main
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:30"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    rebase-strategy: disabled
+    commit-message:
+      prefix: "chore(audio-runtime)"
+
+  - package-ecosystem: pip
+    directory: "/formalization/QIKVRT_Formalization_v1.0"
+    target-branch: main
+    schedule:
+      interval: monthly
+      day: monday
+      time: "06:45"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    rebase-strategy: disabled
+    commit-message:
+      prefix: "chore(formalization-python)"
+
+  - package-ecosystem: pip
+    directory: "/runtime/toolchains"
+    target-branch: main
+    schedule:
+      interval: monthly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 1
+    rebase-strategy: disabled
+    commit-message:
+      prefix: "chore(ietf-runtime)"
