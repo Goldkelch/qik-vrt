@@ -1,0 +1,55 @@
+name: Publish Mandelbrot V3 working paper to Zenodo
+
+on:
+  push:
+    branches:
+      - automation/zenodo-mandelbrot-v3-20260722
+    paths:
+      - .github/workflows/zenodo_publish_mandelbrot_v3.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenodo-mandelbrot-v3-20260722-one-shot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.run_attempt == 1 && github.event.head_commit.message == 'Publish Mandelbrot V3 to Zenodo [one-shot-20260722]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+    steps:
+      - name: Check out the immutable publication branch
+        uses: actions/checkout@v4
+
+      - name: Verify the exact files and metadata without network mutation
+        run: python3 tools/zenodo_publish_mandelbrot_v3.py --prepare
+
+      - name: Create, upload, publish and publicly verify the Zenodo record
+        run: python3 tools/zenodo_publish_mandelbrot_v3.py --publish
+
+      - name: Add the DOI and record URL to the run summary
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          r = json.loads(Path('zenodo-publication-receipt.json').read_text('utf-8'))
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as f:
+              f.write('# Zenodo publication verified\n\n')
+              f.write(f"- DOI: [{r['doi']}]({r['doi_url']})\n")
+              f.write(f"- Record: [{r['record_id']}]({r['record_url']})\n")
+              f.write(f"- Status: `{r['status']}`\n")
+          PY
+
+      - name: Preserve the non-secret publication receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenodo-publication-receipt
+          path: zenodo-publication-receipt.json
+          if-no-files-found: warn
+          retention-days: 90
