@@ -135,19 +135,19 @@ class FakeZenodoTransport:
         method = method.upper()
         self.calls.append((method, path, body))
 
-        if method == "GET" and path == "/api/records/20712301/versions/latest":
+        if method == "GET" and path == "/api/records/21488116/versions/latest":
             return zenodo.HttpResponse(
                 301,
-                {"Location": "https://zenodo.org/api/records/20712301"},
+                {"Location": "https://zenodo.org/api/records/21488116"},
                 b'{"status": 301}',
             )
-        if method == "GET" and path == "/api/records/20712301":
+        if method == "GET" and path == "/api/records/21488116":
             return json_response(200, {
-                "id": 20712301,
-                "conceptrecid": 20712300,
-                "doi": "10.5281/zenodo.20712301",
+                "id": 21488116,
+                "conceptrecid": 21488115,
+                "doi": "10.5281/zenodo.21488116",
                 "links": {
-                    "latest": "https://zenodo.org/api/records/20712301/versions/latest"
+                    "latest": "https://zenodo.org/api/records/21488116/versions/latest"
                 },
                 "metadata": {
                     "relations": {"version": [{"index": 0, "is_last": True}]}
@@ -155,7 +155,7 @@ class FakeZenodoTransport:
             })
         if method == "POST" and path == "/api/deposit/depositions":
             return json_response(201, self._clean(self.depositions[301]))
-        if method == "POST" and path == "/api/deposit/depositions/20712301/actions/newversion":
+        if method == "POST" and path == "/api/deposit/depositions/21488116/actions/newversion":
             # Deliberately misleading response id proves that latest_draft is followed.
             return json_response(201, {
                 "id": 999999,
@@ -390,7 +390,7 @@ class ZenodoActionsTests(unittest.TestCase):
         self.assertNotIn(TOKEN, serialized)
         paths = [(method, path) for method, path, _ in transport.calls]
         self.assertLess(
-            paths.index(("GET", "/api/records/20712301")),
+            paths.index(("GET", "/api/records/21488116")),
             paths.index(("POST", "/api/deposit/depositions")),
         )
         self.assertIn(("GET", "/api/deposit/depositions/302"), paths)
@@ -418,14 +418,14 @@ class ZenodoActionsTests(unittest.TestCase):
                 path = urllib.parse.urlsplit(url).path
                 if (
                     method == "POST"
-                    and path == "/api/deposit/depositions/20712301/actions/newversion"
+                    and path == "/api/deposit/depositions/21488116/actions/newversion"
                 ):
                     self.calls.append((method, path, kwargs.get("body")))  # type: ignore[arg-type]
                     return json_response(409, {"message": "draft already exists"})
-                if method == "GET" and path == "/api/deposit/depositions/20712301":
+                if method == "GET" and path == "/api/deposit/depositions/21488116":
                     self.calls.append((method, path, None))
                     return json_response(200, {
-                        "id": 20712301,
+                        "id": 21488116,
                         "links": {
                             "latest_draft": "https://zenodo.org/api/deposit/depositions/302"
                         },
@@ -436,7 +436,7 @@ class ZenodoActionsTests(unittest.TestCase):
         result, _, _ = self.reserve_once(transport)
         self.assertEqual(result["software"]["deposition_id"], 302)
         self.assertIn(
-            ("GET", "/api/deposit/depositions/20712301"),
+            ("GET", "/api/deposit/depositions/21488116"),
             [(method, path) for method, path, _ in transport.calls],
         )
 
@@ -459,17 +459,17 @@ class ZenodoActionsTests(unittest.TestCase):
                     )
                 if (
                     method == "POST"
-                    and path == "/api/deposit/depositions/20712301/actions/newversion"
+                    and path == "/api/deposit/depositions/21488116/actions/newversion"
                 ):
                     self.calls.append((method, path, kwargs.get("body")))  # type: ignore[arg-type]
                     return json_response(202, {"status": "queued"})
-                if method == "GET" and path == "/api/deposit/depositions/20712301":
+                if method == "GET" and path == "/api/deposit/depositions/21488116":
                     self.calls.append((method, path, None))
                     self.source_polls += 1
                     if self.source_polls == 1:
                         return json_response(202, {"status": "creating"})
                     return json_response(200, {
-                        "id": 20712301,
+                        "id": 21488116,
                         "links": {
                             "latest_draft": "https://zenodo.org/api/deposit/depositions/302"
                         },
@@ -486,16 +486,16 @@ class ZenodoActionsTests(unittest.TestCase):
         class MismatchTransport(FakeZenodoTransport):
             def request(self, method: str, url: str, **kwargs: object) -> zenodo.HttpResponse:
                 path = urllib.parse.urlsplit(url).path
-                if method == "GET" and path == "/api/records/20712301":
+                if method == "GET" and path == "/api/records/21488116":
                     return json_response(200, {
-                        "id": 20712301,
-                        "conceptrecid": 20712300,
+                        "id": 21488116,
+                        "conceptrecid": 21488115,
                         "links": {"latest": "https://zenodo.org/api/records/20712399"},
                     })
                 if method == "GET" and path == "/api/records/20712399":
                     return json_response(200, {
                         "id": 20712399,
-                        "conceptrecid": 20712300,
+                        "conceptrecid": 21488115,
                         "links": {"latest": "https://zenodo.org/api/records/20712399"},
                     })
                 return super().request(method, url, **kwargs)
@@ -547,7 +547,7 @@ class ZenodoActionsTests(unittest.TestCase):
 
     def test_new_version_prefers_prereserved_doi_over_inherited_legacy_doi(self) -> None:
         value = {
-            "doi": "10.5281/zenodo.20712301",
+            "doi": "10.5281/zenodo.21488116",
             "metadata": {"prereserve_doi": {"doi": SOFTWARE_DOI}},
         }
         self.assertEqual(

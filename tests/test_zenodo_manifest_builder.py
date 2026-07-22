@@ -62,8 +62,8 @@ class ZenodoManifestBuilderTests(unittest.TestCase):
                 "files": [entry(self.root, "paper.txt", "paper.txt")],
             },
             "software": {
-                "source_record_id": 20712301,
-                "concept_record_id": 20712300,
+                "source_record_id": 21488116,
+                "concept_record_id": 21488115,
                 "metadata": {
                     "title": "QIK-VRT EFFECT_ACK software",
                     "version": "2026.07.22-effect-ack-universality-1.0.0",

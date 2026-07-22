@@ -116,6 +116,12 @@ authorization envelope. The later final manifest may add the reserved DOI to
 metadata and rebuild file hashes; it is not incorrectly required to retain a
 pre-DOI full-file fingerprint.
 
+The software draft versions the credential-owned QIK-VRT concept
+`10.5281/zenodo.21488115` from source record `10.5281/zenodo.21488116`.
+Legacy QIKVRT V8.33 record `10.5281/zenodo.20712301` remains an explicit
+historical reference; this automation does not claim or rewrite its separately
+owned version chain.
+
 ## Phase 2: tag both repositories, then publish on Goldkelch
 
 After the reserved DOI values have been embedded, rendered, verified and
