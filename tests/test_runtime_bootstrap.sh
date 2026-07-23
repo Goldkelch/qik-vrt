@@ -9,6 +9,9 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 BOOTSTRAP="$ROOT/tools/bootstrap-gh.sh"
 SOURCE_CACHE=${QIKVRT_TEST_SOURCE_CACHE:-"$ROOT/.qikvrt/toolchains"}
+PYTHON=${PYTHON:-python3}
+
+"$PYTHON" "$ROOT/tools/qikvrt_tool_cache.py" verify
 
 case "$(uname -s 2>/dev/null || printf unknown)" in
     Linux) OS=linux; EXT=tar.gz ;;
