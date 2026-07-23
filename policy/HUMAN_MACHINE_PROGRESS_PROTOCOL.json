@@ -1,5 +1,5 @@
 {
-  "schema": "qikvrt-human-machine-progress-protocol/1.1",
+  "schema": "qikvrt-human-machine-progress-protocol/1.2",
   "authority": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
   "required_files": {
     "machine_state": "AI_PROGRESS.json",
@@ -17,7 +17,13 @@
   "communication_rules": {
     "work_before_explanation": true,
     "compact_updates": true,
-    "update_on_meaningful_phase_change": true,
+    "progress_frame_before_every_github_action": true,
+    "progress_frame_after_every_github_action": true,
+    "progress_frame_on_every_workflow_transition": true,
+    "progress_frame_on_every_job_transition": true,
+    "progress_frame_on_every_step_transition": true,
+    "allow_batched_github_actions_without_intermediate_frame": false,
+    "later_summary_compensates_for_missing_frame": false,
     "repeat_unchanged_state": false,
     "claim_pass_without_evidence": false,
     "include_repository_ref_sha": true,
@@ -28,7 +34,12 @@
   "architecture_rules": {
     "reuse_before_create": true,
     "required_order": ["REUSE", "EXTEND", "PARAMETERIZE", "GENERALIZE", "REFACTOR", "CREATE_NEW"],
-    "parallel_component_requires_reuse_evidence": true
+    "parallel_component_requires_reuse_evidence": true,
+    "repository_is_runtime_authority": true,
+    "chat_is_disposable_transport": true,
+    "runtime_capabilities_accumulate_in_repository": true,
+    "tool_locks_bootstrap_checksums_provenance_tests_and_recovery_are_committed": true,
+    "credentials_or_mutable_auth_state_in_cache": false
   },
   "effect_boundary": {
     "transport_ack_is_effect_ack": false,
