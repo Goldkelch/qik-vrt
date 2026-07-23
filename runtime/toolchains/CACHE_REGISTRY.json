@@ -5,28 +5,33 @@
     "hosted-toolcache",
     "ecosystem-cache",
     "build-cache",
-    "runner-image-layer"
+    "runner-image-layer",
+    "system-package-archive"
   ],
   "components": {
     "cc": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
         "Makefile",
-        "tests/test_effect_ack_core.sh"
+        "tests/test_effect_ack_core.sh",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
       ],
-      "cache_class": "runner-image-layer",
+      "cache_class": "system-package-archive",
       "cache_locations": [
+        ".qikvrt/toolchains/apt/ubuntu-24.04-amd64",
         "github-hosted-runner-image:ubuntu-24.04"
       ],
       "profiles": [
         "core",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
-      "trusted_save": false,
+      "provider": "Ubuntu apt archive cache + pinned GitHub-hosted runner image",
+      "trusted_save": true,
       "verification": [
         "strict ANSI-C90 compile contract",
-        "core execution tests"
+        "core execution tests",
+        "APT package-version digest",
+        "cached DEB SHA-256 receipt"
       ],
       "version": "ansi-c90"
     },
@@ -35,19 +40,22 @@
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
         ".github/workflows/qikvrt_formalization_and_audio.yml"
       ],
-      "cache_class": "runner-image-layer",
+      "cache_class": "system-package-archive",
       "cache_locations": [
+        ".qikvrt/toolchains/apt/ubuntu-24.04-amd64",
         "github-hosted-runner-image:ubuntu-24.04"
       ],
       "profiles": [
         "audio",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
-      "trusted_save": false,
+      "provider": "Ubuntu apt archive cache + pinned GitHub-hosted runner image",
+      "trusted_save": true,
       "verification": [
         "ffmpeg -version",
-        "audio conversion tests"
+        "audio conversion tests",
+        "APT package-version digest",
+        "cached DEB SHA-256 receipt"
       ],
       "version": "reported-version"
     },
@@ -56,19 +64,22 @@
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
         ".github/workflows/qikvrt_formalization_and_audio.yml"
       ],
-      "cache_class": "runner-image-layer",
+      "cache_class": "system-package-archive",
       "cache_locations": [
+        ".qikvrt/toolchains/apt/ubuntu-24.04-amd64",
         "github-hosted-runner-image:ubuntu-24.04"
       ],
       "profiles": [
         "audio",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
-      "trusted_save": false,
+      "provider": "Ubuntu apt archive cache + pinned GitHub-hosted runner image",
+      "trusted_save": true,
       "verification": [
         "ffprobe -version",
-        "audio provenance tests"
+        "audio provenance tests",
+        "APT package-version digest",
+        "cached DEB SHA-256 receipt"
       ],
       "version": "same-as-ffmpeg"
     },
@@ -157,21 +168,25 @@
     "poppler": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
-        "tools/bootstrap-runtime.sh"
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
       ],
-      "cache_class": "runner-image-layer",
+      "cache_class": "system-package-archive",
       "cache_locations": [
+        ".qikvrt/toolchains/apt/ubuntu-24.04-amd64",
         "github-hosted-runner-image:ubuntu-24.04"
       ],
       "profiles": [
         "publication",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
-      "trusted_save": false,
+      "provider": "Ubuntu apt archive cache + pinned GitHub-hosted runner image",
+      "trusted_save": true,
       "verification": [
         "pdfinfo/pdftoppm version",
-        "PDF visual verification"
+        "PDF visual verification",
+        "APT package-version digest",
+        "cached DEB SHA-256 receipt"
       ],
       "version": "reported-version"
     },
@@ -276,21 +291,25 @@
     "xelatex": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
-        "tools/bootstrap-runtime.sh"
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
       ],
-      "cache_class": "runner-image-layer",
+      "cache_class": "system-package-archive",
       "cache_locations": [
+        ".qikvrt/toolchains/apt/ubuntu-24.04-amd64",
         "github-hosted-runner-image:ubuntu-24.04"
       ],
       "profiles": [
         "publication",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
-      "trusted_save": false,
+      "provider": "Ubuntu apt archive cache + pinned GitHub-hosted runner image",
+      "trusted_save": true,
       "verification": [
         "xelatex --version",
-        "scientific PDF rendering checks"
+        "scientific PDF rendering checks",
+        "APT package-version digest",
+        "cached DEB SHA-256 receipt"
       ],
       "version": "reported-version"
     },
