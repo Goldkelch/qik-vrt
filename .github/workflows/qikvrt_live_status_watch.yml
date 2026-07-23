@@ -1,0 +1,78 @@
+name: QIKVRT live status watch
+
+on:
+  push:
+    branches:
+      - agent/formalization-v2-batch03-shift
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-live-status-${{ github.repository }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Observe repository workflows serially
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          REF_NAME: ${{ github.ref_name }}
+          WATCH_WORKFLOW: QIKVRT live status watch
+          MARKER: '<!-- qikvrt-live-status-watch -->'
+        run: |
+          set -euo pipefail
+          branch="$HEAD_REF"
+          test -n "$branch" || branch="$REF_NAME"
+
+          pr="$EVENT_PR"
+          if [ -z "$pr" ]; then
+            pr="$(gh api "repos/$REPOSITORY/pulls?state=open&head=Goldkelch:$branch" --jq '.[0].number // empty')"
+          fi
+
+          update_status() {
+            body="$1"
+            printf '%s\n\n%s\n' "$MARKER" "$body" > /tmp/qikvrt-status.md
+            if [ -z "$pr" ]; then
+              printf '%s\n' "$body"
+              return
+            fi
+            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq '.[] | select(.body | contains("<!-- qikvrt-live-status-watch -->")) | .id' | tail -n 1)"
+            if [ -n "$comment_id" ]; then
+              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" --input /tmp/qikvrt-status.md >/dev/null
+            else
+              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" --input /tmp/qikvrt-status.md >/dev/null
+            fi
+          }
+
+          cycle=0
+          while :; do
+            cycle=$((cycle + 1))
+            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
+            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
+            active_count="$(printf '%s' "$active" | jq 'length')"
+            completed="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and .status == "completed")][0:8]')"
+            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+            active_lines="$(printf '%s' "$active" | jq -r 'if length == 0 then "- none" else .[] | "- " + .name + " — " + .status + " — run " + (.run_number|tostring) end')"
+            completed_lines="$(printf '%s' "$completed" | jq -r 'if length == 0 then "- none" else .[] | "- " + .name + " — " + (.conclusion // "unknown") + " — run " + (.run_number|tostring) end')"
+
+            update_status "## QIKVRT live repository status\n\n- Repository: \`$REPOSITORY\`\n- Branch: \`$branch\`\n- Observation cycle: \`$cycle\`\n- Observed at: \`$now\`\n- Active external runs: \`$active_count\`\n\n### Active\n$active_lines\n\n### Latest completed\n$completed_lines\n\nThe next cycle starts only after this cycle has completed, followed by a five-second pause."
+
+            if [ "$active_count" -eq 0 ]; then
+              break
+            fi
+            sleep 5
+          done
