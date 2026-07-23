@@ -51,7 +51,8 @@ theorem bounded_of_shift_bounded {trajectory : Trajectory} :
   induction k with
   | zero =>
       intro h
-      simpa [shift] using h
+      rcases h with ⟨bound, hBound⟩
+      exact ⟨bound, fun n => by simpa [shift] using hBound n⟩
   | succ k ih =>
       intro h
       exact ih (bounded_shift_succ_of_bounded_shift h)
@@ -69,7 +70,7 @@ inductive ExactStatus where
 
 /-- Exact classifier used by the manuscript: PASS exactly for bounded tails. -/
 noncomputable def classify (trajectory : Trajectory) : ExactStatus :=
-  if Bounded trajectory then .pass else .block
+  @ite ExactStatus (Bounded trajectory) (Classical.propDecidable _) .pass .block
 
 theorem classify_shift_invariant (trajectory : Trajectory) (k : Nat) :
     classify (shift k trajectory) = classify trajectory := by
