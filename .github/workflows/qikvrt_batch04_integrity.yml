@@ -4,24 +4,39 @@ on:
   push:
     branches:
       - agent/formalization-cache-hmi-batch04
+      - agent/ai-runtime-bootloader
   workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Existing authorized branch to materialize
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-batch04-integrity
+  group: qikvrt-batch04-integrity-${{ github.event.inputs.target_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   materialize:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      TARGET_BRANCH: ${{ github.event.inputs.target_branch || github.ref_name }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: agent/formalization-cache-hmi-batch04
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
+      - name: Validate authorized materialization target
+        run: |
+          set -euo pipefail
+          case "$TARGET_BRANCH" in
+            agent/formalization-cache-hmi-batch04|agent/ai-runtime-bootloader) ;;
+            *) echo "BLOCK: unauthorized materialization target: $TARGET_BRANCH" >&2; exit 2 ;;
+          esac
       - name: Regenerate and verify repository integrity
         run: |
           set -euo pipefail
@@ -37,5 +52,5 @@ jobs:
             echo "Integrity outputs already current."
             exit 0
           fi
-          git commit -m "fix: regenerate integrity for batch04"
-          git push origin HEAD:agent/formalization-cache-hmi-batch04
+          git commit -m "fix: regenerate integrity for ${TARGET_BRANCH##*/}"
+          git push origin "HEAD:$TARGET_BRANCH"
