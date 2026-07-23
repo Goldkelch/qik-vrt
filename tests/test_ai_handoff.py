@@ -33,6 +33,7 @@ class AIHandoffContractTests(unittest.TestCase):
         self.assertIn("AI_HANDOFF_STATUS=VALID", completed.stdout)
         self.assertIn("PROGRESS_STATE=IDLE", completed.stdout)
         self.assertIn("RUNTIME_TOOLCHAIN_LOCK=runtime/toolchains/TOOLCHAIN.lock.tsv", completed.stdout)
+        self.assertIn("RUNTIME_OPTIONAL_CAPABILITIES_AVAILABLE=", completed.stdout)
 
     def test_every_github_boundary_requires_a_complete_frame(self) -> None:
         policy = self.load_json("policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json")
@@ -87,7 +88,6 @@ class AIHandoffContractTests(unittest.TestCase):
             "bootstrap_posix",
             "bootstrap_windows",
             "adaptive_runtime",
-            "lean_cache_workflow",
         ):
             self.assertTrue((ROOT / runtime[key]).is_file(), key)
 
@@ -95,11 +95,19 @@ class AIHandoffContractTests(unittest.TestCase):
         self.assertIn("actions/cache/restore@", adaptive)
         self.assertIn("actions/cache/save@", adaptive)
         self.assertIn(".qikvrt/toolchains/gh", adaptive)
-        lean = (ROOT / runtime["lean_cache_workflow"]).read_text(encoding="utf-8")
-        self.assertIn("Restore cumulative Lean runtime cache", lean)
-        self.assertIn("~/.elan", lean)
-        self.assertIn(".lake/packages", lean)
-        self.assertIn(".lake/build", lean)
+
+        optional = runtime["optional_capabilities"]
+        self.assertIsInstance(optional, dict)
+        self.assertIn("lean_cache_workflow", optional)
+        lean_path = ROOT / optional["lean_cache_workflow"]
+        if lean_path.is_file():
+            lean = lean_path.read_text(encoding="utf-8")
+            self.assertIn("Restore cumulative Lean runtime cache", lean)
+            self.assertIn("~/.elan", lean)
+            self.assertIn(".lake/packages", lean)
+            self.assertIn(".lake/build", lean)
+        else:
+            self.assertNotIn(optional["lean_cache_workflow"], context["required_read_order"])
 
 
 if __name__ == "__main__":
