@@ -1,11 +1,16 @@
 {
-  "schema": "qikvrt-human-machine-progress-protocol/1.2",
-  "authority": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
+  "schema": "qikvrt-human-machine-progress-protocol/1.3",
+  "authority": "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md",
+  "explanatory_contract": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
+  "progress_schema": "schemas/human_machine_progress.schema.json",
   "required_files": {
     "machine_state": "AI_PROGRESS.json",
-    "human_projection": "AI_STATUS.md"
+    "human_projection": "AI_STATUS.md",
+    "live_watcher": ".github/workflows/qikvrt_live_status_watch.yml",
+    "cache_policy": "runtime/CACHE_POLICY.md",
+    "toolchain_lock": "runtime/toolchains/TOOLCHAIN.lock.tsv"
   },
-  "states": ["RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "CANCELLED"],
+  "states": ["IDLE", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"],
   "step_states": {
     "completed": "✓",
     "running": "⟳",
@@ -13,10 +18,26 @@
     "failed": "✗",
     "blocked": "!"
   },
-  "mandatory_fields": ["schema", "operation_id", "repository", "ref_name", "source_sha", "state", "percent", "current_action", "completed_steps", "pending_steps", "blockers", "next_action", "updated_at"],
+  "mandatory_fields": [
+    "schema",
+    "frame_id",
+    "sequence",
+    "repository",
+    "ref_name",
+    "source_sha",
+    "operation_id",
+    "operation",
+    "state",
+    "percent",
+    "transition",
+    "gates",
+    "blockers",
+    "next_action",
+    "updated_at"
+  ],
   "communication_rules": {
     "work_before_explanation": true,
-    "compact_updates": true,
+    "compact_complete_frames": true,
     "progress_frame_before_every_github_action": true,
     "progress_frame_after_every_github_action": true,
     "progress_frame_on_every_workflow_transition": true,
@@ -24,12 +45,30 @@
     "progress_frame_on_every_step_transition": true,
     "allow_batched_github_actions_without_intermediate_frame": false,
     "later_summary_compensates_for_missing_frame": false,
+    "telemetry_observation_and_persistence_is_one_nonrecursive_atomic_cycle": true,
     "repeat_unchanged_state": false,
     "claim_pass_without_evidence": false,
     "include_repository_ref_sha": true,
     "include_progress_bar": true,
     "include_concrete_blocker": true,
-    "complete_persistence_before_response": true
+    "complete_persistence_before_final_response": true,
+    "execution_telemetry_is_not_a_final_conversational_return": true
+  },
+  "observation_contract": {
+    "serial_cycles": true,
+    "overlapping_cycles_allowed": false,
+    "persist_frame_before_next_cycle": true,
+    "poll_interval_seconds_after_completed_cycle": 5,
+    "poll_only_while_work_is_active": true,
+    "emit_only_on_state_signature_change": true,
+    "observe_workflows_jobs_and_steps": true,
+    "terminal_frame_requires_decisive_identifiers": true
+  },
+  "tracked_snapshot_contract": {
+    "allowed_unowned_states": ["IDLE", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"],
+    "stale_running_or_waiting_snapshot_forbidden": true,
+    "active_snapshot_requires_persistent_owner": true,
+    "live_state_surface": "QIKVRT live status watch pull-request comment and GitHub Actions step summary"
   },
   "architecture_rules": {
     "reuse_before_create": true,
@@ -40,6 +79,16 @@
     "runtime_capabilities_accumulate_in_repository": true,
     "tool_locks_bootstrap_checksums_provenance_tests_and_recovery_are_committed": true,
     "credentials_or_mutable_auth_state_in_cache": false
+  },
+  "runtime_authority": {
+    "cache_root": ".qikvrt/toolchains",
+    "toolchain_lock": "runtime/toolchains/TOOLCHAIN.lock.tsv",
+    "cache_policy": "runtime/CACHE_POLICY.md",
+    "bootstrap_posix": "tools/bootstrap-runtime.sh",
+    "bootstrap_windows": "tools/bootstrap-runtime.ps1",
+    "adaptive_runtime": ".github/workflows/qikvrt_adaptive_runtime.yml",
+    "lean_cache_workflow": ".github/workflows/qikvrt_manuscript_proof.yml",
+    "cache_hit_never_replaces_current_tree_checks": true
   },
   "effect_boundary": {
     "transport_ack_is_effect_ack": false,
