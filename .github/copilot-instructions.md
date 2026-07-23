@@ -1,6 +1,6 @@
 # QIK-VRT Copilot instructions
 
-Before generating or modifying project content, read `AI_BOOTSTRAP.md`, parse
+Before generating or modifying project content, read the root file `AI`, parse
 `AI_CONTEXT.json`, and follow its `required_read_order`.
 
 Repository evidence is authoritative over chat or model memory. Preserve
