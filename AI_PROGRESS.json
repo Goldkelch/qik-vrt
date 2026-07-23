@@ -1,24 +1,53 @@
 {
-  "schema": "qikvrt-ai-progress/1.0",
-  "operation_id": "human-machine-progress-protocol",
-  "repository": "Goldkelch/qik-vrt",
-  "ref_name": "agent/human-machine-progress-protocol",
-  "source_sha": "PENDING",
-  "state": "RUNNING",
-  "percent": 60,
-  "current_action": "Persist and validate the human-machine progress protocol",
-  "completed_steps": [
-    "Define compact live status format",
-    "Define machine-readable policy"
-  ],
-  "pending_steps": [
-    "Bind protocol into AI startup context",
-    "Run repository checks",
-    "Merge to main"
+  "schema": "qikvrt_human_machine_progress_v2",
+  "frame_id": "repository-runtime-idle",
+  "parent_frame_id": null,
+  "sequence": 0,
+  "repository": "QIK-VRT symmetric-canonical repositories",
+  "ref_name": "main",
+  "source_sha": "resolved-at-session-start",
+  "operation_id": "repository-runtime-idle",
+  "operation": "Repository runtime ready; no persistent operation currently owns this tracked snapshot.",
+  "state": "IDLE",
+  "percent": 100,
+  "transition": {
+    "kind": "idle",
+    "name": "Repository runtime ready",
+    "state": "IDLE",
+    "workflow": null,
+    "run_id": null,
+    "job_id": null,
+    "step_number": null
+  },
+  "gates": [
+    {
+      "name": "Cross-AI handoff entrypoint",
+      "state": "PASS",
+      "evidence": "AI"
+    },
+    {
+      "name": "Per-action and per-step progress contract",
+      "state": "PASS",
+      "evidence": "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
+    },
+    {
+      "name": "Cumulative repository runtime authority",
+      "state": "PASS",
+      "evidence": "runtime/CACHE_POLICY.md"
+    },
+    {
+      "name": "Locked runtime tool inventory",
+      "state": "PASS",
+      "evidence": "runtime/toolchains/TOOLCHAIN.lock.tsv"
+    }
   ],
   "blockers": [],
-  "next_action": "Bind protocol into AI_CONTEXT.json and AGENTS.md",
-  "checks": [],
-  "evidence": [],
-  "updated_at": "2026-07-23T14:00:00+02:00"
+  "next_action": "Read /AI, run python3 tools/ai_handoff.py, and emit frame 1 before the next task-advancing GitHub action.",
+  "runtime": {
+    "authority": "AI_CONTEXT.json",
+    "cache_policy": "runtime/CACHE_POLICY.md",
+    "toolchain_lock": "runtime/toolchains/TOOLCHAIN.lock.tsv",
+    "live_watcher": ".github/workflows/qikvrt_live_status_watch.yml"
+  },
+  "updated_at": "tracked-idle-snapshot; resolve the current commit at session start"
 }
