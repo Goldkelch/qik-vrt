@@ -1,6 +1,9 @@
 name: QIKVRT integrity materialization
 
 on:
+  push:
+    branches:
+      - agent/formalization-v2-batch03-shift
   pull_request:
   workflow_dispatch:
 
@@ -11,6 +14,25 @@ jobs:
   materialize:
     runs-on: ubuntu-24.04
     steps:
+      - name: Assert authoritative repository origin
+        env:
+          EXPECTED_REPOSITORY: Goldkelch/qik-vrt
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -eu
+          test "$ACTUAL_REPOSITORY" = "$EXPECTED_REPOSITORY" || {
+            echo "BLOCK PR_HEAD_ORIGIN_MISMATCH: expected $EXPECTED_REPOSITORY, got $ACTUAL_REPOSITORY" >&2
+            exit 2
+          }
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            test "$PR_HEAD_REPOSITORY" = "$EXPECTED_REPOSITORY" || {
+              echo "BLOCK PR_HEAD_REPOSITORY_NOT_AUTHORITATIVE: expected $EXPECTED_REPOSITORY, got $PR_HEAD_REPOSITORY" >&2
+              echo "Remediation: create or update the PR from a branch inside $EXPECTED_REPOSITORY." >&2
+              exit 2
+            }
+          fi
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Generate deterministic integrity outputs
         run: python3 tools/qikvrt_integrity.py generate
