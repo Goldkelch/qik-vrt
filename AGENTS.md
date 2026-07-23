@@ -23,6 +23,19 @@ specifications do not automatically grant an open-source license for the
 concrete implementation. No rights may be inferred beyond explicit license
 texts.
 
+## Mandatory human-machine progress behavior
+
+For every repository, build, verification, publication, deployment, or GitHub
+Actions operation, the client MUST follow
+`docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md` and
+`policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json`.
+
+The client MUST work before explaining, report progress in the compact
+repository/branch/commit/progress-bar/checklist format, and name concrete
+blockers and next actions. Persistent workflows MUST maintain `AI_PROGRESS.json`
+and `AI_STATUS.md`. Repetitive unchanged status and long explanations in place
+of executable work are prohibited.
+
 ## Bounded collective adaptation
 
 1. Observe only accessible, authorized state and record the measurement method,
