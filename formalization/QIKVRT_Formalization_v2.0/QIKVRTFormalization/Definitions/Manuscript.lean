@@ -51,15 +51,15 @@ theorem DEF001_checked : DEF001Statement := by
   exact ⟨iteration.initial parameter, iteration.recursion parameter⟩
 
 
-def relativeComplement (universe subset : SetOf α) : SetOf α :=
-  fun point => universe point ∧ ¬ subset point
+def relativeComplement (ambient subset : SetOf α) : SetOf α :=
+  fun point => ambient point ∧ ¬ subset point
 
 def DEF002Statement : Prop :=
-  ∀ (α : Type) (universe subset : SetOf α) (point : α),
-    relativeComplement universe subset point ↔ universe point ∧ ¬ subset point
+  ∀ (α : Type) (ambient subset : SetOf α) (point : α),
+    relativeComplement ambient subset point ↔ ambient point ∧ ¬ subset point
 
 theorem DEF002_checked : DEF002Statement := by
-  intro α universe subset point
+  intro α ambient subset point
   rfl
 
 
@@ -85,52 +85,52 @@ theorem DEF003_checked : DEF003Statement := by
       exact h ⟨stage, hStage⟩⟩
 
 
-def finiteEscapeSet (universe : SetOf α) (escapeAt : α → Nat → Prop)
+def finiteEscapeSet (ambient : SetOf α) (escapeAt : α → Nat → Prop)
     (stage : Nat) : SetOf α :=
-  fun point => universe point ∧ Escape.Stage escapeAt stage point
+  fun point => ambient point ∧ Escape.Stage escapeAt stage point
 
 def DEF004Statement : Prop :=
-  ∀ (α : Type) (universe : SetOf α) (escapeAt : α → Nat → Prop)
+  ∀ (α : Type) (ambient : SetOf α) (escapeAt : α → Nat → Prop)
       (stage : Nat) (point : α),
-    finiteEscapeSet universe escapeAt stage point ↔
-      universe point ∧ ∃ witness, witness ≤ stage ∧ escapeAt point witness
+    finiteEscapeSet ambient escapeAt stage point ↔
+      ambient point ∧ ∃ witness, witness ≤ stage ∧ escapeAt point witness
 
 theorem DEF004_checked : DEF004Statement := by
-  intro α universe escapeAt stage point
+  intro α ambient escapeAt stage point
   rfl
 
 
 structure MandelbrotModelUniverse (α : Type u) where
-  universe : SetOf α
+  ambient : SetOf α
   mandelbrot : SetOf α
 
 def MandelbrotModelUniverse.exterior (model : MandelbrotModelUniverse α) : SetOf α :=
-  relativeComplement model.universe model.mandelbrot
+  relativeComplement model.ambient model.mandelbrot
 
 def DEF005Statement : Prop :=
   ∀ (α : Type) (model : MandelbrotModelUniverse α) (point : α),
-    model.exterior point ↔ model.universe point ∧ ¬ model.mandelbrot point
+    model.exterior point ↔ model.ambient point ∧ ¬ model.mandelbrot point
 
 theorem DEF005_checked : DEF005Statement := by
   intro α model point
   rfl
 
 
-structure Correspondence (Event : Type u) (Universe : Type v) where
-  map : Event → Universe
+structure Correspondence (Event : Type u) (Target : Type v) where
+  map : Event → Target
 
-def Correspondence.preimage (correspondence : Correspondence Event Universe)
-    (subset : SetOf Universe) : SetOf Event :=
+def Correspondence.preimage (correspondence : Correspondence Event Target)
+    (subset : SetOf Target) : SetOf Event :=
   fun event => subset (correspondence.map event)
 
 def DEF006Statement : Prop :=
-  ∀ (Event : Type) (Universe : Type)
-      (correspondence : Correspondence Event Universe)
-      (subset : SetOf Universe) (event : Event),
+  ∀ (Event : Type) (Target : Type)
+      (correspondence : Correspondence Event Target)
+      (subset : SetOf Target) (event : Event),
     correspondence.preimage subset event ↔ subset (correspondence.map event)
 
 theorem DEF006_checked : DEF006Statement := by
-  intro Event Universe correspondence subset event
+  intro Event Target correspondence subset event
   rfl
 
 
@@ -200,8 +200,8 @@ theorem DEF009_checked : DEF009Statement := by
   rfl
 
 
-def exactTrajectoryStatus (magnitude : α → Nat) (trajectory : Sequence α) :
-    Trajectory.ExactStatus :=
+noncomputable def exactTrajectoryStatus (magnitude : α → Nat)
+    (trajectory : Sequence α) : Trajectory.ExactStatus :=
   Trajectory.exactStatus magnitude trajectory
 
 def DEF010Statement : Prop :=
@@ -406,14 +406,14 @@ structure StructuralCreationPrinciple (State : Type u) where
   difference : State → State → Prop
   preservesDifference : State → State
   relation : State → State → Prop
-  continue : State → State
+  continuation : State → State
 
 def DEF020Statement : Prop :=
   ∀ (State : Type) (principle : StructuralCreationPrinciple State),
     principle.difference = principle.difference ∧
     principle.preservesDifference = principle.preservesDifference ∧
     principle.relation = principle.relation ∧
-    principle.continue = principle.continue
+    principle.continuation = principle.continuation
 
 theorem DEF020_checked : DEF020Statement := by
   intro State principle
