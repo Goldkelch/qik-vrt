@@ -7,9 +7,9 @@ import QIKVRTFormalization.Process.ShiftInvariance
 # Source-bound manuscript definitions
 
 This module gives every one of the twenty formal definition environments in the
-locked 62-page manuscript an explicit Lean type.  The definitions are generic
+locked 62-page manuscript an explicit Lean type. The definitions are generic
 where the manuscript uses mathematical structures that are not supplied by
-Lean `Std` (notably real/complex analysis).  No empirical or interpretive claim
+Lean `Std` (notably real/complex analysis). No empirical or interpretive claim
 is promoted by these declarations.
 -/
 
@@ -378,12 +378,13 @@ structure PhysicalRetrocausality (Early : Type u) (Late : Type v) where
 def DEF018Statement : Prop :=
   ∀ (Early : Type) (Late : Type)
       (model : PhysicalRetrocausality Early Late),
-    (Early → Late → Prop) × (Early → Late → Prop) =
-      (model.dependsOnLater, model.irreducibleToForwardOrCommonCause)
+    model.dependsOnLater = model.dependsOnLater ∧
+    model.irreducibleToForwardOrCommonCause =
+      model.irreducibleToForwardOrCommonCause
 
 theorem DEF018_checked : DEF018Statement := by
   intro Early Late model
-  rfl
+  exact ⟨rfl, rfl⟩
 
 
 structure BackwardSignalling (Message : Type u) (EarlyRecord : Type v) where
@@ -409,34 +410,34 @@ structure StructuralCreationPrinciple (State : Type u) where
 
 def DEF020Statement : Prop :=
   ∀ (State : Type) (principle : StructuralCreationPrinciple State),
-    (State → State → Prop) × (State → State) ×
-      (State → State → Prop) × (State → State) =
-    (principle.difference, principle.preservesDifference,
-      principle.relation, principle.continue)
+    principle.difference = principle.difference ∧
+    principle.preservesDifference = principle.preservesDifference ∧
+    principle.relation = principle.relation ∧
+    principle.continue = principle.continue
 
 theorem DEF020_checked : DEF020Statement := by
   intro State principle
-  rfl
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
-# print axioms DEF001_checked
-# print axioms DEF002_checked
-# print axioms DEF003_checked
-# print axioms DEF004_checked
-# print axioms DEF005_checked
-# print axioms DEF006_checked
-# print axioms DEF007_checked
-# print axioms DEF008_checked
-# print axioms DEF009_checked
-# print axioms DEF010_checked
-# print axioms DEF011_checked
-# print axioms DEF012_checked
-# print axioms DEF013_checked
-# print axioms DEF014_checked
-# print axioms DEF015_checked
-# print axioms DEF016_checked
-# print axioms DEF017_checked
-# print axioms DEF018_checked
-# print axioms DEF019_checked
-# print axioms DEF020_checked
+#print axioms DEF001_checked
+#print axioms DEF002_checked
+#print axioms DEF003_checked
+#print axioms DEF004_checked
+#print axioms DEF005_checked
+#print axioms DEF006_checked
+#print axioms DEF007_checked
+#print axioms DEF008_checked
+#print axioms DEF009_checked
+#print axioms DEF010_checked
+#print axioms DEF011_checked
+#print axioms DEF012_checked
+#print axioms DEF013_checked
+#print axioms DEF014_checked
+#print axioms DEF015_checked
+#print axioms DEF016_checked
+#print axioms DEF017_checked
+#print axioms DEF018_checked
+#print axioms DEF019_checked
+#print axioms DEF020_checked
 
 end QIKVRT.V2.Definitions
