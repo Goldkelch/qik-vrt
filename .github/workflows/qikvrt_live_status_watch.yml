@@ -5,6 +5,11 @@ on:
   issue_comment:
     types: [created]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to observe
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -13,7 +18,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref_name }}
+  group: qikvrt-live-status-${{ github.repository }}-${{ github.event.inputs.pr_number || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -25,17 +30,20 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Observe every repository workflow, job, and step transition serially
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT_PR: ${{ github.event.inputs.pr_number || github.event.pull_request.number || github.event.issue.number }}
           WATCH_WORKFLOW: QIKVRT live status watch
           MARKER: '<!-- qikvrt-live-status-watch -->'
         run: |
           set -euo pipefail
           pr="$EVENT_PR"
           test -n "$pr"
-          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+          pull="$(gh api "repos/$REPOSITORY/pulls/$pr")"
+          branch="$(printf '%s' "$pull" | jq -r '.head.ref')"
+          head_sha="$(printf '%s' "$pull" | jq -r '.head.sha')"
 
           update_status() {
             body="$1"
@@ -43,84 +51,166 @@ jobs:
             if [ -n "$comment_id" ]; then
               gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
 
-$body" >/dev/null
+          $body" >/dev/null
             else
               gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
 
-$body" >/dev/null
+          $body" >/dev/null
             fi
+          }
+
+          sanitize_cell() {
+            printf '%s' "$1" | tr '\r\n' '  ' | sed 's/|/\\|/g'
           }
 
           state_signature=""
           cycle=0
+          frame=0
           while :; do
             cycle=$((cycle + 1))
             runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
-            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
-            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
-            active_count="$(printf '%s' "$active" | jq 'length')"
+            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '
+              [.workflow_runs[] | select(.name != $self)]
+              | reduce .[] as $run ([];
+                  if any(.[]; .name == $run.name)
+                  then .
+                  else . + [$run]
+                  end)
+              | .[0:12]
+            ')"
+            active_count="$(printf '%s' "$latest" | jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending")] | length')"
 
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | " + (.run_number|tostring) + " |" end')"
+            workflow_lines=''
+            while IFS=$'\t' read -r workflow status conclusion run_number run_id; do
+              [ -n "$workflow" ] || continue
+              effective="$status"
+              if [ "$status" = completed ]; then effective="$conclusion"; fi
+              workflow="$(sanitize_cell "$workflow")"
+              workflow_lines="$workflow_lines
+          | $workflow | $effective | $run_number | $run_id |"
+            done < <(printf '%s' "$latest" | jq -r '.[] | [.name, .status, (.conclusion // ""), (.run_number|tostring), (.id|tostring)] | @tsv')
+            if [ -z "$workflow_lines" ]; then
+              workflow_lines='| none | PENDING | - | - |'
+            fi
+
             step_rows=''
             total_steps=0
-            completed_steps=0
+            settled_steps=0
+            successful_steps=0
+            failed_steps=0
+            running_steps=0
+            pending_steps=0
+
             while IFS= read -r run_id; do
               [ -n "$run_id" ] || continue
               jobs="$(gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100")"
-              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv')"
-              while IFS=$'\t' read -r job step status conclusion; do
+              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, (.number|tostring), .name, .status, (.conclusion // ""), ($job.id|tostring)] | @tsv')"
+              while IFS=$'\t' read -r job step_number step status conclusion job_id; do
                 [ -n "$step" ] || continue
                 total_steps=$((total_steps + 1))
                 marker='⟳'
                 effective="$status"
-                if [ "$status" = completed ]; then
-                  completed_steps=$((completed_steps + 1))
-                  effective="$conclusion"
-                  if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then marker='✓'; else marker='✗'; fi
-                elif [ "$status" = queued ] || [ "$status" = pending ]; then
-                  marker='□'
-                fi
+                case "$status" in
+                  completed)
+                    settled_steps=$((settled_steps + 1))
+                    effective="$conclusion"
+                    if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then
+                      marker='✓'
+                      successful_steps=$((successful_steps + 1))
+                    else
+                      marker='✗'
+                      failed_steps=$((failed_steps + 1))
+                    fi
+                    ;;
+                  in_progress)
+                    running_steps=$((running_steps + 1))
+                    ;;
+                  *)
+                    marker='□'
+                    pending_steps=$((pending_steps + 1))
+                    ;;
+                esac
+                job="$(sanitize_cell "$job")"
+                step="$(sanitize_cell "$step")"
                 step_rows="$step_rows
-| $marker | $job | $step | $effective |"
+          | $marker | $job | $step_number | $step | $effective | $job_id |"
               done <<< "$rows"
             done < <(printf '%s' "$latest" | jq -r '.[].id')
 
             if [ "$total_steps" -eq 0 ]; then
               percent=0
-              step_rows='| □ | none | awaiting workflow jobs | PENDING |'
+              pending_steps=1
+              step_rows='| □ | none | - | awaiting workflow jobs | PENDING | - |'
             else
-              percent=$((completed_steps * 100 / total_steps))
+              percent=$((settled_steps * 100 / total_steps))
             fi
+
+            if [ "$failed_steps" -gt 0 ]; then
+              overall_state=BLOCK
+              blocker="$failed_steps observed step(s) failed; inspect the failed rows and linked run identifiers."
+              next_action="Inspect the failing job logs, repair the branch, and continue observing."
+            elif [ "$active_count" -gt 0 ]; then
+              overall_state=RUNNING
+              blocker=none
+              next_action="Complete the current observation cycle, persist the next changed frame, wait five seconds, and observe again."
+            elif [ "$total_steps" -eq 0 ]; then
+              overall_state=WAITING
+              blocker=none
+              next_action="Wait for repository workflows to expose jobs and steps."
+            else
+              overall_state=PASS
+              blocker=none
+              next_action="Verify decisive checks and continue with the next authorized repository effect."
+            fi
+
             filled=$((percent / 5))
             empty=$((20 - filled))
             bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
             now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
+            signature="$(printf '%s\n%s\n%s\n%s\n%s\n%s' "$head_sha" "$overall_state" "$active_count" "$workflow_lines" "$step_rows" "$percent" | sha256sum | awk '{print $1}')"
 
             if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT live repository runtime
+              frame=$((frame + 1))
+              body="## QIKVRT live repository runtime
 
-**Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
+          Repository: \`$REPOSITORY\`  
+          Branch: \`$branch\`  
+          Commit: \`$head_sha\`  
+          Operation: \`Observe all repository workflow, job, and step transitions\`  
+          Frame: \`$frame — workflow/job/step transition\`
 
-- Repository: \`$REPOSITORY\`
-- Branch: \`$branch\`
-- Observation cycle: \`$cycle\`
-- Observed at: \`$now\`
-- Active external runs: \`$active_count\`
+          \`[$bar] $percent%\`
 
-### Workflows
+          - ✓ $successful_steps successful observed step(s)
+          - ⟳ $running_steps running observed step(s)
+          - □ $pending_steps pending observed step(s)
+          - ✗ $failed_steps failed observed step(s)
 
-| Workflow | State | Run |
-|---|---|---:|
-$workflow_lines
+          **BLOCKER:** $blocker  
+          **NEXT:** $next_action  
+          **STATUS:** \`$overall_state\`
 
-### Jobs and steps
+          - Pull request: \`#$pr\`
+          - Observation cycle: \`$cycle\`
+          - Observed at: \`$now\`
+          - Active workflow runs: \`$active_count\`
+          - State signature: \`$signature\`
 
-| | Job | Step | State |
-|---|---|---|---|
-$step_rows
+          ### Workflows
 
-A new progress graphic is emitted for every detected workflow, job, or step transition. The next observation starts only after this frame has been persisted, followed by a five-second pause."
+          | Workflow | State | Run | Run ID |
+          |---|---|---:|---:|
+          $workflow_lines
+
+          ### Jobs and steps
+
+          | | Job | Step | Action | State | Job ID |
+          |---|---|---:|---|---|---:|
+          $step_rows
+
+          Every changed workflow/job/step state produces this complete progress graphic. The next observation begins only after this frame has been persisted; while work remains active, the watcher then waits five seconds."
+              update_status "$body"
+              printf '%s\n\n' "$body" >> "$GITHUB_STEP_SUMMARY"
               state_signature="$signature"
             fi
 
