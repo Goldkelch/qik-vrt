@@ -32,17 +32,18 @@ theorem shift_bounded_of_bounded {trajectory : Trajectory} {k : Nat}
 theorem bounded_shift_succ_of_bounded_shift {trajectory : Trajectory} {k : Nat}
     (hTail : Bounded (shift (k + 1) trajectory)) : Bounded (shift k trajectory) := by
   rcases hTail with ⟨bound, hBound⟩
-  refine ⟨max (trajectory k) bound, ?_⟩
+  refine ⟨trajectory k + bound, ?_⟩
   intro n
   cases n with
   | zero =>
-      simpa [shift] using Nat.le_max_left (trajectory k) bound
+      change trajectory k ≤ trajectory k + bound
+      omega
   | succ n =>
+      change trajectory (k + Nat.succ n) ≤ trajectory k + bound
       have hIndex : k + Nat.succ n = (k + 1) + n := by omega
-      have hTailValue : trajectory ((k + 1) + n) ≤ bound := hBound n
-      have hValue : trajectory (k + Nat.succ n) ≤ bound := by
-        simpa [hIndex] using hTailValue
-      exact le_trans hValue (Nat.le_max_right _ _)
+      rw [hIndex]
+      have hValue : trajectory ((k + 1) + n) ≤ bound := hBound n
+      omega
 
 theorem bounded_of_shift_bounded {trajectory : Trajectory} :
     ∀ k, Bounded (shift k trajectory) → Bounded trajectory := by
@@ -57,7 +58,9 @@ theorem bounded_of_shift_bounded {trajectory : Trajectory} :
 
 theorem bounded_shift_iff (trajectory : Trajectory) (k : Nat) :
     Bounded (shift k trajectory) ↔ Bounded trajectory := by
-  exact ⟨bounded_of_shift_bounded k, shift_bounded_of_bounded⟩
+  constructor
+  · exact bounded_of_shift_bounded k
+  · exact shift_bounded_of_bounded
 
 inductive ExactStatus where
   | pass
