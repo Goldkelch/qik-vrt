@@ -45,6 +45,12 @@ CONCEPT_RECORD_ID = 21488115
 SOURCE_EVIDENCE_SCHEMA = (
     "qikvrt_formalization_v2_zenodo_independent_verification_v1"
 )
+RECONCILIATION_EVIDENCE_SCHEMA = (
+    "qikvrt_formalization_v2_alpha2_read_only_inventory_v1"
+)
+RECONCILIATION_REQUEST_ID = (
+    "2026-07-23-formalization-v2.0-alpha.2-r2-reconciliation"
+)
 PROTECTED_ZENODO_IDS = frozenset(
     {
         CONCEPT_RECORD_ID,
@@ -451,16 +457,248 @@ def _require_pristine_source_snapshot(
     draft_metadata = draft.get("metadata")
     if not isinstance(source_metadata, dict) or not isinstance(draft_metadata, dict):
         raise ZenodoError("source or draft metadata is missing")
+    if source_metadata.get("version") != SOURCE_VERSION:
+        raise ZenodoError("published source metadata has an unexpected version")
     identity = {
         key: source_metadata[key]
-        for key in ("title", "version", "creators")
+        for key in ("title", "creators")
         if key in source_metadata
     }
-    if set(identity) != {"title", "version", "creators"} or not shared._metadata_matches(
+    if set(identity) != {"title", "creators"} or not shared._metadata_matches(
         draft_metadata, identity
     ):
-        raise ZenodoError("new alpha.2 draft did not inherit source identity")
+        raise ZenodoError(
+            "new alpha.2 draft did not inherit source title and creators"
+        )
+    # Zenodo's legacy ``newversion`` endpoint can omit the published
+    # ``version`` field from the editable draft while retaining the source
+    # title, creators, concept and exact inherited files.  Absence is accepted
+    # only at this pristine reservation boundary; a conflicting value remains
+    # a hard failure, and finalize later writes and verifies TARGET_VERSION.
+    draft_version = draft_metadata.get("version")
+    if draft_version not in (None, SOURCE_VERSION):
+        raise ZenodoError(
+            "new alpha.2 draft inherited an unexpected source version"
+        )
     return record_id, doi
+
+
+def validate_reconciliation_evidence(
+    value: Mapping[str, Any],
+    source_evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the immutable GET-only evidence for one interrupted reserve.
+
+    The evidence is intentionally insufficient on its own: reconciliation also
+    repeats authenticated live GETs and accepts only the same sole editable
+    draft with the exact inherited source files.
+    """
+    shared._check_exact_keys(
+        value,
+        {
+            "diagnostic",
+            "draft",
+            "failed_reserve",
+            "inventory",
+            "read_only",
+            "request_id",
+            "schema",
+            "source",
+            "state_attempt",
+            "zenodo_http_methods",
+            "zenodo_mutation_count",
+        },
+        "alpha.2 reconciliation evidence",
+    )
+    if (
+        value["schema"] != RECONCILIATION_EVIDENCE_SCHEMA
+        or value["request_id"] != RECONCILIATION_REQUEST_ID
+        or value["read_only"] is not True
+        or value["zenodo_http_methods"] != ["GET"]
+        or value["zenodo_mutation_count"] != 0
+    ):
+        raise ZenodoError("alpha.2 reconciliation evidence is not GET-only")
+
+    expected_source_files = _expected_source_fingerprint(source_evidence)
+    source = value["source"]
+    if not isinstance(source, dict):
+        raise ZenodoError("alpha.2 reconciliation source is invalid")
+    shared._check_exact_keys(
+        source,
+        {
+            "concept_record_id",
+            "doi",
+            "files",
+            "identity_sha256",
+            "owner_latest_draft_link_id",
+            "owner_metadata_sha256",
+            "public_latest_record_id",
+            "public_metadata_sha256",
+            "record_id",
+            "version",
+        },
+        "alpha.2 reconciliation source",
+    )
+    if (
+        source["record_id"] != SOURCE_RECORD_ID
+        or source["concept_record_id"] != CONCEPT_RECORD_ID
+        or source["doi"] != SOURCE_VERSION_DOI
+        or source["version"] != SOURCE_VERSION
+        or source["public_latest_record_id"] != SOURCE_RECORD_ID
+        or source["owner_latest_draft_link_id"] != SOURCE_RECORD_ID
+        or source["files"] != expected_source_files
+    ):
+        raise ZenodoError("alpha.2 reconciliation source identity changed")
+
+    draft = value["draft"]
+    if not isinstance(draft, dict):
+        raise ZenodoError("alpha.2 reconciliation draft is invalid")
+    shared._check_exact_keys(
+        draft,
+        {
+            "bucket_path_sha256",
+            "concept_record_id",
+            "created",
+            "creators_match_public_source",
+            "doi",
+            "files",
+            "files_match_source_evidence",
+            "identity_sha256",
+            "metadata_keys",
+            "metadata_sha256",
+            "modified",
+            "original_identity_gate_matches",
+            "public_record_absent",
+            "record_id",
+            "recoverable_without_zenodo_mutation",
+            "self_link_verified",
+            "state",
+            "submitted",
+            "title_matches_public_source",
+            "version_missing_or_exact_source",
+            "version_present",
+            "version_value",
+        },
+        "alpha.2 reconciliation draft",
+    )
+    record_id = _positive_id(draft["record_id"], "reconciliation draft record_id")
+    doi = draft["doi"]
+    if (
+        record_id in PROTECTED_ZENODO_IDS
+        or draft["concept_record_id"] != CONCEPT_RECORD_ID
+        or doi != f"10.5281/zenodo.{record_id}"
+        or draft["state"] != "unsubmitted"
+        or draft["submitted"] is not False
+        or draft["public_record_absent"] is not True
+        or draft["self_link_verified"] is not True
+        or draft["recoverable_without_zenodo_mutation"] is not True
+        or draft["files_match_source_evidence"] is not True
+        or draft["title_matches_public_source"] is not True
+        or draft["creators_match_public_source"] is not True
+        or draft["version_missing_or_exact_source"] is not True
+        or draft["original_identity_gate_matches"] is not False
+        or draft["files"] != expected_source_files
+    ):
+        raise ZenodoError("alpha.2 reconciliation draft identity changed")
+    if draft["version_present"] is False:
+        if draft["version_value"] is not None:
+            raise ZenodoError("alpha.2 reconciliation missing version is inconsistent")
+    elif (
+        draft["version_present"] is not True
+        or draft["version_value"] != SOURCE_VERSION
+    ):
+        raise ZenodoError("alpha.2 reconciliation draft version changed")
+
+    inventory = value["inventory"]
+    if not isinstance(inventory, dict):
+        raise ZenodoError("alpha.2 reconciliation inventory is invalid")
+    shared._check_exact_keys(
+        inventory,
+        {
+            "account_deposition_count",
+            "editable_concept_draft_ids",
+            "page_cap",
+            "page_cap_reached",
+            "page_size",
+            "snapshot_sha256",
+            "stable_double_snapshot",
+        },
+        "alpha.2 reconciliation inventory",
+    )
+    if (
+        inventory["editable_concept_draft_ids"] != [record_id]
+        or inventory["stable_double_snapshot"] is not True
+        or inventory["page_cap_reached"] is not False
+        or not isinstance(inventory["snapshot_sha256"], str)
+        or shared.HEX_64.fullmatch(inventory["snapshot_sha256"]) is None
+    ):
+        raise ZenodoError("alpha.2 reconciliation inventory is not unique and stable")
+
+    failed = value["failed_reserve"]
+    diagnostic = value["diagnostic"]
+    state_attempt = value["state_attempt"]
+    if (
+        not isinstance(failed, dict)
+        or not isinstance(diagnostic, dict)
+        or not isinstance(state_attempt, dict)
+        or failed.get("reported_failure")
+        != "BLOCK new alpha.2 draft did not inherit source identity"
+        or state_attempt.get("reservation_absent_before_inventory") is not True
+    ):
+        raise ZenodoError("alpha.2 reconciliation failure provenance changed")
+    shared._check_exact_keys(
+        failed,
+        {
+            "marker_commit",
+            "marker_sha256",
+            "reported_failure",
+            "reserve_job_id",
+            "validate_job_id",
+            "workflow_run_id",
+        },
+        "alpha.2 reconciliation failed reserve",
+    )
+    shared._check_exact_keys(
+        diagnostic,
+        {"commit", "marker_sha256", "workflow_sha256"},
+        "alpha.2 reconciliation diagnostic",
+    )
+    shared._check_exact_keys(
+        state_attempt,
+        {
+            "blob",
+            "reservation_absent_before_inventory",
+            "sha256",
+            "size",
+            "state_parent",
+        },
+        "alpha.2 reconciliation state attempt",
+    )
+    for container, keys in (
+        (failed, ("marker_commit",)),
+        (diagnostic, ("commit",)),
+        (state_attempt, ("blob", "state_parent")),
+    ):
+        for key in keys:
+            item = container.get(key)
+            if not isinstance(item, str) or re.fullmatch(r"[0-9a-f]{40}", item) is None:
+                raise ZenodoError(
+                    "alpha.2 reconciliation provenance commit is invalid"
+                )
+    for key in ("reserve_job_id", "validate_job_id", "workflow_run_id"):
+        _positive_id(failed.get(key), "alpha.2 reconciliation " + key)
+    for container, keys in (
+        (failed, ("marker_sha256",)),
+        (diagnostic, ("marker_sha256", "workflow_sha256")),
+        (state_attempt, ("sha256",)),
+    ):
+        for key in keys:
+            item = container.get(key)
+            if not isinstance(item, str) or shared.HEX_64.fullmatch(item) is None:
+                raise ZenodoError(
+                    "alpha.2 reconciliation provenance hash is invalid"
+                )
+    return {"record_id": record_id, "doi": doi}
 
 
 def _sign_reservation(value: Mapping[str, Any], token: str) -> dict[str, Any]:
@@ -470,6 +708,42 @@ def _sign_reservation(value: Mapping[str, Any], token: str) -> dict[str, Any]:
         token.encode("utf-8"), shared._json_bytes(signed), hashlib.sha256
     ).hexdigest()
     return signed
+
+
+def _new_reservation(
+    manifest: Mapping[str, Any],
+    manifest_sha256: str,
+    source_evidence_sha256: str,
+    record_id: int,
+    doi: str,
+    api_base_url: str,
+    token: str,
+) -> dict[str, Any]:
+    metadata_sha256, files_sha256 = _manifest_hashes(manifest)
+    return _sign_reservation(
+        {
+            "schema_version": 2,
+            "kind": RESERVATION_KIND,
+            "phase": "reserved",
+            "api_base_url": api_base_url,
+            "release_id": RELEASE_ID,
+            "manifest_sha256": manifest_sha256,
+            "metadata_sha256": metadata_sha256,
+            "files_sha256": files_sha256,
+            "source_evidence_sha256": source_evidence_sha256,
+            "source": {
+                "record_id": SOURCE_RECORD_ID,
+                "concept_record_id": CONCEPT_RECORD_ID,
+                "doi": SOURCE_VERSION_DOI,
+            },
+            "software": {
+                "deposition_id": record_id,
+                "concept_record_id": CONCEPT_RECORD_ID,
+                "doi": doi,
+            },
+        },
+        token,
+    )
 
 
 def _validate_reservation(
@@ -605,29 +879,84 @@ def reserve_release(
     )
     client.authorize_draft(draft, record_id=record_id, doi=doi)
     client.check_live_software_source(SOURCE_RECORD_ID, CONCEPT_RECORD_ID)
-    metadata_sha256, files_sha256 = _manifest_hashes(normalized)
-    reservation = _sign_reservation(
-        {
-            "schema_version": 2,
-            "kind": RESERVATION_KIND,
-            "phase": "reserved",
-            "api_base_url": client.base_url,
-            "release_id": RELEASE_ID,
-            "manifest_sha256": manifest_sha256,
-            "metadata_sha256": metadata_sha256,
-            "files_sha256": files_sha256,
-            "source_evidence_sha256": source_evidence_sha256,
-            "source": {
-                "record_id": SOURCE_RECORD_ID,
-                "concept_record_id": CONCEPT_RECORD_ID,
-                "doi": SOURCE_VERSION_DOI,
-            },
-            "software": {
-                "deposition_id": record_id,
-                "concept_record_id": CONCEPT_RECORD_ID,
-                "doi": doi,
-            },
-        },
+    reservation = _new_reservation(
+        normalized,
+        manifest_sha256,
+        source_evidence_sha256,
+        record_id,
+        doi,
+        client.base_url,
+        client.token,
+    )
+    shared._atomic_json(reservation_path, reservation, client.token)
+    return reservation
+
+
+def reconcile_release(
+    client: FormalizationVersionClient,
+    manifest: Mapping[str, Any],
+    root: pathlib.Path,
+    manifest_sha256: str,
+    source_evidence: Mapping[str, Any],
+    source_evidence_sha256: str,
+    reconciliation_evidence: Mapping[str, Any],
+    reservation_path: pathlib.Path,
+) -> dict[str, Any]:
+    """Adopt only the evidenced interrupted reserve through live GETs.
+
+    This path cannot call ``newversion`` and cannot write Zenodo metadata,
+    files, or publication state.  Its sole effect is a local MAC-bound
+    reservation record for the already-created, uniquely identified draft.
+    """
+    normalized = validate_manifest(dict(manifest), root)
+    verified_evidence = validate_source_evidence(source_evidence)
+    verify_manifest_files(normalized, root, client.token)
+    recovery = validate_reconciliation_evidence(
+        reconciliation_evidence, verified_evidence
+    )
+    if reservation_path.exists():
+        existing, _ = shared._load_json_file(reservation_path, client.token)
+        _validate_reservation(
+            existing,
+            normalized,
+            manifest_sha256,
+            source_evidence_sha256,
+            client,
+        )
+        return existing
+
+    record_id = recovery["record_id"]
+    expected_doi = recovery["doi"]
+    source_public = client.check_live_software_source(
+        SOURCE_RECORD_ID, CONCEPT_RECORD_ID
+    )
+    if _unknown_existing_concept_drafts(client) != [record_id]:
+        raise ZenodoError(
+            "live alpha.2 reconciliation inventory is not the evidenced sole draft"
+        )
+    state, draft = client.get_deposition_or_record(record_id)
+    if state != "draft":
+        raise ZenodoError("evidenced alpha.2 record is no longer an editable draft")
+    live_record_id, live_doi = _require_pristine_source_snapshot(
+        draft, source_public, verified_evidence
+    )
+    if live_record_id != record_id or live_doi != expected_doi:
+        raise ZenodoError("live alpha.2 reconciliation draft changed identity")
+    # Repeat the unique-draft and published-source gates immediately before
+    # creating the local authorization record.
+    if _unknown_existing_concept_drafts(client) != [record_id]:
+        raise ZenodoError(
+            "live alpha.2 reconciliation inventory changed during validation"
+        )
+    client.check_live_software_source(SOURCE_RECORD_ID, CONCEPT_RECORD_ID)
+    client.authorize_draft(draft, record_id=record_id, doi=expected_doi)
+    reservation = _new_reservation(
+        normalized,
+        manifest_sha256,
+        source_evidence_sha256,
+        record_id,
+        expected_doi,
+        client.base_url,
         client.token,
     )
     shared._atomic_json(reservation_path, reservation, client.token)
@@ -790,13 +1119,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command", required=True, parser_class=shared.SafeArgumentParser
     )
     reserve_parser = subparsers.add_parser("reserve")
-    reserve_parser.add_argument("--manifest", required=True)
-    reserve_parser.add_argument("--source-evidence", required=True)
-    reserve_parser.add_argument("--reservation", required=True)
+    reconcile_parser = subparsers.add_parser("reconcile")
     finalize_parser = subparsers.add_parser("finalize")
-    finalize_parser.add_argument("--manifest", required=True)
-    finalize_parser.add_argument("--source-evidence", required=True)
-    finalize_parser.add_argument("--reservation", required=True)
+    for command_parser in (
+        reserve_parser,
+        reconcile_parser,
+        finalize_parser,
+    ):
+        command_parser.add_argument("--manifest", required=True)
+        command_parser.add_argument("--source-evidence", required=True)
+        command_parser.add_argument("--reservation", required=True)
+    reconcile_parser.add_argument("--reconciliation-evidence", required=True)
     finalize_parser.add_argument("--result", required=True)
     for command in subparsers.choices.values():
         command.add_argument(
@@ -850,12 +1183,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_evidence_sha256,
                 reservation_path,
             )
-            message = {
-                "status": "ok",
-                "phase": outcome["phase"],
-                "record_id": outcome["software"]["deposition_id"],
-                "doi": outcome["software"]["doi"],
-            }
+        elif args.command == "reconcile":
+            reconciliation_path = shared._external_path_in_root(
+                root, args.reconciliation_evidence, must_exist=True
+            )
+            reconciliation, _ = shared._load_json_file(
+                reconciliation_path, token
+            )
+            outcome = reconcile_release(
+                client,
+                manifest,
+                root,
+                manifest_sha256,
+                source_evidence,
+                source_evidence_sha256,
+                reconciliation,
+                reservation_path,
+            )
         else:
             reservation, _ = shared._load_json_file(reservation_path, token)
             result_path = shared._external_path_in_root(
@@ -871,6 +1215,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reservation,
                 result_path,
             )
+        if args.command in {"reserve", "reconcile"}:
+            message = {
+                "status": "ok",
+                "phase": outcome["phase"],
+                "record_id": outcome["software"]["deposition_id"],
+                "doi": outcome["software"]["doi"],
+            }
+        else:
             message = {
                 "status": "ok",
                 "phase": "published",
