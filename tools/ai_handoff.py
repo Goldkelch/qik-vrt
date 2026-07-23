@@ -220,7 +220,7 @@ def validate_progress(context: dict[str, Any]) -> tuple[str, str, str]:
     return policy["schema"], snapshot["schema"], state
 
 
-def validate_runtime(context: dict[str, Any]) -> tuple[str, int]:
+def validate_runtime(context: dict[str, Any]) -> tuple[str, int, int]:
     runtime = require(context, "runtime_authority", dict)
     require_true(runtime, "repository_is_runtime_authority")
     require_true(runtime, "chat_is_disposable_transport")
@@ -233,7 +233,6 @@ def validate_runtime(context: dict[str, Any]) -> tuple[str, int]:
         "bootstrap_posix",
         "bootstrap_windows",
         "adaptive_runtime",
-        "lean_cache_workflow",
     )
     paths = {key: require(runtime, key, str) for key in path_keys}
     files = {key: require_file(path) for key, path in paths.items()}
@@ -257,7 +256,22 @@ def validate_runtime(context: dict[str, Any]) -> tuple[str, int]:
     if missing:
         fail("runtime toolchain lock is missing components: " + ", ".join(missing))
 
-    return paths["toolchain_lock"], len(lock_lines)
+    optional = require(runtime, "optional_capabilities", dict)
+    available_optional = 0
+    for name, path_text in optional.items():
+        if not isinstance(name, str) or not isinstance(path_text, str) or not path_text:
+            fail("optional runtime capabilities must map non-empty names to repository paths")
+        path = ROOT / path_text
+        if not path.is_file():
+            continue
+        available_optional += 1
+        if name == "lean_cache_workflow":
+            text = path.read_text(encoding="utf-8")
+            for phrase in ("Restore cumulative Lean runtime cache", "~/.elan", ".lake/packages", ".lake/build"):
+                if phrase not in text:
+                    fail(f"available Lean cache workflow is missing required phrase: {phrase}")
+
+    return paths["toolchain_lock"], len(lock_lines), available_optional
 
 
 def main() -> int:
@@ -282,7 +296,7 @@ def main() -> int:
 
     registry_name, adapter_count = validate_adapters(context)
     progress_policy, progress_schema, progress_state = validate_progress(context)
-    toolchain_lock, tool_count = validate_runtime(context)
+    toolchain_lock, tool_count, optional_count = validate_runtime(context)
 
     licensing = require(context, "licensing_policy", dict)
     architecture = require(licensing, "architecture", dict)
@@ -303,6 +317,7 @@ def main() -> int:
     print(f"PROGRESS_STATE={progress_state}")
     print(f"RUNTIME_TOOLCHAIN_LOCK={toolchain_lock}")
     print(f"RUNTIME_TOOL_RECORDS={tool_count}")
+    print(f"RUNTIME_OPTIONAL_CAPABILITIES_AVAILABLE={optional_count}")
     print("ARCHITECTURE_POLICY=" + str(architecture.get("intent", "unknown")))
     print("IMPLEMENTATION_POLICY=" + str(implementation.get("intent", "unknown")))
     print("NEXT_ACTION=Emit frame 1 before the next GitHub action, then continue from repository evidence without relying on chat memory.")
