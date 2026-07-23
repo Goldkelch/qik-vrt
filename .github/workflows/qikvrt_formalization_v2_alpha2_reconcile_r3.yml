@@ -1,0 +1,444 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT formalization v2 alpha.2 reconcile r3
+
+on:
+  push:
+    branches:
+      - automation/formalization-v2-alpha2-reconcile-20260724-r3
+    paths:
+      - release/formalization-v2-alpha2-reconcile-r3-request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-formalization-v2-alpha2-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the exact reconciliation request
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate request, implementation, and immutable inventory binding
+        env:
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .qikvrt/release/formalization-v2-alpha2
+          python -I -S -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          AUTHORITY = "Goldkelch/qik-vrt"
+          REF = (
+              "refs/heads/"
+              "automation/formalization-v2-alpha2-reconcile-20260724-r3"
+          )
+          BASE_COMMIT = "666bb4fa740f591f21cdb070a7ad99ceb9250958"
+          STATE_BRANCH = "qikvrt/formalization-v2-state-r2"
+          STATE_PARENT = "8cbadea631885b8ed11175fad1c7cc451d59c876"
+          INVENTORY_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-read-only-inventory.json"
+          )
+          RESERVATION_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation.json"
+          )
+          INVENTORY_BLOB = "2794fba6126a9dcb34acfcf2ee477ef168a97b4a"
+          INVENTORY_SHA256 = (
+              "56a1c7671dcd941008b3c597414bd881d46a5b53025ac91b86d97bbc7e25c6ef"
+          )
+          INVENTORY_SIZE = 7023
+          MARKER = "release/formalization-v2-alpha2-reconcile-r3-request.json"
+          WORKFLOW = (
+              ".github/workflows/"
+              "qikvrt_formalization_v2_alpha2_reconcile_r3.yml"
+          )
+          TOOL = "tools/qikvrt_formalization_v2_zenodo.py"
+          TEST = "tests/test_formalization_v2_zenodo.py"
+          MANIFEST = "release/formalization-v2-alpha2-zenodo.json"
+          SOURCE_EVIDENCE = (
+              "release/formalization-v2-zenodo-independent-verification.json"
+          )
+          LOCAL_INVENTORY = Path(
+              ".qikvrt/release/formalization-v2-alpha2/"
+              "zenodo-read-only-inventory.json"
+          )
+          SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+          PATHS = {
+              "manifest_sha256": MANIFEST,
+              "source_evidence_sha256": SOURCE_EVIDENCE,
+              "test_sha256": TEST,
+              "tool_sha256": TOOL,
+              "workflow_sha256": WORKFLOW,
+          }
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          def git(*arguments):
+              return subprocess.check_output(
+                  ["git", *arguments], text=True, stderr=subprocess.DEVNULL
+              ).strip()
+
+          def api(suffix, *, missing=False):
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + AUTHORITY + "/" + suffix,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": "Bearer " + os.environ["GH_API_TOKEN"],
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "qikvrt-formalization-alpha2-reconcile-gate",
+                  },
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  raise
+
+          def content(path, ref, *, missing=False):
+              suffix = (
+                  "contents/" + urllib.parse.quote(path, safe="/") + "?"
+                  + urllib.parse.urlencode({"ref": ref})
+              )
+              value = api(suffix, missing=missing)
+              if value is None:
+                  return None, None
+              if not isinstance(value, dict):
+                  fail("GitHub content response is not an object")
+              encoded = "".join(str(value.get("content", "")).split())
+              try:
+                  raw = base64.b64decode(encoded, validate=True)
+              except (TypeError, ValueError):
+                  fail("GitHub content response is not canonical base64")
+              return raw, value.get("sha")
+
+          if (
+              os.environ["GITHUB_REPOSITORY"] != AUTHORITY
+              or os.environ["EVENT_REF"] != REF
+              or os.environ["EVENT_FORCED"] != "false"
+              or os.environ["EVENT_AFTER"] != os.environ["GITHUB_SHA"]
+          ):
+              fail("reconciliation event envelope differs")
+          if git("merge-base", "--is-ancestor", BASE_COMMIT, "HEAD") != "":
+              fail("reconciliation branch does not descend from the bound base")
+          changed = sorted(
+              item for item in git(
+                  "diff", "--name-only", BASE_COMMIT + "..HEAD"
+              ).splitlines() if item
+          )
+          expected_changed = sorted([MARKER, TEST, TOOL, WORKFLOW])
+          if changed != expected_changed:
+              fail("reconciliation branch changes unapproved paths")
+
+          marker = json.loads(Path(MARKER).read_text(encoding="utf-8"))
+          expected_keys = {
+              "authorization_payload_sha256",
+              "base_commit",
+              "bindings",
+              "confirm",
+              "inventory",
+              "request_id",
+              "schema",
+              "state",
+              "state_branch",
+              "target",
+          }
+          if not isinstance(marker, dict) or set(marker) != expected_keys:
+              fail("reconciliation marker keys differ")
+          if (
+              marker["schema"]
+              != "qikvrt_formalization_v2_alpha2_reconcile_request_v1"
+              or marker["request_id"]
+              != "2026-07-24-formalization-v2.0-alpha.2-r3-reconcile"
+              or marker["state"] != "reconcile"
+              or marker["confirm"]
+              != "RECONCILE_EXISTING_ALPHA2_DRAFT_GET_ONLY"
+              or marker["base_commit"] != BASE_COMMIT
+              or marker["state_branch"] != STATE_BRANCH
+              or marker["target"] != {
+                  "concept_record_id": 21488115,
+                  "deposition_id": 21518464,
+                  "doi": "10.5281/zenodo.21518464",
+              }
+              or marker["inventory"] != {
+                  "blob": INVENTORY_BLOB,
+                  "path": INVENTORY_PATH,
+                  "sha256": INVENTORY_SHA256,
+                  "size": INVENTORY_SIZE,
+                  "state_parent": STATE_PARENT,
+              }
+          ):
+              fail("reconciliation marker identity differs")
+          if (
+              not isinstance(marker["bindings"], dict)
+              or set(marker["bindings"]) != set(PATHS)
+          ):
+              fail("reconciliation binding keys differ")
+          for key, path in PATHS.items():
+              supplied = marker["bindings"].get(key)
+              if (
+                  not isinstance(supplied, str)
+                  or SHA256.fullmatch(supplied) is None
+                  or hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                  != supplied
+              ):
+                  fail("reconciliation binding differs: " + path)
+          projection = dict(marker)
+          supplied_authorization = projection.pop(
+              "authorization_payload_sha256", None
+          )
+          expected_authorization = hashlib.sha256(json.dumps(
+              projection,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8")).hexdigest()
+          if supplied_authorization != expected_authorization:
+              fail("reconciliation authorization digest differs")
+
+          state_ref = api(
+              "git/ref/heads/" + urllib.parse.quote(STATE_BRANCH, safe="/")
+          )
+          state_object = (
+              state_ref.get("object") if isinstance(state_ref, dict) else None
+          )
+          if (
+              not isinstance(state_object, dict)
+              or state_object.get("sha") != STATE_PARENT
+          ):
+              fail("alpha.2 state branch moved before reconciliation")
+          inventory_raw, inventory_blob = content(INVENTORY_PATH, STATE_PARENT)
+          if (
+              inventory_blob != INVENTORY_BLOB
+              or inventory_raw is None
+              or len(inventory_raw) != INVENTORY_SIZE
+              or hashlib.sha256(inventory_raw).hexdigest() != INVENTORY_SHA256
+          ):
+              fail("bound read-only inventory bytes differ")
+          reservation_raw, _ = content(
+              RESERVATION_PATH, STATE_PARENT, missing=True
+          )
+          if reservation_raw is not None:
+              fail("alpha.2 reservation already exists at the bound state")
+          LOCAL_INVENTORY.write_bytes(inventory_raw)
+          PY
+
+      - name: Verify reconciliation behavior
+        run: |
+          set -euo pipefail
+          python -I -S -B -m py_compile \
+            tools/qikvrt_formalization_v2_zenodo.py \
+            tests/test_formalization_v2_zenodo.py
+          python -I -S -B -m unittest tests.test_formalization_v2_zenodo -v
+
+      - name: Reconcile the sole evidenced draft through Zenodo GETs
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$ZENODO_ACCESS_TOKEN" || {
+            echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable' >&2
+            exit 1
+          }
+          python -I -S -B tools/qikvrt_formalization_v2_zenodo.py reconcile \
+            --repository-root . \
+            --manifest release/formalization-v2-alpha2-zenodo.json \
+            --source-evidence \
+              release/formalization-v2-zenodo-independent-verification.json \
+            --reconciliation-evidence \
+              .qikvrt/release/formalization-v2-alpha2/zenodo-read-only-inventory.json \
+            --reservation \
+              .qikvrt/release/formalization-v2-alpha2/zenodo-reservation.json
+          python -I -S -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(
+              ".qikvrt/release/formalization-v2-alpha2/zenodo-reservation.json"
+          )
+          raw = path.read_bytes()
+          token = os.environ["ZENODO_ACCESS_TOKEN"].encode()
+          if token in raw:
+              raise SystemExit("BLOCK: reservation evidence contains the token")
+          value = json.loads(raw)
+          if (
+              value.get("phase") != "reserved"
+              or value.get("software") != {
+                  "deposition_id": 21518464,
+                  "concept_record_id": 21488115,
+                  "doi": "10.5281/zenodo.21518464",
+              }
+          ):
+              raise SystemExit("BLOCK: reconciled reservation identity differs")
+          PY
+
+      - name: Persist the reservation on the dedicated state branch
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -I -S -B - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          REPOSITORY = "Goldkelch/qik-vrt"
+          STATE_BRANCH = "qikvrt/formalization-v2-state-r2"
+          STATE_PARENT = "8cbadea631885b8ed11175fad1c7cc451d59c876"
+          STATE_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation.json"
+          )
+          token = os.environ["GH_API_TOKEN"]
+          content = Path(
+              ".qikvrt/release/formalization-v2-alpha2/"
+              "zenodo-reservation.json"
+          ).read_bytes()
+
+          def request(method, suffix, payload=None, *, accept=(200, 201)):
+              data = None
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + token,
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "qikvrt-formalization-alpha2-state-writer",
+              }
+              if payload is not None:
+                  data = json.dumps(
+                      payload, sort_keys=True, separators=(",", ":")
+                  ).encode()
+                  headers["Content-Type"] = "application/json"
+              api_request = urllib.request.Request(
+                  "https://api.github.com/repos/" + REPOSITORY + "/" + suffix,
+                  data=data,
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(api_request, timeout=30) as response:
+                      if response.status not in accept:
+                          raise SystemExit(
+                              "BLOCK: unexpected GitHub state status"
+                          )
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if error.code == 404:
+                      return None
+                  raise
+
+          ref_suffix = (
+              "git/ref/heads/" + urllib.parse.quote(STATE_BRANCH, safe="/")
+          )
+          state_ref = request("GET", ref_suffix)
+          state_object = (
+              state_ref.get("object") if isinstance(state_ref, dict) else None
+          )
+          if (
+              not isinstance(state_object, dict)
+              or state_object.get("sha") != STATE_PARENT
+          ):
+              raise SystemExit("BLOCK: alpha.2 state branch moved")
+          existing = request(
+              "GET",
+              "contents/" + urllib.parse.quote(STATE_PATH, safe="/")
+              + "?" + urllib.parse.urlencode({"ref": STATE_PARENT}),
+          )
+          if existing is not None:
+              raise SystemExit("BLOCK: alpha.2 reservation already exists")
+          parent = request("GET", "git/commits/" + STATE_PARENT)
+          parent_tree = (
+              parent.get("tree") if isinstance(parent, dict) else None
+          )
+          parent_tree_sha = (
+              parent_tree.get("sha")
+              if isinstance(parent_tree, dict)
+              else None
+          )
+          if not isinstance(parent_tree_sha, str):
+              raise SystemExit("BLOCK: alpha.2 state parent tree is malformed")
+          blob = request("POST", "git/blobs", {
+              "content": base64.b64encode(content).decode(),
+              "encoding": "base64",
+          })
+          blob_sha = blob.get("sha") if isinstance(blob, dict) else None
+          if not isinstance(blob_sha, str):
+              raise SystemExit("BLOCK: reservation blob creation failed")
+          tree = request("POST", "git/trees", {
+              "base_tree": parent_tree_sha,
+              "tree": [{
+                  "path": STATE_PATH,
+                  "mode": "100644",
+                  "type": "blob",
+                  "sha": blob_sha,
+              }],
+          })
+          tree_sha = tree.get("sha") if isinstance(tree, dict) else None
+          if not isinstance(tree_sha, str):
+              raise SystemExit("BLOCK: reservation state tree creation failed")
+          commit = request("POST", "git/commits", {
+              "message": "Record reconciled formalization alpha.2 reservation",
+              "tree": tree_sha,
+              "parents": [STATE_PARENT],
+          })
+          commit_sha = commit.get("sha") if isinstance(commit, dict) else None
+          if not isinstance(commit_sha, str):
+              raise SystemExit("BLOCK: reservation state commit failed")
+          updated = request("PATCH", ref_suffix, {
+              "sha": commit_sha,
+              "force": False,
+          })
+          updated_object = (
+              updated.get("object") if isinstance(updated, dict) else None
+          )
+          if (
+              not isinstance(updated_object, dict)
+              or updated_object.get("sha") != commit_sha
+          ):
+              raise SystemExit("BLOCK: reservation state ref update failed")
+          print("PASS reservation state commit " + commit_sha)
+          PY
+
+      - name: Upload reservation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: formalization-v2-alpha2-reconciled-reservation-${{ github.sha }}
+          path: .qikvrt/release/formalization-v2-alpha2/zenodo-reservation.json
+          if-no-files-found: error
+          retention-days: 7
