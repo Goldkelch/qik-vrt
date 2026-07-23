@@ -39,15 +39,18 @@ jobs:
 
           update_status() {
             body="$1"
-            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
+            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" |
+              jq -r --arg marker "$MARKER" \
+                '.[] | select(.body | contains($marker)) | .id' |
+              tail -n 1)"
             if [ -n "$comment_id" ]; then
               gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
 
-$body" >/dev/null
+          $body" >/dev/null
             else
               gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
 
-$body" >/dev/null
+          $body" >/dev/null
             fi
           }
 
@@ -60,7 +63,7 @@ $body" >/dev/null
             latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
             active_count="$(printf '%s' "$active" | jq 'length')"
 
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | " + (.run_number|tostring) + " |" end')"
+            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end')"
             step_rows=''
             total_steps=0
             completed_steps=0
@@ -81,7 +84,7 @@ $body" >/dev/null
                   marker='□'
                 fi
                 step_rows="$step_rows
-| $marker | $job | $step | $effective |"
+          | $marker | $job | $step | $effective |"
               done <<< "$rows"
             done < <(printf '%s' "$latest" | jq -r '.[].id')
 
@@ -100,27 +103,27 @@ $body" >/dev/null
             if [ "$signature" != "$state_signature" ]; then
               update_status "## QIKVRT live repository runtime
 
-**Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
+          **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
 
-- Repository: \`$REPOSITORY\`
-- Branch: \`$branch\`
-- Observation cycle: \`$cycle\`
-- Observed at: \`$now\`
-- Active external runs: \`$active_count\`
+          - Repository: \`$REPOSITORY\`
+          - Branch: \`$branch\`
+          - Observation cycle: \`$cycle\`
+          - Observed at: \`$now\`
+          - Active external runs: \`$active_count\`
 
-### Workflows
+          ### Workflows
 
-| Workflow | State | Run |
-|---|---|---:|
-$workflow_lines
+          | Workflow | State | Run | Run ID |
+          |---|---|---:|---:|
+          $workflow_lines
 
-### Jobs and steps
+          ### Jobs and steps
 
-| | Job | Step | State |
-|---|---|---|---|
-$step_rows
+          | | Job | Step | State |
+          |---|---|---|---|
+          $step_rows
 
-A new progress graphic is emitted for every detected workflow, job, or step transition. The next observation starts only after this frame has been persisted, followed by a five-second pause."
+          A new progress graphic is emitted for every detected workflow, job, or step transition. The next observation starts only after this frame has been persisted, followed by a five-second pause."
               state_signature="$signature"
             fi
 
