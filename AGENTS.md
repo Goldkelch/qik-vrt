@@ -36,6 +36,26 @@ blockers and next actions. Persistent workflows MUST maintain `AI_PROGRESS.json`
 and `AI_STATUS.md`. Repetitive unchanged status and long explanations in place
 of executable work are prohibited.
 
+## Reuse before creation
+
+`REUSE_BEFORE_CREATE` is mandatory. Before creating a new workflow, script,
+policy, adapter, pipeline, tool, or repository artifact, the agent MUST first
+search for an existing component that can be reused, extended, parameterized,
+generalized, or refactored. New parallel machinery is permitted only when the
+repository contains explicit evidence that reuse is technically insufficient.
+Optimization and perfection of an existing path take precedence over duplicate
+implementation.
+
+## Persistence-run completion boundary
+
+`NO_USER_RETURN_BEFORE_PERSISTENCE_COMPLETE` is mandatory after an explicit
+persistence instruction. The agent MUST continue the persistence run through
+write, integrity materialization, verification, and the requested repository
+effect before returning to the user. A user-facing return is allowed only for a
+verified `DONE` result or a concrete external `BLOCK` that cannot be repaired
+with the already authorized repository capabilities. Commentary, discussion,
+or an unchanged intermediate status MUST NOT replace continued execution.
+
 ## Bounded collective adaptation
 
 1. Observe only accessible, authorized state and record the measurement method,
