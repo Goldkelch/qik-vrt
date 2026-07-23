@@ -10,11 +10,12 @@ collect or use adaptive evidence.
 
 ## Session reconstruction
 
-Every new AI, agent, IDE-assistant, or automation session MUST begin with
-`AI_BOOTSTRAP.md`, parse `AI_CONTEXT.json`, and follow its
-`required_read_order`. Repository evidence is authoritative over conversation
-memory. The declared repositories are symmetrically canonical only for a scope
-whose exact bytes and state have been verified equivalent.
+Every new AI, agent, IDE-assistant, or automation session MUST begin with the
+root file `AI`, parse `AI_CONTEXT.json`, and follow its `required_read_order`.
+The identical GitHub-native handoff path in every QIK-VRT repository is `/AI`.
+Repository evidence is authoritative over conversation memory. The declared
+repositories are symmetrically canonical only for a scope whose exact bytes and
+state have been verified equivalent.
 
 The architecture/implementation licensing boundary in `AI_CONTEXT.json` is
 mandatory context: freely available architecture and interoperability
