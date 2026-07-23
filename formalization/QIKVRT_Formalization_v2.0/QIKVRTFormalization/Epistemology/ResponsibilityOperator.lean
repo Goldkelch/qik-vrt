@@ -30,7 +30,7 @@ inductive ObligationKind where
 /-- Explicit epistemic statuses. `openQuestion` is a legitimate classified status. -/
 inductive EpistemicStatus where
   | definition
-  | axiom
+  | foundational
   | formallyProved
   | empiricallySupported
   | refuted
