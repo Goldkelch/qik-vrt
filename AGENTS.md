@@ -26,15 +26,36 @@ texts.
 ## Mandatory human-machine progress behavior
 
 For every repository, build, verification, publication, deployment, or GitHub
-Actions operation, the client MUST follow
-`docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md` and
-`policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json`.
+Actions operation, the client MUST follow all of:
 
-The client MUST work before explaining, report progress in the compact
-repository/branch/commit/progress-bar/checklist format, and name concrete
-blockers and next actions. Persistent workflows MUST maintain `AI_PROGRESS.json`
-and `AI_STATUS.md`. Repetitive unchanged status and long explanations in place
-of executable work are prohibited.
+- `docs/HUMAN_MACHINE_PROGRESS_STANDARD.md`;
+- `docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md`;
+- `policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json`; and
+- `schemas/human_machine_progress.schema.json`.
+
+The client MUST emit a complete repository/branch/commit/operation/frame/
+progress-bar/checklist/blocker/next-action frame immediately before and
+immediately after every task-advancing GitHub action. It MUST emit another full
+frame whenever any observed workflow, job, or step changes state. Multiple
+GitHub actions may not be hidden behind one frame, and a later summary may not
+replace a missing intermediate frame.
+
+The reads and writes used solely to observe or persist one frame form one atomic,
+non-recursive telemetry cycle. This exception prevents infinite regress; it does
+not exempt task-advancing GitHub actions. Observation cycles MUST be serial,
+MUST NOT overlap, MUST persist the changed frame before continuing, and MUST wait
+five seconds after a completed cycle while external work remains active.
+
+Execution telemetry is not a final conversational return. During an explicit
+persistence run, compact progress frames remain mandatory, while explanatory
+conversation or a terminal response remains prohibited until verified `DONE` or
+a concrete non-repairable external `BLOCK`.
+
+Persistent workflows MUST maintain machine and human projections. The tracked
+root `AI_PROGRESS.json` and `AI_STATUS.md` MUST be `IDLE` or terminal whenever no
+persistent owner is active; stale `RUNNING`, `WAITING`, or `PENDING` snapshots are
+prohibited. Live workflow state is persisted by `QIKVRT live status watch` in a
+pull-request comment and the GitHub Actions step summary.
 
 ## Reuse before creation
 
@@ -46,12 +67,26 @@ repository contains explicit evidence that reuse is technically insufficient.
 Optimization and perfection of an existing path take precedence over duplicate
 implementation.
 
+## Repository runtime authority
+
+The repository is the durable runtime authority; chat sessions and individual
+AI clients are replaceable transport surfaces. Runtime capability MUST
+accumulate through the existing `runtime/toolchains/` locks,
+`runtime/CACHE_POLICY.md`, bootstrap scripts, tests, integrity authorities, and
+adaptive-runtime workflows.
+
+Verified archives, wheelhouses, package stores, and build products may be
+reused through exact-key caches. A cache hit never replaces current-tree proof,
+integrity, provenance, security, review, or release checks. Credentials,
+mutable authentication state, unverified executables, and chat memory MUST NOT
+be persisted as runtime-cache authority.
+
 ## Persistence-run completion boundary
 
 `NO_USER_RETURN_BEFORE_PERSISTENCE_COMPLETE` is mandatory after an explicit
 persistence instruction. The agent MUST continue the persistence run through
 write, integrity materialization, verification, and the requested repository
-effect before returning to the user. A user-facing return is allowed only for a
+effect before a terminal response. A final response is allowed only for a
 verified `DONE` result or a concrete external `BLOCK` that cannot be repaired
 with the already authorized repository capabilities. Commentary, discussion,
 or an unchanged intermediate status MUST NOT replace continued execution.
