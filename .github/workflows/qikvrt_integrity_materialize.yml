@@ -8,7 +8,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: qikvrt-integrity-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   materialize:
@@ -33,12 +37,77 @@ jobs:
               exit 2
             }
           fi
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+
       - name: Generate deterministic integrity outputs
         run: python3 tools/qikvrt_integrity.py generate
+
       - name: Verify generated integrity outputs
         run: python3 tools/qikvrt_integrity.py verify
-      - name: Upload generated integrity outputs
+
+      - name: Write machine-readable run evidence
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -eu
+          mkdir -p .qikvrt/evidence
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          paths = [
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          ]
+          evidence = {
+              "schema": "qikvrt_integrity_materialization_evidence_v1",
+              "status": "PASS",
+              "repository": os.environ["REPOSITORY"],
+              "ref_name": os.environ["REF_NAME"],
+              "event_name": os.environ["EVENT_NAME"],
+              "source_sha": os.environ["SOURCE_SHA"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "outputs": {},
+          }
+          for name in paths:
+              data = Path(name).read_bytes()
+              evidence["outputs"][name] = {
+                  "bytes": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+              }
+          target = Path(".qikvrt/evidence/integrity_materialization_latest.json")
+          target.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Persist verified outputs and evidence
+        if: github.event_name != 'pull_request'
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -eu
+          git config user.name "qikvrt-integrity-bot"
+          git config user.email "qikvrt-integrity-bot@users.noreply.github.com"
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt .qikvrt/evidence/integrity_materialization_latest.json
+          if git diff --cached --quiet; then
+            echo "No integrity delta to persist."
+          else
+            git commit -m "ci: persist verified integrity materialization [skip ci]"
+            git push origin "HEAD:${TARGET_BRANCH}"
+          fi
+
+      - name: Upload generated integrity outputs and evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-integrity-materialized
@@ -48,3 +117,4 @@ jobs:
             REPOSITORY_FILE_MANIFEST.json
             REPOSITORY_FILE_MANIFEST.json.sha256
             SHA256SUMS.txt
+            .qikvrt/evidence/integrity_materialization_latest.json
