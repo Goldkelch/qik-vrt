@@ -1,29 +1,44 @@
 <!--
 SPDX-License-Identifier: CC-BY-NC-ND-4.0
-Copyright 2026 Ingolf Lohmann.
+Copyright (c) 2026 Ingolf Lohmann.
 -->
 
 # Runtime cache policy
 
 ## Purpose
 
-Runtime caches reduce repeated downloads and environment construction. They do
-not persist project cognition, proof, review, authentication, authorization, or
-publication state. A cold cache and a warm cache MUST execute the same required
-checks and MUST produce semantically identical project outputs.
+Runtime caches reduce repeated downloads and environment construction. They do not persist project cognition, proof, review, authentication, authorization, or publication state. A cold cache and a warm cache MUST execute the same required checks and MUST produce semantically identical project outputs.
+
+## Repository as runtime environment
+
+The repository is the durable runtime authority. Chat sessions and individual AI clients are replaceable transport surfaces. The repository MUST accumulate the exact tool definitions, version locks, checksums, bootstrap logic, provenance, tests, repair procedures, and runtime receipts required to reconstruct authorized work independently of any prior conversation.
+
+Existing runtime components MUST be reused and improved before another bootstrap path, cache layer, installer, or workflow is introduced. The intended evolution is cumulative: each verified tool or optimization increases the reusable capability of the repository without weakening reproducibility, security, or effect gates.
+
+The committed repository contains authoritative runtime descriptions and reconstruction logic. Volatile binary caches remain accelerators, not authorities. A missing cache may cost time; it MUST NOT remove capability when locked upstream material remains available.
+
+## Cumulative tool inventory
+
+Every runtime tool admitted for repeated use MUST have, where applicable:
+
+1. a stable tool identifier and intended capability;
+2. an exact version or immutable source revision;
+3. platform and architecture scope;
+4. upstream location and license/provenance record;
+5. expected cryptographic digest;
+6. deterministic install/bootstrap instructions;
+7. executable self-test and negative test;
+8. cache layout and invalidation key;
+9. rollback/recovery behavior; and
+10. a repository acceptance gate.
+
+Tool additions extend `runtime/toolchains/` and the existing bootstrap scripts. They MUST NOT create untracked parallel installers. Repeated successful use SHOULD improve ordering, cache hit rate, diagnostics, and recovery while preserving identical correctness gates for cold and warm execution.
 
 ## Authority and location
 
-The committed authorities are the bootstrap source, toolchain lock, upstream
-checksums, provenance, and third-party notices under `runtime/toolchains/`.
-Downloaded archives, extracted executables, virtual environments, package
-caches, timing data, and cache receipts are volatile material under
-`.qikvrt/toolchains/` or an explicitly selected external cache directory. They
-MUST NOT be committed and MUST NOT be included in release-integrity claims.
+The committed authorities are the bootstrap source, toolchain lock, upstream checksums, provenance, and third-party notices under `runtime/toolchains/`. Downloaded archives, extracted executables, virtual environments, package caches, timing data, and cache receipts are volatile material under `.qikvrt/toolchains/` or an explicitly selected external cache directory. They MUST NOT be committed and MUST NOT be included in release-integrity claims.
 
-No credential may enter a runtime cache. This includes `GH_TOKEN`,
-`GITHUB_TOKEN`, Git credential-helper state, `gh auth login` state, cookies,
-SSH keys, signing keys, and package-registry credentials.
+No credential may enter a runtime cache. This includes `GH_TOKEN`, `GITHUB_TOKEN`, Git credential-helper state, `gh auth login` state, cookies, SSH keys, signing keys, and package-registry credentials.
 
 ## Keys and restoration
 
@@ -36,68 +51,26 @@ A shared CI cache key MUST contain all of:
 5. a digest of `runtime/toolchains/**`; and
 6. digests of every runtime/GitHub-CLI bootstrap used to consume the cache.
 
-Restoration MUST use an exact key. Broad restore prefixes and cross-OS cache
-archives are prohibited. A runner without CPython 3.12.13 can warm only the
-GitHub-CLI portion under a distinct capability key; it cannot seed or satisfy
-the renderer cache. A GitHub CLI executable installed in or loaded from
-the managed cache is compared byte-for-byte with a fresh extraction of the
-repo-hash-anchored upstream archive before it is executed. Cache metadata is
-not trusted merely because a hosting service returned it. In check-only mode,
-an operator-selected `QIKVRT_GH` or system `gh` outside the managed cache can
-only satisfy the exact-version execution check; it is not represented
-as archive-derived, is never copied into the cache, and is outside the cache's
-reproducibility claim.
+Restoration MUST use an exact key. Broad restore prefixes and cross-OS cache archives are prohibited. A runner without CPython 3.12.13 can warm only the GitHub-CLI portion under a distinct capability key; it cannot seed or satisfy the renderer cache. A GitHub CLI executable installed in or loaded from the managed cache is compared byte-for-byte with a fresh extraction of the repo-hash-anchored upstream archive before it is executed. Cache metadata is not trusted merely because a hosting service returned it. In check-only mode, an operator-selected `QIKVRT_GH` or system `gh` outside the managed cache can only satisfy the exact-version execution check; it is not represented as archive-derived, is never copied into the cache, and is outside the cache's reproducibility claim.
 
-The shared CI cache contains the hash-locked Python wheelhouse, never the
-xml2rfc virtual environment. A local cache directory may contain the derived
-venv for immediate use, but check-only mode deliberately does not execute it.
-Every explicitly authorized install verifies the selected wheels with
-`--require-hashes`, moves any prior local venv into rollback staging, and
-derives a new venv at its final path before executing renderer code.
+The shared CI cache contains the hash-locked Python wheelhouse, never the xml2rfc virtual environment. A local cache directory may contain the derived venv for immediate use, but check-only mode deliberately does not execute it. Every explicitly authorized install verifies the selected wheels with `--require-hashes`, moves any prior local venv into rollback staging, and derives a new venv at its final path before executing renderer code.
 
-Untrusted pull requests may read a default-branch cache where GitHub permits
-that behavior, but they MUST NOT publish a cache that a protected branch can
-later treat as authoritative. Cache-save steps run only for reviewed code on
-`main` or an explicitly dispatched trusted workflow after all contract checks
-pass.
+Untrusted pull requests may read a default-branch cache where GitHub permits that behavior, but they MUST NOT publish a cache that a protected branch can later treat as authoritative. Cache-save steps run only for reviewed code on `main` or an explicitly dispatched trusted workflow after all contract checks pass.
 
 ## Effect boundary
 
 - A cache hit is never `EFFECT_ACK_DONE`.
-- No test, renderer validation, security check, license check, reviewer gate,
-  or release check may be skipped because a previous result is cached.
-- Compiled dependencies and verified tool environments may be reused;
-  mandatory project checks must execute again against the current tree.
-- A mismatch, incomplete extraction, unexpected version, symlink/reparse point,
-  or failed execution self-test is `BLOCK`, not a cache miss.
-- Absence of an optional runtime in check-only mode is `CONTINUE` and causes no
-  network or source-tree mutation.
+- No test, renderer validation, security check, license check, reviewer gate, or release check may be skipped because a previous result is cached.
+- Compiled dependencies and verified tool environments may be reused; mandatory project checks must execute again against the current tree.
+- A mismatch, incomplete extraction, unexpected version, symlink/reparse point, or failed execution self-test is `BLOCK`, not a cache miss.
+- Absence of an optional runtime in check-only mode is `CONTINUE` and causes no network or source-tree mutation.
 
 ## Installation and retention
 
-Installation is opt-in and requires both an install flag and explicit
-third-party acceptance. Downloads use named HTTPS upstreams and locked hashes
-where upstream archives provide them. GitHub CLI installation is staged,
-preverified, atomically moved, verified again in its final location, and rolled
-back if that final verification fails. The XML renderer's wheelhouse is hash
-verified before use; its venv is necessarily built at the final path because
-console launchers bind that path, with the previous venv held in rollback
-staging until all post-install checks pass. Python package installation runs
-isolated from environment variables and user pip configuration, accepts binary
-wheels only, and performs its final installation offline from the verified
-wheelhouse.
+Installation is opt-in and requires both an install flag and explicit third-party acceptance. Downloads use named HTTPS upstreams and locked hashes where upstream archives provide them. GitHub CLI installation is staged, preverified, atomically moved, verified again in its final location, and rolled back if that final verification fails. The XML renderer's wheelhouse is hash verified before use; its venv is necessarily built at the final path because console launchers bind that path, with the previous venv held in rollback staging until all post-install checks pass. Python package installation runs isolated from environment variables and user pip configuration, accepts binary wheels only, and performs its final installation offline from the verified wheelhouse.
 
-GitHub-hosted caches are accelerators with service-defined retention and quota;
-they are not permanent archives. Durable reproducibility comes from committed
-locks and provenance, while durable releases use reviewed, content-addressed
-release assets outside this cache. Owners should delete unused cache generations
-through the hosting service after a lock update. Bootstrap scripts deliberately
-do not perform broad recursive cache deletion.
+GitHub-hosted caches are accelerators with service-defined retention and quota; they are not permanent archives. Durable reproducibility comes from committed locks and provenance, while durable releases use reviewed, content-addressed release assets outside this cache. Owners should delete unused cache generations through the hosting service after a lock update. Bootstrap scripts deliberately do not perform broad recursive cache deletion.
 
 ## Bounded adaptation
 
-Automatic adaptation is limited to exact-key cache reuse. Future timing-based
-optimization may change job ordering or parallelism only through a reviewed
-source change. It may never alter `EFFECT_ACK` predicates, lower review or test
-requirements, modify source, merge a pull request, create a release, or submit
-an Internet-Draft autonomously.
+Automatic adaptation is limited to exact-key cache reuse and measured optimization that does not alter correctness semantics. Timing data may improve job ordering, parallelism, prefetching, and cache warming only through reviewed repository changes. It may never alter `EFFECT_ACK` predicates, lower review or test requirements, modify unreviewed source, merge a pull request, create a release, or submit an Internet-Draft autonomously.
