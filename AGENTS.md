@@ -67,19 +67,38 @@ repository contains explicit evidence that reuse is technically insufficient.
 Optimization and perfection of an existing path take precedence over duplicate
 implementation.
 
-## Repository runtime authority
+## Cumulative repository runtime and complete tool caching
 
 The repository is the durable runtime authority; chat sessions and individual
-AI clients are replaceable transport surfaces. Runtime capability MUST
-accumulate through the existing `runtime/toolchains/` locks,
-`runtime/CACHE_POLICY.md`, bootstrap scripts, tests, integrity authorities, and
-adaptive-runtime workflows.
+AI clients are replaceable transport surfaces. Before invoking any runtime tool,
+the agent MUST verify all of:
 
-Verified archives, wheelhouses, package stores, and build products may be
-reused through exact-key caches. A cache hit never replaces current-tree proof,
-integrity, provenance, security, review, or release checks. Credentials,
-mutable authentication state, unverified executables, and chat memory MUST NOT
-be persisted as runtime-cache authority.
+- `runtime/toolchains/TOOLCHAIN.lock.tsv`;
+- `runtime/toolchains/CACHE_REGISTRY.json`;
+- `runtime/toolchains/CACHE_COVERAGE.json`; and
+- `python3 tools/qikvrt_tool_cache.py verify`.
+
+Every tool required by a declared runtime profile MUST have an exact version or
+behavioral contract, a cache/provision strategy, source or provider authority,
+verification, self-test, provenance/license metadata, failure/rollback handling,
+and step-level progress telemetry. Coverage MUST remain 100 percent. A newly
+required tool MUST extend the existing lock, registry, bootstrap/cache path,
+tests, receipts, and recovery rules before it is used. Undeclared environment
+dependencies are prohibited.
+
+Runtime capability accumulates through the existing `runtime/toolchains/`
+locks and registries, `runtime/CACHE_POLICY.md`, bootstrap scripts, tests,
+integrity authorities, and adaptive-runtime workflows. Payload bytes may reside
+in repository-managed caches, GitHub Actions caches, GitHub-hosted tool caches,
+verified build caches, pinned runner-image layers, or reviewed
+content-addressed release assets.
+
+A cache hit never replaces current-tree proof, integrity, provenance, security,
+review, or release checks. Credentials, mutable authentication state, unverified
+executables, and chat memory MUST NOT be persisted as runtime-cache authority.
+Each successful runtime change SHOULD make the existing repository runtime
+faster, more capable, more diagnosable, or more reproducible without weakening
+any verification gate.
 
 ## Persistence-run completion boundary
 
