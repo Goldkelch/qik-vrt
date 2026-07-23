@@ -5,6 +5,7 @@ import QIKVRTFormalization.Process.GateCompleteness
 import QIKVRTFormalization.Process.ShiftInvariance
 import QIKVRTFormalization.Retrocausality.ForwardProcess
 import QIKVRTFormalization.Retrocausality.Reclassification
+import QIKVRTFormalization.Epistemology.ResponsibilityOperator
 import QIKVRTFormalization.Claims.CheckedRegistry
 import QIKVRTFormalization.Claims.Batch01
 import QIKVRTFormalization.Claims.Batch02
