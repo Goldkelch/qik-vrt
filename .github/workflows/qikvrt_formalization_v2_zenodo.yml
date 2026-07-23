@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: QIK-VRT formalization v2 alpha.2 reserve
+name: QIK-VRT formalization v2 alpha.2 reserve r2
 
 on:
   push:
     branches:
-      - automation/formalization-v2-alpha2-reserve-20260723
+      - automation/formalization-v2-alpha2-reserve-20260723-r2
     paths:
       - release/formalization-v2-alpha2-request.json
 
@@ -32,7 +32,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          # The validator inspects both the candidate and its parent. The
+          # marker is one commit above the candidate, so depth 3 is required
+          # to avoid Git treating the candidate as a shallow root.
+          fetch-depth: 3
           persist-credentials: false
 
       - name: Bind validator to CPython 3.12.13 x64
@@ -66,9 +69,9 @@ jobs:
               "authority_repository": "Goldkelch/qik-vrt",
               "mirror_repository": "ingolf-lohmann/qik-vrt",
               "feature_branch": "agent/effect-ack-lean-v1",
-              "reserve_ref": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723",
-              "finalize_ref": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723",
-              "state_branch": "qikvrt/formalization-v2-state",
+              "reserve_ref": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723-r2",
+              "finalize_ref": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723-r2",
+              "state_branch": "qikvrt/formalization-v2-state-r2",
           }
           BINDINGS = {
               "manifest_sha256": "release/formalization-v2-alpha2-zenodo.json",
@@ -125,7 +128,7 @@ jobs:
               fail("schema hash changed")
           if marker["repository_policy"] != POLICY:
               fail("repository policy changed")
-          if marker["reservation"]["state_path"] != "release-state/formalization-v2-alpha2/zenodo-reservation.json":
+          if marker["reservation"]["state_path"] != "release-state/formalization-v2-alpha2/r2/zenodo-reservation.json":
               fail("reservation state path changed")
           action = marker["action"]
           if action == "inactive":
@@ -299,9 +302,9 @@ jobs:
         env:
           EXPECTED_MARKER_SHA256: ${{ needs.validate.outputs.marker_sha256 }}
           GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/formalization-v2-state
-          ATTEMPT_PATH: release-state/formalization-v2-alpha2/zenodo-reservation-attempt.json
-          RESERVATION_PATH: release-state/formalization-v2-alpha2/zenodo-reservation.json
+          STATE_BRANCH: qikvrt/formalization-v2-state-r2
+          ATTEMPT_PATH: release-state/formalization-v2-alpha2/r2/zenodo-reservation-attempt.json
+          RESERVATION_PATH: release-state/formalization-v2-alpha2/r2/zenodo-reservation.json
         run: |
           set -euo pipefail
           umask 077
@@ -433,8 +436,8 @@ jobs:
         shell: bash
         env:
           GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/formalization-v2-state
-          STATE_PATH: release-state/formalization-v2-alpha2/zenodo-reservation.json
+          STATE_BRANCH: qikvrt/formalization-v2-state-r2
+          STATE_PATH: release-state/formalization-v2-alpha2/r2/zenodo-reservation.json
         run: |
           set -euo pipefail
           python -B - <<'PY'

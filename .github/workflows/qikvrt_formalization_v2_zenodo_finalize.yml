@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: QIK-VRT formalization v2 alpha.2 finalize
+name: QIK-VRT formalization v2 alpha.2 finalize r2
 
 on:
   push:
     branches:
-      - automation/formalization-v2-alpha2-finalize-20260723
+      - automation/formalization-v2-alpha2-finalize-20260723-r2
     paths:
       - release/formalization-v2-alpha2-request.json
 
@@ -32,7 +32,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          # The validator inspects both the candidate and its parent. The
+          # marker is one commit above the candidate, so depth 3 is required
+          # to avoid Git treating the candidate as a shallow root.
+          fetch-depth: 3
           persist-credentials: false
 
       - name: Bind validator to CPython 3.12.13 x64
@@ -68,9 +71,9 @@ jobs:
               "authority_repository": "Goldkelch/qik-vrt",
               "mirror_repository": "ingolf-lohmann/qik-vrt",
               "feature_branch": "agent/effect-ack-lean-v1",
-              "reserve_ref": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723",
-              "finalize_ref": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723",
-              "state_branch": "qikvrt/formalization-v2-state",
+              "reserve_ref": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723-r2",
+              "finalize_ref": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723-r2",
+              "state_branch": "qikvrt/formalization-v2-state-r2",
           }
           BINDINGS = {
               "manifest_sha256": "release/formalization-v2-alpha2-zenodo.json",
@@ -123,7 +126,7 @@ jobs:
               or marker["$schema_ref"] != "../policy/qikvrt-formalization-v2-alpha2-release-request.schema.json"
               or marker["schema_sha256"] != digest(SCHEMA)
               or marker["repository_policy"] != POLICY
-              or marker["reservation"]["state_path"] != "release-state/formalization-v2-alpha2/zenodo-reservation.json"
+              or marker["reservation"]["state_path"] != "release-state/formalization-v2-alpha2/r2/zenodo-reservation.json"
           ):
               fail("fixed release policy changed")
           action = marker["action"]
@@ -378,8 +381,8 @@ jobs:
           CANDIDATE_COMMIT: ${{ needs.validate.outputs.candidate_commit }}
           CANDIDATE_TREE: ${{ needs.validate.outputs.candidate_tree }}
           GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/formalization-v2-state
-          STATE_PATH: release-state/formalization-v2-alpha2/LEAN_CI_EVIDENCE.json
+          STATE_BRANCH: qikvrt/formalization-v2-state-r2
+          STATE_PATH: release-state/formalization-v2-alpha2/r2/LEAN_CI_EVIDENCE.json
         run: |
           set -euo pipefail
           python -B - <<'PY'
@@ -608,7 +611,7 @@ jobs:
         shell: bash
         env:
           GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/formalization-v2-state
+          STATE_BRANCH: qikvrt/formalization-v2-state-r2
         run: |
           set -euo pipefail
           python -B - <<'PY'
@@ -633,8 +636,8 @@ jobs:
           root = Path(".qikvrt/release/formalization-v2-alpha2")
           rows = []
           for local_name, state_name in (
-              ("zenodo-finalization.json", "release-state/formalization-v2-alpha2/zenodo-finalization.json"),
-              ("ZENODO_PUBLICATION_EVIDENCE.json", "release-state/formalization-v2-alpha2/ZENODO_PUBLICATION_EVIDENCE.json"),
+              ("zenodo-finalization.json", "release-state/formalization-v2-alpha2/r2/zenodo-finalization.json"),
+              ("ZENODO_PUBLICATION_EVIDENCE.json", "release-state/formalization-v2-alpha2/r2/ZENODO_PUBLICATION_EVIDENCE.json"),
           ):
               content = (root / local_name).read_bytes()
               blob = api("POST", "/git/blobs", {

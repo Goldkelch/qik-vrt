@@ -127,13 +127,13 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
                 "feature_branch": "agent/effect-ack-lean-v1",
                 "reserve_ref": (
                     "refs/heads/automation/"
-                    "formalization-v2-alpha2-reserve-20260723"
+                    "formalization-v2-alpha2-reserve-20260723-r2"
                 ),
                 "finalize_ref": (
                     "refs/heads/automation/"
-                    "formalization-v2-alpha2-finalize-20260723"
+                    "formalization-v2-alpha2-finalize-20260723-r2"
                 ),
-                "state_branch": "qikvrt/formalization-v2-state",
+                "state_branch": "qikvrt/formalization-v2-state-r2",
             },
         )
         self.assertTrue(
@@ -146,7 +146,7 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
             self.marker["reservation"],
             {
                 "state_path": (
-                    "release-state/formalization-v2-alpha2/"
+                    "release-state/formalization-v2-alpha2/r2/"
                     "zenodo-reservation.json"
                 ),
                 "evidence_sha256": ZERO64,
@@ -354,11 +354,11 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
         for workflow, branch in (
             (
                 self.reserve,
-                "automation/formalization-v2-alpha2-reserve-20260723",
+                "automation/formalization-v2-alpha2-reserve-20260723-r2",
             ),
             (
                 self.finalize,
-                "automation/formalization-v2-alpha2-finalize-20260723",
+                "automation/formalization-v2-alpha2-finalize-20260723-r2",
             ),
         ):
             trigger = workflow.split("permissions:", 1)[0]
@@ -375,6 +375,17 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
             self.assertIn("cancel-in-progress: false", workflow)
             self.assertNotIn("access_token=", workflow.lower())
             self.assertIn('"force": False', workflow)
+            validator_checkout = workflow.split(
+                "- name: Bind validator to CPython", 1
+            )[0]
+            self.assertEqual(
+                validator_checkout.count("fetch-depth: 3"),
+                1,
+                "validator must fetch marker, candidate, and candidate parent",
+            )
+            self.assertNotIn("fetch-depth: 2", validator_checkout)
+            self.assertEqual(workflow.count("fetch-depth: 3"), 1)
+            self.assertEqual(workflow.count("fetch-depth: 2"), 1)
             for action in re.findall(r"(?m)^\s*uses:\s*([^\s#]+)", workflow):
                 self.assertRegex(action, r"@[0-9a-f]{40}$")
         intent = self.reserve.index(
