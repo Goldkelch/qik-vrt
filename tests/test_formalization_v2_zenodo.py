@@ -397,6 +397,86 @@ class FormalizationAlpha2ZenodoTests(unittest.TestCase):
             "version": release.SOURCE_VERSION,
         }
 
+    def reconciliation_evidence(self) -> dict[str, object]:
+        files = [
+            {"name": item["name"], "size": item["size"], "md5": item["md5"]}
+            for item in self.evidence["files"]
+        ]
+        return {
+            "diagnostic": {
+                "commit": "1" * 40,
+                "marker_sha256": "2" * 64,
+                "workflow_sha256": "3" * 64,
+            },
+            "draft": {
+                "bucket_path_sha256": "4" * 64,
+                "concept_record_id": release.CONCEPT_RECORD_ID,
+                "created": "2026-07-23T21:27:09+00:00",
+                "creators_match_public_source": True,
+                "doi": DRAFT_DOI,
+                "files": files,
+                "files_match_source_evidence": True,
+                "identity_sha256": "5" * 64,
+                "metadata_keys": ["creators", "title"],
+                "metadata_sha256": "6" * 64,
+                "modified": "2026-07-23T21:27:10+00:00",
+                "original_identity_gate_matches": False,
+                "public_record_absent": True,
+                "record_id": DRAFT_ID,
+                "recoverable_without_zenodo_mutation": True,
+                "self_link_verified": True,
+                "state": "unsubmitted",
+                "submitted": False,
+                "title_matches_public_source": True,
+                "version_missing_or_exact_source": True,
+                "version_present": False,
+                "version_value": None,
+            },
+            "failed_reserve": {
+                "marker_commit": "7" * 40,
+                "marker_sha256": "8" * 64,
+                "reported_failure": (
+                    "BLOCK new alpha.2 draft did not inherit source identity"
+                ),
+                "reserve_job_id": 11,
+                "validate_job_id": 12,
+                "workflow_run_id": 13,
+            },
+            "inventory": {
+                "account_deposition_count": 2,
+                "editable_concept_draft_ids": [DRAFT_ID],
+                "page_cap": 10,
+                "page_cap_reached": False,
+                "page_size": 100,
+                "snapshot_sha256": "9" * 64,
+                "stable_double_snapshot": True,
+            },
+            "read_only": True,
+            "request_id": release.RECONCILIATION_REQUEST_ID,
+            "schema": release.RECONCILIATION_EVIDENCE_SCHEMA,
+            "source": {
+                "concept_record_id": release.CONCEPT_RECORD_ID,
+                "doi": release.SOURCE_VERSION_DOI,
+                "files": files,
+                "identity_sha256": "a" * 64,
+                "owner_latest_draft_link_id": release.SOURCE_RECORD_ID,
+                "owner_metadata_sha256": "b" * 64,
+                "public_latest_record_id": release.SOURCE_RECORD_ID,
+                "public_metadata_sha256": "c" * 64,
+                "record_id": release.SOURCE_RECORD_ID,
+                "version": release.SOURCE_VERSION,
+            },
+            "state_attempt": {
+                "blob": "d" * 40,
+                "reservation_absent_before_inventory": True,
+                "sha256": "e" * 64,
+                "size": 700,
+                "state_parent": "f" * 40,
+            },
+            "zenodo_http_methods": ["GET"],
+            "zenodo_mutation_count": 0,
+        }
+
     @staticmethod
     def client(transport: FakeTransport) -> release.FormalizationVersionClient:
         return release.FormalizationVersionClient(
@@ -483,6 +563,162 @@ class FormalizationAlpha2ZenodoTests(unittest.TestCase):
             )
         )
         self.assertNotIn(TOKEN, path.read_text(encoding="utf-8"))
+
+    def test_reserve_accepts_inherited_draft_without_version_field(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        transport.draft_metadata.pop("version")
+        reservation, _ = self.reserve(transport)
+        self.assertEqual(reservation["software"]["deposition_id"], DRAFT_ID)
+
+    def test_pristine_snapshot_requires_exact_public_source_version(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        evidence = release.validate_source_evidence(self.evidence)
+        for label, version in (
+            ("missing", None),
+            ("changed", "2.0.0-alpha.0"),
+        ):
+            source_public = transport.source_public()
+            metadata = source_public["metadata"]
+            assert isinstance(metadata, dict)
+            if version is None:
+                metadata.pop("version")
+            else:
+                metadata["version"] = version
+            with self.subTest(label=label), self.assertRaisesRegex(
+                shared.ZenodoError,
+                "published source metadata has an unexpected version",
+            ):
+                release._require_pristine_source_snapshot(
+                    transport.draft(), source_public, evidence
+                )
+
+    def test_pristine_snapshot_rejects_different_draft_version(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        draft = transport.draft()
+        metadata = draft["metadata"]
+        assert isinstance(metadata, dict)
+        metadata["version"] = release.TARGET_VERSION
+        with self.assertRaisesRegex(
+            shared.ZenodoError,
+            "new alpha.2 draft inherited an unexpected source version",
+        ):
+            release._require_pristine_source_snapshot(
+                draft,
+                transport.source_public(),
+                release.validate_source_evidence(self.evidence),
+            )
+
+    def test_pristine_snapshot_requires_matching_title_and_creators(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        source_public = transport.source_public()
+        evidence = release.validate_source_evidence(self.evidence)
+        for label, mutate in (
+            (
+                "title",
+                lambda metadata: metadata.__setitem__("title", "Different title"),
+            ),
+            (
+                "creators",
+                lambda metadata: metadata.__setitem__(
+                    "creators", [{"name": "Different, Author"}]
+                ),
+            ),
+        ):
+            draft = transport.draft()
+            metadata = draft["metadata"]
+            assert isinstance(metadata, dict)
+            mutate(metadata)
+            with self.subTest(label=label), self.assertRaisesRegex(
+                shared.ZenodoError,
+                "did not inherit source title and creators",
+            ):
+                release._require_pristine_source_snapshot(
+                    draft, source_public, evidence
+                )
+
+    def test_reconcile_adopts_only_evidenced_draft_with_gets(self) -> None:
+        transport = FakeTransport(
+            self.metadata, self.source_files, existing_draft=True
+        )
+        transport.draft_metadata.pop("version")
+        manifest = release.validate_manifest(self.manifest(), self.root)
+        source = release.validate_source_evidence(self.evidence)
+        path = self.root / "reservation.json"
+        reservation = release.reconcile_release(
+            self.client(transport),
+            manifest,
+            self.root,
+            "b" * 64,
+            source,
+            "c" * 64,
+            self.reconciliation_evidence(),
+            path,
+        )
+        self.assertEqual(reservation["software"]["deposition_id"], DRAFT_ID)
+        self.assertTrue(path.is_file())
+        self.assertTrue(transport.calls)
+        self.assertTrue(all(method == "GET" for method, _, _ in transport.calls))
+        self.assertGreaterEqual(
+            [(method, path) for method, path, _ in transport.calls].count(
+                ("GET", "/api/deposit/depositions")
+            ),
+            2,
+        )
+        self.assertFalse(transport.published)
+
+    def test_reconcile_rejects_evidence_for_another_draft(self) -> None:
+        transport = FakeTransport(
+            self.metadata, self.source_files, existing_draft=True
+        )
+        evidence = self.reconciliation_evidence()
+        draft = evidence["draft"]
+        inventory = evidence["inventory"]
+        assert isinstance(draft, dict)
+        assert isinstance(inventory, dict)
+        draft["record_id"] = DRAFT_ID + 1
+        draft["doi"] = f"10.5281/zenodo.{DRAFT_ID + 1}"
+        inventory["editable_concept_draft_ids"] = [DRAFT_ID + 1]
+        with self.assertRaisesRegex(
+            shared.ZenodoError,
+            "not the evidenced sole draft",
+        ):
+            release.reconcile_release(
+                self.client(transport),
+                release.validate_manifest(self.manifest(), self.root),
+                self.root,
+                "b" * 64,
+                release.validate_source_evidence(self.evidence),
+                "c" * 64,
+                evidence,
+                self.root / "reservation.json",
+            )
+        self.assertTrue(all(method == "GET" for method, _, _ in transport.calls))
+
+    def test_reconciliation_evidence_must_be_get_only_and_stable(self) -> None:
+        for label, mutate in (
+            (
+                "method",
+                lambda value: value.__setitem__(
+                    "zenodo_http_methods", ["GET", "POST"]
+                ),
+            ),
+            (
+                "mutation",
+                lambda value: value.__setitem__("zenodo_mutation_count", 1),
+            ),
+            (
+                "inventory",
+                lambda value: value["inventory"].__setitem__(
+                    "stable_double_snapshot", False
+                ),
+            ),
+        ):
+            evidence = self.reconciliation_evidence()
+            mutate(evidence)
+            with self.subTest(label=label), self.assertRaises(shared.ZenodoError):
+                release.validate_reconciliation_evidence(
+                    evidence, release.validate_source_evidence(self.evidence)
+                )
 
     def test_missing_latest_draft_uses_one_unique_inventory_delta(self) -> None:
         transport = FakeTransport(
