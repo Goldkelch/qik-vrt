@@ -1,6 +1,8 @@
 {
   "schema": "qikvrt-ai-context/1.0",
   "context_id": "qik-vrt-cross-ai-handoff-2026-07-23",
+  "entrypoint": "AI",
+  "entrypoint_rule": "Every QIK-VRT repository exposes the same root path /AI as the shortest GitHub-native human and machine handoff entrypoint.",
   "project": {
     "name": "QIK-VRT",
     "responsible_human": "Ingolf Lohmann",
@@ -16,7 +18,8 @@
     }
   },
   "required_read_order": [
-    "AI_BOOTSTRAP.md",
+    "AI",
+    "AI_CONTEXT.json",
     "AGENTS.md",
     "README.md",
     "STATUS.md",
@@ -68,6 +71,7 @@
     "transport_ack_is_effect_ack": false
   },
   "machine_entrypoint": {
+    "repository_path": "AI",
     "command": "python3 tools/ai_handoff.py",
     "network_required": false,
     "writes_repository": false
