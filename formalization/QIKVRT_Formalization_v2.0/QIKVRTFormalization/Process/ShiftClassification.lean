@@ -35,13 +35,13 @@ theorem prefix_le_prefixMax (trajectory : Trajectory) :
   induction k with
   | zero =>
       intro n h
-      exact False.elim (Nat.not_lt_zero n h)
+      omega
   | succ k ih =>
       intro n h
       by_cases hnk : n = k
       · subst n
         exact Nat.le_max_right _ _
-      · have hlt : n < k := Nat.lt_of_le_of_ne (Nat.le_of_lt_succ h) hnk
+      · have hlt : n < k := by omega
         exact le_trans (ih hlt) (Nat.le_max_left _ _)
 
 theorem shift_bounded_of_bounded {trajectory : Trajectory} {k : Nat}
@@ -57,8 +57,9 @@ theorem bounded_of_shift_bounded {trajectory : Trajectory} {k : Nat}
   by_cases hPrefix : n < k
   · exact le_trans (prefix_le_prefixMax trajectory hPrefix)
       (Nat.le_max_left _ _)
-  · have hkn : k ≤ n := Nat.le_of_not_gt hPrefix
-    obtain ⟨m, rfl⟩ := Nat.exists_eq_add_of_le hkn
+  · have hkn : k ≤ n := by omega
+    obtain ⟨m, hm⟩ := Nat.exists_eq_add_of_le hkn
+    subst n
     exact le_trans (hTailBound m) (Nat.le_max_right _ _)
 
 theorem bounded_shift_iff (trajectory : Trajectory) (k : Nat) :
@@ -86,7 +87,8 @@ def GAT003Statement : Prop :=
 
 /-- Kernel-checked discharge of the full shift-invariance environment. -/
 theorem GAT003_checked : GAT003Statement := by
-  exact classify_shift_invariant
+  intro trajectory k
+  exact classify_shift_invariant trajectory k
 
 end ShiftClassification
 
