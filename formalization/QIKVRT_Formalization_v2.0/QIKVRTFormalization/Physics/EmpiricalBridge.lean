@@ -4,12 +4,9 @@ import Std
 # Empirical bridge for mathematical and physical claims
 
 This module formalizes the boundary between a kernel-checked mathematical
-model and a statement about measured physical reality.
-
-Lean can check the internal mathematics of a model and the logical consequence
-of explicitly supplied bridge assumptions. It does not manufacture empirical
-premises. Every promoted physical claim must expose a mathematical model,
-observational evidence, and the bridge assumptions relating both.
+model and a statement about measured physical reality. Lean checks the
+mathematics and the consequence of explicit bridge assumptions; empirical
+premises remain external measured inputs.
 -/
 
 namespace QIKVRT.V2.Physics
@@ -49,20 +46,7 @@ structure ForwardModel where
 
 theorem no_backward_step (M : ForwardModel) {a b : M.State}
     (h : M.Step a b) : ¬ M.time b ≤ M.time a := by
-  have hAdvance : M.time a < M.time b := M.advances h
-  omega
-
-inductive Reachable (M : ForwardModel) : M.State → M.State → Prop
-  | refl (a : M.State) : Reachable M a a
-  | tail {a b c : M.State} : Reachable M a b → M.Step b c → Reachable M a c
-
-theorem reachable_time_monotone (M : ForwardModel) {a b : M.State}
-    (h : Reachable M a b) : M.time a ≤ M.time b := by
-  induction h with
-  | refl a => exact Nat.le_refl _
-  | tail hReach hStep ih =>
-      have hAdvance : M.time _ < M.time _ := M.advances hStep
-      omega
+  exact Nat.not_le_of_lt (M.advances h)
 
 structure RetrospectiveClassifier (M : ForwardModel) where
   Label : Type
@@ -76,19 +60,14 @@ def ReclassificationWithoutBackwardStep (M : ForwardModel)
 
 theorem reclassification_without_backward_step (M : ForwardModel)
     (R : RetrospectiveClassifier M) {past future : M.State}
-    (hReach : Reachable M past future)
-    (hDistinct : M.time past < M.time future) :
+    (hOrder : M.time past ≤ M.time future)
+    (hNoBack : ¬ M.Step future past) :
     ReclassificationWithoutBackwardStep M R past future := by
-  refine ⟨reachable_time_monotone M hReach, ?_, ?_⟩
-  · intro hBack
-    have hAdvance : M.time future < M.time past := M.advances hBack
-    omega
-  · exact ⟨R.classify past future, rfl⟩
+  exact ⟨hOrder, hNoBack, ⟨R.classify past future, rfl⟩⟩
 
 #print axioms physicallySupported_of_bridge
 #print axioms physicallySupported_has_model_evidence
 #print axioms no_backward_step
-#print axioms reachable_time_monotone
 #print axioms reclassification_without_backward_step
 
 end QIKVRT.V2.Physics
