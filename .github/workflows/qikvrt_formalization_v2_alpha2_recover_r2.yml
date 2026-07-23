@@ -1,0 +1,2090 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT formalization v2 alpha.2 GET-only draft recovery r2
+
+on:
+  push:
+    branches:
+      - automation/formalization-v2-alpha2-recover-20260724-r2
+    paths:
+      - release/formalization-v2-alpha2-recovery-r2-request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-formalization-v2-alpha2-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      marker_sha256: ${{ steps.recover.outputs.marker_sha256 }}
+      recovery_sha256: ${{ steps.recover.outputs.recovery_sha256 }}
+      reservation_sha256: ${{ steps.recover.outputs.reservation_sha256 }}
+      state_parent: ${{ steps.authorize.outputs.state_parent }}
+      workflow_sha256: ${{ steps.recover.outputs.workflow_sha256 }}
+    steps:
+      - name: Check out the exact one-commit recovery authorization
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+          persist-credentials: false
+
+      - name: Validate separate recovery authorization and immutable state
+        id: authorize
+        env:
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .qikvrt/recovery-control
+          python -I -S -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          AUTHORITY = "Goldkelch/qik-vrt"
+          MIRROR = "ingolf-lohmann/qik-vrt"
+          FEATURE = "agent/effect-ack-lean-v1"
+          REF = (
+              "refs/heads/"
+              "automation/formalization-v2-alpha2-recover-20260724-r2"
+          )
+          WORKFLOW = (
+              ".github/workflows/"
+              "qikvrt_formalization_v2_alpha2_recover_r2.yml"
+          )
+          MARKER = (
+              "release/"
+              "formalization-v2-alpha2-recovery-r2-request.json"
+          )
+          MANIFEST = "release/formalization-v2-alpha2-zenodo.json"
+          SOURCE_EVIDENCE = (
+              "release/"
+              "formalization-v2-zenodo-independent-verification.json"
+          )
+          AUTHORITY_COMMIT = (
+              "d4e45424b5c58880e403be572c0b8582c3da6f02"
+          )
+          AUTHORITY_PARENT = (
+              "c96204117828b023792d65ec357ed47c71ede60f"
+          )
+          MIRROR_COMMIT = (
+              "9d5fe1f3bc5c3b22fc0b671f6cb43e169e445590"
+          )
+          MIRROR_PARENT = (
+              "41083bc8381e5d03215e97f19849c0dc1173e71e"
+          )
+          CANDIDATE_TREE = (
+              "a09cbdcbcc6c64975a06f2ddd92264547bc31ee0"
+          )
+          STATE_BRANCH = "qikvrt/formalization-v2-state-r2"
+          STATE_HEAD = "8cbadea631885b8ed11175fad1c7cc451d59c876"
+          ATTEMPT_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation-attempt.json"
+          )
+          INVENTORY_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-read-only-inventory.json"
+          )
+          RESERVATION_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation.json"
+          )
+          RECOVERY_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation-recovery.json"
+          )
+          ATTEMPT_BLOB = (
+              "5b150fff1cef66d7026ae02a1f5b5e1f0df3553e"
+          )
+          ATTEMPT_SHA256 = (
+              "02d9fb7b3ece55be6710943ae5e2131b66b7b5b0a9c27f61d789d35268b39d66"
+          )
+          INVENTORY_BLOB = (
+              "2794fba6126a9dcb34acfcf2ee477ef168a97b4a"
+          )
+          INVENTORY_SHA256 = (
+              "56a1c7671dcd941008b3c597414bd881d46a5b53025ac91b86d97bbc7e25c6ef"
+          )
+          SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+          PATH_BINDINGS = {
+              "client_sha256": (
+                  "tools/qikvrt_formalization_v2_zenodo.py"
+              ),
+              "manifest_sha256": MANIFEST,
+              "shared_client_sha256": (
+                  "tools/qikvrt_zenodo_actions.py"
+              ),
+              "source_evidence_sha256": SOURCE_EVIDENCE,
+              "workflow_sha256": WORKFLOW,
+          }
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          def git(*arguments):
+              return subprocess.check_output(
+                  ["git", *arguments],
+                  text=True,
+                  stderr=subprocess.DEVNULL,
+              ).strip()
+
+          def api(repository, suffix, token, *, missing=False):
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": (
+                      "qikvrt-formalization-alpha2-recovery-gate"
+                  ),
+              }
+              if token:
+                  headers["Authorization"] = "Bearer " + token
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/{suffix}",
+                  headers=headers,
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(
+                      request, timeout=30
+                  ) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  raise
+
+          def content(repository, path, ref, token, *, missing=False):
+              suffix = (
+                  "contents/"
+                  + urllib.parse.quote(path, safe="/")
+                  + "?"
+                  + urllib.parse.urlencode({"ref": ref})
+              )
+              value = api(
+                  repository, suffix, token, missing=missing
+              )
+              if value is None:
+                  return None, None
+              if not isinstance(value, dict):
+                  fail("GitHub content response is not an object")
+              encoded = "".join(
+                  str(value.get("content", "")).split()
+              )
+              try:
+                  raw = base64.b64decode(encoded, validate=True)
+              except (TypeError, ValueError):
+                  fail("GitHub content response is not canonical base64")
+              return raw, value.get("sha")
+
+          def remote(
+              repository, expected_commit, expected_parent, token
+          ):
+              ref = api(
+                  repository,
+                  "git/ref/heads/"
+                  + urllib.parse.quote(FEATURE, safe="/"),
+                  token,
+              )
+              obj = (
+                  ref.get("object")
+                  if isinstance(ref, dict)
+                  else None
+              )
+              sha = (
+                  obj.get("sha")
+                  if isinstance(obj, dict)
+                  else None
+              )
+              if sha != expected_commit:
+                  fail(repository + " feature ref moved")
+              commit = api(
+                  repository, "git/commits/" + sha, token
+              )
+              tree = (
+                  commit.get("tree")
+                  if isinstance(commit, dict)
+                  else None
+              )
+              parents = (
+                  commit.get("parents")
+                  if isinstance(commit, dict)
+                  else None
+              )
+              tree_sha = (
+                  tree.get("sha")
+                  if isinstance(tree, dict)
+                  else None
+              )
+              parent_shas = (
+                  [
+                      item.get("sha")
+                      for item in parents
+                      if isinstance(item, dict)
+                  ]
+                  if isinstance(parents, list)
+                  else None
+              )
+              if (
+                  tree_sha != CANDIDATE_TREE
+                  or parent_shas != [expected_parent]
+              ):
+                  fail(repository + " candidate identity changed")
+
+          if (
+              os.environ["GITHUB_REPOSITORY"] != AUTHORITY
+              or os.environ["EVENT_REF"] != REF
+              or os.environ["EVENT_FORCED"] != "false"
+              or os.environ["EVENT_AFTER"] != os.environ["GITHUB_SHA"]
+              or os.environ["EVENT_BEFORE"] != AUTHORITY_COMMIT
+          ):
+              fail("recovery event envelope differs")
+          if (
+              git("show", "-s", "--format=%P", "HEAD")
+              != AUTHORITY_COMMIT
+          ):
+              fail("recovery commit does not directly extend candidate")
+          if (
+              git("show", "-s", "--format=%T", "HEAD^")
+              != CANDIDATE_TREE
+              or git("show", "-s", "--format=%P", "HEAD^")
+              != AUTHORITY_PARENT
+          ):
+              fail("candidate ancestry differs")
+          changed = git(
+              "diff-tree",
+              "--no-commit-id",
+              "--name-status",
+              "-r",
+              "HEAD^",
+              "HEAD",
+          ).splitlines()
+          expected_changed = sorted(
+              ["A\t" + WORKFLOW, "A\t" + MARKER]
+          )
+          if sorted(changed) != expected_changed:
+              fail("recovery commit must add only workflow and marker")
+
+          marker_raw = Path(MARKER).read_bytes()
+          marker = json.loads(marker_raw)
+          expected_keys = {
+              "authorization_payload_sha256",
+              "bindings",
+              "candidate",
+              "confirm",
+              "draft",
+              "failed_attempt",
+              "prior_inventory",
+              "request_id",
+              "schema",
+              "state",
+              "state_branch",
+              "state_head",
+              "state_paths",
+          }
+          if (
+              not isinstance(marker, dict)
+              or set(marker) != expected_keys
+          ):
+              fail("recovery marker keys differ")
+          if (
+              marker["schema"]
+              != (
+                  "qikvrt_formalization_v2_alpha2_"
+                  "recovery_request_v1"
+              )
+              or marker["request_id"]
+              != (
+                  "2026-07-24-formalization-v2.0-"
+                  "alpha.2-r2-draft-recovery"
+              )
+              or marker["state"] != "recover"
+              or marker["confirm"]
+              != (
+                  "RECOVER_ZENODO_DRAFT_21518464_BY_GET_ONLY_"
+                  "AND_ATOMICALLY_PERSIST_SIGNED_RESERVATION"
+              )
+              or marker["state_branch"] != STATE_BRANCH
+              or marker["state_head"] != STATE_HEAD
+          ):
+              fail("recovery marker identity differs")
+          expected_candidate = {
+              "authority_commit": AUTHORITY_COMMIT,
+              "authority_parent": AUTHORITY_PARENT,
+              "mirror_commit": MIRROR_COMMIT,
+              "mirror_parent": MIRROR_PARENT,
+              "tree": CANDIDATE_TREE,
+          }
+          if marker["candidate"] != expected_candidate:
+              fail("recovery candidate binding differs")
+          if marker["state_paths"] != {
+              "attempt": ATTEMPT_PATH,
+              "inventory": INVENTORY_PATH,
+              "recovery": RECOVERY_PATH,
+              "reservation": RESERVATION_PATH,
+          }:
+              fail("recovery state paths differ")
+          if marker["draft"] != {
+              "concept_record_id": 21488115,
+              "doi": "10.5281/zenodo.21518464",
+              "record_id": 21518464,
+          }:
+              fail("recovery draft identity differs")
+          if marker["failed_attempt"] != {
+              "attempt_blob": ATTEMPT_BLOB,
+              "attempt_sha256": ATTEMPT_SHA256,
+              "marker_commit": (
+                  "17b738280c0f25aa11eb92c217753de6054b26e0"
+              ),
+              "marker_sha256": (
+                  "d0391456eca168d9a0347fd643c6fd161cdc5fbfb6aa8b5b7ed479509ee81e3f"
+              ),
+              "reported_failure": (
+                  "BLOCK new alpha.2 draft did not inherit source identity"
+              ),
+              "reserve_job_id": 89337819962,
+              "validate_job_id": 89337673334,
+              "workflow_run_id": 30046158739,
+          }:
+              fail("failed reserve binding differs")
+          if marker["prior_inventory"] != {
+              "artifact_digest": (
+                  "sha256:"
+                  "a1259d49a28ed0db5131f229b80d892848c7849c443bb0dfc966f252d3c1ebdd"
+              ),
+              "artifact_id": 8579971293,
+              "blob": INVENTORY_BLOB,
+              "diagnostic_commit": (
+                  "b60a3ce4e3a84094ceb42b9d0489d06b048900b3"
+              ),
+              "diagnostic_marker_sha256": (
+                  "3aff091399e3b6d4fdcd25ed70a40cf9b5ed206183122aa2550bcd16dd6b8800"
+              ),
+              "diagnostic_workflow_sha256": (
+                  "164de8cbd03ec0cd0500a5a8fab709582a1b279bf021dca6082d3cc7ad1689a9"
+              ),
+              "evidence_sha256": INVENTORY_SHA256,
+              "inspect_job_id": 89344251971,
+              "path": INVENTORY_PATH,
+              "persist_job_id": 89344296944,
+              "workflow_run_id": 30048221721,
+          }:
+              fail("read-only inventory binding differs")
+          if (
+              not isinstance(marker["bindings"], dict)
+              or set(marker["bindings"]) != set(PATH_BINDINGS)
+          ):
+              fail("recovery file bindings differ")
+          for key, path in PATH_BINDINGS.items():
+              supplied = marker["bindings"].get(key)
+              if (
+                  not isinstance(supplied, str)
+                  or SHA256.fullmatch(supplied) is None
+                  or hashlib.sha256(
+                      Path(path).read_bytes()
+                  ).hexdigest()
+                  != supplied
+              ):
+                  fail("recovery binding differs: " + path)
+          supplied_auth = marker["authorization_payload_sha256"]
+          projection = dict(marker)
+          projection.pop("authorization_payload_sha256")
+          expected_auth = hashlib.sha256(
+              json.dumps(
+                  projection,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              ).encode("utf-8")
+          ).hexdigest()
+          if supplied_auth != expected_auth:
+              fail("recovery authorization digest differs")
+
+          remote(
+              AUTHORITY,
+              AUTHORITY_COMMIT,
+              AUTHORITY_PARENT,
+              os.environ["GH_API_TOKEN"],
+          )
+          remote(
+              MIRROR,
+              MIRROR_COMMIT,
+              MIRROR_PARENT,
+              "",
+          )
+          state_ref = api(
+              AUTHORITY,
+              "git/ref/heads/"
+              + urllib.parse.quote(STATE_BRANCH, safe="/"),
+              os.environ["GH_API_TOKEN"],
+          )
+          state_obj = (
+              state_ref.get("object")
+              if isinstance(state_ref, dict)
+              else None
+          )
+          state_parent = (
+              state_obj.get("sha")
+              if isinstance(state_obj, dict)
+              else None
+          )
+          if state_parent != STATE_HEAD:
+              fail("r2 state branch moved after inventory")
+
+          attempt_raw, attempt_blob = content(
+              AUTHORITY,
+              ATTEMPT_PATH,
+              STATE_HEAD,
+              os.environ["GH_API_TOKEN"],
+          )
+          if (
+              attempt_raw is None
+              or attempt_blob != ATTEMPT_BLOB
+              or len(attempt_raw) != 700
+              or hashlib.sha256(attempt_raw).hexdigest()
+              != ATTEMPT_SHA256
+          ):
+              fail("persisted reservation attempt differs")
+          attempt = json.loads(attempt_raw)
+          if attempt != {
+              "candidate": expected_candidate,
+              "kind": (
+                  "qikvrt-formalization-v2-alpha2-"
+                  "reservation-attempt"
+              ),
+              "manifest_sha256": (
+                  "a60e6cf164cc34823945e3b949b63d0140ba4406e885f30ee1eb081805d3daed"
+              ),
+              "marker_sha256": (
+                  "d0391456eca168d9a0347fd643c6fd161cdc5fbfb6aa8b5b7ed479509ee81e3f"
+              ),
+              "request_id": (
+                  "2026-07-23-formalization-v2.0-alpha.2"
+              ),
+              "schema_version": 1,
+              "source_evidence_sha256": (
+                  "9e11b097af8951b3590586f8b8751cca0995f59c42873823fd94ee0f7b96a550"
+              ),
+          }:
+              fail("persisted reservation attempt content differs")
+
+          inventory_raw, inventory_blob = content(
+              AUTHORITY,
+              INVENTORY_PATH,
+              STATE_HEAD,
+              os.environ["GH_API_TOKEN"],
+          )
+          if (
+              inventory_raw is None
+              or inventory_blob != INVENTORY_BLOB
+              or hashlib.sha256(inventory_raw).hexdigest()
+              != INVENTORY_SHA256
+          ):
+              fail("persisted read-only inventory differs")
+          inventory = json.loads(inventory_raw)
+          if (
+              inventory.get("schema")
+              != (
+                  "qikvrt_formalization_v2_alpha2_"
+                  "read_only_inventory_v1"
+              )
+              or inventory.get("read_only") is not True
+              or inventory.get("zenodo_http_methods") != ["GET"]
+              or inventory.get("zenodo_mutation_count") != 0
+              or inventory.get("draft", {}).get("record_id")
+              != 21518464
+              or inventory.get("draft", {}).get("doi")
+              != "10.5281/zenodo.21518464"
+              or inventory.get("draft", {}).get(
+                  "recoverable_without_zenodo_mutation"
+              )
+              is not True
+              or inventory.get("draft", {}).get("version_present")
+              is not False
+              or inventory.get("inventory", {}).get(
+                  "editable_concept_draft_ids"
+              )
+              != [21518464]
+              or inventory.get("inventory", {}).get(
+                  "stable_double_snapshot"
+              )
+              is not True
+          ):
+              fail("persisted inventory does not authorize recovery")
+
+          for state_path in (RESERVATION_PATH, RECOVERY_PATH):
+              raw, _ = content(
+                  AUTHORITY,
+                  state_path,
+                  STATE_HEAD,
+                  os.environ["GH_API_TOKEN"],
+                  missing=True,
+              )
+              if raw is not None:
+                  fail("recovery output already exists")
+
+          Path(
+              ".qikvrt/recovery-control/"
+              "zenodo-reservation-attempt.json"
+          ).write_bytes(attempt_raw)
+          Path(
+              ".qikvrt/recovery-control/"
+              "zenodo-read-only-inventory.json"
+          ).write_bytes(inventory_raw)
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write("state_parent=" + state_parent + "\n")
+          PY
+
+      - name: Reconcile exact existing draft through Zenodo GET only
+        id: recover
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$ZENODO_ACCESS_TOKEN" || {
+            echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable' >&2
+            exit 1
+          }
+          mkdir -p .qikvrt/recovery-output
+          python -I -S -B - <<'PY'
+          import datetime
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+          sys.path.insert(0, str(ROOT))
+          from tools import qikvrt_formalization_v2_zenodo as release
+          from tools import qikvrt_zenodo_actions as shared
+
+          BASE = "https://zenodo.org"
+          API_BASE = BASE + "/api"
+          SOURCE_ID = 21501365
+          SOURCE_VERSION = "2.0.0-alpha.1"
+          SOURCE_DOI = "10.5281/zenodo.21501365"
+          CONCEPT_ID = 21488115
+          DRAFT_ID = 21518464
+          DRAFT_DOI = "10.5281/zenodo.21518464"
+          PROTECTED = {
+              21488115,
+              21488116,
+              21498773,
+              21498774,
+              21501365,
+          }
+          MANIFEST_PATH = Path(
+              "release/formalization-v2-alpha2-zenodo.json"
+          )
+          SOURCE_EVIDENCE_PATH = Path(
+              "release/"
+              "formalization-v2-zenodo-independent-verification.json"
+          )
+          MARKER_PATH = Path(
+              "release/"
+              "formalization-v2-alpha2-recovery-r2-request.json"
+          )
+          INVENTORY_PATH = Path(
+              ".qikvrt/recovery-control/"
+              "zenodo-read-only-inventory.json"
+          )
+          RESERVATION_OUTPUT = Path(
+              ".qikvrt/recovery-output/zenodo-reservation.json"
+          )
+          RECOVERY_OUTPUT = Path(
+              ".qikvrt/recovery-output/"
+              "zenodo-reservation-recovery.json"
+          )
+          MANIFEST_SHA256 = (
+              "a60e6cf164cc34823945e3b949b63d0140ba4406e885f30ee1eb081805d3daed"
+          )
+          SOURCE_EVIDENCE_SHA256 = (
+              "9e11b097af8951b3590586f8b8751cca0995f59c42873823fd94ee0f7b96a550"
+          )
+          PRIOR_INVENTORY_SHA256 = (
+              "56a1c7671dcd941008b3c597414bd881d46a5b53025ac91b86d97bbc7e25c6ef"
+          )
+          METADATA_SHA256 = (
+              "d6077f02ddcff5c6a82190fa6e12387f3dfbf4e927e55783e0945e40a975b97f"
+          )
+          FILES_SHA256 = (
+              "a69f9613770f84766fc9a679042092c78a31f58ff65dcb33316ac3fd9f5fafc5"
+          )
+          UNSIGNED_RESERVATION_SHA256 = (
+              "fe097dd5a3579aa96f540e4123ada92965e766787706272bdb69d4eb7ba58428"
+          )
+          STATE_HEAD = (
+              "8cbadea631885b8ed11175fad1c7cc451d59c876"
+          )
+          MAX_JSON = 16 * 1024 * 1024
+          MAX_EVIDENCE = 1024 * 1024
+          MAX_PAGES = 10
+          PAGE_SIZE = 100
+          HEX32 = re.compile(r"[0-9a-f]{32}\Z")
+          SAFE_BUCKET = re.compile(
+              r"/api/files/[A-Za-z0-9._~-]+\Z"
+          )
+          token = os.environ["ZENODO_ACCESS_TOKEN"]
+          methods = []
+          MISSING = object()
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(
+                  self, req, fp, code, msg, headers, newurl
+              ):
+                  return None
+
+          opener = urllib.request.build_opener(NoRedirect())
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          def safe_url(url, *, query_allowed=False):
+              split = urllib.parse.urlsplit(url)
+              if (
+                  split.scheme != "https"
+                  or split.hostname != "zenodo.org"
+                  or split.port is not None
+                  or split.username is not None
+                  or split.password is not None
+                  or split.fragment
+                  or (split.query and not query_allowed)
+                  or not (
+                      split.path == "/api"
+                      or split.path.startswith("/api/")
+                  )
+              ):
+                  fail("unsafe Zenodo GET URL")
+              return split
+
+          def request_get(url, *, query_allowed=False):
+              safe_url(url, query_allowed=query_allowed)
+              methods.append("GET")
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Accept": "application/json",
+                      "User-Agent": (
+                          "qikvrt-formalization-alpha2-"
+                          "get-only-draft-recovery"
+                      ),
+                  },
+                  method="GET",
+              )
+              return opener.open(request, timeout=30)
+
+          def decode_json(response, expected_url):
+              with response:
+                  if response.status != 200:
+                      fail("Zenodo GET returned a non-200 response")
+                  if response.geturl() != expected_url:
+                      fail("Zenodo GET escaped no-redirect transport")
+                  content_type = response.headers.get(
+                      "Content-Type", ""
+                  )
+                  if "application/json" not in content_type.lower():
+                      fail("Zenodo GET was not JSON")
+                  raw = response.read(MAX_JSON + 1)
+              if len(raw) > MAX_JSON:
+                  fail("Zenodo GET exceeded byte bound")
+              try:
+                  return json.loads(raw.decode("utf-8"))
+              except (UnicodeDecodeError, json.JSONDecodeError):
+                  fail("Zenodo GET returned invalid JSON")
+
+          def get_json(
+              url, *, allow_404=False, query_allowed=False
+          ):
+              try:
+                  response = request_get(
+                      url, query_allowed=query_allowed
+                  )
+              except urllib.error.HTTPError as error:
+                  if allow_404 and error.code == 404:
+                      return MISSING
+                  fail(
+                      "Zenodo GET failed with HTTP "
+                      + str(error.code)
+                  )
+              return decode_json(response, url)
+
+          def get_latest(url):
+              current = url
+              redirect_codes = {301, 302, 303, 307, 308}
+              for _ in range(5):
+                  split = safe_url(current)
+                  if (
+                      split.query
+                      or re.fullmatch(
+                          rf"/api/records/{SOURCE_ID}"
+                          r"(?:/versions/latest)?/?",
+                          split.path,
+                      )
+                      is None
+                  ):
+                      fail("unsafe public latest URL")
+                  try:
+                      response = request_get(current)
+                  except urllib.error.HTTPError as error:
+                      if error.code not in redirect_codes:
+                          fail(
+                              "public latest GET failed with HTTP "
+                              + str(error.code)
+                          )
+                      location = error.headers.get("Location")
+                      if (
+                          not isinstance(location, str)
+                          or not location
+                      ):
+                          fail(
+                              "public latest redirect omitted location"
+                          )
+                      current = urllib.parse.urljoin(
+                          current, location
+                      )
+                      continue
+                  return decode_json(response, current)
+              fail("public latest exceeded redirect bound")
+
+          def canonical_bytes(value):
+              return json.dumps(
+                  value,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              ).encode("utf-8")
+
+          def canonical_hash(value):
+              return hashlib.sha256(
+                  canonical_bytes(value)
+              ).hexdigest()
+
+          def positive_id(value, label):
+              if isinstance(value, str) and value.isdecimal():
+                  value = int(value)
+              if (
+                  isinstance(value, bool)
+                  or not isinstance(value, int)
+                  or value <= 0
+              ):
+                  fail(label + " is not a positive ID")
+              return value
+
+          def record_id(value, label):
+              if not isinstance(value, dict):
+                  fail(label + " is not an object")
+              return positive_id(value.get("id"), label + ".id")
+
+          def concept_id(value, label):
+              if not isinstance(value, dict):
+                  fail(label + " is not an object")
+              return positive_id(
+                  value.get(
+                      "conceptrecid",
+                      value.get("concept_record_id"),
+                  ),
+                  label + ".conceptrecid",
+              )
+
+          def deposition_doi(value, label):
+              metadata = (
+                  value.get("metadata")
+                  if isinstance(value, dict)
+                  else None
+              )
+              candidates = []
+              if isinstance(metadata, dict):
+                  reserved = metadata.get("prereserve_doi")
+                  if isinstance(reserved, dict):
+                      candidates.append(reserved.get("doi"))
+              candidates.append(
+                  value.get("doi")
+                  if isinstance(value, dict)
+                  else None
+              )
+              if isinstance(metadata, dict):
+                  candidates.append(metadata.get("doi"))
+              for candidate in candidates:
+                  if (
+                      isinstance(candidate, str)
+                      and shared.DOI.fullmatch(candidate)
+                  ):
+                      return candidate
+              fail(label + " has no record-bound DOI")
+
+          def normalized_files(value, label):
+              files = (
+                  value.get("files")
+                  if isinstance(value, dict)
+                  else None
+              )
+              if (
+                  not isinstance(files, list)
+                  or not all(
+                      isinstance(item, dict) for item in files
+                  )
+              ):
+                  fail(label + " has malformed files")
+              rows = []
+              names = set()
+              for item in files:
+                  name = item.get("filename", item.get("key"))
+                  size = item.get("filesize", item.get("size"))
+                  checksum = item.get("checksum")
+                  if isinstance(size, str) and size.isdecimal():
+                      size = int(size)
+                  if (
+                      isinstance(checksum, str)
+                      and checksum.startswith("md5:")
+                  ):
+                      checksum = checksum[4:]
+                  if (
+                      not isinstance(name, str)
+                      or not name
+                      or name in names
+                      or isinstance(size, bool)
+                      or not isinstance(size, int)
+                      or size < 0
+                      or not isinstance(checksum, str)
+                      or HEX32.fullmatch(checksum) is None
+                  ):
+                      fail(label + " contains malformed file")
+                  names.add(name)
+                  rows.append(
+                      {
+                          "name": name,
+                          "size": size,
+                          "md5": checksum,
+                      }
+                  )
+              return sorted(rows, key=lambda item: item["name"])
+
+          def api_id_link(value, prefix, *, optional=False):
+              if optional and value is None:
+                  return None
+              if not isinstance(value, str):
+                  fail("Zenodo API identity link is missing")
+              split = safe_url(value)
+              match = re.fullmatch(
+                  re.escape(prefix.rstrip("/")) + r"/([0-9]+)/?",
+                  split.path,
+              )
+              if match is None:
+                  fail("Zenodo API identity link changed type")
+              return int(match.group(1))
+
+          def bucket_path_hash(value):
+              if not isinstance(value, str):
+                  fail("draft bucket link is missing")
+              split = safe_url(value)
+              path = split.path.rstrip("/")
+              if SAFE_BUCKET.fullmatch(path) is None:
+                  fail("draft bucket link escaped file API")
+              return hashlib.sha256(
+                  path.encode("utf-8")
+              ).hexdigest()
+
+          def inventory_snapshot():
+              items = []
+              for page in range(1, MAX_PAGES + 1):
+                  query = urllib.parse.urlencode(
+                      {
+                          "all_versions": "true",
+                          "page": page,
+                          "size": PAGE_SIZE,
+                          "sort": "mostrecent",
+                      }
+                  )
+                  value = get_json(
+                      API_BASE
+                      + "/deposit/depositions?"
+                      + query,
+                      query_allowed=True,
+                  )
+                  if (
+                      not isinstance(value, list)
+                      or len(value) > PAGE_SIZE
+                      or not all(
+                          isinstance(item, dict) for item in value
+                      )
+                  ):
+                      fail("owner inventory page is malformed")
+                  items.extend(value)
+                  if len(value) < PAGE_SIZE:
+                      break
+                  if page == MAX_PAGES:
+                      fail("owner inventory reached page cap")
+              ids = [
+                  record_id(item, "owner inventory item")
+                  for item in items
+              ]
+              if len(ids) != len(set(ids)):
+                  fail("owner inventory has duplicate IDs")
+              return items
+
+          manifest_raw = MANIFEST_PATH.read_bytes()
+          source_raw = SOURCE_EVIDENCE_PATH.read_bytes()
+          inventory_raw = INVENTORY_PATH.read_bytes()
+          marker_raw = MARKER_PATH.read_bytes()
+          if (
+              hashlib.sha256(manifest_raw).hexdigest()
+              != MANIFEST_SHA256
+              or hashlib.sha256(source_raw).hexdigest()
+              != SOURCE_EVIDENCE_SHA256
+              or hashlib.sha256(inventory_raw).hexdigest()
+              != PRIOR_INVENTORY_SHA256
+          ):
+              fail("local recovery input hash differs")
+          manifest_value = json.loads(manifest_raw)
+          source_value = json.loads(source_raw)
+          prior = json.loads(inventory_raw)
+          marker = json.loads(marker_raw)
+          normalized_manifest = release.validate_manifest(
+              manifest_value, ROOT
+          )
+          verified_source = release.validate_source_evidence(
+              source_value
+          )
+          release.verify_manifest_files(
+              normalized_manifest, ROOT, token
+          )
+          metadata_sha256, files_sha256 = (
+              release._manifest_hashes(normalized_manifest)
+          )
+          if (
+              metadata_sha256 != METADATA_SHA256
+              or files_sha256 != FILES_SHA256
+          ):
+              fail("finalize-client manifest projection differs")
+          expected_files = release._expected_source_fingerprint(
+              verified_source
+          )
+          if len(expected_files) != 14:
+              fail("source evidence file count differs")
+
+          first_inventory = inventory_snapshot()
+          if (
+              canonical_hash(first_inventory)
+              != prior["inventory"]["snapshot_sha256"]
+          ):
+              fail("owner inventory changed since authorized diagnostic")
+
+          public_source = get_json(
+              API_BASE + f"/records/{SOURCE_ID}"
+          )
+          owner_source = get_json(
+              API_BASE
+              + f"/deposit/depositions/{SOURCE_ID}"
+          )
+          if (
+              record_id(public_source, "public source")
+              != SOURCE_ID
+              or concept_id(public_source, "public source")
+              != CONCEPT_ID
+              or deposition_doi(public_source, "public source")
+              != SOURCE_DOI
+              or record_id(owner_source, "owner source")
+              != SOURCE_ID
+              or concept_id(owner_source, "owner source")
+              != CONCEPT_ID
+              or deposition_doi(owner_source, "owner source")
+              != SOURCE_DOI
+              or owner_source.get("submitted") is not True
+              or owner_source.get("state") != "done"
+          ):
+              fail("source identity or state changed")
+          public_metadata = public_source.get("metadata")
+          owner_metadata = owner_source.get("metadata")
+          public_links = public_source.get("links")
+          owner_links = owner_source.get("links")
+          if (
+              not isinstance(public_metadata, dict)
+              or public_metadata.get("version") != SOURCE_VERSION
+              or not isinstance(owner_metadata, dict)
+              or not isinstance(public_links, dict)
+              or not isinstance(owner_links, dict)
+          ):
+              fail("source metadata or links changed")
+          if (
+              canonical_hash(public_metadata)
+              != prior["source"]["public_metadata_sha256"]
+              or canonical_hash(owner_metadata)
+              != prior["source"]["owner_metadata_sha256"]
+              or normalized_files(
+                  public_source, "public source"
+              )
+              != expected_files
+              or normalized_files(owner_source, "owner source")
+              != expected_files
+          ):
+              fail("source metadata or file fingerprint changed")
+
+          latest_url = public_links.get("latest")
+          if not isinstance(latest_url, str):
+              fail("public source has no latest link")
+          latest = get_latest(latest_url)
+          latest_metadata = (
+              latest.get("metadata")
+              if isinstance(latest, dict)
+              else None
+          )
+          if (
+              record_id(latest, "resolved public latest")
+              != SOURCE_ID
+              or concept_id(latest, "resolved public latest")
+              != CONCEPT_ID
+              or deposition_doi(
+                  latest, "resolved public latest"
+              )
+              != SOURCE_DOI
+              or not isinstance(latest_metadata, dict)
+              or latest_metadata.get("version")
+              != SOURCE_VERSION
+              or canonical_hash(latest_metadata)
+              != canonical_hash(public_metadata)
+              or normalized_files(
+                  latest, "resolved public latest"
+              )
+              != expected_files
+          ):
+              fail("published source is no longer exact public latest")
+          relations = latest_metadata.get("relations")
+          if (
+              isinstance(relations, dict)
+              and isinstance(relations.get("version"), list)
+              and relations["version"]
+              and not any(
+                  isinstance(item, dict)
+                  and item.get("is_last") is True
+                  for item in relations["version"]
+              )
+          ):
+              fail("resolved source is not marked latest")
+
+          editable = []
+          for item in first_inventory:
+              item_id = record_id(
+                  item, "owner inventory item"
+              )
+              item_concept = concept_id(
+                  item, "owner inventory item"
+              )
+              if (
+                  item_id != SOURCE_ID
+                  and item_concept == CONCEPT_ID
+              ):
+                  if (
+                      item.get("submitted") is False
+                      and item.get("state") == "unsubmitted"
+                  ):
+                      editable.append(item_id)
+                  elif not (
+                      item.get("submitted") is True
+                      and item.get("state") == "done"
+                  ):
+                      fail("concept deposition has unknown state")
+          editable = sorted(set(editable))
+          if editable != [DRAFT_ID] or DRAFT_ID in PROTECTED:
+              fail("authorized draft is not the unique editable draft")
+          if (
+              len(first_inventory)
+              != prior["inventory"]["account_deposition_count"]
+          ):
+              fail("owner inventory count changed")
+
+          owner_latest_id = api_id_link(
+              owner_links.get("latest_draft"),
+              "/api/deposit/depositions",
+              optional=True,
+          )
+          if (
+              owner_latest_id
+              != prior["source"]["owner_latest_draft_link_id"]
+          ):
+              fail("owner source latest_draft link changed")
+
+          draft = get_json(
+              API_BASE
+              + f"/deposit/depositions/{DRAFT_ID}"
+          )
+          if (
+              record_id(draft, "direct draft") != DRAFT_ID
+              or concept_id(draft, "direct draft")
+              != CONCEPT_ID
+              or deposition_doi(draft, "direct draft")
+              != DRAFT_DOI
+              or draft.get("submitted") is not False
+              or draft.get("state") != "unsubmitted"
+          ):
+              fail("direct draft identity or state changed")
+          draft_metadata = draft.get("metadata")
+          draft_links = draft.get("links")
+          if (
+              not isinstance(draft_metadata, dict)
+              or not isinstance(draft_links, dict)
+          ):
+              fail("direct draft metadata or links changed")
+          if (
+              api_id_link(
+                  draft_links.get("self"),
+                  "/api/deposit/depositions",
+              )
+              != DRAFT_ID
+          ):
+              fail("direct draft self link changed")
+          bucket_hash = bucket_path_hash(
+              draft_links.get("bucket")
+          )
+          if (
+              bucket_hash
+              != prior["draft"]["bucket_path_sha256"]
+              or normalized_files(draft, "direct draft")
+              != expected_files
+          ):
+              fail("direct draft bucket or inherited files changed")
+          if (
+              get_json(
+                  API_BASE + f"/records/{DRAFT_ID}",
+                  allow_404=True,
+              )
+              is not MISSING
+          ):
+              fail("authorized draft is already public")
+
+          second_inventory = inventory_snapshot()
+          if (
+              canonical_bytes(first_inventory)
+              != canonical_bytes(second_inventory)
+          ):
+              fail("owner inventory changed during reconciliation")
+          if (
+              canonical_hash(second_inventory)
+              != prior["inventory"]["snapshot_sha256"]
+          ):
+              fail("second owner inventory snapshot differs")
+
+          expected_title = public_metadata.get("title")
+          expected_creators = public_metadata.get("creators")
+          if (
+              not isinstance(expected_title, str)
+              or not expected_title
+              or not isinstance(expected_creators, list)
+              or not expected_creators
+          ):
+              fail("public source identity is malformed")
+          if (
+              canonical_hash(
+                  {
+                      "title": expected_title,
+                      "version": SOURCE_VERSION,
+                      "creators": expected_creators,
+                  }
+              )
+              != prior["source"]["identity_sha256"]
+          ):
+              fail("public source identity changed")
+          title_matches = shared._metadata_matches(
+              draft_metadata, {"title": expected_title}
+          )
+          creators_match = shared._metadata_matches(
+              draft_metadata,
+              {"creators": expected_creators},
+          )
+          version_present = "version" in draft_metadata
+          version_value = draft_metadata.get("version")
+          version_allowed = (
+              not version_present
+              or version_value == SOURCE_VERSION
+          )
+          if not (
+              title_matches
+              and creators_match
+              and version_allowed
+          ):
+              fail("draft is not a pristine source-identity snapshot")
+          if (
+              canonical_hash(draft_metadata)
+              != prior["draft"]["metadata_sha256"]
+              or sorted(draft_metadata)
+              != prior["draft"]["metadata_keys"]
+              or canonical_hash(
+                  {
+                      "title": draft_metadata.get("title"),
+                      "version": draft_metadata.get("version"),
+                      "creators": draft_metadata.get("creators"),
+                  }
+              )
+              != prior["draft"]["identity_sha256"]
+              or draft.get("created")
+              != prior["draft"]["created"]
+              or draft.get("modified")
+              != prior["draft"]["modified"]
+              or version_present
+              != prior["draft"]["version_present"]
+              or version_value
+              != prior["draft"]["version_value"]
+          ):
+              fail("draft changed since authorized diagnostic")
+          if (
+              prior["draft"][
+                  "recoverable_without_zenodo_mutation"
+              ]
+              is not True
+              or prior["draft"][
+                  "title_matches_public_source"
+              ]
+              is not True
+              or prior["draft"][
+                  "creators_match_public_source"
+              ]
+              is not True
+              or prior["draft"][
+                  "version_missing_or_exact_source"
+              ]
+              is not True
+              or prior["draft"]["files_match_source_evidence"]
+              is not True
+              or prior["draft"]["public_record_absent"]
+              is not True
+              or prior["draft"]["self_link_verified"]
+              is not True
+          ):
+              fail("prior diagnostic recovery gates differ")
+
+          client = release.FormalizationVersionClient(
+              token,
+              API_BASE,
+              transport=object(),
+          )
+          client.authorize_draft(
+              draft,
+              record_id=DRAFT_ID,
+              doi=DRAFT_DOI,
+          )
+          reservation = release._sign_reservation(
+              {
+                  "schema_version": 2,
+                  "kind": release.RESERVATION_KIND,
+                  "phase": "reserved",
+                  "api_base_url": API_BASE,
+                  "release_id": release.RELEASE_ID,
+                  "manifest_sha256": MANIFEST_SHA256,
+                  "metadata_sha256": METADATA_SHA256,
+                  "files_sha256": FILES_SHA256,
+                  "source_evidence_sha256": (
+                      SOURCE_EVIDENCE_SHA256
+                  ),
+                  "source": {
+                      "record_id": SOURCE_ID,
+                      "concept_record_id": CONCEPT_ID,
+                      "doi": SOURCE_DOI,
+                  },
+                  "software": {
+                      "deposition_id": DRAFT_ID,
+                      "concept_record_id": CONCEPT_ID,
+                      "doi": DRAFT_DOI,
+                  },
+              },
+              token,
+          )
+          unsigned = dict(reservation)
+          unsigned.pop("authorization_mac")
+          if (
+              hashlib.sha256(
+                  shared._json_bytes(unsigned)
+              ).hexdigest()
+              != UNSIGNED_RESERVATION_SHA256
+          ):
+              fail("unsigned reservation projection differs")
+          validated_software = release._validate_reservation(
+              reservation,
+              normalized_manifest,
+              MANIFEST_SHA256,
+              SOURCE_EVIDENCE_SHA256,
+              client,
+          )
+          if validated_software != {
+              "deposition_id": DRAFT_ID,
+              "concept_record_id": CONCEPT_ID,
+              "doi": DRAFT_DOI,
+          }:
+              fail("finalize-client reservation compatibility failed")
+          if set(methods) != {"GET"}:
+              fail("Zenodo method audit is not GET-only")
+
+          reservation_raw = (
+              json.dumps(
+                  reservation,
+                  ensure_ascii=False,
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n"
+          ).encode("utf-8")
+          reservation_sha256 = hashlib.sha256(
+              reservation_raw
+          ).hexdigest()
+          marker_sha256 = hashlib.sha256(
+              marker_raw
+          ).hexdigest()
+          recovery = {
+              "schema": (
+                  "qikvrt_formalization_v2_alpha2_"
+                  "reservation_recovery_v1"
+              ),
+              "request_id": marker["request_id"],
+              "read_only": True,
+              "zenodo_http_methods": ["GET"],
+              "zenodo_mutation_count": 0,
+              "candidate": marker["candidate"],
+              "state": {
+                  "branch": marker["state_branch"],
+                  "parent": STATE_HEAD,
+                  "attempt_path": marker["state_paths"][
+                      "attempt"
+                  ],
+                  "attempt_blob": marker["failed_attempt"][
+                      "attempt_blob"
+                  ],
+                  "attempt_sha256": marker[
+                      "failed_attempt"
+                  ]["attempt_sha256"],
+                  "inventory_path": marker["state_paths"][
+                      "inventory"
+                  ],
+                  "inventory_blob": marker[
+                      "prior_inventory"
+                  ]["blob"],
+                  "inventory_sha256": (
+                      PRIOR_INVENTORY_SHA256
+                  ),
+              },
+              "authorization": {
+                  "marker_sha256": marker_sha256,
+                  "payload_sha256": marker[
+                      "authorization_payload_sha256"
+                  ],
+                  "confirm": marker["confirm"],
+              },
+              "execution": {
+                  "commit": os.environ["GITHUB_SHA"],
+                  "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                  "run_attempt": int(
+                      os.environ["GITHUB_RUN_ATTEMPT"]
+                  ),
+                  "workflow_sha256": marker["bindings"][
+                      "workflow_sha256"
+                  ],
+                  "marker_sha256": marker_sha256,
+              },
+              "diagnostic": marker["prior_inventory"],
+              "failed_reserve": marker["failed_attempt"],
+              "source": {
+                  "record_id": SOURCE_ID,
+                  "concept_record_id": CONCEPT_ID,
+                  "doi": SOURCE_DOI,
+                  "version": SOURCE_VERSION,
+                  "public_metadata_sha256": (
+                      canonical_hash(public_metadata)
+                  ),
+                  "owner_metadata_sha256": (
+                      canonical_hash(owner_metadata)
+                  ),
+                  "files": expected_files,
+                  "public_latest_verified": True,
+              },
+              "inventory": {
+                  "snapshot_sha256": canonical_hash(
+                      first_inventory
+                  ),
+                  "stable_double_snapshot": True,
+                  "account_deposition_count": len(
+                      first_inventory
+                  ),
+                  "editable_concept_draft_ids": [DRAFT_ID],
+                  "page_size": PAGE_SIZE,
+                  "page_cap": MAX_PAGES,
+                  "page_cap_reached": False,
+              },
+              "draft": {
+                  "record_id": DRAFT_ID,
+                  "concept_record_id": CONCEPT_ID,
+                  "doi": DRAFT_DOI,
+                  "submitted": False,
+                  "state": "unsubmitted",
+                  "public_record_absent": True,
+                  "self_link_verified": True,
+                  "bucket_path_sha256": bucket_hash,
+                  "metadata_sha256": canonical_hash(
+                      draft_metadata
+                  ),
+                  "version_present": version_present,
+                  "version_value": version_value,
+                  "title_matches_public_source": title_matches,
+                  "creators_match_public_source": (
+                      creators_match
+                  ),
+                  "version_missing_or_exact_source": (
+                      version_allowed
+                  ),
+                  "files": expected_files,
+                  "files_match_source_evidence": True,
+                  "recoverable_without_zenodo_mutation": True,
+              },
+              "reservation": {
+                  "state_path": marker["state_paths"][
+                      "reservation"
+                  ],
+                  "sha256": reservation_sha256,
+                  "unsigned_canonical_sha256": (
+                      UNSIGNED_RESERVATION_SHA256
+                  ),
+                  "schema_version": 2,
+                  "kind": release.RESERVATION_KIND,
+                  "phase": "reserved",
+                  "deposition_id": DRAFT_ID,
+                  "doi": DRAFT_DOI,
+                  "manifest_sha256": MANIFEST_SHA256,
+                  "metadata_sha256": METADATA_SHA256,
+                  "files_sha256": FILES_SHA256,
+                  "source_evidence_sha256": (
+                      SOURCE_EVIDENCE_SHA256
+                  ),
+                  "authorization_mac_format": (
+                      "hmac-sha256-lowercase-hex"
+                  ),
+                  "compatible_with_candidate_finalize_client": (
+                      True
+                  ),
+              },
+              "verified_at_utc": (
+                  datetime.datetime.now(datetime.timezone.utc)
+                  .replace(microsecond=0)
+                  .isoformat()
+                  .replace("+00:00", "Z")
+              ),
+          }
+          recovery_raw = (
+              json.dumps(
+                  recovery,
+                  ensure_ascii=False,
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n"
+          ).encode("utf-8")
+          if (
+              len(reservation_raw) > MAX_EVIDENCE
+              or len(recovery_raw) > MAX_EVIDENCE
+              or token.encode("utf-8") in reservation_raw
+              or token.encode("utf-8") in recovery_raw
+          ):
+              fail("recovery output is unsafe")
+          RESERVATION_OUTPUT.write_bytes(reservation_raw)
+          RECOVERY_OUTPUT.write_bytes(recovery_raw)
+          recovery_sha256 = hashlib.sha256(
+              recovery_raw
+          ).hexdigest()
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write(
+                  "reservation_sha256="
+                  + reservation_sha256
+                  + "\n"
+              )
+              output.write(
+                  "recovery_sha256="
+                  + recovery_sha256
+                  + "\n"
+              )
+              output.write(
+                  "workflow_sha256="
+                  + marker["bindings"]["workflow_sha256"]
+                  + "\n"
+              )
+              output.write(
+                  "marker_sha256="
+                  + marker_sha256
+                  + "\n"
+              )
+          print(
+              "GET_ONLY_RECOVERY_READY "
+              f"draft={DRAFT_ID} "
+              f"reservation_sha256={reservation_sha256} "
+              f"recovery_sha256={recovery_sha256}"
+          )
+          PY
+
+      - name: Upload signed reservation and GET-only recovery evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: formalization-v2-alpha2-recovery-${{ github.sha }}
+          path: .qikvrt/recovery-output/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  persist:
+    needs: reconcile
+    if: needs.reconcile.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download recovery artifact without the Zenodo secret
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: formalization-v2-alpha2-recovery-${{ github.sha }}
+          path: .qikvrt/recovery-output
+
+      - name: Atomically persist reservation and recovery evidence
+        env:
+          EXPECTED_RECOVERY_SHA256: ${{ needs.reconcile.outputs.recovery_sha256 }}
+          EXPECTED_MARKER_SHA256: ${{ needs.reconcile.outputs.marker_sha256 }}
+          EXPECTED_RESERVATION_SHA256: ${{ needs.reconcile.outputs.reservation_sha256 }}
+          EXPECTED_STATE_PARENT: ${{ needs.reconcile.outputs.state_parent }}
+          EXPECTED_WORKFLOW_SHA256: ${{ needs.reconcile.outputs.workflow_sha256 }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python -I -S -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          REPOSITORY = "Goldkelch/qik-vrt"
+          STATE_BRANCH = "qikvrt/formalization-v2-state-r2"
+          STATE_HEAD = "8cbadea631885b8ed11175fad1c7cc451d59c876"
+          ATTEMPT_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation-attempt.json"
+          )
+          INVENTORY_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-read-only-inventory.json"
+          )
+          RESERVATION_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation.json"
+          )
+          RECOVERY_PATH = (
+              "release-state/formalization-v2-alpha2/r2/"
+              "zenodo-reservation-recovery.json"
+          )
+          ATTEMPT_BLOB = (
+              "5b150fff1cef66d7026ae02a1f5b5e1f0df3553e"
+          )
+          ATTEMPT_SHA256 = (
+              "02d9fb7b3ece55be6710943ae5e2131b66b7b5b0a9c27f61d789d35268b39d66"
+          )
+          INVENTORY_BLOB = (
+              "2794fba6126a9dcb34acfcf2ee477ef168a97b4a"
+          )
+          INVENTORY_SHA256 = (
+              "56a1c7671dcd941008b3c597414bd881d46a5b53025ac91b86d97bbc7e25c6ef"
+          )
+          MANIFEST_SHA256 = (
+              "a60e6cf164cc34823945e3b949b63d0140ba4406e885f30ee1eb081805d3daed"
+          )
+          SOURCE_EVIDENCE_SHA256 = (
+              "9e11b097af8951b3590586f8b8751cca0995f59c42873823fd94ee0f7b96a550"
+          )
+          METADATA_SHA256 = (
+              "d6077f02ddcff5c6a82190fa6e12387f3dfbf4e927e55783e0945e40a975b97f"
+          )
+          FILES_SHA256 = (
+              "a69f9613770f84766fc9a679042092c78a31f58ff65dcb33316ac3fd9f5fafc5"
+          )
+          UNSIGNED_RESERVATION_SHA256 = (
+              "fe097dd5a3579aa96f540e4123ada92965e766787706272bdb69d4eb7ba58428"
+          )
+          SHA40 = re.compile(r"[0-9a-f]{40}\Z")
+          SHA64 = re.compile(r"[0-9a-f]{64}\Z")
+          DOI = "10.5281/zenodo.21518464"
+          reservation_file = Path(
+              ".qikvrt/recovery-output/zenodo-reservation.json"
+          )
+          recovery_file = Path(
+              ".qikvrt/recovery-output/"
+              "zenodo-reservation-recovery.json"
+          )
+          reservation_raw = reservation_file.read_bytes()
+          recovery_raw = recovery_file.read_bytes()
+          reservation_sha = hashlib.sha256(
+              reservation_raw
+          ).hexdigest()
+          recovery_sha = hashlib.sha256(
+              recovery_raw
+          ).hexdigest()
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          if (
+              os.environ["GITHUB_REPOSITORY"] != REPOSITORY
+              or os.environ["EXPECTED_STATE_PARENT"] != STATE_HEAD
+              or os.environ["EXPECTED_RESERVATION_SHA256"]
+              != reservation_sha
+              or os.environ["EXPECTED_RECOVERY_SHA256"]
+              != recovery_sha
+              or SHA64.fullmatch(reservation_sha) is None
+              or SHA64.fullmatch(recovery_sha) is None
+              or SHA64.fullmatch(
+                  os.environ["EXPECTED_WORKFLOW_SHA256"]
+              )
+              is None
+              or SHA64.fullmatch(
+                  os.environ["EXPECTED_MARKER_SHA256"]
+              )
+              is None
+          ):
+              fail("recovery artifact output binding differs")
+
+          reservation = json.loads(reservation_raw)
+          expected_reservation_keys = {
+              "api_base_url",
+              "authorization_mac",
+              "files_sha256",
+              "kind",
+              "manifest_sha256",
+              "metadata_sha256",
+              "phase",
+              "release_id",
+              "schema_version",
+              "software",
+              "source",
+              "source_evidence_sha256",
+          }
+          if (
+              not isinstance(reservation, dict)
+              or set(reservation) != expected_reservation_keys
+              or reservation["schema_version"] != 2
+              or reservation["kind"]
+              != "qikvrt-formalization-v2-alpha2"
+              or reservation["phase"] != "reserved"
+              or reservation["api_base_url"]
+              != "https://zenodo.org/api"
+              or reservation["release_id"]
+              != "2026-07-23-formalization-v2.0-alpha.2"
+              or reservation["manifest_sha256"]
+              != MANIFEST_SHA256
+              or reservation["metadata_sha256"]
+              != METADATA_SHA256
+              or reservation["files_sha256"] != FILES_SHA256
+              or reservation["source_evidence_sha256"]
+              != SOURCE_EVIDENCE_SHA256
+              or reservation["source"]
+              != {
+                  "record_id": 21501365,
+                  "concept_record_id": 21488115,
+                  "doi": "10.5281/zenodo.21501365",
+              }
+              or reservation["software"]
+              != {
+                  "deposition_id": 21518464,
+                  "concept_record_id": 21488115,
+                  "doi": DOI,
+              }
+              or not isinstance(
+                  reservation["authorization_mac"], str
+              )
+              or SHA64.fullmatch(
+                  reservation["authorization_mac"]
+              )
+              is None
+          ):
+              fail("reservation is not finalize-client compatible")
+          unsigned = dict(reservation)
+          unsigned.pop("authorization_mac")
+          unsigned_raw = json.dumps(
+              unsigned,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8")
+          if (
+              hashlib.sha256(unsigned_raw).hexdigest()
+              != UNSIGNED_RESERVATION_SHA256
+          ):
+              fail("unsigned reservation projection changed")
+
+          recovery = json.loads(recovery_raw)
+          if (
+              recovery.get("schema")
+              != (
+                  "qikvrt_formalization_v2_alpha2_"
+                  "reservation_recovery_v1"
+              )
+              or recovery.get("read_only") is not True
+              or recovery.get("zenodo_http_methods") != ["GET"]
+              or recovery.get("zenodo_mutation_count") != 0
+              or recovery.get("execution")
+              != {
+                  "commit": os.environ["GITHUB_SHA"],
+                  "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                  "run_attempt": int(
+                      os.environ["GITHUB_RUN_ATTEMPT"]
+                  ),
+                  "workflow_sha256": os.environ[
+                      "EXPECTED_WORKFLOW_SHA256"
+                  ],
+                  "marker_sha256": os.environ[
+                      "EXPECTED_MARKER_SHA256"
+                  ],
+              }
+              or recovery.get("candidate", {}).get(
+                  "authority_commit"
+              )
+              != "d4e45424b5c58880e403be572c0b8582c3da6f02"
+              or recovery.get("state", {}).get("parent")
+              != STATE_HEAD
+              or recovery.get("state", {}).get(
+                  "attempt_blob"
+              )
+              != ATTEMPT_BLOB
+              or recovery.get("state", {}).get(
+                  "attempt_sha256"
+              )
+              != ATTEMPT_SHA256
+              or recovery.get("state", {}).get(
+                  "inventory_blob"
+              )
+              != INVENTORY_BLOB
+              or recovery.get("state", {}).get(
+                  "inventory_sha256"
+              )
+              != INVENTORY_SHA256
+              or recovery.get("draft", {}).get("record_id")
+              != 21518464
+              or recovery.get("draft", {}).get("doi") != DOI
+              or recovery.get("draft", {}).get("submitted")
+              is not False
+              or recovery.get("draft", {}).get("state")
+              != "unsubmitted"
+              or recovery.get("draft", {}).get(
+                  "public_record_absent"
+              )
+              is not True
+              or recovery.get("draft", {}).get(
+                  "recoverable_without_zenodo_mutation"
+              )
+              is not True
+              or recovery.get("reservation", {}).get(
+                  "state_path"
+              )
+              != RESERVATION_PATH
+              or recovery.get("reservation", {}).get("sha256")
+              != reservation_sha
+              or recovery.get("reservation", {}).get(
+                  "unsigned_canonical_sha256"
+              )
+              != UNSIGNED_RESERVATION_SHA256
+              or recovery.get("reservation", {}).get(
+                  "compatible_with_candidate_finalize_client"
+              )
+              is not True
+          ):
+              fail("GET-only recovery evidence differs")
+
+          base = (
+              "https://api.github.com/repos/" + REPOSITORY
+          )
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": (
+                  "Bearer " + os.environ["GH_API_TOKEN"]
+              ),
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": (
+                  "qikvrt-formalization-alpha2-recovery-state"
+              ),
+          }
+
+          def api(method, path, body=None, *, missing=False):
+              if method not in {"GET", "POST", "PATCH"}:
+                  fail("GitHub state method is outside policy")
+              data = (
+                  None
+                  if body is None
+                  else json.dumps(
+                      body, separators=(",", ":")
+                  ).encode("utf-8")
+              )
+              request = urllib.request.Request(
+                  base + path,
+                  data=data,
+                  method=method,
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(
+                      request, timeout=30
+                  ) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  raise
+
+          def content(path, ref, *, missing=False):
+              suffix = (
+                  "/contents/"
+                  + urllib.parse.quote(path, safe="/")
+                  + "?"
+                  + urllib.parse.urlencode({"ref": ref})
+              )
+              value = api(
+                  "GET", suffix, missing=missing
+              )
+              if value is None:
+                  return None, None
+              if not isinstance(value, dict):
+                  fail("GitHub state content is malformed")
+              encoded = "".join(
+                  str(value.get("content", "")).split()
+              )
+              try:
+                  raw = base64.b64decode(
+                      encoded, validate=True
+                  )
+              except (TypeError, ValueError):
+                  fail("GitHub state content is not canonical base64")
+              return raw, value.get("sha")
+
+          encoded_ref = urllib.parse.quote(
+              "heads/" + STATE_BRANCH, safe="/"
+          )
+          state_ref = api(
+              "GET", "/git/ref/" + encoded_ref
+          )
+          state_obj = (
+              state_ref.get("object")
+              if isinstance(state_ref, dict)
+              else None
+          )
+          parent = (
+              state_obj.get("sha")
+              if isinstance(state_obj, dict)
+              else None
+          )
+          if parent != STATE_HEAD:
+              fail("state CAS parent moved before atomic persist")
+          attempt_raw, attempt_blob = content(
+              ATTEMPT_PATH, STATE_HEAD
+          )
+          inventory_raw, inventory_blob = content(
+              INVENTORY_PATH, STATE_HEAD
+          )
+          if (
+              attempt_raw is None
+              or attempt_blob != ATTEMPT_BLOB
+              or hashlib.sha256(attempt_raw).hexdigest()
+              != ATTEMPT_SHA256
+              or inventory_raw is None
+              or inventory_blob != INVENTORY_BLOB
+              or hashlib.sha256(inventory_raw).hexdigest()
+              != INVENTORY_SHA256
+          ):
+              fail("state inputs changed before atomic persist")
+          for path in (RESERVATION_PATH, RECOVERY_PATH):
+              raw, _ = content(
+                  path, STATE_HEAD, missing=True
+              )
+              if raw is not None:
+                  fail("recovery output already exists")
+
+          commit_value = api(
+              "GET", "/git/commits/" + STATE_HEAD
+          )
+          tree_value = (
+              commit_value.get("tree")
+              if isinstance(commit_value, dict)
+              else None
+          )
+          base_tree = (
+              tree_value.get("sha")
+              if isinstance(tree_value, dict)
+              else None
+          )
+          if (
+              not isinstance(base_tree, str)
+              or SHA40.fullmatch(base_tree) is None
+          ):
+              fail("state base tree is malformed")
+
+          rows = []
+          expected_blobs = {}
+          for state_path, raw in (
+              (RESERVATION_PATH, reservation_raw),
+              (RECOVERY_PATH, recovery_raw),
+          ):
+              value = api(
+                  "POST",
+                  "/git/blobs",
+                  {
+                      "content": base64.b64encode(
+                          raw
+                      ).decode("ascii"),
+                      "encoding": "base64",
+                  },
+              )
+              blob = (
+                  value.get("sha")
+                  if isinstance(value, dict)
+                  else None
+              )
+              if (
+                  not isinstance(blob, str)
+                  or SHA40.fullmatch(blob) is None
+              ):
+                  fail("created state blob is malformed")
+              expected_blobs[state_path] = blob
+              rows.append(
+                  {
+                      "path": state_path,
+                      "mode": "100644",
+                      "type": "blob",
+                      "sha": blob,
+                  }
+              )
+          tree = api(
+              "POST",
+              "/git/trees",
+              {"base_tree": base_tree, "tree": rows},
+          )
+          tree_sha = (
+              tree.get("sha")
+              if isinstance(tree, dict)
+              else None
+          )
+          if (
+              not isinstance(tree_sha, str)
+              or SHA40.fullmatch(tree_sha) is None
+              or tree_sha == base_tree
+          ):
+              fail("atomic recovery tree was not created")
+          commit = api(
+              "POST",
+              "/git/commits",
+              {
+                  "message": (
+                      "Recover formalization alpha.2 "
+                      "Zenodo reservation by GET only"
+                  ),
+                  "tree": tree_sha,
+                  "parents": [STATE_HEAD],
+              },
+          )
+          commit_sha = (
+              commit.get("sha")
+              if isinstance(commit, dict)
+              else None
+          )
+          if (
+              not isinstance(commit_sha, str)
+              or SHA40.fullmatch(commit_sha) is None
+          ):
+              fail("atomic recovery commit is malformed")
+          updated = api(
+              "PATCH",
+              "/git/refs/" + encoded_ref,
+              {"sha": commit_sha, "force": False},
+          )
+          updated_obj = (
+              updated.get("object")
+              if isinstance(updated, dict)
+              else None
+          )
+          if (
+              not isinstance(updated_obj, dict)
+              or updated_obj.get("sha") != commit_sha
+          ):
+              fail("state CAS update did not return recovery commit")
+
+          final_ref = api(
+              "GET", "/git/ref/" + encoded_ref
+          )
+          final_obj = (
+              final_ref.get("object")
+              if isinstance(final_ref, dict)
+              else None
+          )
+          if (
+              not isinstance(final_obj, dict)
+              or final_obj.get("sha") != commit_sha
+          ):
+              fail("state ref does not identify recovery commit")
+          for state_path, expected_raw in (
+              (RESERVATION_PATH, reservation_raw),
+              (RECOVERY_PATH, recovery_raw),
+          ):
+              actual_raw, actual_blob = content(
+                  state_path, commit_sha
+              )
+              if (
+                  actual_raw != expected_raw
+                  or actual_blob
+                  != expected_blobs[state_path]
+              ):
+                  fail("persisted recovery bytes differ")
+          print(
+              "RECOVERY_STATE_COMMITTED "
+              f"commit={commit_sha} "
+              f"reservation_sha256={reservation_sha} "
+              f"recovery_sha256={recovery_sha}"
+          )
+          PY
+
+      - name: Upload atomically persisted recovery bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: formalization-v2-alpha2-recovery-persisted-${{ github.sha }}
+          path: .qikvrt/recovery-output/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
