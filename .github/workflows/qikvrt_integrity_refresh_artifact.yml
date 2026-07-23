@@ -1,0 +1,30 @@
+name: QIKVRT integrity refresh artifact
+
+on:
+  pull_request:
+    paths:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Generate deterministic integrity outputs
+        run: python3 tools/qikvrt_integrity.py generate
+      - name: Verify generated outputs
+        run: python3 tools/qikvrt_integrity.py verify
+      - name: Upload integrity outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-integrity-refresh
+          path: |
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
