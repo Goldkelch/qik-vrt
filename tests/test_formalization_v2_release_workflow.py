@@ -127,13 +127,13 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
                 "feature_branch": "agent/effect-ack-lean-v1",
                 "reserve_ref": (
                     "refs/heads/automation/"
-                    "formalization-v2-alpha2-reserve-20260723"
+                    "formalization-v2-alpha2-reserve-20260723-r2"
                 ),
                 "finalize_ref": (
                     "refs/heads/automation/"
-                    "formalization-v2-alpha2-finalize-20260723"
+                    "formalization-v2-alpha2-finalize-20260723-r2"
                 ),
-                "state_branch": "qikvrt/formalization-v2-state",
+                "state_branch": "qikvrt/formalization-v2-state-r2",
             },
         )
         self.assertTrue(
@@ -146,7 +146,7 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
             self.marker["reservation"],
             {
                 "state_path": (
-                    "release-state/formalization-v2-alpha2/"
+                    "release-state/formalization-v2-alpha2/r2/"
                     "zenodo-reservation.json"
                 ),
                 "evidence_sha256": ZERO64,
@@ -354,11 +354,11 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
         for workflow, branch in (
             (
                 self.reserve,
-                "automation/formalization-v2-alpha2-reserve-20260723",
+                "automation/formalization-v2-alpha2-reserve-20260723-r2",
             ),
             (
                 self.finalize,
-                "automation/formalization-v2-alpha2-finalize-20260723",
+                "automation/formalization-v2-alpha2-finalize-20260723-r2",
             ),
         ):
             trigger = workflow.split("permissions:", 1)[0]
