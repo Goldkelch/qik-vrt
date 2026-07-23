@@ -1,6 +1,6 @@
 # Gemini repository instructions
 
-Start with `AI_BOOTSTRAP.md`. Parse `AI_CONTEXT.json`, read the listed files in
+Start with the root file `AI`. Parse `AI_CONTEXT.json`, read the listed files in
 order, and verify the actual repository/ref before continuing.
 
 Do not rely on prior-chat memory. Do not infer that the implementation is open
