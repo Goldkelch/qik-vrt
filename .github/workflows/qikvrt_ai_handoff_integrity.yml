@@ -24,20 +24,17 @@ jobs:
           fetch-depth: 0
       - name: Validate AI handoff
         run: python3 tools/ai_handoff.py
-      - name: Regenerate and verify repository integrity
+      - name: Remove one-shot repair workflow and regenerate integrity
         run: |
           set -euo pipefail
+          git rm .github/workflows/qikvrt_ai_handoff_integrity.yml
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit regenerated integrity outputs
+      - name: Commit final integrity outputs
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          if git diff --cached --quiet; then
-            echo "Integrity outputs already current."
-            exit 0
-          fi
-          git commit -m "fix: regenerate integrity for AI handoff"
+          git commit -m "fix: finalize AI handoff integrity"
           git push origin HEAD:agent/cross-ai-session-handoff
