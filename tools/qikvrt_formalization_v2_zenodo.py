@@ -53,6 +53,23 @@ RECOVERY_DRAFT_CREATED = "2026-07-23T00:33:37.286596+00:00"
 RECOVERY_DRAFT_METADATA_SHA256 = (
     "dbd3cc9fb13448bab03c5b7c37dc3024eca1812aad3f0e11dea8da434b0662ea"
 )
+RECOVERY_DRAFT_FILE_FINGERPRINT = (
+    (
+        "qik-vrt-effect-ack-source-export-provenance.json",
+        1082,
+        "898967a157d5b54c4959037d4a4bb876",
+    ),
+    (
+        "qik-vrt-v2026.07.22-effect-ack-universality-1.0.0-source.tar.gz",
+        102094416,
+        "645eb72d099a303da91ce37ceb3e95bf",
+    ),
+    (
+        "qik-vrt-v2026.07.22-effect-ack-universality-1.0.0-source.tar.gz.sha256",
+        130,
+        "e786e1e10f859d1960519930438532e9",
+    ),
+)
 MAX_RELEASE_FILES = 100
 MAX_RELEASE_BYTES = zenodo.MAX_UPLOAD_BYTES
 
@@ -329,7 +346,34 @@ def _require_exact_recovery_draft_identity(draft: Mapping[str, Any]) -> None:
         if isinstance(metadata, dict)
         else None
     )
-    if metadata_sha256 != RECOVERY_DRAFT_METADATA_SHA256 or draft.get("files") != []:
+    files = draft.get("files")
+    fingerprint: list[tuple[str, int, str]] = []
+    if isinstance(files, list):
+        for item in files:
+            if not isinstance(item, dict):
+                fingerprint = []
+                break
+            name = item.get("filename", item.get("key"))
+            size = item.get("filesize", item.get("size"))
+            checksum = item.get("checksum")
+            if isinstance(size, str) and size.isdecimal():
+                size = int(size)
+            if isinstance(checksum, str) and checksum.startswith("md5:"):
+                checksum = checksum[4:]
+            if (
+                not isinstance(name, str)
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or not isinstance(checksum, str)
+                or zenodo.HEX_32.fullmatch(checksum) is None
+            ):
+                fingerprint = []
+                break
+            fingerprint.append((name, size, checksum))
+    if (
+        metadata_sha256 != RECOVERY_DRAFT_METADATA_SHA256
+        or tuple(sorted(fingerprint)) != RECOVERY_DRAFT_FILE_FINGERPRINT
+    ):
         raise zenodo.ZenodoError(
             "audited formalization recovery draft changed identity or state"
         )

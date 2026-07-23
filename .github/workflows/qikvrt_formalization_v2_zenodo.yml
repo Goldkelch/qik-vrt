@@ -6,7 +6,7 @@ name: QIK-VRT formalization v2 Zenodo publication
 on:
   push:
     branches:
-      - automation/formalization-v2-publish-20260723-v4
+      - automation/formalization-v2-publish-20260723-v5
     paths:
       - release/formalization-v2-request.json
 
@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 7
+          fetch-depth: 8
           persist-credentials: false
 
       - name: Validate inert or marker-only publication request
@@ -53,19 +53,21 @@ jobs:
           from pathlib import Path
 
           MARKER_PATH = "release/formalization-v2-request.json"
-          AUTOMATION_REF = "refs/heads/automation/formalization-v2-publish-20260723-v4"
+          AUTOMATION_REF = "refs/heads/automation/formalization-v2-publish-20260723-v5"
           AUTHORITY = "Goldkelch/qik-vrt"
           MIRROR = "ingolf-lohmann/qik-vrt"
           FEATURE = "agent/manuscript-formalization-v2-alpha"
           AUTHORITY_BASE = "d037a44d2893b9ea094d7cad55954223eb90a186"
           MIRROR_BASE = "7aaee4e1b182e18c9f0e927685f31d3c1190031a"
           AUTHORITY_ANCESTRY = (
+              ("3aa271ab38c022232b744dbac2faa64c3bafd74d", "69b19b6e3b0da8cf2c279222f761e2c810089b41", "af6762da33e19f3a1525b3a726eabc70994542b0"),
               ("af6762da33e19f3a1525b3a726eabc70994542b0", "6d14ac019cde5be15ea12fd6993e015efd041d26", "9624466b84dc785d9bc6d18ff6b3c0966de89684"),
               ("9624466b84dc785d9bc6d18ff6b3c0966de89684", "f45b713bddbb6377e0f3ebb3cb2061235f41ceb4", "8d39c93b738ac53ea952f8d8dda78aea973961cd"),
               ("8d39c93b738ac53ea952f8d8dda78aea973961cd", "7d4f6238063eb18c56cef8d03f111b7ddc1530a1", "ed4f61fb4f09043eb8683932a1fed5222ad524f7"),
               ("ed4f61fb4f09043eb8683932a1fed5222ad524f7", "00e71ed364b388727aafea133122eda02c046692", AUTHORITY_BASE),
           )
           MIRROR_ANCESTRY = (
+              ("9b3f87ed1fdd642137387d0892de9ea533bc709f", "69b19b6e3b0da8cf2c279222f761e2c810089b41", "6d6d1866779f1d907b8a33d1515f951d7cbd2a81"),
               ("6d6d1866779f1d907b8a33d1515f951d7cbd2a81", "6d14ac019cde5be15ea12fd6993e015efd041d26", "661b9ecd66bd91d1359e3d47ab77a8991522b662"),
               ("661b9ecd66bd91d1359e3d47ab77a8991522b662", "f45b713bddbb6377e0f3ebb3cb2061235f41ceb4", "48a9f2c642ed6fb22daa4d841f606d33d5b65c37"),
               ("48a9f2c642ed6fb22daa4d841f606d33d5b65c37", "7d4f6238063eb18c56cef8d03f111b7ddc1530a1", "c9a7bcabebd66768f2f728d8b35a9317c5ea7323"),
@@ -91,6 +93,7 @@ jobs:
               "client_test_sha256": "tests/test_formalization_v2_zenodo.py",
               "workflow_sha256": ".github/workflows/qikvrt_formalization_v2_zenodo.yml",
               "recovery_evidence_sha256": "release/formalization-v2-draft-recovery.json",
+              "direct_inventory_sha256": "release/formalization-v2-direct-draft-inventory.json",
               "archive_sha256": "release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.1.zip",
           }
 
@@ -429,12 +432,14 @@ jobs:
           AUTHORITY_BASE = "d037a44d2893b9ea094d7cad55954223eb90a186"
           MIRROR_BASE = "7aaee4e1b182e18c9f0e927685f31d3c1190031a"
           AUTHORITY_ANCESTRY = (
+              ("3aa271ab38c022232b744dbac2faa64c3bafd74d", "69b19b6e3b0da8cf2c279222f761e2c810089b41", "af6762da33e19f3a1525b3a726eabc70994542b0"),
               ("af6762da33e19f3a1525b3a726eabc70994542b0", "6d14ac019cde5be15ea12fd6993e015efd041d26", "9624466b84dc785d9bc6d18ff6b3c0966de89684"),
               ("9624466b84dc785d9bc6d18ff6b3c0966de89684", "f45b713bddbb6377e0f3ebb3cb2061235f41ceb4", "8d39c93b738ac53ea952f8d8dda78aea973961cd"),
               ("8d39c93b738ac53ea952f8d8dda78aea973961cd", "7d4f6238063eb18c56cef8d03f111b7ddc1530a1", "ed4f61fb4f09043eb8683932a1fed5222ad524f7"),
               ("ed4f61fb4f09043eb8683932a1fed5222ad524f7", "00e71ed364b388727aafea133122eda02c046692", AUTHORITY_BASE),
           )
           MIRROR_ANCESTRY = (
+              ("9b3f87ed1fdd642137387d0892de9ea533bc709f", "69b19b6e3b0da8cf2c279222f761e2c810089b41", "6d6d1866779f1d907b8a33d1515f951d7cbd2a81"),
               ("6d6d1866779f1d907b8a33d1515f951d7cbd2a81", "6d14ac019cde5be15ea12fd6993e015efd041d26", "661b9ecd66bd91d1359e3d47ab77a8991522b662"),
               ("661b9ecd66bd91d1359e3d47ab77a8991522b662", "f45b713bddbb6377e0f3ebb3cb2061235f41ceb4", "48a9f2c642ed6fb22daa4d841f606d33d5b65c37"),
               ("48a9f2c642ed6fb22daa4d841f606d33d5b65c37", "7d4f6238063eb18c56cef8d03f111b7ddc1530a1", "c9a7bcabebd66768f2f728d8b35a9317c5ea7323"),
@@ -451,6 +456,7 @@ jobs:
               "client_test_sha256": "tests/test_formalization_v2_zenodo.py",
               "workflow_sha256": ".github/workflows/qikvrt_formalization_v2_zenodo.yml",
               "recovery_evidence_sha256": "release/formalization-v2-draft-recovery.json",
+              "direct_inventory_sha256": "release/formalization-v2-direct-draft-inventory.json",
               "archive_sha256": "release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.1.zip",
           }
 

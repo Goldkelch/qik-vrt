@@ -348,6 +348,26 @@ class FormalizationV2ZenodoTests(unittest.TestCase):
             "a" * 64,
         )
 
+    @staticmethod
+    def audited_recovery_files() -> list[dict[str, object]]:
+        return [
+            {
+                "id": f"inherited-{index}",
+                "filename": name,
+                "filesize": size,
+                "checksum": checksum,
+                "links": {
+                    "self": (
+                        "https://zenodo.org/api/files/formalization-v2-bucket/"
+                        + urllib.parse.quote(name, safe="")
+                    )
+                },
+            }
+            for index, (name, size, checksum) in enumerate(
+                release.RECOVERY_DRAFT_FILE_FINGERPRINT
+            )
+        ]
+
     def test_resumes_only_identified_source_latest_draft_and_publishes(self) -> None:
         transport = FakeTransport(self.metadata, existing_draft=True)
         result = self.invoke(transport)
@@ -416,7 +436,7 @@ class FormalizationV2ZenodoTests(unittest.TestCase):
             "state": "unsubmitted",
             "submitted": False,
             "metadata": recovery_metadata,
-            "files": [],
+            "files": self.audited_recovery_files(),
             "links": {
                 "self": (
                     "https://zenodo.org/api/deposit/depositions/"
@@ -459,7 +479,7 @@ class FormalizationV2ZenodoTests(unittest.TestCase):
                 "upload_type": "software",
                 "prereserve_doi": {"doi": release.RECOVERY_DRAFT_DOI},
             },
-            "files": [],
+            "files": self.audited_recovery_files(),
             "links": {},
         }
         transport = FakeTransport(
@@ -480,6 +500,45 @@ class FormalizationV2ZenodoTests(unittest.TestCase):
                 for method, path, _body in transport.calls
             )
         )
+
+    def test_exact_recovery_file_fingerprint_rejects_every_delta(self) -> None:
+        metadata = {
+            "title": "Inherited predecessor metadata",
+            "upload_type": "software",
+            "creators": [{"name": "Lohmann, Ingolf"}],
+            "prereserve_doi": {"doi": release.RECOVERY_DRAFT_DOI},
+        }
+        baseline: dict[str, object] = {
+            "id": release.RECOVERY_DRAFT_RECORD_ID,
+            "conceptrecid": release.CONCEPT_RECORD_ID,
+            "created": release.RECOVERY_DRAFT_CREATED,
+            "state": "unsubmitted",
+            "submitted": False,
+            "metadata": metadata,
+            "files": self.audited_recovery_files(),
+        }
+        metadata_sha256 = hashlib.sha256(zenodo._json_bytes(metadata)).hexdigest()
+        with mock.patch.object(
+            release, "RECOVERY_DRAFT_METADATA_SHA256", metadata_sha256
+        ):
+            release._require_exact_recovery_draft_identity(baseline)
+            for name, mutate in (
+                ("removed", lambda files: files.pop()),
+                ("name", lambda files: files[0].__setitem__("filename", "other")),
+                ("size", lambda files: files[0].__setitem__("filesize", 1083)),
+                ("checksum", lambda files: files[0].__setitem__("checksum", "0" * 32)),
+                ("added", lambda files: files.append(copy.deepcopy(files[0]))),
+            ):
+                with self.subTest(name=name):
+                    candidate = copy.deepcopy(baseline)
+                    files = candidate["files"]
+                    assert isinstance(files, list)
+                    mutate(files)
+                    with self.assertRaisesRegex(
+                        zenodo.ZenodoError,
+                        "recovery draft changed identity or state",
+                    ):
+                        release._require_exact_recovery_draft_identity(candidate)
 
     def test_recovery_state_delta_blocks_before_remote_mutation(self) -> None:
         recovery_metadata = copy.deepcopy(self.metadata)
