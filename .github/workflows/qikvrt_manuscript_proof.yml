@@ -30,10 +30,32 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+      - name: Install Lean toolchain and attempt initial build
+        id: lean_action
+        continue-on-error: true
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           lake-package-directory: formalization/QIKVRT_Formalization_v2.0
           test: false
+      - name: Capture complete Lean build diagnostics
+        shell: bash
+        run: |
+          set +e
+          lake build > lean-build.log 2>&1
+          status=$?
+          printf '%s\n' "$status" > lean-build.exit
+          exit 0
+      - name: Upload Lean build diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6
+        with:
+          name: qikvrt-lean-build-diagnostics
+          path: |
+            formalization/QIKVRT_Formalization_v2.0/lean-build.log
+            formalization/QIKVRT_Formalization_v2.0/lean-build.exit
+          if-no-files-found: error
+      - name: Enforce successful Lean build
+        run: test "$(cat lean-build.exit)" = "0"
       - name: Verify locked manuscript bytes and page count
         run: python3 scripts/verify_source_lock.py
       - name: Verify generated source inventory is current
