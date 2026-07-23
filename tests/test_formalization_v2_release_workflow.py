@@ -27,6 +27,8 @@ EFFECT = (
     / "formalization/QIKVRT_Formalization_v2.0/release_authorization/EFFECT_ACK_DONE.json"
 )
 MAKEFILE = ROOT / "Makefile"
+INSPECTION_WORKFLOW = ROOT / ".github/workflows/qikvrt_formalization_v2_inspect.yml"
+INSPECTION_MARKER = ROOT / "release/formalization-v2-inspection-request.json"
 AUTOMATION_BRANCH = "automation/formalization-v2-publish-20260723-v2"
 FEATURE_BRANCH = "agent/manuscript-formalization-v2-alpha"
 
@@ -222,6 +224,24 @@ class FormalizationV2ReleaseWorkflowTests(unittest.TestCase):
             self.assertRegex(action, r"@(?:[0-9a-f]{40}|[0-9a-f]{64})$")
         for forbidden in ("git push", "gh pr", "gh release", "contents: write"):
             self.assertNotIn(forbidden, self.workflow)
+
+    def test_draft_inspection_is_inert_read_only_and_hash_bound(self) -> None:
+        inspection = INSPECTION_WORKFLOW.read_text(encoding="utf-8")
+        marker = json.loads(INSPECTION_MARKER.read_text(encoding="utf-8"))
+        self.assertEqual(marker["state"], "inactive")
+        self.assertEqual(marker["confirm"], "NOT_AUTHORIZED")
+        self.assertTrue(all(value == "0" * 64 for value in marker["bindings"].values()))
+        self.assertIn("automation/formalization-v2-inspect-20260723", inspection)
+        self.assertIn("release/formalization-v2-inspection-request.json", inspection)
+        self.assertIn("INSPECT_ZENODO_FORMALIZATION_V2_DRAFT_READ_ONLY", inspection)
+        self.assertIn('["M\\t" + MARKER]', inspection)
+        self.assertIn('method="GET"', inspection)
+        for method in ('method="POST"', 'method="PUT"', 'method="PATCH"', 'method="DELETE"'):
+            self.assertNotIn(method, inspection)
+        uses = re.findall(r"(?m)^\s*uses:\s*([^\s#]+)", inspection)
+        self.assertTrue(uses)
+        for action in uses:
+            self.assertRegex(action, r"@(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
     def test_release_tests_are_part_of_root_test_and_candidate_workflow(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
