@@ -23,8 +23,10 @@
     "bootstrap_posix": "tools/bootstrap-runtime.sh",
     "bootstrap_windows": "tools/bootstrap-runtime.ps1",
     "adaptive_runtime": ".github/workflows/qikvrt_adaptive_runtime.yml",
-    "lean_cache_workflow": ".github/workflows/qikvrt_manuscript_proof.yml",
-    "principle": "Capabilities accumulate through verified reuse, exact locks, cache contracts, tests, provenance, diagnostics, and recovery."
+    "optional_capabilities": {
+      "lean_cache_workflow": ".github/workflows/qikvrt_manuscript_proof.yml"
+    },
+    "principle": "Capabilities accumulate through verified reuse, exact locks, cache contracts, tests, provenance, diagnostics, and recovery. Optional capabilities are required only when their corresponding repository workload is present."
   },
   "project": {
     "name": "QIK-VRT",
@@ -66,7 +68,7 @@
       "Resolve repository identity and current Git ref.",
       "Read all required files in order.",
       "Run python3 tools/ai_handoff.py before task work.",
-      "Inspect the latest verified checkpoint, open pull requests, checks, runtime caches, and integrity authorities relevant to the task.",
+      "Inspect the latest verified checkpoint, open pull requests, checks, required runtime caches, available optional capabilities, and integrity authorities relevant to the task.",
       "State uncertainties explicitly; do not reconstruct missing facts from model memory."
     ],
     "work": [
