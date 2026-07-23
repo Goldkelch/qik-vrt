@@ -375,6 +375,17 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
             self.assertIn("cancel-in-progress: false", workflow)
             self.assertNotIn("access_token=", workflow.lower())
             self.assertIn('"force": False', workflow)
+            validator_checkout = workflow.split(
+                "- name: Bind validator to CPython", 1
+            )[0]
+            self.assertEqual(
+                validator_checkout.count("fetch-depth: 3"),
+                1,
+                "validator must fetch marker, candidate, and candidate parent",
+            )
+            self.assertNotIn("fetch-depth: 2", validator_checkout)
+            self.assertEqual(workflow.count("fetch-depth: 3"), 1)
+            self.assertEqual(workflow.count("fetch-depth: 2"), 1)
             for action in re.findall(r"(?m)^\s*uses:\s*([^\s#]+)", workflow):
                 self.assertRegex(action, r"@[0-9a-f]{40}$")
         intent = self.reserve.index(
