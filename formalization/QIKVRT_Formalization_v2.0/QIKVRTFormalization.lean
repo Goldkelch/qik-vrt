@@ -3,6 +3,7 @@ import QIKVRTFormalization.Foundation.ImageComplement
 import QIKVRTFormalization.Process.Gates
 import QIKVRTFormalization.Process.GateCompleteness
 import QIKVRTFormalization.Process.ShiftInvariance
+import QIKVRTFormalization.Escape.FiniteStages
 import QIKVRTFormalization.Retrocausality.ForwardProcess
 import QIKVRTFormalization.Retrocausality.Reclassification
 import QIKVRTFormalization.Physics.EmpiricalBridge
@@ -13,6 +14,7 @@ import QIKVRTFormalization.Claims.Batch02Counterexamples
 import QIKVRTFormalization.Claims.Batch02Dimensions
 import QIKVRTFormalization.Claims.Batch02Factorization
 import QIKVRTFormalization.Claims.Batch04
+import QIKVRTFormalization.Claims.Batch05
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.

@@ -1,0 +1,41 @@
+name: QIKVRT escape stages integrity
+
+on:
+  push:
+    branches:
+      - agent/escape-stages-batch06
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-escape-stages-integrity
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: agent/escape-stages-batch06
+          fetch-depth: 0
+      - name: Regenerate and verify repository integrity
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Commit regenerated integrity outputs
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "Integrity outputs already current."
+            exit 0
+          fi
+          git commit -m "fix: regenerate integrity for escape-stage proof batch"
+          git push origin HEAD:agent/escape-stages-batch06
