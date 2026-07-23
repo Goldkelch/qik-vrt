@@ -26,7 +26,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
           EVENT_PR: ${{ github.event.pull_request.number }}
           HEAD_REF: ${{ github.head_ref }}
           REF_NAME: ${{ github.ref_name }}
@@ -44,17 +43,30 @@ jobs:
 
           update_status() {
             body="$1"
-            printf '%s\n\n%s\n' "$MARKER" "$body" > /tmp/qikvrt-status.md
             if [ -z "$pr" ]; then
               printf '%s\n' "$body"
               return
             fi
             comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq '.[] | select(.body | contains("<!-- qikvrt-live-status-watch -->")) | .id' | tail -n 1)"
             if [ -n "$comment_id" ]; then
-              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" --input /tmp/qikvrt-status.md >/dev/null
+              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null
             else
-              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" --input /tmp/qikvrt-status.md >/dev/null
+              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" >/dev/null
             fi
+          }
+
+          latest_conclusion() {
+            workflow_name="$1"
+            printf '%s' "$runs" | jq -r --arg name "$workflow_name" '[.workflow_runs[] | select(.name == $name and .status == "completed")][0].conclusion // "missing"'
+          }
+
+          gate_icon() {
+            case "$1" in
+              success) printf '✅ PASS' ;;
+              failure|cancelled|timed_out|action_required|startup_failure|stale) printf '❌ BLOCK' ;;
+              queued|in_progress|waiting|requested|pending) printf '🔄 RUNNING' ;;
+              *) printf '⬜ PENDING' ;;
+            esac
           }
 
           cycle=0
@@ -64,12 +76,69 @@ jobs:
             active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
             active_count="$(printf '%s' "$active" | jq 'length')"
             completed="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and .status == "completed")][0:8]')"
-            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+            ci="$(latest_conclusion 'QIKVRT CI')"
+            proof="$(latest_conclusion 'QIK-VRT manuscript proof coverage')"
+            integrity="$(latest_conclusion 'QIKVRT integrity materialization')"
+
+            evidence="missing"
+            if gh api -H 'Accept: application/vnd.github+json' "repos/$REPOSITORY/contents/.qikvrt/evidence/integrity_materialization_latest.json?ref=$branch" >/dev/null 2>&1; then
+              evidence="success"
+            fi
+
+            formalization="$proof"
+            origin_guard="$integrity"
+
+            passed=0
+            for state in "$formalization" "$proof" "$origin_guard" "$integrity" "$evidence" "$ci"; do
+              test "$state" = success && passed=$((passed + 1)) || true
+            done
+            total=6
+            percent=$((passed * 100 / total))
+            filled=$((percent / 5))
+            empty=$((20 - filled))
+            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
+
+            final_state="PENDING"
+            if [ "$passed" -eq "$total" ]; then
+              final_state="PASS"
+            elif [ "$ci" = failure ] || [ "$proof" = failure ] || [ "$integrity" = failure ]; then
+              final_state="BLOCK"
+            fi
 
             active_lines="$(printf '%s' "$active" | jq -r 'if length == 0 then "- none" else .[] | "- " + .name + " — " + .status + " — run " + (.run_number|tostring) end')"
             completed_lines="$(printf '%s' "$completed" | jq -r 'if length == 0 then "- none" else .[] | "- " + .name + " — " + (.conclusion // "unknown") + " — run " + (.run_number|tostring) end')"
+            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-            update_status "## QIKVRT live repository status\n\n- Repository: \`$REPOSITORY\`\n- Branch: \`$branch\`\n- Observation cycle: \`$cycle\`\n- Observed at: \`$now\`\n- Active external runs: \`$active_count\`\n\n### Active\n$active_lines\n\n### Latest completed\n$completed_lines\n\nThe next cycle starts only after this cycle has completed, followed by a five-second pause."
+            body="$MARKER
+          ## QIKVRT live repository status
+
+          **Relative progress:** \`[$bar] $percent% ($passed/$total gates)\`
+
+          | Gate | State |
+          |---|---|
+          | Formalization modules | $(gate_icon "$formalization") |
+          | Manuscript / Lean proof coverage | $(gate_icon "$proof") |
+          | Authoritative head-origin guard | $(gate_icon "$origin_guard") |
+          | Integrity materialization | $(gate_icon "$integrity") |
+          | Persisted integrity evidence | $(gate_icon "$evidence") |
+          | Full repository CI | $(gate_icon "$ci") |
+          | **Final release state** | **$final_state** |
+
+          - Repository: \`$REPOSITORY\`
+          - Branch: \`$branch\`
+          - Observation cycle: \`$cycle\`
+          - Observed at: \`$now\`
+          - Active external runs: \`$active_count\`
+
+          ### Active
+          $active_lines
+
+          ### Latest completed
+          $completed_lines
+
+          A new cycle starts only after the current cycle has completed, followed by a five-second pause."
+            update_status "$body"
 
             if [ "$active_count" -eq 0 ]; then
               break
