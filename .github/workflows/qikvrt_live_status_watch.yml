@@ -1,0 +1,120 @@
+name: QIKVRT live status watch
+
+on:
+  pull_request:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-live-status-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/qikvrt-status-watch'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Observe repository workflows serially
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          WATCH_WORKFLOW: QIKVRT live status watch
+          MARKER: '<!-- qikvrt-live-status-watch -->'
+        run: |
+          set -euo pipefail
+          pr="$EVENT_PR"
+          test -n "$pr"
+          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+
+          update_status() {
+            body="$1"
+            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
+            if [ -n "$comment_id" ]; then
+              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
+
+$body" >/dev/null
+            else
+              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
+
+$body" >/dev/null
+            fi
+          }
+
+          cycle=0
+          while :; do
+            cycle=$((cycle + 1))
+            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
+            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
+            active_count="$(printf '%s' "$active" | jq 'length')"
+            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
+
+            gate_status() {
+              pattern="$1"
+              match="$(printf '%s' "$latest" | jq --arg p "$pattern" '[.[] | select(.name | test($p; "i"))][0] // empty')"
+              if [ -z "$match" ]; then printf 'PENDING'; return; fi
+              status="$(printf '%s' "$match" | jq -r '.status')"
+              conclusion="$(printf '%s' "$match" | jq -r '.conclusion // ""')"
+              if [ "$status" != "completed" ]; then printf 'RUNNING';
+              elif [ "$conclusion" = "success" ]; then printf 'PASS';
+              else printf 'BLOCK'; fi
+            }
+
+            formalization="$(gate_status 'manuscript proof coverage|formalization')"
+            manuscript="$(gate_status 'manuscript proof coverage')"
+            origin_guard="PASS"
+            integrity="$(gate_status 'integrity materialization')"
+            evidence="PENDING"
+            ci="$(gate_status '^QIKVRT CI$')"
+
+            if gh api "repos/$REPOSITORY/contents/.qikvrt/evidence/integrity_materialization_latest.json?ref=$branch" >/dev/null 2>&1; then
+              evidence="PASS"
+            fi
+
+            statuses="$formalization $manuscript $origin_guard $integrity $evidence $ci"
+            passed="$(printf '%s\n' $statuses | grep -c '^PASS$' || true)"
+            total=6
+            percent=$((passed * 100 / total))
+            filled=$((percent / 5))
+            empty=$((20 - filled))
+            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
+            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            active_lines="$(printf '%s' "$active" | jq -r 'if length == 0 then "- none" else .[] | "- " + .name + " — " + .status + " — run " + (.run_number|tostring) end')"
+
+            update_status "## QIKVRT live repository status
+
+**Progress:** \`[$bar] $percent% ($passed/$total gates)\`
+
+| Gate | Status |
+|---|---|
+| Formalization modules | **$formalization** |
+| Manuscript / Lean proof coverage | **$manuscript** |
+| Authoritative head-origin guard | **$origin_guard** |
+| Integrity materialization | **$integrity** |
+| Persisted integrity evidence | **$evidence** |
+| Full repository CI | **$ci** |
+
+- Repository: \`$REPOSITORY\`
+- Branch: \`$branch\`
+- Observation cycle: \`$cycle\`
+- Observed at: \`$now\`
+- Active external runs: \`$active_count\`
+
+### Active
+$active_lines
+
+The next cycle starts only after this cycle has completed, followed by a five-second pause."
+
+            if [ "$active_count" -eq 0 ]; then break; fi
+            sleep 5
+          done
