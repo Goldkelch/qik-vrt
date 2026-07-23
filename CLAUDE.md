@@ -1,6 +1,6 @@
 # Claude repository instructions
 
-Read `AI_BOOTSTRAP.md` first. Then load `AI_CONTEXT.json` and follow its
+Read the root file `AI` first. Then load `AI_CONTEXT.json` and follow its
 `required_read_order` exactly.
 
 The repository, not conversation memory, is the project authority. Symmetric
