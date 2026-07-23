@@ -8,6 +8,20 @@ Copyright (c) 2026 Ingolf Lohmann.
 These rules apply repository-wide to humans, agents, workflows, and tools that
 collect or use adaptive evidence.
 
+## Session reconstruction
+
+Every new AI, agent, IDE-assistant, or automation session MUST begin with
+`AI_BOOTSTRAP.md`, parse `AI_CONTEXT.json`, and follow its
+`required_read_order`. Repository evidence is authoritative over conversation
+memory. The declared repositories are symmetrically canonical only for a scope
+whose exact bytes and state have been verified equivalent.
+
+The architecture/implementation licensing boundary in `AI_CONTEXT.json` is
+mandatory context: freely available architecture and interoperability
+specifications do not automatically grant an open-source license for the
+concrete implementation. No rights may be inferred beyond explicit license
+texts.
+
 ## Bounded collective adaptation
 
 1. Observe only accessible, authorized state and record the measurement method,
