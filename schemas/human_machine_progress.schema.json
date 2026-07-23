@@ -1,15 +1,76 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Goldkelch/qik-vrt/schemas/human_machine_progress.schema.json",
-  "title": "QIK-VRT Human-Machine Progress",
+  "$id": "urn:qikvrt:schema:human-machine-progress:2",
+  "title": "QIK-VRT Human-Machine Progress Frame",
   "type": "object",
-  "required": ["schema", "repository", "operation", "status", "gates"],
+  "required": [
+    "schema",
+    "frame_id",
+    "sequence",
+    "repository",
+    "ref_name",
+    "source_sha",
+    "operation_id",
+    "operation",
+    "state",
+    "percent",
+    "transition",
+    "gates",
+    "blockers",
+    "next_action",
+    "updated_at"
+  ],
   "properties": {
-    "schema": {"const": "qikvrt_human_machine_progress_v1"},
+    "schema": {"const": "qikvrt_human_machine_progress_v2"},
+    "frame_id": {"type": "string", "minLength": 1},
+    "parent_frame_id": {"type": ["string", "null"]},
+    "sequence": {"type": "integer", "minimum": 0},
     "repository": {"type": "string", "minLength": 3},
+    "ref_name": {"type": "string", "minLength": 1},
+    "source_sha": {"type": "string", "minLength": 1},
+    "operation_id": {"type": "string", "minLength": 1},
     "operation": {"type": "string", "minLength": 1},
-    "status": {"enum": ["IN_PROGRESS", "PASS", "BLOCK", "FAIL", "TIMEOUT"]},
-    "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
+    "state": {
+      "enum": ["IDLE", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]
+    },
+    "percent": {"type": "integer", "minimum": 0, "maximum": 100},
+    "transition": {
+      "type": "object",
+      "required": ["kind", "name", "state"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "idle",
+            "github_action_before",
+            "github_action_after",
+            "workflow",
+            "job",
+            "step",
+            "terminal"
+          ]
+        },
+        "name": {"type": "string", "minLength": 1},
+        "state": {
+          "enum": [
+            "IDLE",
+            "PENDING",
+            "RUNNING",
+            "WAITING",
+            "PASS",
+            "BLOCK",
+            "FAIL",
+            "SKIPPED",
+            "TIMEOUT",
+            "CANCELLED"
+          ]
+        },
+        "workflow": {"type": ["string", "null"]},
+        "run_id": {"type": ["integer", "null"], "minimum": 1},
+        "job_id": {"type": ["integer", "null"], "minimum": 1},
+        "step_number": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "additionalProperties": false
+    },
     "gates": {
       "type": "array",
       "minItems": 1,
@@ -18,12 +79,30 @@
         "required": ["name", "state"],
         "properties": {
           "name": {"type": "string", "minLength": 1},
-          "state": {"enum": ["PENDING", "RUNNING", "PASS", "BLOCK", "FAIL", "SKIPPED"]},
+          "state": {
+            "enum": ["PENDING", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "SKIPPED", "CANCELLED"]
+          },
           "evidence": {"type": ["string", "null"]}
         },
         "additionalProperties": false
       }
-    }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "next_action": {"type": "string", "minLength": 1},
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "authority": {"type": "string", "minLength": 1},
+        "cache_policy": {"type": "string", "minLength": 1},
+        "toolchain_lock": {"type": "string", "minLength": 1},
+        "live_watcher": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "updated_at": {"type": "string", "minLength": 1}
   },
   "additionalProperties": false
 }
