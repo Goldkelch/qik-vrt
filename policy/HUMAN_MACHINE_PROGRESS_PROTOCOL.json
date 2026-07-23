@@ -1,5 +1,5 @@
 {
-  "schema": "qikvrt-human-machine-progress-protocol/1.0",
+  "schema": "qikvrt-human-machine-progress-protocol/1.1",
   "authority": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
   "required_files": {
     "machine_state": "AI_PROGRESS.json",
@@ -13,21 +13,7 @@
     "failed": "✗",
     "blocked": "!"
   },
-  "mandatory_fields": [
-    "schema",
-    "operation_id",
-    "repository",
-    "ref_name",
-    "source_sha",
-    "state",
-    "percent",
-    "current_action",
-    "completed_steps",
-    "pending_steps",
-    "blockers",
-    "next_action",
-    "updated_at"
-  ],
+  "mandatory_fields": ["schema", "operation_id", "repository", "ref_name", "source_sha", "state", "percent", "current_action", "completed_steps", "pending_steps", "blockers", "next_action", "updated_at"],
   "communication_rules": {
     "work_before_explanation": true,
     "compact_updates": true,
@@ -36,7 +22,13 @@
     "claim_pass_without_evidence": false,
     "include_repository_ref_sha": true,
     "include_progress_bar": true,
-    "include_concrete_blocker": true
+    "include_concrete_blocker": true,
+    "complete_persistence_before_response": true
+  },
+  "architecture_rules": {
+    "reuse_before_create": true,
+    "required_order": ["REUSE", "EXTEND", "PARAMETERIZE", "GENERALIZE", "REFACTOR", "CREATE_NEW"],
+    "parallel_component_requires_reuse_evidence": true
   },
   "effect_boundary": {
     "transport_ack_is_effect_ack": false,
