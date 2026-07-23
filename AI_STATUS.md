@@ -4,7 +4,7 @@ Repository: `Goldkelch/qik-vrt`
 Branch: `agent/effect-ack-lean-v1`
 Source commit: `aa2763b5bbcce914063d12b1027b47c6e0e34004`
 
-`[██░░░░░░░░] 20%`
+`[████▌░░░░░] 45%`
 
 - ✓ Two source audios transcribed and verified offline
 - ✓ `draft-lohmann-qikvrt-effect-ack-01` identified from primary IETF sources
@@ -13,18 +13,20 @@ Source commit: `aa2763b5bbcce914063d12b1027b47c6e0e34004`
 - ✓ 5/5 bootloader contract tests
 - ✓ Repository integrity regenerated and verified
 - ✓ Bootloader now reaches understood `CONTINUE`
-- ⟳ Persisting the runtime repair
-- □ Lean 4 protocol formalization
-- □ Draft-source claim binding and truth-bounded WhatsApp article
+- ✓ Runtime repair persisted on the authority branch
+- ✓ Lean 4 protocol model and proposition-indexed claim registry implemented
+- ✓ Exact Draft-01 source/structure binding and 21/21 local support tests
+- ⟳ Publishing the formalization checkpoint for Lean kernel compilation
+- □ Truth-bounded WhatsApp article
 - □ Full verification, repository synchronization, and Zenodo publication
 
 ## BLOCKER
 
-None. Missing optional local Lean, Zod, pytest, sherpa-onnx and canonical
-IETF-renderer runtimes remain an explicit `CONTINUE`; the declared CI runtime
-will perform the Lean kernel build.
+None. Lean is intentionally not asserted as locally available. The declared
+GitHub Actions runtime will compile the exact branch and perform the kernel,
+axiom, and proof-escape gates before any public theorem claim is finalized.
 
 ## NEXT
 
-Persist the schema repair as an isolated commit, then implement the
-Draft-01-bound Lean formalization.
+Persist the Draft-01-bound formalization checkpoint, inspect the exact CI
+result, and repair any kernel-reported issue before writing release claims.

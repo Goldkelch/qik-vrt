@@ -3,15 +3,19 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AUDIT_SOURCE = ROOT / "QIKVRTFormalization" / "Claims" / "AxiomAuditAll.lean"
-EXPECTED = {
+MANUSCRIPT_AUDIT_SOURCE = (
+    ROOT / "QIKVRTFormalization" / "Claims" / "AxiomAuditAll.lean"
+)
+MANUSCRIPT_EXPECTED = {
     "QIKVRT.V2.Class.SET001_checked",
     "QIKVRT.V2.Class.MAP001_checked",
     "QIKVRT.V2.QUA003A_prefix_checked",
@@ -25,45 +29,131 @@ EXPECTED = {
     "QIKVRT.V2.DIM006A_additive_checked",
     "QIKVRT.V2.DIM007A_countermodel_checked",
 }
-ALLOWED = {"propext", "Classical.choice", "Quot.sound"}
+EFFECT_ACK_AUDIT_SOURCE = ROOT / "QIKVRTEffectAck" / "AxiomAudit.lean"
+EFFECT_ACK_MATRIX = ROOT / "effect_ack" / "DRAFT01_CLAIM_MATRIX.json"
+FOUNDATIONAL_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
+EFFECT_ACK_SUPPLEMENTAL = {
+    "QIKVRT.EffectAck.V1.Claims.claimIds_count": set(),
+    "QIKVRT.EffectAck.V1.Claims.claimIds_pairwise": set(),
+}
+
+
+def require_object(value: Any, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    return value
+
+
+def effect_ack_policy() -> dict[str, set[str]]:
+    matrix = require_object(
+        json.loads(EFFECT_ACK_MATRIX.read_text(encoding="utf-8")),
+        "claim matrix",
+    )
+    claims = matrix.get("claims")
+    if not isinstance(claims, list):
+        raise ValueError("claim matrix claims must be an array")
+    policy: dict[str, set[str]] = {}
+    for index, raw_claim in enumerate(claims):
+        claim = require_object(raw_claim, f"claim {index}")
+        raw_allowed = claim.get("allowed_axioms", [])
+        if not isinstance(raw_allowed, list) or not all(
+            isinstance(item, str) and item for item in raw_allowed
+        ):
+            raise ValueError(f"claim {index} allowed_axioms must be strings")
+        allowed = set(raw_allowed)
+        unknown = allowed - FOUNDATIONAL_AXIOMS
+        if unknown:
+            raise ValueError(
+                f"claim {index} declares forbidden axioms {sorted(unknown)}"
+            )
+        raw_constants = claim.get("proof_constants", [])
+        if not isinstance(raw_constants, list):
+            raise ValueError(f"claim {index} proof_constants must be an array")
+        constants = list(raw_constants)
+        registry = claim.get("registry_constant")
+        if registry is not None:
+            constants.append(registry)
+        for constant in constants:
+            if not isinstance(constant, str) or not constant:
+                raise ValueError(f"claim {index} contains an invalid constant")
+            if constant in policy and policy[constant] != allowed:
+                raise ValueError(
+                    f"{constant} has conflicting per-claim axiom policies"
+                )
+            policy[constant] = allowed
+    for constant, allowed in EFFECT_ACK_SUPPLEMENTAL.items():
+        if constant in policy and policy[constant] != allowed:
+            raise ValueError(f"{constant} conflicts with supplemental policy")
+        policy[constant] = allowed
+
+    expected_lines = {f"#print axioms {name}" for name in policy}
+    actual_lines = {
+        line.strip()
+        for line in EFFECT_ACK_AUDIT_SOURCE.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("#print axioms ")
+    }
+    if actual_lines != expected_lines:
+        missing = sorted(expected_lines - actual_lines)
+        extra = sorted(actual_lines - expected_lines)
+        raise ValueError(
+            f"generated EFFECT_ACK audit drift; missing={missing}, extra={extra}"
+        )
+    return policy
 
 
 def main() -> int:
-    result = subprocess.run(
-        ["lake", "env", "lean", str(AUDIT_SOURCE)],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
+    try:
+        effect_policy = effect_ack_policy()
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"ERROR: invalid EFFECT_ACK axiom policy: {exc}", file=sys.stderr)
+        return 1
+    manuscript_policy = {
+        name: set(FOUNDATIONAL_AXIOMS) for name in MANUSCRIPT_EXPECTED
+    }
+    audits = (
+        (MANUSCRIPT_AUDIT_SOURCE, manuscript_policy),
+        (EFFECT_ACK_AUDIT_SOURCE, effect_policy),
     )
-    output = result.stdout + result.stderr
-    if result.returncode != 0:
-        print(output, file=sys.stderr)
-        return result.returncode
-
     seen: set[str] = set()
     violations: list[str] = []
     line_pattern = re.compile(
         r"^'(?P<name>[^']+)' (?:does not depend on any axioms|"
         r"depends on axioms: \[(?P<axioms>[^]]*)\])$"
     )
-    for line in output.splitlines():
-        match = line_pattern.match(line.strip())
-        if not match:
-            continue
-        name = match.group("name")
-        if name not in EXPECTED:
-            continue
-        seen.add(name)
-        raw_axioms = match.group("axioms")
-        axioms = {
-            item.strip() for item in (raw_axioms or "").split(",") if item.strip()
-        }
-        unexpected = axioms - ALLOWED
-        if unexpected:
-            violations.append(f"{name}: forbidden axioms {sorted(unexpected)}")
+    expected = set().union(*(policy for _, policy in audits))
+    for audit_source, audit_policy in audits:
+        result = subprocess.run(
+            ["lake", "env", "lean", str(audit_source)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout + result.stderr
+        if result.returncode != 0:
+            print(output, file=sys.stderr)
+            return result.returncode
+        for line in output.splitlines():
+            match = line_pattern.match(line.strip())
+            if not match:
+                continue
+            name = match.group("name")
+            if name not in audit_policy:
+                continue
+            seen.add(name)
+            raw_axioms = match.group("axioms")
+            axioms = {
+                item.strip()
+                for item in (raw_axioms or "").split(",")
+                if item.strip()
+            }
+            unexpected = axioms - audit_policy[name]
+            if unexpected:
+                violations.append(
+                    f"{name}: forbidden axioms {sorted(unexpected)}"
+                )
 
-    missing = EXPECTED - seen
+    missing = expected - seen
     if missing:
         violations.append(f"missing axiom reports: {sorted(missing)}")
     if violations:
@@ -71,8 +161,10 @@ def main() -> int:
             print(f"ERROR: {violation}", file=sys.stderr)
         return 1
 
-    allowed_text = ", ".join(sorted(ALLOWED)) if ALLOWED else "none"
-    print(f"PASS axiom audit: 12 checked theorems; allowed axioms: {allowed_text}")
+    print(
+        f"PASS axiom audit: {len(expected)} checked theorems; "
+        f"{len(effect_policy)} EFFECT_ACK constants use per-claim policies"
+    )
     return 0
 
 

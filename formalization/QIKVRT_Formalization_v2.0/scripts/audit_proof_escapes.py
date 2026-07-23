@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LEAN_ROOT = ROOT / "QIKVRTFormalization"
+LEAN_ROOTS = (ROOT / "QIKVRTFormalization", ROOT / "QIKVRTEffectAck")
 FORBIDDEN_CODE = re.compile(r"\b(?:sorry|admit|axiom|constant)\b")
 
 
@@ -77,7 +77,11 @@ def lexical_violations(path: Path) -> list[str]:
 
 
 def main() -> int:
-    files = sorted(LEAN_ROOT.rglob("*.lean"))
+    files = sorted(
+        path
+        for lean_root in LEAN_ROOTS
+        for path in lean_root.rglob("*.lean")
+    )
     violations = [item for path in files for item in lexical_violations(path)]
     for path in files:
         result = subprocess.run(
