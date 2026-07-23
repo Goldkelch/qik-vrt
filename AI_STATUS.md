@@ -1,21 +1,31 @@
-# QIK-VRT Work Status
+# QIK-VRT Repository Runtime Status
 
-Repository: `Goldkelch/qik-vrt`  
-Branch: `agent/human-machine-progress-protocol`  
-Commit: `PENDING`
+Repository: `QIK-VRT symmetric-canonical repositories`  
+Branch: `main`  
+Commit: `resolved at session start`  
+Operation: `Repository runtime ready; no persistent operation owns this tracked snapshot.`  
+Frame: `0 — idle`
 
-`[██████░░░░] 60%`
+`[██████████] 100%`
 
-- ✓ Compact live status format defined
-- ✓ Machine-readable policy defined
-- ⟳ Binding protocol into AI startup context
-- □ Repository checks
-- □ Merge to `main`
+- ✓ Cross-AI handoff entrypoint available at `/AI`
+- ✓ Per-action and per-workflow/job/step progress contract loaded
+- ✓ Repository-local runtime cache contract loaded
+- ✓ Locked tool inventory and bootstrap paths available
+- □ Next task not started
+
+## STATUS
+
+`IDLE`
 
 ## BLOCKER
 
 None.
 
+## LIVE STATE
+
+When a GitHub operation is active, `QIKVRT live status watch` persists every changed workflow/job/step frame in one pull-request comment and in the GitHub Actions step summary. The tracked root snapshot must not remain falsely `RUNNING` after that owner stops.
+
 ## NEXT
 
-Bind the protocol into `AI_CONTEXT.json` and `AGENTS.md`, run checks, and merge after verified PASS.
+Read `/AI`, run `python3 tools/ai_handoff.py`, and emit frame 1 immediately before the next task-advancing GitHub action.
