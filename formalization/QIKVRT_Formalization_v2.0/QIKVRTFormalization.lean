@@ -12,6 +12,7 @@ import QIKVRTFormalization.Claims.Batch02
 import QIKVRTFormalization.Claims.Batch02Counterexamples
 import QIKVRTFormalization.Claims.Batch02Dimensions
 import QIKVRTFormalization.Claims.Batch02Factorization
+import QIKVRTFormalization.Claims.Batch04
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
