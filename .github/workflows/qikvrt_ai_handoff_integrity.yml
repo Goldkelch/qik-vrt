@@ -1,0 +1,43 @@
+name: QIKVRT AI handoff integrity
+
+on:
+  push:
+    branches:
+      - agent/cross-ai-session-handoff
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-ai-handoff-integrity-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: agent/cross-ai-session-handoff
+          fetch-depth: 0
+      - name: Validate AI handoff
+        run: python3 tools/ai_handoff.py
+      - name: Regenerate and verify repository integrity
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Commit regenerated integrity outputs
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "Integrity outputs already current."
+            exit 0
+          fi
+          git commit -m "fix: regenerate integrity for AI handoff"
+          git push origin HEAD:agent/cross-ai-session-handoff
