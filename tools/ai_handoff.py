@@ -11,28 +11,28 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_PATH = ROOT / "AI_CONTEXT.json"
 
 
-def fail(message: str) -> "NoReturn":
+def fail(message: str) -> NoReturn:
     print(f"AI_HANDOFF_BLOCK: {message}", file=sys.stderr)
     raise SystemExit(2)
 
 
-def load_context() -> dict[str, Any]:
+def load_json(path: Path) -> dict[str, Any]:
     try:
-        raw = CONTEXT_PATH.read_bytes()
+        raw = path.read_bytes()
     except OSError as exc:
-        fail(f"cannot read {CONTEXT_PATH}: {exc}")
+        fail(f"cannot read {path}: {exc}")
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
-        fail(f"invalid JSON in {CONTEXT_PATH}: {exc}")
+        fail(f"invalid JSON in {path}: {exc}")
     if not isinstance(value, dict):
-        fail("top-level context must be an object")
+        fail(f"top-level value in {path} must be an object")
     return value
 
 
@@ -59,8 +59,30 @@ def git_value(*args: str) -> str:
     return proc.stdout.strip() or "unavailable"
 
 
+def validate_adapters(context: dict[str, Any]) -> tuple[str, int]:
+    registry_name = require(context, "adapter_registry", str)
+    registry = load_json(ROOT / registry_name)
+    if require(registry, "schema", str) != "qikvrt-ai-adapters/1.0":
+        fail("unsupported AI adapter registry schema")
+    if require(registry, "canonical_entrypoint", str) != "AI":
+        fail("AI adapter registry must bind canonical entrypoint AI")
+    adapters = require(registry, "adapters", list)
+    if not adapters:
+        fail("AI adapter registry must contain at least one adapter")
+    missing: list[str] = []
+    for adapter in adapters:
+        if not isinstance(adapter, dict):
+            fail("every AI adapter entry must be an object")
+        path = require(adapter, "path", str)
+        if not (ROOT / path).is_file():
+            missing.append(path)
+    if missing:
+        fail("missing AI adapter files: " + ", ".join(sorted(missing)))
+    return registry_name, len(adapters)
+
+
 def main() -> int:
-    context = load_context()
+    context = load_json(CONTEXT_PATH)
     schema = require(context, "schema", str)
     if schema != "qikvrt-ai-context/1.0":
         fail(f"unsupported schema {schema!r}")
@@ -80,6 +102,8 @@ def main() -> int:
     if missing:
         fail("missing required files: " + ", ".join(missing))
 
+    registry_name, adapter_count = validate_adapters(context)
+
     licensing = require(context, "licensing_policy", dict)
     architecture = require(licensing, "architecture", dict)
     implementation = require(licensing, "implementation", dict)
@@ -92,6 +116,8 @@ def main() -> int:
     print("CANONICAL_MODE=" + str(canonicality.get("mode", "unknown")))
     print("CANONICAL_REPOSITORIES=" + ",".join(repositories))
     print("READ_ORDER=" + " -> ".join(read_order))
+    print(f"AI_ADAPTER_REGISTRY={registry_name}")
+    print(f"AI_ADAPTER_COUNT={adapter_count}")
     print("ARCHITECTURE_POLICY=" + str(architecture.get("intent", "unknown")))
     print("IMPLEMENTATION_POLICY=" + str(implementation.get("intent", "unknown")))
     print("NEXT_ACTION=Read required files, inspect task-relevant verified state, then continue without relying on chat memory.")
