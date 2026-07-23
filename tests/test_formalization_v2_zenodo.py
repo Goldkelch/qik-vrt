@@ -484,6 +484,79 @@ class FormalizationAlpha2ZenodoTests(unittest.TestCase):
         )
         self.assertNotIn(TOKEN, path.read_text(encoding="utf-8"))
 
+    def test_reserve_accepts_inherited_draft_without_version_field(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        transport.draft_metadata.pop("version")
+        reservation, _ = self.reserve(transport)
+        self.assertEqual(reservation["software"]["deposition_id"], DRAFT_ID)
+
+    def test_pristine_snapshot_requires_exact_public_source_version(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        evidence = release.validate_source_evidence(self.evidence)
+
+        for label, version in (
+            ("missing", None),
+            ("changed", "2.0.0-alpha.0"),
+        ):
+            source_public = transport.source_public()
+            metadata = source_public["metadata"]
+            assert isinstance(metadata, dict)
+            if version is None:
+                metadata.pop("version")
+            else:
+                metadata["version"] = version
+            with self.subTest(label=label), self.assertRaisesRegex(
+                shared.ZenodoError,
+                "published source metadata has an unexpected version",
+            ):
+                release._require_pristine_source_snapshot(
+                    transport.draft(), source_public, evidence
+                )
+
+    def test_pristine_snapshot_rejects_different_draft_version(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        draft = transport.draft()
+        metadata = draft["metadata"]
+        assert isinstance(metadata, dict)
+        metadata["version"] = release.TARGET_VERSION
+        with self.assertRaisesRegex(
+            shared.ZenodoError,
+            "new alpha.2 draft inherited an unexpected source version",
+        ):
+            release._require_pristine_source_snapshot(
+                draft,
+                transport.source_public(),
+                release.validate_source_evidence(self.evidence),
+            )
+
+    def test_pristine_snapshot_requires_matching_title_and_creators(self) -> None:
+        transport = FakeTransport(self.metadata, self.source_files)
+        source_public = transport.source_public()
+        evidence = release.validate_source_evidence(self.evidence)
+
+        for label, mutate in (
+            (
+                "title",
+                lambda metadata: metadata.__setitem__("title", "Different title"),
+            ),
+            (
+                "creators",
+                lambda metadata: metadata.__setitem__(
+                    "creators", [{"name": "Different, Author"}]
+                ),
+            ),
+        ):
+            draft = transport.draft()
+            metadata = draft["metadata"]
+            assert isinstance(metadata, dict)
+            mutate(metadata)
+            with self.subTest(label=label), self.assertRaisesRegex(
+                shared.ZenodoError, "did not inherit source title and creators"
+            ):
+                release._require_pristine_source_snapshot(
+                    draft, source_public, evidence
+                )
+
     def test_missing_latest_draft_uses_one_unique_inventory_delta(self) -> None:
         transport = FakeTransport(
             self.metadata,

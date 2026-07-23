@@ -451,15 +451,22 @@ def _require_pristine_source_snapshot(
     draft_metadata = draft.get("metadata")
     if not isinstance(source_metadata, dict) or not isinstance(draft_metadata, dict):
         raise ZenodoError("source or draft metadata is missing")
+    if source_metadata.get("version") != SOURCE_VERSION:
+        raise ZenodoError("published source metadata has an unexpected version")
     identity = {
         key: source_metadata[key]
-        for key in ("title", "version", "creators")
+        for key in ("title", "creators")
         if key in source_metadata
     }
-    if set(identity) != {"title", "version", "creators"} or not shared._metadata_matches(
+    if set(identity) != {"title", "creators"} or not shared._metadata_matches(
         draft_metadata, identity
     ):
-        raise ZenodoError("new alpha.2 draft did not inherit source identity")
+        raise ZenodoError("new alpha.2 draft did not inherit source title and creators")
+    if (
+        "version" in draft_metadata
+        and draft_metadata["version"] != SOURCE_VERSION
+    ):
+        raise ZenodoError("new alpha.2 draft inherited an unexpected source version")
     return record_id, doi
 
 
