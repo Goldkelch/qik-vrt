@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - infra/live-status-default-branch
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -15,6 +18,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name != 'pull_request' || github.head_ref == 'infra/live-status-default-branch'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
