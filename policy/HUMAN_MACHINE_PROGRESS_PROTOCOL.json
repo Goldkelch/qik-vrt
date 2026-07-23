@@ -1,0 +1,47 @@
+{
+  "schema": "qikvrt-human-machine-progress-protocol/1.0",
+  "authority": "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
+  "required_files": {
+    "machine_state": "AI_PROGRESS.json",
+    "human_projection": "AI_STATUS.md"
+  },
+  "states": ["RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "CANCELLED"],
+  "step_states": {
+    "completed": "✓",
+    "running": "⟳",
+    "pending": "□",
+    "failed": "✗",
+    "blocked": "!"
+  },
+  "mandatory_fields": [
+    "schema",
+    "operation_id",
+    "repository",
+    "ref_name",
+    "source_sha",
+    "state",
+    "percent",
+    "current_action",
+    "completed_steps",
+    "pending_steps",
+    "blockers",
+    "next_action",
+    "updated_at"
+  ],
+  "communication_rules": {
+    "work_before_explanation": true,
+    "compact_updates": true,
+    "update_on_meaningful_phase_change": true,
+    "repeat_unchanged_state": false,
+    "claim_pass_without_evidence": false,
+    "include_repository_ref_sha": true,
+    "include_progress_bar": true,
+    "include_concrete_blocker": true
+  },
+  "effect_boundary": {
+    "transport_ack_is_effect_ack": false,
+    "exit_zero_is_final_pass": false,
+    "pass_is_scope_bound": true,
+    "required_pass_evidence": ["repository", "ref_name", "source_sha", "checks", "evidence"]
+  }
+}
