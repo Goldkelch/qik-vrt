@@ -1,0 +1,353 @@
+{
+  "cache_classes": [
+    "repo-managed-archive",
+    "repo-managed-wheelhouse",
+    "hosted-toolcache",
+    "ecosystem-cache",
+    "build-cache",
+    "runner-image-layer"
+  ],
+  "components": {
+    "cc": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "Makefile",
+        "tests/test_effect_ack_core.sh"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "core",
+        "all"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "strict ANSI-C90 compile contract",
+        "core execution tests"
+      ],
+      "version": "ansi-c90"
+    },
+    "ffmpeg": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "audio",
+        "all"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "ffmpeg -version",
+        "audio conversion tests"
+      ],
+      "version": "reported-version"
+    },
+    "ffprobe": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "audio",
+        "all"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "ffprobe -version",
+        "audio provenance tests"
+      ],
+      "version": "same-as-ffmpeg"
+    },
+    "gh": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-gh.sh",
+        "tools/bootstrap-gh.ps1",
+        ".github/workflows/qikvrt_adaptive_runtime.yml"
+      ],
+      "cache_class": "repo-managed-archive",
+      "cache_locations": [
+        ".qikvrt/toolchains/gh"
+      ],
+      "profiles": [
+        "core",
+        "ietf",
+        "formal",
+        "audio",
+        "publication",
+        "all"
+      ],
+      "provider": "tools/bootstrap-gh.sh|tools/bootstrap-gh.ps1",
+      "trusted_save": true,
+      "verification": [
+        "archive SHA-256",
+        "exact version",
+        "final-path byte comparison",
+        "execution self-test"
+      ],
+      "version": "2.96.0"
+    },
+    "lean": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_manuscript_proof.yml",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "build-cache",
+      "cache_locations": [
+        "~/.elan",
+        "formalization/**/.lake/packages",
+        "formalization/**/.lake/build"
+      ],
+      "profiles": [
+        "formal",
+        "all"
+      ],
+      "provider": "leanprover/lean-action+actions/cache",
+      "trusted_save": true,
+      "verification": [
+        "lean-toolchain contract",
+        "lake manifest digest",
+        "lake build",
+        "kernel proof checks"
+      ],
+      "version": "4.19.0"
+    },
+    "node": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "formalization/QIKVRT_Formalization_v1.0/package-lock.json",
+        "tools/offline-audio-transcription/package-lock.json",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "hosted-toolcache",
+      "cache_locations": [
+        "github-hosted-toolcache:Node/24",
+        "github-actions-cache:npm"
+      ],
+      "profiles": [
+        "formal",
+        "audio",
+        "all"
+      ],
+      "provider": "actions/setup-node",
+      "trusted_save": false,
+      "verification": [
+        "Node major-version contract",
+        "npm ci",
+        "package-lock digest",
+        "test execution"
+      ],
+      "version": "24.x"
+    },
+    "poppler": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_formalization_v2_zenodo.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "publication",
+        "all"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "pdfinfo/pdftoppm version",
+        "PDF visual verification"
+      ],
+      "version": "reported-version"
+    },
+    "pypdf": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/requirements-xml2rfc-3.34.0.txt",
+        "tests/test_ietf_offline_render.py"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "github-actions-cache:pip",
+        ".qikvrt/toolchains/xml2rfc/**/wheelhouse"
+      ],
+      "profiles": [
+        "ietf",
+        "publication",
+        "all"
+      ],
+      "provider": "hash-locked Python wheel cache",
+      "trusted_save": true,
+      "verification": [
+        "locked wheel hash",
+        "exact package version",
+        "PDF inspection test"
+      ],
+      "version": "6.10.0"
+    },
+    "pytest": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "formalization/QIKVRT_Formalization_v1.0/requirements-dev.txt",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "github-actions-cache:pip"
+      ],
+      "profiles": [
+        "formal",
+        "all"
+      ],
+      "provider": "actions/setup-python:pip",
+      "trusted_save": true,
+      "verification": [
+        "requirements pin",
+        "pip cache key",
+        "python -m pytest"
+      ],
+      "version": "9.1.1"
+    },
+    "python": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_adaptive_runtime.yml",
+        ".github/workflows/qikvrt_manuscript_proof.yml",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "hosted-toolcache",
+      "cache_locations": [
+        "github-hosted-toolcache:Python/3.12.13",
+        "github-actions-cache:pip"
+      ],
+      "profiles": [
+        "ietf",
+        "formal",
+        "publication",
+        "all"
+      ],
+      "provider": "actions/setup-python",
+      "trusted_save": false,
+      "verification": [
+        "exact interpreter version where required",
+        "pip dependency-lock digest",
+        "runtime execution"
+      ],
+      "version": "3.12.13"
+    },
+    "sherpa-onnx-node": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/offline-audio-transcription/package-lock.json",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "github-actions-cache:npm"
+      ],
+      "profiles": [
+        "audio",
+        "all"
+      ],
+      "provider": "actions/setup-node:npm",
+      "trusted_save": true,
+      "verification": [
+        "package-lock pin",
+        "npm ci",
+        "offline audio tests"
+      ],
+      "version": "1.13.4"
+    },
+    "xelatex": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        ".github/workflows/qikvrt_formalization_v2_zenodo.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "publication",
+        "all"
+      ],
+      "provider": "pinned GitHub-hosted runner image",
+      "trusted_save": false,
+      "verification": [
+        "xelatex --version",
+        "scientific PDF rendering checks"
+      ],
+      "version": "reported-version"
+    },
+    "xml2rfc": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "runtime/toolchains/requirements-xml2rfc-3.34.0.txt",
+        "tools/bootstrap-runtime.sh",
+        "tools/bootstrap-runtime.ps1",
+        ".github/workflows/qikvrt_adaptive_runtime.yml"
+      ],
+      "cache_class": "repo-managed-wheelhouse",
+      "cache_locations": [
+        ".qikvrt/toolchains/xml2rfc/3.34.0/python-3.12.13/<platform>/wheelhouse"
+      ],
+      "profiles": [
+        "ietf",
+        "publication",
+        "all"
+      ],
+      "provider": "tools/bootstrap-runtime.sh|tools/bootstrap-runtime.ps1",
+      "trusted_save": true,
+      "verification": [
+        "pip --require-hashes",
+        "offline derivation",
+        "exact version",
+        "renderer self-test"
+      ],
+      "version": "3.34.0"
+    },
+    "zod": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "formalization/QIKVRT_Formalization_v1.0/package-lock.json",
+        ".github/workflows/qikvrt_formalization_and_audio.yml"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "github-actions-cache:npm"
+      ],
+      "profiles": [
+        "formal",
+        "all"
+      ],
+      "provider": "actions/setup-node:npm",
+      "trusted_save": true,
+      "verification": [
+        "package-lock pin",
+        "npm ci",
+        "schema-validation tests"
+      ],
+      "version": "4.1.12"
+    }
+  },
+  "coverage_authority": "runtime/toolchains/CACHE_COVERAGE.json",
+  "lock_authority": "runtime/toolchains/TOOLCHAIN.lock.tsv",
+  "policy_authority": "runtime/CACHE_POLICY.md",
+  "schema": "qikvrt-tool-cache-registry/1.0",
+  "scope_rule": "Every unique component declared by TOOLCHAIN.lock.tsv MUST have exactly one cache/provision strategy before it may be used by a QIK-VRT runtime profile. A newly required tool extends this registry before use."
+}
