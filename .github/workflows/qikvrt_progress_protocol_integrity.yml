@@ -1,0 +1,48 @@
+name: QIKVRT progress protocol integrity
+
+on:
+  push:
+    branches:
+      - agent/human-machine-progress-protocol
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-progress-protocol-integrity-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: agent/human-machine-progress-protocol
+          fetch-depth: 0
+      - name: Validate AI context and progress policy
+        run: |
+          set -euo pipefail
+          python3 tools/ai_handoff.py
+          python3 -m json.tool AI_CONTEXT.json >/dev/null
+          python3 -m json.tool AI_PROGRESS.json >/dev/null
+          python3 -m json.tool policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json >/dev/null
+      - name: Regenerate and verify repository integrity
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Commit regenerated integrity authorities
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "Integrity authorities already current."
+            exit 0
+          fi
+          git commit -m "ci: regenerate integrity for progress protocol"
+          git push origin HEAD:agent/human-machine-progress-protocol
