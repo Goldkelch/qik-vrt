@@ -15,6 +15,12 @@ from typing import Any, NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_PATH = ROOT / "AI_CONTEXT.json"
+SUPPORTED_CONTEXT_SCHEMAS = frozenset(
+    {
+        "qikvrt-ai-context/1.0",
+        "qikvrt-ai-context/1.2",
+    }
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -84,7 +90,7 @@ def validate_adapters(context: dict[str, Any]) -> tuple[str, int]:
 def main() -> int:
     context = load_json(CONTEXT_PATH)
     schema = require(context, "schema", str)
-    if schema != "qikvrt-ai-context/1.0":
+    if schema not in SUPPORTED_CONTEXT_SCHEMAS:
         fail(f"unsupported schema {schema!r}")
 
     project = require(context, "project", dict)

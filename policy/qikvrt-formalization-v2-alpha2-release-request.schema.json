@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-formalization-v2-alpha2-release-request.schema.json",
+  "title": "QIK-VRT Formalization v2 alpha.2 release request",
+  "description": "Closed reserve/finalize authorization marker for one new Zenodo version of concept 10.5281/zenodo.21488115.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_license",
+    "$schema_ref",
+    "schema",
+    "schema_sha256",
+    "request_id",
+    "action",
+    "confirm",
+    "authorization_payload_sha256",
+    "repository_policy",
+    "candidate",
+    "bindings",
+    "reservation"
+  ],
+  "properties": {
+    "_license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "copyright",
+        "rights_holder",
+        "license",
+        "license_text_ref",
+        "classification"
+      ],
+      "properties": {
+        "copyright": {"const": "Copyright 2026 Ingolf Lohmann"},
+        "rights_holder": {"const": "Ingolf Lohmann"},
+        "license": {"const": "CC-BY-NC-ND-4.0"},
+        "license_text_ref": {"const": "LICENSES/CC-BY-NC-ND-4.0.txt"},
+        "classification": {"const": "release_authorization_json"}
+      }
+    },
+    "$schema_ref": {
+      "const": "../policy/qikvrt-formalization-v2-alpha2-release-request.schema.json"
+    },
+    "schema": {"const": "qikvrt_formalization_v2_alpha2_release_request_v1"},
+    "schema_sha256": {"$ref": "#/$defs/sha256"},
+    "request_id": {"const": "2026-07-23-formalization-v2.0-alpha.2"},
+    "action": {"enum": ["inactive", "reserve", "finalize"]},
+    "confirm": {
+      "enum": [
+        "NOT_AUTHORIZED",
+        "RESERVE_ZENODO_FORMALIZATION_V2_ALPHA_2_DRAFT_ONLY_NO_PUBLISH",
+        "FINALIZE_ZENODO_FORMALIZATION_V2_ALPHA_2_RESERVED_DRAFT"
+      ]
+    },
+    "authorization_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "repository_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_repository",
+        "mirror_repository",
+        "feature_branch",
+        "reserve_ref",
+        "finalize_ref",
+        "state_branch"
+      ],
+      "properties": {
+        "authority_repository": {"const": "Goldkelch/qik-vrt"},
+        "mirror_repository": {"const": "ingolf-lohmann/qik-vrt"},
+        "feature_branch": {"const": "agent/effect-ack-lean-v1"},
+        "reserve_ref": {
+          "const": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723"
+        },
+        "finalize_ref": {
+          "const": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723"
+        },
+        "state_branch": {"const": "qikvrt/formalization-v2-state"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_commit",
+        "authority_parent",
+        "mirror_commit",
+        "mirror_parent",
+        "tree"
+      ],
+      "properties": {
+        "authority_commit": {"$ref": "#/$defs/gitSha1"},
+        "authority_parent": {"$ref": "#/$defs/gitSha1"},
+        "mirror_commit": {"$ref": "#/$defs/gitSha1"},
+        "mirror_parent": {"$ref": "#/$defs/gitSha1"},
+        "tree": {"$ref": "#/$defs/gitSha1"}
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_sha256",
+        "client_sha256",
+        "shared_client_sha256",
+        "client_test_sha256",
+        "reserve_workflow_sha256",
+        "finalize_workflow_sha256",
+        "workflow_test_sha256",
+        "package_script_sha256",
+        "archive_sha256",
+        "source_evidence_sha256"
+      ],
+      "properties": {
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "client_sha256": {"$ref": "#/$defs/sha256"},
+        "shared_client_sha256": {"$ref": "#/$defs/sha256"},
+        "client_test_sha256": {"$ref": "#/$defs/sha256"},
+        "reserve_workflow_sha256": {"$ref": "#/$defs/sha256"},
+        "finalize_workflow_sha256": {"$ref": "#/$defs/sha256"},
+        "workflow_test_sha256": {"$ref": "#/$defs/sha256"},
+        "package_script_sha256": {"$ref": "#/$defs/sha256"},
+        "archive_sha256": {"$ref": "#/$defs/sha256"},
+        "source_evidence_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_path",
+        "evidence_sha256",
+        "deposition_id",
+        "doi"
+      ],
+      "properties": {
+        "state_path": {
+          "const": "release-state/formalization-v2-alpha2/zenodo-reservation.json"
+        },
+        "evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "deposition_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "doi": {
+          "type": ["string", "null"],
+          "pattern": "^10\\.5281/zenodo\\.[0-9]+$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"action": {"const": "inactive"}},
+        "required": ["action"]
+      },
+      "then": {
+        "properties": {
+          "confirm": {"const": "NOT_AUTHORIZED"},
+          "authorization_payload_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+          "candidate": {
+            "properties": {
+              "authority_commit": {"const": "0000000000000000000000000000000000000000"},
+              "authority_parent": {"const": "0000000000000000000000000000000000000000"},
+              "mirror_commit": {"const": "0000000000000000000000000000000000000000"},
+              "mirror_parent": {"const": "0000000000000000000000000000000000000000"},
+              "tree": {"const": "0000000000000000000000000000000000000000"}
+            }
+          },
+          "bindings": {
+            "properties": {
+              "manifest_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "client_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "shared_client_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "client_test_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "reserve_workflow_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "finalize_workflow_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "workflow_test_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "package_script_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "archive_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "source_evidence_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}
+            }
+          },
+          "reservation": {
+            "properties": {
+              "evidence_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "deposition_id": {"const": null},
+              "doi": {"const": null}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"action": {"const": "reserve"}},
+        "required": ["action"]
+      },
+      "then": {
+        "properties": {
+          "confirm": {
+            "const": "RESERVE_ZENODO_FORMALIZATION_V2_ALPHA_2_DRAFT_ONLY_NO_PUBLISH"
+          },
+          "reservation": {
+            "properties": {
+              "evidence_sha256": {"const": "0000000000000000000000000000000000000000000000000000000000000000"},
+              "deposition_id": {"const": null},
+              "doi": {"const": null}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"action": {"const": "finalize"}},
+        "required": ["action"]
+      },
+      "then": {
+        "properties": {
+          "confirm": {
+            "const": "FINALIZE_ZENODO_FORMALIZATION_V2_ALPHA_2_RESERVED_DRAFT"
+          },
+          "reservation": {
+            "properties": {
+              "evidence_sha256": {
+                "not": {
+                  "const": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              },
+              "deposition_id": {"type": "integer", "minimum": 1},
+              "doi": {
+                "type": "string",
+                "pattern": "^10\\.5281/zenodo\\.[0-9]+$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}

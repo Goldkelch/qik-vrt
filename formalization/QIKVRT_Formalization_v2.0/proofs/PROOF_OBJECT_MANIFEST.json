@@ -1,5 +1,5 @@
 {
-  "schema": "qikvrt_proof_object_manifest_v1",
+  "schema": "qikvrt_proof_object_manifest_v2",
   "policy": {
     "cacheMayAccelerate": true,
     "cacheMayReplaceKernelVerification": false,
@@ -27,5 +27,205 @@
       "compiledObject": ".lake/build/lib/lean/QIKVRTFormalization/Escape/FiniteStages.olean",
       "status": "KERNEL_CHECK_REQUIRED_ON_EVERY_DISTINCT_INPUT_SET"
     }
-  ]
+  ],
+  "effectAck": {
+    "claimMatrix": "effect_ack/DRAFT01_CLAIM_MATRIX.json",
+    "registrySourcePath": "QIKVRTEffectAck/Claims.lean",
+    "claims": [
+      {
+        "claimId": "EA-LEAN-001",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.states_count",
+          "QIKVRT.EffectAck.V1.states_pairwise",
+          "QIKVRT.EffectAck.V1.states_complete",
+          "QIKVRT.EffectAck.V1.connectionDecisions_count",
+          "QIKVRT.EffectAck.V1.connectionDecisions_pairwise",
+          "QIKVRT.EffectAck.V1.connectionDecisions_complete"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.StateSpace",
+        "sourcePath": "QIKVRTEffectAck/Model.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Model.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-002",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.coreDone_eq_true_iff"
+        ],
+        "registryConstant": null,
+        "sourcePath": "QIKVRTEffectAck/Model.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Model.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-003",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.selectState_eq_done_iff"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.DoneSelection",
+        "sourcePath": "QIKVRTEffectAck/Safety.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Safety.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-004",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.predecessorInvalid_blocks",
+          "QIKVRT.EffectAck.V1.deadlineExceeded_blocks",
+          "QIKVRT.EffectAck.V1.missingEffectCheckableReception_nacks",
+          "QIKVRT.EffectAck.V1.integrityFailure_blocks",
+          "QIKVRT.EffectAck.V1.explicitBlock_precedes_later_outcomes",
+          "QIKVRT.EffectAck.V1.explicitIsolate_precedes_done"
+        ],
+        "registryConstant": null,
+        "sourcePath": "QIKVRTEffectAck/Safety.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Safety.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-005",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.authorized_implies_recorded_and_recomputed_done",
+          "QIKVRT.EffectAck.V1.authorized_implies_consumer_checks"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.ReleaseSafety",
+        "sourcePath": "QIKVRTEffectAck/Safety.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Safety.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-006",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.nonDone_record_never_authorized",
+          "QIKVRT.EffectAck.V1.stale_record_never_authorized"
+        ],
+        "registryConstant": null,
+        "sourcePath": "QIKVRTEffectAck/Safety.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Safety.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-007",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.transportAck_is_not_effectAuthorization"
+        ],
+        "registryConstant": null,
+        "sourcePath": "QIKVRTEffectAck/Safety.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Safety.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-008",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.completelyMediated_execution_implies_done"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.CompleteMediation",
+        "sourcePath": "QIKVRTEffectAck/Mediation.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Mediation.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-009",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.physicalOccurrence_implies_authorized_done_conditionally"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.ConditionalPhysicalBridge",
+        "sourcePath": "QIKVRTEffectAck/Mediation.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/Mediation.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-010",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.semanticReconstruction_iff_fiberConstant"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.SemanticBoundary",
+        "sourcePath": "QIKVRTEffectAck/InformationBoundary.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/InformationBoundary.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-011",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.exactHistoricalReconstruction_implies_injective"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.InversionBoundary",
+        "sourcePath": "QIKVRTEffectAck/InformationBoundary.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/InformationBoundary.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-LEAN-012",
+        "bindingKind": "KERNEL_PROOF",
+        "proofConstants": [
+          "QIKVRT.EffectAck.V1.noExactDecoder_forCollapsedObservation"
+        ],
+        "registryConstant": "QIKVRT.EffectAck.V1.Claims.CollapsedDecoderCounterexample",
+        "sourcePath": "QIKVRTEffectAck/InformationBoundary.lean",
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck/InformationBoundary.olean",
+          ".lake/build/lib/lean/QIKVRTEffectAck/Claims.olean"
+        ]
+      },
+      {
+        "claimId": "EA-OPEN-001",
+        "bindingKind": "SCOPE_BOUNDARY",
+        "proofConstants": [],
+        "registryConstant": null,
+        "sourcePath": null,
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck.olean"
+        ]
+      },
+      {
+        "claimId": "EA-OPEN-002",
+        "bindingKind": "SCOPE_BOUNDARY",
+        "proofConstants": [],
+        "registryConstant": null,
+        "sourcePath": null,
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck.olean"
+        ]
+      },
+      {
+        "claimId": "EA-OPEN-003",
+        "bindingKind": "SCOPE_BOUNDARY",
+        "proofConstants": [],
+        "registryConstant": null,
+        "sourcePath": null,
+        "compiledObjects": [
+          ".lake/build/lib/lean/QIKVRTEffectAck.olean"
+        ]
+      }
+    ]
+  }
 }

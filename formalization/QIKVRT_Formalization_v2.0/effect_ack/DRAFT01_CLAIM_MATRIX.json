@@ -1,0 +1,248 @@
+{
+  "schema": "qikvrt_effect_ack_draft01_claim_matrix_v1",
+  "source_provenance": "effect_ack/DRAFT01_SOURCE_PROVENANCE.json",
+  "lean_library": "QIKVRTEffectAck",
+  "model": {
+    "boolean_snapshot_fields": 19,
+    "connection_decisions": 5,
+    "states": 5,
+    "core_done_conjuncts": 17,
+    "scope": "Abstract Draft-01 decision and consumer-authorization core"
+  },
+  "axiom_policy": {
+    "foundational_allowlist": ["Classical.choice", "Quot.sound", "propext"],
+    "default_expected_axioms": [],
+    "per_constant_expected_axioms": {
+      "QIKVRT.EffectAck.V1.Claims.CompleteMediation": ["propext"],
+      "QIKVRT.EffectAck.V1.Claims.ConditionalPhysicalBridge": ["propext"],
+      "QIKVRT.EffectAck.V1.Claims.DoneSelection": ["propext"],
+      "QIKVRT.EffectAck.V1.Claims.ReleaseSafety": ["propext"],
+      "QIKVRT.EffectAck.V1.Claims.SemanticBoundary": ["Classical.choice", "Quot.sound"],
+      "QIKVRT.EffectAck.V1.Claims.StateSpace": ["propext"],
+      "QIKVRT.EffectAck.V1.authorized_implies_consumer_checks": ["propext"],
+      "QIKVRT.EffectAck.V1.authorized_implies_recorded_and_recomputed_done": ["propext"],
+      "QIKVRT.EffectAck.V1.completelyMediated_execution_implies_done": ["propext"],
+      "QIKVRT.EffectAck.V1.connectionDecisions_complete": ["propext"],
+      "QIKVRT.EffectAck.V1.coreDone_eq_true_iff": ["propext"],
+      "QIKVRT.EffectAck.V1.deadlineExceeded_blocks": ["propext"],
+      "QIKVRT.EffectAck.V1.explicitBlock_precedes_later_outcomes": ["propext"],
+      "QIKVRT.EffectAck.V1.explicitIsolate_precedes_done": ["propext"],
+      "QIKVRT.EffectAck.V1.integrityFailure_blocks": ["propext"],
+      "QIKVRT.EffectAck.V1.missingEffectCheckableReception_nacks": ["propext"],
+      "QIKVRT.EffectAck.V1.nonDone_record_never_authorized": ["propext"],
+      "QIKVRT.EffectAck.V1.physicalOccurrence_implies_authorized_done_conditionally": ["propext"],
+      "QIKVRT.EffectAck.V1.predecessorInvalid_blocks": ["propext"],
+      "QIKVRT.EffectAck.V1.selectState_eq_done_iff": ["propext"],
+      "QIKVRT.EffectAck.V1.semanticReconstruction_iff_fiberConstant": ["Classical.choice", "Quot.sound"],
+      "QIKVRT.EffectAck.V1.stale_record_never_authorized": ["propext"],
+      "QIKVRT.EffectAck.V1.states_complete": ["propext"]
+    }
+  },
+  "claims": [
+    {
+      "id": "EA-LEAN-001",
+      "source_sections": ["4", "5.1", "Appendix A"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "The modeled version-1 state and connection-decision enumerations each contain five pairwise distinct constructors.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.states_count",
+        "QIKVRT.EffectAck.V1.states_pairwise",
+        "QIKVRT.EffectAck.V1.states_complete",
+        "QIKVRT.EffectAck.V1.connectionDecisions_count",
+        "QIKVRT.EffectAck.V1.connectionDecisions_pairwise",
+        "QIKVRT.EffectAck.V1.connectionDecisions_complete"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.StateSpace",
+      "source_path": "QIKVRTEffectAck/Model.lean"
+    },
+    {
+      "id": "EA-LEAN-002",
+      "source_sections": ["4.1"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "The executable coreDone Boolean is true exactly when all seventeen abstract CoreDone conditions hold.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.coreDone_eq_true_iff"
+      ],
+      "registry_constant": null,
+      "source_path": "QIKVRTEffectAck/Model.lean"
+    },
+    {
+      "id": "EA-LEAN-003",
+      "source_sections": ["4.2"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "After the separately modeled consumer admission checks, the deterministic selector returns DONE exactly under the disclosed priority-clear and CoreDone conditions.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.selectState_eq_done_iff"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.DoneSelection",
+      "source_path": "QIKVRTEffectAck/Safety.lean"
+    },
+    {
+      "id": "EA-LEAN-004",
+      "source_sections": ["4.2"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "Within the post-admission selector, predecessor failure, deadline, absent effect-checkable reception, integrity failure, explicit BLOCK and explicit ISOLATE obey the modeled Draft-01 priority order.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.predecessorInvalid_blocks",
+        "QIKVRT.EffectAck.V1.deadlineExceeded_blocks",
+        "QIKVRT.EffectAck.V1.missingEffectCheckableReception_nacks",
+        "QIKVRT.EffectAck.V1.integrityFailure_blocks",
+        "QIKVRT.EffectAck.V1.explicitBlock_precedes_later_outcomes",
+        "QIKVRT.EffectAck.V1.explicitIsolate_precedes_done"
+      ],
+      "registry_constant": null,
+      "source_path": "QIKVRTEffectAck/Safety.lean"
+    },
+    {
+      "id": "EA-LEAN-005",
+      "source_sections": ["3", "4.1", "4.2"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "Ordinary authorization implies all modeled consumer checks, a recorded DONE and a DONE recomputed from the supplied snapshot.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.authorized_implies_recorded_and_recomputed_done",
+        "QIKVRT.EffectAck.V1.authorized_implies_consumer_checks"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.ReleaseSafety",
+      "source_path": "QIKVRTEffectAck/Safety.lean"
+    },
+    {
+      "id": "EA-LEAN-006",
+      "source_sections": ["3", "4.3", "11"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "NORMATIVE_PROTOCOL",
+      "status": "KERNEL_PROVED",
+      "statement": "A non-DONE record and a record marked stale cannot satisfy the modeled ordinary-release authorization predicate.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.nonDone_record_never_authorized",
+        "QIKVRT.EffectAck.V1.stale_record_never_authorized"
+      ],
+      "registry_constant": null,
+      "source_path": "QIKVRTEffectAck/Safety.lean"
+    },
+    {
+      "id": "EA-LEAN-007",
+      "source_sections": ["1", "3", "4"],
+      "draft_relationship": "NORMATIVE_MODEL",
+      "classification": "COUNTEREXAMPLE",
+      "status": "KERNEL_PROVED",
+      "statement": "A concrete snapshot with transport acknowledgement but no effect-checkable reception selects NACK and is not authorized.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.transportAck_is_not_effectAuthorization"
+      ],
+      "registry_constant": null,
+      "source_path": "QIKVRTEffectAck/Safety.lean"
+    },
+    {
+      "id": "EA-LEAN-008",
+      "source_sections": ["3", "9.3", "14"],
+      "draft_relationship": "CONDITIONAL_EXTENSION",
+      "classification": "CONDITIONAL_SOFTWARE_THEOREM",
+      "status": "KERNEL_PROVED_CONDITIONAL",
+      "statement": "Under complete mediation, every scoped ordinary executor invocation implies a recorded DONE and a DONE recomputed from the supplied snapshot.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.completelyMediated_execution_implies_done"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.CompleteMediation",
+      "source_path": "QIKVRTEffectAck/Mediation.lean"
+    },
+    {
+      "id": "EA-LEAN-009",
+      "source_sections": ["14"],
+      "draft_relationship": "CONDITIONAL_EXTENSION",
+      "classification": "CONDITIONAL_CYBERPHYSICAL_THEOREM",
+      "status": "KERNEL_PROVED_CONDITIONAL",
+      "statement": "Under complete mediation and a faithful causal bridge, every scoped physical occurrence has a causing executor invocation with recorded DONE and DONE recomputed from the supplied snapshot.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.physicalOccurrence_implies_authorized_done_conditionally"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.ConditionalPhysicalBridge",
+      "source_path": "QIKVRTEffectAck/Mediation.lean"
+    },
+    {
+      "id": "EA-LEAN-010",
+      "source_sections": [],
+      "related_sections": ["1", "14"],
+      "draft_relationship": "ANALYTIC_EXTENSION",
+      "classification": "INFORMATION_THEOREM",
+      "status": "KERNEL_PROVED",
+      "statement": "A target meaning is reconstructible on the observation image exactly when it is constant on every observation fiber.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.semanticReconstruction_iff_fiberConstant"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.SemanticBoundary",
+      "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+    },
+    {
+      "id": "EA-LEAN-011",
+      "source_sections": [],
+      "related_sections": ["1", "14"],
+      "draft_relationship": "ANALYTIC_EXTENSION",
+      "classification": "INFORMATION_THEOREM",
+      "status": "KERNEL_PROVED",
+      "statement": "Exact historical reconstruction by a left inverse requires an injective observation.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.exactHistoricalReconstruction_implies_injective"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.InversionBoundary",
+      "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+    },
+    {
+      "id": "EA-LEAN-012",
+      "source_sections": [],
+      "related_sections": ["1", "14"],
+      "draft_relationship": "ANALYTIC_EXTENSION",
+      "classification": "COUNTEREXAMPLE",
+      "status": "KERNEL_PROVED",
+      "statement": "A collapsed observation of two distinguishable Boolean sources admits no exact decoder.",
+      "proof_constants": [
+        "QIKVRT.EffectAck.V1.noExactDecoder_forCollapsedObservation"
+      ],
+      "registry_constant": "QIKVRT.EffectAck.V1.Claims.CollapsedDecoderCounterexample",
+      "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+    },
+    {
+      "id": "EA-OPEN-001",
+      "source_sections": ["5", "6", "7", "8", "9.1", "10", "11", "12"],
+      "draft_relationship": "SCOPE_BOUNDARY",
+      "classification": "IMPLEMENTATION_CONFORMANCE",
+      "status": "OPEN",
+      "statement": "Full Draft-01 wire parsing, closed-schema handling, JCS/SHA-256 behavior, version negotiation, authentication and independent interoperability remain outside this Lean model.",
+      "proof_constants": [],
+      "registry_constant": null,
+      "source_path": null
+    },
+    {
+      "id": "EA-OPEN-002",
+      "source_sections": ["14"],
+      "draft_relationship": "SCOPE_BOUNDARY",
+      "classification": "EMPIRICAL_PHYSICS",
+      "status": "EMPIRICAL_OPEN",
+      "statement": "Hardware correctness, sensor and actuator trust, calibrated measurement, fault coverage and physical safety require empirical evidence and are not consequences of the software proof.",
+      "proof_constants": [],
+      "registry_constant": null,
+      "source_path": null
+    },
+    {
+      "id": "EA-OPEN-003",
+      "source_sections": [],
+      "related_sections": ["1", "14"],
+      "draft_relationship": "SCOPE_BOUNDARY",
+      "classification": "TOTALITY_CLAIM",
+      "status": "OPEN",
+      "statement": "Neither Draft-01 nor this formalization establishes a universal decoder, recovery of all lost information, all mathematics, all physics or the entire universe; the separate collapsed-observation theorem proves only a concrete general inversion boundary.",
+      "proof_constants": [],
+      "registry_constant": null,
+      "source_path": null
+    }
+  ]
+}

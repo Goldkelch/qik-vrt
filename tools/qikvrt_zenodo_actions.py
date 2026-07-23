@@ -230,6 +230,31 @@ def _parse_json(response: HttpResponse, token: str) -> dict[str, Any]:
     return value
 
 
+def _parse_json_array(response: HttpResponse, token: str) -> list[dict[str, Any]]:
+    """Parse one bounded collection response without weakening object callers."""
+    if not response.body:
+        raise ZenodoError("Zenodo returned an empty collection response")
+    try:
+        value = json.loads(response.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ZenodoError(
+            f"Zenodo returned invalid collection JSON (HTTP {response.status})"
+        ) from None
+    if (
+        not isinstance(value, list)
+        or len(value) > 100
+        or not all(isinstance(item, dict) for item in value)
+    ):
+        raise ZenodoError(
+            "Zenodo returned an invalid or oversized deposition collection"
+        )
+    if token and token in json.dumps(value, ensure_ascii=False):
+        raise ZenodoError(
+            "Zenodo collection unexpectedly contained the access token"
+        )
+    return [dict(item) for item in value]
+
+
 def _response_detail(response: HttpResponse, token: str) -> str:
     try:
         parsed = _parse_json(response, token)
@@ -747,6 +772,24 @@ class ZenodoClient:
         response, value = self.request("GET", path_or_url, accept=accept)
         return response.status, value
 
+    def list_owned_depositions(self) -> list[dict[str, Any]]:
+        """Return the first bounded owner-deposition page through the safe transport."""
+        safe_url = validate_response_url(
+            "/api/deposit/depositions", self.base_url
+        )
+        response = self.transport.request(
+            "GET",
+            safe_url,
+            max_response_bytes=MAX_JSON_BYTES,
+        )
+        if response.status != 200:
+            detail = _response_detail(response, self.token)
+            raise ZenodoError(
+                "Zenodo deposition inventory request rejected "
+                f"(HTTP {response.status}): {detail}"
+            )
+        return _parse_json_array(response, self.token)
+
     def get_with_validated_redirects(self, path_or_url: str) -> dict[str, Any]:
         """Follow a small same-origin API redirect chain without forwarding blindly."""
         current = validate_response_url(path_or_url, self.base_url)
@@ -814,16 +857,40 @@ class ZenodoClient:
         _doi_from_deposition(deposition, "paper deposition")
         return deposition
 
-    def create_software_version(self, source: int) -> dict[str, Any]:
+    def create_software_version(
+        self, source: int, concept: int | None = None
+    ) -> dict[str, Any]:
+        before_ids: set[int] = set()
+        if concept is not None:
+            before_ids = {
+                _record_id(item, "pre-newversion deposition inventory")
+                for item in self.list_owned_depositions()
+                if item.get("id", item.get("record_id")) is not None
+            }
         response, value = self.request(
             "POST",
             f"/api/deposit/depositions/{source}/actions/newversion",
             accept=(200, 201, 202, 409),
         )
+        if concept is not None and response.status == 409:
+            raise ZenodoError(
+                "new-version request conflicted with an existing unreserved draft"
+            )
         links = value.get("links")
         latest_draft_raw = (
             links.get("latest_draft") if isinstance(links, dict) else None
         )
+        if isinstance(latest_draft_raw, str):
+            candidate_url = validate_response_url(
+                latest_draft_raw, self.base_url
+            )
+            linked_id = _id_from_api_url(
+                candidate_url,
+                self.base_url,
+                "/api/deposit/depositions",
+            )
+            if linked_id == source:
+                latest_draft_raw = None
         if not isinstance(latest_draft_raw, str):
             for attempt in range(self.poll_attempts):
                 status, candidate = self.get(
@@ -834,6 +901,51 @@ class ZenodoClient:
                 if status == 200 and isinstance(candidate_links, dict):
                     latest_draft_raw = candidate_links.get("latest_draft")
                 if isinstance(latest_draft_raw, str):
+                    candidate_url = validate_response_url(
+                        latest_draft_raw, self.base_url
+                    )
+                    linked_id = _id_from_api_url(
+                        candidate_url,
+                        self.base_url,
+                        "/api/deposit/depositions",
+                    )
+                    if linked_id != source:
+                        break
+                    latest_draft_raw = None
+                if attempt + 1 < self.poll_attempts:
+                    self.sleeper(self.poll_interval)
+        if not isinstance(latest_draft_raw, str) and concept is not None:
+            for attempt in range(self.poll_attempts):
+                candidates: list[dict[str, Any]] = []
+                for item in self.list_owned_depositions():
+                    try:
+                        record_id = _record_id(
+                            item, "post-newversion deposition inventory"
+                        )
+                        concept_id = _concept_id(
+                            item, "post-newversion deposition inventory"
+                        )
+                    except ZenodoError:
+                        continue
+                    if (
+                        record_id not in before_ids
+                        and record_id != source
+                        and concept_id == concept
+                        and item.get("submitted") is not True
+                        and item.get("state") != "done"
+                    ):
+                        candidates.append(item)
+                if len(candidates) > 1:
+                    raise ZenodoError(
+                        "new-version inventory contains multiple candidate drafts"
+                    )
+                if len(candidates) == 1:
+                    candidate_id = _record_id(
+                        candidates[0], "new-version inventory candidate"
+                    )
+                    latest_draft_raw = (
+                        f"{self.base_url}/deposit/depositions/{candidate_id}"
+                    )
                     break
                 if attempt + 1 < self.poll_attempts:
                     self.sleeper(self.poll_interval)
@@ -848,6 +960,12 @@ class ZenodoClient:
         )
         if _record_id(draft, "software draft") != linked_id:
             raise ZenodoError("latest_draft URL and returned software draft disagree")
+        if linked_id == source:
+            raise ZenodoError("new-version draft reused the published source ID")
+        if concept is not None and _concept_id(draft, "software draft") != concept:
+            raise ZenodoError("new-version draft changed software concept")
+        if draft.get("submitted") is True or draft.get("state") == "done":
+            raise ZenodoError("new-version result is not an editable draft")
         _doi_from_deposition(draft, "software draft")
         return draft
 

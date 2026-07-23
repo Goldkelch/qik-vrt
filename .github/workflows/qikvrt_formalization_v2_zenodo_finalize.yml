@@ -1,0 +1,661 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT formalization v2 alpha.2 finalize
+
+on:
+  push:
+    branches:
+      - automation/formalization-v2-alpha2-finalize-20260723
+    paths:
+      - release/formalization-v2-alpha2-request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-formalization-v2-alpha2-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      authorized: ${{ steps.marker.outputs.authorized }}
+      marker_sha256: ${{ steps.marker.outputs.marker_sha256 }}
+      candidate_commit: ${{ steps.marker.outputs.candidate_commit }}
+      candidate_tree: ${{ steps.marker.outputs.candidate_tree }}
+    steps:
+      - name: Check out exact marker commit without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind validator to CPython 3.12.13 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Validate inert or marker-only alpha.2 finalize request
+        id: marker
+        shell: bash
+        env:
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64, copy, hashlib, json, os, re, stat, subprocess
+          import urllib.parse, urllib.request
+          from pathlib import Path
+
+          MARKER = Path("release/formalization-v2-alpha2-request.json")
+          SCHEMA = Path("policy/qikvrt-formalization-v2-alpha2-release-request.schema.json")
+          ZERO40, ZERO64 = "0" * 40, "0" * 64
+          SHA1 = re.compile(r"[0-9a-f]{40}\Z")
+          SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+          DOI = re.compile(r"10\.5281/zenodo\.([1-9][0-9]*)\Z")
+          PROTECTED = {21488115, 21488116, 21498773, 21498774, 21501365}
+          POLICY = {
+              "authority_repository": "Goldkelch/qik-vrt",
+              "mirror_repository": "ingolf-lohmann/qik-vrt",
+              "feature_branch": "agent/effect-ack-lean-v1",
+              "reserve_ref": "refs/heads/automation/formalization-v2-alpha2-reserve-20260723",
+              "finalize_ref": "refs/heads/automation/formalization-v2-alpha2-finalize-20260723",
+              "state_branch": "qikvrt/formalization-v2-state",
+          }
+          BINDINGS = {
+              "manifest_sha256": "release/formalization-v2-alpha2-zenodo.json",
+              "client_sha256": "tools/qikvrt_formalization_v2_zenodo.py",
+              "shared_client_sha256": "tools/qikvrt_zenodo_actions.py",
+              "client_test_sha256": "tests/test_formalization_v2_zenodo.py",
+              "reserve_workflow_sha256": ".github/workflows/qikvrt_formalization_v2_zenodo.yml",
+              "finalize_workflow_sha256": ".github/workflows/qikvrt_formalization_v2_zenodo_finalize.yml",
+              "workflow_test_sha256": "tests/test_formalization_v2_release_workflow.py",
+              "package_script_sha256": "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+              "archive_sha256": "release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip",
+              "source_evidence_sha256": "release/formalization-v2-zenodo-independent-verification.json",
+          }
+
+          def fail(message):
+              raise SystemExit("BLOCK: " + message)
+
+          def exact(value, keys, label):
+              if not isinstance(value, dict) or set(value) != set(keys):
+                  fail(f"{label} keys differ from the closed contract")
+
+          def digest(path):
+              path = Path(path)
+              try:
+                  mode = path.lstat().st_mode
+              except FileNotFoundError:
+                  fail(f"required path is absent: {path}")
+              if path.is_symlink() or not stat.S_ISREG(mode):
+                  fail(f"required path is unsafe: {path}")
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          marker_raw = MARKER.read_bytes()
+          marker = json.loads(marker_raw)
+          exact(marker, {
+              "_license", "$schema_ref", "schema", "schema_sha256", "request_id",
+              "action", "confirm", "authorization_payload_sha256",
+              "repository_policy", "candidate", "bindings", "reservation",
+          }, "marker")
+          exact(marker["candidate"], {
+              "authority_commit", "authority_parent", "mirror_commit",
+              "mirror_parent", "tree",
+          }, "candidate")
+          exact(marker["bindings"], BINDINGS, "bindings")
+          exact(marker["reservation"], {
+              "state_path", "evidence_sha256", "deposition_id", "doi",
+          }, "reservation")
+          if (
+              marker["schema"] != "qikvrt_formalization_v2_alpha2_release_request_v1"
+              or marker["request_id"] != "2026-07-23-formalization-v2.0-alpha.2"
+              or marker["$schema_ref"] != "../policy/qikvrt-formalization-v2-alpha2-release-request.schema.json"
+              or marker["schema_sha256"] != digest(SCHEMA)
+              or marker["repository_policy"] != POLICY
+              or marker["reservation"]["state_path"] != "release-state/formalization-v2-alpha2/zenodo-reservation.json"
+          ):
+              fail("fixed release policy changed")
+          action = marker["action"]
+          if action == "inactive":
+              if (
+                  marker["confirm"] != "NOT_AUTHORIZED"
+                  or marker["authorization_payload_sha256"] != ZERO64
+                  or any(value != ZERO40 for value in marker["candidate"].values())
+                  or any(value != ZERO64 for value in marker["bindings"].values())
+                  or marker["reservation"]["evidence_sha256"] != ZERO64
+                  or marker["reservation"]["deposition_id"] is not None
+                  or marker["reservation"]["doi"] is not None
+              ):
+                  fail("inactive marker is not fully inert")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+                  output.write("authorized=false\n")
+                  output.write("marker_sha256=" + hashlib.sha256(marker_raw).hexdigest() + "\n")
+              raise SystemExit(0)
+          if action != "finalize" or marker["confirm"] != "FINALIZE_ZENODO_FORMALIZATION_V2_ALPHA_2_RESERVED_DRAFT":
+              fail("finalize ref carries no exact finalize authorization")
+          projection = copy.deepcopy(marker)
+          supplied = projection.pop("authorization_payload_sha256")
+          calculated = hashlib.sha256(json.dumps(
+              projection, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+          ).encode()).hexdigest()
+          if supplied != calculated or supplied == ZERO64:
+              fail("authorization payload hash changed")
+          if any(not SHA1.fullmatch(value) or value == ZERO40 for value in marker["candidate"].values()):
+              fail("candidate identity is absent")
+          if any(not SHA256.fullmatch(value) or value == ZERO64 for value in marker["bindings"].values()):
+              fail("release binding is absent")
+          reservation = marker["reservation"]
+          doi_match = DOI.fullmatch(reservation["doi"] or "")
+          if (
+              not SHA256.fullmatch(reservation["evidence_sha256"])
+              or reservation["evidence_sha256"] == ZERO64
+              or not isinstance(reservation["deposition_id"], int)
+              or reservation["deposition_id"] in PROTECTED
+              or doi_match is None
+              or int(doi_match.group(1)) != reservation["deposition_id"]
+          ):
+              fail("finalize marker has no safe exact reservation")
+          for key, path in BINDINGS.items():
+              if digest(path) != marker["bindings"][key]:
+                  fail(f"authorized bytes changed: {path}")
+          if (
+              os.environ["EVENT_REF"] != POLICY["finalize_ref"]
+              or os.environ["EVENT_FORCED"] != "false"
+              or os.environ["EVENT_AFTER"] != os.environ["GITHUB_SHA"]
+          ):
+              fail("push event is not the fixed non-forced finalize event")
+          candidate = marker["candidate"]
+          parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
+          if parent != candidate["authority_commit"] or os.environ["EVENT_BEFORE"] != parent:
+              fail("marker parent is not the exact authority candidate")
+          if subprocess.check_output(["git", "show", "-s", "--format=%T", "HEAD^"], text=True).strip() != candidate["tree"]:
+              fail("authority candidate tree changed")
+          if subprocess.check_output(["git", "show", "-s", "--format=%P", "HEAD^"], text=True).strip() != candidate["authority_parent"]:
+              fail("authority candidate parent changed")
+          changed = subprocess.check_output(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^", "HEAD"],
+              text=True,
+          ).splitlines()
+          if changed != [str(MARKER)]:
+              fail("authorization commit must change only the marker")
+          inert = copy.deepcopy(marker)
+          inert["action"] = "inactive"
+          inert["confirm"] = "NOT_AUTHORIZED"
+          inert["authorization_payload_sha256"] = ZERO64
+          inert["candidate"] = {key: ZERO40 for key in inert["candidate"]}
+          inert["bindings"] = {key: ZERO64 for key in inert["bindings"]}
+          inert["reservation"]["evidence_sha256"] = ZERO64
+          inert["reservation"]["deposition_id"] = None
+          inert["reservation"]["doi"] = None
+          if json.loads(subprocess.check_output(["git", "show", f"HEAD^:{MARKER}"])) != inert:
+              fail("candidate parent does not contain the exact inert marker")
+
+          def api(repository, suffix):
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "qikvrt-formalization-alpha2-finalize-validator",
+              }
+              if repository == os.environ["GITHUB_REPOSITORY"]:
+                  headers["Authorization"] = "Bearer " + os.environ["GH_API_TOKEN"]
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/{suffix}", headers=headers
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          authority, mirror = POLICY["authority_repository"], POLICY["mirror_repository"]
+          branch = urllib.parse.quote(POLICY["feature_branch"], safe="")
+          finalize_branch = urllib.parse.quote(POLICY["finalize_ref"].removeprefix("refs/heads/"), safe="")
+          if api(authority, "git/ref/heads/" + finalize_branch)["object"]["sha"] != os.environ["GITHUB_SHA"]:
+              fail("finalize authorization ref advanced")
+          for repository, commit_key, parent_key in (
+              (authority, "authority_commit", "authority_parent"),
+              (mirror, "mirror_commit", "mirror_parent"),
+          ):
+              commit = candidate[commit_key]
+              if api(repository, "git/ref/heads/" + branch)["object"]["sha"] != commit:
+                  fail(f"{repository} feature branch advanced")
+              remote = api(repository, "git/commits/" + commit)
+              if remote.get("tree", {}).get("sha") != candidate["tree"]:
+                  fail(f"{repository} feature tree changed")
+              if [item.get("sha") for item in remote.get("parents", [])] != [candidate[parent_key]]:
+                  fail(f"{repository} feature parent changed")
+          state_path = urllib.parse.quote(reservation["state_path"], safe="/")
+          state_ref = urllib.parse.quote(POLICY["state_branch"], safe="")
+          state = api(authority, f"contents/{state_path}?ref={state_ref}")
+          if state.get("encoding") != "base64" or not isinstance(state.get("content"), str):
+              fail("reservation state is not safe file content")
+          raw = base64.b64decode("".join(state["content"].split()), validate=True)
+          if hashlib.sha256(raw).hexdigest() != reservation["evidence_sha256"]:
+              fail("persisted reservation bytes changed")
+          value = json.loads(raw)
+          software = value.get("software", {})
+          if (
+              value.get("kind") != "qikvrt-formalization-v2-alpha2"
+              or value.get("phase") != "reserved"
+              or value.get("manifest_sha256") != marker["bindings"]["manifest_sha256"]
+              or value.get("source_evidence_sha256") != marker["bindings"]["source_evidence_sha256"]
+              or software.get("deposition_id") != reservation["deposition_id"]
+              or software.get("doi") != reservation["doi"]
+          ):
+              fail("persisted reservation is not marker-bound")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write("authorized=true\n")
+              output.write("marker_sha256=" + hashlib.sha256(marker_raw).hexdigest() + "\n")
+              output.write("candidate_commit=" + candidate["authority_commit"] + "\n")
+              output.write("candidate_tree=" + candidate["tree"] + "\n")
+          PY
+
+      - name: Validate package, manifest, source evidence and full source tree
+        if: steps.marker.outputs.authorized == 'true'
+        shell: bash
+        env:
+          CANDIDATE_COMMIT: ${{ steps.marker.outputs.candidate_commit }}
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/qikvrt-formalization-alpha2-source"
+          git worktree add --detach "$source_root" "$CANDIDATE_COMMIT"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 make -C "$source_root" test
+          python -B - <<'PY'
+          import json
+          from pathlib import Path
+          from tools.qikvrt_formalization_v2_zenodo import (
+              validate_manifest, validate_source_evidence, verify_manifest_files,
+          )
+          root = Path.cwd()
+          manifest = validate_manifest(json.loads(
+              Path("release/formalization-v2-alpha2-zenodo.json").read_text()
+          ), root)
+          validate_source_evidence(json.loads(
+              Path("release/formalization-v2-zenodo-independent-verification.json").read_text()
+          ))
+          verify_manifest_files(manifest, root, "offline-validator")
+          PY
+          python -B formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py \
+            --output "$RUNNER_TEMP/alpha2-rebuilt.zip"
+          cmp "$RUNNER_TEMP/alpha2-rebuilt.zip" \
+            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip
+
+  finalize:
+    needs: validate
+    if: needs.validate.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact marker commit without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Bind client to CPython 3.12.13 x64
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Fetch and revalidate exact reservation immediately before effect
+        shell: bash
+        env:
+          EXPECTED_MARKER_SHA256: ${{ needs.validate.outputs.marker_sha256 }}
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .qikvrt/release/formalization-v2-alpha2
+          python -B - <<'PY'
+          import base64, hashlib, json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          raw = Path("release/formalization-v2-alpha2-request.json").read_bytes()
+          marker = json.loads(raw)
+          if (
+              hashlib.sha256(raw).hexdigest() != os.environ["EXPECTED_MARKER_SHA256"]
+              or marker.get("action") != "finalize"
+          ):
+              raise SystemExit("BLOCK: finalize marker changed")
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "qikvrt-formalization-alpha2-finalize-effect",
+          }
+          def api(repository, suffix):
+              local = dict(headers)
+              if repository == os.environ["GITHUB_REPOSITORY"]:
+                  local["Authorization"] = "Bearer " + os.environ["GH_API_TOKEN"]
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/{suffix}", headers=local
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          policy, candidate = marker["repository_policy"], marker["candidate"]
+          finalize_branch = urllib.parse.quote(policy["finalize_ref"].removeprefix("refs/heads/"), safe="")
+          feature = urllib.parse.quote(policy["feature_branch"], safe="")
+          if api("Goldkelch/qik-vrt", "git/ref/heads/" + finalize_branch)["object"]["sha"] != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: finalize authorization ref advanced")
+          for repository, key in (
+              ("Goldkelch/qik-vrt", "authority_commit"),
+              ("ingolf-lohmann/qik-vrt", "mirror_commit"),
+          ):
+              if api(repository, "git/ref/heads/" + feature)["object"]["sha"] != candidate[key]:
+                  raise SystemExit(f"BLOCK: {repository} feature branch advanced")
+          reservation = marker["reservation"]
+          path = urllib.parse.quote(reservation["state_path"], safe="/")
+          ref = urllib.parse.quote(policy["state_branch"], safe="")
+          state = api("Goldkelch/qik-vrt", f"contents/{path}?ref={ref}")
+          encoded = "".join(state.get("content", "").split())
+          state_raw = base64.b64decode(encoded, validate=True)
+          if hashlib.sha256(state_raw).hexdigest() != reservation["evidence_sha256"]:
+              raise SystemExit("BLOCK: reservation state changed")
+          value = json.loads(state_raw)
+          if (
+              value.get("software", {}).get("deposition_id") != reservation["deposition_id"]
+              or value.get("software", {}).get("doi") != reservation["doi"]
+          ):
+              raise SystemExit("BLOCK: reservation identity changed")
+          output = Path(".qikvrt/release/formalization-v2-alpha2/zenodo-reservation.json")
+          output.write_bytes(state_raw)
+          output.chmod(0o600)
+          PY
+
+      - name: Persist prepublication Lean CI evidence
+        shell: bash
+        env:
+          CANDIDATE_COMMIT: ${{ needs.validate.outputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ needs.validate.outputs.candidate_tree }}
+          GH_API_TOKEN: ${{ github.token }}
+          STATE_BRANCH: qikvrt/formalization-v2-state
+          STATE_PATH: release-state/formalization-v2-alpha2/LEAN_CI_EVIDENCE.json
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64, hashlib, json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          manifest_raw = Path("release/formalization-v2-alpha2-zenodo.json").read_bytes()
+          manifest = json.loads(manifest_raw)
+          evidence = {
+              "schema": "qikvrt_formalization_v2_alpha2_lean_ci_evidence_v1",
+              "status": "success",
+              "candidate_commit": os.environ["CANDIDATE_COMMIT"],
+              "candidate_tree": os.environ["CANDIDATE_TREE"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "workflow_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+              "expected_uploads": [
+                  {
+                      "name": item["name"],
+                      "size": item["size"],
+                      "md5": item["md5"],
+                      "sha256": item["sha256"],
+                  }
+                  for item in manifest["software"]["files"]
+              ],
+              "gates": [
+                  "repository make test",
+                  "manifest and source-evidence validation",
+                  "deterministic archive byte comparison",
+              ],
+              "created_before_zenodo_publication": True,
+              "zenodo_release_file": False,
+          }
+          root = Path(".qikvrt/release/formalization-v2-alpha2")
+          root.mkdir(parents=True, exist_ok=True)
+          local = root / "LEAN_CI_EVIDENCE.json"
+          local.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          base = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + os.environ["GH_API_TOKEN"],
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "qikvrt-formalization-alpha2-state",
+          }
+          def api(method, path, body=None):
+              data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+              request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          encoded_ref = urllib.parse.quote("heads/" + os.environ["STATE_BRANCH"], safe="/")
+          parent = api("GET", "/git/ref/" + encoded_ref)["object"]["sha"]
+          base_tree = api("GET", f"/git/commits/{parent}")["tree"]["sha"]
+          blob = api("POST", "/git/blobs", {
+              "content": base64.b64encode(local.read_bytes()).decode(),
+              "encoding": "base64",
+          })["sha"]
+          tree = api("POST", "/git/trees", {
+              "base_tree": base_tree,
+              "tree": [{
+                  "path": os.environ["STATE_PATH"], "mode": "100644",
+                  "type": "blob", "sha": blob,
+              }],
+          })["sha"]
+          if tree == base_tree:
+              raise SystemExit(0)
+          commit = api("POST", "/git/commits", {
+              "message": "Record prepublication formalization alpha.2 CI evidence",
+              "tree": tree, "parents": [parent],
+          })["sha"]
+          api("PATCH", "/git/refs/" + encoded_ref, {"sha": commit, "force": False})
+          PY
+
+      - name: Upload prepublication Lean CI evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: formalization-v2-alpha2-lean-ci-${{ github.sha }}
+          path: .qikvrt/release/formalization-v2-alpha2/LEAN_CI_EVIDENCE.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Finalize only the MAC-bound reserved alpha.2 draft
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python -B tools/qikvrt_formalization_v2_zenodo.py finalize \
+            --manifest release/formalization-v2-alpha2-zenodo.json \
+            --source-evidence release/formalization-v2-zenodo-independent-verification.json \
+            --reservation .qikvrt/release/formalization-v2-alpha2/zenodo-reservation.json \
+            --result .qikvrt/release/formalization-v2-alpha2/zenodo-finalization.json \
+            --repository-root .
+          python -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = Path(".qikvrt/release/formalization-v2-alpha2/zenodo-finalization.json").read_bytes()
+          if os.environ["ZENODO_ACCESS_TOKEN"].encode() in raw:
+              raise SystemExit("BLOCK: finalization evidence contains the token")
+          value = json.loads(raw)
+          marker = json.loads(Path("release/formalization-v2-alpha2-request.json").read_text())
+          if (
+              value.get("schema") != "qikvrt_formalization_v2_alpha2_zenodo_result_v1"
+              or value.get("published_record_id") != marker["reservation"]["deposition_id"]
+              or value.get("doi") != marker["reservation"]["doi"]
+              or value.get("public_record_verified") is not True
+          ):
+              raise SystemExit("BLOCK: client finalization evidence changed identity")
+          PY
+
+      - name: Independently verify anonymous public Zenodo metadata and bytes
+        shell: bash
+        env:
+          CANDIDATE_COMMIT: ${{ needs.validate.outputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ needs.validate.outputs.candidate_tree }}
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import hashlib, json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          manifest_raw = Path("release/formalization-v2-alpha2-zenodo.json").read_bytes()
+          manifest = json.loads(manifest_raw)
+          marker = json.loads(Path("release/formalization-v2-alpha2-request.json").read_text())
+          result_raw = Path(".qikvrt/release/formalization-v2-alpha2/zenodo-finalization.json").read_bytes()
+          result = json.loads(result_raw)
+          record_id = marker["reservation"]["deposition_id"]
+          expected_doi = marker["reservation"]["doi"]
+
+          def get_json(url):
+              parts = urllib.parse.urlsplit(url)
+              if (
+                  parts.scheme != "https" or parts.hostname != "zenodo.org"
+                  or parts.username or parts.password or parts.query or parts.fragment
+              ):
+                  raise SystemExit("BLOCK: unsafe anonymous Zenodo URL")
+              request = urllib.request.Request(url, headers={
+                  "Accept": "application/json",
+                  "User-Agent": "qikvrt-formalization-alpha2-anonymous-verifier",
+              })
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  raw = response.read(8_388_609)
+              if len(raw) > 8_388_608:
+                  raise SystemExit("BLOCK: anonymous JSON exceeded size bound")
+              return json.loads(raw)
+
+          public = get_json(f"https://zenodo.org/api/records/{record_id}")
+          if (
+              public.get("id") != record_id
+              or int(public.get("conceptrecid", 0)) != 21488115
+              or public.get("doi") != expected_doi
+          ):
+              raise SystemExit("BLOCK: anonymous public record identity changed")
+          expected_metadata = manifest["software"]["metadata"]
+          actual_metadata = public.get("metadata", {})
+          for key in (
+              "title", "description", "publication_date", "version", "language",
+              "creators", "keywords", "related_identifiers", "notes",
+          ):
+              if actual_metadata.get(key) != expected_metadata.get(key):
+                  raise SystemExit(f"BLOCK: anonymous metadata differs: {key}")
+          if actual_metadata.get("resource_type", {}).get("type") != "software":
+              raise SystemExit("BLOCK: anonymous resource type differs")
+          license_value = actual_metadata.get("license")
+          if isinstance(license_value, dict):
+              license_value = license_value.get("id")
+          if license_value != expected_metadata["license"]:
+              raise SystemExit("BLOCK: anonymous license differs")
+          actual_files = {}
+          for item in public.get("files", []):
+              name = item.get("key", item.get("filename"))
+              actual_files[name] = item
+          if set(actual_files) != {item["name"] for item in manifest["software"]["files"]}:
+              raise SystemExit("BLOCK: anonymous file set differs")
+          verified = []
+          for expected in manifest["software"]["files"]:
+              item = actual_files[expected["name"]]
+              size = item.get("size", item.get("filesize"))
+              checksum = item.get("checksum", "")
+              if checksum.startswith("md5:"):
+                  checksum = checksum[4:]
+              if size != expected["size"] or checksum != expected["md5"]:
+                  raise SystemExit("BLOCK: anonymous file metadata differs")
+              url = item.get("links", {}).get("download", item.get("links", {}).get("self"))
+              parts = urllib.parse.urlsplit(url or "")
+              if (
+                  parts.scheme != "https" or parts.hostname != "zenodo.org"
+                  or parts.username or parts.password or parts.query or parts.fragment
+              ):
+                  raise SystemExit("BLOCK: unsafe anonymous file URL")
+              with urllib.request.urlopen(urllib.request.Request(
+                  url, headers={"User-Agent": "qikvrt-formalization-alpha2-anonymous-verifier"}
+              ), timeout=120) as response:
+                  raw = response.read(expected["size"] + 1)
+              if len(raw) != expected["size"] or hashlib.sha256(raw).hexdigest() != expected["sha256"]:
+                  raise SystemExit("BLOCK: anonymous file bytes differ")
+              verified.append({
+                  "name": expected["name"], "size": expected["size"],
+                  "md5": expected["md5"], "sha256": expected["sha256"],
+              })
+          source = get_json("https://zenodo.org/api/records/21501365")
+          latest = get_json(source.get("links", {}).get("latest", ""))
+          if latest.get("id") != record_id or int(latest.get("conceptrecid", 0)) != 21488115:
+              raise SystemExit("BLOCK: alpha.2 is not the anonymous concept latest")
+          evidence = {
+              "schema": "qikvrt_formalization_v2_alpha2_anonymous_verification_v1",
+              "anonymous": True,
+              "record_id": record_id,
+              "concept_record_id": 21488115,
+              "doi": expected_doi,
+              "version": "2.0.0-alpha.2",
+              "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+              "result_sha256": hashlib.sha256(result_raw).hexdigest(),
+              "source_record_id": 21501365,
+              "source_latest_verified": True,
+              "files": verified,
+          }
+          root = Path(".qikvrt/release/formalization-v2-alpha2")
+          root.mkdir(parents=True, exist_ok=True)
+          public_path = root / "ZENODO_PUBLICATION_EVIDENCE.json"
+          public_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Persist finalization and Zenodo publication evidence
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          STATE_BRANCH: qikvrt/formalization-v2-state
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import base64, json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          base = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + os.environ["GH_API_TOKEN"],
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "qikvrt-formalization-alpha2-state",
+          }
+          def api(method, path, body=None):
+              data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+              request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          encoded_ref = urllib.parse.quote("heads/" + os.environ["STATE_BRANCH"], safe="/")
+          parent = api("GET", "/git/ref/" + encoded_ref)["object"]["sha"]
+          base_tree = api("GET", f"/git/commits/{parent}")["tree"]["sha"]
+          root = Path(".qikvrt/release/formalization-v2-alpha2")
+          rows = []
+          for local_name, state_name in (
+              ("zenodo-finalization.json", "release-state/formalization-v2-alpha2/zenodo-finalization.json"),
+              ("ZENODO_PUBLICATION_EVIDENCE.json", "release-state/formalization-v2-alpha2/ZENODO_PUBLICATION_EVIDENCE.json"),
+          ):
+              content = (root / local_name).read_bytes()
+              blob = api("POST", "/git/blobs", {
+                  "content": base64.b64encode(content).decode(), "encoding": "base64",
+              })["sha"]
+              rows.append({"path": state_name, "mode": "100644", "type": "blob", "sha": blob})
+          tree = api("POST", "/git/trees", {"base_tree": base_tree, "tree": rows})["sha"]
+          if tree == base_tree:
+              raise SystemExit(0)
+          commit = api("POST", "/git/commits", {
+              "message": "Record formalization alpha.2 finalization evidence",
+              "tree": tree, "parents": [parent],
+          })["sha"]
+          api("PATCH", "/git/refs/" + encoded_ref, {"sha": commit, "force": False})
+          PY
+
+      - name: Upload finalization and post-publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: formalization-v2-alpha2-finalization-${{ github.sha }}
+          path: .qikvrt/release/formalization-v2-alpha2/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30

@@ -56,6 +56,25 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertIn("--json", completed.stdout)
         self.assertIn("--task", completed.stdout)
 
+    def test_handoff_accepts_current_context_schema(self) -> None:
+        context = json.loads((ROOT / "AI_CONTEXT.json").read_text(encoding="utf-8"))
+        completed = subprocess.run(
+            [sys.executable, "-B", "tools/ai_handoff.py"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"current context schema {context['schema']!r} rejected: "
+            f"{completed.stderr}",
+        )
+        self.assertIn("AI_HANDOFF_STATUS=VALID", completed.stdout)
+
     def test_bootloader_source_preserves_effect_boundary(self) -> None:
         source = (ROOT / "tools/ai_runtime_bootloader.py").read_text(encoding="utf-8")
         self.assertIn("no network access", source)
