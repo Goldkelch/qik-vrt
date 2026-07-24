@@ -13,24 +13,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact transport state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: automation/audio-20260724-103937
           persist-credentials: false
-      - name: Create unreferenced blob and bounded request manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
+
+      - name: Reconstruct and validate bounded audio
+        id: media
         shell: bash
         run: |
           set -euo pipefail
           root='requests/audio-20260724-103937'
-          chunks=("$root/audio.opus.b64.00" "$root/audio.opus.b64.01" "$root/audio.opus.b64.02" "$root/audio.opus.b64.03" "$root/audio.opus.b64.04")
-          mapfile -t actual < <(find "$root" -maxdepth 1 -type f -name 'audio.opus.b64.*' -print | sort)
-          [[ ${#actual[@]} -eq ${#chunks[@]} ]]
-          for i in "${!chunks[@]}"; do [[ "${actual[$i]}" == "${chunks[$i]}" ]]; done
+          mapfile -t chunks < <(find "$root" -maxdepth 1 -type f -name 'audio.opus.b64.*' -print | sort)
+          (( ${#chunks[@]} >= 1 && ${#chunks[@]} <= 20 ))
+          for i in "${!chunks[@]}"; do
+            printf -v suffix '%02d' "$i"
+            [[ "${chunks[$i]}" == "$root/audio.opus.b64.$suffix" ]]
+          done
           audio="$RUNNER_TEMP/request.ogg"
-          cat "${chunks[@]}" | tr -d '[:space:]' | base64 -d > "$audio"
+          cat "${chunks[@]}" | tr -d '[:space:]' | base64 --decode > "$audio"
           test -s "$audio"
           bytes="$(wc -c < "$audio" | tr -d ' ')"
           (( bytes > 1000 && bytes <= 26214400 ))
@@ -38,50 +40,96 @@ jobs:
           duration="$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$audio")"
           python3 - "$duration" <<'PY'
           import math, sys
-          d=float(sys.argv[1])
-          assert math.isfinite(d) and 20.0 <= d <= 23.0, d
+          duration=float(sys.argv[1])
+          if not math.isfinite(duration) or not 20.0 <= duration <= 23.0:
+              raise SystemExit(f'unexpected duration: {duration}')
           PY
-          python3 -B - "$audio" "$REPOSITORY" "$digest" "$bytes" <<'PY'
-          import base64, json, os, pathlib, sys, urllib.request
-          audio=pathlib.Path(sys.argv[1]).read_bytes()
-          repository,digest,expected_bytes=sys.argv[2:]
-          assert len(audio)==int(expected_bytes)
-          headers={
-            'Accept':'application/vnd.github+json',
-            'Authorization':f"Bearer {os.environ['GH_TOKEN']}",
-            'Content-Type':'application/json',
-            'X-GitHub-Api-Version':'2022-11-28',
-            'User-Agent':'qikvrt-audio-bootstrap',
-          }
-          def request(method,url,payload):
-            req=urllib.request.Request(url,method=method,headers=headers,data=json.dumps(payload,separators=(',',':')).encode())
-            with urllib.request.urlopen(req,timeout=60) as response: return json.load(response)
-          api=f'https://api.github.com/repos/{repository}'
-          blob=request('POST',f'{api}/git/blobs',{'content':base64.b64encode(audio).decode(),'encoding':'base64'})
+          {
+            echo "audio_path=$audio"
+            echo "bytes=$bytes"
+            echo "sha256=$digest"
+            echo "duration=$duration"
+            echo "chunk_count=${#chunks[@]}"
+          } >> "$GITHUB_OUTPUT"
+          printf '{"stage":"media-validated","bytes":%s,"sha256":"%s","duration":%s,"chunks":%s}\n' \
+            "$bytes" "$digest" "$duration" "${#chunks[@]}" > "$RUNNER_TEMP/media-receipt.json"
+
+      - name: Create unreferenced authenticated Git blob
+        id: blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          AUDIO_PATH: ${{ steps.media.outputs.audio_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64, json, os, pathlib, urllib.error, urllib.request
+          audio=pathlib.Path(os.environ['AUDIO_PATH']).read_bytes()
+          url=f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs"
+          payload=json.dumps({'content':base64.b64encode(audio).decode('ascii'),'encoding':'base64'},separators=(',',':')).encode()
+          request=urllib.request.Request(url,method='POST',data=payload,headers={
+              'Accept':'application/vnd.github+json',
+              'Authorization':f"Bearer {os.environ['GH_TOKEN']}",
+              'Content-Type':'application/json',
+              'X-GitHub-Api-Version':'2022-11-28',
+              'User-Agent':'qikvrt-audio-bootstrap',
+          })
+          try:
+              with urllib.request.urlopen(request,timeout=60) as response: result=json.load(response)
+          except urllib.error.HTTPError as error:
+              raise SystemExit(f'blob API failed: {error.code}: {error.read().decode(errors="replace")}') from error
+          sha=str(result['sha'])
+          if len(sha)!=40: raise SystemExit('invalid blob SHA')
+          pathlib.Path(os.environ['RUNNER_TEMP'],'blob-receipt.json').write_text(json.dumps({'stage':'blob-created','blob_sha':sha},indent=2)+'\n')
+          with pathlib.Path(os.environ['GITHUB_OUTPUT']).open('a') as output: output.write(f'blob_sha={sha}\n')
+          PY
+
+      - name: Commit authenticated request manifest
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BLOB_SHA: ${{ steps.blob.outputs.blob_sha }}
+          SOURCE_SHA256: ${{ steps.media.outputs.sha256 }}
+          SOURCE_BYTES: ${{ steps.media.outputs.bytes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64, json, os, pathlib, urllib.error, urllib.request
           manifest={
-            'schemaVersion':'1.0.0',
-            'requestId':'audio-20260724-103937',
-            'source':{
-              'kind':'github-git-blob','repository':repository,'blobSha':blob['sha'],
-              'sha256':digest,'bytes':len(audio),'filename':'AUDIO-2026-07-24-10-39-37.ogg'
-            },
+            'schemaVersion':'1.0.0','requestId':'audio-20260724-103937',
+            'source':{'kind':'github-git-blob','repository':os.environ['REPOSITORY'],'blobSha':os.environ['BLOB_SHA'],'sha256':os.environ['SOURCE_SHA256'],'bytes':int(os.environ['SOURCE_BYTES']),'filename':'AUDIO-2026-07-24-10-39-37.ogg'},
             'transcription':{'language':'de','chunkSeconds':28,'overlapSeconds':1.5,'threads':4},
             'response':{'instruction':'Read AI, AI_CONTEXT.json, AGENTS.md and repository evidence. Answer the transcribed command in German. Determine whether the GitHub mechanisms are completely and independently implemented. Separate implemented capability, verified execution, and remaining human or external authorization boundaries. Claim no unverified effect.'}
           }
           raw=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode()
-          result=request('PUT',f'{api}/contents/requests/audio/20260724-103937.json',{
-            'message':'Submit authenticated audio transcription request',
-            'content':base64.b64encode(raw).decode(),
-            'branch':'audio-request/20260724-103937'
+          url=f"https://api.github.com/repos/{os.environ['REPOSITORY']}/contents/requests/audio/20260724-103937.json"
+          payload=json.dumps({'message':'Submit authenticated audio transcription request','content':base64.b64encode(raw).decode('ascii'),'branch':'audio-request/20260724-103937'},separators=(',',':')).encode()
+          request=urllib.request.Request(url,method='PUT',data=payload,headers={
+              'Accept':'application/vnd.github+json','Authorization':f"Bearer {os.environ['GH_TOKEN']}",'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'qikvrt-audio-bootstrap'
           })
-          receipt={'blob_sha':blob['sha'],'sha256':digest,'bytes':len(audio),'manifest_commit':result['commit']['sha']}
-          pathlib.Path(os.environ['RUNNER_TEMP'],'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          print(json.dumps({'request_id':'audio-20260724-103937','bytes':len(audio),'sha256':digest,'manifest_commit':result['commit']['sha']}))
+          try:
+              with urllib.request.urlopen(request,timeout=60) as response: result=json.load(response)
+          except urllib.error.HTTPError as error:
+              raise SystemExit(f'contents API failed: {error.code}: {error.read().decode(errors="replace")}') from error
+          commit=str(result['commit']['sha'])
+          receipt={'stage':'manifest-committed','request_id':'audio-20260724-103937','blob_sha':os.environ['BLOB_SHA'],'source_sha256':os.environ['SOURCE_SHA256'],'source_bytes':int(os.environ['SOURCE_BYTES']),'manifest_commit':commit}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'manifest-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          print(json.dumps({'request_id':receipt['request_id'],'manifest_commit':commit,'source_bytes':receipt['source_bytes'],'source_sha256':receipt['source_sha256']}))
           PY
-          rm -f "$audio"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+
+      - name: Upload non-content receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-audio-bootstrap-20260724-103937
           retention-days: 7
-          path: ${{ runner.temp }}/receipt.json
-          if-no-files-found: error
+          path: ${{ runner.temp }}/*-receipt.json
+          if-no-files-found: warn
+
+      - name: Remove reconstructed audio
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/request.ogg"
