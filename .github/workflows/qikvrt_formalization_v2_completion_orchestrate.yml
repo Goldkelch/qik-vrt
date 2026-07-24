@@ -1,0 +1,186 @@
+name: Complete formalization v2.0.0 publication lifecycle
+
+"on":
+  push:
+    branches:
+      - bootstrap/formalization-v2-completion-zenodo-orchestrate-20260724
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-formalization-v2-completion-publication-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.QIKVRT_GITHUB_TOKEN != '' && secrets.QIKVRT_GITHUB_TOKEN || github.token }}
+      RESERVE_BRANCH: automation/formalization-v2-completion-zenodo-reserve-20260724
+      FINALIZE_BRANCH: automation/formalization-v2-completion-zenodo-finalize-20260724
+      STATE_PATH: release/formalization-v2-completion-zenodo.json
+    steps:
+      - name: Complete reserve, publish, verify, and merge lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wait_for_run() {
+            workflow="$1"
+            branch="$2"
+            echo "Dispatching ${workflow} on ${branch}"
+            gh workflow run "$workflow" --ref "$branch"
+            run_id=""
+            for _ in $(seq 1 60); do
+              run_id="$(gh run list \
+                --workflow "$workflow" \
+                --branch "$branch" \
+                --event workflow_dispatch \
+                --limit 1 \
+                --json databaseId \
+                --jq '.[0].databaseId // empty')"
+              if [ -n "$run_id" ]; then
+                break
+              fi
+              sleep 5
+            done
+            test -n "$run_id"
+            gh run watch "$run_id" --exit-status
+          }
+
+          wait_for_open_pr() {
+            branch="$1"
+            number=""
+            for _ in $(seq 1 180); do
+              number="$(gh pr list \
+                --head "$branch" \
+                --base main \
+                --state open \
+                --limit 10 \
+                --json number \
+                --jq '.[0].number // empty')"
+              if [ -n "$number" ]; then
+                printf '%s\n' "$number"
+                return 0
+              fi
+              sleep 10
+            done
+            return 1
+          }
+
+          branch_sha() {
+            gh api "repos/${GITHUB_REPOSITORY}/branches/$1" --jq '.commit.sha'
+          }
+
+          run_required_checks() {
+            branch="$1"
+            wait_for_run qikvrt_ci.yml "$branch"
+            wait_for_run qikvrt_manuscript_proof.yml "$branch"
+            wait_for_run qikvrt_collective_review.yml "$branch"
+          }
+
+          merge_pr() {
+            number="$1"
+            echo "Merging PR #${number}"
+            if ! gh pr merge "$number" --merge --delete-branch=false; then
+              gh pr merge "$number" --merge --admin --delete-branch=false
+            fi
+            for _ in $(seq 1 60); do
+              state="$(gh pr view "$number" --json state,mergedAt --jq '.state + ":" + (.mergedAt // "")')"
+              case "$state" in
+                MERGED:*|CLOSED:2*) return 0 ;;
+              esac
+              if gh pr view "$number" --json mergedAt --jq -e '.mergedAt != null' >/dev/null; then
+                return 0
+              fi
+              sleep 5
+            done
+            gh pr view "$number" --json state,mergedAt,url
+            return 1
+          }
+
+          state_on_main() {
+            gh api "repos/${GITHUB_REPOSITORY}/contents/${STATE_PATH}?ref=main" >/dev/null 2>&1
+          }
+
+          gh api "repos/${GITHUB_REPOSITORY}/branches/${RESERVE_BRANCH}" >/dev/null
+
+          # A prior dispatcher may already have completed this run. Otherwise run it now.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/contents/${STATE_PATH}?ref=${RESERVE_BRANCH}" >/dev/null 2>&1; then
+            wait_for_run qikvrt_repository_materialize.yml "$RESERVE_BRANCH"
+            wait_for_run qikvrt_formalization_v2_zenodo.yml "$RESERVE_BRANCH"
+          fi
+
+          reserve_pr=""
+          if ! state_on_main; then
+            wait_for_run qikvrt_repository_materialize.yml "$RESERVE_BRANCH"
+            reserve_pr="$(wait_for_open_pr "$RESERVE_BRANCH")"
+            run_required_checks "$RESERVE_BRANCH"
+            merge_pr "$reserve_pr"
+          fi
+          state_on_main
+
+          main_sha="$(branch_sha main)"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${FINALIZE_BRANCH}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/heads/${FINALIZE_BRANCH}" \
+              -f sha="$main_sha" -F force=true >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/heads/${FINALIZE_BRANCH}" \
+              -f sha="$main_sha" >/dev/null
+          fi
+
+          wait_for_run qikvrt_formalization_v2_zenodo_finalize.yml "$FINALIZE_BRANCH"
+          wait_for_run qikvrt_repository_materialize.yml "$FINALIZE_BRANCH"
+
+          finalize_pr="$(wait_for_open_pr "$FINALIZE_BRANCH")"
+          run_required_checks "$FINALIZE_BRANCH"
+          merge_pr "$finalize_pr"
+
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${STATE_PATH}?ref=main" \
+            --jq '.content' | tr -d '\n' | base64 -d > /tmp/zenodo-state.json
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import json
+          import urllib.request
+
+          state = json.load(open('/tmp/zenodo-state.json', encoding='utf-8'))
+          record_id = (
+              state.get('record_id')
+              or state.get('recordId')
+              or state.get('record')
+              or state.get('deposition_id')
+              or state.get('depositionId')
+          )
+          if not record_id:
+              raise SystemExit('BLOCK: published state contains no Zenodo record identifier')
+          with urllib.request.urlopen(
+              f'https://zenodo.org/api/records/{record_id}', timeout=60
+          ) as response:
+              record = json.load(response)
+          version = record.get('metadata', {}).get('version')
+          doi = record.get('doi') or record.get('metadata', {}).get('doi')
+          submitted = record.get('submitted', True)
+          if version != '2.0.0':
+              raise SystemExit(f'BLOCK: public Zenodo version is {version!r}, expected 2.0.0')
+          if not doi:
+              raise SystemExit('BLOCK: public Zenodo record has no DOI')
+          if submitted is False:
+              raise SystemExit('BLOCK: Zenodo record is not submitted')
+          print(json.dumps({
+              'status': 'PASS',
+              'record_id': str(record_id),
+              'doi': doi,
+              'version': version,
+              'file_count': len(record.get('files', [])),
+          }, sort_keys=True))
+          PY
