@@ -3,7 +3,9 @@ name: QIK-VRT one-shot audio transport bootstrap
 on:
   push:
     branches: [automation/audio-20260724-103937]
-    paths: [.github/workflows/qikvrt_audio_transport_bootstrap.yml]
+    paths:
+      - .github/workflows/qikvrt_audio_transport_bootstrap.yml
+      - requests/audio-20260724-103937/source.opus.b64.*
 
 permissions:
   contents: write
@@ -37,9 +39,7 @@ jobs:
           done
           audio="$RUNNER_TEMP/AUDIO-2026-07-24-10-39-37.ogg"
           : > "$audio"
-          for chunk in "${chunks[@]}"; do
-            base64 --decode "$chunk" >> "$audio"
-          done
+          for chunk in "${chunks[@]}"; do base64 --decode "$chunk" >> "$audio"; done
           bytes="$(wc -c < "$audio" | tr -d ' ')"
           sha256="$(sha256sum "$audio" | awk '{print $1}')"
           [[ "$bytes" = "$EXPECTED_BYTES" ]]
@@ -61,15 +61,13 @@ jobs:
           import json, sys
           from pathlib import Path
           Path(sys.argv[1]).write_text(json.dumps({
-            'schema':'qikvrt_audio_transport_media_receipt_v1',
-            'chunk_count':8,
-            'derived_bytes':int(sys.argv[2]),
-            'derived_sha256':sys.argv[3],
+            'schema':'qikvrt_audio_transport_media_receipt_v1','chunk_count':8,
+            'derived_bytes':int(sys.argv[2]),'derived_sha256':sys.argv[3],
             'duration_seconds':float(sys.argv[4]),
             'original_filename':'AUDIO-2026-07-24-10-39-37(1).m4a',
             'original_bytes':236552,
             'original_sha256':'46bdb66ebfeb54514f20354267dc7cb62e13b72c41a2446fdf23babf1478b22b',
-            'derivation':'ffmpeg mono 16 kHz libopus 16 kbit/s application=voip',
+            'derivation':'ffmpeg mono 16 kHz libopus 16 kbit/s application=voip'
           },indent=2,sort_keys=True)+'\n',encoding='utf-8')
           PY
 
@@ -89,8 +87,7 @@ jobs:
             f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/blobs",
             method='POST',
             data=json.dumps({'content':base64.b64encode(audio).decode('ascii'),'encoding':'base64'},separators=(',',':')).encode(),
-            headers={'Accept':'application/vnd.github+json','Authorization':f"Bearer {os.environ['GH_TOKEN']}",'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'qikvrt-audio-bootstrap'},
-          )
+            headers={'Accept':'application/vnd.github+json','Authorization':f"Bearer {os.environ['GH_TOKEN']}",'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'qikvrt-audio-bootstrap'})
           try:
             with urllib.request.urlopen(request,timeout=60) as response: result=json.load(response)
           except urllib.error.HTTPError as error:
@@ -115,13 +112,8 @@ jobs:
           python3 -B - <<'PY'
           import base64, json, os, pathlib, urllib.error, urllib.request
           manifest={
-            'schemaVersion':'1.0.0',
-            'requestId':'audio-20260724-103937',
-            'source':{
-              'kind':'github-git-blob','repository':os.environ['REPOSITORY'],
-              'blobSha':os.environ['BLOB_SHA'],'sha256':os.environ['SOURCE_SHA256'],
-              'bytes':int(os.environ['SOURCE_BYTES']),'filename':'AUDIO-2026-07-24-10-39-37.ogg'
-            },
+            'schemaVersion':'1.0.0','requestId':'audio-20260724-103937',
+            'source':{'kind':'github-git-blob','repository':os.environ['REPOSITORY'],'blobSha':os.environ['BLOB_SHA'],'sha256':os.environ['SOURCE_SHA256'],'bytes':int(os.environ['SOURCE_BYTES']),'filename':'AUDIO-2026-07-24-10-39-37.ogg'},
             'transcription':{'language':'de','chunkSeconds':28,'overlapSeconds':1.5,'threads':4},
             'response':{'instruction':'Read AI, AI_CONTEXT.json, AGENTS.md and repository evidence. Answer the transcribed command in German. Determine whether the GitHub mechanisms are completely and independently implemented. Separate implemented capability, verified execution, and remaining human or external authorization boundaries. Claim no unverified effect. Provenance boundary: original M4A SHA-256 46bdb66ebfeb54514f20354267dc7cb62e13b72c41a2446fdf23babf1478b22b, 236552 bytes; authenticated transport is a complete 21.808-second mono Opus derivation SHA-256 edd794daa6991a4a9ebc27fe73c16d650bcc11665c8d6bd290d4923278e9beb1.'}
           }
@@ -130,8 +122,7 @@ jobs:
             f"https://api.github.com/repos/{os.environ['REPOSITORY']}/contents/requests/audio/20260724-103937.json",
             method='PUT',
             data=json.dumps({'message':'Submit authenticated audio transcription request','content':base64.b64encode(raw).decode('ascii'),'branch':'audio-request/20260724-103937'},separators=(',',':')).encode(),
-            headers={'Accept':'application/vnd.github+json','Authorization':f"Bearer {os.environ['GH_TOKEN']}",'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'qikvrt-audio-bootstrap'},
-          )
+            headers={'Accept':'application/vnd.github+json','Authorization':f"Bearer {os.environ['GH_TOKEN']}",'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'qikvrt-audio-bootstrap'})
           try:
             with urllib.request.urlopen(request,timeout=60) as response: result=json.load(response)
           except urllib.error.HTTPError as error:
