@@ -32,7 +32,10 @@ jobs:
             [[ "${chunks[$i]}" == "$root/audio.opus.b64.$suffix" ]]
           done
           audio="$RUNNER_TEMP/request.ogg"
-          cat "${chunks[@]}" | tr -d '[:space:]' | base64 --decode > "$audio"
+          : > "$audio"
+          for chunk in "${chunks[@]}"; do
+            tr -d '[:space:]' < "$chunk" | base64 --decode >> "$audio"
+          done
           test -s "$audio"
           bytes="$(wc -c < "$audio" | tr -d ' ')"
           (( bytes > 1000 && bytes <= 26214400 ))
