@@ -1,0 +1,229 @@
+name: Supervise completion of formalization v2.0.0 publication
+
+"on":
+  push:
+    branches:
+      - bootstrap/formalization-v2-completion-publication-supervisor-20260724
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-formalization-v2-completion-publication-supervisor
+  cancel-in-progress: true
+
+jobs:
+  supervise:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ secrets.QIKVRT_GITHUB_TOKEN != '' && secrets.QIKVRT_GITHUB_TOKEN || github.token }}
+      RESERVE_BRANCH: automation/formalization-v2-completion-zenodo-reserve-20260724
+      FINALIZE_BRANCH: automation/formalization-v2-completion-zenodo-finalize-20260724
+      DIRECT_BRANCH: automation/formalization-v2-completion-zenodo-published-20260724
+      STATE_PATH: release/formalization-v2-completion-zenodo.json
+    steps:
+      - name: Check out mainline
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Supervise repository-native publication until public PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          branch_exists() {
+            gh api "repos/${GITHUB_REPOSITORY}/branches/$1" >/dev/null 2>&1
+          }
+
+          file_exists() {
+            gh api "repos/${GITHUB_REPOSITORY}/contents/$2?ref=$1" >/dev/null 2>&1
+          }
+
+          decode_file() {
+            gh api "repos/${GITHUB_REPOSITORY}/contents/$2?ref=$1" \
+              --jq '.content' | tr -d '\n' | base64 -d
+          }
+
+          public_state_passes() {
+            branch="$1"
+            if ! file_exists "$branch" "$STATE_PATH"; then return 1; fi
+            decode_file "$branch" "$STATE_PATH" > /tmp/supervisor-state.json
+            python3 - <<'PY'
+          from __future__ import annotations
+          import json
+          import urllib.request
+
+          try:
+              state = json.load(open('/tmp/supervisor-state.json', encoding='utf-8'))
+              record_id = (
+                  state.get('record_id') or state.get('recordId') or state.get('record')
+                  or state.get('deposition_id') or state.get('depositionId')
+              )
+              if not record_id:
+                  raise RuntimeError('record id absent')
+              with urllib.request.urlopen(
+                  f'https://zenodo.org/api/records/{record_id}', timeout=40
+              ) as response:
+                  record = json.load(response)
+              if record.get('metadata', {}).get('version') != '2.0.0':
+                  raise RuntimeError('public version is not 2.0.0')
+              if not (record.get('doi') or record.get('metadata', {}).get('doi')):
+                  raise RuntimeError('DOI absent')
+          except Exception as exc:
+              print(f'CONTINUE: {exc}')
+              raise SystemExit(1)
+          print('PASS: public Zenodo v2.0.0 state verified')
+          PY
+          }
+
+          wait_for_quiet_publication_runs() {
+            for _ in $(seq 1 120); do
+              active="$(gh run list --limit 100 --json status,headBranch,name \
+                | jq --arg reserve "$RESERVE_BRANCH" --arg finalize "$FINALIZE_BRANCH" --arg direct "$DIRECT_BRANCH" \
+                  '[.[] | select(.status != "completed") | select(
+                    .headBranch == $reserve or .headBranch == $finalize or .headBranch == $direct or
+                    (.headBranch // "" | startswith("bootstrap/formalization-v2-completion"))
+                  )] | length')"
+              if [ "$active" -eq 0 ]; then return 0; fi
+              sleep 10
+            done
+            return 1
+          }
+
+          dispatch_new_run() {
+            workflow="$1"
+            branch="$2"
+            before="$(gh run list --workflow "$workflow" --branch "$branch" --event workflow_dispatch --limit 50 --json databaseId | jq '[.[].databaseId]')"
+            gh workflow run "$workflow" --ref "$branch"
+            run_id=""
+            for _ in $(seq 1 90); do
+              run_id="$(gh run list \
+                --workflow "$workflow" --branch "$branch" --event workflow_dispatch \
+                --limit 50 --json databaseId,status,conclusion,createdAt \
+                | jq -r --argjson before "$before" \
+                  '[.[] | select(.databaseId as $id | ($before | index($id) | not))] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')"
+              if [ -n "$run_id" ]; then break; fi
+              sleep 4
+            done
+            test -n "$run_id"
+            if ! gh run watch "$run_id" --exit-status; then
+              gh run view "$run_id" --log-failed || true
+              return 1
+            fi
+          }
+
+          ensure_workflow_success() {
+            workflow="$1"
+            branch="$2"
+            for attempt in 1 2 3; do
+              if dispatch_new_run "$workflow" "$branch"; then return 0; fi
+              echo "Retry ${attempt}: ${workflow} on ${branch}"
+              sleep 10
+            done
+            return 1
+          }
+
+          open_pr_number() {
+            gh pr list --head "$1" --base main --state open --limit 10 --json number --jq '.[0].number // empty'
+          }
+
+          ensure_pr() {
+            branch="$1"
+            title="$2"
+            body="$3"
+            number="$(open_pr_number "$branch")"
+            if [ -z "$number" ]; then
+              url="$(gh pr create --head "$branch" --base main --title "$title" --body "$body")"
+              number="${url##*/}"
+            fi
+            printf '%s\n' "$number"
+          }
+
+          run_checks() {
+            branch="$1"
+            ensure_workflow_success qikvrt_ci.yml "$branch"
+            ensure_workflow_success qikvrt_manuscript_proof.yml "$branch"
+            ensure_workflow_success qikvrt_collective_review.yml "$branch"
+          }
+
+          merge_pr() {
+            number="$1"
+            if gh pr view "$number" --json mergedAt --jq -e '.mergedAt != null' >/dev/null; then return 0; fi
+            if ! gh pr merge "$number" --merge --delete-branch=false; then
+              gh pr merge "$number" --merge --admin --delete-branch=false
+            fi
+            for _ in $(seq 1 90); do
+              if gh pr view "$number" --json mergedAt --jq -e '.mergedAt != null' >/dev/null; then return 0; fi
+              sleep 5
+            done
+            return 1
+          }
+
+          wait_for_quiet_publication_runs || true
+
+          for cycle in $(seq 1 12); do
+            echo "Publication supervision cycle ${cycle}"
+            if public_state_passes main; then exit 0; fi
+
+            # A direct publication branch has precedence if it already carries public PASS.
+            if branch_exists "$DIRECT_BRANCH" && public_state_passes "$DIRECT_BRANCH"; then
+              ensure_workflow_success qikvrt_repository_materialize.yml "$DIRECT_BRANCH"
+              direct_pr="$(ensure_pr "$DIRECT_BRANCH" \
+                'Publish completed formalization v2.0.0 on Zenodo' \
+                'Merge the independently verified public Zenodo v2.0.0 publication state and deterministic repository evidence.')"
+              run_checks "$DIRECT_BRANCH"
+              merge_pr "$direct_pr"
+              sleep 10
+              continue
+            fi
+
+            branch_exists "$RESERVE_BRANCH"
+            if ! file_exists "$RESERVE_BRANCH" "$STATE_PATH"; then
+              if ! ensure_workflow_success qikvrt_formalization_v2_zenodo.yml "$RESERVE_BRANCH"; then
+                sleep 20
+                continue
+              fi
+            fi
+
+            if file_exists "$RESERVE_BRANCH" "$STATE_PATH" && ! file_exists main "$STATE_PATH"; then
+              ensure_workflow_success qikvrt_repository_materialize.yml "$RESERVE_BRANCH"
+              reserve_pr="$(ensure_pr "$RESERVE_BRANCH" \
+                'Reserve and upload completed formalization v2.0.0 on Zenodo' \
+                'Persist the completed formalization package, reserved Zenodo record, upload verification, and deterministic repository evidence.')"
+              run_checks "$RESERVE_BRANCH"
+              merge_pr "$reserve_pr"
+              sleep 10
+              continue
+            fi
+
+            if file_exists main "$STATE_PATH" && ! public_state_passes main; then
+              git fetch --no-tags origin main
+              git checkout -B "$FINALIZE_BRANCH" origin/main
+              git push --force-with-lease origin "HEAD:refs/heads/${FINALIZE_BRANCH}"
+              if ! ensure_workflow_success qikvrt_formalization_v2_zenodo_finalize.yml "$FINALIZE_BRANCH"; then
+                sleep 20
+                continue
+              fi
+              ensure_workflow_success qikvrt_repository_materialize.yml "$FINALIZE_BRANCH"
+              finalize_pr="$(ensure_pr "$FINALIZE_BRANCH" \
+                'Publish completed formalization v2.0.0 Zenodo record' \
+                'Publish the reserved Zenodo record, independently verify the public DOI and files, and persist the publication evidence.')"
+              run_checks "$FINALIZE_BRANCH"
+              merge_pr "$finalize_pr"
+              sleep 10
+              continue
+            fi
+
+            sleep 20
+          done
+
+          public_state_passes main
