@@ -3,8 +3,11 @@ name: QIKVRT repository evidence materialization
 on:
   push:
     branches:
+      - main
       - agent/formalization-cache-hmi-batch04
       - agent/manuscript-formalization-v2-completion
+      - automation/generalize-repository-evidence-20260724
+      - automation/machine-verifiable-science-zenodo-20260723
   workflow_dispatch:
 
 permissions:
@@ -108,6 +111,12 @@ jobs:
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
+      - name: Run repository gates before persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          python3 tools/qikvrt_integrity.py verify
       - name: Commit materialized evidence and integrity outputs
         run: |
           set -euo pipefail
@@ -131,5 +140,5 @@ jobs:
             echo "Repository evidence is already current."
             exit 0
           fi
-          git commit -m "ci: materialize completed manuscript evidence"
+          git commit -m "ci: materialize repository evidence"
           git push origin "HEAD:${{ github.ref_name }}"
