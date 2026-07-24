@@ -8,3 +8,5 @@ provenance, effect boundaries, tests, hashes, and the explicit licensing split:
 freely available architecture does not automatically license the concrete
 implementation as open source. Treat symmetric canonicality as verified only
 for byte-equivalent declared scope.
+
+<!-- deterministic workflow retrigger -->
