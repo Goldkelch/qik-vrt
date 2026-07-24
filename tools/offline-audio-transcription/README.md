@@ -52,11 +52,40 @@ Erzeugt werden:
 Die Eingabedatei wird vor und nach der Verarbeitung gehasht und niemals
 überschrieben. Temporäre PCM-Daten werden auch bei Fehlern entfernt.
 
+## Authentifizierter GitHub-Auftrag
+
+Der Workflow `.github/workflows/qikvrt_audio_request.yml` nimmt ein streng
+validiertes Request-Manifest unter `requests/audio/` entgegen. Die Audiodaten
+werden zuvor über GitHubs Git-Data-API als unreferenziertes Blob angelegt; das
+Manifest bindet Repository, Blob-SHA, Originaldateiname, Bytezahl, SHA-256,
+Sprache, begrenzte Laufzeitparameter und den anschließenden
+Repository-Arbeitsauftrag.
+
+Die Workflow-Grenzen sind fail-closed:
+
+- nur ein Manifest pro Transport-PR;
+- nur Branches `audio-request/**` aus demselben Repository;
+- höchstens 25 MiB und eine feste Medien-Endungsliste;
+- kein Pfad-Traversal, keine versteckten Dateinamen und keine unbekannten
+  Manifestfelder;
+- Bytezahl- und SHA-256-Prüfung vor der Transkription;
+- Modellarchiv und extrahierte Modellkomponenten werden erneut hashgeprüft;
+- Audio und Transkript erscheinen weder im Repository noch im Job-Log;
+- Transkript, Segmente, Provenienz und Antwortauftrag werden sieben Tage als
+  Workflow-Artefakt aufbewahrt.
+
+Ein unreferenziertes Git-Blob ist nicht kryptographisch vertraulich: Wer seine
+Objekt-SHA kennt und Leserechte besitzt, kann es bis zur serverseitigen
+Bereinigung abrufen. Vertrauliche Aufnahmen gehören deshalb in ein privates
+Repository oder direkt in die lokale Offline-Pipeline. Ein Transport-PR wird
+nie gemergt und sein Branch nach dem Lauf auf den Ausgangsstand zurückgesetzt.
+
 ## Prüfung
 
 ```bash
 npm test
 ./bin/transcribe-audio --help
+node src/materialize-request.cjs --help
 ```
 
 Für eine inhaltliche Freigabe ist zusätzlich eine menschliche Gegenprüfung am

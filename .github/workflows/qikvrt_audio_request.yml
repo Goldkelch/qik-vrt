@@ -1,0 +1,228 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT authenticated audio request
+
+on:
+  pull_request:
+    paths:
+      - "requests/audio/*.json"
+      - "tools/offline-audio-transcription/**"
+      - ".github/workflows/qikvrt_audio_request.yml"
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: "Repository-relative request manifest under requests/audio/"
+        required: true
+        default: "requests/audio/request.json"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-audio-request-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-interface:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/offline-audio-transcription/package-lock.json
+      - name: Validate request parser, negative controls and shell syntax
+        working-directory: tools/offline-audio-transcription
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          bash -n bin/transcribe-audio scripts/install-model.sh
+          node src/materialize-request.cjs --help
+
+  transcribe:
+    needs: validate-interface
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.head_ref, 'audio-request/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact request state without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Resolve exactly one bounded request manifest
+        id: request
+        shell: bash
+        env:
+          DISPATCH_PATH: ${{ inputs.request_path || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            request_path="${DISPATCH_PATH}"
+          else
+            mapfile -t candidates < <(git diff --name-only HEAD^ HEAD -- 'requests/audio/*.json')
+            if [[ "${#candidates[@]}" -ne 1 ]]; then
+              printf 'Expected exactly one changed audio request manifest, found %s\n' "${#candidates[@]}" >&2
+              exit 1
+            fi
+            request_path="${candidates[0]}"
+          fi
+          if [[ ! "${request_path}" =~ ^requests/audio/[A-Za-z0-9._-]+\.json$ ]]; then
+            echo "Request path is outside the bounded request namespace" >&2
+            exit 1
+          fi
+          test -f "${request_path}"
+          echo "path=${request_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up pinned Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/offline-audio-transcription/package-lock.json
+
+      - name: Verify required media runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Install and test the repository-owned audio tool
+        working-directory: tools/offline-audio-transcription
+        run: |
+          npm ci
+          npm test
+
+      - name: Install and hash-verify the declared speech model
+        working-directory: tools/offline-audio-transcription
+        env:
+          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+        run: ./scripts/install-model.sh
+
+      - name: Materialize authenticated Git blob and verify source bytes
+        id: materialized
+        working-directory: tools/offline-audio-transcription
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REQUEST_PATH: ${{ steps.request.outputs.path }}
+          MATERIALIZED_JSON: ${{ runner.temp }}/qikvrt-materialized.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          node src/materialize-request.cjs \
+            --request "${GITHUB_WORKSPACE}/${REQUEST_PATH}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --output-dir "${RUNNER_TEMP}/qikvrt-audio-input" \
+            > "${MATERIALIZED_JSON}"
+          node - "${MATERIALIZED_JSON}" "${GITHUB_OUTPUT}" <<'NODE'
+          const fs = require('node:fs');
+          const [input, output] = process.argv.slice(2);
+          const value = JSON.parse(fs.readFileSync(input, 'utf8'));
+          const entries = {
+            request_id: value.requestId,
+            audio_path: value.audioPath,
+            receipt_path: value.receiptPath,
+            language: value.transcription.language,
+            chunk_seconds: value.transcription.chunkSeconds,
+            overlap_seconds: value.transcription.overlapSeconds,
+            threads: value.transcription.threads,
+          };
+          const lines = Object.entries(entries).map(([key, item]) => `${key}=${item}`);
+          fs.appendFileSync(output, `${lines.join('\n')}\n`);
+          NODE
+
+      - name: Transcribe without network disclosure of audio or transcript
+        working-directory: tools/offline-audio-transcription
+        env:
+          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./bin/transcribe-audio \
+            --input "${{ steps.materialized.outputs.audio_path }}" \
+            --output-dir "${RUNNER_TEMP}/qikvrt-audio-output" \
+            --language "${{ steps.materialized.outputs.language }}" \
+            --chunk-seconds "${{ steps.materialized.outputs.chunk_seconds }}" \
+            --overlap-seconds "${{ steps.materialized.outputs.overlap_seconds }}" \
+            --threads "${{ steps.materialized.outputs.threads }}"
+
+      - name: Build repository-response handoff without printing the transcript
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.path }}
+          REQUEST_ID: ${{ steps.materialized.outputs.request_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          request = json.loads(Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
+          output_dir = Path(os.environ["RUNNER_TEMP"]) / "qikvrt-audio-output"
+          transcripts = sorted(output_dir.glob("*.transcript.txt"))
+          if len(transcripts) != 1:
+              raise SystemExit(f"expected one transcript, found {len(transcripts)}")
+          transcript = transcripts[0].read_text(encoding="utf-8").strip()
+          instruction = (request.get("response") or {}).get(
+              "instruction",
+              "Read AI, AI_CONTEXT.json and AGENTS.md, then answer the transcribed command from repository evidence.",
+          )
+          handoff = output_dir / "repository-response-request.md"
+          handoff.write_text(
+              "# Repository response request\n\n"
+              f"- Request ID: `{os.environ['REQUEST_ID']}`\n"
+              f"- Source SHA-256: `{request['source']['sha256']}`\n"
+              "- Boundary: automatic transcription; factual and acoustic review remains required.\n\n"
+              "## Transcribed command\n\n"
+              f"> {transcript}\n\n"
+              "## Repository instruction\n\n"
+              f"{instruction}\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload private-to-run transcription, provenance and response handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-audio-request-${{ steps.materialized.outputs.request_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/qikvrt-audio-output/**
+            ${{ steps.materialized.outputs.receipt_path }}
+
+      - name: Record non-content execution receipt
+        shell: bash
+        run: |
+          {
+            echo "## QIK-VRT audio request"
+            echo
+            echo "- Request: \`${{ steps.materialized.outputs.request_id }}\`"
+            echo "- Input bytes and SHA-256: verified before transcription"
+            echo "- Model archive and extracted model files: SHA-256 verified"
+            echo "- Transcript disclosure: artifact only; not written to logs or repository"
+            echo "- Effect state: \`EFFECT_ACK_CONTINUE\` pending human acoustic review and repository response"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Remove materialized input and model from runner workspace
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/qikvrt-audio-input" "${RUNNER_TEMP}/qikvrt-audio-model"
