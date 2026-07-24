@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT canonical repository mirror
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-canonical-repository-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MIRROR_TOKEN: ${{ secrets.QIKVRT_MIRROR_TOKEN || secrets.QIKVRT_REPOSITORY_TOKEN || secrets.QIKVRT_GITHUB_TOKEN || secrets.GH_PAT || secrets.PERSONAL_ACCESS_TOKEN || secrets.REPO_TOKEN }}
+      SOURCE_REPOSITORY: Goldkelch/qik-vrt
+      TARGET_REPOSITORY: ingolf-lohmann/qik-vrt
+      TARGET_BRANCH: main
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the verified authority tree
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require an explicit cross-repository credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$MIRROR_TOKEN" || {
+            echo 'BLOCK: no configured cross-repository mirror credential' >&2
+            exit 1
+          }
+
+      - name: Reconstruct the target from the authority content tree
+        id: mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/qik-vrt-target"
+          source="$GITHUB_WORKSPACE"
+          git clone --branch "$TARGET_BRANCH" --single-branch \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/${TARGET_REPOSITORY}.git" \
+            "$target"
+
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.qikvrt/' \
+            --exclude '__pycache__/' \
+            --exclude '*.pyc' \
+            "$source/" "$target/"
+
+          git -C "$target" config user.name 'qikvrt-mirror[bot]'
+          git -C "$target" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$target" add -A
+
+          source_digest="$(python3 - <<'PY'
+          import json
+          print(json.load(open('REPOSITORY_FILE_MANIFEST.json', encoding='utf-8'))['repository_content_tree_sha256'])
+          PY
+          )"
+          target_digest="$(python3 - "$target" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          print(json.loads((root / 'REPOSITORY_FILE_MANIFEST.json').read_text(encoding='utf-8'))['repository_content_tree_sha256'])
+          PY
+          )"
+          test "$source_digest" = "$target_digest"
+
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B "$target/tools/qikvrt_integrity.py" verify
+
+          if git -C "$target" diff --cached --quiet; then
+            echo 'Target content tree already equals the authority tree.'
+          else
+            git -C "$target" commit -m \
+              "mirror: synchronize verified Goldkelch authority ${GITHUB_SHA}"
+            git -C "$target" push origin "HEAD:${TARGET_BRANCH}"
+          fi
+
+          target_sha="$(git -C "$target" rev-parse HEAD)"
+          printf 'source_sha=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          printf 'target_sha=%s\n' "$target_sha" >> "$GITHUB_OUTPUT"
+          printf 'tree_digest=%s\n' "$source_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Persist mirror evidence on the completion pull request
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '<!-- qikvrt-canonical-repository-mirror -->'
+            echo
+            echo '## Canonical repository mirror'
+            echo
+            echo "- authority commit: \`${{ steps.mirror.outputs.source_sha }}\`"
+            echo "- mirror commit: \`${{ steps.mirror.outputs.target_sha }}\`"
+            echo "- verified content-tree SHA-256: \`${{ steps.mirror.outputs.tree_digest }}\`"
+            echo
+            echo '`EFFECT_ACK_DONE` for the cross-repository mirror effect.'
+          } > "$RUNNER_TEMP/qikvrt-mirror-comment.md"
+          gh pr comment 55 --repo "$SOURCE_REPOSITORY" \
+            --body-file "$RUNNER_TEMP/qikvrt-mirror-comment.md"
