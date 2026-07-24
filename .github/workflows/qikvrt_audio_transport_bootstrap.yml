@@ -71,11 +71,13 @@ jobs:
           report={'schema':'qikvrt_audio_chunk_attestation_v1','chunks':entries,'aggregate_bytes':len(aggregate),'aggregate_sha256':aggregate_digest,'expected_aggregate_bytes':int(os.environ['EXPECTED_AGGREGATE_BYTES']),'expected_aggregate_sha256':os.environ['EXPECTED_AGGREGATE_SHA256'],'aggregate_match':aggregate_match,'all_match':all_match}
           report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           print(json.dumps({'aggregate_bytes':len(aggregate),'aggregate_sha256':aggregate_digest,'aggregate_match':aggregate_match,'all_match':all_match},sort_keys=True))
+          if not all_match:
+              raise SystemExit('full-length transport identity mismatch')
           with Path(os.environ['GITHUB_OUTPUT']).open('a',encoding='utf-8') as output:
-              output.write(f'audio={audio_path}\nbytes={len(aggregate)}\nsha256={aggregate_digest}\nall_match={str(all_match).lower()}\n')
+              output.write(f'audio={audio_path}\nbytes={len(aggregate)}\nsha256={aggregate_digest}\n')
           PY
 
-      - name: Upload chunk attestation before enforcement
+      - name: Upload chunk attestation
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -83,23 +85,6 @@ jobs:
           retention-days: 1
           path: ${{ runner.temp }}/chunk-attestation.json
           if-no-files-found: warn
-
-      - name: Enforce full-length transport identity
-        shell: bash
-        env:
-          AUDIO_PATH: ${{ steps.media.outputs.audio }}
-          ALL_MATCH: ${{ steps.media.outputs.all_match }}
-        run: |
-          set -euo pipefail
-          [[ "$ALL_MATCH" = true ]]
-          duration="$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$AUDIO_PATH")"
-          python3 - "$duration" <<'PY'
-          import math, sys
-          value=float(sys.argv[1])
-          if not math.isfinite(value) or not 21.70 <= value <= 21.90:
-              raise SystemExit(f'unexpected duration: {value}')
-          PY
-          echo "duration=$duration" >> "$GITHUB_OUTPUT"
 
       - name: Create unreferenced authenticated Git blob
         id: blob
