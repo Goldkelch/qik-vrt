@@ -1,0 +1,178 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT formalization v2 alpha.2 read-only draft inventory
+
+"on":
+  push:
+    branches:
+      - automation/formalization-v2-alpha2-draft-inventory-20260724
+    paths:
+      - release/formalization-v2-alpha2-diagnostics-request.json
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic request without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Inventory only the authorized Zenodo concept through GET
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$ZENODO_ACCESS_TOKEN" || { echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable' >&2; exit 1; }
+          mkdir -p .qikvrt/release/formalization-v2-alpha2
+          python -I -S -B - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          marker_path = Path('release/formalization-v2-alpha2-diagnostics-request.json')
+          marker = json.loads(marker_path.read_text(encoding='utf-8'))
+          expected = {
+              'schema': 'qikvrt_formalization_v2_alpha2_draft_inventory_request_v1',
+              'state': 'inspect',
+              'confirm': 'INSPECT_ZENODO_FORMALIZATION_V2_ALPHA_2_DRAFTS_READ_ONLY',
+              'source_record_id': 21501365,
+              'concept_record_id': 21488115,
+          }
+          if marker != expected:
+              raise SystemExit('BLOCK: diagnostic marker differs')
+
+          token = os.environ['ZENODO_ACCESS_TOKEN']
+          base = 'https://zenodo.org'
+          list_url = base + '/api/deposit/depositions?size=100&sort=mostrecent'
+          allowed_detail = re.compile(r'https://zenodo\.org/api/deposit/depositions/[1-9][0-9]*\Z')
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(NoRedirect())
+
+          def get(url):
+              if url != list_url and allowed_detail.fullmatch(url) is None:
+                  raise SystemExit('BLOCK: unapproved Zenodo diagnostic URL')
+              request = urllib.request.Request(
+                  url,
+                  method='GET',
+                  headers={
+                      'Authorization': 'Bearer ' + token,
+                      'Accept': 'application/json',
+                      'User-Agent': 'qikvrt-formalization-v2-alpha2-read-only-inventory',
+                  },
+              )
+              with opener.open(request, timeout=30) as response:
+                  final = urllib.parse.urlsplit(response.geturl())
+                  raw = response.read(16 * 1024 * 1024 + 1)
+              if final.scheme != 'https' or final.hostname != 'zenodo.org':
+                  raise SystemExit('BLOCK: Zenodo response escaped its origin')
+              if len(raw) > 16 * 1024 * 1024:
+                  raise SystemExit('BLOCK: Zenodo response exceeded its bound')
+              return json.loads(raw.decode('utf-8'))
+
+          def integer(value):
+              try:
+                  result = int(value)
+              except (TypeError, ValueError):
+                  return None
+              return result if result > 0 else None
+
+          def normalize(value):
+              metadata = value.get('metadata') if isinstance(value.get('metadata'), dict) else {}
+              files = value.get('files') if isinstance(value.get('files'), list) else []
+              names = []
+              for item in files:
+                  if not isinstance(item, dict):
+                      continue
+                  name = item.get('filename', item.get('key'))
+                  if isinstance(name, str) and name:
+                      names.append(name)
+              prereserve = metadata.get('prereserve_doi')
+              if isinstance(prereserve, dict):
+                  prereserve = prereserve.get('doi')
+              if not isinstance(prereserve, str):
+                  prereserve = None
+              return {
+                  'id': integer(value.get('id')),
+                  'record_id': integer(value.get('record_id')),
+                  'concept_record_id': integer(value.get('conceptrecid', value.get('concept_record_id'))),
+                  'state': value.get('state'),
+                  'submitted': value.get('submitted'),
+                  'title': metadata.get('title'),
+                  'version': metadata.get('version'),
+                  'prereserved_doi': prereserve,
+                  'created': value.get('created'),
+                  'modified': value.get('modified'),
+                  'file_count': len(names),
+                  'file_names': sorted(names),
+              }
+
+          collection = get(list_url)
+          if not isinstance(collection, list) or not all(isinstance(item, dict) for item in collection):
+              raise SystemExit('BLOCK: Zenodo deposition collection is malformed')
+
+          relevant = []
+          for item in collection:
+              record_id = integer(item.get('record_id', item.get('id')))
+              concept_id = integer(item.get('conceptrecid', item.get('concept_record_id')))
+              if concept_id == 21488115 or record_id == 21501365:
+                  relevant.append(item)
+
+          details = []
+          seen = set()
+          for item in relevant:
+              record_id = integer(item.get('id', item.get('record_id')))
+              if record_id is None or record_id in seen:
+                  continue
+              seen.add(record_id)
+              details.append(normalize(get(base + f'/api/deposit/depositions/{record_id}')))
+
+          details.sort(key=lambda item: item['id'] or 0)
+          result = {
+              'schema': 'qikvrt_formalization_v2_alpha2_draft_inventory_v1',
+              'read_only': True,
+              'source_record_id': 21501365,
+              'concept_record_id': 21488115,
+              'account_deposition_count': len(collection),
+              'relevant_depositions': details,
+              'editable_concept_draft_ids': [
+                  item['id'] for item in details
+                  if item['id'] != 21501365
+                  and item['submitted'] is not True
+                  and item['state'] != 'done'
+              ],
+              'github_run_id': os.environ.get('GITHUB_RUN_ID'),
+              'github_sha': os.environ.get('GITHUB_SHA'),
+          }
+          output = Path('.qikvrt/release/formalization-v2-alpha2/draft-inventory.json')
+          output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'status': 'ok',
+              'relevant_count': len(details),
+              'editable_concept_draft_ids': result['editable_concept_draft_ids'],
+          }, sort_keys=True))
+          PY
+
+      - name: Upload read-only draft inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-formalization-v2-alpha2-draft-inventory
+          retention-days: 30
+          path: .qikvrt/release/formalization-v2-alpha2/draft-inventory.json
+          if-no-files-found: error
