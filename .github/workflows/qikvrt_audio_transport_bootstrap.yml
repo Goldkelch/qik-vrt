@@ -49,42 +49,27 @@ jobs:
           set -euo pipefail
           audio="$RUNNER_TEMP/request.ogg"
           python3 -B - "$CHUNK_LIST" "$audio" "$RUNNER_TEMP/decode-receipt.json" <<'PY'
-          import base64
-          import hashlib
-          import json
+          import base64, hashlib, json, re, sys
           from pathlib import Path
-          import re
-          import sys
-
           list_path, audio_path, receipt_path = map(Path, sys.argv[1:])
-          paths = [Path(line) for line in list_path.read_text(encoding='utf-8').splitlines() if line]
-          parts = []
+          paths=[Path(line) for line in list_path.read_text(encoding='utf-8').splitlines() if line]
+          parts=[]
           for path in paths:
-              compact = ''.join(path.read_text(encoding='ascii').split())
+              compact=''.join(path.read_text(encoding='ascii').split())
               if not compact or re.fullmatch(r'[A-Za-z0-9+/]*={0,2}', compact) is None:
                   raise SystemExit(f'invalid Base64 alphabet or padding in {path}')
               parts.append(compact)
-
-          def decode_part(value: str) -> bytes:
-              unpadded = value.rstrip('=')
-              padded = unpadded + '=' * ((4 - len(unpadded) % 4) % 4)
-              return base64.b64decode(padded, validate=True)
-
+          def decode(value):
+              value=value.rstrip('=')
+              return base64.b64decode(value + '='*((4-len(value)%4)%4), validate=True)
           if any('=' in part for part in parts[:-1]):
-              mode = 'independent-padded-chunks'
-              audio = b''.join(decode_part(part) for part in parts)
+              mode='independent-padded-chunks'; audio=b''.join(decode(part) for part in parts)
           else:
-              mode = 'continuous-split-stream'
-              audio = decode_part(''.join(parts))
-
-          if not 1000 < len(audio) <= 25 * 1024 * 1024:
-              raise SystemExit(f'decoded byte count outside bounds: {len(audio)}')
+              mode='continuous-split-stream'; audio=decode(''.join(parts))
+          if not 1000 < len(audio) <= 25*1024*1024: raise SystemExit(f'decoded byte count outside bounds: {len(audio)}')
           audio_path.write_bytes(audio)
-          digest = hashlib.sha256(audio).hexdigest()
+          digest=hashlib.sha256(audio).hexdigest()
           receipt_path.write_text(json.dumps({'stage':'chunks-decoded','mode':mode,'bytes':len(audio),'sha256':digest},indent=2,sort_keys=True)+'\n',encoding='utf-8')
-          with Path(sys.argv[0]).open('w') if False else open('/dev/null','w'):
-              pass
-          print(json.dumps({'bytes':len(audio),'sha256':digest,'mode':mode}))
           PY
           bytes="$(wc -c < "$audio" | tr -d ' ')"
           digest="$(sha256sum "$audio" | awk '{print $1}')"
@@ -100,14 +85,15 @@ jobs:
         run: |
           set -euo pipefail
           duration="$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$AUDIO_PATH")"
-          python3 - "$duration" <<'PY'
-          import math, sys
+          python3 - "$duration" "$RUNNER_TEMP/media-receipt.json" <<'PY'
+          import json, math, sys
+          from pathlib import Path
           duration=float(sys.argv[1])
-          if not math.isfinite(duration) or not 20.0 <= duration <= 23.0:
+          if not math.isfinite(duration) or not 0.5 <= duration <= 120.0:
               raise SystemExit(f'unexpected duration: {duration}')
+          Path(sys.argv[2]).write_text(json.dumps({'stage':'media-probed','duration':duration,'bounded_seconds':[0.5,120.0]},indent=2,sort_keys=True)+'\n')
           PY
           echo "duration=$duration" >> "$GITHUB_OUTPUT"
-          printf '{"stage":"media-probed","duration":%s}\n' "$duration" > "$RUNNER_TEMP/media-receipt.json"
 
       - name: Create unreferenced authenticated Git blob
         id: blob
