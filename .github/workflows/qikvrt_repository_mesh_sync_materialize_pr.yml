@@ -84,17 +84,19 @@ jobs:
 
           evidence_path = Path('.github/workflows/qikvrt_batch04_integrity.yml')
           evidence_text = evidence_path.read_text(encoding='utf-8')
-          temporary_condition = """    if: >-
-              github.head_ref != 'automation/repository-mesh-sync-materialize-20260724' &&
-              (github.event_name != 'pull_request' ||
-               (github.event.pull_request.head.repo.full_name == github.repository &&
-                github.actor != 'dependabot[bot]'))
-          """
-          original_condition = """    if: >-
-              github.event_name != 'pull_request' ||
-              (github.event.pull_request.head.repo.full_name == github.repository &&
-               github.actor != 'dependabot[bot]')
-          """
+          temporary_condition = (
+              "    if: >-\n"
+              "      github.head_ref != 'automation/repository-mesh-sync-materialize-20260724' &&\n"
+              "      (github.event_name != 'pull_request' ||\n"
+              "       (github.event.pull_request.head.repo.full_name == github.repository &&\n"
+              "        github.actor != 'dependabot[bot]'))\n"
+          )
+          original_condition = (
+              "    if: >-\n"
+              "      github.event_name != 'pull_request' ||\n"
+              "      (github.event.pull_request.head.repo.full_name == github.repository &&\n"
+              "       github.actor != 'dependabot[bot]')\n"
+          )
           if evidence_text.count(temporary_condition) != 1:
               raise SystemExit('BLOCK: temporary evidence-materializer serialization is absent or ambiguous')
           evidence_path.write_text(
