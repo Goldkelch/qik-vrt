@@ -1,41 +1,75 @@
-name: QIKVRT batch04 integrity materialization
+name: QIKVRT repository evidence materialization
 
 on:
   push:
     branches:
       - agent/formalization-cache-hmi-batch04
+      - agent/manuscript-formalization-v2-completion
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-batch04-integrity
+  group: qikvrt-repository-evidence-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   materialize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: agent/formalization-cache-hmi-batch04
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Materialize completed manuscript evidence when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="formalization/QIKVRT_Formalization_v2.0"
+          if [ ! -f "$root/scripts/materialize_completion.py" ]; then
+            echo "Completion materializer is not present on this branch."
+            exit 0
+          fi
+          (
+            cd "$root"
+            python3 scripts/materialize_completion.py
+            python3 scripts/render_completion_proof_map.py
+            python3 scripts/render_completion_verification_report.py
+            python3 scripts/materialize_completion_proof_manifest.py
+            python3 scripts/materialize_completion.py --check
+            python3 scripts/render_completion_proof_map.py --check
+            python3 scripts/render_completion_verification_report.py --check
+            python3 scripts/materialize_completion_proof_manifest.py --check
+            python3 scripts/validate_completion_claim_graph.py
+          )
       - name: Regenerate and verify repository integrity
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit regenerated integrity outputs
+      - name: Commit materialized evidence and integrity outputs
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add \
+            formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
+            formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
+            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
+            formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
+            formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
+            formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
           if git diff --cached --quiet; then
-            echo "Integrity outputs already current."
+            echo "Repository evidence is already current."
             exit 0
           fi
-          git commit -m "fix: regenerate integrity for batch04"
-          git push origin HEAD:agent/formalization-cache-hmi-batch04
+          git commit -m "ci: materialize completed manuscript evidence"
+          git push origin "HEAD:${{ github.ref_name }}"
