@@ -370,7 +370,7 @@ jobs:
       - name: Restore exact renderer and GH cache
         id: exact-runtime-cache
         if: steps.renderer-python.outcome == 'success'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .qikvrt/toolchains/gh
@@ -381,7 +381,7 @@ jobs:
       - name: Restore GH-only cache without exact renderer
         id: gh-only-cache
         if: steps.renderer-python.outcome == 'failure'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .qikvrt/toolchains/gh
           key: qikvrt-runtime-v4-py-3.12.13-unavailable-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('runtime/toolchains/**', 'tools/bootstrap-gh.sh', 'tools/bootstrap-gh.ps1', 'tools/bootstrap-runtime.sh', 'tools/bootstrap-runtime.ps1') }}
