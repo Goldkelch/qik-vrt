@@ -63,10 +63,23 @@ jobs:
               raise SystemExit('BLOCK: replacement helper is absent or ambiguous')
           function_replacement = function_anchor + (
               "    import inspect\n"
-              "    old = inspect.cleandoc(old) + '\\n'\n"
-              "    new = inspect.cleandoc(new) + '\\n'\n"
+              "    def clean(value: str) -> str:\n"
+              "        cleaned = inspect.cleandoc(value)\n"
+              "        if cleaned.startswith('- '):\n"
+              "            cleaned = '\\n'.join(\n"
+              "                line if not line or line.startswith('- ') else '  ' + line\n"
+              "                for line in cleaned.splitlines()\n"
+              "            )\n"
+              "        return cleaned + '\\n'\n"
+              "    old = clean(old)\n"
+              "    new = clean(new)\n"
           )
           program = program.replace(function_anchor, function_replacement, 1)
+          error_anchor = "raise SystemExit(f'BLOCK: expected one replacement anchor in {path}, found {count}')"
+          error_replacement = "raise SystemExit(f'BLOCK: expected one replacement anchor in {path}: {old.splitlines()[0]!r}, found {count}')"
+          if program.count(error_anchor) != 1:
+              raise SystemExit('BLOCK: replacement error contract is absent or ambiguous')
+          program = program.replace(error_anchor, error_replacement, 1)
           exec(compile(program, str(source) + ':embedded', 'exec'), {'__name__': '__main__'})
           Path('.github/workflows/qikvrt_repository_mesh_sync_materialize_pr.yml').unlink()
           Path('.github/workflows/qikvrt_repository_mesh_sync_diagnose.yml').unlink(missing_ok=True)
