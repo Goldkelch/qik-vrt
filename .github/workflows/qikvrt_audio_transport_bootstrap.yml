@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT one-shot audio transport bootstrap
+
+on:
+  push:
+    branches:
+      - automation/audio-20260724-103937
+    paths:
+      - .github/workflows/qikvrt_audio_transport_bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-audio-transport-bootstrap-20260724-103937
+  cancel-in-progress: false
+
+jobs:
+  materialize-request:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact transport state without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/audio-20260724-103937
+          persist-credentials: false
+
+      - name: Reconstruct bounded audio and create unreferenced authenticated blob
+        id: request
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_BRANCH: audio-request/20260724-103937
+          REQUEST_PATH: requests/audio/20260724-103937.json
+        run: |
+          set -euo pipefail
+          transport='requests/audio-20260724-103937'
+          expected=(
+            "$transport/audio.opus.b64.00"
+            "$transport/audio.opus.b64.01"
+            "$transport/audio.opus.b64.02"
+            "$transport/audio.opus.b64.03"
+            "$transport/audio.opus.b64.04"
+          )
+          mapfile -t actual < <(find "$transport" -maxdepth 1 -type f -name 'audio.opus.b64.*' -print | sort)
+          [[ ${#actual[@]} -eq ${#expected[@]} ]]
+          for index in "${!expected[@]}"; do
+            [[ "${actual[$index]}" == "${expected[$index]}" ]]
+          done
+
+          audio="$RUNNER_TEMP/audio-20260724-103937.ogg"
+          cat "${expected[@]}" | tr -d '[:space:]' | base64 --decode > "$audio"
+          test -s "$audio"
+          bytes="$(wc -c < "$audio" | tr -d ' ')"
+          (( bytes > 1000 && bytes <= 26214400 ))
+          sha256="$(sha256sum "$audio" | awk '{print $1}')"
+          duration="$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$audio")"
+          python3 - "$duration" <<'PY'
+          import math
+          import sys
+          duration = float(sys.argv[1])
+          if not math.isfinite(duration) or not 20.0 <= duration <= 23.0:
+              raise SystemExit(f'unexpected reconstructed duration: {duration}')
+          PY
+
+          python3 -B - "$audio" "$REPOSITORY" "$TARGET_BRANCH" "$REQUEST_PATH" "$sha256" "$bytes" <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          import urllib.error
+          import urllib.request
+
+          audio_path = Path(sys.argv[1])
+          repository, target_branch, request_path, sha256, bytes_text = sys.argv[2:]
+          token = os.environ['GITHUB_TOKEN']
+          api = f'https://api.github.com/repos/{repository}'
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'Content-Type': 'application/json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'qikvrt-audio-transport-bootstrap',
+          }
+
+          def call(method: str, url: str, payload: dict[str, object]) -> dict[str, object]:
+              request = urllib.request.Request(
+                  url,
+                  method=method,
+                  headers=headers,
+                  data=json.dumps(payload, separators=(',', ':')).encode('utf-8'),
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode('utf-8', errors='replace')
+                  raise SystemExit(f'GitHub API {method} {url} failed: {error.code}: {body}') from error
+
+          audio = audio_path.read_bytes()
+          if len(audio) != int(bytes_text):
+              raise SystemExit('audio byte count changed before blob creation')
+          blob = call('POST', f'{api}/git/blobs', {
+              'content': base64.b64encode(audio).decode('ascii'),
+              'encoding': 'base64',
+          })
+          blob_sha = str(blob['sha'])
+          if len(blob_sha) != 40:
+              raise SystemExit('GitHub returned an invalid blob SHA')
+
+          manifest = {
+              'schemaVersion': '1.0.0',
+              'requestId': 'audio-20260724-103937',
+              'source': {
+                  'kind': 'github-git-blob',
+                  'repository': repository,
+                  'blobSha': blob_sha,
+                  'sha256': sha256,
+                  'bytes': len(audio),
+                  'filename': 'AUDIO-2026-07-24-10-39-37.ogg',
+              },
+              'transcription': {
+                  'language': 'de',
+                  'chunkSeconds': 28,
+                  'overlapSeconds': 1.5,
+                  'threads': 4,
+              },
+              'response': {
+                  'instruction': (
+                      'Read AI, AI_CONTEXT.json, AGENTS.md and the repository evidence. '
+                      'Answer the transcribed command in German. Determine specifically whether '
+                      'the GitHub mechanisms are completely and independently implemented. '
+                      'Distinguish implemented capability, verified execution, remaining human or '
+                      'external authorization boundaries, and do not claim any unverified effect.'
+                  ),
+              },
+          }
+          manifest_bytes = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+          committed = call('PUT', f'{api}/contents/{request_path}', {
+              'message': 'Submit authenticated audio transcription request',
+              'content': base64.b64encode(manifest_bytes).decode('ascii'),
+              'branch': target_branch,
+          })
+          receipt = {
+              'schema': 'qikvrt_audio_transport_bootstrap_receipt_v1',
+              'repository': repository,
+              'target_branch': target_branch,
+              'request_path': request_path,
+              'request_id': manifest['requestId'],
+              'blob_sha': blob_sha,
+              'source_sha256': sha256,
+              'source_bytes': len(audio),
+              'manifest_commit': committed['commit']['sha'],
+              'audio_content_logged': False,
+              'transcript_content_logged': False,
+          }
+          Path(os.environ['RUNNER_TEMP'], 'qikvrt-audio-bootstrap-receipt.json').write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+              output.write(f"blob_sha={blob_sha}\n")
+              output.write(f"manifest_commit={committed['commit']['sha']}\n")
+              output.write(f"source_sha256={sha256}\n")
+              output.write(f"source_bytes={len(audio)}\n")
+          PY
+
+      - name: Upload non-content bootstrap receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-audio-bootstrap-20260724-103937
+          retention-days: 7
+          if-no-files-found: error
+          path: ${{ runner.temp }}/qikvrt-audio-bootstrap-receipt.json
+
+      - name: Record bounded execution summary
+        shell: bash
+        run: |
+          {
+            echo '## QIK-VRT audio transport bootstrap'
+            echo
+            echo '- Chunk sequence: verified exactly'
+            echo '- Reconstructed media duration: bounded and verified'
+            echo '- Git blob: created without adding audio bytes to a repository tree'
+            echo '- Request manifest: committed to `audio-request/20260724-103937`'
+            echo '- Audio/transcript content in logs: no'
+            echo '- Effect state: `EFFECT_ACK_CONTINUE` pending transcription artifact review'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove reconstructed audio from runner
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/audio-20260724-103937.ogg"
