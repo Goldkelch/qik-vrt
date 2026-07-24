@@ -95,14 +95,22 @@ jobs:
           cache: npm
           cache-dependency-path: tools/offline-audio-transcription/package-lock.json
 
-      - name: Verify required media runtime
+      - name: Install and verify required media runtime before input materialization
         shell: bash
         run: |
           set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              apt-get install --yes --no-install-recommends ffmpeg
+          fi
           command -v ffmpeg
           command -v ffprobe
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
+          if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query --show --showformat='ffmpeg-package=${Version}\n' ffmpeg
+          fi
 
       - name: Install and test the repository-owned audio tool
         working-directory: tools/offline-audio-transcription
@@ -218,6 +226,7 @@ jobs:
             echo "- Request: \`${{ steps.materialized.outputs.request_id }}\`"
             echo "- Input bytes and SHA-256: verified before transcription"
             echo "- Model archive and extracted model files: SHA-256 verified"
+            echo "- Media runtime: installed or verified before input materialization"
             echo "- Transcript disclosure: artifact only; not written to logs or repository"
             echo "- Effect state: \`EFFECT_ACK_CONTINUE\` pending human acoustic review and repository response"
           } >> "${GITHUB_STEP_SUMMARY}"
