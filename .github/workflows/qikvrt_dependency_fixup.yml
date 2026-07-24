@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# One-shot maintenance fixup; deletes itself before committing.
+name: QIKVRT dependency maintenance fixup
+
+on:
+  push:
+    branches:
+      - maintenance/dependency-security-updates-20260724
+    paths:
+      - .github/workflows/qikvrt_dependency_fixup.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-dependency-maintenance-fixup
+  cancel-in-progress: false
+
+jobs:
+  fixup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: maintenance/dependency-security-updates-20260724
+          fetch-depth: 0
+      - name: Align immutable action contracts and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          old_checkout = "de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+          new_checkout = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+          old_cache = "0057852bfaa89a56745cba8c7296529d2fc39830"
+          new_cache = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+
+          test_path = Path("tests/test_status_release_workflows.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          if test_text.count(old_checkout) != 1:
+              raise SystemExit("BLOCK: checkout contract constant is absent or ambiguous")
+          test_path.write_text(
+              test_text.replace(old_checkout, new_checkout),
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          adaptive = Path(".github/workflows/qikvrt_adaptive_runtime.yml")
+          adaptive_text = adaptive.read_text(encoding="utf-8")
+          old_token = f"actions/cache/save@{old_cache} # v4.3.0"
+          new_token = f"actions/cache/save@{new_cache} # v6.1.0"
+          if adaptive_text.count(old_token) != 2:
+              raise SystemExit("BLOCK: expected exactly two cache/save v4 pins")
+          adaptive.write_text(
+              adaptive_text.replace(old_token, new_token),
+              encoding="utf-8",
+              newline="\n",
+          )
+
+          Path(".github/workflows/qikvrt_dependency_fixup.yml").unlink()
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tests/test_status_release_workflows.py \
+            .github/workflows/qikvrt_adaptive_runtime.yml \
+            .github/workflows/qikvrt_dependency_fixup.yml
+          git commit -m "test: align dependency pin contracts"
+          git push origin HEAD:maintenance/dependency-security-updates-20260724
