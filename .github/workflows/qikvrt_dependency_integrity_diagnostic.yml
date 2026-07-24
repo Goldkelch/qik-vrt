@@ -1,0 +1,65 @@
+# Temporary read-only diagnostic; removed after the integrity transition is identified.
+name: QIKVRT dependency integrity diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'maintenance/dependency-security-updates-final-20260724'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: maintenance/dependency-security-updates-final-20260724
+          fetch-depth: 0
+      - name: Trace integrity transition
+        shell: bash
+        run: |
+          set +e
+          mkdir -p /tmp/qikvrt-integrity-diagnostic
+          exec > >(tee /tmp/qikvrt-integrity-diagnostic/TRACE.log) 2>&1
+          printf '%s\n' '=== HEAD ==='
+          git rev-parse HEAD
+          git status --short --untracked-files=all
+          printf '%s\n' '=== BEFORE GENERATE ==='
+          sha256sum REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt .github/workflows/qikvrt_batch04_integrity.yml runtime/toolchains/TOOLCHAIN.lock.tsv
+          python3 tools/qikvrt_integrity.py generate
+          generate_status=$?
+          printf 'GENERATE_STATUS=%s\n' "$generate_status"
+          printf '%s\n' '=== AFTER GENERATE ==='
+          sha256sum REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt .github/workflows/qikvrt_batch04_integrity.yml runtime/toolchains/TOOLCHAIN.lock.tsv
+          cp REPOSITORY_FILE_MANIFEST.json /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_MANIFEST.json
+          cp REPOSITORY_FILE_MANIFEST.json.sha256 /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_MANIFEST.sha256
+          cp SHA256SUMS.txt /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_SHA256SUMS.txt
+          python3 tools/qikvrt_integrity.py verify
+          printf 'VERIFY_AFTER_GENERATE_STATUS=%s\n' "$?"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tests/test_integrity.py
+          printf 'TEST_INTEGRITY_STATUS=%s\n' "$?"
+          printf '%s\n' '=== AFTER TEST ==='
+          sha256sum REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt .github/workflows/qikvrt_batch04_integrity.yml runtime/toolchains/TOOLCHAIN.lock.tsv
+          diff -u /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json || true
+          diff -u /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_MANIFEST.sha256 REPOSITORY_FILE_MANIFEST.json.sha256 || true
+          diff -u /tmp/qikvrt-integrity-diagnostic/AFTER_GENERATE_SHA256SUMS.txt SHA256SUMS.txt || true
+          python3 tools/qikvrt_integrity.py verify
+          printf 'VERIFY_AFTER_TEST_STATUS=%s\n' "$?"
+          git status --short --untracked-files=all
+          git diff -- . ':!REPOSITORY_FILE_MANIFEST.json' ':!SHA256SUMS.txt' ':!REPOSITORY_FILE_MANIFEST.json.sha256'
+          exit 0
+      - name: Upload diagnostic trace
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-dependency-integrity-diagnostic
+          path: /tmp/qikvrt-integrity-diagnostic/**
+          if-no-files-found: error
+          retention-days: 7
