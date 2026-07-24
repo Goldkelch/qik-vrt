@@ -1,0 +1,70 @@
+# Temporary Ubuntu-only trace; remove after the exact failure is fixed.
+name: QIKVRT adaptive runtime Ubuntu diagnostic
+
+on:
+  push:
+    branches:
+      - maintenance/dependency-security-updates-final-20260724
+    paths:
+      - .github/workflows/qikvrt_adaptive_runtime_ubuntu_diagnostic.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-adaptive-runtime-ubuntu-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: maintenance/dependency-security-updates-final-20260724
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+      - name: Execute exact Ubuntu contract with full trace
+        id: contract
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p /tmp/qikvrt-adaptive-runtime-ubuntu
+          exec > >(tee /tmp/qikvrt-adaptive-runtime-ubuntu/TRACE.log) 2>&1
+          set -euxo pipefail
+          export QIKVRT_PYTHON="$pythonLocation/bin/python"
+          "$QIKVRT_PYTHON" --version
+          sha256sum \
+            runtime/toolchains/TOOLCHAIN.lock.tsv \
+            runtime/toolchains/requirements-xml2rfc-3.34.0.txt \
+            runtime/toolchains/CACHE_REGISTRY.json \
+            runtime/toolchains/CACHE_COVERAGE.json \
+            tools/bootstrap-runtime.sh
+          grep -nE 'pypdf|zod' \
+            runtime/toolchains/TOOLCHAIN.lock.tsv \
+            runtime/toolchains/CACHE_REGISTRY.json \
+            tools/bootstrap-runtime.sh
+          contract_cache="$RUNNER_TEMP/qikvrt-contract-runtime"
+          sh tools/bootstrap-runtime.sh --install --accept-third-party \
+            --profile ietf --cache-dir "$contract_cache"
+          test_tmp="$RUNNER_TEMP/qikvrt-runtime-test-tmp"
+          mkdir -p "$test_tmp"
+          TMPDIR="$test_tmp" QIKVRT_TEST_SOURCE_CACHE="$contract_cache" \
+            sh tests/test_runtime_bootstrap.sh
+          renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/linux-amd64/venv/bin/xml2rfc"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+      - name: Upload Ubuntu contract trace
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-adaptive-runtime-ubuntu-diagnostic
+          retention-days: 30
+          path: /tmp/qikvrt-adaptive-runtime-ubuntu/TRACE.log
+          if-no-files-found: error
+      - name: Enforce Ubuntu contract
+        if: steps.contract.outcome == 'failure'
+        run: exit 1
