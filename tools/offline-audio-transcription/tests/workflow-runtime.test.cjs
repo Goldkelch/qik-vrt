@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright 2026 Ingolf Lohmann.
 "use strict";
 
 const assert = require("node:assert/strict");
