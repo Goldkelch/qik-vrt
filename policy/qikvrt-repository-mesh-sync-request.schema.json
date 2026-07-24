@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schema/qikvrt-repository-mesh-sync-request-v1.json",
+  "title": "QIK-VRT repository mesh sync tag request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_license",
+    "$schema_ref",
+    "schema",
+    "schema_sha256",
+    "request_id",
+    "action",
+    "confirm",
+    "authorization_payload_sha256",
+    "repository_policy",
+    "release",
+    "expected"
+  ],
+  "properties": {
+    "_license": {
+      "type": "object"
+    },
+    "$schema_ref": {
+      "const": "../policy/qikvrt-repository-mesh-sync-request.schema.json"
+    },
+    "schema": {
+      "const": "qikvrt_repository_mesh_sync_request_v1"
+    },
+    "schema_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request_id": {
+      "const": "repository-mesh-sync-2026-07-24"
+    },
+    "action": {
+      "enum": [
+        "inactive",
+        "tag"
+      ]
+    },
+    "confirm": {
+      "type": "string"
+    },
+    "authorization_payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repository_policy": {
+      "type": "object"
+    },
+    "release": {
+      "type": "object"
+    },
+    "expected": {
+      "type": "object"
+    }
+  }
+}

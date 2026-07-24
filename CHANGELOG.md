@@ -8,6 +8,18 @@ Copyright (c) 2026 Ingolf Lohmann.
 This file summarizes current public milestones. Git history and release pages
 remain the authoritative detailed record.
 
+## 2026.07.24 — synchronized repository mesh snapshot
+
+- Synchronized the Authority and Mirror repositories through the consolidated
+  dependency-security maintenance state and authenticated repository-native
+  audio-request interface.
+- Refreshed `README.md` and `STATUS.md` with the published Zenodo status
+  clarification, Formalization Alpha 3, and Charter records.
+- Added common annotated tag `v2026.07.24-repository-mesh-sync-1.0.0` only
+  after both `main` branches expose the same Git tree and repository integrity
+  verifies in each repository.
+- No GitHub Release object or new Zenodo record is created by this synchronization.
+
 ## 2026.07.22 — EFFECT_ACK universality 1.0.0
 
 - Added the EFFECT_ACK universality working paper, executable proof report,

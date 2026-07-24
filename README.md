@@ -47,18 +47,22 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 - [Current authority map](docs/CURRENT_AUTHORITY.md)
 - [Project site](https://goldkelch.github.io/qik-vrt/)
 
-### Current release evidence
+### Current release and synchronized snapshot evidence
 
 | Item | Verified value |
 |---|---|
-| Release | [`v2026.07.22-effect-ack-universality-1.0.0`](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0) in both repositories |
+| Scientific release | [`v2026.07.22-effect-ack-universality-1.0.0`](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.22-effect-ack-universality-1.0.0) in both repositories |
+| Repository mesh snapshot | [`v2026.07.24-repository-mesh-sync-1.0.0`](https://github.com/Goldkelch/qik-vrt/tree/v2026.07.24-repository-mesh-sync-1.0.0) in [Authority](https://github.com/Goldkelch/qik-vrt) and [Mirror](https://github.com/ingolf-lohmann/qik-vrt); identical content tree with repository-specific commits |
 | Working paper | [DOI 10.5281/zenodo.21498773](https://doi.org/10.5281/zenodo.21498773) |
-| Software | [DOI 10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774) |
+| Software snapshot | [DOI 10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774) |
+| Official status clarification | [DOI 10.5281/zenodo.21500322](https://doi.org/10.5281/zenodo.21500322) |
+| Completed formal-environment Alpha 3 | [DOI 10.5281/zenodo.21529081](https://doi.org/10.5281/zenodo.21529081) |
+| Charter of Machine-Verifiable Science | [DOI 10.5281/zenodo.21515074](https://doi.org/10.5281/zenodo.21515074) |
 | Python tests | 128/128 in twelve modules with test cases |
 | ANSI-C90 model | 2,621,440 valid snapshots; 7,864,387 checks |
 | Draft rendering | Python 3.12.13 and `xml2rfc` 3.34.0; XML/TXT/HTML preserved |
-| GitHub Release object | Intentionally absent; the annotated tag is the release identity |
-| IETF Datatracker | No submission; published Draft `-01` remains byte-identical |
+| GitHub Release objects | Intentionally absent; the annotated tags are the repository identities |
+| IETF Datatracker | Active individual Internet-Draft revision `-01`; not an RFC or IETF consensus |
 
 ## Scope of the claim
 
@@ -110,6 +114,15 @@ The exact working paper is archived under
 [DOI 10.5281/zenodo.21498773](https://doi.org/10.5281/zenodo.21498773); the
 corresponding versioned source export is archived under
 [DOI 10.5281/zenodo.21498774](https://doi.org/10.5281/zenodo.21498774).
+
+The evidence-bounded official status clarification is archived under
+[DOI 10.5281/zenodo.21500322](https://doi.org/10.5281/zenodo.21500322).
+The latest completed formal-environment snapshot is Alpha 3 under
+[DOI 10.5281/zenodo.21529081](https://doi.org/10.5281/zenodo.21529081),
+and the independent Charter of Machine-Verifiable Science is archived
+under [DOI 10.5281/zenodo.21515074](https://doi.org/10.5281/zenodo.21515074).
+Zenodo persistence establishes identity and fixity of those bytes; it
+does not establish peer review, empirical confirmation, or field-wide adoption.
 
 ## Current runnable core
 
