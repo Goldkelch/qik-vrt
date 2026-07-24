@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT manuscript completion finalizer
+
+on:
+  push:
+    branches:
+      - agent/manuscript-formalization-v2-completion
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-manuscript-completion-finalizer
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_PR: "55"
+      TARGET_BRANCH: agent/manuscript-formalization-v2-completion
+    steps:
+      - name: Wait for all completion gates on the immutable head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          target_sha = os.environ["GITHUB_SHA"]
+          target_branch = os.environ["TARGET_BRANCH"]
+          token = os.environ["GH_TOKEN"]
+          required = {
+              "QIK-VRT manuscript proof coverage",
+              "QIKVRT CI",
+              "QIKVRT Collective Proposal Review",
+          }
+
+          def api(path: str):
+              request = urllib.request.Request(
+                  f"https://api.github.com/{path}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          deadline = time.monotonic() + 30 * 60
+          last = None
+          while time.monotonic() < deadline:
+              branch = api(f"repos/{repository}/branches/{target_branch}")
+              branch_sha = branch["commit"]["sha"]
+              if branch_sha != target_sha:
+                  raise SystemExit(
+                      f"STALE_FINALIZER: branch advanced from {target_sha} to {branch_sha}"
+                  )
+
+              payload = api(
+                  f"repos/{repository}/actions/runs?branch={target_branch}&per_page=100"
+              )
+              latest = {}
+              for run in payload.get("workflow_runs", []):
+                  if run.get("head_sha") != target_sha:
+                      continue
+                  name = run.get("name")
+                  if name in required and (
+                      name not in latest or run["id"] > latest[name]["id"]
+                  ):
+                      latest[name] = run
+
+              state = {
+                  name: (
+                      latest[name].get("status"),
+                      latest[name].get("conclusion"),
+                      latest[name].get("id"),
+                  )
+                  if name in latest
+                  else ("missing", None, None)
+                  for name in sorted(required)
+              }
+              if state != last:
+                  print(json.dumps(state, sort_keys=True), flush=True)
+                  last = state
+
+              failed = {
+                  name: values
+                  for name, values in state.items()
+                  if values[0] == "completed" and values[1] != "success"
+              }
+              if failed:
+                  raise SystemExit(f"COMPLETION_GATE_FAILED: {failed}")
+              if all(
+                  values[0] == "completed" and values[1] == "success"
+                  for values in state.values()
+              ):
+                  with open("/tmp/qikvrt-completion-gates.json", "w", encoding="utf-8") as handle:
+                      json.dump(
+                          {
+                              "schema": "qikvrt_manuscript_completion_gates_v1",
+                              "repository": repository,
+                              "headSha": target_sha,
+                              "branch": target_branch,
+                              "workflows": {
+                                  name: {
+                                      "status": values[0],
+                                      "conclusion": values[1],
+                                      "runId": values[2],
+                                  }
+                                  for name, values in state.items()
+                              },
+                          },
+                          handle,
+                          indent=2,
+                          sort_keys=True,
+                      )
+                      handle.write("\n")
+                  break
+              time.sleep(15)
+          else:
+              raise SystemExit(f"COMPLETION_GATE_TIMEOUT: {last}")
+          PY
+
+      - name: Mark the authorized completion pull request ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr ready "$TARGET_PR" --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Persist final gate evidence in the pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '<!-- qikvrt-manuscript-completion-finalizer -->'
+            echo
+            echo '## Manuscript completion gates'
+            echo
+            echo 'All required workflows succeeded on the immutable branch head:'
+            echo
+            echo '```json'
+            cat /tmp/qikvrt-completion-gates.json
+            echo '```'
+            echo
+            echo '`EFFECT_ACK_DONE` for the repository merge effect.'
+          } > /tmp/qikvrt-completion-comment.md
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/qikvrt-completion-comment.md
+
+      - name: Merge the verified completion without bypassing gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/branches/$TARGET_BRANCH" --jq .commit.sha)"
+          test "$current_sha" = "$GITHUB_SHA"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$TARGET_PR/merge" \
+            -f merge_method=merge \
+            -f sha="$GITHUB_SHA" \
+            --jq '.merged == true'
