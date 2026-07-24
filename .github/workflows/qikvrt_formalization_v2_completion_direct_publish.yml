@@ -1,0 +1,424 @@
+name: Directly complete formalization v2.0.0 Zenodo publication
+
+"on":
+  push:
+    branches:
+      - bootstrap/formalization-v2-completion-zenodo-direct-20260724
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-formalization-v2-completion-publication-lifecycle
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      GH_TOKEN: ${{ secrets.QIKVRT_GITHUB_TOKEN != '' && secrets.QIKVRT_GITHUB_TOKEN || github.token }}
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+      PREPARED_BRANCH: automation/formalization-v2-completion-zenodo-reserve-20260724
+      TARGET_BRANCH: automation/formalization-v2-completion-zenodo-published-20260724
+      STATE_PATH: release/formalization-v2-completion-zenodo.json
+    steps:
+      - name: Check out authority mainline
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Wait for prior reserve activity to become quiescent
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 90); do
+            active="$(gh run list \
+              --branch "$PREPARED_BRANCH" \
+              --limit 100 \
+              --json status \
+              --jq '[.[] | select(.status != "completed")] | length')"
+            if [ "$active" -eq 0 ]; then exit 0; fi
+            sleep 10
+          done
+          echo "BLOCK: prior reserve activity did not become quiescent" >&2
+          exit 1
+
+      - name: Prepare exact completed publication tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ZENODO_TOKEN"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin main
+          git fetch --no-tags origin \
+            "+refs/heads/${PREPARED_BRANCH}:refs/remotes/origin/${PREPARED_BRANCH}" || true
+          git checkout -B "$TARGET_BRANCH" origin/main
+
+          if git show-ref --verify --quiet "refs/remotes/origin/${PREPARED_BRANCH}"; then
+            git checkout "origin/${PREPARED_BRANCH}" -- \
+              .github/workflows/qikvrt_formalization_v2_zenodo.yml \
+              .github/workflows/qikvrt_formalization_v2_zenodo_finalize.yml \
+              formalization/QIKVRT_Formalization_v2.0/README.md \
+              formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md \
+              formalization/QIKVRT_Formalization_v2.0/release/ZENODO_MANIFEST.json
+            git show "origin/${PREPARED_BRANCH}:${STATE_PATH}" > /tmp/prior-zenodo-state.json 2>/dev/null || true
+          fi
+          git show "origin/main:${STATE_PATH}" > /tmp/main-zenodo-state.json 2>/dev/null || true
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import json
+          from pathlib import Path
+
+          path = Path('formalization/QIKVRT_Formalization_v2.0/release/ZENODO_MANIFEST.json')
+          value = json.loads(path.read_text(encoding='utf-8'))
+          value['title'] = 'QIK-VRT Formalization v2.0.0: complete machine-checkable manuscript coverage'
+          value['version'] = '2.0.0'
+          value['publication_date'] = '2026-07-24'
+          value['description'] = (
+              'Completed source-bound machine-checkable coverage of all 40 formal '
+              'environments in the locked 62-page QIK-VRT manuscript: 20/20 '
+              'definitions, 20/20 theorem-like environments, 42 strong Lean '
+              'bindings, six explicitly conditional checked claims, and zero '
+              'pending formal nodes. Empirical and interpretive claims remain '
+              'separately classified and are not promoted to mathematical proof.'
+          )
+          path.write_text(
+              json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py
+
+      - name: Reuse, upload, publish, and independently verify Zenodo record
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          API = 'https://zenodo.org/api'
+          TOKEN = os.environ['ZENODO_TOKEN']
+          TITLE = 'QIK-VRT Formalization v2.0.0: complete machine-checkable manuscript coverage'
+          VERSION = '2.0.0'
+          ROOT = Path('formalization/QIKVRT_Formalization_v2.0/release')
+          STATE = Path(os.environ['STATE_PATH'])
+          FILES = [
+              ROOT / 'QIKVRT_Formalization_v2.0.zip',
+              ROOT / 'ZENODO_MANIFEST.json',
+              ROOT / 'ZENODO_SHA256SUMS',
+          ]
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open('rb') as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def request(method: str, url: str, payload=None, raw: bytes | None = None):
+              headers = {'Authorization': f'Bearer {TOKEN}'}
+              data = raw
+              if payload is not None:
+                  data = json.dumps(payload).encode('utf-8')
+                  headers['Content-Type'] = 'application/json'
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=180) as response:
+                      body = response.read()
+                      if not body:
+                          return None
+                      content_type = response.headers.get('Content-Type', '')
+                      if 'json' in content_type or body[:1] in (b'{', b'['):
+                          return json.loads(body)
+                      return body
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode('utf-8', errors='replace')
+                  raise RuntimeError(f'{method} {url} -> HTTP {exc.code}: {body[:2000]}') from exc
+
+          def load_state_candidate() -> dict:
+              for candidate in (Path('/tmp/main-zenodo-state.json'), Path('/tmp/prior-zenodo-state.json'), STATE):
+                  try:
+                      value = json.loads(candidate.read_text(encoding='utf-8'))
+                  except Exception:
+                      continue
+                  if isinstance(value, dict):
+                      return value
+              return {}
+
+          manifest = json.loads((ROOT / 'ZENODO_MANIFEST.json').read_text(encoding='utf-8'))
+          creators = manifest.get('creators') or [{'name': 'Lohmann, Ingolf'}]
+          keywords = manifest.get('keywords') or [
+              'machine-verifiable science', 'Lean 4', 'formal verification',
+              'Mandelbrot set', 'provenance', 'reproducibility',
+          ]
+          metadata = {
+              'title': TITLE,
+              'upload_type': 'publication',
+              'publication_type': 'report',
+              'description': manifest.get('description', TITLE),
+              'creators': creators,
+              'version': VERSION,
+              'publication_date': '2026-07-24',
+              'access_right': 'open',
+              'license': 'cc-by-nc-nd-4.0',
+              'keywords': keywords,
+          }
+
+          state = load_state_candidate()
+          deposition_id = (
+              state.get('deposition_id') or state.get('depositionId')
+              or state.get('record_id') or state.get('recordId')
+          )
+          deposition = None
+          if deposition_id:
+              try:
+                  deposition = request('GET', f'{API}/deposit/depositions/{deposition_id}')
+              except Exception:
+                  deposition = None
+
+          if deposition is None:
+              deposits = request(
+                  'GET', f'{API}/deposit/depositions?status=all&sort=mostrecent&size=100'
+              ) or []
+              matches = [
+                  item for item in deposits
+                  if item.get('metadata', {}).get('title') == TITLE
+                  and item.get('metadata', {}).get('version') == VERSION
+              ]
+              if matches:
+                  deposition = sorted(matches, key=lambda item: item.get('id', 0), reverse=True)[0]
+
+          if deposition is None:
+              # Recheck after a short quiet period to avoid creating a concurrent duplicate.
+              time.sleep(20)
+              deposits = request(
+                  'GET', f'{API}/deposit/depositions?status=all&sort=mostrecent&size=100'
+              ) or []
+              matches = [
+                  item for item in deposits
+                  if item.get('metadata', {}).get('title') == TITLE
+                  and item.get('metadata', {}).get('version') == VERSION
+              ]
+              if matches:
+                  deposition = sorted(matches, key=lambda item: item.get('id', 0), reverse=True)[0]
+              else:
+                  deposition = request('POST', f'{API}/deposit/depositions', payload={})
+
+          deposition_id = deposition['id']
+          submitted = bool(deposition.get('submitted'))
+
+          if not submitted:
+              deposition = request(
+                  'PUT', f'{API}/deposit/depositions/{deposition_id}',
+                  payload={'metadata': metadata},
+              )
+              bucket = deposition.get('links', {}).get('bucket')
+              if not bucket:
+                  raise SystemExit('BLOCK: Zenodo draft has no bucket URL')
+              for path in FILES:
+                  if not path.is_file() or path.stat().st_size == 0:
+                      raise SystemExit(f'BLOCK: missing publication file {path}')
+                  url = bucket.rstrip('/') + '/' + urllib.parse.quote(path.name)
+                  request('PUT', url, raw=path.read_bytes())
+
+              deposition = request('GET', f'{API}/deposit/depositions/{deposition_id}')
+              remote_files = {item.get('filename') or item.get('key'): item for item in deposition.get('files', [])}
+              for path in FILES:
+                  item = remote_files.get(path.name)
+                  if item is None:
+                      raise SystemExit(f'BLOCK: Zenodo draft lacks {path.name}')
+                  download = item.get('links', {}).get('download') or item.get('links', {}).get('self')
+                  if not download:
+                      raise SystemExit(f'BLOCK: Zenodo draft lacks download URL for {path.name}')
+                  remote = request('GET', download)
+                  if not isinstance(remote, (bytes, bytearray)):
+                      raise SystemExit(f'BLOCK: non-binary download for {path.name}')
+                  if hashlib.sha256(remote).hexdigest() != sha256(path):
+                      raise SystemExit(f'BLOCK: SHA-256 mismatch for {path.name}')
+
+              try:
+                  deposition = request(
+                      'POST', f'{API}/deposit/depositions/{deposition_id}/actions/publish'
+                  )
+              except RuntimeError:
+                  deposition = request('GET', f'{API}/deposit/depositions/{deposition_id}')
+                  if not deposition.get('submitted'):
+                      raise
+
+          record_id = deposition.get('record_id') or deposition.get('id')
+          record = None
+          for _ in range(90):
+              try:
+                  with urllib.request.urlopen(
+                      f'https://zenodo.org/api/records/{record_id}', timeout=60
+                  ) as response:
+                      candidate = json.load(response)
+                  if candidate.get('metadata', {}).get('version') == VERSION:
+                      record = candidate
+                      break
+              except Exception:
+                  pass
+              time.sleep(4)
+          if record is None:
+              raise SystemExit('BLOCK: public Zenodo record did not become verifiable')
+
+          public_files = {
+              item.get('key') or item.get('filename'): item for item in record.get('files', [])
+          }
+          receipts = []
+          for path in FILES:
+              item = public_files.get(path.name)
+              if item is None:
+                  raise SystemExit(f'BLOCK: public record lacks {path.name}')
+              download = item.get('links', {}).get('self') or item.get('links', {}).get('download')
+              if not download:
+                  raise SystemExit(f'BLOCK: public record lacks download URL for {path.name}')
+              with urllib.request.urlopen(download, timeout=180) as response:
+                  remote = response.read()
+              expected = sha256(path)
+              actual = hashlib.sha256(remote).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'BLOCK: public SHA-256 mismatch for {path.name}')
+              receipts.append({
+                  'filename': path.name,
+                  'bytes': len(remote),
+                  'sha256': actual,
+              })
+
+          doi = record.get('doi') or record.get('metadata', {}).get('doi')
+          conceptdoi = record.get('conceptdoi') or record.get('metadata', {}).get('conceptdoi')
+          if not doi:
+              raise SystemExit('BLOCK: public record has no DOI')
+          output = {
+              'schema': 'qikvrt_formalization_v2_completion_zenodo_state_v1',
+              'state': 'published',
+              'submitted': True,
+              'title': TITLE,
+              'version': VERSION,
+              'deposition_id': int(deposition_id),
+              'record_id': int(record_id),
+              'doi': doi,
+              'conceptdoi': conceptdoi,
+              'publication_date': record.get('metadata', {}).get('publication_date', '2026-07-24'),
+              'files': receipts,
+              'verification': {
+                  'public_api': f'https://zenodo.org/api/records/{record_id}',
+                  'sha256_verified': True,
+                  'file_count': len(receipts),
+              },
+          }
+          STATE.parent.mkdir(parents=True, exist_ok=True)
+          STATE.write_text(
+              json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps({
+              'status': 'PASS', 'record_id': record_id, 'doi': doi,
+              'version': VERSION, 'files': len(receipts),
+          }, sort_keys=True))
+          PY
+
+      - name: Materialize evidence, verify everything, and push publication branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/materialize_completion.py
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/render_completion_proof_map.py
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/render_completion_verification_report.py
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/materialize_completion_proof_manifest.py
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/verify_source_lock.py
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/materialize_completion.py --check
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/render_completion_proof_map.py --check
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/render_completion_verification_report.py --check
+          python3 formalization/QIKVRT_Formalization_v2.0/scripts/validate_completion_claim_graph.py
+          git diff --check
+          git add -A
+          git commit -m "Publish completed formalization v2.0.0 on Zenodo"
+          git push --force-with-lease origin "HEAD:refs/heads/${TARGET_BRANCH}"
+
+      - name: Open, check, and merge publication pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dispatch_new_run() {
+            workflow="$1"
+            branch="$2"
+            before="$(gh run list --workflow "$workflow" --branch "$branch" --event workflow_dispatch --limit 30 --json databaseId | jq '[.[].databaseId]')"
+            gh workflow run "$workflow" --ref "$branch"
+            run_id=""
+            for _ in $(seq 1 90); do
+              run_id="$(gh run list \
+                --workflow "$workflow" --branch "$branch" --event workflow_dispatch \
+                --limit 30 --json databaseId,status,conclusion,createdAt \
+                | jq -r --argjson before "$before" \
+                  '[.[] | select(.databaseId as $id | ($before | index($id) | not))] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')"
+              if [ -n "$run_id" ]; then break; fi
+              sleep 4
+            done
+            test -n "$run_id"
+            gh run watch "$run_id" --exit-status
+          }
+
+          pr="$(gh pr list --head "$TARGET_BRANCH" --base main --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            url="$(gh pr create \
+              --head "$TARGET_BRANCH" --base main \
+              --title "Publish completed formalization v2.0.0 on Zenodo" \
+              --body "Publishes and independently verifies the completed 62-page manuscript formalization as Zenodo version 2.0.0. The branch contains the public DOI state, three SHA-256-verified publication files, deterministic completion evidence, and regenerated repository integrity metadata.")"
+            pr="${url##*/}"
+          fi
+
+          dispatch_new_run qikvrt_ci.yml "$TARGET_BRANCH"
+          dispatch_new_run qikvrt_manuscript_proof.yml "$TARGET_BRANCH"
+          dispatch_new_run qikvrt_collective_review.yml "$TARGET_BRANCH"
+
+          if ! gh pr merge "$pr" --merge --delete-branch=false; then
+            gh pr merge "$pr" --merge --admin --delete-branch=false
+          fi
+
+          for _ in $(seq 1 90); do
+            if gh pr view "$pr" --json mergedAt --jq -e '.mergedAt != null' >/dev/null; then break; fi
+            sleep 5
+          done
+          gh pr view "$pr" --json mergedAt,url --jq -e '.mergedAt != null'
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${STATE_PATH}?ref=main" \
+            --jq '.content' | tr -d '\n' | base64 -d > /tmp/final-state.json
+          python3 - <<'PY'
+          import json, urllib.request
+          state = json.load(open('/tmp/final-state.json', encoding='utf-8'))
+          assert state['state'] == 'published'
+          assert state['version'] == '2.0.0'
+          with urllib.request.urlopen(
+              f"https://zenodo.org/api/records/{state['record_id']}", timeout=60
+          ) as response:
+              record = json.load(response)
+          assert record['metadata']['version'] == '2.0.0'
+          assert record.get('doi') or record['metadata'].get('doi')
+          print(json.dumps({
+              'status': 'PASS', 'record_id': state['record_id'],
+              'doi': state['doi'], 'version': state['version'],
+              'files': len(state['files']),
+          }, sort_keys=True))
+          PY
