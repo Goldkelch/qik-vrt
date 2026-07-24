@@ -32,14 +32,14 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${GH_API_TOKEN}" \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            'https://api.github.com/repos/Goldkelch/qik-vrt/actions/jobs/89551439392/logs' \
+            'https://api.github.com/repos/Goldkelch/qik-vrt/actions/jobs/89552891892/logs' \
             -o /tmp/materializer.log
           python3 -B - <<'PY'
           from pathlib import Path
           lines = Path('/tmp/materializer.log').read_text(encoding='utf-8-sig', errors='replace').splitlines()
-          selected = [line for line in lines if any(token in line for token in ('BLOCK:', 'Traceback', 'SyntaxError', 'Error:', 'Exception'))]
+          selected = [line for line in lines if any(token in line for token in ('BLOCK:', 'Traceback', 'SyntaxError', 'Error:', 'Exception', 'rejected', 'denied', 'refusing', 'permission'))]
           print('--- selected failure lines ---')
-          print('\n'.join(selected[-30:]) or '(none)')
+          print('\n'.join(selected[-40:]) or '(none)')
           print('--- final log tail ---')
-          print('\n'.join(lines[-50:]))
+          print('\n'.join(lines[-70:]))
           PY
