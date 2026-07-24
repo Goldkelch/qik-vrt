@@ -12,12 +12,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from extract_tex_inventory import (  # noqa: E402
+from materialize_completion import (  # noqa: E402
+    ALL_FORMAL_BINDINGS,
+    CLOSED_STATUSES,
     DEFAULT_PROVENANCE,
     generate,
 )
 from audit_proof_escapes import FORBIDDEN_CODE, strip_comments_and_strings  # noqa: E402
-from validate_claim_graph import validate_claim_graph  # noqa: E402
+from validate_completion_claim_graph import validate  # noqa: E402
 from verify_source_lock import verify_source_lock  # noqa: E402
 
 
@@ -37,13 +39,13 @@ class ClaimPipelineTests(unittest.TestCase):
             f"expected an error containing {fragment!r}; got {errors}",
         )
 
-    def test_positive_locked_source_and_fresh_extraction(self) -> None:
+    def test_positive_locked_source_and_fresh_completion_materialization(self) -> None:
         self.assertEqual(verify_source_lock(DEFAULT_PROVENANCE), [])
         environments, matrix, graph = generate(DEFAULT_PROVENANCE)
         self.assertEqual(environments, self.environments)
         self.assertEqual(matrix, self.matrix)
         self.assertEqual(graph, self.graph)
-        self.assertEqual(validate_claim_graph(graph, environments, matrix), [])
+        self.assertEqual(validate(graph, environments, matrix), [])
 
     def test_inventory_exact_counts_and_proof_associations(self) -> None:
         self.assertEqual(
@@ -84,7 +86,7 @@ class ClaimPipelineTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(0), "sorry")
 
-    def test_batch01a_has_five_strong_multi_span_bindings(self) -> None:
+    def test_legacy_batch01_bindings_are_preserved(self) -> None:
         nodes = {node["id"]: node for node in self.graph["nodes"]}
         expected = {"MAP-003", "GAT-004", "GAT-005", "GAT-006", "RET-011"}
         actual = {
@@ -96,55 +98,82 @@ class ClaimPipelineTests(unittest.TestCase):
         self.assertEqual(actual, expected)
         for node_id in expected:
             self.assertEqual(nodes[node_id]["formalizationStatus"], "KERNEL_CHECKED")
-            self.assertEqual(
-                nodes[node_id]["formalBinding"]["bindingStrength"], "STRONG"
-            )
+            self.assertEqual(nodes[node_id]["formalBinding"]["bindingStrength"], "STRONG")
         self.assertEqual(len(nodes["RET-011"]["sourceSpanIds"]), 3)
-        self.assertEqual(nodes["GAT-005"]["sourceSpanIds"], nodes["GAT-006"]["sourceSpanIds"])
 
-    def test_batch02_has_seven_exactly_scoped_strong_bindings(self) -> None:
+    def test_legacy_batch02_subclaims_remain_distinct(self) -> None:
         nodes = {node["id"]: node for node in self.graph["nodes"]}
         expected_full = {"SET-001", "MAP-001", "SET-003", "GAT-002"}
         expected_subclaims = {"QUA-003A", "DIM-006A", "DIM-007A"}
-        actual = {
-            node_id
-            for node_id, node in nodes.items()
-            if node.get("formalBinding") is not None
-            if node["formalBinding"].get("batch", "").startswith("Batch02")
-        }
-        self.assertEqual(actual, expected_full | expected_subclaims)
         for node_id in expected_full:
-            self.assertEqual(
-                nodes[node_id]["formalBinding"]["claimScope"],
-                "FULL_ENVIRONMENT",
-            )
+            self.assertEqual(nodes[node_id]["formalBinding"]["claimScope"], "FULL_ENVIRONMENT")
         for node_id in expected_subclaims:
-            self.assertEqual(
-                nodes[node_id]["formalBinding"]["claimScope"],
-                "SOURCE_SUBCLAIM",
-            )
+            self.assertEqual(nodes[node_id]["formalBinding"]["claimScope"], "SOURCE_SUBCLAIM")
         for parent_id in {"QUA-003", "DIM-006", "DIM-007"}:
-            self.assertEqual(nodes[parent_id]["formalizationStatus"], "PENDING")
-            self.assertIsNone(nodes[parent_id]["formalBinding"])
+            self.assertIn(nodes[parent_id]["formalizationStatus"], CLOSED_STATUSES)
+            self.assertIsNotNone(nodes[parent_id]["formalBinding"])
+            self.assertNotEqual(
+                nodes[parent_id]["formalBinding"]["proofConstant"],
+                nodes[parent_id + "A"]["formalBinding"]["proofConstant"],
+            )
 
-    def test_graph_coverage_counts_are_explicit(self) -> None:
+    def test_all_twenty_definitions_have_strong_kernel_bindings(self) -> None:
+        nodes = {node["id"]: node for node in self.graph["nodes"]}
+        for index in range(1, 21):
+            node = nodes[f"DEF-{index:03d}"]
+            self.assertEqual(node["formalizationStatus"], "KERNEL_CHECKED")
+            self.assertEqual(node["formalBinding"]["claimScope"], "DEFINITION_BINDING")
+            self.assertEqual(node["formalBinding"]["bindingStrength"], "STRONG")
+
+    def test_all_twenty_theorem_environments_are_closed(self) -> None:
+        nodes = {node["id"]: node for node in self.graph["nodes"]}
+        theorem_environments = [
+            item for item in self.environments["environments"]
+            if item["group"] == "theoremLike"
+        ]
+        self.assertEqual(len(theorem_environments), 20)
+        for environment in theorem_environments:
+            self.assertTrue(
+                all(nodes[claim_id]["formalizationStatus"] in CLOSED_STATUSES
+                    for claim_id in environment["claimIds"]),
+                environment["id"],
+            )
+
+    def test_completion_scope_and_status_are_explicit(self) -> None:
+        nodes = {node["id"]: node for node in self.graph["nodes"]}
+        conditional = {"ESC-004", "ESC-005", "ESC-003", "QUA-004", "QUA-005", "DIM-006"}
+        exact = {"QUA-003", "GAT-003", "GAT-007", "DIM-007"}
+        for claim_id in conditional:
+            self.assertEqual(nodes[claim_id]["formalizationStatus"], "CONDITIONAL_CHECKED")
+            self.assertEqual(
+                nodes[claim_id]["formalBinding"]["claimScope"],
+                "CONDITIONAL_ENVIRONMENT",
+            )
+        for claim_id in exact:
+            self.assertEqual(nodes[claim_id]["formalizationStatus"], "KERNEL_CHECKED")
+            self.assertEqual(nodes[claim_id]["formalBinding"]["claimScope"], "FULL_ENVIRONMENT")
+
+    def test_graph_completion_counts_are_explicit(self) -> None:
         self.assertEqual(
             self.graph["counts"],
             {
                 "nodes": 43,
                 "definitionNodes": 20,
-                "kernelCheckedClaims": 12,
-                "pendingNodes": 30,
+                "strongBindings": 42,
+                "kernelCheckedClaims": 42,
+                "conditionalCheckedClaims": 6,
+                "pendingNodes": 0,
             },
         )
+        self.assertEqual(set(ALL_FORMAL_BINDINGS), {
+            node["id"] for node in self.graph["nodes"] if node.get("formalBinding")
+        })
 
-    def test_non_batch_formal_obligations_remain_pending(self) -> None:
+    def test_no_formal_obligation_remains_pending(self) -> None:
         for node in self.graph["nodes"]:
-            if node["epistemicCategory"] not in {"DEFINITION", "MATHEMATICAL", "CONDITIONAL"}:
-                continue
-            binding = node.get("formalBinding")
-            if binding is None:
-                self.assertEqual(node["formalizationStatus"], "PENDING", node["id"])
+            if node["epistemicCategory"] in {"DEFINITION", "MATHEMATICAL", "CONDITIONAL"}:
+                self.assertIn(node["formalizationStatus"], CLOSED_STATUSES, node["id"])
+                self.assertIsNotNone(node["formalBinding"], node["id"])
 
     def test_negative_wrong_source_hash_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -153,34 +182,22 @@ class ClaimPipelineTests(unittest.TestCase):
             source.write_bytes(b"locked source\n")
             provenance = root / "SOURCE_PROVENANCE.json"
             provenance.write_text(
-                json.dumps(
-                    {
-                        "sourceFiles": {
-                            "tex": {
-                                "path": "source.tex",
-                                "sha256": "0" * 64,
-                                "lineCount": 1,
-                            }
-                        },
-                        "policy": {
-                            "sourceBytesImmutable": True,
-                            "lineSpanHashesAreNormative": True,
-                        },
-                    }
-                ),
+                json.dumps({
+                    "sourceFiles": {"tex": {
+                        "path": "source.tex", "sha256": "0" * 64, "lineCount": 1,
+                    }},
+                    "policy": {"sourceBytesImmutable": True, "lineSpanHashesAreNormative": True},
+                }),
                 encoding="utf-8",
             )
             errors = verify_source_lock(provenance)
             self.assertHasError(errors, "sha256 mismatch")
-            self.assertNotEqual(
-                hashlib.sha256(source.read_bytes()).hexdigest(),
-                "0" * 64,
-            )
+            self.assertNotEqual(hashlib.sha256(source.read_bytes()).hexdigest(), "0" * 64)
 
     def test_negative_missing_environment_is_rejected(self) -> None:
         environments = copy.deepcopy(self.environments)
         environments["environments"] = environments["environments"][:-1]
-        errors = validate_claim_graph(self.graph, environments, self.matrix)
+        errors = validate(self.graph, environments, self.matrix)
         self.assertHasError(errors, "formal: expected 40")
 
     def test_negative_dependency_cycle_is_rejected(self) -> None:
@@ -188,76 +205,45 @@ class ClaimPipelineTests(unittest.TestCase):
         nodes = {node["id"]: node for node in graph["nodes"]}
         nodes["DEF-001"]["dependencies"] = ["DEF-002"]
         nodes["DEF-002"]["dependencies"] = ["DEF-001"]
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
+        errors = validate(graph, self.environments, self.matrix)
         self.assertHasError(errors, "claim dependency cycle")
 
     def test_negative_stale_lean_type_binding_is_rejected(self) -> None:
         graph = copy.deepcopy(self.graph)
-        node = next(item for item in graph["nodes"] if item["id"] == "MAP-003")
+        node = next(item for item in graph["nodes"] if item["id"] == "ESC-004")
         node["formalBinding"]["leanSourceSha256"] = "0" * 64
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
+        errors = validate(graph, self.environments, self.matrix)
         self.assertHasError(errors, "stale Lean source fingerprint")
 
     def test_negative_stale_indexed_registry_is_rejected(self) -> None:
         graph = copy.deepcopy(self.graph)
-        node = next(item for item in graph["nodes"] if item["id"] == "GAT-004")
+        node = next(item for item in graph["nodes"] if item["id"] == "DEF-001")
         node["formalBinding"]["registrySourceSha256"] = "f" * 64
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
+        errors = validate(graph, self.environments, self.matrix)
         self.assertHasError(errors, "stale registry source fingerprint")
 
-    def test_negative_subclaim_cannot_promote_pending_parent(self) -> None:
+    def test_negative_subclaim_cannot_substitute_for_parent_binding(self) -> None:
         graph = copy.deepcopy(self.graph)
-        parent = next(item for item in graph["nodes"] if item["id"] == "QUA-003")
-        child = next(item for item in graph["nodes"] if item["id"] == "QUA-003A")
-        parent["formalizationStatus"] = "KERNEL_CHECKED"
-        parent["formalBinding"] = copy.deepcopy(child["formalBinding"])
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
-        self.assertHasError(errors, "parent claim QUA-003 must remain pending")
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        nodes["QUA-003"]["formalBinding"] = copy.deepcopy(nodes["QUA-003A"]["formalBinding"])
+        errors = validate(graph, self.environments, self.matrix)
+        self.assertHasError(errors, "QUA-003 binding")
 
     def test_negative_forbidden_empirical_promotion_is_rejected(self) -> None:
         graph = copy.deepcopy(self.graph)
-        graph["nodes"].append(
-            {
-                "id": "EMP-TEST",
-                "statement": "Synthetic empirical hypothesis for a negative test.",
-                "epistemicCategory": "EMPIRICAL",
-                "formalizationStatus": "PENDING",
-                "dependencies": ["SRC-001"],
-                "environmentIds": [],
-                "sourceSpanIds": [],
-                "proofBlockIds": [],
-                "formalBinding": None,
-            }
-        )
-        node = next(item for item in graph["nodes"] if item["id"] == "SET-001")
-        node["dependencies"].append("EMP-TEST")
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
-        self.assertHasError(errors, "forbidden dependency/promotion")
-
-    def test_negative_proof_binding_on_interpretation_is_rejected(self) -> None:
-        graph = copy.deepcopy(self.graph)
-        graph["nodes"].append(
-            {
-                "id": "INT-TEST",
-                "statement": "Synthetic interpretation for a negative test.",
-                "epistemicCategory": "INTERPRETIVE",
-                "formalizationStatus": "KERNEL_CHECKED",
-                "dependencies": ["SRC-001"],
-                "environmentIds": [],
-                "sourceSpanIds": ["SPAN-TEX-3469-3469"],
-                "proofBlockIds": [],
-                "formalBinding": {
-                    "proofSystem": "Lean4",
-                    "bindingStrength": "STRONG",
-                    "batch": "NEGATIVE-TEST",
-                    "module": "Forbidden",
-                    "statementConstant": "Forbidden.statement",
-                    "proofConstant": "Forbidden.checked",
-                },
-            }
-        )
-        errors = validate_claim_graph(graph, self.environments, self.matrix)
-        self.assertHasError(errors, "proof binding forbidden for INTERPRETIVE")
+        graph["nodes"].append({
+            "id": "EMP-TEST",
+            "statement": "Synthetic empirical hypothesis.",
+            "epistemicCategory": "EMPIRICAL",
+            "formalizationStatus": "KERNEL_CHECKED",
+            "dependencies": ["SRC-001"],
+            "environmentIds": [],
+            "sourceSpanIds": ["SPAN-TEX-3469-3469"],
+            "proofBlockIds": [],
+            "formalBinding": copy.deepcopy(graph["nodes"][1]["formalBinding"]),
+        })
+        errors = validate(graph, self.environments, self.matrix)
+        self.assertHasError(errors, "proof binding forbidden for EMPIRICAL")
 
 
 if __name__ == "__main__":

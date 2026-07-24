@@ -21,7 +21,49 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
-        run: make test
+        id: full_test
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          diagnostics=.qikvrt/runtime/ci-diagnostics
+          mkdir -p "$diagnostics"
+          make test > "$diagnostics/MAKE_TEST_FULL.log" 2>&1
+          status=$?
+          {
+            printf 'MAKE_TEST_EXIT=%s\n' "$status"
+            printf '%s\n' '--- LAST 500 LINES ---'
+            tail -n 500 "$diagnostics/MAKE_TEST_FULL.log"
+            printf '%s\n' '--- WORKTREE STATUS ---'
+            git status --short --untracked-files=all
+            printf '%s\n' '--- INTEGRITY MANIFEST DELTA ---'
+            python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from tools import qikvrt_integrity as integrity
+
+          stored = json.loads(Path(integrity.MANIFEST_NAME).read_text(encoding='utf-8'))
+          _manifest, _index, _detached, expected = integrity.build_outputs()
+          old = {entry['path']: entry for entry in stored['files']}
+          new = {entry['path']: entry for entry in expected['files']}
+          print('added=' + json.dumps(sorted(new.keys() - old.keys())))
+          print('removed=' + json.dumps(sorted(old.keys() - new.keys())))
+          changed = sorted(
+              path for path in old.keys() & new.keys()
+              if old[path] != new[path]
+          )
+          print('changed=' + json.dumps(changed))
+          for path in changed[:50]:
+              before = old[path]
+              after = new[path]
+              print(json.dumps({'path': path, 'stored': before, 'expected': after}, sort_keys=True))
+          PY
+          } > "$diagnostics/MAKE_TEST_DIAGNOSTICS.log" 2>&1
+          mkdir -p audit/ci-diagnostics
+          cp "$diagnostics/MAKE_TEST_DIAGNOSTICS.log" \
+            audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
+          cat "$diagnostics/MAKE_TEST_DIAGNOSTICS.log"
+          exit "$status"
       - name: Upload audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -32,3 +74,10 @@ jobs:
             audit/**
             .qikvrt/**
           if-no-files-found: warn
+          include-hidden-files: true
+      - name: Enforce full repository test result
+        if: steps.full_test.outcome == 'failure'
+        shell: bash
+        run: |
+          cat audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
+          exit 1

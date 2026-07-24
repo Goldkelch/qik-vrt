@@ -46,34 +46,99 @@ jobs:
           restore-keys: |
             qikvrt-lean-${{ runner.os }}-${{ hashFiles('formalization/QIKVRT_Formalization_v2.0/lean-toolchain', 'formalization/QIKVRT_Formalization_v2.0/lakefile.toml', 'formalization/QIKVRT_Formalization_v2.0/lake-manifest.json') }}-
             qikvrt-lean-${{ runner.os }}-
-      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+      - name: Initial Lean build
+        id: initial_lean_build
+        continue-on-error: true
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           lake-package-directory: formalization/QIKVRT_Formalization_v2.0
           test: false
+      - name: Capture compact Lean compiler diagnostics
+        if: steps.initial_lean_build.outcome == 'failure'
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .lake/build
+          lake build > .lake/build/lean-build-diagnostics.log 2>&1
+          status=$?
+          {
+            printf 'LEAN_BUILD_EXIT=%s\n' "$status"
+            printf '%s\n' '--- LAST 400 LINES ---'
+            tail -n 400 .lake/build/lean-build-diagnostics.log
+          } > .lake/build/lean-build-diagnostics-tail.log
+          exit 0
+      - name: Upload Lean compiler diagnostics
+        if: steps.initial_lean_build.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-lean-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: >-
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/lean-build-diagnostics-tail.log
+          if-no-files-found: error
+      - name: Enforce initial Lean build
+        if: steps.initial_lean_build.outcome == 'failure'
+        run: |
+          cat .lake/build/lean-build-diagnostics-tail.log
+          exit 1
       - name: Verify locked manuscript bytes and page count
         run: python3 scripts/verify_source_lock.py
-      - name: Verify generated source inventory is current
-        run: python3 scripts/extract_tex_inventory.py --check
-      - name: Verify human proof map is current
-        run: python3 scripts/render_proof_map.py --check
-      - name: Validate claim graph and epistemic boundaries
-        run: python3 scripts/validate_claim_graph.py
+      - name: Verify completed claim graph materialization
+        run: python3 scripts/materialize_completion.py --check
+      - name: Verify completed human proof map
+        run: python3 scripts/render_completion_proof_map.py --check
+      - name: Verify completed verification report
+        run: python3 scripts/render_completion_verification_report.py --check
+      - name: Validate completed claim graph and epistemic boundaries
+        run: python3 scripts/validate_completion_claim_graph.py
       - name: Validate EFFECT_ACK source, structure and proof references
         run: python3 scripts/validate_effect_ack_claims.py
       - name: Run positive and negative provenance tests
         run: python3 -m unittest discover -s tests -v
       - name: Compile exact statement/proof bindings
         run: lake build
-      - name: Audit theorem axiom dependencies
+      - name: Audit legacy and EFFECT_ACK theorem dependencies
         run: python3 scripts/audit_lean_axioms.py
+      - name: Audit every completed manuscript proof constant
+        run: python3 scripts/audit_completion_axioms.py
       - name: Reject project proof escapes
         run: python3 scripts/audit_proof_escapes.py
+      - name: Verify completed proof-object manifest is current
+        run: python3 scripts/materialize_completion_proof_manifest.py --check
       - name: Verify persistent proof-object manifest
+        id: proof_object_manifest
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .lake/build
+          python3 scripts/verify_proof_object_manifest.py \
+            > .lake/build/qikvrt-proof-object-verifier.log 2>&1
+          status=$?
+          cat .lake/build/qikvrt-proof-object-verifier.log
+          exit "$status"
+      - name: Upload proof-object verifier diagnostics
+        if: steps.proof_object_manifest.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-proof-object-verifier-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          path: >-
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/qikvrt-proof-object-verifier.log
+          if-no-files-found: error
+      - name: Enforce persistent proof-object verification
+        if: steps.proof_object_manifest.outcome == 'failure'
+        run: |
+          cat .lake/build/qikvrt-proof-object-verifier.log
+          exit 1
+      - name: Materialize proof-object runtime evidence
+        if: steps.proof_object_manifest.outcome == 'success'
         run: |
           set -euo pipefail
           python3 scripts/verify_proof_object_manifest.py \
             | tee .lake/build/qikvrt-proof-object-runtime-evidence.json
       - name: Upload proof-object runtime evidence
+        if: steps.proof_object_manifest.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-proof-object-runtime-evidence
