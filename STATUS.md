@@ -1,16 +1,21 @@
 # Verification status
 
-**Snapshot date:** 2026-07-22
+**Snapshot date:** 2026-07-24
 
-**Release identity:** annotated tag
+**Scientific release identity:** annotated tag
 `v2026.07.22-effect-ack-universality-1.0.0` in `Goldkelch/qik-vrt` and
 `ingolf-lohmann/qik-vrt`; working-paper DOI
 `10.5281/zenodo.21498773`; software DOI `10.5281/zenodo.21498774`.
 
-**Current verified object:** the identical content tree carried by that tag in
-both repositories. Commit identities remain repository-specific; the dedicated
-public finalization evidence records both commit/tree/tag bindings and Zenodo
-file digests without introducing a self-reference into the tagged tree.
+**Synchronized repository identity:** annotated tag
+`v2026.07.24-repository-mesh-sync-1.0.0` in both repositories. It identifies
+the shared post-release content tree, including dependency-security maintenance,
+authenticated repository-native audio requests, current Zenodo inventory, and
+this status refresh. Commit identities remain repository-specific.
+
+**Current verified object:** the identical content tree carried by the common
+repository-mesh tag in both repositories. The earlier scientific release tag
+remains immutable and continues to identify the separately archived release.
 
 **License transition:** the public baseline and earlier Apache-2.0 grants remain
 under Apache-2.0. Current QIK-VRT-controlled repair-set code carrying the new
@@ -35,6 +40,11 @@ commercial use requires separate written permission. See
   identity, planned asset bytes, local `HEAD`, remote digest evidence, and
   durable publication journals. Negative tests cover malformed, oversized,
   unauthenticated, expired, conflicting, tampered, and timeout inputs.
+- The authenticated repository-native audio-request interface binds repository,
+  Git-blob SHA, filename, byte count, SHA-256, model identity, and bounded
+  transcription parameters before ephemeral processing. It rejects repository
+  substitution, traversal, hidden names, unsupported formats, malformed Base64,
+  oversized inputs, unknown fields, and byte or digest mismatches.
 - The collective-adaptive cognition runtime emits evidence and reviewable
   proposals while remaining in `EFFECT_ACK_CONTINUE`. It does not assert human,
   organizational, causal, or identity consensus from observer identifiers.
@@ -49,6 +59,11 @@ commercial use requires separate written permission. See
   explicitly separating process universalizability, semantic factorization on
   observation fibres, conditional historical inversion, and conditional
   cyberphysical effect control.
+- The source-bound Lean formalization now records closed machine-readable status
+  for all 20 definition environments and all 20 theorem-like environments,
+  materializes 42 strong source bindings, and keeps six conditional claims
+  explicitly conditional. This is formal-environment coverage, not empirical
+  confirmation of physical or interpretive claims.
 - A durable local gate regenerates the proof report byte-for-byte, rejects
   optimized Python mode, and verifies complete SHA-256 coverage of the bundle.
 - Python 3.12.13 and `xml2rfc` 3.34.0 validate the Draft-01 XML and reproduce
@@ -72,17 +87,26 @@ workspace state.
 
 ## Current external state
 
-- Both repository `main` branches carry the same release content tree under
-  annotated tag `v2026.07.22-effect-ack-universality-1.0.0`.
+- Both repository `main` branches carry the same current content tree under
+  annotated tag `v2026.07.24-repository-mesh-sync-1.0.0`; the Authority and
+  Mirror commits differ because their histories remain repository-specific.
+- The immutable scientific release tag
+  `v2026.07.22-effect-ack-universality-1.0.0` remains present in both repositories.
 - Zenodo publishes the exact working-paper files under DOI
   `10.5281/zenodo.21498773` and the deterministic tagged source-tree export
   under DOI `10.5281/zenodo.21498774`.
-- No GitHub Release object exists for this tag. Tagging and archival publication
-  were separate, hash-bound effects.
-- No IETF Datatracker submission was performed. XML, TXT, and HTML rendering
-  and validation preserved Draft `-01`; its normative bytes are unchanged.
-- Public machine-readable reservation/finalization evidence is retained on
-  branch `qikvrt/zenodo-state` of `Goldkelch/qik-vrt`.
+- The official evidence-boundary status clarification is published under DOI
+  `10.5281/zenodo.21500322`.
+- The formalization concept `10.5281/zenodo.21488115` currently reaches the
+  independently verified Alpha-3 version DOI `10.5281/zenodo.21529081`.
+- The Charter of Machine-Verifiable Science is published independently under
+  DOI `10.5281/zenodo.21515074`.
+- No GitHub Release object is created for either annotated tag. Repository
+  tagging and Zenodo archival publication remain separate effects.
+- IETF Datatracker publishes the active individual Internet-Draft revision
+  `draft-lohmann-qikvrt-effect-ack-01`; it is neither an RFC nor IETF consensus.
+- Public machine-readable Zenodo reservation, finalization, and anonymous
+  verification evidence remains retained on the dedicated QIK-VRT state branches.
 
 ## Not demonstrated
 

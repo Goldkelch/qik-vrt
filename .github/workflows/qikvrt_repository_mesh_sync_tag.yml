@@ -1,0 +1,262 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT repository mesh sync tag
+
+on:
+  push:
+    branches:
+      - automation/repository-mesh-sync-tag-20260724
+    paths:
+      - release/repository-mesh-sync-request.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-repository-mesh-sync-tag-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-tag:
+    if: github.repository == 'Goldkelch/qik-vrt' || github.repository == 'ingolf-lohmann/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the exact authorization commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Validate the marker, both main trees, and repository integrity
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PYTAG'
+          from __future__ import annotations
+
+          import copy
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          MARKER = Path('release/repository-mesh-sync-request.json')
+          SCHEMA = Path('policy/qikvrt-repository-mesh-sync-request.schema.json')
+          ZERO40 = '0' * 40
+          SHA1 = re.compile(r'[0-9a-f]{40}\Z')
+          REPOSITORIES = ('Goldkelch/qik-vrt', 'ingolf-lohmann/qik-vrt')
+
+          def fail(message: str) -> None:
+              raise SystemExit('BLOCK: ' + message)
+
+          def digest(path: Path) -> str:
+              if path.is_symlink() or not path.is_file():
+                  fail(f'unsafe or missing required file: {path}')
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          marker = json.loads(MARKER.read_text(encoding='utf-8'))
+          required = {
+              '_license', '$schema_ref', 'schema', 'schema_sha256', 'request_id',
+              'action', 'confirm', 'authorization_payload_sha256',
+              'repository_policy', 'release', 'expected',
+          }
+          if set(marker) != required:
+              fail('marker keys differ from the closed contract')
+          if marker['$schema_ref'] != '../policy/qikvrt-repository-mesh-sync-request.schema.json':
+              fail('schema reference changed')
+          if marker['schema'] != 'qikvrt_repository_mesh_sync_request_v1':
+              fail('schema name changed')
+          if marker['schema_sha256'] != digest(SCHEMA):
+              fail('schema digest changed')
+          if marker['request_id'] != 'repository-mesh-sync-2026-07-24':
+              fail('request identity changed')
+          policy = {
+              'authority_repository': 'Goldkelch/qik-vrt',
+              'mirror_repository': 'ingolf-lohmann/qik-vrt',
+              'authorization_branch': 'automation/repository-mesh-sync-tag-20260724',
+          }
+          if marker['repository_policy'] != policy:
+              fail('repository policy changed')
+          fixed_release = {
+              'tag': 'v2026.07.24-repository-mesh-sync-1.0.0',
+              'tagger_name': 'Ingolf Lohmann',
+              'tagger_email': 'ingolf.lohmann@live.com',
+              'tagger_timestamp': '2026-07-24T17:30:00Z',
+              'tag_message': (
+                  'QIK-VRT synchronized repository mesh snapshot 1.0.0\n\n'
+                  'Common annotated tag for the byte-identical Authority and Mirror '
+                  'content tree after dependency-security maintenance, authenticated '
+                  'repository-native audio requests, Zenodo inventory refresh, and '
+                  'status documentation synchronization. No GitHub Release object and '
+                  'no new Zenodo publication are created.'
+              ),
+          }
+          if marker['release'] != fixed_release:
+              fail('release contract changed')
+          projection = copy.deepcopy(marker)
+          supplied = projection.pop('authorization_payload_sha256')
+          calculated = hashlib.sha256(
+              json.dumps(projection, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          ).hexdigest()
+          if supplied != calculated:
+              fail('authorization payload digest changed')
+          if marker['action'] != 'tag' or marker['confirm'] != 'CREATE_COMMON_ANNOTATED_REPOSITORY_MESH_SYNC_TAG':
+              fail('no exact tag authorization')
+          expected = marker['expected']
+          if set(expected) != {'authority_commit', 'mirror_commit', 'shared_tree'}:
+              fail('expected identity keys changed')
+          if any(not SHA1.fullmatch(value) or value == ZERO40 for value in expected.values()):
+              fail('expected commit or tree identity is absent')
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          if repository not in REPOSITORIES:
+              fail('repository is outside the two-node contract')
+          source = expected['authority_commit'] if repository == REPOSITORIES[0] else expected['mirror_commit']
+          if os.environ['EVENT_REF'] != 'refs/heads/automation/repository-mesh-sync-tag-20260724':
+              fail('unexpected authorization ref')
+          if os.environ['EVENT_FORCED'] != 'false':
+              fail('forced authorization push')
+          if os.environ['EVENT_AFTER'] != os.environ['GITHUB_SHA']:
+              fail('event after differs from workflow SHA')
+          if os.environ['EVENT_BEFORE'] != source:
+              fail('authorization branch was not created directly from main')
+          parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
+          if parent != source:
+              fail('marker parent is not the authorized main commit')
+          parents = subprocess.check_output(['git', 'show', '-s', '--format=%P', 'HEAD'], text=True).split()
+          if parents != [source]:
+              fail('authorization commit must have exactly one parent')
+          changed = subprocess.check_output(
+              ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD^', 'HEAD'],
+              text=True,
+          ).splitlines()
+          if changed != [str(MARKER)]:
+              fail('authorization commit must change only the marker')
+          tree = subprocess.check_output(['git', 'show', '-s', '--format=%T', 'HEAD^'], text=True).strip()
+          if tree != expected['shared_tree']:
+              fail('source parent tree differs from the shared tree')
+
+          inert = copy.deepcopy(marker)
+          inert['action'] = 'inactive'
+          inert['confirm'] = 'NOT_AUTHORIZED'
+          inert['expected'] = {
+              'authority_commit': ZERO40,
+              'mirror_commit': ZERO40,
+              'shared_tree': ZERO40,
+          }
+          inert_projection = copy.deepcopy(inert)
+          inert_projection.pop('authorization_payload_sha256')
+          inert['authorization_payload_sha256'] = hashlib.sha256(
+              json.dumps(inert_projection, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          ).hexdigest()
+          parent_marker = json.loads(subprocess.check_output(['git', 'show', f'HEAD^:{MARKER}']))
+          if parent_marker != inert:
+              fail('source parent does not contain the exact inert marker')
+
+          def api(target: str, method: str, path: str, body=None, missing: bool = False):
+              headers = {
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qikvrt-repository-mesh-sync-tagger',
+              }
+              if target == repository:
+                  headers['Authorization'] = 'Bearer ' + os.environ['GH_API_TOKEN']
+                  headers['Content-Type'] = 'application/json'
+              data = None if body is None else json.dumps(body, separators=(',', ':')).encode('utf-8')
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/{target}{path}',
+                  data=data,
+                  method=method,
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  raise
+
+          for target, commit in zip(REPOSITORIES, (expected['authority_commit'], expected['mirror_commit'])):
+              main = api(target, 'GET', '/git/ref/heads/main')['object']['sha']
+              if main != commit:
+                  fail(f'{target} main differs from authorization')
+              remote = api(target, 'GET', '/git/commits/' + commit)
+              if remote.get('tree', {}).get('sha') != expected['shared_tree']:
+                  fail(f'{target} tree differs from shared tree')
+
+          branch_name = urllib.parse.quote('automation/repository-mesh-sync-tag-20260724', safe='')
+          remote_authorization = api(repository, 'GET', '/git/ref/heads/' + branch_name)['object']['sha']
+          if remote_authorization != os.environ['GITHUB_SHA']:
+              fail('authorization branch advanced during validation')
+
+          source_root = Path(os.environ['RUNNER_TEMP']) / 'qikvrt-repository-mesh-source'
+          subprocess.run(['git', 'worktree', 'add', '--detach', str(source_root), source], check=True)
+          subprocess.run(['python3', '-B', 'tools/qikvrt_integrity.py', 'verify'], cwd=source_root, check=True)
+          readme = (source_root / 'README.md').read_text(encoding='utf-8')
+          status = (source_root / 'STATUS.md').read_text(encoding='utf-8')
+          for needle in (
+              fixed_release['tag'],
+              '10.5281/zenodo.21500322',
+              '10.5281/zenodo.21515074',
+              '10.5281/zenodo.21529081',
+          ):
+              if needle not in readme or needle not in status:
+                  fail(f'current documentation lacks required identity: {needle}')
+
+          tag = fixed_release['tag']
+          encoded_tag = urllib.parse.quote(tag, safe='')
+          ref = api(repository, 'GET', '/git/ref/tags/' + encoded_tag, missing=True)
+          if ref is None:
+              tag_object = api(repository, 'POST', '/git/tags', {
+                  'tag': tag,
+                  'message': fixed_release['tag_message'],
+                  'object': source,
+                  'type': 'commit',
+                  'tagger': {
+                      'name': fixed_release['tagger_name'],
+                      'email': fixed_release['tagger_email'],
+                      'date': fixed_release['tagger_timestamp'],
+                  },
+              })
+              api(repository, 'POST', '/git/refs', {
+                  'ref': 'refs/tags/' + tag,
+                  'sha': tag_object['sha'],
+              })
+              ref = api(repository, 'GET', '/git/ref/tags/' + encoded_tag)
+          if ref.get('object', {}).get('type') != 'tag':
+              fail('common tag is not annotated')
+          obj = api(repository, 'GET', '/git/tags/' + ref['object']['sha'])
+          tagger = obj.get('tagger', {})
+          target = obj.get('object', {})
+          if (
+              obj.get('tag') != tag
+              or obj.get('message') != fixed_release['tag_message']
+              or target.get('type') != 'commit'
+              or target.get('sha') != source
+              or tagger.get('name') != fixed_release['tagger_name']
+              or tagger.get('email') != fixed_release['tagger_email']
+              or tagger.get('date') != fixed_release['tagger_timestamp']
+          ):
+              fail('annotated tag differs from the fixed contract')
+          print(json.dumps({
+              'repository': repository,
+              'tag': tag,
+              'source_commit': source,
+              'shared_tree': expected['shared_tree'],
+              'state': 'TAGGED_AND_VERIFIED',
+          }, sort_keys=True))
+          PYTAG
