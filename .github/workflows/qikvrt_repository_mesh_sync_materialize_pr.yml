@@ -124,16 +124,57 @@ jobs:
           make test
           python3 -B tools/qikvrt_integrity.py verify
 
-      - name: Persist the exact reviewed candidate on the PR branch
+      - name: Preserve reviewed workflow handoff and restore connector-owned workflow state
+        shell: bash
+        run: |
+          set -euo pipefail
+          handoff="$RUNNER_TEMP/qikvrt_repository_mesh_sync_tag.yml"
+          cp .github/workflows/qikvrt_repository_mesh_sync_tag.yml "$handoff"
+          sha256sum "$handoff" > "$handoff.sha256"
+          git restore --source=HEAD --worktree -- .github/workflows
+          rm -f .github/workflows/qikvrt_repository_mesh_sync_tag.yml
+          git restore --source=HEAD --worktree -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --check
+
+      - name: Persist reviewed non-workflow content on the PR branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          if git diff --cached --quiet; then
-            echo 'BLOCK: no final repository-mesh candidate was materialized' >&2
+          git add -A -- \
+            README.md \
+            STATUS.md \
+            CHANGELOG.md \
+            policy/qikvrt-repository-mesh-sync-request.schema.json \
+            release/repository-mesh-sync-request.json \
+            release/repository-mesh-sync-materialize-request.json
+          mapfile -t changed < <(git diff --cached --name-only | LC_ALL=C sort)
+          expected=(
+            CHANGELOG.md
+            README.md
+            STATUS.md
+            policy/qikvrt-repository-mesh-sync-request.schema.json
+            release/repository-mesh-sync-materialize-request.json
+            release/repository-mesh-sync-request.json
+          )
+          if [ "${changed[*]}" != "${expected[*]}" ]; then
+            printf 'BLOCK: staged content differs from fixed handoff set\nactual: %s\nexpected: %s\n' \
+              "${changed[*]}" "${expected[*]}" >&2
             exit 1
           fi
-          git commit -m 'Prepare synchronized repository mesh snapshot'
+          git commit -m 'Prepare repository mesh snapshot content'
           git push origin HEAD:automation/repository-mesh-sync-materialize-20260724
+
+      - name: Upload the exact reviewed common-tag workflow handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-mesh-sync-tag-workflow-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/qikvrt_repository_mesh_sync_tag.yml
+            ${{ runner.temp }}/qikvrt_repository_mesh_sync_tag.yml.sha256
+          if-no-files-found: error
+          retention-days: 30
