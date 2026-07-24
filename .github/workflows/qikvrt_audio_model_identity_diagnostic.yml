@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT declared audio model identity diagnostic
+
+on:
+  push:
+    branches:
+      - automation/audio-model-identity-diagnostic-20260724
+    paths:
+      - .github/workflows/qikvrt_audio_model_identity_diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download declared archive and preserve bounded diagnostics
+        id: inspect
+        shell: bash
+        env:
+          MODEL_URL: https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2
+          EXPECTED_ARCHIVE_SHA256: 911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de
+        run: |
+          set -u
+          root="$RUNNER_TEMP/qikvrt-model-diagnostic"
+          mkdir -p "$root/extracted"
+          archive="$root/model.tar.bz2"
+          headers="$root/headers.txt"
+          stderr="$root/curl.stderr.txt"
+          summary="$root/summary.json"
+
+          set +e
+          http_code="$(curl \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --connect-timeout 30 \
+            --max-time 600 \
+            --dump-header "$headers" \
+            --output "$archive" \
+            --write-out '%{http_code}' \
+            "$MODEL_URL" 2>"$stderr")"
+          curl_rc=$?
+          set -e
+
+          python3 -B - "$archive" "$headers" "$stderr" "$summary" "$curl_rc" "$http_code" "$EXPECTED_ARCHIVE_SHA256" <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          archive, headers, stderr, summary = map(Path, sys.argv[1:5])
+          curl_rc = int(sys.argv[5])
+          http_code = sys.argv[6]
+          expected_archive_sha256 = sys.argv[7]
+          payload = archive.read_bytes() if archive.exists() else b""
+          actual_archive_sha256 = hashlib.sha256(payload).hexdigest() if payload else None
+          report: dict[str, object] = {
+              "schema": "qikvrt_audio_model_identity_diagnostic_v1",
+              "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
+              "curl_exit": curl_rc,
+              "http_code": http_code,
+              "archive_bytes": len(payload),
+              "expected_archive_sha256": expected_archive_sha256,
+              "actual_archive_sha256": actual_archive_sha256,
+              "archive_identity_matches": actual_archive_sha256 == expected_archive_sha256,
+              "tar_list_exit": None,
+              "expected_members_present": False,
+              "members": [],
+              "extracted_files": [],
+          }
+          expected_members = {
+              "sherpa-onnx-whisper-base/base-decoder.int8.onnx",
+              "sherpa-onnx-whisper-base/base-encoder.int8.onnx",
+              "sherpa-onnx-whisper-base/base-tokens.txt",
+          }
+          if payload:
+              listed = subprocess.run(
+                  ["tar", "-tjf", str(archive)],
+                  check=False,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  encoding="utf-8",
+                  errors="replace",
+                  timeout=180,
+              )
+              report["tar_list_exit"] = listed.returncode
+              members = [line for line in listed.stdout.splitlines() if line]
+              report["member_count"] = len(members)
+              report["members"] = [member for member in members if "whisper-base/" in member][:20]
+              report["tar_stderr_tail"] = listed.stderr[-2000:]
+              report["expected_members_present"] = expected_members.issubset(set(members))
+              if listed.returncode == 0 and report["expected_members_present"]:
+                  extracted = archive.parent / "extracted"
+                  subprocess.run(
+                      ["tar", "--no-same-owner", "-xjf", str(archive), "-C", str(extracted), *sorted(expected_members)],
+                      check=True,
+                      timeout=180,
+                  )
+                  records = []
+                  for member in sorted(expected_members):
+                      path = extracted / member
+                      raw = path.read_bytes()
+                      records.append({
+                          "member": member,
+                          "bytes": len(raw),
+                          "sha256": hashlib.sha256(raw).hexdigest(),
+                      })
+                  report["extracted_files"] = records
+          summary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps({
+              "curl_exit": curl_rc,
+              "http_code": http_code,
+              "archive_bytes": len(payload),
+              "archive_identity_matches": report["archive_identity_matches"],
+              "tar_list_exit": report["tar_list_exit"],
+              "expected_members_present": report["expected_members_present"],
+          }, sort_keys=True))
+          PY
+
+      - name: Upload bounded model identity diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-audio-model-identity-diagnostic
+          retention-days: 3
+          path: |
+            ${{ runner.temp }}/qikvrt-model-diagnostic/summary.json
+            ${{ runner.temp }}/qikvrt-model-diagnostic/headers.txt
+            ${{ runner.temp }}/qikvrt-model-diagnostic/curl.stderr.txt
+          if-no-files-found: error
