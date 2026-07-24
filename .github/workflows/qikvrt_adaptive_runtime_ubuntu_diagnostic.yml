@@ -28,13 +28,14 @@ jobs:
         with:
           python-version: "3.12.13"
           architecture: x64
-      - name: Execute exact Ubuntu contract with full trace
+      - name: Materialize exact Ubuntu render outputs with full trace
         id: contract
         continue-on-error: true
         shell: bash
         run: |
-          mkdir -p /tmp/qikvrt-adaptive-runtime-ubuntu
-          exec > >(tee /tmp/qikvrt-adaptive-runtime-ubuntu/TRACE.log) 2>&1
+          output=/tmp/qikvrt-adaptive-runtime-ubuntu
+          mkdir -p "$output"
+          exec > >(tee "$output/TRACE.log") 2>&1
           set -euxo pipefail
           export QIKVRT_PYTHON="$pythonLocation/bin/python"
           "$QIKVRT_PYTHON" --version
@@ -48,6 +49,7 @@ jobs:
             runtime/toolchains/TOOLCHAIN.lock.tsv \
             runtime/toolchains/CACHE_REGISTRY.json \
             tools/bootstrap-runtime.sh
+
           contract_cache="$RUNNER_TEMP/qikvrt-contract-runtime"
           sh tools/bootstrap-runtime.sh --install --accept-third-party \
             --profile ietf --cache-dir "$contract_cache"
@@ -55,15 +57,32 @@ jobs:
           mkdir -p "$test_tmp"
           TMPDIR="$test_tmp" QIKVRT_TEST_SOURCE_CACHE="$contract_cache" \
             sh tests/test_runtime_bootstrap.sh
+
           renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/linux-amd64/venv/bin/xml2rfc"
+          source="docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.xml"
+          render_cache="$output/cache"
+          mkdir -p "$render_cache"
+
+          "$renderer" "$source" --v3 --text --no-network --skip-config-files \
+            --warn-bare-unicode --cache "$render_cache" --verbose \
+            --out "$output/rendered.txt"
+          "$renderer" "$source" --v3 --html --no-network --skip-config-files \
+            --warn-bare-unicode --cache "$render_cache" --verbose \
+            --out "$output/rendered.html"
+
+          sha256sum "$output/rendered.txt" "$output/rendered.html" | tee "$output/SHA256SUMS"
+          wc -c "$output/rendered.txt" "$output/rendered.html" | tee "$output/SIZES.txt"
+          cp docs/publications/2026-07-22-effect-ack-universal-effect-control/IETF_RENDER_VALIDATION.json \
+            "$output/IETF_RENDER_VALIDATION.before.json"
+
           "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
-      - name: Upload Ubuntu contract trace
+      - name: Upload Ubuntu render and contract evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qikvrt-adaptive-runtime-ubuntu-diagnostic
+          name: qikvrt-adaptive-runtime-ubuntu-render-evidence
           retention-days: 30
-          path: /tmp/qikvrt-adaptive-runtime-ubuntu/TRACE.log
+          path: /tmp/qikvrt-adaptive-runtime-ubuntu/**
           if-no-files-found: error
       - name: Enforce Ubuntu contract
         if: steps.contract.outcome == 'failure'
