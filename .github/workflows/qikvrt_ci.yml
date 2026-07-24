@@ -26,15 +26,16 @@ jobs:
         shell: bash
         run: |
           set +e
-          mkdir -p audit
-          make test > audit/MAKE_TEST_FULL.log 2>&1
+          diagnostics=.qikvrt/runtime/ci-diagnostics
+          mkdir -p "$diagnostics"
+          make test > "$diagnostics/MAKE_TEST_FULL.log" 2>&1
           status=$?
           {
             printf 'MAKE_TEST_EXIT=%s\n' "$status"
             printf '%s\n' '--- LAST 500 LINES ---'
-            tail -n 500 audit/MAKE_TEST_FULL.log
-          } > audit/MAKE_TEST_DIAGNOSTICS.log
-          cat audit/MAKE_TEST_DIAGNOSTICS.log
+            tail -n 500 "$diagnostics/MAKE_TEST_FULL.log"
+          } > "$diagnostics/MAKE_TEST_DIAGNOSTICS.log"
+          cat "$diagnostics/MAKE_TEST_DIAGNOSTICS.log"
           exit "$status"
       - name: Upload audit
         if: always()
@@ -50,5 +51,5 @@ jobs:
         if: steps.full_test.outcome == 'failure'
         shell: bash
         run: |
-          cat audit/MAKE_TEST_DIAGNOSTICS.log
+          cat .qikvrt/runtime/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
           exit 1
