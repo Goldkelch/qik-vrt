@@ -1,0 +1,74 @@
+name: Dispatch completed formalization v2.0.0 publication
+
+"on":
+  push:
+    branches:
+      - bootstrap/formalization-v2-completion-zenodo-dispatch-20260724
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: qikvrt-formalization-v2-completion-publication-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: automation/formalization-v2-completion-zenodo-reserve-20260724
+    steps:
+      - name: Verify target branch exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/branches/${TARGET_BRANCH}" >/dev/null
+
+      - name: Materialize deterministic repository evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run qikvrt_repository_materialize.yml --ref "$TARGET_BRANCH"
+          sleep 5
+          run_id="$(gh run list \
+            --workflow qikvrt_repository_materialize.yml \
+            --branch "$TARGET_BRANCH" \
+            --event workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')"
+          test -n "$run_id"
+          gh run watch "$run_id" --exit-status
+
+      - name: Reserve and upload completed Zenodo package
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run qikvrt_formalization_v2_zenodo.yml --ref "$TARGET_BRANCH"
+          sleep 5
+          run_id="$(gh run list \
+            --workflow qikvrt_formalization_v2_zenodo.yml \
+            --branch "$TARGET_BRANCH" \
+            --event workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')"
+          test -n "$run_id"
+          gh run watch "$run_id" --exit-status
+
+      - name: Verify reserve pull request and state
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_count="$(gh pr list \
+            --head "$TARGET_BRANCH" \
+            --base main \
+            --state open \
+            --json number \
+            --jq 'length')"
+          test "$pr_count" -eq 1
+          gh api "repos/${GITHUB_REPOSITORY}/contents/release/formalization-v2-completion-zenodo.json?ref=${TARGET_BRANCH}" >/dev/null
