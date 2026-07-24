@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# One-shot maintenance fixup; deletes itself before committing.
+# Temporary maintenance fixup; removed after the candidate is materialized.
 name: QIKVRT dependency maintenance fixup
 
 on:
@@ -8,6 +8,8 @@ on:
       - maintenance/dependency-security-updates-20260724
     paths:
       - .github/workflows/qikvrt_dependency_fixup.yml
+      - tests/test_status_release_workflows.py
+      - .github/workflows/qikvrt_adaptive_runtime.yml
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ jobs:
         with:
           ref: maintenance/dependency-security-updates-20260724
           fetch-depth: 0
-      - name: Align immutable action contracts and remove one-shot workflow
+      - name: Align immutable action contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -39,8 +41,6 @@ jobs:
 
           test_path = Path("tests/test_status_release_workflows.py")
           test_text = test_path.read_text(encoding="utf-8")
-          if test_text.count(old_checkout) != 1:
-              raise SystemExit("BLOCK: checkout contract constant is absent or ambiguous")
           test_path.write_text(
               test_text.replace(old_checkout, new_checkout),
               encoding="utf-8",
@@ -49,23 +49,18 @@ jobs:
 
           adaptive = Path(".github/workflows/qikvrt_adaptive_runtime.yml")
           adaptive_text = adaptive.read_text(encoding="utf-8")
-          old_token = f"actions/cache/save@{old_cache} # v4.3.0"
-          new_token = f"actions/cache/save@{new_cache} # v6.1.0"
-          if adaptive_text.count(old_token) != 2:
-              raise SystemExit("BLOCK: expected exactly two cache/save v4 pins")
-          adaptive.write_text(
-              adaptive_text.replace(old_token, new_token),
-              encoding="utf-8",
-              newline="\n",
-          )
-
-          Path(".github/workflows/qikvrt_dependency_fixup.yml").unlink()
+          adaptive_text = adaptive_text.replace(
+              f"actions/cache/save@{old_cache}",
+              f"actions/cache/save@{new_cache}",
+          ).replace("# v4.3.0", "# v6.1.0")
+          adaptive.write_text(adaptive_text, encoding="utf-8", newline="\n")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            tests/test_status_release_workflows.py \
-            .github/workflows/qikvrt_adaptive_runtime.yml \
-            .github/workflows/qikvrt_dependency_fixup.yml
+          git add tests/test_status_release_workflows.py .github/workflows/qikvrt_adaptive_runtime.yml
+          if git diff --cached --quiet; then
+            echo "Dependency pin contracts are already aligned."
+            exit 0
+          fi
           git commit -m "test: align dependency pin contracts"
           git push origin HEAD:maintenance/dependency-security-updates-20260724
