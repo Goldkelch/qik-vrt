@@ -29,11 +29,11 @@ test("audio request installs a missing media runtime before materializing source
   assert.match(value, /contents: read/);
 });
 
-test("media installation occurs before the authenticated blob can disclose audio to a process", () => {
+test("media installation occurs before the productive blob materialization and transcription", () => {
   const value = workflow();
   const install = value.indexOf("apt-get install --yes --no-install-recommends ffmpeg");
-  const blob = value.indexOf("node src/materialize-request.cjs");
-  const transcribe = value.indexOf("./bin/transcribe-audio");
+  const blob = value.lastIndexOf("node src/materialize-request.cjs");
+  const transcribe = value.lastIndexOf("./bin/transcribe-audio");
 
   assert.ok(install >= 0 && blob >= 0 && transcribe >= 0);
   assert.ok(install < blob);
