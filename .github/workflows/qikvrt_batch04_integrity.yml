@@ -125,11 +125,29 @@ jobs:
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
       - name: Run repository gates before persistence
+        id: repository_gates
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          mkdir -p .qikvrt/runtime/maintenance-diagnostics
+          exec > >(tee .qikvrt/runtime/maintenance-diagnostics/MAKE_TEST_MATERIALIZER.log) 2>&1
+          set -euxo pipefail
+          git status --short --untracked-files=all
+          python3 tools/qikvrt_integrity.py verify
           make test
           python3 tools/qikvrt_integrity.py verify
+      - name: Upload maintenance gate diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-dependency-maintenance-gate-diagnostics
+          retention-days: 30
+          path: .qikvrt/runtime/maintenance-diagnostics/MAKE_TEST_MATERIALIZER.log
+          if-no-files-found: warn
+      - name: Enforce repository gates before persistence
+        if: steps.repository_gates.outcome == 'failure'
+        shell: bash
+        run: exit 1
       - name: Commit materialized maintenance candidate
         env:
           GH_TOKEN: ${{ github.token }}
