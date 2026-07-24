@@ -4,19 +4,20 @@
 """Publish exactly QIK-VRT Formalization v2 alpha.3 from public alpha.2.
 
 This module reuses the audited alpha.2 Zenodo implementation and changes only
-its release identity, source record and source-evidence contract.  All network,
+its release identity, source record and source-evidence contract. All network,
 mutation, file, metadata, HMAC, polling and public-verification gates remain in
-the existing implementation.  The resulting client can create one new version
+the existing implementation. The resulting client can create one new version
 from published record 21518464 in concept 21488115 and can mutate only the one
 draft bound by its token-authenticated reservation.
 """
 from __future__ import annotations
 
-import json
+import contextlib
+import pathlib
 import re
 import sys
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TextIO
 
 import qikvrt_formalization_v2_zenodo as implementation
 import qikvrt_zenodo_actions as shared
@@ -35,17 +36,27 @@ implementation.SOURCE_EVIDENCE_SCHEMA = (
     "qikvrt_formalization_v2_alpha2_public_source_evidence_v1"
 )
 implementation.PROTECTED_ZENODO_IDS = frozenset(
-    {
-        21488115,
-        21488116,
-        21498773,
-        21498774,
-        21501365,
-        21518464,
-    }
+    {21488115, 21488116, 21498773, 21498774, 21501365, 21518464}
 )
 
-UTC_SECOND = re.compile(r"^20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z$")
+UTC_SECOND = re.compile(
+    r"^20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z$"
+)
+
+
+class _Tee:
+    def __init__(self, *targets: TextIO) -> None:
+        self.targets = targets
+
+    def write(self, value: str) -> int:
+        for target in self.targets:
+            target.write(value)
+            target.flush()
+        return len(value)
+
+    def flush(self) -> None:
+        for target in self.targets:
+            target.flush()
 
 
 def validate_source_evidence(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -139,7 +150,13 @@ implementation.validate_source_evidence = validate_source_evidence
 
 
 def main() -> int:
-    return implementation.main()
+    log = pathlib.Path(
+        ".qikvrt/release/formalization-v2-alpha3/zenodo-client-stderr.log"
+    )
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8", newline="\n") as handle:
+        with contextlib.redirect_stderr(_Tee(sys.stderr, handle)):
+            return implementation.main()
 
 
 if __name__ == "__main__":
