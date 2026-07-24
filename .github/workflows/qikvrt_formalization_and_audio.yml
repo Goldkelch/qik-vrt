@@ -56,6 +56,15 @@ jobs:
           --checker "Lean 4 native kernel"
           --version "4.19.0"
           --commit "6caaee842e9495688c1567e78c0e68dbb96942aa"
+      - name: Regenerate deterministic package checksums
+        run: python scripts/generate_checksums.py
+      - name: Upload deterministic package checksums
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-formalization-v1-package-checksums
+          retention-days: 30
+          path: formalization/QIKVRT_Formalization_v1.0/SHA256SUMS
+          if-no-files-found: error
       - name: Run Node gate20
         id: node_gate20
         continue-on-error: true
