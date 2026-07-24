@@ -57,9 +57,19 @@ jobs:
           end = "\n          PY\n\n      - name: Regenerate and verify repository integrity"
           if raw.count(start) != 1 or raw.count(end) != 1:
               raise SystemExit('BLOCK: embedded materialization program is absent or ambiguous')
-          program = raw.split(start, 1)[1].split(end, 1)[0]
-          exec(compile(textwrap.dedent(program), str(source) + ':embedded', 'exec'), {'__name__': '__main__'})
+          program = textwrap.dedent(raw.split(start, 1)[1].split(end, 1)[0])
+          function_anchor = "def replace_once(path: str, old: str, new: str) -> None:\n"
+          if program.count(function_anchor) != 1:
+              raise SystemExit('BLOCK: replacement helper is absent or ambiguous')
+          function_replacement = function_anchor + (
+              "    import inspect\n"
+              "    old = inspect.cleandoc(old) + '\\n'\n"
+              "    new = inspect.cleandoc(new) + '\\n'\n"
+          )
+          program = program.replace(function_anchor, function_replacement, 1)
+          exec(compile(program, str(source) + ':embedded', 'exec'), {'__name__': '__main__'})
           Path('.github/workflows/qikvrt_repository_mesh_sync_materialize_pr.yml').unlink()
+          Path('.github/workflows/qikvrt_repository_mesh_sync_diagnose.yml').unlink(missing_ok=True)
           PY
 
       - name: Regenerate and verify repository integrity
