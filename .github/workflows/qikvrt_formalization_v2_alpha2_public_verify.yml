@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT formalization v2 alpha.2 public record verification
+
+"on":
+  push:
+    branches:
+      - automation/formalization-v2-alpha2-draft-inventory-20260724
+    paths:
+      - release/formalization-v2-alpha2-public-verify-request.json
+
+permissions:
+  contents: read
+
+jobs:
+  verify-public-record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact verification request
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify public record, metadata and every file byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/release/formalization-v2-alpha2
+          python -I -S -B - <<'PY'
+          import hashlib
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          marker = json.loads(Path('release/formalization-v2-alpha2-public-verify-request.json').read_text(encoding='utf-8'))
+          expected_marker = {
+              'schema': 'qikvrt_formalization_v2_alpha2_public_verify_request_v1',
+              'state': 'verify',
+              'confirm': 'VERIFY_ZENODO_FORMALIZATION_V2_ALPHA_2_PUBLIC_RECORD_READ_ONLY',
+              'record_id': 21518464,
+              'doi': '10.5281/zenodo.21518464',
+          }
+          if marker != expected_marker:
+              raise SystemExit('BLOCK: public verification marker differs')
+
+          manifest_raw = Path('release/formalization-v2-alpha2-zenodo.json').read_bytes()
+          manifest = json.loads(manifest_raw)
+          software = manifest.get('software')
+          if not isinstance(software, dict):
+              raise SystemExit('BLOCK: manifest software object is missing')
+          expected_metadata = software.get('metadata')
+          expected_files = software.get('files')
+          if not isinstance(expected_metadata, dict) or not isinstance(expected_files, list):
+              raise SystemExit('BLOCK: manifest metadata/files are malformed')
+
+          record_url = 'https://zenodo.org/api/records/21518464'
+          request = urllib.request.Request(
+              record_url,
+              method='GET',
+              headers={'Accept': 'application/json', 'User-Agent': 'qikvrt-alpha2-public-verifier'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              final = urllib.parse.urlsplit(response.geturl())
+              raw = response.read(16 * 1024 * 1024 + 1)
+          if final.scheme != 'https' or final.hostname != 'zenodo.org' or len(raw) > 16 * 1024 * 1024:
+              raise SystemExit('BLOCK: public record response escaped its bound')
+          record = json.loads(raw.decode('utf-8'))
+          if not isinstance(record, dict):
+              raise SystemExit('BLOCK: public record is not an object')
+
+          record_id = record.get('id')
+          concept_id = record.get('conceptrecid')
+          metadata = record.get('metadata')
+          files = record.get('files')
+          if int(record_id) != 21518464 or int(concept_id) != 21488115:
+              raise SystemExit('BLOCK: public record identity or concept differs')
+          if not isinstance(metadata, dict) or not isinstance(files, list):
+              raise SystemExit('BLOCK: public metadata/files are malformed')
+          if metadata.get('doi') != '10.5281/zenodo.21518464' or metadata.get('version') != '2.0.0-alpha.2':
+              raise SystemExit('BLOCK: public DOI/version differs')
+          for key in ('title', 'upload_type', 'description', 'creators', 'version'):
+              if metadata.get(key) != expected_metadata.get(key):
+                  raise SystemExit('BLOCK: public metadata differs: ' + key)
+
+          expected_by_name = {}
+          for entry in expected_files:
+              if not isinstance(entry, dict):
+                  raise SystemExit('BLOCK: manifest file entry is malformed')
+              name = entry.get('name')
+              if not isinstance(name, str) or name in expected_by_name:
+                  raise SystemExit('BLOCK: manifest file names are invalid')
+              expected_by_name[name] = entry
+
+          public_by_name = {}
+          for item in files:
+              if not isinstance(item, dict):
+                  raise SystemExit('BLOCK: public file entry is malformed')
+              name = item.get('key', item.get('filename'))
+              if not isinstance(name, str) or name in public_by_name:
+                  raise SystemExit('BLOCK: public file names are invalid')
+              public_by_name[name] = item
+          if set(public_by_name) != set(expected_by_name):
+              raise SystemExit('BLOCK: public file-name set differs from manifest')
+
+          receipts = []
+          for name in sorted(expected_by_name):
+              expected = expected_by_name[name]
+              public = public_by_name[name]
+              expected_size = expected.get('size')
+              expected_sha256 = expected.get('sha256')
+              public_size = public.get('size')
+              checksum = public.get('checksum')
+              links = public.get('links')
+              url = links.get('self') if isinstance(links, dict) else None
+              if public_size != expected_size:
+                  raise SystemExit('BLOCK: public size differs: ' + name)
+              if not isinstance(checksum, str) or not checksum.startswith('md5:'):
+                  raise SystemExit('BLOCK: public MD5 is missing: ' + name)
+              if not isinstance(url, str):
+                  raise SystemExit('BLOCK: public file URL is missing: ' + name)
+              parsed = urllib.parse.urlsplit(url)
+              if parsed.scheme != 'https' or parsed.hostname != 'zenodo.org' or parsed.query or parsed.fragment:
+                  raise SystemExit('BLOCK: public file URL escaped Zenodo: ' + name)
+              download = urllib.request.Request(url, method='GET', headers={'User-Agent': 'qikvrt-alpha2-public-verifier'})
+              md5 = hashlib.md5(usedforsecurity=False)
+              sha256 = hashlib.sha256()
+              size = 0
+              with urllib.request.urlopen(download, timeout=60) as response:
+                  final_file = urllib.parse.urlsplit(response.geturl())
+                  if final_file.scheme != 'https' or final_file.hostname != 'zenodo.org':
+                      raise SystemExit('BLOCK: public file redirect escaped Zenodo: ' + name)
+                  while True:
+                      chunk = response.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      size += len(chunk)
+                      if size > 256 * 1024 * 1024:
+                          raise SystemExit('BLOCK: public file exceeded size bound: ' + name)
+                      md5.update(chunk)
+                      sha256.update(chunk)
+              actual_md5 = md5.hexdigest()
+              actual_sha256 = sha256.hexdigest()
+              if size != expected_size or actual_sha256 != expected_sha256 or actual_md5 != checksum[4:]:
+                  raise SystemExit('BLOCK: public file bytes differ: ' + name)
+              receipts.append({'name': name, 'size': size, 'md5': actual_md5, 'sha256': actual_sha256})
+
+          result = {
+              'schema': 'qikvrt_formalization_v2_alpha2_public_verification_v1',
+              'status': 'PASS',
+              'record_id': 21518464,
+              'concept_record_id': 21488115,
+              'doi': '10.5281/zenodo.21518464',
+              'version': '2.0.0-alpha.2',
+              'manifest_sha256': hashlib.sha256(manifest_raw).hexdigest(),
+              'file_count': len(receipts),
+              'files': receipts,
+              'public_record_verified': True,
+          }
+          Path('.qikvrt/release/formalization-v2-alpha2/public-verification.json').write_text(
+              json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps({'status': 'PASS', 'record_id': 21518464, 'file_count': len(receipts)}, sort_keys=True))
+          PY
+
+      - name: Upload public verification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-formalization-v2-alpha2-public-verification
+          retention-days: 30
+          path: .qikvrt/release/formalization-v2-alpha2/public-verification.json
+          if-no-files-found: error
