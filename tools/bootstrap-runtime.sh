@@ -314,7 +314,7 @@ check_ietf_profile() {
     python_is_renderer_exact "$CACHED_PYTHON" || fail "installed renderer is not bound to Python $PYTHON_RENDERER_VERSION"
     locked_environment_is_exact "$CACHED_PYTHON" || fail "installed renderer does not contain exactly the locked package set"
     xml2rfc_metadata_is_exact "$CACHED_PYTHON" || fail "installed xml2rfc metadata is not exactly $XML2RFC_VERSION"
-    python_package_is_exact "$CACHED_PYTHON" pypdf 6.10.0 || fail "installed pypdf metadata is not exactly 6.10.0"
+    python_package_is_exact "$CACHED_PYTHON" pypdf 6.14.2 || fail "installed pypdf metadata is not exactly 6.14.2"
     xml2rfc_cli_is_exact "$CACHED_XML2RFC" || fail "installed xml2rfc command failed its exact-version execution check"
     lock_sha=$(hash_file "$XML2RFC_LOCK")
     {
@@ -351,10 +351,10 @@ check_formal_profile() {
 
     if ! node_24_is_available; then
         mark_continue "formal: Node 24.x is absent; automatic installation is not supported"
-    elif ! (cd "$formal_root" && node -e 'const p=require("./node_modules/zod/package.json"); process.exit(p.version === "4.1.12" ? 0 : 1)' >/dev/null 2>&1); then
-        mark_continue "formal: installed Zod 4.1.12 is absent; run the reviewed npm lock installation"
+    elif ! (cd "$formal_root" && node -e 'const p=require("./node_modules/zod/package.json"); process.exit(p.version === "4.4.3" ? 0 : 1)' >/dev/null 2>&1); then
+        mark_continue "formal: installed Zod 4.4.3 is absent; run the reviewed npm lock installation"
     else
-        printf '%s\n' "PASS: formal Node 24 + Zod 4.1.12"
+        printf '%s\n' "PASS: formal Node 24 + Zod 4.4.3"
     fi
 
     if ! command -v lean >/dev/null 2>&1 || ! command -v lake >/dev/null 2>&1; then
