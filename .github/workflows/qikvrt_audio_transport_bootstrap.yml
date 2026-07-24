@@ -1,0 +1,87 @@
+name: QIK-VRT one-shot audio transport bootstrap
+
+on:
+  push:
+    branches: [automation/audio-20260724-103937]
+    paths: [.github/workflows/qikvrt_audio_transport_bootstrap.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/audio-20260724-103937
+          persist-credentials: false
+      - name: Create unreferenced blob and bounded request manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='requests/audio-20260724-103937'
+          chunks=("$root/audio.opus.b64.00" "$root/audio.opus.b64.01" "$root/audio.opus.b64.02" "$root/audio.opus.b64.03" "$root/audio.opus.b64.04")
+          mapfile -t actual < <(find "$root" -maxdepth 1 -type f -name 'audio.opus.b64.*' -print | sort)
+          [[ ${#actual[@]} -eq ${#chunks[@]} ]]
+          for i in "${!chunks[@]}"; do [[ "${actual[$i]}" == "${chunks[$i]}" ]]; done
+          audio="$RUNNER_TEMP/request.ogg"
+          cat "${chunks[@]}" | tr -d '[:space:]' | base64 -d > "$audio"
+          test -s "$audio"
+          bytes="$(wc -c < "$audio" | tr -d ' ')"
+          (( bytes > 1000 && bytes <= 26214400 ))
+          digest="$(sha256sum "$audio" | awk '{print $1}')"
+          duration="$(ffprobe -v error -show_entries format=duration -of default=nokey=1:noprint_wrappers=1 "$audio")"
+          python3 - "$duration" <<'PY'
+          import math, sys
+          d=float(sys.argv[1])
+          assert math.isfinite(d) and 20.0 <= d <= 23.0, d
+          PY
+          python3 -B - "$audio" "$REPOSITORY" "$digest" "$bytes" <<'PY'
+          import base64, json, os, pathlib, sys, urllib.request
+          audio=pathlib.Path(sys.argv[1]).read_bytes()
+          repository,digest,expected_bytes=sys.argv[2:]
+          assert len(audio)==int(expected_bytes)
+          headers={
+            'Accept':'application/vnd.github+json',
+            'Authorization':f"Bearer {os.environ['GH_TOKEN']}",
+            'Content-Type':'application/json',
+            'X-GitHub-Api-Version':'2022-11-28',
+            'User-Agent':'qikvrt-audio-bootstrap',
+          }
+          def request(method,url,payload):
+            req=urllib.request.Request(url,method=method,headers=headers,data=json.dumps(payload,separators=(',',':')).encode())
+            with urllib.request.urlopen(req,timeout=60) as response: return json.load(response)
+          api=f'https://api.github.com/repos/{repository}'
+          blob=request('POST',f'{api}/git/blobs',{'content':base64.b64encode(audio).decode(),'encoding':'base64'})
+          manifest={
+            'schemaVersion':'1.0.0',
+            'requestId':'audio-20260724-103937',
+            'source':{
+              'kind':'github-git-blob','repository':repository,'blobSha':blob['sha'],
+              'sha256':digest,'bytes':len(audio),'filename':'AUDIO-2026-07-24-10-39-37.ogg'
+            },
+            'transcription':{'language':'de','chunkSeconds':28,'overlapSeconds':1.5,'threads':4},
+            'response':{'instruction':'Read AI, AI_CONTEXT.json, AGENTS.md and repository evidence. Answer the transcribed command in German. Determine whether the GitHub mechanisms are completely and independently implemented. Separate implemented capability, verified execution, and remaining human or external authorization boundaries. Claim no unverified effect.'}
+          }
+          raw=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode()
+          result=request('PUT',f'{api}/contents/requests/audio/20260724-103937.json',{
+            'message':'Submit authenticated audio transcription request',
+            'content':base64.b64encode(raw).decode(),
+            'branch':'audio-request/20260724-103937'
+          })
+          receipt={'blob_sha':blob['sha'],'sha256':digest,'bytes':len(audio),'manifest_commit':result['commit']['sha']}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print(json.dumps({'request_id':'audio-20260724-103937','bytes':len(audio),'sha256':digest,'manifest_commit':result['commit']['sha']}))
+          PY
+          rm -f "$audio"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-audio-bootstrap-20260724-103937
+          retention-days: 7
+          path: ${{ runner.temp }}/receipt.json
+          if-no-files-found: error
