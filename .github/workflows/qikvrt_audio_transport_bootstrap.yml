@@ -40,7 +40,7 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
           printf '{"stage":"chunks-validated","count":%s}\n' "$count" > "$RUNNER_TEMP/chunks-receipt.json"
 
-      - name: Decode independently encoded chunks
+      - name: Decode validated split Base64 transport
         id: decoded
         shell: bash
         env:
@@ -48,18 +48,49 @@ jobs:
         run: |
           set -euo pipefail
           audio="$RUNNER_TEMP/request.ogg"
-          : > "$audio"
-          while IFS= read -r chunk; do
-            base64 --decode "$chunk" >> "$audio"
-          done < "$CHUNK_LIST"
-          test -s "$audio"
+          python3 -B - "$CHUNK_LIST" "$audio" "$RUNNER_TEMP/decode-receipt.json" <<'PY'
+          import base64
+          import hashlib
+          import json
+          from pathlib import Path
+          import re
+          import sys
+
+          list_path, audio_path, receipt_path = map(Path, sys.argv[1:])
+          paths = [Path(line) for line in list_path.read_text(encoding='utf-8').splitlines() if line]
+          parts = []
+          for path in paths:
+              compact = ''.join(path.read_text(encoding='ascii').split())
+              if not compact or re.fullmatch(r'[A-Za-z0-9+/]*={0,2}', compact) is None:
+                  raise SystemExit(f'invalid Base64 alphabet or padding in {path}')
+              parts.append(compact)
+
+          def decode_part(value: str) -> bytes:
+              unpadded = value.rstrip('=')
+              padded = unpadded + '=' * ((4 - len(unpadded) % 4) % 4)
+              return base64.b64decode(padded, validate=True)
+
+          if any('=' in part for part in parts[:-1]):
+              mode = 'independent-padded-chunks'
+              audio = b''.join(decode_part(part) for part in parts)
+          else:
+              mode = 'continuous-split-stream'
+              audio = decode_part(''.join(parts))
+
+          if not 1000 < len(audio) <= 25 * 1024 * 1024:
+              raise SystemExit(f'decoded byte count outside bounds: {len(audio)}')
+          audio_path.write_bytes(audio)
+          digest = hashlib.sha256(audio).hexdigest()
+          receipt_path.write_text(json.dumps({'stage':'chunks-decoded','mode':mode,'bytes':len(audio),'sha256':digest},indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          with Path(sys.argv[0]).open('w') if False else open('/dev/null','w'):
+              pass
+          print(json.dumps({'bytes':len(audio),'sha256':digest,'mode':mode}))
+          PY
           bytes="$(wc -c < "$audio" | tr -d ' ')"
-          (( bytes > 1000 && bytes <= 26214400 ))
           digest="$(sha256sum "$audio" | awk '{print $1}')"
           echo "audio_path=$audio" >> "$GITHUB_OUTPUT"
           echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
-          printf '{"stage":"chunks-decoded","bytes":%s,"sha256":"%s"}\n' "$bytes" "$digest" > "$RUNNER_TEMP/decode-receipt.json"
 
       - name: Probe reconstructed media duration
         id: media
