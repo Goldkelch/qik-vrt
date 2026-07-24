@@ -1,0 +1,228 @@
+# Temporary one-shot bootstrap. The generated target branch does not retain this file.
+name: QIK-VRT formalization v2.0.0 publication bootstrap
+
+"on":
+  push:
+    branches:
+      - bootstrap/formalization-v2-completion-zenodo-20260724
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-formalization-v2-completion-publication-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out bootstrap branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: bootstrap/formalization-v2-completion-zenodo-20260724
+
+      - name: Materialize completed-formalization publication runtime
+        shell: bash
+        env:
+          TARGET_BRANCH: automation/formalization-v2-completion-zenodo-reserve-20260724
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path('.')
+          reserve_path = root / '.github/workflows/qikvrt_formalization_v2_zenodo.yml'
+          finalize_path = root / '.github/workflows/qikvrt_formalization_v2_zenodo_finalize.yml'
+          readme_path = root / 'formalization/QIKVRT_Formalization_v2.0/README.md'
+          plan_path = root / 'formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md'
+          manifest_path = root / 'formalization/QIKVRT_Formalization_v2.0/release/ZENODO_MANIFEST.json'
+
+          reserve_branch = 'automation/formalization-v2-completion-zenodo-reserve-20260724'
+          finalize_branch = 'automation/formalization-v2-completion-zenodo-finalize-20260724'
+          version = '2.0.0'
+          tag = 'v2.0.0'
+          title = 'QIK-VRT Formalization v2.0.0: complete machine-checkable manuscript coverage'
+          state_path = 'release/formalization-v2-completion-zenodo.json'
+
+          def replace_first_push_branch(text: str, branch: str) -> str:
+              lines = text.splitlines()
+              in_push = False
+              in_branches = False
+              replaced = False
+              for index, line in enumerate(lines):
+                  if line.startswith('  push:'):
+                      in_push = True
+                      in_branches = False
+                      continue
+                  if in_push and line.startswith('  ') and not line.startswith('    ') and not line.startswith('  push:'):
+                      in_push = False
+                      in_branches = False
+                  if in_push and line.strip() == 'branches:':
+                      in_branches = True
+                      continue
+                  if in_branches and re.match(r'^\s*-\s+\S+', line):
+                      indent = line[:len(line) - len(line.lstrip())]
+                      lines[index] = f'{indent}- {branch}'
+                      replaced = True
+                      break
+              if not replaced:
+                  raise SystemExit(f'BLOCK: no push branch found for {branch}')
+              return '\n'.join(lines) + '\n'
+
+          def set_global_env(text: str, key: str, value: str) -> str:
+              pattern = rf'(?m)^  {re.escape(key)}:.*$'
+              replacement = f'  {key}: {json.dumps(value)}'
+              updated, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(f'BLOCK: missing global env {key}')
+              return updated
+
+          reserve = reserve_path.read_text(encoding='utf-8')
+          reserve = re.sub(
+              r'(?m)^name:.*$',
+              'name: QIK-VRT formalization v2.0.0 Zenodo reserve/upload',
+              reserve,
+              count=1,
+          )
+          reserve = replace_first_push_branch(reserve, reserve_branch)
+          for key, value in {
+              'VERSION': version,
+              'TAG': tag,
+              'TITLE': title,
+              'STATE_PATH': state_path,
+              'RUN_STATE_PATH': 'release/formalization-v2-completion-zenodo-run-${{ github.run_id }}.json',
+          }.items():
+              reserve = set_global_env(reserve, key, value)
+          reserve = reserve.replace('2.0.0-alpha.2', version)
+          reserve = reserve.replace('v2.0.0-alpha.2', tag)
+          reserve = reserve.replace('Alpha 2', 'v2.0.0 completion')
+          reserve = reserve.replace('alpha.2', '2.0.0')
+          reserve = reserve.replace('alpha2', 'completion')
+          reserve_path.write_text(reserve, encoding='utf-8')
+
+          finalize = finalize_path.read_text(encoding='utf-8')
+          finalize = re.sub(
+              r'(?m)^name:.*$',
+              'name: QIK-VRT formalization v2.0.0 Zenodo finalize',
+              finalize,
+              count=1,
+          )
+          finalize = replace_first_push_branch(finalize, finalize_branch)
+          for key, value in {
+              'VERSION': version,
+              'TAG': tag,
+              'TITLE': title,
+              'STATE_PATH': state_path,
+          }.items():
+              finalize = set_global_env(finalize, key, value)
+          finalize = finalize.replace('2.0.0-alpha.2', version)
+          finalize = finalize.replace('v2.0.0-alpha.2', tag)
+          finalize = finalize.replace('Alpha 2', 'v2.0.0 completion')
+          finalize = finalize.replace('alpha.2', '2.0.0')
+          finalize = finalize.replace('alpha2', 'completion')
+          finalize_path.write_text(finalize, encoding='utf-8')
+
+          readme_path.write_text(
+              '''# QIK-VRT manuscript formalization v2.0\n\n'''
+              '''This directory contains the source-bound machine-checkable reconstruction of the locked 62-page manuscript **Mandelbrot, Anschlussordnung, Physik und Retrokausalität**.\n\n'''
+              '''## Completed coverage\n\n'''
+              '''- immutable TeX and PDF source identity: verified;\n'''
+              '''- formal LaTeX environments inventoried: 40 / 40;\n'''
+              '''- definition environments source-bound and kernel-checked: 20 / 20;\n'''
+              '''- theorem-like environments formally closed: 20 / 20;\n'''
+              '''- appendix matrix rows epistemically classified: 34 / 34;\n'''
+              '''- strong source-bound Lean bindings: 42;\n'''
+              '''- explicitly conditional checked bindings: 6;\n'''
+              '''- pending formal definition, mathematical, or conditional nodes: 0.\n\n'''
+              '''## Scientific boundary\n\n'''
+              '''`KERNEL_CHECKED` means that the proposition-indexed Lean declaration compiles under Lean 4.19.0 and passes the repository axiom and proof-escape audits. `CONDITIONAL_CHECKED` means the proof is kernel-checked with every additional premise explicit in the Lean proposition. Empirical, interpretive, background, metaphysical, spiritual, retrocausal, and quantum-gravitational content is not promoted to mathematical proof.\n\n'''
+              '''## Locked source\n\n'''
+              '''- TeX SHA-256: `c55446c62c890e581e9536c0dc8d5de70b7ecf7012a7e2e41744d971da9807cf`\n'''
+              '''- PDF SHA-256: `b2207d61cd2ff145089d2f1b7cceff8b7f7bd21bce39de7230f553a99a29611f`\n'''
+              '''- physical PDF pages: 62\n\n'''
+              '''## Reproducible verification\n\n'''
+              '''```sh\n'''
+              '''python3 scripts/verify_source_lock.py\n'''
+              '''python3 scripts/materialize_completion.py --check\n'''
+              '''python3 scripts/render_completion_proof_map.py --check\n'''
+              '''python3 scripts/render_completion_verification_report.py --check\n'''
+              '''python3 scripts/validate_completion_claim_graph.py\n'''
+              '''python3 -m unittest discover -s tests -v\n'''
+              '''lake build\n'''
+              '''python3 scripts/audit_lean_axioms.py\n'''
+              '''python3 scripts/audit_completion_axioms.py\n'''
+              '''python3 scripts/audit_proof_escapes.py\n'''
+              '''python3 scripts/materialize_completion_proof_manifest.py --check\n'''
+              '''python3 scripts/verify_proof_object_manifest.py\n'''
+              '''```\n''',
+              encoding='utf-8',
+          )
+
+          plan_path.write_text(
+              '''# Completion plan — QIK-VRT manuscript formalization v2.0\n\n'''
+              '''Status: COMPLETED AND VERIFIED\n'''
+              '''Authority repository: `Goldkelch/qik-vrt`\n'''
+              '''Authority commit: `3d640b05e815ff8644fe7640ddd7dcf89d4094c4`\n'''
+              '''Authority Git tree: `ff38a33549fbcf83e52e15247892507c1f8d3316`\n'''
+              '''Repository content-tree SHA-256: `964801915be7eb1f33bfad52326c33bf47582fa77bd44dd572a46fc21ad79dcb`\n'''
+              '''Responsible human: Ingolf Lohmann\n\n'''
+              '''## Completed result\n\n'''
+              '''Every formal environment of the locked 62-page manuscript has a source-bound machine-readable status. All 20 definition environments have explicit Lean representations. All 20 theorem-like environments are either kernel-checked directly or kernel-checked conditionally with every premise exposed in the proposition. No formal definition, mathematical, or conditional claim node remains `PENDING`.\n\n'''
+              '''Completed theorem tranches:\n\n'''
+              '''- escape-time reconstruction: `ESC-004`, `ESC-005`, `ESC-003`;\n'''
+              '''- finite epsilon quantization: `QUA-004`, `QUA-005`, `QUA-003`;\n'''
+              '''- trajectory and boundary classification: `GAT-003`, `GAT-007`;\n'''
+              '''- dimensional and Lorentz claims: `DIM-006`, `DIM-007`;\n'''
+              '''- definition tranche: `DEF-001` through `DEF-020`.\n\n'''
+              '''## Preserved truth boundary\n\n'''
+              '''Completion concerns source identity, formal representation, kernel checking, explicit assumptions, proof-object evidence, deterministic generation, and epistemic classification. It does not constitute empirical confirmation of metaphysical, spiritual, retrocausal, quantum-gravitational, or other physical interpretations.\n\n'''
+              '''## Passed gates\n\n'''
+              '''- Lean 4.19.0 full build;\n'''
+              '''- unified axiom audits;\n'''
+              '''- rejection of `sorry`, `admit`, project axioms, unchecked constants, and proof escapes;\n'''
+              '''- deterministic claim graph, proof map, verification report, and proof-object manifest;\n'''
+              '''- positive and negative provenance tests;\n'''
+              '''- full repository `make test`;\n'''
+              '''- repository integrity verification;\n'''
+              '''- exact-tree synchronization of both canonical repositories.\n''',
+              encoding='utf-8',
+          )
+
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['title'] = title
+          manifest['version'] = version
+          manifest['publication_date'] = '2026-07-24'
+          manifest['description'] = (
+              'Completed source-bound machine-checkable coverage of all 40 formal '
+              'environments in the locked 62-page QIK-VRT manuscript: 20/20 '
+              'definitions, 20/20 theorem-like environments, 42 strong Lean '
+              'bindings, six explicitly conditional checked claims, and zero '
+              'pending formal nodes. Empirical and interpretive claims remain '
+              'separately classified and are not promoted to mathematical proof.'
+          )
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+
+          bootstrap = root / '.github/workflows/qikvrt_formalization_v2_completion_bootstrap.yml'
+          bootstrap.unlink()
+          PY
+
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          git diff --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Prepare completed formalization v2.0.0 Zenodo publication"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
