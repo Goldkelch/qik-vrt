@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: formalization/QIKVRT_Formalization_v1.0
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1, resolved 2026-07-22
@@ -56,8 +56,33 @@ jobs:
           --checker "Lean 4 native kernel"
           --version "4.19.0"
           --commit "6caaee842e9495688c1567e78c0e68dbb96942aa"
-      - run: npm run gate20
-      - run: python -m python.gate20
+      - name: Regenerate deterministic package checksums
+        run: python scripts/generate_checksums.py
+      - name: Upload deterministic package checksums
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-formalization-v1-package-checksums
+          retention-days: 30
+          path: formalization/QIKVRT_Formalization_v1.0/SHA256SUMS
+          if-no-files-found: error
+      - name: Run Node gate20
+        id: node_gate20
+        continue-on-error: true
+        run: npm run gate20
+      - name: Upload Node gate20 report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-node-gate20-report
+          retention-days: 30
+          path: formalization/QIKVRT_Formalization_v1.0/build/gate20-report.json
+          if-no-files-found: warn
+      - name: Run Python gate20
+        if: always()
+        run: python -m python.gate20
+      - name: Enforce Node gate20
+        if: steps.node_gate20.outcome == 'failure'
+        run: exit 1
 
   audio-tool-tests:
     runs-on: ubuntu-24.04
@@ -65,7 +90,7 @@ jobs:
       run:
         working-directory: tools/offline-audio-transcription
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22

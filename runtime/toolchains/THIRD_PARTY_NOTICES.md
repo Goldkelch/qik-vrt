@@ -80,7 +80,7 @@ The xml2rfc environment also installs these exact third-party packages:
 - natsort 8.4.0
 - platformdirs 4.11.0
 - pycountry 26.2.16
-- pypdf 6.10.0
+- pypdf 6.14.2
 - PyYAML 6.0.3
 - requests 2.34.2
 - sortedcontainers 2.4.0

@@ -329,7 +329,7 @@ function Test-IetfProfile {
     if (-not (Test-PythonRendererExact -Path $CachedPython -Prefix @())) { Stop-Block "installed renderer is not bound to Python $PythonRendererVersion" }
     if (-not (Test-LockedEnvironmentExact $CachedPython)) { Stop-Block 'installed renderer does not contain exactly the locked package set' }
     if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package xml2rfc -Version $Xml2rfcVersion)) { Stop-Block "installed xml2rfc metadata is not exactly $Xml2rfcVersion" }
-    if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package pypdf -Version '6.10.0')) { Stop-Block 'installed pypdf metadata is not exactly 6.10.0' }
+    if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package pypdf -Version '6.14.2')) { Stop-Block 'installed pypdf metadata is not exactly 6.14.2' }
     if (-not (Test-Xml2rfcCommandExact $CachedXml2rfc)) { Stop-Block 'installed xml2rfc command failed its exact-version execution check' }
     $lockHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Xml2rfcLock).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $CompleteMarker -Encoding ASCII -Value @(
@@ -358,10 +358,10 @@ function Test-FormalProfile {
     $formalRoot = Join-Path $RepoRoot 'formalization\QIKVRT_Formalization_v1.0'
     if (-not (Test-Node24)) {
         Set-Continue 'formal: Node 24.x is absent; automatic installation is not supported'
-    } elseif (-not (Test-NodePackage -Directory $formalRoot -Package zod -Version '4.1.12')) {
-        Set-Continue 'formal: installed Zod 4.1.12 is absent; run the reviewed npm lock installation'
+    } elseif (-not (Test-NodePackage -Directory $formalRoot -Package zod -Version '4.4.3')) {
+        Set-Continue 'formal: installed Zod 4.4.3 is absent; run the reviewed npm lock installation'
     } else {
-        Write-Output 'PASS: formal Node 24 + Zod 4.1.12'
+        Write-Output 'PASS: formal Node 24 + Zod 4.4.3'
     }
 
     $lean = Get-Command lean -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1

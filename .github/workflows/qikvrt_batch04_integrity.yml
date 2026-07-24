@@ -7,8 +7,6 @@ on:
       - main
       - agent/formalization-cache-hmi-batch04
       - agent/manuscript-formalization-v2-completion
-      - automation/generalize-repository-evidence-20260724
-      - automation/machine-verifiable-science-zenodo-20260723
   pull_request:
     branches:
       - main
@@ -29,14 +27,14 @@ jobs:
   materialize:
     if: >-
       github.event_name != 'pull_request' ||
-      github.head_ref == 'automation/generalize-repository-evidence-20260724' ||
-      github.head_ref == 'automation/machine-verifiable-science-zenodo-20260723'
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TARGET_REF }}
           fetch-depth: 0
@@ -121,17 +119,19 @@ jobs:
           PY
           python3 -B tests/test_formalization_v2_release_workflow.py
       - name: Regenerate and verify repository integrity
+        shell: bash
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
-      - name: Run repository gates before persistence
+      - name: Run complete repository gates before persistence
         shell: bash
         run: |
           set -euo pipefail
           make test
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit materialized evidence and integrity outputs
+      - name: Commit materialized repository evidence
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
