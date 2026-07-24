@@ -83,22 +83,28 @@ jobs:
           exit 1
       - name: Verify locked manuscript bytes and page count
         run: python3 scripts/verify_source_lock.py
-      - name: Verify generated source inventory is current
-        run: python3 scripts/extract_tex_inventory.py --check
-      - name: Verify human proof map is current
-        run: python3 scripts/render_proof_map.py --check
-      - name: Validate claim graph and epistemic boundaries
-        run: python3 scripts/validate_claim_graph.py
+      - name: Verify completed claim graph materialization
+        run: python3 scripts/materialize_completion.py --check
+      - name: Verify completed human proof map
+        run: python3 scripts/render_completion_proof_map.py --check
+      - name: Verify completed verification report
+        run: python3 scripts/render_completion_verification_report.py --check
+      - name: Validate completed claim graph and epistemic boundaries
+        run: python3 scripts/validate_completion_claim_graph.py
       - name: Validate EFFECT_ACK source, structure and proof references
         run: python3 scripts/validate_effect_ack_claims.py
       - name: Run positive and negative provenance tests
         run: python3 -m unittest discover -s tests -v
       - name: Compile exact statement/proof bindings
         run: lake build
-      - name: Audit theorem axiom dependencies
+      - name: Audit legacy and EFFECT_ACK theorem dependencies
         run: python3 scripts/audit_lean_axioms.py
+      - name: Audit every completed manuscript proof constant
+        run: python3 scripts/audit_completion_axioms.py
       - name: Reject project proof escapes
         run: python3 scripts/audit_proof_escapes.py
+      - name: Verify completed proof-object manifest is current
+        run: python3 scripts/materialize_completion_proof_manifest.py --check
       - name: Verify persistent proof-object manifest
         run: |
           set -euo pipefail
