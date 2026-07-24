@@ -1,0 +1,59 @@
+{
+  "schema": "qikvrt_runtime_capability_v3",
+  "capability": "zenodo-production-publication",
+  "profile": "publication",
+  "implementation": "tools/qikvrt_zenodo_publish.py",
+  "reused_transport": "tools/qikvrt_zenodo_actions.py",
+  "manifest_schema": "qikvrt_zenodo_publication_manifest_v1",
+  "invocation": "python -B tools/qikvrt_zenodo_publish.py --manifest <repository-relative-manifest.json>",
+  "workflow_binding": "none; existing authorized workflows invoke the generic capability",
+  "trigger_contract": "A repository-controlled manifest explicitly authorizes production publication and binds every artifact by Git blob SHA-1.",
+  "genericity": {
+    "document_specific_constants": false,
+    "release_specific_constants": false,
+    "record_or_doi_constants": false,
+    "workflow_specific_constants": false,
+    "metadata_source": "repository manifest",
+    "artifact_identity": "repository path plus exact Git blob SHA-1"
+  },
+  "credential": {
+    "environment_variable": "ZENODO_ACCESS_TOKEN",
+    "storage": "GitHub Actions secret only",
+    "cacheable": false
+  },
+  "cache": {
+    "class": "ecosystem-cache",
+    "location": ".qikvrt/cache/zenodo-publication",
+    "key_inputs": [
+      "tools/qikvrt_zenodo_publish.py",
+      "tools/qikvrt_zenodo_actions.py",
+      "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json"
+    ],
+    "contents": [
+      "validated source digests",
+      "CPython bytecode cache",
+      "generic capability self-test receipt"
+    ],
+    "excludes": [
+      "credentials",
+      "mutable authentication state",
+      "unverified remote payloads"
+    ]
+  },
+  "verification": [
+    "closed generic manifest contract",
+    "Git blob identity gate",
+    "standard-library compilation",
+    "allowlisted HTTPS Zenodo origin",
+    "artifact MD5 and SHA-256 before upload",
+    "server file-list and checksum gate",
+    "byte-exact remote redownload SHA-256 gate",
+    "published metadata and DOI gate",
+    "repository evidence commit"
+  ],
+  "recovery": "Existing publication evidence blocks duplicate mutation. Interrupted runs leave no DONE claim and require explicit remote-state reconciliation before retry.",
+  "rollback": "No destructive rollback of a published DOI. Corrections require a new version with preserved history.",
+  "effect_boundary": "A workflow result is not publication evidence until a generic evidence JSON is committed and the public record has passed the client's independent public GET gate.",
+  "rights_holder": "Ingolf Lohmann",
+  "license": "PolyForm-Noncommercial-1.0.0 for implementation; each artifact declares its own license"
+}
