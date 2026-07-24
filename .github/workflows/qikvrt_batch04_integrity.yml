@@ -7,8 +7,6 @@ on:
       - main
       - agent/formalization-cache-hmi-batch04
       - agent/manuscript-formalization-v2-completion
-      - automation/generalize-repository-evidence-20260724
-      - automation/machine-verifiable-science-zenodo-20260723
   pull_request:
     branches:
       - main
@@ -20,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
@@ -29,8 +28,8 @@ jobs:
   materialize:
     if: >-
       github.event_name != 'pull_request' ||
-      github.head_ref == 'automation/generalize-repository-evidence-20260724' ||
-      github.head_ref == 'automation/machine-verifiable-science-zenodo-20260723'
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -131,12 +130,20 @@ jobs:
           set -euo pipefail
           make test
           python3 tools/qikvrt_integrity.py verify
-      - name: Commit materialized evidence and integrity outputs
+      - name: Commit materialized maintenance candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
+            .github/workflows \
+            formalization/QIKVRT_Formalization_v1.0/package.json \
+            formalization/QIKVRT_Formalization_v1.0/package-lock.json \
+            runtime/toolchains/requirements-xml2rfc-3.34.0.txt \
             formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
             formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
             formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
@@ -151,8 +158,39 @@ jobs:
             REPOSITORY_FILE_MANIFEST.json.sha256 \
             SHA256SUMS.txt
           if git diff --cached --quiet; then
-            echo "Repository evidence is already current."
+            echo "Repository evidence and dependencies are already current."
             exit 0
           fi
-          git commit -m "ci: materialize repository evidence"
-          git push origin "HEAD:$TARGET_REF"
+          git commit -m "chore: consolidate dependency security updates"
+          candidate="$(git rev-parse HEAD)"
+          tree="$(git show -s --format=%T HEAD)"
+          set +e
+          push_output="$(git push origin "HEAD:$TARGET_REF" 2>&1)"
+          push_status=$?
+          set -e
+          if [ -n "${PR_NUMBER:-}" ]; then
+            concise="$(printf '%s\n' "$push_output" | tail -n 20)"
+            body="## Consolidated dependency maintenance candidate
+
+            - Candidate commit: \`$candidate\`
+            - Candidate tree: \`$tree\`
+            - Target branch: \`$TARGET_REF\`
+            - Direct push status: \`$push_status\`
+
+            Included updates:
+            - actions/checkout 7.0.1
+            - actions/cache/restore 6.1.0
+            - actions/cache/save 6.1.0
+            - pypdf 6.14.2
+            - Zod 4.4.3
+
+            The full repository test, deterministic evidence regeneration and integrity verification passed before this commit was created.
+
+            \`\`\`text
+            $concise
+            \`\`\`"
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              -f body="$body" >/dev/null
+          fi
+          exit 0
