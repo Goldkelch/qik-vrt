@@ -1,0 +1,53 @@
+name: QIK-VRT audio decode diagnostic
+
+on:
+  push:
+    branches: [automation/audio-20260724-103937]
+    paths: [.github/workflows/qikvrt_audio_decode_diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  decode:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/audio-20260724-103937
+          persist-credentials: false
+      - name: Decode exact transport chunks without media assumptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64, hashlib, json, re
+          from pathlib import Path
+          root=Path('requests/audio-20260724-103937')
+          paths=sorted(root.glob('audio.opus.b64.*'))
+          if not paths: raise SystemExit('no chunks')
+          parts=[]
+          for path in paths:
+              compact=''.join(path.read_text(encoding='ascii').split())
+              if re.fullmatch(r'[A-Za-z0-9+/]*={0,2}',compact) is None: raise SystemExit(f'invalid Base64: {path}')
+              parts.append(compact)
+          def decode(value):
+              value=value.rstrip('=')
+              return base64.b64decode(value+'='*((4-len(value)%4)%4),validate=True)
+          if any('=' in part for part in parts[:-1]):
+              mode='independent-padded-chunks'; payload=b''.join(decode(part) for part in parts)
+          else:
+              mode='continuous-split-stream'; payload=decode(''.join(parts))
+          out=Path('/tmp/qikvrt-decoded-transport.ogg')
+          out.write_bytes(payload)
+          Path('/tmp/qikvrt-decoded-transport.json').write_text(json.dumps({'chunks':len(paths),'mode':mode,'bytes':len(payload),'sha256':hashlib.sha256(payload).hexdigest()},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-decoded-audio-diagnostic-20260724-103937
+          retention-days: 1
+          path: |
+            /tmp/qikvrt-decoded-transport.ogg
+            /tmp/qikvrt-decoded-transport.json
+          if-no-files-found: error
