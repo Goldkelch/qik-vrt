@@ -29,11 +29,12 @@ jobs:
           ref: agent/wirkungsquadrat-v1
           fetch-depth: 0
 
-      - name: Detect complete source bundle
+      - name: Detect complete local or authorized remote source bundle
         id: bundle
         shell: bash
         run: |
-          if [ -f bootstrap/wirkungsquadrat-source-v1/manifest.json ]; then
+          if [ -f bootstrap/wirkungsquadrat-source-v1/manifest.json ] || \
+             [ -f bootstrap/wirkungsquadrat-source-v1/REMOTE_SOURCE ]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"
@@ -46,20 +47,97 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Decode, authenticate and materialize exact source tree
+      - name: Fetch mirror input, authenticate chunks and materialize exact source tree
         if: steps.bundle.outputs.ready == 'true'
         shell: bash
+        env:
+          CURRENT_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
           from __future__ import annotations
-          import base64, hashlib, json, pathlib, stat, zipfile
+
+          import base64
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import stat
+          import urllib.parse
+          import urllib.request
+          import zipfile
 
           CHUNKS = pathlib.Path('bootstrap/wirkungsquadrat-source-v1')
-          EXPECTED_MANIFEST_SHA256 = '091cb948ce066d8cc7881a56ddfab660d5d9de6ec20b4ed7218f4dccda594811'
+          EXPECTED_MANIFEST_SHA256 = '21c931322d20a8a45978709b332e6f6e31877c2ff67dd98c5310c50bddf8fb4d'
           EXPECTED_ZIP_SHA256 = 'd0324281b02526b805fec910daa2ce158b0437239d04805b533b95c7a1094912'
+          EXPECTED_PARTS = 34
           EXPECTED_FILES = 40
+          AUTHORITY_REPOSITORY = 'Goldkelch/qik-vrt'
+          MIRROR_REPOSITORY = 'ingolf-lohmann/qik-vrt'
+          SOURCE_REF = 'agent/wirkungsquadrat-v1'
+
+          CHUNKS.mkdir(parents=True, exist_ok=True)
           manifest_path = CHUNKS / 'manifest.json'
+          trigger_path = CHUNKS / 'REMOTE_SOURCE'
+          repository = os.environ.get('CURRENT_REPOSITORY', '')
+
+          def fetch_public_file(relative_path: str) -> bytes:
+              encoded_path = urllib.parse.quote(relative_path, safe='/')
+              encoded_ref = urllib.parse.quote(SOURCE_REF, safe='')
+              url = (
+                  f'https://api.github.com/repos/{AUTHORITY_REPOSITORY}/contents/'
+                  f'{encoded_path}?ref={encoded_ref}'
+              )
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'qikvrt-wirkungsquadrat-source-mirror/1',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  raw = response.read(256 * 1024 + 1)
+              if len(raw) > 256 * 1024:
+                  raise SystemExit('BLOCK: remote source response exceeded its bound')
+              value = json.loads(raw.decode('utf-8'))
+              if (
+                  not isinstance(value, dict)
+                  or value.get('type') != 'file'
+                  or value.get('encoding') != 'base64'
+                  or not isinstance(value.get('content'), str)
+              ):
+                  raise SystemExit(f'BLOCK: remote source file is malformed: {relative_path}')
+              try:
+                  return base64.b64decode(''.join(value['content'].split()), validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'BLOCK: remote source file encoding is invalid: {relative_path}') from exc
+
+          if not manifest_path.is_file():
+              if repository != MIRROR_REPOSITORY or not trigger_path.is_file():
+                  raise SystemExit('BLOCK: only the mirror may resolve an explicit remote-source trigger')
+              remote_manifest = fetch_public_file(
+                  'bootstrap/wirkungsquadrat-source-v1/manifest.json'
+              )
+              if hashlib.sha256(remote_manifest).hexdigest() != EXPECTED_MANIFEST_SHA256:
+                  raise SystemExit('BLOCK: remote source chunk manifest hash mismatch')
+              manifest_path.write_bytes(remote_manifest)
+              remote_value = json.loads(remote_manifest.decode('utf-8'))
+              remote_parts = remote_value.get('parts')
+              if not isinstance(remote_parts, list) or len(remote_parts) != EXPECTED_PARTS:
+                  raise SystemExit('BLOCK: remote source chunk cardinality differs')
+              for index, entry in enumerate(remote_parts, 1):
+                  expected_name = f'part-{index:03d}.b64'
+                  if not isinstance(entry, dict) or entry.get('name') != expected_name:
+                      raise SystemExit('BLOCK: remote source chunk order differs')
+                  relative = f'bootstrap/wirkungsquadrat-source-v1/{expected_name}'
+                  payload = fetch_public_file(relative)
+                  if hashlib.sha256(payload).hexdigest() != entry.get('sha256'):
+                      raise SystemExit(f'BLOCK: remote source chunk hash mismatch: {expected_name}')
+                  (CHUNKS / expected_name).write_bytes(payload)
+          elif repository not in (AUTHORITY_REPOSITORY, MIRROR_REPOSITORY):
+              raise SystemExit('BLOCK: repository is outside the two-node source contract')
+
           manifest_raw = manifest_path.read_bytes()
           if hashlib.sha256(manifest_raw).hexdigest() != EXPECTED_MANIFEST_SHA256:
               raise SystemExit('BLOCK: source chunk manifest hash mismatch')
@@ -68,15 +146,16 @@ jobs:
               chunk_manifest.get('schema') != 'qikvrt_wirkungsquadrat_source_chunk_manifest_v1'
               or chunk_manifest.get('archive_sha256') != EXPECTED_ZIP_SHA256
               or chunk_manifest.get('encoding') != 'rfc4648-base64'
-              or chunk_manifest.get('part_count') != 9
+              or chunk_manifest.get('part_count') != EXPECTED_PARTS
           ):
               raise SystemExit('BLOCK: source chunk manifest identity differs')
-          encoded = []
+          encoded: list[str] = []
           parts = chunk_manifest.get('parts')
-          if not isinstance(parts, list) or len(parts) != 9:
+          if not isinstance(parts, list) or len(parts) != EXPECTED_PARTS:
               raise SystemExit('BLOCK: source chunk cardinality differs')
           for index, entry in enumerate(parts, 1):
-              if set(entry) != {'name', 'characters', 'sha256'} or entry['name'] != f'part-{index:03d}.b64':
+              expected_name = f'part-{index:03d}.b64'
+              if set(entry) != {'name', 'characters', 'sha256'} or entry['name'] != expected_name:
                   raise SystemExit('BLOCK: source chunk order or schema differs')
               path = CHUNKS / entry['name']
               raw = path.read_bytes()
@@ -90,7 +169,10 @@ jobs:
               archive = base64.b64decode(''.join(encoded), validate=True)
           except Exception as exc:
               raise SystemExit('BLOCK: invalid reconstructed source-bundle Base64') from exc
-          if len(archive) != chunk_manifest.get('archive_size') or hashlib.sha256(archive).hexdigest() != EXPECTED_ZIP_SHA256:
+          if (
+              len(archive) != chunk_manifest.get('archive_size')
+              or hashlib.sha256(archive).hexdigest() != EXPECTED_ZIP_SHA256
+          ):
               raise SystemExit('BLOCK: source-bundle ZIP size or hash mismatch')
           bundle = pathlib.Path('.qikvrt/wirkungsquadrat-source-v1.zip')
           bundle.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +185,11 @@ jobs:
               if manifest.get('schema') != 'qikvrt_wirkungsquadrat_source_bundle_v1':
                   raise SystemExit('BLOCK: source-bundle schema differs')
               files = manifest.get('files')
-              if not isinstance(files, list) or len(files) != EXPECTED_FILES or manifest.get('file_count') != EXPECTED_FILES:
+              if (
+                  not isinstance(files, list)
+                  or len(files) != EXPECTED_FILES
+                  or manifest.get('file_count') != EXPECTED_FILES
+              ):
                   raise SystemExit('BLOCK: source-bundle file count differs')
               expected = {entry['path']: entry for entry in files}
               if len(expected) != EXPECTED_FILES or set(names) != {'BUNDLE_MANIFEST.json', *expected}:
@@ -138,6 +224,8 @@ jobs:
                   target.write_bytes(data)
                   if hashlib.sha256(target.read_bytes()).hexdigest() != entry['sha256']:
                       raise SystemExit(f'BLOCK: materialized file differs: {name}')
+
+          trigger_path.unlink(missing_ok=True)
           evidence = {
               'schema': 'qikvrt_wirkungsquadrat_source_bundle_evidence_v1',
               'status': 'PASS',
@@ -146,7 +234,9 @@ jobs:
               'materialized_file_count': EXPECTED_FILES,
           }
           pathlib.Path('bootstrap/WIRKUNGSQUADRAT_SOURCE_BUNDLE_EVIDENCE.json').write_text(
-              json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+              newline='\n',
           )
           PY
 
