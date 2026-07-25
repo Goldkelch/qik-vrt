@@ -1,0 +1,412 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,array,longtable}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\geometry{margin=27mm}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,urlcolor=blue!45!black,pdftitle={Das Wirkungsquadrat der Planck-Skala},pdfauthor={Ingolf Lohmann}}
+\setlist{nosep,leftmargin=*}
+\newtheorem{definition}{Definition}
+\newtheorem{satz}{Satz}
+\newtheorem{korollar}{Korollar}
+\newtheorem{bemerkung}{Bemerkung}
+\newcommand{\lP}{\ell_{\mathrm P}}
+\newcommand{\tP}{t_{\mathrm P}}
+\newcommand{\mP}{m_{\mathrm P}}
+\newcommand{\pP}{p_{\mathrm P}}
+\newcommand{\EP}{E_{\mathrm P}}
+\newcommand{\hbarred}{\hbar}
+
+\title{\textbf{Das Wirkungsquadrat der Planck-Skala}\\[0.5em]
+\large Eine relationale Normalform von Raum, Zeit, Impuls und Energie}
+\author{Ingolf Lohmann\\Independent Researcher; QIK-VRT}
+\date{25. Juli 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Die Planck-Länge, Planck-Zeit, Planck-Masse, Planck-Impuls und
+Planck-Energie werden gewöhnlich als Liste natürlicher Einheiten präsentiert.
+Der vorliegende Beitrag ordnet dieselben Standardgrößen in eine geschlossene
+relationale Normalform ein. Für jede masselose Quantenmode gilt bei konsistenter
+Phasenkonvention
+\[
+  \frac{\bar\lambda}{\tau}=\frac{E}{p}=c,
+  \qquad
+  \bar\lambda p=\tau E=\hbar,
+\]
+wobei $\bar\lambda=1/k$ und $\tau=1/\omega$ sind. Die Gravitation wählt aus
+dieser skalenfreien Familie den positiven Planck-Punkt aus. Dort gilt exakt
+\[
+  \frac{\lP}{\tP}=\frac{\EP}{\pP}=c,
+  \qquad
+  \lP\pP=\tP\EP=\hbar,
+  \qquad
+  \lP=\frac{\hbar}{\mP c}=\frac{G\mP}{c^2}.
+\]
+Die Gleichungen werden vollständig hergeleitet, ihre Eindeutigkeit unter den
+angegebenen Voraussetzungen wird gezeigt und ihre Geltungsgrenze wird
+explizit festgehalten. Eine begleitende Lean-4-Formalisierung prüft den
+algebraischen Kern. Das Resultat ist eine Normalform bekannter Physik, keine
+Behauptung einer bereits experimentell bestätigten diskreten Raumzeit und
+keine Erklärung des Ursprungs des Universums.
+\end{abstract}
+
+\section{Erkenntnisstatus und Fragestellung}
+
+Die Einzelbeziehungen dieses Artikels gehören zur etablierten Physik:
+$\omega=ck$ für masselose Moden im Vakuum, $E=\hbar\omega$,
+$p=\hbar k$, $E=pc$ sowie die aus $c$, $\hbar$ und $G$ gebildeten
+Planck-Größen. Der eigenständige Beitrag liegt nicht in einer Umbenennung
+dieser Gleichungen, sondern in ihrer simultanen Schließung zu einem
+viergliedrigen Verhältnis- und Wirkungsgefüge, in der sauberen Trennung von
+universeller masseloser Struktur und gravitationsselektiertem Planck-Punkt
+sowie in einer maschinenprüfbaren Beweis- und Provenienzordnung.
+
+Der zentrale Befund lässt sich in drei Zeilen zusammenfassen:
+\begin{align}
+ \frac{\lP}{\tP}&=\frac{\EP}{\pP}=c, \label{eq:ratio}\\
+ \lP\pP&=\tP\EP=\hbar, \label{eq:products}\\
+ \lP&=\frac{\hbar}{\mP c}=\frac{G\mP}{c^2}. \label{eq:anchor}
+\end{align}
+Dabei übernimmt $c$ die Rolle der Verhältnisbindung, $\hbar$ die Rolle der
+Wirkungsbindung und $G$ die Rolle der absoluten Skalenselektion. Die Wörter
+``Bindung'' und ``Selektion'' bezeichnen hier mathematische Funktionen der
+Konstanten; sie machen aus den Konstanten nicht ohne Definition zusätzliche
+physikalische Operatoren.
+
+\section{Phasenkonvention und der Faktor $2\pi$}
+
+Eine periodische Welle kann zyklusbezogen oder phasenbezogen beschrieben
+werden. Zyklusbezogen gelten
+\[
+ E=hf,\qquad p=\frac{h}{\lambda},\qquad c=f\lambda.
+\]
+Phasenbezogen setzt man
+\[
+ \omega=2\pi f,\qquad k=\frac{2\pi}{\lambda},\qquad h=2\pi\hbar
+\]
+und erhält
+\[
+ E=\hbar\omega,\qquad p=\hbar k,\qquad \omega=ck.
+\]
+Für die relationale Normalform sind die reduzierten Skalen
+\begin{equation}
+ \bar\lambda:=\frac{1}{k}=\frac{\lambda}{2\pi},
+ \qquad
+ \tau:=\frac{1}{\omega}=\frac{T}{2\pi}
+ \label{eq:reduced}
+\end{equation}
+maßgeblich. Eine Vermischung von $h$ mit $\omega$ oder von $\hbar$ mit der
+vollen Wellenlänge erzeugt einen bloßen Konventionsfehler. Die nachfolgenden
+Beweise verwenden durchgehend $\hbar$, $k$, $\omega$, $\bar\lambda$ und
+$\tau$.
+
+\section{Das universelle Wirkungsquadrat}
+
+\begin{satz}[Universelles Wirkungsquadrat]
+Sei eine masselose Mode im Vakuum durch $k>0$ und $\omega=ck$ mit $c>0$
+gegeben. Es gelte $p=\hbar k$, $E=\hbar\omega$ und $\hbar>0$. Mit
+$\bar\lambda=1/k$ und $\tau=1/\omega$ gilt
+\begin{equation}
+ \frac{\bar\lambda}{\tau}=\frac{E}{p}=c,
+ \qquad
+ \bar\lambda p=\tau E=\hbar.
+ \label{eq:universal}
+\end{equation}
+\end{satz}
+
+\begin{proof}
+Direktes Einsetzen ergibt
+\[
+ \bar\lambda p=\frac{1}{k}\hbar k=\hbar,
+ \qquad
+ \tau E=\frac{1}{\omega}\hbar\omega=\hbar.
+\]
+Ferner folgt aus $\omega=ck$
+\[
+ \frac{\bar\lambda}{\tau}
+ =\frac{1/k}{1/\omega}=\frac{\omega}{k}=c
+\]
+und ebenso
+\[
+ \frac{E}{p}=\frac{\hbar\omega}{\hbar k}=\frac{\omega}{k}=c.
+\]
+\end{proof}
+
+Die universelle Lösungsmenge besitzt einen Skalenfreiheitsgrad. Wählt man
+$\bar\lambda>0$, dann folgen eindeutig
+\begin{equation}
+ \tau=\frac{\bar\lambda}{c},\qquad
+ p=\frac{\hbar}{\bar\lambda},\qquad
+ E=\frac{\hbar c}{\bar\lambda}.
+ \label{eq:family}
+\end{equation}
+Ohne eine weitere dimensionsbehaftete Konstante wird kein einzelner Punkt der
+Familie ausgezeichnet. $c$ und $\hbar$ bestimmen die Relationen, aber noch
+nicht die absolute Länge.
+
+\section{Definition der Planck-Größen}
+
+Für $c>0$, $\hbar>0$ und $G>0$ definieren wir
+\begin{align}
+ \lP&:=\sqrt{\frac{\hbar G}{c^3}},
+ &\tP&:=\sqrt{\frac{\hbar G}{c^5}}=\frac{\lP}{c},\\
+ \mP&:=\sqrt{\frac{\hbar c}{G}},
+ &\pP&:=\mP c=\sqrt{\frac{\hbar c^3}{G}},\\
+ \EP&:=\mP c^2=\pP c=\sqrt{\frac{\hbar c^5}{G}}.
+ \label{eq:planckdefs}
+\end{align}
+Alle Wurzeln bezeichnen die eindeutig positive Quadratwurzel.
+
+\begin{satz}[Planck-Schließung]
+Die Größen aus \eqref{eq:planckdefs} erfüllen exakt
+\eqref{eq:ratio} und \eqref{eq:products}.
+\end{satz}
+
+\begin{proof}
+Für das räumlich-zeitliche Verhältnis gilt
+\[
+ \frac{\lP}{\tP}
+ =\frac{\sqrt{\hbar G/c^3}}{\sqrt{\hbar G/c^5}}
+ =\sqrt{c^2}=c.
+\]
+Für Energie und Impuls folgt unmittelbar
+\[
+ \frac{\EP}{\pP}=\frac{\mP c^2}{\mP c}=c.
+\]
+Die beiden Wirkungsprodukte lauten
+\[
+ \lP\pP
+ =\sqrt{\frac{\hbar G}{c^3}}
+  \sqrt{\frac{\hbar c^3}{G}}
+ =\hbar
+\]
+und
+\[
+ \tP\EP
+ =\sqrt{\frac{\hbar G}{c^5}}
+  \sqrt{\frac{\hbar c^5}{G}}
+ =\hbar.
+\]
+Positivität entfernt die sonst mögliche Vorzeichenmehrdeutigkeit.
+\end{proof}
+
+\section{Gravitationsselektion}
+
+Die reduzierte Compton-Länge einer Masse $m>0$ ist
+\[
+ \bar\lambda_C(m)=\frac{\hbar}{mc}.
+\]
+Als gravitative Längenskala verwenden wir ausdrücklich
+\[
+ r_g(m)=\frac{Gm}{c^2}.
+\]
+Diese Konvention ist die Hälfte des Schwarzschild-Radius. Die Gleichsetzung
+$\bar\lambda_C(m)=r_g(m)$ ergibt
+\[
+ \frac{\hbar}{mc}=\frac{Gm}{c^2}
+ \quad\Longleftrightarrow\quad
+ m^2=\frac{\hbar c}{G}.
+\]
+Wegen $m>0$ folgt eindeutig $m=\mP$ und damit
+\[
+ \bar\lambda_C(\mP)=r_g(\mP)=\lP.
+\]
+Dies beweist \eqref{eq:anchor}. Verwendete man stattdessen den
+Schwarzschild-Radius $2Gm/c^2$, entstünde der konventionsbedingte Faktor
+$\sqrt{2}$. Daher ist die verwendete gravitative Längendefinition Bestandteil
+des Satzes und darf nicht stillschweigend gewechselt werden.
+
+\begin{satz}[Eindeutige positive Gravitationsselektion]
+Sei $\ell>0$ ein Punkt der universellen Familie \eqref{eq:family}. Definiere
+$m:=p/c=\hbar/(\ell c)$. Erfüllt $\ell=Gm/c^2$, dann ist
+$\ell=\lP$, $m=\mP$, $p=\pP$, $E=\EP$ und $\tau=\tP$.
+\end{satz}
+
+\begin{proof}
+Einsetzen von $m=\hbar/(\ell c)$ in die Gravitationsbedingung liefert
+\[
+ \ell=\frac{G\hbar}{\ell c^3}
+ \quad\Longleftrightarrow\quad
+ \ell^2=\frac{\hbar G}{c^3}.
+\]
+Die positive Lösung ist eindeutig $\ell=\lP$. Alle übrigen Größen folgen
+eindeutig aus \eqref{eq:family}.
+\end{proof}
+
+\section{Dimensionsanalytische Eindeutigkeit}
+
+Gesucht sei eine monomiale Länge
+\[
+ L=c^a\hbar^bG^d.
+\]
+Mit
+\[
+ [c]=LT^{-1},\qquad [\hbar]=ML^2T^{-1},\qquad
+ [G]=M^{-1}L^3T^{-2}
+\]
+ergeben sich die Exponentengleichungen
+\[
+ b-d=0,\qquad -a-b-2d=0,\qquad a+2b+3d=1.
+\]
+Das lineare System besitzt die eindeutige Lösung
+\[
+ a=-\frac32,\qquad b=\frac12,\qquad d=\frac12,
+\]
+also
+\[
+ L=\sqrt{\frac{\hbar G}{c^3}}=\lP.
+\]
+Analog ergeben sich Planck-Zeit und Planck-Masse. Dimensionsanalyse beweist
+hier die Eindeutigkeit der monomialen natürlichen Skala. Sie beweist für sich
+allein weder eine Dynamik noch die ontische Diskretheit der Raumzeit.
+
+\section{Kovariante Einordnung}
+
+Die ebene Quantenphase kann geschrieben werden als
+\[
+ \Phi=k_\mu x^\mu=\frac{p_\mu x^\mu}{\hbar},
+ \qquad p^\mu=\hbar k^\mu.
+\]
+In einer üblichen Signatur erscheint im Exponenten die Wirkungskombination
+$\mathbf p\!\cdot\!\mathbf x-Et$. Die räumliche Paarung $x p$ und die
+zeitliche Paarung $tE$ sind daher keine nachträgliche Analogie. Sie sind die
+Komponenten derselben relativistischen Phasenstruktur. Das Wirkungsquadrat ist
+eine skalare, didaktisch transparente Projektion dieser kovarianten Beziehung
+auf charakteristische positive Skalen.
+
+\section{Maschinenprüfbarer Beweisstatus}
+
+Die begleitende Lean-4-Datei formalisiert die Planck-Länge als positive Wurzel
+von $\hbar G/c^3$ und definiert Zeit, Masse, Impuls und Energie durch die oben
+angegebenen Relationen. Der Kernel prüft insbesondere:
+\begin{itemize}
+ \item Positivität und Quadratgleichung der Planck-Länge,
+ \item beide Verhältnisidentitäten,
+ \item beide Wirkungsproduktidentitäten,
+ \item quantenmechanischen und gravitativen Längenanker,
+ \item Eindeutigkeit des positiven gravitationsselektierten Punktes,
+ \item die zusammengefasste Drei-Zeilen-Normalform.
+\end{itemize}
+Das Repository-Gate untersagt \texttt{sorry}, \texttt{admit}, projektinterne
+\texttt{axiom}-Deklarationen und ungebundene Beweisersatzkonstanten. Ein
+Axiom-Audit dokumentiert die vom Lean-/Mathlib-Unterbau verwendeten logischen
+Grundlagen. Die formale Aussage bleibt ausdrücklich an ihre Definitionen und
+Positivitätsprämissen gebunden.
+
+Ein maschineller Beweis kann zeigen, dass die Gleichungen aus den Definitionen
+folgen. Er misst nicht selbst $c$, $\hbar$ oder $G$ und verwandelt keine
+Korrespondenzhypothese automatisch in einen Messbefund. Diese Grenze ist Teil
+der Beweisarchitektur, nicht ihre Schwäche.
+
+\section{Was an der Darstellung neu ist}
+
+Historische Priorität für jede Einzelgleichung wird nicht beansprucht. Der
+prüfbare Beitrag besteht in der folgenden Kombination:
+\begin{enumerate}
+ \item der expliziten Normalform mit zwei Verhältnis- und zwei
+       Wirkungsinvarianten;
+ \item der strikten Trennung von universeller masseloser Lösungsfamilie und
+       gravitationsselektiertem Planck-Punkt;
+ \item der konsistenten Phasennormierung durch $\hbar$, $1/k$ und $1/\omega$;
+ \item dem Eindeutigkeitsbeweis der positiven Selektion unter angegebener
+       Gravitationskonvention;
+ \item der quellen-, hash-, kernel- und veröffentlichungsgebundenen
+       Reproduzierbarkeit.
+\end{enumerate}
+Die kürzeste sachliche Lesart lautet:
+\[
+ \boxed{\;c\text{ bindet die Verhältnisse},\quad
+        \hbar\text{ bindet die Wirkungsprodukte},\quad
+        G\text{ wählt den Planck-Maßstab.}\;}
+\]
+
+\section{Was nicht folgt}
+
+Aus den bewiesenen Identitäten folgt nicht, dass die Raumzeit aus kubischen
+Zellen der Kantenlänge $\lP$ aufgebaut ist. Es folgt nicht, dass Zeit in
+Schritten von $\tP$ abläuft. Es folgt keine bestimmte Topologie, kein
+Nachbarschaftsgraph, keine Übergangsdynamik, keine neue Wechselwirkung und kein
+bereits bestätigtes Modell der Quantengravitation. Eine diskrete Raumzeit kann
+mit der Struktur vereinbar sein; eine kontinuierliche Beschreibung mit einer
+operationalen Mindestauflösung kann ebenfalls vereinbar sein. Identität der
+Skalenrelationen ist nicht Identität einer Ontologie.
+
+Für eine neue dynamische Theorie wären mindestens erforderlich: elementare
+Zustände, ein Wirkungs- oder Übergangsprinzip, eine kontrollierte
+Lorentzstruktur, die Reproduktion von Allgemeiner Relativitätstheorie und
+Quantenfeldtheorie im geeigneten Grenzfall sowie mindestens eine neue,
+quantitative und falsifizierbare Vorhersage.
+
+\section{Die weiterhin offene Ursprungsfrage}
+
+Die Normalform beantwortet, wie fundamentale Größen innerhalb der bekannten
+physikalischen Ordnung zusammenhängen. Sie beantwortet nicht, warum überhaupt
+ein Universum existiert, ob ein physikalisch sinnvoller Begriff eines
+``Davor'' besteht, warum Naturgesetze mathematisch formulierbar sind oder warum
+$c$, $\hbar$ und $G$ gerade ihre beobachteten Werte besitzen. Die Gleichungen
+sind eine Landkarte der inneren Relationen, keine Geburtsurkunde des
+Universums.
+
+\section{Schluss}
+
+Die Planck-Größen bilden keine lose Liste extremer Zahlen. Unter den
+Standarddefinitionen bilden sie ein geschlossenes, positives
+Verhältnis-Wirkungs-System:
+\[
+ \frac{\lP}{\tP}=\frac{\EP}{\pP}=c,
+ \qquad
+ \lP\pP=\tP\EP=\hbar,
+ \qquad
+ \lP=\frac{\hbar}{\mP c}=\frac{G\mP}{c^2}.
+\]
+Das Resultat ist algebraisch zwingend, dimensionsanalytisch eindeutig im
+angegebenen monomialen Ansatz und maschinenprüfbar formalisiert. Seine Stärke
+liegt gerade in der klaren Grenze: Bewiesen ist die relationale Normalform;
+offen bleiben Dynamik, empirische Quantengravitation und Kosmogonie.
+
+\section*{Daten-, Code- und Lizenzhinweis}
+Die vollständigen Quellen, Lean-Beweise, Prüfskripte, Hashbelege und
+Publikationsprovenienz werden in den beiden QIK-VRT-Repositories geführt und
+über eine DOI-verknüpfte Zenodo-Fassung archiviert. Artikel und nicht
+ausführbare Dokumentation stehen unter CC BY-NC-ND 4.0. Prüfcode steht unter
+Apache-2.0, sofern die jeweilige Datei nichts Abweichendes bestimmt.
+
+\begin{thebibliography}{9}
+\bibitem{Planck1899}
+M. Planck, \emph{Über irreversible Strahlungsvorgänge}, Sitzungsberichte der
+Königlich Preußischen Akademie der Wissenschaften zu Berlin, 1899.
+
+\bibitem{CODATA2022}
+E. Tiesinga et al., \emph{CODATA Recommended Values of the Fundamental
+Physical Constants: 2022}, Reviews of Modern Physics / NIST reference data.
+
+\bibitem{LohmannManuscript}
+I. Lohmann, \emph{Mandelbrot, Anschlussordnung, Physik und Retrokausalität},
+Zenodo, DOI: \href{https://doi.org/10.5281/zenodo.21482023}{10.5281/zenodo.21482023}, 2026.
+
+\bibitem{LohmannFormalization}
+I. Lohmann, \emph{QIK-VRT: Vollständige maschinenprüfbare Formalisierung des
+formal entscheidbaren Kerns}, Zenodo, DOI:
+\href{https://doi.org/10.5281/zenodo.21488116}{10.5281/zenodo.21488116}, 2026.
+
+\bibitem{LohmannAlpha3}
+I. Lohmann, \emph{QIK-VRT: Quellengebundene Lean-4-Formalisierung des
+62-seitigen Manuskripts -- Alpha 3}, Zenodo, DOI:
+\href{https://doi.org/10.5281/zenodo.21529081}{10.5281/zenodo.21529081}, 2026.
+\end{thebibliography}
+
+\vfill
+\noindent\textit{q.e.d.}\hfill Ingolf Lohmann
+\end{document}
