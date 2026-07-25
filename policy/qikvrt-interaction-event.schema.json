@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schema/qikvrt-interaction-event-v1.json",
+  "title": "QIK-VRT encrypted interaction event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "event_id",
+    "conversation_id",
+    "sequence",
+    "role",
+    "created_at",
+    "purpose",
+    "consent",
+    "privacy",
+    "payload",
+    "previous_event_hash",
+    "tombstone",
+    "event_hash"
+  ],
+  "properties": {
+    "schema": {"const": "qikvrt_interaction_event_v1"},
+    "event_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{8,128}$"},
+    "conversation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "sequence": {"type": "integer", "minimum": 1},
+    "role": {"enum": ["user", "assistant", "tool", "system"]},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64},
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 256},
+    "consent": {
+      "type": "object",
+      "required": ["consent_id", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "scope": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "privacy": {"type": "object"},
+    "payload": {"type": "object"},
+    "previous_event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tombstone": {"type": "boolean"},
+    "event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
