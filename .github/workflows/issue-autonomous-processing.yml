@@ -1,0 +1,118 @@
+name: Autonomous issue processing
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing issue number to process
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: issue-agent-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          number="$EVENT_ISSUE_NUMBER"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then number="$INPUT_ISSUE_NUMBER"; fi
+          test -n "$number"
+          gh api "repos/$REPOSITORY/issues/$number" > issue.json
+          jq -e '.pull_request | not' issue.json >/dev/null
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Materialize request and repository context
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/issue_agent/materialize.py \
+            --issue issue.json \
+            --repository "$REPOSITORY" \
+            --output-dir "evidence/issues/$ISSUE_NUMBER"
+
+      - name: Generate repository-grounded answer
+        id: inference
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          set -euo pipefail
+          python3 scripts/issue_agent/infer.py \
+            --issue issue.json \
+            --context "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
+            --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
+            --model "openai/gpt-4.1"
+
+      - name: Enforce truthful status
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          INFERENCE_OUTCOME: ${{ steps.inference.outcome }}
+        run: |
+          set -euo pipefail
+          python3 scripts/issue_agent/finalize.py \
+            --directory "evidence/issues/$ISSUE_NUMBER" \
+            --inference-outcome "$INFERENCE_OUTCOME"
+
+      - name: Validate generated artifacts
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests/issue_agent -p 'test_*.py'
+          python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
+
+      - name: Create or update issue work branch and pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        run: |
+          set -euo pipefail
+          branch="issue-agent/$ISSUE_NUMBER"
+          git config user.name "qik-vrt-issue-agent[bot]"
+          git config user.email "qik-vrt-issue-agent[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "evidence/issues/$ISSUE_NUMBER"
+          if ! git diff --cached --quiet; then
+            git commit -m "issue-agent: process issue #$ISSUE_NUMBER"
+            git push --force-with-lease origin "$branch"
+          fi
+
+          pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "Issue agent: process #$ISSUE_NUMBER" \
+              --body "Repository-native processing artifacts for #$ISSUE_NUMBER.\n\nNo automatic merge: review and repository gates remain mandatory."
+          fi
+
+          pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
+          status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
+          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe issue is not closed automatically. Merge requires review and all repository gates."
