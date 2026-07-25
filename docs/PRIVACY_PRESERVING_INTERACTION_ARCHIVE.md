@@ -12,6 +12,10 @@ operational deployment writes interaction records into a **separately
 access-controlled archive repository or worktree** selected with
 `--archive-root`.
 
+The archive operator commits and replicates that encrypted archive through the
+private repository's normal Git policy; the public source repositories never
+receive those operational records.
+
 Each persisted interaction consists of:
 
 - a minimized JSON event envelope under `events/`;
