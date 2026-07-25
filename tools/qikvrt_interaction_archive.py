@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Fail-closed, encrypted, append-only archive for user and machine interactions.
-
-The public source repository contains this protocol and implementation, never plaintext
-conversation payloads or encryption identities. A deployment points ``--archive-root``
-at a separately access-controlled repository/worktree. Payloads are encrypted with age;
-metadata is minimized, machine-readable, hash-linked, and exportable on explicit request.
-"""
+"""Encrypted, append-only, machine-readable archive for accountable interactions."""
 from __future__ import annotations
 
 import argparse
@@ -53,8 +47,11 @@ def secure_root(path: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     if root.is_symlink():
         raise ArchiveError("BLOCK: archive root must not be a symlink")
-    (root / "events").mkdir(exist_ok=True)
-    (root / "blobs").mkdir(exist_ok=True)
+    for name in ("events", "blobs"):
+        child = root / name
+        child.mkdir(exist_ok=True)
+        if child.is_symlink() or not child.is_dir():
+            raise ArchiveError(f"BLOCK: unsafe archive directory: {child}")
     return root
 
 
@@ -66,10 +63,23 @@ def read_json(path: Path) -> dict[str, object]:
     return value
 
 
+def ordered_events(root: Path) -> list[tuple[Path, dict[str, object]]]:
+    values: list[tuple[int, Path, dict[str, object]]] = []
+    for path in (root / "events").glob("*.json"):
+        event = read_json(path)
+        sequence = event.get("sequence")
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
+            raise ArchiveError(f"BLOCK: invalid event sequence at {path}")
+        values.append((sequence, path, event))
+    values.sort(key=lambda item: item[0])
+    if [item[0] for item in values] != list(range(1, len(values) + 1)):
+        raise ArchiveError("BLOCK: event sequence is incomplete or duplicated")
+    return [(path, event) for _, path, event in values]
+
+
 def run_age_encrypt(age_binary: str, recipient: str, source: Path, target: Path) -> None:
     if not recipient.strip():
         raise ArchiveError("BLOCK: age recipient is required")
-    target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as handle:
         temporary = Path(handle.name)
     try:
@@ -105,22 +115,16 @@ def run_age_decrypt(age_binary: str, identity: Path, source: Path) -> bytes:
     return completed.stdout
 
 
-def event_paths(root: Path) -> list[Path]:
-    return sorted((root / "events").glob("*.json"))
-
-
 def verify(root: Path) -> dict[str, object]:
     previous = "0" * 64
     seen: set[str] = set()
-    count = 0
-    for path in event_paths(root):
-        event = read_json(path)
-        event_hash = str(event.get("event_hash", ""))
+    events = ordered_events(root)
+    for path, event in events:
         projection = dict(event)
-        projection.pop("event_hash", None)
+        event_hash = str(projection.pop("event_hash", ""))
+        event_id = str(event.get("event_id", ""))
         if event.get("schema") != SCHEMA:
             raise ArchiveError(f"BLOCK: unsupported event schema: {path}")
-        event_id = str(event.get("event_id", ""))
         if not event_id or event_id in seen or path.stem != event_id:
             raise ArchiveError(f"BLOCK: duplicate or mismatched event identity: {path}")
         seen.add(event_id)
@@ -133,23 +137,23 @@ def verify(root: Path) -> dict[str, object]:
             raise ArchiveError(f"BLOCK: payload descriptor is absent at {path}")
         blob_name = str(payload.get("ciphertext_path", ""))
         if blob_name:
-            blob = root / blob_name
+            blob = (root / blob_name).resolve()
+            if root not in blob.parents:
+                raise ArchiveError(f"BLOCK: ciphertext path escapes archive: {path}")
             require_regular(blob, "ciphertext blob")
             raw = blob.read_bytes()
-            if not HEX64.fullmatch(str(payload.get("ciphertext_sha256", ""))) or sha256(raw) != payload.get("ciphertext_sha256"):
+            expected = str(payload.get("ciphertext_sha256", ""))
+            if not HEX64.fullmatch(expected) or sha256(raw) != expected:
                 raise ArchiveError(f"BLOCK: ciphertext digest mismatch at {path}")
         previous = event_hash
-        count += 1
-    return {"state": "VERIFIED", "event_count": count, "head_event_hash": previous}
+    return {"state": "VERIFIED", "event_count": len(events), "head_event_hash": previous}
 
 
 def append(args: argparse.Namespace) -> dict[str, object]:
     if args.confirm != CONFIRM_APPEND:
         raise ArchiveError("BLOCK: exact persistence confirmation is required")
-    if args.role not in ROLE_VALUES:
-        raise ArchiveError("BLOCK: unsupported interaction role")
-    if not args.consent_id.strip() or not args.purpose.strip():
-        raise ArchiveError("BLOCK: consent identity and declared purpose are required")
+    if args.role not in ROLE_VALUES or not args.consent_id.strip() or not args.purpose.strip():
+        raise ArchiveError("BLOCK: role, consent identity and purpose are required")
     source = Path(args.content_file).expanduser().resolve()
     require_regular(source, "plaintext input")
     raw = source.read_bytes()
@@ -161,7 +165,8 @@ def append(args: argparse.Namespace) -> dict[str, object]:
     if not re.fullmatch(r"[A-Za-z0-9._-]{8,128}", event_id):
         raise ArchiveError("BLOCK: invalid event identity")
     target = root / "blobs" / f"{event_id}.age"
-    if target.exists() or (root / "events" / f"{event_id}.json").exists():
+    event_path = root / "events" / f"{event_id}.json"
+    if target.exists() or event_path.exists():
         raise ArchiveError("BLOCK: event identity already exists")
     run_age_encrypt(args.age_binary, args.recipient, source, target)
     encrypted = target.read_bytes()
@@ -193,7 +198,6 @@ def append(args: argparse.Namespace) -> dict[str, object]:
         "tombstone": False,
     }
     event["event_hash"] = sha256(canonical(event))
-    event_path = root / "events" / f"{event_id}.json"
     event_path.write_text(json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     verify(root)
     return {"state": "PERSISTED_ENCRYPTED", "event_id": event_id, "event_hash": event["event_hash"]}
@@ -209,8 +213,7 @@ def export(args: argparse.Namespace) -> dict[str, object]:
     if output.exists() and not args.overwrite:
         raise ArchiveError("BLOCK: export output already exists")
     records: list[dict[str, object]] = []
-    for path in event_paths(root):
-        event = read_json(path)
+    for _, event in ordered_events(root):
         if args.conversation_id and event.get("conversation_id") != args.conversation_id:
             continue
         record = dict(event)
@@ -223,14 +226,14 @@ def export(args: argparse.Namespace) -> dict[str, object]:
             payload["content_utf8"] = plaintext.decode("utf-8")
         record["payload"] = payload
         records.append(record)
-    export_value = {
+    value = {
         "schema": "qikvrt_interaction_export_v1",
         "authorization": {"request_id": args.request_id, "confirm": args.confirm},
         "event_count": len(records),
         "events": records,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(export_value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    output.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return {"state": "EXPORTED", "event_count": len(records), "output": str(output), "sha256": sha256(output.read_bytes())}
 
 
@@ -238,21 +241,21 @@ def tombstone(args: argparse.Namespace) -> dict[str, object]:
     if args.confirm != CONFIRM_TOMBSTONE:
         raise ArchiveError("BLOCK: exact tombstone confirmation is required")
     root = secure_root(Path(args.archive_root))
-    verify(root)
+    state = verify(root)
     source_event = read_json(root / "events" / f"{args.event_id}.json")
     event_id = uuid.uuid4().hex
     event: dict[str, object] = {
         "schema": SCHEMA,
         "event_id": event_id,
         "conversation_id": source_event.get("conversation_id"),
-        "sequence": len(event_paths(root)) + 1,
+        "sequence": int(state["event_count"]) + 1,
         "role": "system",
         "created_at": args.created_at,
         "purpose": "retention_tombstone",
         "consent": {"consent_id": args.authorization_id, "scope": "retention_tombstone"},
         "privacy": {"plaintext_in_repository": False, "metadata_minimized": True},
         "payload": {"target_event_id": args.event_id, "ciphertext_path": ""},
-        "previous_event_hash": verify(root)["head_event_hash"],
+        "previous_event_hash": state["head_event_hash"],
         "tombstone": True,
     }
     event["event_hash"] = sha256(canonical(event))
@@ -266,7 +269,6 @@ def parser() -> argparse.ArgumentParser:
     sub = value.add_subparsers(dest="command", required=True)
     verify_parser = sub.add_parser("verify")
     verify_parser.add_argument("--archive-root", required=True)
-
     append_parser = sub.add_parser("append")
     append_parser.add_argument("--archive-root", required=True)
     append_parser.add_argument("--content-file", required=True)
@@ -282,7 +284,6 @@ def parser() -> argparse.ArgumentParser:
     append_parser.add_argument("--media-type", default="text/plain; charset=utf-8")
     append_parser.add_argument("--max-bytes", type=int, default=4 * 1024 * 1024)
     append_parser.add_argument("--confirm", required=True)
-
     export_parser = sub.add_parser("export")
     export_parser.add_argument("--archive-root", required=True)
     export_parser.add_argument("--identity-file", required=True)
@@ -292,7 +293,6 @@ def parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--conversation-id")
     export_parser.add_argument("--overwrite", action="store_true")
     export_parser.add_argument("--confirm", required=True)
-
     tombstone_parser = sub.add_parser("tombstone")
     tombstone_parser.add_argument("--archive-root", required=True)
     tombstone_parser.add_argument("--event-id", required=True)
