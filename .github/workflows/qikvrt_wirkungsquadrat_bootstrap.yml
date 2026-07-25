@@ -7,7 +7,7 @@ name: QIK-VRT Wirkungsquadrat source bootstrap
     branches:
       - agent/wirkungsquadrat-v1
     paths:
-      - bootstrap/wirkungsquadrat-source-v1.zip.b64
+      - bootstrap/wirkungsquadrat-source-v1/**
       - .github/workflows/qikvrt_wirkungsquadrat_bootstrap.yml
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
         id: bundle
         shell: bash
         run: |
-          if [ -f bootstrap/wirkungsquadrat-source-v1.zip.b64 ]; then
+          if [ -f bootstrap/wirkungsquadrat-source-v1/manifest.json ]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"
@@ -55,19 +55,43 @@ jobs:
           from __future__ import annotations
           import base64, hashlib, json, pathlib, stat, zipfile
 
-          B64 = pathlib.Path('bootstrap/wirkungsquadrat-source-v1.zip.b64')
-          EXPECTED_B64_SHA256 = '5fe629adee6585bb177a46a80b60988132f99ec56b13ada303e1ef020c26a223'
+          CHUNKS = pathlib.Path('bootstrap/wirkungsquadrat-source-v1')
+          EXPECTED_MANIFEST_SHA256 = '091cb948ce066d8cc7881a56ddfab660d5d9de6ec20b4ed7218f4dccda594811'
           EXPECTED_ZIP_SHA256 = 'd0324281b02526b805fec910daa2ce158b0437239d04805b533b95c7a1094912'
           EXPECTED_FILES = 40
-          raw_b64 = B64.read_bytes()
-          if hashlib.sha256(raw_b64).hexdigest() != EXPECTED_B64_SHA256:
-              raise SystemExit('BLOCK: source-bundle Base64 hash mismatch')
+          manifest_path = CHUNKS / 'manifest.json'
+          manifest_raw = manifest_path.read_bytes()
+          if hashlib.sha256(manifest_raw).hexdigest() != EXPECTED_MANIFEST_SHA256:
+              raise SystemExit('BLOCK: source chunk manifest hash mismatch')
+          chunk_manifest = json.loads(manifest_raw.decode('utf-8'))
+          if (
+              chunk_manifest.get('schema') != 'qikvrt_wirkungsquadrat_source_chunk_manifest_v1'
+              or chunk_manifest.get('archive_sha256') != EXPECTED_ZIP_SHA256
+              or chunk_manifest.get('encoding') != 'rfc4648-base64'
+              or chunk_manifest.get('part_count') != 9
+          ):
+              raise SystemExit('BLOCK: source chunk manifest identity differs')
+          encoded = []
+          parts = chunk_manifest.get('parts')
+          if not isinstance(parts, list) or len(parts) != 9:
+              raise SystemExit('BLOCK: source chunk cardinality differs')
+          for index, entry in enumerate(parts, 1):
+              if set(entry) != {'name', 'characters', 'sha256'} or entry['name'] != f'part-{index:03d}.b64':
+                  raise SystemExit('BLOCK: source chunk order or schema differs')
+              path = CHUNKS / entry['name']
+              raw = path.read_bytes()
+              if hashlib.sha256(raw).hexdigest() != entry['sha256']:
+                  raise SystemExit(f"BLOCK: source chunk hash mismatch: {entry['name']}")
+              text = raw.decode('ascii')
+              if not text.endswith('\n') or len(text) - 1 != entry['characters']:
+                  raise SystemExit(f"BLOCK: source chunk length differs: {entry['name']}")
+              encoded.append(text[:-1])
           try:
-              archive = base64.b64decode(raw_b64, validate=True)
+              archive = base64.b64decode(''.join(encoded), validate=True)
           except Exception as exc:
-              raise SystemExit('BLOCK: invalid source-bundle Base64') from exc
-          if hashlib.sha256(archive).hexdigest() != EXPECTED_ZIP_SHA256:
-              raise SystemExit('BLOCK: source-bundle ZIP hash mismatch')
+              raise SystemExit('BLOCK: invalid reconstructed source-bundle Base64') from exc
+          if len(archive) != chunk_manifest.get('archive_size') or hashlib.sha256(archive).hexdigest() != EXPECTED_ZIP_SHA256:
+              raise SystemExit('BLOCK: source-bundle ZIP size or hash mismatch')
           bundle = pathlib.Path('.qikvrt/wirkungsquadrat-source-v1.zip')
           bundle.parent.mkdir(parents=True, exist_ok=True)
           bundle.write_bytes(archive)
@@ -117,7 +141,7 @@ jobs:
           evidence = {
               'schema': 'qikvrt_wirkungsquadrat_source_bundle_evidence_v1',
               'status': 'PASS',
-              'base64_sha256': EXPECTED_B64_SHA256,
+              'chunk_manifest_sha256': EXPECTED_MANIFEST_SHA256,
               'archive_sha256': EXPECTED_ZIP_SHA256,
               'materialized_file_count': EXPECTED_FILES,
           }
