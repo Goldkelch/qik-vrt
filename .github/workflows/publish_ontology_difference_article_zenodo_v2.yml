@@ -1,0 +1,90 @@
+name: Publish ontology article to Zenodo v2
+
+on:
+  push:
+    branches: [publication/ontology-difference-reverse-engineering]
+    paths: [release/ontology-difference-zenodo-request-v2.json]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Validate exact candidate and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.error, urllib.parse, urllib.request
+          marker_path = pathlib.Path('release/ontology-difference-zenodo-request-v2.json')
+          marker = json.loads(marker_path.read_text(encoding='utf-8'))
+          expected = {
+            'schema':'qikvrt_zenodo_publication_request_v2',
+            'action':'publish',
+            'confirm':'PUBLISH_ONTOLOGY_DIFFERENCE_ARTICLE_AND_META_REVIEW',
+            'authority_repository':'Goldkelch/qik-vrt',
+            'mirror_repository':'ingolf-lohmann/qik-vrt',
+            'status':'EFFECT_ACK_CONTINUE'
+          }
+          for k,v in expected.items():
+            if marker.get(k)!=v: raise SystemExit('BLOCK: marker mismatch '+k)
+          parent=subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()
+          if marker.get('candidate_commit')!=parent: raise SystemExit('BLOCK: candidate commit mismatch')
+          changed=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD^','HEAD'],text=True).splitlines()
+          if changed!=[str(marker_path)]: raise SystemExit('BLOCK: authorization commit changed more than marker')
+          package=pathlib.Path('publications/ontology-des-unterschieds-reverse-engineering')
+          names=['ORIGINAL_ARTICLE.md','META_REVIEW.md','PUBLICATION.json','README.md']
+          manifest=[]
+          for name in names:
+            data=(package/name).read_bytes()
+            manifest.append({'name':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          token=os.environ.get('ZENODO_ACCESS_TOKEN','')
+          if len(token)<20 or any(c.isspace() for c in token): raise SystemExit('BLOCK: ZENODO_ACCESS_TOKEN unavailable')
+          api='https://zenodo.org/api'
+          def call(method,url,payload=None,ctype='application/json'):
+            data=None if payload is None else (payload if isinstance(payload,bytes) else json.dumps(payload,ensure_ascii=False).encode())
+            req=urllib.request.Request(url,data=data,method=method,headers={'Authorization':'Bearer '+token,'Accept':'application/json','Content-Type':ctype,'User-Agent':'qik-vrt-publication/2'})
+            try:
+              with urllib.request.urlopen(req,timeout=90) as r:
+                raw=r.read(); return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+              raise SystemExit(f'BLOCK: Zenodo HTTP {e.code}: '+e.read(4096).decode('utf-8','replace')[:1000])
+          dep=call('POST',api+'/deposit/depositions',{})
+          depid=dep.get('id'); bucket=(dep.get('links') or {}).get('bucket')
+          if not isinstance(depid,int) or not isinstance(bucket,str) or not bucket.startswith('https://zenodo.org/api/files/'):
+            raise SystemExit('BLOCK: unsafe deposition response')
+          metadata={'metadata':{
+            'title':'Die Ontologie des Unterschieds als universaler Reverse-Engineering-Mechanismus',
+            'upload_type':'publication','publication_type':'article',
+            'description':'Originalartikel von Ingolf Lohmann mit getrennt ausgewiesener wissenschaftlicher Meta-Betrachtung und fail-closed QIK-VRT-Verifikationsstatus.',
+            'creators':[{'name':'Lohmann, Ingolf'}],
+            'contributors':[{'name':'OpenAI ChatGPT','type':'Other'}],
+            'language':'deu','license':'cc-by-nc-nd-4.0',
+            'keywords':['QIK-VRT','Ontologie des Unterschieds','Reverse Engineering','Informationswirksamkeit','Evidenz','Verantwortung'],
+            'related_identifiers':[{'identifier':'https://github.com/Goldkelch/qik-vrt','relation':'isSupplementTo','scheme':'url'},{'identifier':'https://github.com/ingolf-lohmann/qik-vrt','relation':'isSupplementTo','scheme':'url'}],
+            'notes':'Kein FINAL_PASS und kein EFFECT_ACK_DONE; Claim-Inventar, Lean-Kernel-Receipts, Traceability und Authority-/Mirror-Synchronisation bleiben gesonderte Abschlusskriterien.'}}
+          call('PUT',api+f'/deposit/depositions/{depid}',metadata)
+          for item in manifest:
+            call('PUT',bucket+'/'+urllib.parse.quote(item['name']), (package/item['name']).read_bytes(),'application/octet-stream')
+          published=call('POST',api+f'/deposit/depositions/{depid}/actions/publish')
+          receipt={'schema':'qikvrt_zenodo_publication_receipt_v1','candidate_commit':parent,'deposition_id':depid,'doi':published.get('doi') or (published.get('metadata') or {}).get('doi'),'record_url':(published.get('links') or {}).get('record_html'),'files':manifest,'status':'PUBLISHED_NOT_KERNEL_FINAL'}
+          pathlib.Path('zenodo-publication-receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          PY
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ontology-difference-zenodo-receipt
+          path: zenodo-publication-receipt.json
+          if-no-files-found: warn
+          retention-days: 90
