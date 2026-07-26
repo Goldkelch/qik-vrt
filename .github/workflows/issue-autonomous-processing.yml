@@ -80,12 +80,14 @@ jobs:
             --directory "evidence/issues/$ISSUE_NUMBER" \
             --inference-outcome "$INFERENCE_OUTCOME"
 
-      - name: Validate generated artifacts
+      - name: Validate and promote generated artifacts
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests/issue_agent -p 'test_*.py'
+          python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
+          python3 scripts/issue_agent/promote.py "evidence/issues/$ISSUE_NUMBER"
           python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
 
       - name: Create or update issue work branch and pull request
@@ -110,9 +112,9 @@ jobs:
               --base main \
               --head "$branch" \
               --title "Issue agent: process #$ISSUE_NUMBER" \
-              --body "Repository-native processing artifacts for #$ISSUE_NUMBER.\n\nNo automatic merge: review and repository gates remain mandatory."
+              --body "Repository-native processing artifacts for #$ISSUE_NUMBER.\n\nThe resumable auto-finish workflow may merge this PR only after EFFECT_ACK_DONE and successful repository checks. It then synchronizes the mirror, creates the common tag, and closes the issue."
           fi
 
           pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
           status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
-          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe issue is not closed automatically. Merge requires review and all repository gates."
+          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe repository auto-finish transaction now owns merge, mirror synchronization, common tagging, and issue closure. Any failed gate remains BLOCK."
