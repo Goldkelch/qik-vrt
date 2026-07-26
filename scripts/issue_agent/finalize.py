@@ -49,8 +49,14 @@ def run_deterministic_fallback(directory: Path) -> dict[str, Any]:
         raise RuntimeError("fallback planner did not produce STATUS.work-units.json")
     aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
 
-    # The work-unit aggregate becomes canonical only after successful parsing and
-    # retains the fail-closed automatic-merge boundary from the planner.
+    if aggregate.get("status") in {"DONE", "EFFECT_ACK_DONE"}:
+        # The deterministic fallback is not permitted to elevate the issue to a
+        # final state by itself. Scientific completion still requires the
+        # dedicated completion gate and all repository receipts.
+        aggregate["status"] = "EFFECT_ACK_CONTINUE"
+        aggregate["automatic_merge"] = False
+        aggregate["completion_gate_required"] = True
+
     aggregate["fallback_mode"] = "deterministic_work_units"
     aggregate["no_false_pass"] = True
     write_json(directory / "STATUS.json", aggregate)
@@ -83,8 +89,6 @@ def main() -> None:
     try:
         run_deterministic_fallback(directory)
     except (OSError, RuntimeError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-        # A broken fallback is itself a precise fail-closed blocker. Never hide it
-        # behind a successful or mergeable status.
         write_json(directory / "STATUS.json", coarse_status(succeeded=False, fallback_error=str(exc)))
         raise
 
