@@ -24,10 +24,17 @@ def validate(directory: Path) -> None:
         raise SystemExit("INVALID_ISSUE_NUMBER")
 
     status = json.loads((directory / "STATUS.json").read_text(encoding="utf-8"))
-    if status.get("status") not in {"DONE", "CONTINUE", "ISOLATE", "BLOCK"}:
+    gate = status.get("status")
+    if gate not in {"DONE", "CONTINUE", "ISOLATE", "BLOCK"}:
         raise SystemExit("INVALID_GATE_STATUS")
-    if status.get("automatic_merge") is not False:
-        raise SystemExit("AUTOMATIC_MERGE_MUST_REMAIN_FALSE")
+    if gate == "DONE":
+        if status.get("automatic_merge") is not True:
+            raise SystemExit("DONE_REQUIRES_AUTOMATIC_MERGE")
+        for key in ("automatic_issue_close", "mirror_sync_required", "common_tag_required"):
+            if status.get(key) is not True:
+                raise SystemExit(f"DONE_REQUIRES_{key.upper()}")
+    elif status.get("automatic_merge") is not False:
+        raise SystemExit("NON_DONE_MUST_NOT_AUTO_MERGE")
     if status.get("no_false_pass") is not True:
         raise SystemExit("NO_FALSE_PASS_GATE_FAILED")
 
