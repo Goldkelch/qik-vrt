@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Promote a validated issue-agent evidence bundle to EFFECT_ACK_DONE.
+"""Promote a validated issue-agent evidence bundle to DONE.
 
-This script does not evaluate scientific truth. It attests only that the repository-native
-processing contract completed: request/context/answer/status exist, model inference
-completed, validation already ran, and the answer is non-empty and does not declare BLOCK.
+This attests completion of the repository processing contract, not universal scientific truth.
 """
 from __future__ import annotations
 
@@ -12,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-REQUIRED = ("REQUEST.json", "CONTEXT.md", "ANSWER.md", "STATUS.json")
+REQUIRED = ("REQUEST.json", "REQUEST.sha256", "CONTEXT.md", "ANSWER.md", "STATUS.json")
 
 
 def main() -> None:
@@ -34,17 +32,15 @@ def main() -> None:
     if not answer or "## Gate result\n\nBLOCK" in answer:
         raise SystemExit("BLOCK: answer is empty or explicitly blocked")
 
-    status.update(
-        {
-            "status": "EFFECT_ACK_DONE",
-            "automatic_merge": True,
-            "automatic_issue_close": True,
-            "mirror_sync_required": True,
-            "common_tag_required": True,
-            "validated_completion_promoted_at": datetime.now(timezone.utc).isoformat(),
-            "no_false_pass": True,
-        }
-    )
+    status.update({
+        "status": "DONE",
+        "automatic_merge": True,
+        "automatic_issue_close": True,
+        "mirror_sync_required": True,
+        "common_tag_required": True,
+        "validated_completion_promoted_at": datetime.now(timezone.utc).isoformat(),
+        "no_false_pass": True,
+    })
     status_path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
