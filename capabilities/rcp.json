@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "capability_id": "qikvrt.protocol.repository-capability-protocol",
+  "title": "Repository Capability Protocol",
+  "description": "Machine-discoverable repository capabilities, implementation locations, execution plans, failure classes and effect receipts.",
+  "version": "0.0.0-draft-00",
+  "status": "PARTIAL",
+  "capability_class": "protocol",
+  "implementation_locations": [
+    "docs/architecture/REPOSITORY_CAPABILITY_SELF_DISCLOSURE_SYSTEM.md",
+    "schemas/qikvrt-capability-record.schema.json",
+    "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
+  ],
+  "invocation": {
+    "discovery_paths": [
+      "/.well-known/rcp",
+      "capabilities/catalog.json",
+      "capabilities/runtime-status.json"
+    ],
+    "execution_enabled": false,
+    "reason": "Reference implementation, API materializer and execution planner are not yet implemented."
+  },
+  "required_permissions": [
+    "contents:read",
+    "metadata:read"
+  ],
+  "authority_coverage": {
+    "repository": "Goldkelch/qik-vrt",
+    "state": "SOURCE_PERSISTED_ON_PR_BRANCH"
+  },
+  "mirror_coverage": {
+    "repository": "ingolf-lohmann/qik-vrt",
+    "state": "NOT_SYNCHRONIZED"
+  },
+  "tests": [],
+  "evidence": [
+    "PR #102"
+  ],
+  "failure_classes": [
+    "RCP_REFERENCE_IMPLEMENTATION_MISSING",
+    "RCP_TEST_RECEIPTS_MISSING",
+    "RCP_AUTHORITY_MIRROR_SYNC_MISSING",
+    "IETF_DATATRACKER_SUBMISSION_NOT_EXECUTED"
+  ],
+  "next_effect": {
+    "effect_id": "implement-rcp-catalog-materializer",
+    "description": "Implement a deterministic scanner that produces capabilities/catalog.json, locations.json, runtime-status.json and docs/CAPABILITIES.md, then validate them against the schema.",
+    "automatable": true,
+    "owner_action_required": false
+  },
+  "provenance": {
+    "author": "Ingolf Lohmann",
+    "source_issue": 87,
+    "source_pull_request": 102,
+    "status": "EFFECT_ACK_CONTINUE"
+  }
+}
