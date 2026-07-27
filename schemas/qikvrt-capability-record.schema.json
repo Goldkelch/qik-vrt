@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/qikvrt-capability-record.schema.json",
+  "title": "QIK-VRT Capability Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capability_id",
+    "title",
+    "status",
+    "capability_class",
+    "implementation_locations",
+    "invocation",
+    "authority_coverage",
+    "mirror_coverage",
+    "tests",
+    "evidence",
+    "failure_classes",
+    "next_effect",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "capability_id": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]+$"},
+    "title": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "semantic_version": {"type": "string"},
+    "status": {
+      "type": "string",
+      "enum": ["AVAILABLE", "PARTIAL", "BLOCKED", "UNSUPPORTED", "DEPRECATED"]
+    },
+    "capability_class": {"type": "string", "minLength": 1},
+    "implementation_locations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "location"],
+        "properties": {
+          "kind": {"type": "string"},
+          "location": {"type": "string"},
+          "ref": {"type": ["string", "null"]},
+          "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api_routes": {"type": "array", "items": {"type": "string"}},
+        "commands": {"type": "array", "items": {"type": "string"}},
+        "workflows": {"type": "array", "items": {"type": "string"}},
+        "triggers": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "required_permissions": {"type": "array", "items": {"type": "string"}},
+    "required_secret_names": {"type": "array", "items": {"type": "string"}},
+    "authority_coverage": {"type": "string"},
+    "mirror_coverage": {"type": "string"},
+    "tests": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "idempotency": {"type": "string"},
+    "retry_semantics": {"type": "string"},
+    "failure_classes": {"type": "array", "items": {"type": "string"}},
+    "next_effect": {"type": "string"},
+    "owner_bootstrap_actions": {"type": "array", "items": {"type": "string"}},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_commit", "generated_at", "record_sha256"],
+      "properties": {
+        "source_commit": {"type": "string"},
+        "generated_at": {"type": "string", "format": "date-time"},
+        "record_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    }
+  }
+}

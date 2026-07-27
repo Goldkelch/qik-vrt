@@ -1,0 +1,68 @@
+{
+  "schema_version": "qikvrt_capability_record_v1",
+  "capability_id": "qikvrt.repository.anticipation.v1",
+  "title": "Repository Trend and Anticipation Engine",
+  "description": "Derives one canonical next valid repository state and one minimal deterministic next effect from verified ordered observations, discrete derivatives and transition rules.",
+  "semantic_version": "1.0.0-draft",
+  "status": "PARTIAL",
+  "capability_class": "monitoring",
+  "implementation_locations": [
+    "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
+    "schemas/qikvrt-anticipation-state.schema.json",
+    "anticipation/",
+    "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
+    "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
+  ],
+  "invocation": {
+    "public_routes": [
+      "GET /.well-known/rcp",
+      "GET /rcp/anticipation",
+      "GET /rcp/anticipation/current",
+      "GET /rcp/anticipation/history",
+      "POST /rcp/anticipation/observe"
+    ],
+    "github_native": [
+      "repository_dispatch:qikvrt-observe",
+      "workflow_dispatch:qikvrt-anticipation"
+    ]
+  },
+  "required_permissions": [
+    "contents:read",
+    "actions:read",
+    "checks:read",
+    "issues:read",
+    "pull_requests:read"
+  ],
+  "required_secrets": [],
+  "authority_coverage": "PARTIAL",
+  "mirror_coverage": "MISSING",
+  "tests": [
+    "schema validation",
+    "deterministic replay",
+    "insufficient-observation negative test",
+    "activity-versus-progress test",
+    "single-next-effect invariant",
+    "post-dispatch re-observation test",
+    "planner replacement conformance test"
+  ],
+  "evidence": [
+    "PR #102 branch artifacts"
+  ],
+  "failure_classes": [
+    "INSUFFICIENT_VERIFIED_OBSERVATIONS",
+    "TREND_DERIVATION_NONDETERMINISTIC",
+    "NEXT_EFFECT_NOT_SELECTED",
+    "NEXT_EFFECT_NOT_DISPATCHED",
+    "EXECUTION_RECEIPT_MISSING",
+    "PRODUCTIVE_CHAIN_STALLED",
+    "AUTHORITY_MIRROR_STATE_DIVERGENCE",
+    "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
+  ],
+  "next_effect": "Execute work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json on the exact PR head and materialize tested anticipation projections.",
+  "owner_only_bootstrap_actions": [],
+  "provenance": {
+    "repository": "Goldkelch/qik-vrt",
+    "branch": "agent/repository-capability-self-disclosure-v1",
+    "sha256_binding": "PENDING_INTEGRITY_MATERIALIZATION"
+  }
+}

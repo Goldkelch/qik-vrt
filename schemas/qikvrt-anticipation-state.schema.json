@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/qikvrt-anticipation-state.schema.json",
+  "title": "QIK-VRT Anticipation State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observation_id",
+    "repository",
+    "observed_at",
+    "current_state",
+    "state_history",
+    "trend",
+    "derivatives",
+    "anticipated_state",
+    "next_effect",
+    "execution",
+    "evidence",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "qikvrt_anticipation_state_v1"},
+    "observation_id": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "current_state": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["state_id", "classification", "productive_chain_position"],
+      "properties": {
+        "state_id": {"type": "string"},
+        "classification": {
+          "enum": ["AUFTRAG_ANGENOMMEN", "ARBEIT_BEGONNEN", "TEILFORTSCHRITT", "BLOCKER", "STILLSTAND", "KERNEL_VERIFIZIERTER_ABSCHLUSS"]
+        },
+        "productive_chain_position": {"type": "string"}
+      }
+    },
+    "state_history": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["state_id", "observed_at", "state_digest"],
+        "properties": {
+          "state_id": {"type": "string"},
+          "observed_at": {"type": "string", "format": "date-time"},
+          "state_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "trend": {
+      "type": "object",
+      "required": ["direction", "basis", "productive_progress"],
+      "properties": {
+        "direction": {"enum": ["ADVANCING", "STABLE", "REGRESSING", "OSCILLATING", "UNKNOWN"]},
+        "basis": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "productive_progress": {"type": "boolean"}
+      }
+    },
+    "derivatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order", "name", "value", "interpretation"],
+        "properties": {
+          "order": {"type": "integer", "minimum": 1},
+          "name": {"type": "string"},
+          "value": {},
+          "interpretation": {"type": "string"}
+        }
+      }
+    },
+    "anticipated_state": {
+      "type": "object",
+      "required": ["state_id", "derivation_rule", "deterministic"],
+      "properties": {
+        "state_id": {"type": "string"},
+        "derivation_rule": {"type": "string"},
+        "deterministic": {"const": true}
+      }
+    },
+    "next_effect": {
+      "type": "object",
+      "required": ["effect_id", "description", "executor_capability", "preconditions", "expected_receipt"],
+      "properties": {
+        "effect_id": {"type": "string"},
+        "description": {"type": "string"},
+        "executor_capability": {"type": "string"},
+        "preconditions": {"type": "array", "items": {"type": "string"}},
+        "expected_receipt": {"type": "string"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["status", "automatically_dispatched"],
+      "properties": {
+        "status": {"enum": ["PENDING", "DISPATCHED", "RUNNING", "BLOCKED", "RECEIPT_OBSERVED"]},
+        "automatically_dispatched": {"type": "boolean"},
+        "failure_class": {"type": ["string", "null"]}
+      }
+    },
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "provenance": {
+      "type": "object",
+      "required": ["source_revision", "sha256"],
+      "properties": {
+        "source_revision": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    }
+  }
+}
