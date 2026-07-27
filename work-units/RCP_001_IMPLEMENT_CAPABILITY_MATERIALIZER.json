@@ -1,0 +1,76 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "RCP-001",
+  "title": "Implement Repository Capability Protocol catalog materializer",
+  "status": "READY",
+  "priority": "HIGHEST",
+  "requested_effect": "Generate and verify the public RCP capability resources from the live repository structure.",
+  "inputs": {
+    "authority_repository": "Goldkelch/qik-vrt",
+    "mirror_repository": "ingolf-lohmann/qik-vrt",
+    "source_pull_request": 102,
+    "source_issue": 87,
+    "specification": "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
+  },
+  "ordered_steps": [
+    {
+      "id": "scan",
+      "effect": "Scan workflows, tools, scripts, runtime, protocol, adapters, release, Zenodo, IETF, formalization, tests and evidence locations."
+    },
+    {
+      "id": "materialize",
+      "effect": "Create capabilities/catalog.json, capabilities/locations.json, capabilities/runtime-status.json, capabilities/history.jsonl and docs/CAPABILITIES.md."
+    },
+    {
+      "id": "validate",
+      "effect": "Validate every record against schemas/qikvrt-capability-record.schema.json and fail closed on stale, contradictory or unsupported claims."
+    },
+    {
+      "id": "test",
+      "effect": "Add positive, negative, stale-record and query-before-denial tests."
+    },
+    {
+      "id": "integrate",
+      "effect": "Connect monitor and watchdog consumers and expose the Git-native discovery fallback."
+    },
+    {
+      "id": "verify-authority",
+      "effect": "Run mandatory gates on the exact Authority head revision."
+    },
+    {
+      "id": "synchronize-mirror",
+      "effect": "After successful promotion, synchronize the verified delta to the Mirror and produce an equality receipt."
+    }
+  ],
+  "mandatory_outputs": [
+    "capabilities/catalog.json",
+    "capabilities/locations.json",
+    "capabilities/runtime-status.json",
+    "capabilities/history.jsonl",
+    "docs/CAPABILITIES.md",
+    "tests/test_rcp_capability_materializer.*",
+    "evidence/rcp/authority-mirror-receipt.json"
+  ],
+  "failure_classes": [
+    "CAPABILITY_SCAN_INCOMPLETE",
+    "CAPABILITY_RECORD_SCHEMA_INVALID",
+    "CAPABILITY_CLAIM_WITHOUT_RUNTIME_EVIDENCE",
+    "QUERY_BEFORE_DENIAL_NOT_ENFORCED",
+    "AUTHORITY_EXACT_HEAD_GATES_NOT_GREEN",
+    "MIRROR_SYNCHRONIZATION_NOT_VERIFIED"
+  ],
+  "acceptance": {
+    "no_false_pass": true,
+    "exact_head_binding_required": true,
+    "full_traceability_required": true,
+    "authority_mirror_receipt_required": true,
+    "completion_claim": "FORBIDDEN_UNTIL_ALL_ACCEPTANCE_CONDITIONS_PASS"
+  },
+  "next_effect": "Repository agent implements the scanner and tests on PR #102 or a successor implementation branch, then requests exact-head gate execution.",
+  "authorization": {
+    "user_freigabe": "Freigabe erteilt. Volle Kraft voraus.",
+    "scope": "Preparation and repository-native automated implementation; no secret disclosure or biometric credential persistence.",
+    "record_type": "conversation_instruction_reference",
+    "not_an_identity_proof": true
+  }
+}
