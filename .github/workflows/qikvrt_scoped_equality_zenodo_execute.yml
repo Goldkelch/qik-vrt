@@ -27,6 +27,7 @@ jobs:
       MIRROR_EXPECTED: 41874792196f5234cbbbd5f099914f0ee409855a
       RECEIPT_BLOB_EXPECTED: 83c80c53d330eb929defb3739ecc9184e6754639
       INDEX_BLOB_EXPECTED: 24ed0bf0736b444d51e6773c66b57301cb6b9727
+      MANIFEST_BLOB_EXPECTED: 732d7afda8aaeed8c6a6e1e82a444d8105325ae2
     steps:
       - name: Check for an already persisted publication receipt
         id: preflight
@@ -47,19 +48,45 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      - name: Reobserve pair refs and verify publication source blobs
+      - name: Reobserve exact Authority and Mirror refs
         if: steps.preflight.outputs.already != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          authority="$(gh api repos/Goldkelch/qik-vrt/commits/main --jq '.sha')"
-          mirror="$(gh api repos/ingolf-lohmann/qik-vrt/commits/main --jq '.sha')"
+          authority="$(git ls-remote https://github.com/Goldkelch/qik-vrt.git refs/heads/main | awk '{print $1}')"
+          mirror="$(git ls-remote https://github.com/ingolf-lohmann/qik-vrt.git refs/heads/main | awk '{print $1}')"
+          echo "AUTHORITY_OBSERVED=$authority"
+          echo "MIRROR_OBSERVED=$mirror"
           test "$authority" = "$AUTHORITY_EXPECTED"
           test "$mirror" = "$MIRROR_EXPECTED"
-          test "$(git hash-object evidence/receipts/authority-mirror-equality-2026-07-27-pr106-pr56.json)" = "$RECEIPT_BLOB_EXPECTED"
-          test "$(git hash-object evidence/receipts/index.json)" = "$INDEX_BLOB_EXPECTED"
-          test "$(git hash-object "$MANIFEST")" = "732d7afda8aaeed8c6a6e1e82a444d8105325ae2"
+
+      - name: Verify exact publication source blobs
+        if: steps.preflight.outputs.already != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$(git hash-object evidence/receipts/authority-mirror-equality-2026-07-27-pr106-pr56.json)"
+          index="$(git hash-object evidence/receipts/index.json)"
+          manifest="$(git hash-object "$MANIFEST")"
+          echo "RECEIPT_BLOB_OBSERVED=$receipt"
+          echo "INDEX_BLOB_OBSERVED=$index"
+          echo "PUBLICATION_MANIFEST_BLOB_OBSERVED=$manifest"
+          test "$receipt" = "$RECEIPT_BLOB_EXPECTED"
+          test "$index" = "$INDEX_BLOB_EXPECTED"
+          test "$manifest" = "$MANIFEST_BLOB_EXPECTED"
+
+      - name: Run deterministic equality receipt and publication tests
+        if: steps.preflight.outputs.already != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
           python -B tests/test_authority_mirror_equality_receipt.py
+
+      - name: Regenerate and verify temporary repository integrity
+        if: steps.preflight.outputs.already != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
           python -B tools/qikvrt_integrity.py generate
           python -B tools/qikvrt_integrity.py verify
 
