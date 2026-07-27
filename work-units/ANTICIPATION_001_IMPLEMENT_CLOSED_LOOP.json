@@ -1,0 +1,103 @@
+{
+  "schema_version": "qikvrt_work_unit_v1",
+  "work_unit_id": "ANTICIPATION-001",
+  "title": "Implement repository-native trend, anticipation and closed observation loop",
+  "status": "READY",
+  "priority": "HIGHEST",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "mirror_repository": "ingolf-lohmann/qik-vrt",
+  "source_branch": "agent/repository-capability-self-disclosure-v1",
+  "inputs": [
+    "schemas/qikvrt-anticipation-state.schema.json",
+    "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
+    "capabilities/anticipation.json",
+    "capabilities/rcp.json",
+    "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
+  ],
+  "effects": [
+    {
+      "order": 1,
+      "effect_id": "IMPLEMENT_OBSERVER",
+      "description": "Implement deterministic repository observation over issues, pull requests, branches, commits, tags, releases, workflow runs, jobs, checks, artifacts, comments, reviews, labels, Zenodo events and Authority/Mirror state."
+    },
+    {
+      "order": 2,
+      "effect_id": "MATERIALIZE_HISTORY",
+      "description": "Materialize forward-only verified observations with timestamps, revision bindings and SHA-256 state digests."
+    },
+    {
+      "order": 3,
+      "effect_id": "DERIVE_TREND",
+      "description": "Compute state differences and discrete derivatives; distinguish activity from productive progress."
+    },
+    {
+      "order": 4,
+      "effect_id": "SELECT_NEXT_EFFECT",
+      "description": "Select exactly one canonical minimal deterministic next effect from transition ordering rules."
+    },
+    {
+      "order": 5,
+      "effect_id": "DISPATCH_AND_REOBSERVE",
+      "description": "Dispatch through the declared executor capability and automatically schedule a subsequent observation."
+    },
+    {
+      "order": 6,
+      "effect_id": "EXPOSE_RCP_API",
+      "description": "Expose equivalent GitHub-native and RCP projections for current state, history, trends, derivatives and next effect."
+    },
+    {
+      "order": 7,
+      "effect_id": "PROJECT_PUBLICATION_STATE",
+      "description": "Bind the canonical anticipation digest into Zenodo metadata/evidence and IETF draft/render provenance without claiming external publication before receipts exist."
+    },
+    {
+      "order": 8,
+      "effect_id": "VERIFY_COMPONENT_REPLACEMENT",
+      "description": "Run conformance tests proving the planner/assistant implementation is replaceable without changing canonical semantics."
+    },
+    {
+      "order": 9,
+      "effect_id": "SYNC_PAIR",
+      "description": "Promote green Authority state and verify compatible Mirror projection and digest."
+    }
+  ],
+  "required_outputs": [
+    "anticipation/current.json",
+    "anticipation/history.jsonl",
+    "anticipation/trends.json",
+    "anticipation/derivatives.json",
+    "anticipation/next-effect.json",
+    "openapi/qikvrt-rcp.yaml",
+    "tests/test_anticipation_schema.*",
+    "tests/test_anticipation_determinism.*",
+    "tests/test_activity_vs_progress.*",
+    "tests/test_post_dispatch_reobservation.*",
+    "tests/test_component_replacement.*",
+    "receipts/anticipation/"
+  ],
+  "mandatory_gates": [
+    "SCHEMA_VALIDATION",
+    "DETERMINISTIC_REPLAY",
+    "SINGLE_NEXT_EFFECT",
+    "NO_ACTIVITY_AS_PROGRESS_FALSE_POSITIVE",
+    "POST_DISPATCH_REOBSERVATION",
+    "NO_COMPONENT_IDENTITY_DEPENDENCY",
+    "AUTHORITY_MIRROR_COMPATIBILITY",
+    "INTEGRITY_MANIFEST",
+    "NO_FALSE_PASS"
+  ],
+  "failure_classes": [
+    "INSUFFICIENT_VERIFIED_OBSERVATIONS",
+    "STATE_DIGEST_MISMATCH",
+    "TREND_DERIVATION_NONDETERMINISTIC",
+    "NEXT_EFFECT_NOT_SELECTED",
+    "NEXT_EFFECT_NOT_DISPATCHED",
+    "EXECUTION_RECEIPT_MISSING",
+    "PRODUCTIVE_CHAIN_STALLED",
+    "AUTHORITY_MIRROR_STATE_DIVERGENCE",
+    "PROJECTION_STALE",
+    "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
+  ],
+  "completion_condition": "All mandatory gates green on the exact head, Authority merged, Mirror digest verified, publication projections bound, and next Work Unit materialized.",
+  "completion_claim": "FORBIDDEN_UNTIL_RECEIPTS"
+}
