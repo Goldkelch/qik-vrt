@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Authority to Mirror exact-tree sync 49850f649283
+
+on:
+  push:
+    branches:
+      - automation/mirror-sync-49850f649283
+    paths:
+      - .github/workflows/qikvrt_authority_mirror_sync_49850f649283.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-authority-mirror-sync-49850f649283
+  cancel-in-progress: false
+
+jobs:
+  synchronize-and-receipt:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      EXPECTED_AUTHORITY: 49850f6492831cf6421889498e4f9d71b1efb132
+      GREEN_AUTHORITY_HEAD: 1c9469e7825bcc75157f601a575d82690180a36e
+      EXPECTED_MIRROR_BEFORE: 650b3bd17d32a297f492eb9765a5d4fd2d6672ce
+      SYNC_BRANCH: sync/authority-49850f649283
+      FIXED_GIT_DATE: '2026-07-27T20:40:00Z'
+      AUTH_TOKEN: ${{ github.token }}
+      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+    steps:
+      - name: Check out the isolated authorization branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify, synchronize, gate, merge, and materialize equality receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fail() {
+            echo "::error::$*"
+            exit 1
+          }
+
+          [ -n "${MESH_TOKEN:-}" ] || fail 'QIKVRT_MESH_TOKEN is unavailable'
+          command -v gh >/dev/null || fail 'gh CLI unavailable'
+          command -v jq >/dev/null || fail 'jq unavailable'
+          command -v python3 >/dev/null || fail 'python3 unavailable'
+
+          git fetch --force origin main
+          authority_main="$(git rev-parse refs/remotes/origin/main)"
+          [ "$authority_main" = "$EXPECTED_AUTHORITY" ] || fail "Authority main moved: $authority_main"
+
+          authority_tree="$(git rev-parse "$EXPECTED_AUTHORITY^{tree}")"
+          green_tree="$(git rev-parse "$GREEN_AUTHORITY_HEAD^{tree}")"
+          [ "$authority_tree" = "$green_tree" ] || fail 'Merged Authority tree differs from the exact green PR head tree'
+
+          required_names='["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review","QIKVRT live status watch","QIKVRT PR18 integrity repair"]'
+
+          latest_required_runs() {
+            local data="$1"
+            printf '%s' "$data" | jq -c --argjson required "$required_names" '
+              [ $required[] as $name
+                | ([.workflow_runs[] | select(.name == $name)] | sort_by(.run_number) | last)
+                | if . == null then {name:$name,status:"missing",conclusion:"missing",id:null,run_number:null,head_sha:null}
+                  else {name:.name,status:.status,conclusion:(.conclusion // ""),id:.id,run_number:.run_number,head_sha:.head_sha}
+                  end
+              ]'
+          }
+
+          assert_green_runs() {
+            local receipt="$1"
+            local phase="$2"
+            local bad
+            bad="$(printf '%s' "$receipt" | jq -r '
+              .[]
+              | select(
+                  (.name == "QIKVRT PR18 integrity repair" and ((.status != "completed") or ((.conclusion != "success") and (.conclusion != "skipped"))))
+                  or
+                  (.name != "QIKVRT PR18 integrity repair" and ((.status != "completed") or (.conclusion != "success")))
+                )
+              | "\(.name):status=\(.status):conclusion=\(.conclusion)"' | paste -sd ';' -)"
+            [ -z "$bad" ] || fail "$phase required workflows are not green: $bad"
+          }
+
+          authority_runs_raw="$(GH_TOKEN="$AUTH_TOKEN" gh api "repos/$AUTHORITY_REPOSITORY/actions/runs?head_sha=$GREEN_AUTHORITY_HEAD&per_page=100")"
+          authority_runs="$(latest_required_runs "$authority_runs_raw")"
+          assert_green_runs "$authority_runs" 'Authority exact-head'
+
+          authority_root="$RUNNER_TEMP/qikvrt-authority-exact"
+          rm -rf "$authority_root"
+          git worktree add --detach "$authority_root" "$EXPECTED_AUTHORITY"
+          (cd "$authority_root" && python3 -B tools/qikvrt_integrity.py verify)
+
+          git remote remove mirror 2>/dev/null || true
+          git remote add mirror "https://x-access-token:${MESH_TOKEN}@github.com/${MIRROR_REPOSITORY}.git"
+          git fetch --force mirror main:refs/remotes/mirror/main
+          mirror_before="$(git rev-parse refs/remotes/mirror/main)"
+          [ "$mirror_before" = "$EXPECTED_MIRROR_BEFORE" ] || fail "Mirror main moved before synchronization: $mirror_before"
+
+          sync_message="$(cat <<EOF
+          Synchronize Authority content tree 49850f649283
+
+          Authority commit: $EXPECTED_AUTHORITY
+          Authority tree: $authority_tree
+          Previous Mirror main: $mirror_before
+          Semantics: preserve Mirror history as the sole parent while replacing the complete content tree with the verified Authority tree.
+          No PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed by this commit.
+          EOF
+          )"
+
+          sync_commit="$(printf '%s\n' "$sync_message" | env \
+            GIT_AUTHOR_NAME='QIK-VRT Repository Mesh' \
+            GIT_AUTHOR_EMAIL='ingolf.lohmann@live.com' \
+            GIT_AUTHOR_DATE="$FIXED_GIT_DATE" \
+            GIT_COMMITTER_NAME='QIK-VRT Repository Mesh' \
+            GIT_COMMITTER_EMAIL='ingolf.lohmann@live.com' \
+            GIT_COMMITTER_DATE="$FIXED_GIT_DATE" \
+            git commit-tree "$authority_tree" -p "$mirror_before")"
+
+          [ "$(git rev-parse "$sync_commit^{tree}")" = "$authority_tree" ] || fail 'Synthetic Mirror sync commit tree mismatch'
+          [ "$(git show -s --format=%P "$sync_commit")" = "$mirror_before" ] || fail 'Synthetic Mirror sync commit parent mismatch'
+
+          remote_sync="$(git ls-remote --heads mirror "refs/heads/$SYNC_BRANCH" | awk '{print $1}')"
+          if [ -z "$remote_sync" ]; then
+            git push mirror "$sync_commit:refs/heads/$SYNC_BRANCH"
+          elif [ "$remote_sync" != "$sync_commit" ]; then
+            fail "Existing Mirror sync branch differs: $remote_sync"
+          fi
+
+          pr_list="$(GH_TOKEN="$MESH_TOKEN" gh api -X GET "repos/$MIRROR_REPOSITORY/pulls" -f state=open -f head="ingolf-lohmann:$SYNC_BRANCH" -f base=main)"
+          mirror_pr="$(printf '%s' "$pr_list" | jq -r '.[0].number // empty')"
+          if [ -z "$mirror_pr" ]; then
+            pr_body="$(cat <<EOF
+          ## Exact-tree synchronization contract
+
+          - Authority commit: \`$EXPECTED_AUTHORITY\`
+          - Authority exact green head: \`$GREEN_AUTHORITY_HEAD\`
+          - Previous Mirror main: \`$mirror_before\`
+          - Proposed Mirror head: \`$sync_commit\`
+          - Shared content tree: \`$authority_tree\`
+
+          The proposed commit has the previous Mirror main as its sole parent and the complete verified Authority tree as its tree. Merge is allowed only after all named mandatory Mirror workflows are present and green. No PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed.
+          EOF
+            )"
+            pr_json="$(GH_TOKEN="$MESH_TOKEN" gh api -X POST "repos/$MIRROR_REPOSITORY/pulls" \
+              -f title='Synchronize Mirror to Authority tree 49850f649283' \
+              -f head="$SYNC_BRANCH" \
+              -f base=main \
+              -f body="$pr_body")"
+            mirror_pr="$(printf '%s' "$pr_json" | jq -r '.number')"
+          fi
+
+          pr_json="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/pulls/$mirror_pr")"
+          pr_head="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+          pr_base="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
+          pr_state="$(printf '%s' "$pr_json" | jq -r '.state')"
+          [ "$pr_head" = "$sync_commit" ] || fail "Mirror PR head changed: $pr_head"
+          [ "$pr_base" = "$mirror_before" ] || fail "Mirror PR base changed: $pr_base"
+          [ "$pr_state" = 'open' ] || fail "Mirror PR is not open: $pr_state"
+
+          mirror_runs='[]'
+          deadline=$((SECONDS + 2100))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            mirror_runs_raw="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/actions/runs?head_sha=$sync_commit&per_page=100")"
+            mirror_runs="$(latest_required_runs "$mirror_runs_raw")"
+
+            terminal_bad="$(printf '%s' "$mirror_runs" | jq -r '
+              .[]
+              | select(.status == "completed" and (.conclusion | IN("failure","cancelled","timed_out","action_required","stale","startup_failure")))
+              | "\(.name):\(.conclusion)"' | paste -sd ';' -)"
+            [ -z "$terminal_bad" ] || fail "Mirror required workflow terminal failure: $terminal_bad"
+
+            ready="$(printf '%s' "$mirror_runs" | jq -r '
+              all(.[ ];
+                if .name == "QIKVRT PR18 integrity repair"
+                then (.status == "completed" and ((.conclusion == "success") or (.conclusion == "skipped")))
+                else (.status == "completed" and .conclusion == "success")
+                end
+              )')"
+            if [ "$ready" = 'true' ]; then
+              break
+            fi
+            sleep 15
+          done
+          assert_green_runs "$mirror_runs" 'Mirror exact-tree PR head'
+
+          merge_json="$(GH_TOKEN="$MESH_TOKEN" gh api -X PUT "repos/$MIRROR_REPOSITORY/pulls/$mirror_pr/merge" \
+            -f sha="$sync_commit" \
+            -f merge_method=merge)"
+          [ "$(printf '%s' "$merge_json" | jq -r '.merged')" = 'true' ] || fail "Mirror PR merge rejected: $(printf '%s' "$merge_json" | jq -c '.')"
+          mirror_merge="$(printf '%s' "$merge_json" | jq -r '.sha')"
+
+          mirror_main="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [ "$mirror_main" = "$mirror_merge" ] || fail "Mirror main advanced unexpectedly after merge: $mirror_main"
+
+          authority_api_tree="$(GH_TOKEN="$AUTH_TOKEN" gh api "repos/$AUTHORITY_REPOSITORY/git/commits/$EXPECTED_AUTHORITY" --jq '.tree.sha')"
+          mirror_api_tree="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/commits/$mirror_main" --jq '.tree.sha')"
+          [ "$authority_api_tree" = "$authority_tree" ] || fail 'Authority API tree differs from local Authority tree'
+          [ "$mirror_api_tree" = "$authority_tree" ] || fail 'Mirror main tree differs from Authority tree after merge'
+
+          authority_manifest="$RUNNER_TEMP/authority-manifest.json"
+          mirror_manifest="$RUNNER_TEMP/mirror-manifest.json"
+          GH_TOKEN="$AUTH_TOKEN" gh api -H 'Accept: application/vnd.github.raw+json' \
+            "repos/$AUTHORITY_REPOSITORY/contents/REPOSITORY_FILE_MANIFEST.json?ref=$EXPECTED_AUTHORITY" > "$authority_manifest"
+          GH_TOKEN="$MESH_TOKEN" gh api -H 'Accept: application/vnd.github.raw+json' \
+            "repos/$MIRROR_REPOSITORY/contents/REPOSITORY_FILE_MANIFEST.json?ref=$mirror_main" > "$mirror_manifest"
+          cmp -s "$authority_manifest" "$mirror_manifest" || fail 'Repository manifests are not byte-identical'
+
+          manifest_sha256="$(sha256sum "$authority_manifest" | awk '{print $1}')"
+          repository_content_tree_sha256="$(jq -r '.repository_content_tree_sha256' "$authority_manifest")"
+          [ -n "$repository_content_tree_sha256" ] && [ "$repository_content_tree_sha256" != 'null' ] || fail 'Repository content-tree SHA-256 absent'
+
+          git fetch --force mirror main:refs/remotes/mirror/main-post
+          [ "$(git rev-parse refs/remotes/mirror/main-post)" = "$mirror_main" ] || fail 'Post-merge Mirror fetch differs from API main'
+          mirror_root="$RUNNER_TEMP/qikvrt-mirror-main"
+          rm -rf "$mirror_root"
+          git worktree add --detach "$mirror_root" "$mirror_main"
+          (cd "$mirror_root" && python3 -B tools/qikvrt_integrity.py verify)
+
+          receipt="$(jq -n \
+            --arg schema 'qikvrt_authority_mirror_equality_receipt_v1' \
+            --arg state 'AUTHORITY_MIRROR_CONTENT_TREE_EQUALITY_VERIFIED' \
+            --arg authority_repository "$AUTHORITY_REPOSITORY" \
+            --arg authority_commit "$EXPECTED_AUTHORITY" \
+            --arg authority_green_head "$GREEN_AUTHORITY_HEAD" \
+            --arg mirror_repository "$MIRROR_REPOSITORY" \
+            --arg mirror_previous_commit "$mirror_before" \
+            --arg mirror_sync_commit "$sync_commit" \
+            --arg mirror_merge_commit "$mirror_merge" \
+            --arg mirror_main "$mirror_main" \
+            --arg shared_git_tree "$authority_tree" \
+            --arg manifest_sha256 "$manifest_sha256" \
+            --arg repository_content_tree_sha256 "$repository_content_tree_sha256" \
+            --argjson mirror_pr "$mirror_pr" \
+            --argjson authority_runs "$authority_runs" \
+            --argjson mirror_runs "$mirror_runs" \
+            '{
+              schema:$schema,
+              state:$state,
+              authority:{repository:$authority_repository,commit:$authority_commit,exact_green_head:$authority_green_head,required_workflows:$authority_runs},
+              mirror:{repository:$mirror_repository,previous_commit:$mirror_previous_commit,sync_commit:$mirror_sync_commit,merge_commit:$mirror_merge_commit,main:$mirror_main,pull_request:$mirror_pr,required_workflows:$mirror_runs},
+              equality:{commit_sha_equal:false,git_tree_sha_equal:true,shared_git_tree:$shared_git_tree,repository_manifest_byte_equal:true,repository_manifest_sha256:$manifest_sha256,repository_content_tree_sha256:$repository_content_tree_sha256,authority_integrity_verify:true,mirror_integrity_verify:true},
+              claims:{pass:false,final_pass:false,effect_ack_done:false}
+            }')"
+
+          comment_body="$(cat <<EOF
+          ## Authority/Mirror Equality Receipt
+
+          The Mirror was synchronized through a history-preserving commit whose complete Git tree is identical to the verified Authority tree. The named mandatory workflows were checked on the Authority exact green head and on the Mirror synchronization head before merge. Repository integrity verification succeeded on both resulting trees.
+
+          \`\`\`json
+          $(printf '%s' "$receipt" | jq '.')
+          \`\`\`
+
+          No \`PASS\`, \`FINAL_PASS\`, or \`EFFECT_ACK_DONE\` is claimed by this receipt.
+          EOF
+          )"
+
+          GH_TOKEN="$AUTH_TOKEN" gh api -X POST "repos/$AUTHORITY_REPOSITORY/issues/103/comments" -f body="$comment_body" >/dev/null
+          GH_TOKEN="$MESH_TOKEN" gh api -X POST "repos/$MIRROR_REPOSITORY/issues/$mirror_pr/comments" -f body="$comment_body" >/dev/null
+
+          printf '%s\n' "$receipt" | jq '.'
