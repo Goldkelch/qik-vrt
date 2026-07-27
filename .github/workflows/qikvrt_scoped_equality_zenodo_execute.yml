@@ -79,8 +79,15 @@ jobs:
         if: steps.preflight.outputs.already != 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          python -B tests/test_authority_mirror_equality_receipt.py
+          set +e
+          python -B tests/test_authority_mirror_equality_receipt.py > equality-test-output.log 2>&1
+          status=$?
+          cat equality-test-output.log
+          if [ "$status" -ne 0 ]; then
+            diagnostic="$(tail -c 5000 equality-test-output.log)"
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Repository Zenodo executor test gate: **BLOCK** on run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\n\n\`\`\`text\n$diagnostic\n\`\`\`\n\nNo Zenodo API mutation was attempted."
+            exit "$status"
+          fi
 
       - name: Regenerate and verify temporary repository integrity
         if: steps.preflight.outputs.already != 'true'
