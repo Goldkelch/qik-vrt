@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT sync capability probe 49850f
+
+on:
+  push:
+    branches:
+      - automation/mirror-sync-49850f649283
+    paths:
+      - .github/workflows/qikvrt_sync_capability_probe_49850f.yml
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+    steps:
+      - name: Materialize non-secret capability observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${MESH_TOKEN:-}" ]; then
+            mesh_state=AVAILABLE
+          else
+            mesh_state=UNAVAILABLE
+          fi
+          body="QIK-VRT sync capability observation: workflow execution reached the runner on commit \`${GITHUB_SHA}\`; \`QIKVRT_MESH_TOKEN=$mesh_state\`. This is diagnostic activity only and claims no synchronization, PASS, FINAL_PASS, or EFFECT_ACK_DONE."
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/103/comments" -f body="$body" >/dev/null
