@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -B tests/test_authority_mirror_equality_receipt.py > equality-test-output.log 2>&1
+          PYTHONPATH="$GITHUB_WORKSPACE" python -B tests/test_authority_mirror_equality_receipt.py > equality-test-output.log 2>&1
           status=$?
           cat equality-test-output.log
           if [ "$status" -ne 0 ]; then
