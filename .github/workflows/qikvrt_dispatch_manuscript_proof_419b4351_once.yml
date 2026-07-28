@@ -1,0 +1,127 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT one-shot manuscript proof dispatch 419b4351
+
+on:
+  push:
+    branches:
+      - automation/dispatch-manuscript-proof-419b4351
+    paths:
+      - .github/workflows/qikvrt_dispatch_manuscript_proof_419b4351_once.yml
+  pull_request:
+    paths:
+      - .github/workflows/qikvrt_dispatch_manuscript_proof_419b4351_once.yml
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-one-shot-manuscript-proof-419b4351
+  cancel-in-progress: false
+
+jobs:
+  dispatch-and-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: trusted/pr122-canonical-status-article-419b4351
+      EXPECTED_SHA: 419b43516bb5b746d06192772ea46fb278951b7f
+      TARGET_WORKFLOW: qikvrt_manuscript_proof.yml
+      TARGET_PR: '122'
+    steps:
+      - name: Report dispatcher start
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatcher started for the canonical status article.\n\n- target head: \`$EXPECTED_SHA\`\n- target branch: \`$TARGET_BRANCH\`\n- dispatcher run: \`$GITHUB_RUN_ID\`\n\nThe dispatcher will reuse an existing successful workflow-dispatch run for this exact SHA or create and gate a new one."
+      - name: Reuse or dispatch exact manuscript proof workflow
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          list_runs() {
+            gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/runs" \
+              -f branch="$TARGET_BRANCH" \
+              -f event=workflow_dispatch \
+              -f per_page=30 > .qikvrt/evidence/manuscript-proof-runs.json
+          }
+          list_runs
+          run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .status == "completed" and .conclusion == "success")][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+          reused=false
+          if [ -z "$run_id" ]; then
+            gh api -X POST \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/dispatches" \
+              -f ref="$TARGET_BRANCH"
+            for _attempt in $(seq 1 120); do
+              list_runs
+              run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha)][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+              [ -n "$run_id" ] && break
+              sleep 5
+            done
+          else
+            reused=true
+          fi
+          if [ -z "$run_id" ]; then
+            echo 'BLOCK: exact workflow-dispatch run was not observed' >&2
+            exit 1
+          fi
+          printf 'run_id=%s\nreused=%s\n' "$run_id" "$reused" >> "$GITHUB_OUTPUT"
+      - name: Gate exact manuscript proof run
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.resolve.outputs.run_id }}'
+          status=''
+          conclusion=''
+          for _attempt in $(seq 1 240); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > .qikvrt/evidence/manuscript-proof-run.json
+            status=$(jq -r '.status // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            conclusion=$(jq -r '.conclusion // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            head_sha=$(jq -r '.head_sha // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            event=$(jq -r '.event // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            if [ "$head_sha" != "$EXPECTED_SHA" ] || [ "$event" != workflow_dispatch ]; then
+              echo "BLOCK: run $run_id identity differs: head=$head_sha event=$event" >&2
+              exit 1
+            fi
+            [ "$status" = completed ] && break
+            sleep 5
+          done
+          if [ "$status" != completed ] || [ "$conclusion" != success ]; then
+            echo "BLOCK: manuscript proof run $run_id ended status=$status conclusion=$conclusion" >&2
+            exit 1
+          fi
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$TARGET_WORKFLOW" \
+            --arg target_branch "$TARGET_BRANCH" \
+            --arg head_sha "$EXPECTED_SHA" \
+            --argjson run_id "$run_id" \
+            --argjson reused '${{ steps.resolve.outputs.reused }}' \
+            '{schema:"qikvrt_exact_head_workflow_dispatch_receipt_v1",repository:$repository,workflow:$workflow,target_branch:$target_branch,head_sha:$head_sha,run_id:$run_id,event:"workflow_dispatch",status:"completed",conclusion:"success",reused_existing_success:$reused,scope:"fresh_manuscript_lean_kernel_axiom_proof_escape_and_proof_object_gate"}' \
+            > .qikvrt/evidence/manuscript-proof-dispatch-receipt.json
+      - name: Persist exact-head verification notice
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatch completed successfully for the canonical status article.\n\n- head: \`$EXPECTED_SHA\`\n- workflow: \`$TARGET_WORKFLOW\`\n- event: \`workflow_dispatch\`\n- run ID: \`${{ steps.resolve.outputs.run_id }}\`\n- reused existing success: \`${{ steps.resolve.outputs.reused }}\`\n- scope: fresh Lean build, source/claim graph, axiom audits, proof-escape rejection and proof-object runtime evidence\n\nThis receipt verifies the unchanged proof scope on the article candidate; it does not publish to Zenodo."
+      - name: Persist dispatcher block notice
+        if: failure()
+        shell: bash
+        run: |
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatcher: **BLOCK**.\n\n- target head: \`$EXPECTED_SHA\`\n- dispatcher run: \`$GITHUB_RUN_ID\`\n- resolved target run: \`${{ steps.resolve.outputs.run_id }}\`\n\nNo kernel-success or publication claim is made."
+      - name: Upload dispatch receipt
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-manuscript-proof-dispatch-419b4351
+          retention-days: 30
+          if-no-files-found: error
+          path: .qikvrt/evidence/manuscript-proof-dispatch-receipt.json
