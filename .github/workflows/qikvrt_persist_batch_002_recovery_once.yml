@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT persist Batch-002 recovery evidence once
+
+on:
+  push:
+    branches:
+      - trusted/persist-content-disposition-batch-002-recovery-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_persist_batch_002_recovery_once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-persist-batch-002-recovery-v1
+  cancel-in-progress: false
+
+jobs:
+  persist-recovery-evidence:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_AUTHORITY_MAIN: 98194f453cee0ddf4dd0a44b1d12b1d9f20a9709
+      TRIGGER_BRANCH: trusted/persist-content-disposition-batch-002-recovery-20260728-v1
+      EVIDENCE_BRANCH: evidence/content-disposition-batch-002-recovery-20260728-v1
+      PREP_RUN: '30381702166'
+      PREP_ARTIFACT: '8697237384'
+      PREP_DIGEST: 93373b320431f7bac9808a2eb3606aedd1d4465e1183ec3f8f3566004efde428
+      FREEZE_RUN: '30381702895'
+      FREEZE_ARTIFACT: '8697268299'
+      FREEZE_DIGEST: e810dc4d22341e3568f5cf47a45ae8516eb20ced8e4432610ba573a70accf0e6
+      OUTPUT_ROOT: release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002
+    steps:
+      - name: Check out frozen evidence branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: evidence/content-disposition-batch-002-recovery-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify exact recovery boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH" ] || true
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+
+      - name: Download and verify immutable Actions artifacts
+        shell: bash
+        env:
+          GH_STEP_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/batch002/preparation" "$RUNNER_TEMP/batch002/freeze"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_STEP_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREP_ARTIFACT/zip" \
+            -o "$RUNNER_TEMP/batch002/preparation.zip"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_STEP_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$FREEZE_ARTIFACT/zip" \
+            -o "$RUNNER_TEMP/batch002/freeze.zip"
+          echo "$PREP_DIGEST  $RUNNER_TEMP/batch002/preparation.zip" | sha256sum -c -
+          echo "$FREEZE_DIGEST  $RUNNER_TEMP/batch002/freeze.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/batch002/preparation.zip" -d "$RUNNER_TEMP/batch002/preparation"
+          unzip -q "$RUNNER_TEMP/batch002/freeze.zip" -d "$RUNNER_TEMP/batch002/freeze"
+
+      - name: Validate and persist repository evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$OUTPUT_ROOT"
+          mkdir -p "$OUTPUT_ROOT/preparation" "$OUTPUT_ROOT/public-candidate-byte-freeze"
+          cp -a "$RUNNER_TEMP/batch002/preparation/." "$OUTPUT_ROOT/preparation/"
+          cp -a "$RUNNER_TEMP/batch002/freeze/." "$OUTPUT_ROOT/public-candidate-byte-freeze/"
+          python3 - <<'PY'
+          import hashlib, json, pathlib, os
+          root=pathlib.Path(os.environ['OUTPUT_ROOT'])
+          prep=json.loads((root/'preparation/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json').read_text())
+          freeze=json.loads((root/'public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json').read_text())
+          assert prep['subject_count']==6
+          assert prep['completion_claims']['pass'] is False
+          assert prep['completion_claims']['final_pass'] is False
+          assert prep['completion_claims']['effect_ack_done'] is False
+          assert freeze['record_count']==6 and freeze['file_count']>0
+          assert freeze['completion_claims']['candidate_byte_freeze_complete'] is True
+          assert freeze['completion_claims']['claim_disposition_complete'] is False
+          assert freeze['completion_claims']['pass'] is False
+          assert freeze['completion_claims']['final_pass'] is False
+          assert freeze['completion_claims']['effect_ack_done'] is False
+          assert len(list((root/'preparation/subjects').glob('*.json')))==6
+          assert len(list((root/'public-candidate-byte-freeze/records').glob('*.json')))==6
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          receipt={
+            '_license': {'classification':'machine_readable_artifact_binding_receipt','copyright':'Copyright 2026 Ingolf Lohmann','license':'CC-BY-NC-ND-4.0','rights_holder':'Ingolf Lohmann'},
+            'schema':'qikvrt_batch_002_evidence_recovery_binding_v1',
+            'source_authority':os.environ['EXPECTED_AUTHORITY_MAIN'],
+            'preparation':{'run_id':int(os.environ['PREP_RUN']),'artifact_id':int(os.environ['PREP_ARTIFACT']),'artifact_sha256':os.environ['PREP_DIGEST'],'receipt_sha256':sha(root/'preparation/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json')},
+            'public_candidate_byte_freeze':{'run_id':int(os.environ['FREEZE_RUN']),'artifact_id':int(os.environ['FREEZE_ARTIFACT']),'artifact_sha256':os.environ['FREEZE_DIGEST'],'receipt_sha256':sha(root/'public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json')},
+            'validation':{'preparation_subject_receipts':6,'freeze_record_receipts':6,'freeze_file_receipts':len(list((root/'public-candidate-byte-freeze/files').glob('*.json'))),'zenodo_mutation_executed':False,'receipt_persistable':True},
+            'completion_claims':{'batch_002_runtime_evidence_persisted':True,'claim_disposition_complete':False,'authority_promoted':False,'mirror_synchronized':False,'pass':False,'final_pass':False,'effect_ack_done':False},
+            'next_deterministic_effect':'RUN_BATCH_002_EVIDENCE_EXACT_HEAD_GATES'
+          }
+          (root/'BATCH_002_EVIDENCE_RECOVERY_BINDING.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          PY
+
+      - name: Regenerate and verify repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist exact evidence head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'QIK-VRT Evidence Recovery'
+          git config user.email 'ingolf.lohmann@live.com'
+          git add -- "$OUTPUT_ROOT" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --quiet && { echo 'No evidence delta'; exit 1; }
+          git commit -m 'evidence: persist Batch-002 preparation and public-byte freeze receipts'
+          expected_remote="$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)"
+          [ "$expected_remote" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" \
+            --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$EXPECTED_AUTHORITY_MAIN"
+          persisted="$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)"
+          [ "$persisted" = "$(git rev-parse HEAD)" ]
+          echo "evidence_head=$persisted" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, os
+          p=pathlib.Path(os.environ['OUTPUT_ROOT'])/'BATCH_002_EVIDENCE_RECOVERY_BINDING.json'
+          d=json.loads(p.read_text())
+          assert d['completion_claims']['batch_002_runtime_evidence_persisted'] is True
+          assert d['completion_claims']['claim_disposition_complete'] is False
+          assert d['completion_claims']['authority_promoted'] is False
+          assert d['completion_claims']['mirror_synchronized'] is False
+          assert d['completion_claims']['pass'] is False
+          assert d['completion_claims']['final_pass'] is False
+          assert d['completion_claims']['effect_ack_done'] is False
+          PY
