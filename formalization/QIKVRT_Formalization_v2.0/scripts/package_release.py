@@ -27,21 +27,25 @@ EXCLUDED_PARTS = {
     "release",
     "release_authorization",
 }
-# Live completion status was introduced after the immutable Alpha-2 release and
-# is therefore not part of its closed historical input set.
+# Live completion and later article-proof sources were introduced after the
+# immutable Alpha-2 release and are therefore not part of its closed historical
+# input set. They remain compiled and tested in the current repository.
 POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean",
+    "formalization/QIKVRT_Formalization_v2.0/tests/test_quantum_classical_runtime_article.py",
 }
-# These three live text files legitimately advanced after Alpha-2.  The exact
+# These live text files legitimately advanced after Alpha-2. The exact
 # published bytes are materialized from the hash-bound Alpha-2 archive by
 # tools/qikvrt_freeze_alpha2_status.py and substituted only inside this
-# historical package.  Current repository files remain current everywhere else.
+# historical package. Current repository files remain current everywhere else.
 FROZEN_ALPHA2_INPUTS = {
     path: "release/formalization-v2/alpha2-frozen/" + path
     for path in (
         "formalization/QIKVRT_Formalization_v2.0/README.md",
         "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
         "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+        "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
     )
 }
 EXACT_INPUTS = (
