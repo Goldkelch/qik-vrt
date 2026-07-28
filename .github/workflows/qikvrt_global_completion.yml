@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT global claim completion
+
+on:
+  push:
+    branches:
+      - agent/global-completion-v1
+      - agent/global-completion-finalize-v1
+    paths:
+      - tools/qikvrt_global_completion.py
+      - tests/test_global_completion.py
+      - .github/workflows/qikvrt_global_completion.yml
+      - GLOBAL_COMPLETION_FINALIZATION_INPUT.json
+  pull_request:
+    paths:
+      - tools/qikvrt_global_completion.py
+      - tests/test_global_completion.py
+      - .github/workflows/qikvrt_global_completion.yml
+      - GLOBAL_COMPLETION_SCOPE.json
+      - GLOBAL_CLAIM_INVENTORY.json
+      - GLOBAL_SOURCE_CLAIM_DISPOSITION_TRACEABILITY.json
+      - GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json
+      - GLOBAL_COMPLETION_FINALIZATION_INPUT.json
+      - GLOBAL_COMPLETION_RECEIPT.json
+      - README.md
+      - STATUS.md
+      - AI_PROGRESS.json
+      - formalization/QIKVRT_Formalization_v2.0/README.md
+      - formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md
+      - formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json
+      - REPOSITORY_FILE_MANIFEST.json
+      - REPOSITORY_FILE_MANIFEST.json.sha256
+      - SHA256SUMS.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-global-completion-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact materialization input
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Materialize global completion ledger and status projections
+        run: python3 -B tools/qikvrt_global_completion.py generate
+      - name: Run deterministic global completion tests
+        run: python3 -B tests/test_global_completion.py
+      - name: Regenerate and verify canonical repository integrity
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+      - name: Commit materialized candidate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'qikvrt-global-completion[bot]'
+          git config user.email 'qikvrt-global-completion[bot]@users.noreply.github.com'
+          git add -A -- \
+            README.md STATUS.md AI_PROGRESS.json 'GLOBAL_*.json' \
+            formalization/QIKVRT_Formalization_v2.0/README.md \
+            formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md \
+            formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo 'Global completion outputs are already materialized.'
+            exit 0
+          fi
+          git commit -m 'Materialize scoped global claim completion ledger'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  verify-global-completion:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact candidate with tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Verify deterministic global completion materialization
+        run: python3 -B tools/qikvrt_global_completion.py check
+      - name: Run positive and negative global completion tests
+        run: python3 -B tests/test_global_completion.py
+      - name: Verify exact common-tag kernel source binding
+        run: python3 -B tools/qikvrt_global_completion.py verify-tag
+      - name: Verify completed manuscript graph and EFFECT_ACK boundaries
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: |
+          set -euo pipefail
+          python3 -B scripts/materialize_completion.py --check
+          python3 -B scripts/validate_completion_claim_graph.py
+          python3 -B scripts/validate_effect_ack_claims.py
+          python3 -B scripts/render_completion_proof_map.py --check
+          python3 -B scripts/render_completion_verification_report.py --check
+      - name: Verify canonical repository integrity before full suite
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+      - name: Run complete mandatory repository suite
+        run: make test
+      - name: Reverify canonical repository integrity after full suite
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+      - name: Upload global completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-global-completion-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            GLOBAL_COMPLETION_SCOPE.json
+            GLOBAL_CLAIM_INVENTORY.json
+            GLOBAL_SOURCE_CLAIM_DISPOSITION_TRACEABILITY.json
+            GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json
+            GLOBAL_COMPLETION_RECEIPT.json
+            formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json
