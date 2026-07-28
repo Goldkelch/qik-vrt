@@ -1,0 +1,146 @@
+{
+  "_license": {
+    "classification": "machine_readable_failure_diagnostic_receipt",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_zenodo_corpus_inventory_failure_receipt_v1",
+  "state": "DIAGNOSED_AND_REPAIR_PROMOTED",
+  "issued_at": "2026-07-28T10:12:00Z",
+  "scope": "read-only diagnosis of failed authenticated Zenodo corpus inventory run 30347678298 and exact identity of the promoted parser repair",
+  "source_failure": {
+    "repository": "Goldkelch/qik-vrt",
+    "authority_commit": "5fd40bcc12304d92ae4066df3c06cf9acfb7eb98",
+    "run_id": 30347678298,
+    "job_id": 90237623969,
+    "step": "Enumerate owned publications and verify every public byte",
+    "conclusion": "failure",
+    "zenodo_methods": [
+      "GET"
+    ],
+    "zenodo_mutation_executed": false
+  },
+  "reproduction": {
+    "execution_pr": 157,
+    "repair_pr": 158,
+    "trusted_verification_pr": 159,
+    "record_id": 21267021,
+    "observed_failure_line": "BLOCK: record 21267021 contains an unsafe public file name",
+    "observed_public_key_shape": "SAFE_RELATIVE_POSIX_PATH",
+    "exact_public_key_not_asserted_by_this_receipt": true,
+    "diagnostic_result": "REPRODUCED"
+  },
+  "classification": {
+    "parent_failure_class": "PUBLIC_FILESET_MISMATCH",
+    "primary_failure_class": "SAFE_RELATIVE_ZENODO_PUBLIC_FILE_KEY_REJECTED",
+    "failure_mode": "FALSE_POSITIVE_PUBLIC_KEY_VALIDATION",
+    "confidence": "HIGH",
+    "root_cause": "The original parser required every Zenodo file key to equal its basename. A valid safe relative POSIX key therefore failed before public-byte verification.",
+    "not_the_failure": [
+      "ZENODO_UPLOAD_FAILURE",
+      "ZENODO_PUBLICATION_FAILURE",
+      "TOKEN_DISCLOSURE",
+      "CONTENT_PROOF_FAILURE"
+    ]
+  },
+  "faulty_implementation": {
+    "path": "tools/qikvrt_zenodo_corpus_proof.py",
+    "git_blob_sha": "5718805f6fa8a70323271c4939186e97a6726e57",
+    "sha256": "d496826e4d4ffb74c988d5253611be8a046edbd72c3dbf9f6d8218a64e46d3ab",
+    "fault_boundary": "public_files(): pathlib.PurePosixPath(name).name != name was treated as unsafe",
+    "source_commit": "5fd40bcc12304d92ae4066df3c06cf9acfb7eb98"
+  },
+  "promoted_repair": {
+    "candidate_commit": "1b546eb022e416c89193f94192c86371b78f8010",
+    "authority_commit": "65a173cbc666b5555e6251f97cba32b05ac983d9",
+    "path": "tools/qikvrt_zenodo_corpus_proof_v2.py",
+    "git_blob_sha": "1106ebde33b45e0285f9ee312571681985c7434a",
+    "sha256": "3cf09d2e14336756a80a192a6546bdd9289bfe78b3edb9d44561d843f6c86f07",
+    "semantics": {
+      "accepts": [
+        "safe relative canonical POSIX file keys"
+      ],
+      "rejects": [
+        "absolute paths",
+        "empty path segments",
+        "dot segments",
+        "parent traversal",
+        "Windows separators",
+        "NUL, DEL and C0 control characters",
+        "non-canonical POSIX spellings",
+        "duplicate exact keys"
+      ],
+      "requires_explicit_published_record_state": true
+    },
+    "test_path": "tests/test_zenodo_corpus_proof.py",
+    "test_git_blob_sha": "5144a2058643d8a468d791b6fff3dc41e9f998ff",
+    "test_sha256": "98d160aceac60c230fdaf601e6b7a300944b0c27dbe0090289f501b5e8899c7c"
+  },
+  "exact_head_gates": [
+    {
+      "name": "QIKVRT CI",
+      "run_id": 30349296652,
+      "conclusion": "success"
+    },
+    {
+      "name": "QIKVRT repository evidence materialization",
+      "run_id": 30349296759,
+      "conclusion": "success"
+    },
+    {
+      "name": "QIKVRT Collective Proposal Review",
+      "run_id": 30349296575,
+      "conclusion": "success"
+    },
+    {
+      "name": "QIK-VRT global claim completion",
+      "run_id": 30349296622,
+      "conclusion": "success"
+    },
+    {
+      "name": "QIKVRT live status watch",
+      "run_id": 30349296620,
+      "conclusion": "success"
+    },
+    {
+      "name": "QIKVRT PR18 integrity repair",
+      "run_id": 30349296627,
+      "conclusion": "skipped",
+      "reason": "no repair required"
+    }
+  ],
+  "safety": {
+    "diagnostic_operations": [
+      "authenticated Zenodo GET",
+      "public Zenodo GET",
+      "repository and workflow evidence reads"
+    ],
+    "zenodo_mutation_executed": false,
+    "secret_persisted": false,
+    "authorization_header_persisted": false,
+    "public_response_body_persisted": false,
+    "bounded_failure_metadata_only": true
+  },
+  "effect": {
+    "read_only_diagnostic_executed": true,
+    "failure_class_identified": true,
+    "repair_implemented": true,
+    "repair_exact_head_verified": true,
+    "repair_promoted_to_authority": true,
+    "full_corpus_inventory_retried_after_repair": false,
+    "retrospective_proof_envelopes_persisted": false,
+    "proof_corpus_published_on_zenodo": false,
+    "mirror_synchronized_for_this_transaction": false,
+    "next_deterministic_effect": "RETRY_AUTHENTICATED_READ_ONLY_CORPUS_INVENTORY_USING_PROMOTED_SAFE_KEY_PARSER"
+  },
+  "completion_claims": {
+    "diagnostic_complete": true,
+    "repair_complete": true,
+    "corpus_inventory_complete": false,
+    "corpus_proof_publication_complete": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  }
+}
