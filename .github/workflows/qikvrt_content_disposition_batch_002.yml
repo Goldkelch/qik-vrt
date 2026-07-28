@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT content disposition batch 002
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - work-units/CREATE_AND_EXECUTE_CONTENT_DISPOSITION_BATCH_002_WORK_UNIT.json
+      - tools/qikvrt_content_disposition_batch_002.py
+      - tests/test_qikvrt_content_disposition_batch_002.py
+      - .github/workflows/qikvrt_content_disposition_batch_002.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execute-batch-002:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+
+      - name: Verify exact Authority and queue bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          work = json.loads(Path('work-units/CREATE_AND_EXECUTE_CONTENT_DISPOSITION_BATCH_002_WORK_UNIT.json').read_text())
+          queue = json.loads(Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json').read_text())
+          assert work['source_authority'] == '98194f453cee0ddf4dd0a44b1d12b1d9f20a9709'
+          assert work['source_mirror'] == '1bb5af6597e1d90075396a9abf6c61e993388a59'
+          assert queue['active_batch']['batch_id'] == 'CONTENT-DISPOSITION-BATCH-002'
+          assert queue['active_batch']['state'] == 'READY'
+          assert queue['next_deterministic_effect'] == 'EXECUTE_CONTENT_DISPOSITION_BATCH_002'
+          assert work['forbidden_secret_use'] is True
+          PY
+
+      - name: Execute fail-closed disposition preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf evidence/content-disposition-batch-002
+          python3 -B tools/qikvrt_content_disposition_batch_002.py \
+            --queue release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            --out evidence/content-disposition-batch-002
+
+      - name: Run focused non-regression test
+        shell: bash
+        run: python3 -B tests/test_qikvrt_content_disposition_batch_002.py
+
+      - name: Validate truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('evidence/content-disposition-batch-002/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json')
+          r = json.loads(p.read_text())
+          assert r['subject_count'] == 6
+          assert r['execution']['all_six_subject_receipts_created'] is True
+          assert r['execution']['zenodo_mutation_executed'] is False
+          assert r['completion_claims']['pass'] is False
+          assert r['completion_claims']['final_pass'] is False
+          assert r['completion_claims']['effect_ack_done'] is False
+          assert r['next_deterministic_effect'] == 'CREATE_EXACT_PUBLIC_CANDIDATE_BYTE_FREEZE_WORK_UNIT_FOR_BATCH_002'
+          PY
+
+      - name: Publish immutable execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-content-disposition-batch-002-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/content-disposition-batch-002
+          if-no-files-found: error
+          retention-days: 90
