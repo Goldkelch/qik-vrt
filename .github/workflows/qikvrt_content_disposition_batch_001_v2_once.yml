@@ -1,0 +1,212 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT content disposition batch 001 recovery v2 once
+
+on:
+  push:
+    branches:
+      - trusted/execute-content-disposition-batch-001-20260728-v2
+    paths:
+      - .github/workflows/qikvrt_content_disposition_batch_001_v2_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-content-disposition-batch-001-20260728-v2
+  cancel-in-progress: false
+
+jobs:
+  execute-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_AUTHORITY_MAIN: 4892e74458f15762c7b873344bc85b238e3739b1
+      TRIGGER_BRANCH: trusted/execute-content-disposition-batch-001-20260728-v2
+      EVIDENCE_BRANCH: evidence/content-disposition-batch-001-20260728-v2
+      WORKFLOW_PATH: .github/workflows/qikvrt_content_disposition_batch_001_v2_once.yml
+      BOOTSTRAP_DIR: .qikvrt/bootstrap/content-disposition-batch-001-v2
+      TOOL_PATH: tools/qikvrt_content_disposition_batch_001.py
+      TEST_PATH: tests/test_content_disposition_batch_001.py
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-001
+      WORK_UNIT_PATH: work-units/EXECUTE_CONTENT_DISPOSITION_BATCH_001.json
+
+    steps:
+      - name: Check out frozen evidence branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: evidence/content-disposition-batch-001-20260728-v2
+          fetch-depth: 0
+
+      - name: Verify trigger, Authority, bootstrap and evidence boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH" ]
+          [ "$(git ls-remote origin refs/heads/$TRIGGER_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git fetch --no-tags origin "$GITHUB_SHA"
+          [ "$(git merge-base "$GITHUB_SHA" "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" "$GITHUB_SHA" -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 12 ]
+          expected=(
+            "$WORKFLOW_PATH"
+            "$BOOTSTRAP_DIR/script-00.b64" "$BOOTSTRAP_DIR/script-01.b64" "$BOOTSTRAP_DIR/script-02.b64"
+            "$BOOTSTRAP_DIR/script-03.b64" "$BOOTSTRAP_DIR/script-04.b64" "$BOOTSTRAP_DIR/script-05.b64"
+            "$BOOTSTRAP_DIR/script-06.b64" "$BOOTSTRAP_DIR/script-07.b64" "$BOOTSTRAP_DIR/script-08.b64"
+            "$BOOTSTRAP_DIR/test-00.b64" "$BOOTSTRAP_DIR/test-01.b64"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${changed[*]}" = "${expected_sorted[*]}" ]
+          [ ! -e "$OUTPUT_DIR/CONTENT_DISPOSITION_BATCH_001_RECEIPT.json" ]
+          [ ! -e "$TOOL_PATH" ]
+          [ ! -e "$TEST_PATH" ]
+
+      - name: Reconstruct and verify bounded executor
+        shell: bash
+        run: |
+          set -euo pipefail
+          terminal="$RUNNER_TEMP/qikvrt-content-disposition-batch-001"
+          mkdir -p "$terminal" "$(dirname "$TOOL_PATH")" "$(dirname "$TEST_PATH")"
+          : > "$terminal/script.b64"
+          for part in 00 01 02 03 04 05 06 07 08; do
+            git show "$GITHUB_SHA:$BOOTSTRAP_DIR/script-$part.b64" >> "$terminal/script.b64"
+          done
+          : > "$terminal/test.b64"
+          for part in 00 01; do
+            git show "$GITHUB_SHA:$BOOTSTRAP_DIR/test-$part.b64" >> "$terminal/test.b64"
+          done
+          [ "$(sha256sum "$terminal/script.b64" | cut -d' ' -f1)" = f84a06b176661684f471d9f70f5f5c71117787d05f76ed634d2a1a6abaa58a86 ]
+          [ "$(sha256sum "$terminal/test.b64" | cut -d' ' -f1)" = 603121c6f0416a63065047370e1a577b5daf141996649594a2af48f3c37be2f0 ]
+          base64 --decode "$terminal/script.b64" | gzip --decompress > "$TOOL_PATH"
+          base64 --decode "$terminal/test.b64" | gzip --decompress > "$TEST_PATH"
+          [ "$(sha256sum "$TOOL_PATH" | cut -d' ' -f1)" = e7e68f0a47a38ef47c34b05ad773a6b7f083486eb3c8fe155419df8801388930 ]
+          [ "$(sha256sum "$TEST_PATH" | cut -d' ' -f1)" = 10d37eb4b374e0562eef7b2565001615c7f70d17ee239d5a04337c58662030f3 ]
+          chmod 0755 "$TOOL_PATH"
+          python3 -B - <<'PY'
+          import pathlib
+          for raw in ('tools/qikvrt_content_disposition_batch_001.py', 'tests/test_content_disposition_batch_001.py'):
+              path = pathlib.Path(raw)
+              compile(path.read_text(encoding='utf-8'), raw, 'exec')
+          PY
+
+      - name: Execute batch 001 and repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          terminal="$RUNNER_TEMP/qikvrt-content-disposition-batch-001"
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 python3 -B "$TOOL_PATH" >"$terminal/EXECUTION.log" 2>&1
+          execute_status=$?
+          if [ "$execute_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B "$TEST_PATH" >"$terminal/STATIC_VALIDATION.log" 2>&1
+            static_status=$?
+          else static_status=125; fi
+          if [ "$execute_status" -eq 0 ] && [ "$static_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate >"$terminal/INTEGRITY_GENERATE.log" 2>&1
+            generate_status=$?
+          else generate_status=125; fi
+          if [ "$generate_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify >"$terminal/INTEGRITY_VERIFY_PRE.log" 2>&1
+            pre_status=$?
+          else pre_status=125; fi
+          if [ "$pre_status" -eq 0 ]; then
+            make test >"$terminal/MAKE_TEST.log" 2>&1
+            test_status=$?
+          else test_status=125; fi
+          if [ "$test_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify >"$terminal/INTEGRITY_VERIFY_POST.log" 2>&1
+            post_status=$?
+          else post_status=125; fi
+          set -e
+          export EXECUTE_STATUS="$execute_status" STATIC_STATUS="$static_status" GENERATE_STATUS="$generate_status" PRE_STATUS="$pre_status" TEST_STATUS="$test_status" POST_STATUS="$post_status"
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          terminal = pathlib.Path(os.environ['RUNNER_TEMP']) / 'qikvrt-content-disposition-batch-001'
+          status = {key: int(os.environ[key]) for key in ('EXECUTE_STATUS','STATIC_STATUS','GENERATE_STATUS','PRE_STATUS','TEST_STATUS','POST_STATUS')}
+          obj = {'schema':'qikvrt_content_disposition_batch_001_execution_diagnostic_v2','workflow_run_id':os.environ['GITHUB_RUN_ID'],'trigger_sha':os.environ['GITHUB_SHA'],'authority_main':os.environ['EXPECTED_AUTHORITY_MAIN'],'evidence_branch':os.environ['EVIDENCE_BRANCH'],'zenodo_methods':['GET'],'zenodo_mutation_executed':False,'statuses':status,'successful':all(v == 0 for v in status.values())}
+          (terminal/'EXECUTION_DIAGNOSTIC.json').write_text(json.dumps(obj,sort_keys=True,indent=2)+'\n',encoding='utf-8',newline='\n')
+          PY
+          cat "$terminal/EXECUTION.log"
+          [ "$execute_status" -eq 0 ]
+          cat "$terminal/STATIC_VALIDATION.log"
+          [ "$static_status" -eq 0 ]
+          [ "$generate_status" -eq 0 ]
+          [ "$pre_status" -eq 0 ]
+          if [ "$test_status" -ne 0 ]; then tail -n 300 "$terminal/MAKE_TEST.log"; fi
+          [ "$test_status" -eq 0 ]
+          [ "$post_status" -eq 0 ]
+
+      - name: Upload batch evidence on every terminal path
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-content-disposition-batch-001-v2-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/qikvrt-content-disposition-batch-001/**
+            ${{ env.OUTPUT_DIR }}/**
+            ${{ env.WORK_UNIT_PATH }}
+            ${{ env.TOOL_PATH }}
+            ${{ env.TEST_PATH }}
+
+      - name: Persist validated evidence on isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          r=json.loads(pathlib.Path(os.environ['OUTPUT_DIR'],'CONTENT_DISPOSITION_BATCH_001_RECEIPT.json').read_text())
+          assert r['state']=='BATCH_001_DISPOSITIONED_NO_CONTENT_CHANGE' and r['subject_count']==6
+          assert r['validation']['all_public_files_byte_reverified'] and r['validation']['all_claims_terminally_classified'] and r['validation']['formal_claims_have_machine_proof_bindings']
+          assert r['validation']['corrected_candidate_count']==0
+          assert not r['completion_claims']['all_content_claims_dispositioned']
+          assert not r['completion_claims']['proof_corpus_published_on_zenodo']
+          assert not r['completion_claims']['pass'] and not r['completion_claims']['final_pass'] and not r['completion_claims']['effect_ack_done']
+          PY
+          mapfile -t changed < <({ git diff --name-only "$EXPECTED_AUTHORITY_MAIN" --; git ls-files --others --exclude-standard --; } | LC_ALL=C sort -u)
+          [ "${#changed[@]}" -ge 15 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|\
+              "$TOOL_PATH"|"$TEST_PATH"|"$WORK_UNIT_PATH"|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json|\
+              "$OUTPUT_DIR"/*) ;;
+              *) echo "BLOCK: unexpected batch-001 path: $path" >&2; exit 1 ;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git config user.name 'qikvrt-content-disposition[bot]'
+          git config user.email 'qikvrt-content-disposition[bot]@users.noreply.github.com'
+          git add -A -- "$TOOL_PATH" "$TEST_PATH" "$WORK_UNIT_PATH" "$OUTPUT_DIR" \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m 'evidence: execute content disposition batch 001'
+          evidence_head="$(git rev-parse HEAD)"
+          git push origin --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$EXPECTED_AUTHORITY_MAIN" "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$evidence_head" ]
+          echo "EVIDENCE_HEAD=$evidence_head" >> "$GITHUB_ENV"
+
+      - name: Enforce truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${EVIDENCE_HEAD:-}" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EVIDENCE_HEAD" ]
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          r=json.loads(pathlib.Path(os.environ['OUTPUT_DIR'],'CONTENT_DISPOSITION_BATCH_001_RECEIPT.json').read_text())
+          assert r['next_deterministic_effect']=='EXECUTE_CONTENT_DISPOSITION_BATCH_002'
+          assert not r['completion_claims']['pass'] and not r['completion_claims']['final_pass'] and not r['completion_claims']['effect_ack_done']
+          PY
