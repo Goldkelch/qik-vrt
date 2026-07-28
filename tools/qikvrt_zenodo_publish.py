@@ -8,6 +8,10 @@ constants. Effect-bearing identity is supplied by a repository-controlled JSON
 manifest. Each file is bound to its Git blob SHA-1; byte size, MD5 and SHA-256
 are derived locally and then independently verified by the hardened shared
 Zenodo transport before and after publication.
+
+Since 2026-07-28, every new production mutation additionally requires a complete
+QIK-VRT machine-proof bundle. Legacy v1 manifests remain readable for historical
+verification, but they cannot create a new Zenodo record.
 """
 from __future__ import annotations
 
@@ -22,10 +26,13 @@ from typing import Any, NoReturn
 
 try:
     from tools import qikvrt_zenodo_actions as zenodo
+    from tools import qikvrt_zenodo_machine_proof as machine_proof
 except ModuleNotFoundError:
     import qikvrt_zenodo_actions as zenodo  # type: ignore[no-redef]
+    import qikvrt_zenodo_machine_proof as machine_proof  # type: ignore[no-redef]
 
 SCHEMA = "qikvrt_zenodo_publication_manifest_v1"
+SCHEMA_V2 = "qikvrt_zenodo_publication_manifest_v2"
 EVIDENCE_SCHEMA = "qikvrt_zenodo_publication_evidence_v1"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 ALLOWED_METADATA = frozenset(
@@ -112,14 +119,74 @@ def _materialize_file(value: Any, root: pathlib.Path, where: str) -> dict[str, A
     }
 
 
-def load_manifest(path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
-    value, raw = zenodo._load_json_file(path)
+def _validate_machine_proof(
+    value: Any,
+    root: pathlib.Path,
+    files: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        _fail("manifest.machine_proof must be an object")
     zenodo._check_exact_keys(
         value,
-        {"schema", "state", "confirm", "repository", "metadata", "files", "evidence_path"},
-        "manifest",
+        {"path", "git_blob_sha", "policy_id"},
+        "manifest.machine_proof",
     )
-    if value["schema"] != SCHEMA:
+    if value["policy_id"] != machine_proof.POLICY_ID:
+        _fail("manifest.machine_proof.policy_id differs from the active policy")
+    path = _safe_relative(
+        root,
+        value["path"],
+        "manifest.machine_proof.path",
+        must_exist=True,
+    )
+    raw = zenodo.read_regular_file(path, zenodo.MAX_JSON_BYTES)
+    observed_blob = _git_blob_sha(raw)
+    expected_blob = value["git_blob_sha"]
+    if not isinstance(expected_blob, str) or HEX40.fullmatch(expected_blob) is None:
+        _fail("manifest.machine_proof.git_blob_sha must be lowercase Git SHA-1")
+    if observed_blob != expected_blob:
+        _fail("machine-proof bundle Git blob mismatch")
+    upload_paths = [entry["path"] for entry in files]
+    try:
+        receipt = machine_proof.validate_bundle(
+            root,
+            path,
+            upload_paths=upload_paths,
+        )
+    except machine_proof.ProofGateError as exc:
+        _fail("machine-proof gate rejected publication: " + str(exc))
+    if receipt["git_blob_sha1"] != expected_blob:
+        _fail("machine-proof validator returned a different Git blob identity")
+    return {
+        "policy_id": machine_proof.POLICY_ID,
+        "path": receipt["path"],
+        "bytes": receipt["bytes"],
+        "sha256": receipt["sha256"],
+        "git_blob_sha": receipt["git_blob_sha1"],
+        "claim_count": receipt["claim_count"],
+        "machine_proof_complete": True,
+        "zenodo_upload_authorized": True,
+    }
+
+
+def load_manifest(path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
+    """Load v1 for history or v2 for a proof-bearing new publication."""
+    value, raw = zenodo._load_json_file(path)
+    schema = value.get("schema")
+    common_keys = {
+        "schema",
+        "state",
+        "confirm",
+        "repository",
+        "metadata",
+        "files",
+        "evidence_path",
+    }
+    if schema == SCHEMA:
+        zenodo._check_exact_keys(value, common_keys, "manifest")
+    elif schema == SCHEMA_V2:
+        zenodo._check_exact_keys(value, common_keys | {"machine_proof"}, "manifest")
+    else:
         _fail("unsupported publication manifest schema")
     if value["state"] != "publish" or value["confirm"] != "PUBLISH_TO_PRODUCTION_ZENODO":
         _fail("production publication is not explicitly authorized")
@@ -144,11 +211,15 @@ def load_manifest(path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
     evidence_path = _safe_relative(
         root, value["evidence_path"], "manifest.evidence_path", must_exist=False
     )
+    proof = None
+    if schema == SCHEMA_V2:
+        proof = _validate_machine_proof(value["machine_proof"], root, files)
     return {
-        "schema": SCHEMA,
+        "schema": schema,
         "repository": repository,
         "metadata": metadata,
         "files": files,
+        "machine_proof": proof,
         "evidence_path": evidence_path,
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
     }
@@ -159,7 +230,9 @@ def verify_files(
 ) -> dict[tuple[str, str], bytes]:
     verified: dict[tuple[str, str], bytes] = {}
     for entry in manifest["files"]:
-        shared_entry = {key: entry[key] for key in ("path", "name", "size", "md5", "sha256")}
+        shared_entry = {
+            key: entry[key] for key in ("path", "name", "size", "md5", "sha256")
+        }
         verified[("publication", entry["name"])] = zenodo._file_bytes(
             root, shared_entry, token
         )
@@ -175,6 +248,11 @@ def _shared_entries(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
     manifest = load_manifest(manifest_path, root)
+    if manifest["schema"] != SCHEMA_V2 or manifest["machine_proof"] is None:
+        _fail(
+            "NO_MACHINE_PROOF_NO_ZENODO_UPLOAD: legacy v1 manifests are read-only "
+            "and may not start a new production mutation"
+        )
     evidence_path = manifest["evidence_path"]
     if evidence_path.exists():
         _fail("publication evidence already exists; refusing duplicate remote mutation")
@@ -203,6 +281,7 @@ def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
         "version": metadata["version"],
         "manifest_path": manifest_path.relative_to(root).as_posix(),
         "manifest_sha256": manifest["manifest_sha256"],
+        "machine_proof": manifest["machine_proof"],
         "files": manifest["files"],
         "record_url": links.get("html") or f"https://zenodo.org/records/{record_id}",
         "repository": manifest["repository"],
@@ -214,7 +293,7 @@ def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Publish a Git-blob-bound repository manifest to Zenodo"
+        description="Publish a Git-blob-bound, machine-proved repository manifest to Zenodo"
     )
     parser.add_argument(
         "--manifest", required=True, help="repository-relative publication manifest"

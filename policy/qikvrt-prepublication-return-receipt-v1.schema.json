@@ -1,0 +1,83 @@
+{
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-prepublication-return-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "_license": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {"const": "machine_readable_prepublication_return_receipt"},
+        "copyright": {"type": "string", "minLength": 1},
+        "license": {"const": "CC-BY-NC-ND-4.0"},
+        "license_text_ref": {"const": "LICENSES/CC-BY-NC-ND-4.0.txt"},
+        "rights_holder": {"const": "Ingolf Lohmann"}
+      },
+      "required": ["classification", "copyright", "license", "license_text_ref", "rights_holder"],
+      "type": "object"
+    },
+    "candidate_files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {"minimum": 0, "type": "integer"},
+          "git_blob_sha1": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["path", "bytes", "sha256", "git_blob_sha1"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "change_notice_path": {"type": ["string", "null"]},
+    "changed_claim_ids": {"items": {"type": "string", "minLength": 1}, "type": "array"},
+    "content_changed": {"type": "boolean"},
+    "original_files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["path", "sha256"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "publication_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "return": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_returned_to_owner": {"const": true},
+        "owner_name": {"const": "Ingolf Lohmann"},
+        "owner_type": {"const": "NATURAL_PERSON"},
+        "return_channel": {"type": "string", "minLength": 1},
+        "returned_at": {"format": "date-time", "type": "string"},
+        "visible_change_notice_returned": {"type": "boolean"}
+      },
+      "required": [
+        "candidate_returned_to_owner",
+        "owner_name",
+        "owner_type",
+        "return_channel",
+        "returned_at",
+        "visible_change_notice_returned"
+      ],
+      "type": "object"
+    },
+    "schema": {"const": "qikvrt_prepublication_return_receipt_v1"}
+  },
+  "required": [
+    "_license",
+    "schema",
+    "publication_id",
+    "content_changed",
+    "original_files",
+    "candidate_files",
+    "changed_claim_ids",
+    "change_notice_path",
+    "return"
+  ],
+  "type": "object"
+}
