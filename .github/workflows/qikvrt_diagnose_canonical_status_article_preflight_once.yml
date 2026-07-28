@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT diagnose canonical status article preflight once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/qikvrt_diagnose_canonical_status_article_preflight_once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: automation/diagnose-canonical-status-article-preflight
+          fetch-depth: 0
+      - name: Run exact preflight diagnostics
+        id: diagnostic
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .qikvrt/evidence
+          log=.qikvrt/evidence/canonical-status-article-preflight.log
+          : > "$log"
+          python3 -B tests/test_canonical_closing_status_article.py 2>&1 | tee -a "$log"
+          first=${PIPESTATUS[0]}
+          if [ "$first" -eq 0 ]; then
+            GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY' 2>&1 | tee -a "$log"
+          import pathlib
+          from tools import qikvrt_zenodo_publish as publish
+          root = pathlib.Path.cwd().resolve()
+          manifest = publish.load_manifest(root / 'release/canonical-closing-status-article-2026-07-28/publish-request.json', root)
+          print('MATERIALIZED_FILE_BLOBS=' + ','.join(x['git_blob_sha'] for x in manifest['files']))
+          print('PREFLIGHT_PUBLICATION_MANIFEST=PASS')
+          PY
+            second=${PIPESTATUS[0]}
+          else
+            second=0
+          fi
+          printf 'ARTICLE_TEST_STATUS=%s\nMANIFEST_STATUS=%s\n' "$first" "$second" | tee -a "$log"
+          [ "$first" -eq 0 ] && [ "$second" -eq 0 ]
+      - name: Upload exact preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-canonical-status-article-preflight-diagnostics
+          retention-days: 30
+          if-no-files-found: error
+          path: .qikvrt/evidence/canonical-status-article-preflight.log
+      - name: Enforce diagnostic success
+        if: steps.diagnostic.outcome == 'failure'
+        run: exit 1
