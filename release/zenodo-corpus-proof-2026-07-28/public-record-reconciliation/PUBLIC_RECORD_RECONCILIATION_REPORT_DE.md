@@ -1,0 +1,28 @@
+<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->
+<!-- Copyright 2026 Ingolf Lohmann. -->
+
+# Read-only-Rekonsiliation der 13 historischen Zenodo-Mindest-IDs
+
+Beobachtungszeitpunkt: `2026-07-28T14:00:00Z`
+
+| Record | Öffentliche API | Klassifikation | Dateien |
+|---:|---:|---|---:|
+| 20712301 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 2 |
+| 21244412 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21245282 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21245951 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21247297 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21247388 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21252415 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21252649 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21266670 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 1 |
+| 21488116 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 8 |
+| 21498774 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 3 |
+| 21501365 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 14 |
+| 21518464 | 200 | `PUBLIC_RECORD_CURRENT_OR_STANDALONE` | 19 |
+
+Es wurden ausschließlich öffentliche Zenodo-GET-Operationen ausgeführt. Keine Zenodo-Mutation wurde vorgenommen.
+
+Gesamtzustand: `RECONCILED`
+
+Kein `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE` wird behauptet.
