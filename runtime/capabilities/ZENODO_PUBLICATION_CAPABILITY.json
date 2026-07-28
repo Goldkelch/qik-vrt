@@ -1,20 +1,23 @@
 {
-  "schema": "qikvrt_runtime_capability_v3",
+  "schema": "qikvrt_runtime_capability_v4",
   "capability": "zenodo-production-publication",
   "profile": "publication",
   "implementation": "tools/qikvrt_zenodo_publish.py",
+  "machine_proof_gate": "tools/qikvrt_zenodo_machine_proof.py",
   "reused_transport": "tools/qikvrt_zenodo_actions.py",
-  "manifest_schema": "qikvrt_zenodo_publication_manifest_v1",
+  "manifest_schema": "qikvrt_zenodo_publication_manifest_v2",
+  "legacy_manifest_schema": "qikvrt_zenodo_publication_manifest_v1",
   "invocation": "python -B tools/qikvrt_zenodo_publish.py --manifest <repository-relative-manifest.json>",
   "workflow_binding": "none; existing authorized workflows invoke the generic capability",
-  "trigger_contract": "A repository-controlled manifest explicitly authorizes production publication and binds every artifact by Git blob SHA-1.",
+  "trigger_contract": "A repository-controlled v2 manifest explicitly authorizes production publication, binds every artifact by Git blob SHA-1, includes the exact machine-proof bundle in the upload fileset and proves candidate-specific prepublication return to Ingolf Lohmann.",
   "genericity": {
     "document_specific_constants": false,
     "release_specific_constants": false,
     "record_or_doi_constants": false,
     "workflow_specific_constants": false,
     "metadata_source": "repository manifest",
-    "artifact_identity": "repository path plus exact Git blob SHA-1"
+    "artifact_identity": "repository path plus exact Git blob SHA-1",
+    "proof_policy": "policy/zenodo-machine-proof-policy-v1.json"
   },
   "credential": {
     "environment_variable": "ZENODO_ACCESS_TOKEN",
@@ -26,11 +29,14 @@
     "location": ".qikvrt/cache/zenodo-publication",
     "key_inputs": [
       "tools/qikvrt_zenodo_publish.py",
+      "tools/qikvrt_zenodo_machine_proof.py",
       "tools/qikvrt_zenodo_actions.py",
+      "policy/zenodo-machine-proof-policy-v1.json",
       "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json"
     ],
     "contents": [
       "validated source digests",
+      "validated proof-bundle digests",
       "CPython bytecode cache",
       "generic capability self-test receipt"
     ],
@@ -40,9 +46,27 @@
       "unverified remote payloads"
     ]
   },
+  "hard_gates": [
+    "NO_MACHINE_PROOF_NO_ZENODO_UPLOAD",
+    "NO_COMPLETE_CLAIM_MATRIX_NO_UPLOAD",
+    "NO_PREPUBLICATION_RETURN_RECEIPT_NO_CHANGED_CONTENT_UPLOAD",
+    "RETURNED_BYTES_MUST_EQUAL_UPLOADED_BYTES",
+    "PROOF_BUNDLE_MUST_BE_IN_ZENODO_FILESET"
+  ],
+  "legacy_behavior": {
+    "v1_manifests_remain_readable": true,
+    "v1_manifests_may_start_new_production_mutation": false
+  },
   "verification": [
-    "closed generic manifest contract",
+    "closed generic v2 manifest contract",
     "Git blob identity gate",
+    "complete claim-disposition gate",
+    "formal kernel receipt gate",
+    "source and evidence resolution gate",
+    "OPEN wording boundary gate",
+    "candidate-specific prepublication return receipt gate",
+    "returned-candidate/upload-candidate byte identity gate",
+    "proof bundle inclusion in Zenodo fileset",
     "standard-library compilation",
     "allowlisted HTTPS Zenodo origin",
     "artifact MD5 and SHA-256 before upload",
@@ -52,8 +76,8 @@
     "repository evidence commit"
   ],
   "recovery": "Existing publication evidence blocks duplicate mutation. Interrupted runs leave no DONE claim and require explicit remote-state reconciliation before retry.",
-  "rollback": "No destructive rollback of a published DOI. Corrections require a new version with preserved history.",
-  "effect_boundary": "A workflow result is not publication evidence until a generic evidence JSON is committed and the public record has passed the client's independent public GET gate.",
+  "rollback": "No destructive rollback of a published DOI. Corrections require a new version with preserved history and a new prepublication return receipt.",
+  "effect_boundary": "A workflow result is not publication evidence until the proof-bearing evidence JSON is committed and the public record has passed the client's independent public GET and byte-redownload gates.",
   "rights_holder": "Ingolf Lohmann",
-  "license": "PolyForm-Noncommercial-1.0.0 for implementation; each artifact declares its own license"
+  "license": "Implementation files declare their own software license; non-software policy artifacts are CC-BY-NC-ND-4.0"
 }
