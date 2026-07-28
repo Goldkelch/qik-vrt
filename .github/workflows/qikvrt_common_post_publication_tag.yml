@@ -1,0 +1,278 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT common post-publication snapshot tag
+
+on:
+  push:
+    branches:
+      - automation/tag-post-publication-equality-20260728
+    paths:
+      - .github/workflows/qikvrt_common_post_publication_tag.yml
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: qikvrt-common-post-publication-tag-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag-and-receipt:
+    if: github.repository == 'Goldkelch/qik-vrt' || github.repository == 'ingolf-lohmann/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact authorization commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Validate pair and create common annotated tag
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PYTAG'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          TAG = 'v2026.07.28-authority-mirror-zenodo-equality-1.0.0'
+          BRANCH = 'automation/tag-post-publication-equality-20260728'
+          WORKFLOW = '.github/workflows/qikvrt_common_post_publication_tag.yml'
+          TAGGER_NAME = 'Ingolf Lohmann'
+          TAGGER_EMAIL = 'ingolf.lohmann@live.com'
+          TAGGER_DATE = '2026-07-28T00:22:13Z'
+          SHARED_TREE = 'cc3f0421c7eb9255ec35cdd5a7326d3a21dabb9e'
+          MANIFEST_SHA256 = '4c07246b9eb8a9947267d487f78b026b6078a2af7b0f0dbbe0542e01ac77a6c9'
+          CONTENT_TREE_SHA256 = '344d9fdb75575d2e7696425f686feeb6e2b6645d5d02b51a42bf251036d85c11'
+          ZENODO_PATH = 'release/authority-mirror-equality-2026-07-27/zenodo-publication.json'
+          ZENODO_BLOB = '30b85229fba5b037046f94e6e127ae13f705e660'
+          ZENODO_SHA256 = '3b3f7773b080da41e94c04b03700660b05adf364c7c72576259855dc689dfd68'
+          DOI = '10.5281/zenodo.21633411'
+          CONCEPT_DOI = '10.5281/zenodo.21633410'
+          EXPECTED = {
+              'Goldkelch/qik-vrt': {
+                  'commit': '42389236ea638f5cd40c13a486b70b1e1bf03055',
+                  'receipt_pr': 111,
+              },
+              'ingolf-lohmann/qik-vrt': {
+                  'commit': '5c710e98bea2a10035cf0ba2c8e30ffd5c98c279',
+                  'receipt_pr': 60,
+              },
+          }
+          TAG_MESSAGE = (
+              'QIK-VRT post-publication Authority/Mirror equality snapshot 1.0.0\n\n'
+              'Common annotated tag for the byte-identical post-publication repository '
+              'content tree after Authority/Mirror synchronization and independently '
+              'verified Zenodo publication of the scoped equality receipt '
+              '(DOI 10.5281/zenodo.21633411; concept DOI 10.5281/zenodo.21633410). '
+              'Authority and Mirror commits retain their distinct histories while '
+              'resolving to the shared content tree '
+              'cc3f0421c7eb9255ec35cdd5a7326d3a21dabb9e. No PASS, FINAL_PASS, '
+              'EFFECT_ACK_DONE, complete claim inventory, complete Lean-kernel coverage, '
+              'complete traceability, or fully kernel-verified overall completion is claimed.'
+          )
+          SHA1 = re.compile(r'^[0-9a-f]{40}$')
+
+          def fail(message: str) -> None:
+              raise SystemExit('BLOCK: ' + message)
+
+          def api(target: str, method: str, path: str, body=None, missing: bool = False):
+              headers = {
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qikvrt-common-post-publication-tagger',
+              }
+              if target == repository:
+                  headers['Authorization'] = 'Bearer ' + os.environ['GH_API_TOKEN']
+                  headers['Content-Type'] = 'application/json'
+              data = None if body is None else json.dumps(body, separators=(',', ':')).encode('utf-8')
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/{target}{path}',
+                  data=data,
+                  method=method,
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      raw = response.read()
+                      return {} if not raw else json.loads(raw.decode('utf-8'))
+              except urllib.error.HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  detail = error.read().decode('utf-8', errors='replace')[:1000]
+                  fail(f'GitHub API {method} {target}{path} failed HTTP {error.code}: {detail}')
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          if repository not in EXPECTED:
+              fail('repository is outside the Authority/Mirror pair')
+          source = EXPECTED[repository]['commit']
+          receipt_pr = EXPECTED[repository]['receipt_pr']
+
+          if not SHA1.fullmatch(source) or not SHA1.fullmatch(SHARED_TREE):
+              fail('expected commit or tree identity is malformed')
+          if os.environ['EVENT_REF'] != 'refs/heads/' + BRANCH:
+              fail('unexpected authorization ref')
+          if os.environ['EVENT_FORCED'] != 'false':
+              fail('forced authorization push')
+          if os.environ['EVENT_AFTER'] != os.environ['GITHUB_SHA']:
+              fail('event after differs from workflow SHA')
+          if os.environ['EVENT_BEFORE'] != source:
+              fail('authorization branch was not advanced directly from exact main')
+
+          parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
+          parents = subprocess.check_output(['git', 'show', '-s', '--format=%P', 'HEAD'], text=True).split()
+          changed = subprocess.check_output(
+              ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD^', 'HEAD'],
+              text=True,
+          ).splitlines()
+          if parent != source or parents != [source]:
+              fail('authorization commit is not a single-parent child of exact main')
+          if changed != [WORKFLOW]:
+              fail('authorization commit must change only the one-time workflow')
+
+          for target, contract in EXPECTED.items():
+              main = api(target, 'GET', '/git/ref/heads/main')['object']['sha']
+              if main != contract['commit']:
+                  fail(f'{target} main differs from the fixed pair identity')
+              commit = api(target, 'GET', '/git/commits/' + contract['commit'])
+              if commit.get('tree', {}).get('sha') != SHARED_TREE:
+                  fail(f'{target} main does not resolve to the shared tree')
+
+          source_root = Path(os.environ['RUNNER_TEMP']) / 'qikvrt-tag-source'
+          subprocess.run(['git', 'worktree', 'add', '--detach', str(source_root), source], check=True)
+          subprocess.run(['python3', '-B', 'tools/qikvrt_integrity.py', 'verify'], cwd=source_root, check=True)
+
+          detached = (source_root / 'REPOSITORY_FILE_MANIFEST.json.sha256').read_text(encoding='utf-8')
+          if detached != f'{MANIFEST_SHA256}  REPOSITORY_FILE_MANIFEST.json\n':
+              fail('detached manifest digest differs from the fixed snapshot')
+          manifest = json.loads((source_root / 'REPOSITORY_FILE_MANIFEST.json').read_text(encoding='utf-8'))
+          if manifest.get('repository_content_tree_sha256') != CONTENT_TREE_SHA256:
+              fail('repository content-tree digest differs from the fixed snapshot')
+          zenodo_bytes = (source_root / ZENODO_PATH).read_bytes()
+          if hashlib.sha256(zenodo_bytes).hexdigest() != ZENODO_SHA256:
+              fail('Zenodo evidence SHA-256 differs')
+          zenodo_blob = subprocess.check_output(
+              ['git', '-C', str(source_root), 'rev-parse', f'HEAD:{ZENODO_PATH}'], text=True
+          ).strip()
+          if zenodo_blob != ZENODO_BLOB:
+              fail('Zenodo evidence Git blob differs')
+          zenodo = json.loads(zenodo_bytes.decode('utf-8'))
+          if (
+              zenodo.get('state') != 'published'
+              or zenodo.get('doi') != DOI
+              or zenodo.get('conceptdoi') != CONCEPT_DOI
+          ):
+              fail('Zenodo publication identity differs')
+
+          encoded_tag = urllib.parse.quote(TAG, safe='')
+          ref = api(repository, 'GET', '/git/ref/tags/' + encoded_tag, missing=True)
+          created = False
+          if ref is None:
+              tag_object = api(repository, 'POST', '/git/tags', {
+                  'tag': TAG,
+                  'message': TAG_MESSAGE,
+                  'object': source,
+                  'type': 'commit',
+                  'tagger': {
+                      'name': TAGGER_NAME,
+                      'email': TAGGER_EMAIL,
+                      'date': TAGGER_DATE,
+                  },
+              })
+              api(repository, 'POST', '/git/refs', {
+                  'ref': 'refs/tags/' + TAG,
+                  'sha': tag_object['sha'],
+              })
+              ref = api(repository, 'GET', '/git/ref/tags/' + encoded_tag)
+              created = True
+
+          if ref.get('object', {}).get('type') != 'tag':
+              fail('common tag is not annotated')
+          tag_object_sha = ref['object']['sha']
+          obj = api(repository, 'GET', '/git/tags/' + tag_object_sha)
+          tagger = obj.get('tagger', {})
+          target = obj.get('object', {})
+          if (
+              obj.get('tag') != TAG
+              or obj.get('message') != TAG_MESSAGE
+              or target.get('type') != 'commit'
+              or target.get('sha') != source
+              or tagger.get('name') != TAGGER_NAME
+              or tagger.get('email') != TAGGER_EMAIL
+              or tagger.get('date') != TAGGER_DATE
+          ):
+              fail('annotated tag object differs from the fixed contract')
+
+          receipt = {
+              'schema': 'qikvrt_common_annotated_tag_receipt_v1',
+              'state': 'TAGGED_AND_VERIFIED',
+              'repository': repository,
+              'tag': TAG,
+              'annotated': True,
+              'created_in_this_run': created,
+              'source_commit': source,
+              'shared_git_tree_sha1': SHARED_TREE,
+              'repository_manifest_sha256': MANIFEST_SHA256,
+              'repository_content_tree_sha256': CONTENT_TREE_SHA256,
+              'zenodo_doi': DOI,
+              'zenodo_concept_doi': CONCEPT_DOI,
+              'zenodo_evidence_git_blob_sha1': ZENODO_BLOB,
+              'zenodo_evidence_sha256': ZENODO_SHA256,
+              'tag_object_sha1': tag_object_sha,
+              'tagger': {
+                  'name': TAGGER_NAME,
+                  'email': TAGGER_EMAIL,
+                  'date': TAGGER_DATE,
+              },
+              'non_claims': [
+                  'PASS',
+                  'FINAL_PASS',
+                  'EFFECT_ACK_DONE',
+                  'complete claim inventory',
+                  'complete Lean-kernel coverage',
+                  'complete source-to-claim-to-proof traceability',
+                  'fully kernel-verified overall completion',
+              ],
+          }
+          canonical = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+          receipt_sha256 = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+          marker = f'<!-- qikvrt-common-tag-receipt:{TAG} -->'
+          comments = api(repository, 'GET', f'/issues/{receipt_pr}/comments?per_page=100')
+          if not any(marker in str(comment.get('body', '')) for comment in comments):
+              body = (
+                  marker
+                  + '\n\n## Common annotated post-publication tag receipt\n\n'
+                  + f'Receipt payload SHA-256: `{receipt_sha256}`\n\n'
+                  + '```json\n' + canonical + '\n```\n\n'
+                  + 'No `PASS`, `FINAL_PASS`, `EFFECT_ACK_DONE` or fully kernel-verified overall completion is claimed.'
+              )
+              api(repository, 'POST', f'/issues/{receipt_pr}/comments', {'body': body})
+
+          print(json.dumps({
+              'repository': repository,
+              'tag': TAG,
+              'source_commit': source,
+              'shared_tree': SHARED_TREE,
+              'tag_object_sha1': tag_object_sha,
+              'receipt_payload_sha256': receipt_sha256,
+              'state': 'TAGGED_AND_VERIFIED',
+          }, sort_keys=True))
+          PYTAG
