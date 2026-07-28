@@ -6,7 +6,7 @@ name: QIK-VRT persist independently verified runtime article Zenodo receipt v4 o
 on:
   pull_request:
     branches: [main]
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
     paths:
       - .github/workflows/qikvrt_recover_quantum_classical_runtime_article_zenodo_receipt_20260728_v4_once.yml
 
@@ -201,11 +201,11 @@ jobs:
           set -euo pipefail
           [ -s "$EVIDENCE" ]
           [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$AUTHORITY_MAIN" ]
-          mapfile -t actual < <(git diff --name-only "$AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          git add -- "$EVIDENCE"
+          mapfile -t actual < <(git diff --cached --name-only | LC_ALL=C sort)
           [ "${#actual[@]}" -eq 1 ]
           [ "${actual[0]}" = "$EVIDENCE" ]
           git config user.name 'qikvrt-zenodo-recovery[bot]'
           git config user.email 'qikvrt-zenodo-recovery[bot]@users.noreply.github.com'
-          git add -- "$EVIDENCE"
           git commit -m 'zenodo: persist independently verified runtime article receipt'
           git push origin "HEAD:$TARGET_BRANCH"
