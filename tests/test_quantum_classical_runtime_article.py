@@ -34,10 +34,11 @@ SCOPE = "qikvrt-quantum-classical-runtime-article-v1"
 
 EXPECTED = {
     ARTICLE: ("1fade850374cba0dc714dc8ecc842f15d80a62e9cfb7f3cedfd9e736ab1352e1", "783d8eb88103ecd4fbf60d293dd64bf96d49cad5"),
-    MANIFEST: ("71ed92f042edcd6f34f072afbf3ee6f9ec0a075962b1bd41eb43c31780dc68b3", "d938a19c05b36a6ac17a8fd0dedd27452865d0f8"),
+    MANIFEST: ("fa9c5bca235b6326c43fbe02b1d0235923658dcf8616f3dc8db294e987614797", "6e942f06af3d251e911ef8662855a1c9526792c4"),
     CLAIMS: ("efdf603f0018620924cd55aab2470117ad7ded32bf5cd9a679246a122bde5527", "31e1aad06661680b46a89821c272649533491a07"),
-    PLAN: ("bcb26095ba997acc311eca31e4a012650638c410695261227fc9c110bb80adb0", "00dc61036892d223069249405fa16ca852f87a91"),
+    PLAN: ("c91daf74fc2fef41ad487599ae88d6f7de651520d2e1648e1c787638b552eb7c", "9e6f71e09dd461797994e8e2a9bd9ca93537a8ef"),
     AUTHORIZATION: ("ef73396776137395422c53e55b0d320063ce454082fa90f24ea0ece0913d2923", "768e4f645fc4cd69ed1c4058b7fc51dbd08bd1a5"),
+    KERNEL_RECEIPT: ("14245a79966e4667ddd931c59510370032ebffefe4b2421401404dd5c22a6c1a", "adfda684598313af8070077aa6bbe04ca7a11977"),
     LEAN: ("9a02bb3ba762063646aa22af4c05467b52ac49ef05773bfc067f3a3c2be22465", "1d0f806a62e1729893b4688e2322f7403a1cb931"),
 }
 
@@ -97,6 +98,8 @@ class QuantumClassicalRuntimeArticleTests(unittest.TestCase):
         self.assertEqual(manifest["claim_inventory"]["claims_total"], 26)
         self.assertEqual(manifest["claim_inventory"]["formal_theorems"], 9)
         self.assertEqual(manifest["claim_inventory"]["implementation_open"], ["QRT-018"])
+        self.assertEqual(manifest["proof_state"]["state"], "KERNEL_VERIFIED")
+        self.assertTrue(manifest["proof_state"]["kernel_receipt_present"])
         self.assertFalse(manifest["completion_claims"]["pass"])
         self.assertFalse(manifest["completion_claims"]["final_pass"])
         self.assertFalse(manifest["completion_claims"]["effect_ack_done"])
@@ -114,8 +117,10 @@ class QuantumClassicalRuntimeArticleTests(unittest.TestCase):
         self.assertEqual(plan["scope_id"], SCOPE)
         self.assertEqual(plan["source"]["sha256"], EXPECTED[LEAN][0])
         self.assertEqual(plan["source"]["git_blob_sha1"], EXPECTED[LEAN][1])
+        self.assertEqual(plan["receipt"]["sha256"], EXPECTED[KERNEL_RECEIPT][0])
+        self.assertEqual(plan["receipt"]["git_blob_sha1"], EXPECTED[KERNEL_RECEIPT][1])
         self.assertEqual(plan["theorems"], list(THEOREMS))
-        self.assertEqual(plan["state"], "PLANNED")
+        self.assertEqual(plan["state"], "KERNEL_VERIFIED")
         source = LEAN.read_text(encoding="utf-8")
         self.assertIn("import QIKVRTEffectAck.QuantumClassicalRuntime", ENTRY.read_text(encoding="utf-8"))
         for theorem in THEOREMS:
@@ -130,9 +135,7 @@ class QuantumClassicalRuntimeArticleTests(unittest.TestCase):
         self.assertTrue(value["fail_closed"])
         self.assertEqual(value["claims"], {"effect_ack_done": False, "final_pass": False, "pass": False})
 
-    def test_optional_kernel_receipt_is_strict(self) -> None:
-        if not KERNEL_RECEIPT.exists():
-            return
+    def test_kernel_receipt_is_strict(self) -> None:
         value = json.loads(KERNEL_RECEIPT.read_text(encoding="utf-8"))
         self.assertEqual(value["schema"], "qikvrt_quantum_classical_runtime_kernel_receipt_v1")
         self.assertEqual(value["scope_id"], SCOPE)
@@ -141,12 +144,13 @@ class QuantumClassicalRuntimeArticleTests(unittest.TestCase):
         self.assertEqual(value["theorems"], list(THEOREMS))
         self.assertTrue(value["workflow"]["exact_head_bound"])
         self.assertEqual(value["workflow"]["conclusion"], "success")
+        self.assertEqual(value["verified_candidate"]["head"], "2d5fdead6415790a617f3c855385ad623ba3c367")
+        self.assertEqual(value["promoted_authority_commit"], "f601896ecd48907de80a099210bc0c51023b846c")
         self.assertFalse(value["completion_claims"]["final_pass"])
 
     def test_optional_zenodo_request_is_git_blob_bound(self) -> None:
         if not REQUEST.exists():
             return
-        self.assertTrue(KERNEL_RECEIPT.exists())
         with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": "Goldkelch/qik-vrt"}):
             materialized = zenodo_publish.load_manifest(REQUEST, ROOT)
         paths = [ARTICLE, MANIFEST, CLAIMS, PLAN, KERNEL_RECEIPT, LEAN, AUTHORIZATION]
