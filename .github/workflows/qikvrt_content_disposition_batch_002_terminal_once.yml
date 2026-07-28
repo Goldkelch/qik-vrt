@@ -7,13 +7,13 @@ on:
     branches:
       - execution/content-disposition-batch-002-terminal-v1
     paths:
-      - work-units/EXECUTE_BATCH_002_TERMINAL_READY_V2.json
+      - work-units/EXECUTE_BATCH_002_TERMINAL_READY_V3.json
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-content-disposition-batch-002-terminal-v2
+  group: qikvrt-content-disposition-batch-002-terminal-v3
   cancel-in-progress: false
 
 jobs:
@@ -21,64 +21,60 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_BASE: 240bc42aef462f12bd6179ce7da2aa585844f531
-      BRANCH: execution/content-disposition-batch-002-terminal-v1
+      AUTHORITY_BASE: 240bc42aef462f12bd6179ce7da2aa585844f531
+      EVIDENCE_BRANCH: evidence/content-disposition-batch-002-terminal-20260728-v1
     steps:
-      - name: Check out exact execution branch
+      - name: Check out immutable trigger event
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: execution/content-disposition-batch-002-terminal-v1
+          ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Verify marker-last transaction boundary
+      - name: Verify exact event transaction
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt'
-          test "$GITHUB_REF_NAME" = "$BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import json,pathlib,subprocess
-          ready=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V2.json').read_text())
-          assert ready['state']=='READY'
-          assert ready['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
-          for path,blob in ready['git_blob_sha1'].items():
-              assert pathlib.Path(path).is_file(),path
-              observed=subprocess.check_output(['git','rev-parse',f'HEAD:{path}'],text=True).strip()
-              assert observed==blob,(path,observed,blob)
-          changed=subprocess.check_output(['git','diff','--name-only',ready['authority_base'],'HEAD','--'],text=True).splitlines()
-          assert set(changed)==set(ready['allowed_changed_paths']),(changed,ready['allowed_changed_paths'])
-          assert ready['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
+          r=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V3.json').read_text())
+          assert r['state']=='READY'
+          assert r['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
+          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==r['trigger_parent']
+          for path,blob in r['git_blob_sha1'].items():
+              assert subprocess.check_output(['git','rev-parse',f'HEAD:{path}'],text=True).strip()==blob
+          assert r['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
           PY
       - name: Run adversarial unit tests
         run: python3 -B tests/test_content_disposition_batch_002_terminal.py
       - name: Execute public GET-only terminal disposition
         run: python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py | tee /tmp/batch002-terminal.json
-      - name: Stage generated evidence immediately
+      - name: Materialize isolated evidence worktree
         shell: bash
         run: |
           set -euo pipefail
-          git add \
+          git fetch --no-tags origin "$EVIDENCE_BRANCH"
+          test "$(git rev-parse origin/$EVIDENCE_BRANCH)" = "$AUTHORITY_BASE"
+          evidence_root="$RUNNER_TEMP/batch002-terminal-evidence"
+          git worktree add --detach "$evidence_root" "origin/$EVIDENCE_BRANCH"
+          tar -cf - \
+            tools/qikvrt_content_disposition_batch_002_terminal.py \
+            tests/test_content_disposition_batch_002_terminal.py \
+            work-units/EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002.json \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition
-          git diff --cached --quiet && exit 1 || true
-      - name: Regenerate and verify repository integrity
-        run: |
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B tools/qikvrt_integrity.py verify
-      - name: Run repository acceptance suite
-        run: make test
-      - name: Persist validated evidence
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition \
+            | tar -xf - -C "$evidence_root"
+          echo "EVIDENCE_ROOT=$evidence_root" >> "$GITHUB_ENV"
+      - name: Verify evidence, integrity and full acceptance suite
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'QIK-VRT Repository Evidence Bot'
-          git config user.email 'ingolf.lohmann@live.com'
-          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          git diff --cached --quiet && exit 1 || true
-          git commit -m 'Persist terminal content disposition for Batch 002'
-          git push origin "HEAD:$BRANCH"
-      - name: Enforce truth boundary
-        run: |
+          cd "$EVIDENCE_ROOT"
+          python3 -B tests/test_content_disposition_batch_002_terminal.py
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
           python3 - <<'PY'
           import json,pathlib
           p=pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json')
@@ -90,3 +86,23 @@ jobs:
           assert r['completion_claims']['final_pass'] is False
           assert r['completion_claims']['effect_ack_done'] is False
           PY
+      - name: Persist exact validated evidence under frozen lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$EVIDENCE_ROOT"
+          git config user.name 'QIK-VRT Repository Evidence Bot'
+          git config user.email 'ingolf.lohmann@live.com'
+          git add -A
+          test -n "$(git status --porcelain)"
+          git commit -m 'Persist terminal content disposition for Batch 002'
+          git push origin \
+            --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$AUTHORITY_BASE" \
+            "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          persisted="$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)"
+          test "$persisted" = "$(git rev-parse HEAD)"
+          echo "PERSISTED_EVIDENCE_HEAD=$persisted" >> "$GITHUB_ENV"
+      - name: Report truth-bounded result
+        run: |
+          echo "Batch 002 terminal evidence persisted at $PERSISTED_EVIDENCE_HEAD"
+          echo 'PASS=false FINAL_PASS=false EFFECT_ACK_DONE=false'
