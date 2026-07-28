@@ -62,6 +62,17 @@ jobs:
             python3 scripts/materialize_completion_proof_manifest.py --check
             python3 scripts/validate_completion_claim_graph.py
           )
+      - name: Materialize exact global claim inventory and traceability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f tools/qikvrt_global_completion.py ]; then
+            echo "Global completion materializer is not present on this branch."
+            exit 0
+          fi
+          python3 -B tools/qikvrt_global_completion.py generate --require-tag
+          python3 -B tools/qikvrt_global_completion.py check --require-tag
+          python3 -B tests/test_global_completion.py
       - name: Rebuild deterministic formalization release bundle when present
         shell: bash
         run: |
@@ -143,6 +154,10 @@ jobs:
             formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
             formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
             formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+            GLOBAL_CLAIM_INVENTORY.json \
+            GLOBAL_TRACEABILITY.json \
+            GLOBAL_KERNEL_RECEIPTS.json \
+            GLOBAL_COMPLETION_RECEIPT.json \
             release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
             release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
             release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
@@ -154,5 +169,5 @@ jobs:
             echo "Repository evidence is already current."
             exit 0
           fi
-          git commit -m "ci: materialize repository evidence"
+          git commit -m "ci: materialize global completion evidence"
           git push origin "HEAD:$TARGET_REF"
