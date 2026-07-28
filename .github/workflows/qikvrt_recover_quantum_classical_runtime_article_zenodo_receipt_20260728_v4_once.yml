@@ -1,0 +1,211 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT persist independently verified runtime article Zenodo receipt v4 once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened]
+    paths:
+      - .github/workflows/qikvrt_recover_quantum_classical_runtime_article_zenodo_receipt_20260728_v4_once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-persist-runtime-article-zenodo-receipt-20260728-v4
+  cancel-in-progress: false
+
+jobs:
+  persist-publication-receipt:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AUTHORITY_MAIN: dad0d82f768d1ef4506aa41f7399507d72611900
+      TARGET_BRANCH: recovery/quantum-classical-runtime-article-zenodo-receipt-20260728-v4
+      SOURCE_RUN_ID: '30342520352'
+      SOURCE_JOB_ID: '90221117562'
+      MANIFEST: release/quantum-classical-runtime-article-2026-07-28/publish-request.json
+      EVIDENCE: release/quantum-classical-runtime-article-2026-07-28/zenodo-publication.json
+    steps:
+      - name: Check out clean receipt target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: recovery/quantum-classical-runtime-article-zenodo-receipt-20260728-v4
+          fetch-depth: 0
+      - name: Require clean no-duplicate recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "${{ github.event.pull_request.base.sha }}" = "$AUTHORITY_MAIN" ]
+          [ "$(git rev-parse HEAD)" = "$AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$AUTHORITY_MAIN" ]
+          [ ! -e "$EVIDENCE" ]
+          git diff --exit-code "$AUTHORITY_MAIN" HEAD --
+      - name: Recover published Record ID and DOI from source job
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          gh api -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/$GITHUB_REPOSITORY/actions/jobs/$SOURCE_JOB_ID/logs" \
+            > .qikvrt/evidence/source-effect-job.log
+          python3 -B - <<'PY'
+          import json, pathlib, re, zipfile
+          path = pathlib.Path('.qikvrt/evidence/source-effect-job.log')
+          if zipfile.is_zipfile(path):
+              with zipfile.ZipFile(path) as archive:
+                  text = '\n'.join(archive.read(name).decode('utf-8', 'replace') for name in sorted(archive.namelist()))
+          else:
+              text = path.read_bytes().decode('utf-8', 'replace')
+          states = re.findall(r'ZENODO_PUBLICATION_STATE=([a-z]+)', text)
+          records = re.findall(r'ZENODO_RECORD_ID=([1-9][0-9]*)', text)
+          dois = re.findall(r'ZENODO_DOI=(10\.5281/zenodo\.[1-9][0-9]*)', text)
+          if not states or states[-1] != 'published' or not records or not dois:
+              raise SystemExit('BLOCK: source log does not prove publication')
+          record_id = int(records[-1]); doi = dois[-1]
+          if doi != f'10.5281/zenodo.{record_id}':
+              raise SystemExit('BLOCK: source record/DOI mismatch')
+          pathlib.Path('.qikvrt/evidence/identity.json').write_text(
+              json.dumps({'record_id': record_id, 'doi': doi}, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8', newline='\n')
+          print(f'RECOVERED_RECORD_ID={record_id}')
+          print(f'RECOVERED_DOI={doi}')
+          PY
+      - name: Independently verify public record and reconstruct receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY'
+          from __future__ import annotations
+          import hashlib, json, pathlib, re, urllib.parse, urllib.request
+          from typing import Any
+          from tools import qikvrt_zenodo_publish as publisher
+
+          root = pathlib.Path.cwd().resolve()
+          identity = json.loads((root / '.qikvrt/evidence/identity.json').read_text(encoding='utf-8'))
+          record_id = int(identity['record_id']); doi = str(identity['doi'])
+          manifest_path = root / 'release/quantum-classical-runtime-article-2026-07-28/publish-request.json'
+          evidence_path = root / 'release/quantum-classical-runtime-article-2026-07-28/zenodo-publication.json'
+          manifest = publisher.load_manifest(manifest_path, root)
+
+          def get_bytes(url: str, limit: int) -> bytes:
+              parsed = urllib.parse.urlsplit(url); host = (parsed.hostname or '').lower()
+              if parsed.scheme != 'https' or not (host == 'zenodo.org' or host.endswith('.zenodo.org')):
+                  raise RuntimeError(f'non-Zenodo URL: {url}')
+              request = urllib.request.Request(url, headers={
+                  'Accept': 'application/json, application/octet-stream;q=0.9, */*;q=0.1',
+                  'User-Agent': 'qikvrt-runtime-article-receipt/1.0',
+              })
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  final = urllib.parse.urlsplit(response.geturl()); final_host = (final.hostname or '').lower()
+                  if final.scheme != 'https' or not (final_host == 'zenodo.org' or final_host.endswith('.zenodo.org')):
+                      raise RuntimeError('non-Zenodo redirect target')
+                  data = response.read(limit + 1)
+              if len(data) > limit: raise RuntimeError('public response too large')
+              return data
+
+          record = json.loads(get_bytes(f'https://zenodo.org/api/records/{record_id}', 8 * 1024 * 1024).decode('utf-8'))
+          if int(record.get('id', 0)) != record_id: raise RuntimeError('public record ID differs')
+          metadata = record.get('metadata') if isinstance(record.get('metadata'), dict) else {}
+          pids = record.get('pids') if isinstance(record.get('pids'), dict) else {}
+          public_doi = record.get('doi') or metadata.get('doi')
+          if not public_doi and isinstance(pids.get('doi'), dict): public_doi = pids['doi'].get('identifier')
+          if public_doi != doi: raise RuntimeError('public DOI differs')
+          if metadata.get('title') != manifest['metadata']['title']: raise RuntimeError('public title differs')
+          if metadata.get('version') != manifest['metadata']['version']: raise RuntimeError('public version differs')
+          conceptdoi = record.get('conceptdoi') or metadata.get('conceptdoi')
+          parent = record.get('parent') if isinstance(record.get('parent'), dict) else {}
+          parent_pids = parent.get('pids') if isinstance(parent.get('pids'), dict) else {}
+          if not conceptdoi and isinstance(parent_pids.get('doi'), dict): conceptdoi = parent_pids['doi'].get('identifier')
+          if not conceptdoi and str(record.get('conceptrecid', '')).isdigit(): conceptdoi = f"10.5281/zenodo.{record['conceptrecid']}"
+          if not isinstance(conceptdoi, str) or re.fullmatch(r'10\.5281/zenodo\.[1-9][0-9]*', conceptdoi) is None:
+              raise RuntimeError('public Concept DOI missing')
+          if not (record.get('is_published') is True or record.get('submitted') is True
+                  or str(record.get('status', '')).lower() in {'published', 'done'}
+                  or str(record.get('state', '')).lower() in {'published', 'done'}):
+              raise RuntimeError('public record not published')
+
+          raw: Any = record.get('files'); public_files: list[dict[str, Any]] = []
+          if isinstance(raw, list): public_files = [dict(item) for item in raw if isinstance(item, dict)]
+          elif isinstance(raw, dict):
+              entries = raw.get('entries'); source = entries if isinstance(entries, dict) else raw
+              for key, item in source.items():
+                  if isinstance(item, dict):
+                      normalized = dict(item); normalized.setdefault('key', key); public_files.append(normalized)
+          by_name = {}
+          for item in public_files:
+              name = item.get('key') or item.get('filename') or item.get('name')
+              if isinstance(name, str): by_name[name] = item
+          if set(by_name) != {entry['name'] for entry in manifest['files']}:
+              raise RuntimeError(f'public file set differs: {sorted(by_name)}')
+          for expected in manifest['files']:
+              item = by_name[expected['name']]
+              if isinstance(item.get('size'), int) and item['size'] != expected['size']:
+                  raise RuntimeError(f'public size differs for {expected["name"]}')
+              checksum = item.get('checksum') or item.get('md5')
+              if isinstance(checksum, str) and checksum.split(':', 1)[-1].lower() != expected['md5']:
+                  raise RuntimeError(f'public MD5 differs for {expected["name"]}')
+              links = item.get('links') if isinstance(item.get('links'), dict) else {}
+              url = links.get('content') or links.get('download')
+              if not isinstance(url, str) or not url:
+                  url = f"https://zenodo.org/api/records/{record_id}/files/{urllib.parse.quote(expected['name'], safe='')}/content"
+              downloaded = get_bytes(url, 256 * 1024 * 1024)
+              source_bytes = (root / expected['path']).read_bytes()
+              if downloaded != source_bytes: raise RuntimeError(f'public bytes differ for {expected["name"]}')
+              if hashlib.sha256(downloaded).hexdigest() != expected['sha256']:
+                  raise RuntimeError(f'public SHA-256 differs for {expected["name"]}')
+
+          links = record.get('links') if isinstance(record.get('links'), dict) else {}
+          receipt = {
+              'schema': publisher.EVIDENCE_SCHEMA,
+              'state': 'published',
+              'record_id': record_id,
+              'doi': doi,
+              'conceptdoi': conceptdoi,
+              'title': manifest['metadata']['title'],
+              'version': manifest['metadata']['version'],
+              'manifest_path': manifest_path.relative_to(root).as_posix(),
+              'manifest_sha256': manifest['manifest_sha256'],
+              'files': manifest['files'],
+              'record_url': links.get('self_html') or links.get('html') or f'https://zenodo.org/records/{record_id}',
+              'repository': manifest['repository'],
+              'repository_commit': 'dad0d82f768d1ef4506aa41f7399507d72611900',
+              'recovery': {
+                  'schema': 'qikvrt_zenodo_post_effect_receipt_recovery_v1',
+                  'source_run_id': 30342520352,
+                  'source_job_id': 90221117562,
+                  'source_step_conclusion': 'failure_after_publisher_returned_published',
+                  'public_record_reverified': True,
+                  'all_public_files_byte_exact': True,
+                  'duplicate_publication_performed': False,
+              },
+          }
+          evidence_path.parent.mkdir(parents=True, exist_ok=True)
+          evidence_path.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+                                   encoding='utf-8', newline='\n')
+          print(f'RECOVERED_ZENODO_RECORD_ID={record_id}')
+          print(f'RECOVERED_ZENODO_DOI={doi}')
+          print(f'RECOVERED_ZENODO_CONCEPT_DOI={conceptdoi}')
+          PY
+      - name: Persist verified external receipt only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -s "$EVIDENCE" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$AUTHORITY_MAIN" ]
+          mapfile -t actual < <(git diff --name-only "$AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          [ "${#actual[@]}" -eq 1 ]
+          [ "${actual[0]}" = "$EVIDENCE" ]
+          git config user.name 'qikvrt-zenodo-recovery[bot]'
+          git config user.email 'qikvrt-zenodo-recovery[bot]@users.noreply.github.com'
+          git add -- "$EVIDENCE"
+          git commit -m 'zenodo: persist independently verified runtime article receipt'
+          git push origin "HEAD:$TARGET_BRANCH"
