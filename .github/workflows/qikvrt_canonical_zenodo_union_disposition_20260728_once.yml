@@ -1,0 +1,179 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT canonical Zenodo union and content disposition once
+
+on:
+  push:
+    branches:
+      - trusted/execute-canonical-zenodo-union-disposition-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_canonical_zenodo_union_disposition_20260728_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-canonical-zenodo-union-disposition-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  build-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_AUTHORITY_MAIN: 2908c671733d589dc4636dba2fe693a9aff8dc70
+      EXPECTED_EVIDENCE_PREP_HEAD: 9b33ad438fe983155e0d99aeb3fbe10d6c549c74
+      EVIDENCE_BRANCH: evidence/canonical-zenodo-union-disposition-20260728-v1
+      TRIGGER_BRANCH: trusted/execute-canonical-zenodo-union-disposition-20260728-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_canonical_zenodo_union_disposition_20260728_once.yml
+      WORK_UNIT_PATH: work-units/BUILD_CANONICAL_UNION_CORPUS_AND_BEGIN_CONTENT_CLAIM_DISPOSITION.json
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28/canonical-union
+      OBSERVED_AT: '2026-07-28T16:20:00+02:00'
+
+    steps:
+      - name: Check out exact trigger branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: trusted/execute-canonical-zenodo-union-disposition-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify trigger, Authority and evidence boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          [ "$(git merge-base HEAD "$EXPECTED_EVIDENCE_PREP_HEAD")" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_EVIDENCE_PREP_HEAD" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$WORKFLOW_PATH" ]
+          [ -f "$WORK_UNIT_PATH" ]
+          [ -f tools/qikvrt_zenodo_union_disposition.py ]
+          [ -f tests/test_zenodo_union_disposition.py ]
+
+      - name: Check out frozen evidence preparation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: evidence/canonical-zenodo-union-disposition-20260728-v1
+          fetch-depth: 0
+
+      - name: Build canonical union and begin claim disposition
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_zenodo_union_disposition.py \
+            --observed-at "$OBSERVED_AT"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tests/test_zenodo_union_disposition.py
+          git diff --check
+
+      - name: Write execution diagnostic on every terminal path
+        if: always()
+        shell: bash
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_DIR"
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          out = pathlib.Path(os.environ['OUTPUT_DIR'])
+          value = {
+              '_license': {
+                  'classification': 'machine_readable_union_disposition_execution_diagnostic',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_union_disposition_execution_diagnostic_v1',
+              'work_unit_id': 'BUILD-CANONICAL-UNION-CORPUS-AND-BEGIN-CONTENT-CLAIM-DISPOSITION-20260728',
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'trigger_sha': os.environ['GITHUB_SHA'],
+              'evidence_preparation_head': os.environ['EXPECTED_EVIDENCE_PREP_HEAD'],
+              'authority_main': os.environ['EXPECTED_AUTHORITY_MAIN'],
+              'build_outcome': os.environ.get('BUILD_OUTCOME', 'unknown'),
+              'zenodo_methods': [],
+              'zenodo_mutation_executed': False,
+              'authorization_header_used': False,
+              'secret_used': False,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          (out / 'UNION_DISPOSITION_EXECUTION_DIAGNOSTIC.json').write_text(
+              json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          PY
+
+      - name: Upload union and disposition evidence on every terminal path
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-canonical-union-disposition-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/**
+            work-units/BUILD_CANONICAL_UNION_CORPUS_AND_BEGIN_CONTENT_CLAIM_DISPOSITION.json
+            tools/qikvrt_zenodo_union_disposition.py
+            tests/test_zenodo_union_disposition.py
+
+      - name: Persist validated evidence on isolated branch
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_EVIDENCE_PREP_HEAD" ]
+          mapfile -t changed < <({ git diff --name-only --; git ls-files --others --exclude-standard -- "$OUTPUT_DIR"; } | LC_ALL=C sort -u)
+          [ "${#changed[@]}" -eq 6 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              "$OUTPUT_DIR"/*) ;;
+              *) echo "BLOCK: unexpected union/disposition output path: $path" >&2; exit 1 ;;
+            esac
+          done
+          git config user.name 'qikvrt-union-disposition[bot]'
+          git config user.email 'qikvrt-union-disposition[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR"
+          git commit -m 'evidence: build canonical Zenodo union and start claim disposition'
+          git push origin "HEAD:$EVIDENCE_BRANCH"
+          persisted="$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)"
+          [ "$persisted" = "$(git rev-parse HEAD)" ]
+          echo "PERSISTED_EVIDENCE_HEAD=$persisted" >> "$GITHUB_ENV"
+
+      - name: Enforce truth boundary
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          receipt = json.loads(pathlib.Path(
+              'release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json'
+          ).read_text(encoding='utf-8'))
+          assert receipt['state'] == 'CANONICAL_UNION_BUILT_CONTENT_DISPOSITION_STARTED'
+          completion = receipt['completion_claims']
+          assert completion['canonical_union_built'] is True
+          assert completion['content_claim_disposition_started'] is True
+          assert completion['all_content_claims_dispositioned'] is False
+          assert completion['content_correction_review_complete'] is False
+          assert completion['proof_corpus_published_on_zenodo'] is False
+          assert completion['mirror_synchronized'] is False
+          assert completion['pass'] is False
+          assert completion['final_pass'] is False
+          assert completion['effect_ack_done'] is False
+          PY
