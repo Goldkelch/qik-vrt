@@ -1,5 +1,11 @@
 # Verification status
 
+<!-- qikvrt-global-completion-status:start -->
+## Current global completion authority
+
+The current registry scope is `qikvrt-global-claim-scope-v1` with 92 terminally classified claims. The global completion candidate is materialized but no final global claim is granted yet. This supersedes older progress percentages for current completion status; historical snapshot evidence below remains retained.
+<!-- qikvrt-global-completion-status:end -->
+
 **Snapshot date:** 2026-07-24
 
 **Scientific release identity:** annotated tag
