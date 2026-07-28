@@ -1,0 +1,359 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT read-only public reconciliation of 13 historical Zenodo records
+
+on:
+  push:
+    branches:
+      - execution/public-record-reconciliation-13-ids-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_public_record_reconciliation_13_ids_20260728_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-public-record-reconciliation-13-ids-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_AUTHORITY_MAIN: 1d5c92035ccad32fcd7168d11f946bb3fee20d01
+      TARGET_BRANCH: execution/public-record-reconciliation-13-ids-20260728-v1
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_public_record_reconciliation_13_ids_20260728_once.yml
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation
+      OBSERVED_AT: '2026-07-28T11:20:00Z'
+
+    steps:
+      - name: Check out exact execution branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/public-record-reconciliation-13-ids-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify exact read-only authorization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          [ ! -e "$OUTPUT_DIR/PUBLIC_RECORD_RECONCILIATION_RECEIPT.json" ]
+
+      - name: Reconcile public records and verify public bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          IDS = [
+              20712301, 21244412, 21245282, 21245951, 21247297,
+              21247388, 21252415, 21252649, 21266670, 21488116,
+              21498774, 21501365, 21518464,
+          ]
+          ORIGIN = 'https://zenodo.org'
+          OUT = pathlib.Path('release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation')
+          OUT.mkdir(parents=True, exist_ok=True)
+          (OUT / 'proof-envelopes').mkdir(parents=True, exist_ok=True)
+          observed_at = '2026-07-28T11:20:00Z'
+
+          def canonical(value):
+              return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+          def write_json(path, value):
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+
+          def request_json(url):
+              req = urllib.request.Request(url, headers={'Accept': 'application/json', 'User-Agent': 'qikvrt-public-record-reconciliation/1.0'})
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      final = urllib.parse.urlsplit(response.geturl())
+                      if final.scheme != 'https' or (final.hostname or '').lower() not in {'zenodo.org', 'www.zenodo.org'}:
+                          raise RuntimeError('record redirect escaped approved Zenodo origin')
+                      raw = response.read(32 * 1024 * 1024 + 1)
+                      if len(raw) > 32 * 1024 * 1024:
+                          raise RuntimeError('record response exceeded size bound')
+                      return response.status, json.loads(raw.decode('utf-8'))
+              except urllib.error.HTTPError as exc:
+                  return exc.code, None
+
+          def download(url):
+              req = urllib.request.Request(url, headers={'Accept': 'application/octet-stream, */*;q=0.1', 'User-Agent': 'qikvrt-public-record-reconciliation/1.0'})
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  final = urllib.parse.urlsplit(response.geturl())
+                  host = (final.hostname or '').lower()
+                  if final.scheme != 'https' or not (host == 'zenodo.org' or host.endswith('.zenodo.org')):
+                      raise RuntimeError('file redirect escaped approved Zenodo domain')
+                  data = response.read(512 * 1024 * 1024 + 1)
+                  if len(data) > 512 * 1024 * 1024:
+                      raise RuntimeError('file exceeded size bound')
+                  return data
+
+          def creator_attributed(metadata):
+              creators = metadata.get('creators') if isinstance(metadata, dict) else None
+              if not isinstance(creators, list):
+                  return False
+              for creator in creators:
+                  if not isinstance(creator, dict):
+                      continue
+                  words = re.findall(r'[a-z0-9]+', str(creator.get('name', '')).casefold())
+                  if 'ingolf' in words and 'lohmann' in words:
+                      return True
+              return False
+
+          def file_entries(record):
+              raw = record.get('files')
+              values = []
+              if isinstance(raw, list):
+                  values = [dict(v) for v in raw if isinstance(v, dict)]
+              elif isinstance(raw, dict):
+                  source = raw.get('entries') if isinstance(raw.get('entries'), dict) else raw
+                  for key, value in source.items():
+                      if isinstance(value, dict):
+                          item = dict(value)
+                          item.setdefault('key', key)
+                          values.append(item)
+              return values
+
+          results = []
+          for record_id in IDS:
+              item = {
+                  'record_id': record_id,
+                  'authenticated_deposition_api_observed': False,
+                  'public_api_status': None,
+                  'terminal_classification': None,
+                  'public_record_visible': False,
+                  'creator_attributed_to_ingolf_lohmann': False,
+                  'published_state_verified': False,
+                  'conceptdoi': None,
+                  'doi': None,
+                  'public_files': [],
+                  'failure': None,
+              }
+              status, record = request_json(f'{ORIGIN}/api/records/{record_id}')
+              item['public_api_status'] = status
+              if status == 404:
+                  item['terminal_classification'] = 'PUBLIC_RECORD_NOT_FOUND'
+                  results.append(item)
+                  write_json(OUT / 'proof-envelopes' / f'zenodo-{record_id}.json', item)
+                  continue
+              if status != 200 or not isinstance(record, dict):
+                  item['terminal_classification'] = 'PUBLIC_API_ERROR'
+                  item['failure'] = f'HTTP_{status}'
+                  results.append(item)
+                  write_json(OUT / 'proof-envelopes' / f'zenodo-{record_id}.json', item)
+                  continue
+
+              item['public_record_visible'] = True
+              metadata = record.get('metadata') if isinstance(record.get('metadata'), dict) else {}
+              item['creator_attributed_to_ingolf_lohmann'] = creator_attributed(metadata)
+              item['published_state_verified'] = bool(
+                  record.get('is_published') is True
+                  or record.get('submitted') is True
+                  or str(record.get('status', '')).lower() in {'published', 'done'}
+                  or str(record.get('state', '')).lower() in {'published', 'done'}
+              )
+              item['doi'] = record.get('doi') or metadata.get('doi') or f'10.5281/zenodo.{record_id}'
+              item['conceptdoi'] = record.get('conceptdoi') or metadata.get('conceptdoi')
+              links = record.get('links') if isinstance(record.get('links'), dict) else {}
+              latest = links.get('latest') or links.get('latest_html')
+              is_latest = True
+              if isinstance(latest, str):
+                  match = re.search(r'/records/(\d+)', latest)
+                  if match:
+                      is_latest = int(match.group(1)) == record_id
+
+              if not item['published_state_verified']:
+                  item['terminal_classification'] = 'PUBLIC_RECORD_NOT_PUBLISHED'
+              elif not item['creator_attributed_to_ingolf_lohmann']:
+                  item['terminal_classification'] = 'PUBLIC_RECORD_OTHER_CREATOR'
+              elif is_latest:
+                  item['terminal_classification'] = 'PUBLIC_RECORD_CURRENT_OR_STANDALONE'
+              else:
+                  item['terminal_classification'] = 'PUBLIC_RECORD_OLDER_VERSION'
+
+              try:
+                  for public_file in file_entries(record):
+                      name = public_file.get('key') or public_file.get('filename') or public_file.get('name')
+                      file_links = public_file.get('links') if isinstance(public_file.get('links'), dict) else {}
+                      url = file_links.get('content') or file_links.get('download') or file_links.get('self')
+                      if not isinstance(name, str) or not isinstance(url, str):
+                          raise RuntimeError('public file metadata incomplete')
+                      data = download(url)
+                      declared = public_file.get('checksum') or public_file.get('md5')
+                      md5 = hashlib.md5(data).hexdigest()
+                      sha256 = hashlib.sha256(data).hexdigest()
+                      checksum_match = True
+                      if isinstance(declared, str):
+                          expected = declared.split(':', 1)[-1].lower()
+                          if re.fullmatch(r'[0-9a-f]{32}', expected):
+                              checksum_match = expected == md5
+                      if not checksum_match:
+                          raise RuntimeError(f'checksum mismatch for {name}')
+                      item['public_files'].append({
+                          'name': name,
+                          'bytes': len(data),
+                          'md5': md5,
+                          'sha256': sha256,
+                          'public_byte_redownload_verified': True,
+                      })
+              except Exception as exc:
+                  item['failure'] = f'{type(exc).__name__}: {exc}'
+                  item['terminal_classification'] = 'PUBLIC_FILE_VERIFICATION_ERROR'
+
+              envelope = {
+                  '_license': {
+                      'classification': 'machine_readable_public_record_reconciliation_envelope',
+                      'copyright': 'Copyright 2026 Ingolf Lohmann',
+                      'license': 'CC-BY-NC-ND-4.0',
+                      'rights_holder': 'Ingolf Lohmann',
+                  },
+                  'schema': 'qikvrt_public_record_reconciliation_envelope_v1',
+                  'observed_at': observed_at,
+                  'record': item,
+                  'public_record_canonical_sha256': hashlib.sha256(canonical(record)).hexdigest(),
+                  'completion_claims': {
+                      'public_identity_reconciled': item['terminal_classification'] not in {'PUBLIC_API_ERROR'},
+                      'public_file_integrity_complete': bool(item['public_files']) and item['failure'] is None,
+                      'content_claim_review_complete': False,
+                      'final_pass': False,
+                  },
+              }
+              results.append(item)
+              write_json(OUT / 'proof-envelopes' / f'zenodo-{record_id}.json', envelope)
+
+          terminal = all(r['terminal_classification'] not in {'PUBLIC_API_ERROR', 'PUBLIC_FILE_VERIFICATION_ERROR'} for r in results)
+          visible = [r['record_id'] for r in results if r['public_record_visible']]
+          not_found = [r['record_id'] for r in results if r['terminal_classification'] == 'PUBLIC_RECORD_NOT_FOUND']
+          errors = [r['record_id'] for r in results if r['terminal_classification'] in {'PUBLIC_API_ERROR', 'PUBLIC_FILE_VERIFICATION_ERROR'}]
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_public_record_reconciliation_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_public_record_reconciliation_receipt_v1',
+              'observed_at': observed_at,
+              'source_authority': '1d5c92035ccad32fcd7168d11f946bb3fee20d01',
+              'scope': '13 historical minimum record IDs absent from the authenticated deposition API observation',
+              'record_count': len(results),
+              'public_visible_count': len(visible),
+              'public_not_found_count': len(not_found),
+              'validation_error_count': len(errors),
+              'records': results,
+              'state': 'RECONCILED' if terminal else 'BLOCK_VALIDATION',
+              'safety': {
+                  'zenodo_methods': ['GET'],
+                  'zenodo_mutation_executed': False,
+                  'secret_used': False,
+                  'authorization_header_used': False,
+              },
+              'completion_claims': {
+                  'all_13_ids_terminally_classified': terminal,
+                  'historical_minimum_public_reconciliation_complete': terminal,
+                  'content_claim_review_complete': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'mirror_synchronized': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+              'next_deterministic_effect': 'BUILD_CANONICAL_UNION_CORPUS_AND_BEGIN_CONTENT_CLAIM_DISPOSITION' if terminal else 'RESOLVE_PUBLIC_RECORD_RECONCILIATION_ERRORS',
+          }
+          write_json(OUT / 'PUBLIC_RECORD_RECONCILIATION_RECEIPT.json', receipt)
+          report = [
+              '<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->',
+              '<!-- Copyright 2026 Ingolf Lohmann. -->',
+              '',
+              '# Read-only-Rekonsiliation der 13 historischen Zenodo-Mindest-IDs',
+              '',
+              f'Beobachtungszeitpunkt: `{observed_at}`',
+              '',
+              '| Record | Öffentliche API | Klassifikation | Dateien |',
+              '|---:|---:|---|---:|',
+          ]
+          for r in results:
+              report.append(f"| {r['record_id']} | {r['public_api_status']} | `{r['terminal_classification']}` | {len(r['public_files'])} |")
+          report.extend([
+              '',
+              'Es wurden ausschließlich öffentliche Zenodo-GET-Operationen ausgeführt. Keine Zenodo-Mutation wurde vorgenommen.',
+              '',
+              f"Gesamtzustand: `{receipt['state']}`",
+              '',
+              'Kein `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE` wird behauptet.',
+              '',
+          ])
+          (OUT / 'PUBLIC_RECORD_RECONCILIATION_REPORT_DE.md').write_text('\n'.join(report), encoding='utf-8', newline='\n')
+          print('PUBLIC_RECORD_RECONCILIATION_STATE=' + receipt['state'])
+          print('PUBLIC_RECORD_RECONCILIATION_RECORD_COUNT=' + str(len(results)))
+          print('PUBLIC_RECORD_RECONCILIATION_VISIBLE=' + str(len(visible)))
+          print('PUBLIC_RECORD_RECONCILIATION_NOT_FOUND=' + str(len(not_found)))
+          print('PUBLIC_RECORD_RECONCILIATION_ERRORS=' + str(len(errors)))
+          PY
+
+      - name: Verify receipt and persist evidence-only state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          out = pathlib.Path('release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation')
+          receipt = json.loads((out / 'PUBLIC_RECORD_RECONCILIATION_RECEIPT.json').read_text(encoding='utf-8'))
+          assert receipt['schema'] == 'qikvrt_public_record_reconciliation_receipt_v1'
+          assert receipt['record_count'] == 13
+          assert len(receipt['records']) == 13
+          assert len({r['record_id'] for r in receipt['records']}) == 13
+          assert receipt['safety']['zenodo_mutation_executed'] is False
+          assert receipt['completion_claims']['pass'] is False
+          assert receipt['completion_claims']['final_pass'] is False
+          assert receipt['completion_claims']['effect_ack_done'] is False
+          for record in receipt['records']:
+              path = out / 'proof-envelopes' / f"zenodo-{record['record_id']}.json"
+              assert path.is_file()
+          PY
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <({ git diff --name-only "$EXPECTED_AUTHORITY_MAIN" --; git ls-files --others --exclude-standard -- "$OUTPUT_DIR"; } | LC_ALL=C sort -u)
+          [ "${#changed[@]}" -ge 18 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/*) ;;
+              *) echo "BLOCK: unexpected reconciliation output path: $path" >&2; exit 1;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-public-record-reconciliation[bot]'
+          git config user.email 'qikvrt-public-record-reconciliation[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist read-only reconciliation of 13 historical Zenodo records'
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Enforce truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(python3 -B -c "import json; print(json.load(open('$OUTPUT_DIR/PUBLIC_RECORD_RECONCILIATION_RECEIPT.json'))['state'])")"
+          [ "$state" = 'RECONCILED' ] || exit 1
