@@ -1,0 +1,152 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT trusted trigger canonical status article Zenodo a3d385a3
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+    paths:
+      - .github/workflows/qikvrt_trigger_canonical_status_article_zenodo_a3d385a3_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-trusted-status-article-zenodo-a3d385a3
+  cancel-in-progress: false
+
+jobs:
+  execute-materialized-transaction:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: a6f70111d4301c36f0e2a300f9367242d9598145
+      EXPECTED_EXECUTION_HEAD: a3d385a3c5f56b7c30f9cd53f52e8ca1f8168ddc
+      TARGET_BRANCH: execution/canonical-status-article-zenodo-20260728-v2
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_publish_canonical_status_article_20260728_v2_once.yml
+      MANIFEST: release/canonical-closing-status-article-2026-07-28/publish-request.json
+      EVIDENCE: release/canonical-closing-status-article-2026-07-28/zenodo-publication.json
+    steps:
+      - name: Check out exact materialized execution branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/canonical-status-article-zenodo-20260728-v2
+          fetch-depth: 0
+      - name: Reobserve exact four-path execution authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "${{ github.event.pull_request.base.sha }}" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_EXECUTION_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$EXPECTED_EXECUTION_HEAD" ]
+          [ "$(git ls-remote https://github.com/Goldkelch/qik-vrt.git refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t actual < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          expected=(
+            "$EXECUTION_WORKFLOW"
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#actual[@]}" -eq "${#expected_sorted[@]}" ]
+          for i in "${!expected_sorted[@]}"; do [ "${actual[$i]}" = "${expected_sorted[$i]}" ]; done
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          [ ! -e "$EVIDENCE" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+      - name: Verify article and Git-blob-bound publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_canonical_closing_status_article.py
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY'
+          import pathlib
+          from tools import qikvrt_zenodo_publish as publish
+          root = pathlib.Path.cwd().resolve()
+          manifest = publish.load_manifest(root / 'release/canonical-closing-status-article-2026-07-28/publish-request.json', root)
+          assert [x['git_blob_sha'] for x in manifest['files']] == [
+              '3c2cb383687f353031d59b0f914dc91cd04a7ce3',
+              'f70ed8548a5303a7b970741cab48602c6c6439a9',
+              '97466066860a57af412e79220a4dff43a82e300e',
+          ]
+          PY
+      - name: Publish and independently verify production Zenodo record
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' \
+          GITHUB_SHA="$EXPECTED_AUTHORITY_MAIN" \
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST" \
+            | tee .qikvrt-status-article-zenodo.log
+          grep -qx 'ZENODO_PUBLICATION_STATE=published' .qikvrt-status-article-zenodo.log
+          test -s "$EVIDENCE"
+          python3 -B - <<'PY'
+          import hashlib, json, pathlib, re
+          root = pathlib.Path.cwd()
+          value = json.loads((root / 'release/canonical-closing-status-article-2026-07-28/zenodo-publication.json').read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_zenodo_publication_evidence_v1'
+          assert value['state'] == 'published'
+          assert value['repository'] == 'Goldkelch/qik-vrt'
+          assert value['repository_commit'] == 'a6f70111d4301c36f0e2a300f9367242d9598145'
+          assert value['version'] == '1.0.0-2026-07-28'
+          assert isinstance(value['record_id'], int) and value['record_id'] > 0
+          assert re.fullmatch(r'10\.5281/zenodo\.[1-9][0-9]*', value['doi'])
+          assert re.fullmatch(r'10\.5281/zenodo\.[1-9][0-9]*', value['conceptdoi'])
+          expected = {
+            'QIKVRT_Vom_Unterschied_zur_Verantwortung_Statusartikel_DE.md': ('docs/publications/2026-07-28-canonical-closing-statement-historical-context/ARTICLE_DE.md', '3c2cb383687f353031d59b0f914dc91cd04a7ce3'),
+            'QIKVRT_STATUS_ARTICLE_MANIFEST.json': ('docs/publications/2026-07-28-canonical-closing-statement-historical-context/STATUS_ARTICLE_MANIFEST.json', 'f70ed8548a5303a7b970741cab48602c6c6439a9'),
+            'QIKVRT_GLOBAL_COMPLETION_RECEIPT.json': ('GLOBAL_COMPLETION_RECEIPT.json', '97466066860a57af412e79220a4dff43a82e300e'),
+          }
+          assert {x['name'] for x in value['files']} == set(expected)
+          for item in value['files']:
+              source, blob = expected[item['name']]
+              data = (root / source).read_bytes()
+              assert item['path'] == source
+              assert item['git_blob_sha'] == blob
+              assert item['size'] == len(data)
+              assert item['sha256'] == hashlib.sha256(data).hexdigest()
+          PY
+      - name: Remove executor and build receipt-only repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_canonical_closing_status_article.py
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t actual < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          expected=(
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+            'release/canonical-closing-status-article-2026-07-28/zenodo-publication.json'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#actual[@]}" -eq "${#expected_sorted[@]}" ]
+          for i in "${!expected_sorted[@]}"; do [ "${actual[$i]}" = "${expected_sorted[$i]}" ]; done
+      - name: Persist receipt-only state on execution branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$EXPECTED_EXECUTION_HEAD" ]
+          git config user.name 'qikvrt-zenodo-publication[bot]'
+          git config user.email 'qikvrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -A -- \
+            "$EVIDENCE" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EXECUTION_WORKFLOW"
+          git commit -m 'zenodo: persist canonical status article publication receipt'
+          git push origin "HEAD:$TARGET_BRANCH"
