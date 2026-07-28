@@ -7,13 +7,13 @@ on:
     branches:
       - execution/content-disposition-batch-002-terminal-v1
     paths:
-      - work-units/EXECUTE_BATCH_002_TERMINAL_READY.json
+      - work-units/EXECUTE_BATCH_002_TERMINAL_READY_V2.json
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-content-disposition-batch-002-terminal-v1
+  group: qikvrt-content-disposition-batch-002-terminal-v2
   cancel-in-progress: false
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
           test "$GITHUB_REF_NAME" = "$BRANCH"
           python3 - <<'PY'
           import json,pathlib,subprocess
-          ready=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY.json').read_text())
+          ready=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V2.json').read_text())
           assert ready['state']=='READY'
           assert ready['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
           for path,blob in ready['git_blob_sha1'].items():
@@ -52,6 +52,15 @@ jobs:
         run: python3 -B tests/test_content_disposition_batch_002_terminal.py
       - name: Execute public GET-only terminal disposition
         run: python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py | tee /tmp/batch002-terminal.json
+      - name: Stage generated evidence immediately
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition
+          git diff --cached --quiet && exit 1 || true
       - name: Regenerate and verify repository integrity
         run: |
           python3 -B tools/qikvrt_integrity.py generate
@@ -64,12 +73,8 @@ jobs:
           set -euo pipefail
           git config user.name 'QIK-VRT Repository Evidence Bot'
           git config user.email 'ingolf.lohmann@live.com'
-          git add \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition \
-            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          test -n "$(git status --porcelain)"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --quiet && exit 1 || true
           git commit -m 'Persist terminal content disposition for Batch 002'
           git push origin "HEAD:$BRANCH"
       - name: Enforce truth boundary
