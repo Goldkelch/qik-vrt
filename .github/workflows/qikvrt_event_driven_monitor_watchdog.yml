@@ -1,0 +1,96 @@
+name: QIKVRT event-driven monitor watchdog
+
+on:
+  push:
+    branches-ignore:
+      - effect-ack-ledger
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, closed, labeled, unlabeled]
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled, assigned, unassigned, closed]
+  issue_comment:
+    types: [created, edited]
+  workflow_run:
+    workflows:
+      - QIKVRT CI
+      - QIKVRT Collective Proposal Review
+      - QIK-VRT global claim completion
+      - QIKVRT repository evidence materialization
+      - QIKVRT live status watch
+      - QIK-VRT manuscript proof coverage
+    types: [completed]
+  release:
+    types: [published, released, prereleased, edited, deleted]
+  create:
+  delete:
+  repository_dispatch:
+    types: [qikvrt-effect, qikvrt-watchdog-refresh]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-event-ack-${{ github.repository }}-${{ github.event_name }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  effect-ack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out event adapter source
+        uses: actions/checkout@v4
+
+      - name: Materialize canonical Effect Acknowledgement frame
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qikvrt-effect-ack
+          python3 -B tools/qikvrt_effect_ack_event_adapter.py \
+            --event-name "$EVENT_NAME" \
+            --event-path "$EVENT_PATH" \
+            --repository "$REPOSITORY" \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT" \
+            --output-dir /tmp/qikvrt-effect-ack
+          python3 -B tests/test_qikvrt_effect_ack_event_adapter.py
+
+      - name: Persist frame on append-only ledger branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          event_id="$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-effect-ack/latest.json"))["event_id"])')"
+          git config user.name qikvrt-effect-ack-bot
+          git config user.email qikvrt-effect-ack-bot@users.noreply.github.com
+          git fetch origin effect-ack-ledger
+          git switch effect-ack-ledger
+          mkdir -p evidence/effect-ack/frames evidence/effect-ack/status
+          target="evidence/effect-ack/frames/${event_id}.json"
+          if test -e "$target"; then
+            cmp -s "/tmp/qikvrt-effect-ack/frames/${event_id}.json" "$target"
+            echo "Idempotent frame already present: $event_id"
+            exit 0
+          fi
+          cp "/tmp/qikvrt-effect-ack/frames/${event_id}.json" "$target"
+          cp /tmp/qikvrt-effect-ack/latest.json evidence/effect-ack/status/latest.json
+          git add evidence/effect-ack
+          git commit -m "effect-ack: persist ${event_id}"
+          git push origin HEAD:effect-ack-ledger
+
+      - name: Publish immutable run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-effect-ack-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-effect-ack
+          if-no-files-found: error
+          retention-days: 90
