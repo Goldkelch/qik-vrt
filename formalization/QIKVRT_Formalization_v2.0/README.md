@@ -1,79 +1,87 @@
-# QIK-VRT manuscript formalization v2.0 (work in progress)
+# QIK-VRT manuscript formalization v2.0
 
-This directory is the theorem-by-theorem reconstruction of the 62-page
-manuscript **Mandelbrot, Anschlussordnung, Physik und Retrokausalität**.
-The published v1.0 package remains unchanged as an archival baseline.
+Copyright 2026 Ingolf Lohmann. Non-source documentation: CC BY-NC-ND 4.0.
 
-## What “machine-checkable manuscript” means here
+**Status: formal-environment coverage complete with explicit epistemic and conditional boundaries.**
 
-The project distinguishes four separate obligations:
+This directory is the theorem-by-theorem reconstruction of the locked 62-page manuscript **Mandelbrot, Anschlussordnung, Physik und Retrokausalität**. The formalization is attached to the exact TeX and PDF bytes published under DOI `10.5281/zenodo.21482023`; it does not silently rewrite the manuscript.
 
-1. **Source coverage** — every formal LaTeX environment and every row of the
-   appendix claim matrix has a stable identifier and an exact source span.
-2. **Logical coverage** — definitions, assumptions and dependency edges are
-   explicit and acyclic.
-3. **Kernel coverage** — mathematical claims have a Lean `statement` and a
-   Lean theorem `checked : statement`; names alone are not accepted as proof
-   bindings. The ledger also locks the defining module and proposition-indexed
-   registry bytes by SHA-256.
-4. **Epistemic coverage** — empirical, interpretive and normative claims are
-   classified and testable as metadata, but are never promoted to mathematical
-   theorems about nature.
+## Locked source
 
-The phrase “fully formalized” is release-gated until all 20 definitions are
-typechecked, all 20 theorem-like environments are kernel checked (or explicitly
-and accurately represented as conditional statements), and all 34 appendix
-matrix rows are classified. Five remarks are tracked as context and do not add
-proof obligations.
+- TeX SHA-256: `c55446c62c890e581e9536c0dc8d5de70b7ecf7012a7e2e41744d971da9807cf`
+- PDF SHA-256: `b2207d61cd2ff145089d2f1b7cceff8b7f7bd21bce39de7230f553a99a29611f`
+- Physical PDF pages: 62
 
 ## Current verified coverage
 
-The current Std-only package contains **12 kernel-checked atomic bindings**.
-Nine bind complete source claims and cover **10 of 20 theorem-like LaTeX
-environments** (one claim spans three environments). Three further bindings
-are deliberately labeled `SOURCE_SUBCLAIM`: they are checked progress inside a
-source theorem, not proof of its pending parent claim.
+The generated claim graph and proof map record:
 
-Complete source-claim bindings:
+- 40 / 40 formal LaTeX environments inventoried;
+- 20 / 20 definitions source-bound and kernel-checked;
+- 20 / 20 theorem-like environments formally closed;
+- 17 / 17 explicit manuscript proof blocks attached;
+- 34 / 34 appendix matrix rows epistemically classified;
+- 42 strong source-bound Lean bindings;
+- six conditional bindings whose additional premises are explicit in their Lean types;
+- zero pending formal definition, theorem or conditional nodes.
 
-- `SET-001`: disjoint relative-complement partition;
-- `MAP-001`: conditional pullback of the partition;
-- `SET-003`: ambient-dimension-independent complement partition;
-- `MAP-003`: image-complement inclusion, the equality/disjointness iff,
-  injective sufficiency and the bijective codomain-complement case;
-- `GAT-004`: persistence of terminal PASS/BLOCK results;
-- `GAT-005`: exterior completeness from finite block certificates;
-- `GAT-006`: conditional total terminality with explicit certificate
-  completeness assumptions;
-- `RET-011`: later inputs/evidence do not mutate earlier recursive states or
-  immutable records;
-- `GAT-002`: factorization through the process map iff the status is constant
-  on process fibres.
+`KERNEL_CHECKED` denotes a direct source-bound Lean proposition. `CONDITIONAL_CHECKED` denotes a kernel proof under assumptions that remain explicit in the Lean type. It is not an unconditional theorem about physical reality.
 
-Checked source subclaims whose aggregate parent remains `PENDING`:
+The authoritative generated projections are:
 
-- `QUA-003A`: finite exact Boolean-prefix codes do not determine the underlying
-  infinite stream; the metric epsilon-quantizer theorem is still open;
-- `DIM-006A`: dimension-safe addition; unit-scaling necessity and
-  dimensionless transcendental arguments are still open;
-- `DIM-007A`: explicit integer-coordinate null and timelike Minkowski
-  witnesses; transport to standard real affine spacetime is still open.
+- `claims/TEX_ENVIRONMENTS.json`
+- `claims/APPENDIX_MATRIX.json`
+- `claims/CLAIM_GRAPH.json`
+- `MANUSCRIPT_PROOF_MAP.md`
+- `VERIFICATION_REPORT.md`
+- `proofs/PROOF_OBJECT_MANIFEST.json`
 
-The remaining aggregate theorem obligations are `ESC-003`, `ESC-004`,
-`ESC-005`, `QUA-003`, `QUA-004`, `QUA-005`, `GAT-003`, `GAT-007`, `DIM-006`
-and `DIM-007`. The generated proof map is the authoritative live ledger.
+The repository-wide completion projection is generated separately as:
+
+- `../../GLOBAL_CLAIM_INVENTORY.json`
+- `../../GLOBAL_TRACEABILITY.json`
+- `../../GLOBAL_KERNEL_RECEIPTS.json`
+- `../../GLOBAL_COMPLETION_RECEIPT.json`
+
+## Epistemic boundary
+
+Formal completion means that every registered formal manuscript environment has a source-bound machine-checkable disposition. It does not convert empirical, interpretive, metaphysical, spiritual, retrocausal, quantum-gravitational or normative statements into mathematical theorems. Such statements are retained as evidence-bound classifications, interpretations, normative premises, open boundaries or out-of-scope content.
+
+The global inventory therefore distinguishes exactly:
+
+`KERNEL_PROVED`, `KERNEL_PROVED_CONDITIONAL`, `EMPIRICAL_EVIDENCE_BOUND`, `INTERPRETIVE`, `NORMATIVE`, `OPEN`, and `OUT_OF_SCOPE`.
+
+An explicit `OPEN` disposition is a terminally recorded boundary, not a proof and not a `FINAL_PASS`.
 
 ## Reproducible checks
 
 ```sh
-python3 scripts/extract_tex_inventory.py --check
 python3 scripts/verify_source_lock.py
-python3 scripts/validate_claim_graph.py
+python3 scripts/materialize_completion.py --check
+python3 scripts/render_completion_proof_map.py --check
+python3 scripts/render_completion_verification_report.py --check
+python3 scripts/validate_completion_claim_graph.py
+python3 scripts/validate_effect_ack_claims.py
 python3 -m unittest discover -s tests -v
 lake build
 python3 scripts/audit_lean_axioms.py
+python3 scripts/audit_completion_axioms.py
+python3 scripts/audit_proof_escapes.py
+python3 scripts/materialize_completion_proof_manifest.py --check
+python3 scripts/verify_proof_object_manifest.py
+python3 ../../tools/qikvrt_global_completion.py check
 ```
 
-Lean is pinned by `lean-toolchain`. CI must reject `sorry`, `admit`, project
-`axiom` declarations, stale source hashes, missing source environments, cycles,
-forbidden category dependencies and proof fields on non-formal claims.
+Lean is pinned by `lean-toolchain`. Cache reuse may accelerate a build but may not replace kernel verification. CI rejects stale source hashes, missing source environments, dependency cycles, forbidden epistemic promotions, project axioms, `sorry`, `admit`, unchecked constants and stale generated evidence.
+
+## Completion claim boundary
+
+The strongest current manuscript statement is:
+
+```text
+LOCKED_62_PAGE_MANUSCRIPT_FORMAL_ENVIRONMENT_COVERAGE_COMPLETE
+ALL_KERNEL_ELIGIBLE_MANUSCRIPT_ENVIRONMENTS_CHECKED
+CONDITIONAL_ASSUMPTIONS_EXPLICIT
+```
+
+This directory alone does not establish an unqualified repository-wide `PASS`, `FINAL_PASS`, timeless `EFFECT_ACK_DONE`, empirical truth or fully kernel-verified overall completion.
