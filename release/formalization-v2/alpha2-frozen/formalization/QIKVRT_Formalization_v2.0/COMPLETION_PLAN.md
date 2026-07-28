@@ -1,19 +1,9 @@
 # Completion plan — QIK-VRT manuscript formalization v2.0
 
-Status: GLOBAL_FINALIZATION_ACTIVE
+Status: ACTIVE
 Authority repository: `Goldkelch/qik-vrt`
 Base tree: `a09cbdcbcc6c64975a06f2ddd92264547bc31ee0`
 Responsible human: Ingolf Lohmann
-
-<!-- qikvrt-global-completion-plan:start -->
-## Global completion state
-
-State: `GLOBAL_FINALIZATION_ACTIVE` for `qikvrt-global-claim-scope-v1`.
-
-The historical theorem tranches below are closed by the current claim graph: 20/20 definitions, 20/20 theorem-like environments, 42 strong Lean bindings and zero pending formal nodes. The broader ledger terminally classifies all 92 registered claims.
-
-Exact-head gates, Authority/Mirror promotion and the final completion receipt remain required.
-<!-- qikvrt-global-completion-plan:end -->
 
 ## Objective
 
@@ -27,7 +17,7 @@ Completion does not mean converting empirical, interpretive, or normative statem
 - PDF SHA-256: `b2207d61cd2ff145089d2f1b7cceff8b7f7bd21bce39de7230f553a99a29611f`
 - Physical PDF pages: 62
 
-## Completed theorem tranches (historical plan)
+## Remaining theorem tranches
 
 ### T1 — Escape-time reconstruction
 Claims: `ESC-004`, `ESC-005`, `ESC-003`

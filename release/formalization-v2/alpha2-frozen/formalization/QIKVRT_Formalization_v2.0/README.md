@@ -1,4 +1,4 @@
-# QIK-VRT manuscript formalization v2.0
+# QIK-VRT manuscript formalization v2.0 (work in progress)
 
 This directory is the theorem-by-theorem reconstruction of the 62-page
 manuscript **Mandelbrot, Anschlussordnung, Physik und Retrokausalität**.
@@ -26,15 +26,43 @@ and accurately represented as conditional statements), and all 34 appendix
 matrix rows are classified. Five remarks are tracked as context and do not add
 proof obligations.
 
-<!-- qikvrt-global-formalization-coverage:start -->
 ## Current verified coverage
 
-The locked 62-page manuscript formalization is complete at the formal-environment boundary. The claim graph contains 43 nodes: one locked source anchor and 42 strong Lean bindings. All 20 definitions and all 20 theorem-like environments are closed; six theorem bindings remain explicitly conditional.
+The current Std-only package contains **12 kernel-checked atomic bindings**.
+Nine bind complete source claims and cover **10 of 20 theorem-like LaTeX
+environments** (one claim spans three environments). Three further bindings
+are deliberately labeled `SOURCE_SUBCLAIM`: they are checked progress inside a
+source theorem, not proof of its pending parent claim.
 
-The global ledger includes all 43 manuscript graph nodes, all 34 appendix rows, and all 15 EFFECT_ACK claims, with one terminal disposition each. Empirical, interpretive, normative, OPEN and OUT_OF_SCOPE records are preserved without proof inflation.
+Complete source-claim bindings:
 
-Authoritative generated views are `claims/CLAIM_GRAPH.json`, `MANUSCRIPT_PROOF_MAP.md`, `VERIFICATION_REPORT.md`, and the repository-root `GLOBAL_CLAIM_INVENTORY.json`.
-<!-- qikvrt-global-formalization-coverage:end -->
+- `SET-001`: disjoint relative-complement partition;
+- `MAP-001`: conditional pullback of the partition;
+- `SET-003`: ambient-dimension-independent complement partition;
+- `MAP-003`: image-complement inclusion, the equality/disjointness iff,
+  injective sufficiency and the bijective codomain-complement case;
+- `GAT-004`: persistence of terminal PASS/BLOCK results;
+- `GAT-005`: exterior completeness from finite block certificates;
+- `GAT-006`: conditional total terminality with explicit certificate
+  completeness assumptions;
+- `RET-011`: later inputs/evidence do not mutate earlier recursive states or
+  immutable records;
+- `GAT-002`: factorization through the process map iff the status is constant
+  on process fibres.
+
+Checked source subclaims whose aggregate parent remains `PENDING`:
+
+- `QUA-003A`: finite exact Boolean-prefix codes do not determine the underlying
+  infinite stream; the metric epsilon-quantizer theorem is still open;
+- `DIM-006A`: dimension-safe addition; unit-scaling necessity and
+  dimensionless transcendental arguments are still open;
+- `DIM-007A`: explicit integer-coordinate null and timelike Minkowski
+  witnesses; transport to standard real affine spacetime is still open.
+
+The remaining aggregate theorem obligations are `ESC-003`, `ESC-004`,
+`ESC-005`, `QUA-003`, `QUA-004`, `QUA-005`, `GAT-003`, `GAT-007`, `DIM-006`
+and `DIM-007`. The generated proof map is the authoritative live ledger.
+
 ## Reproducible checks
 
 ```sh
