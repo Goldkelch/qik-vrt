@@ -1,0 +1,216 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT one-shot candidate pair equality 599866 6a5b3c0a
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/qikvrt_candidate_pair_equality_599866_6a5b3c0a_once.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-candidate-pair-equality-599866-6a5b3c0a
+  cancel-in-progress: false
+
+jobs:
+  verify-pair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
+      AUTHORITY_MAIN: 599866689400bcb825e5534bd85e4653db44432f
+      AUTHORITY_EXACT_HEAD: 6fec4bcf9679984a5cc6587ebd23be07492e3b5f
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      MIRROR_MAIN: 6a5b3c0ace91a327258f945b82f3fb40c16b18fe
+      MIRROR_EXACT_HEAD: 9f7bd91cb86bda0be9b6dafb5ba3b1f6f3c959a3
+      SCOPE_ID: qikvrt-global-claim-scope-v1
+      TARGET_AUTHORITY_PR: '115'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out bounded equality executor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch and compare exact final trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          authority_url="https://github.com/$AUTHORITY_REPOSITORY.git"
+          mirror_url="https://github.com/$MIRROR_REPOSITORY.git"
+          [ "$(git ls-remote "$authority_url" refs/heads/main | awk '{print $1}')" = "$AUTHORITY_MAIN" ]
+          [ "$(git ls-remote "$mirror_url" refs/heads/main | awk '{print $1}')" = "$MIRROR_MAIN" ]
+          git fetch --no-tags --depth=1 "$authority_url" "$AUTHORITY_MAIN"
+          [ "$(git rev-parse FETCH_HEAD)" = "$AUTHORITY_MAIN" ]
+          git update-ref refs/qikvrt/authority FETCH_HEAD
+          git fetch --no-tags --depth=1 "$mirror_url" "$MIRROR_MAIN"
+          [ "$(git rev-parse FETCH_HEAD)" = "$MIRROR_MAIN" ]
+          git update-ref refs/qikvrt/mirror FETCH_HEAD
+          authority_tree=$(git rev-parse refs/qikvrt/authority^{tree})
+          mirror_tree=$(git rev-parse refs/qikvrt/mirror^{tree})
+          [ "$authority_tree" = "$mirror_tree" ]
+          git diff --exit-code --no-ext-diff refs/qikvrt/authority refs/qikvrt/mirror -- .
+          printf '%s\n' "$authority_tree" > .qikvrt/evidence/shared-tree.txt
+      - name: Verify manifests, ledgers and candidate boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for side in authority mirror; do
+            ref="refs/qikvrt/$side"
+            git show "$ref:REPOSITORY_FILE_MANIFEST.json" > ".qikvrt/evidence/$side-manifest.json"
+            git show "$ref:REPOSITORY_FILE_MANIFEST.json.sha256" > ".qikvrt/evidence/$side-manifest.sha256"
+            git show "$ref:GLOBAL_CLAIM_INVENTORY.json" > ".qikvrt/evidence/$side-inventory.json"
+            git show "$ref:GLOBAL_SOURCE_CLAIM_DISPOSITION_TRACEABILITY.json" > ".qikvrt/evidence/$side-traceability.json"
+            git show "$ref:GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json" > ".qikvrt/evidence/$side-kernel.json"
+            if git cat-file -e "$ref:GLOBAL_COMPLETION_RECEIPT.json" 2>/dev/null; then
+              echo "BLOCK: $side candidate already contains a final receipt" >&2
+              exit 1
+            fi
+          done
+          cmp .qikvrt/evidence/authority-manifest.json .qikvrt/evidence/mirror-manifest.json
+          cmp .qikvrt/evidence/authority-manifest.sha256 .qikvrt/evidence/mirror-manifest.sha256
+          cmp .qikvrt/evidence/authority-inventory.json .qikvrt/evidence/mirror-inventory.json
+          cmp .qikvrt/evidence/authority-traceability.json .qikvrt/evidence/mirror-traceability.json
+          cmp .qikvrt/evidence/authority-kernel.json .qikvrt/evidence/mirror-kernel.json
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('.qikvrt/evidence')
+          manifest_bytes = (root / 'authority-manifest.json').read_bytes()
+          detached = (root / 'authority-manifest.sha256').read_text(encoding='ascii').split()[0]
+          manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+          if detached != manifest_sha:
+              raise SystemExit('BLOCK: detached manifest digest differs')
+          manifest = json.loads(manifest_bytes)
+          inventory = json.loads((root / 'authority-inventory.json').read_text(encoding='utf-8'))
+          trace = json.loads((root / 'authority-traceability.json').read_text(encoding='utf-8'))
+          kernel = json.loads((root / 'authority-kernel.json').read_text(encoding='utf-8'))
+          if inventory.get('scope_id') != 'qikvrt-global-claim-scope-v1' or inventory.get('counts', {}).get('total') != 92:
+              raise SystemExit('BLOCK: global inventory identity/count differs')
+          if trace.get('counts', {}).get('records') != 92:
+              raise SystemExit('BLOCK: traceability count differs')
+          if kernel.get('counts', {}).get('primary_receipts') != 54:
+              raise SystemExit('BLOCK: primary kernel receipt count differs')
+          values = {
+              'repository_manifest_sha256': manifest_sha,
+              'repository_content_tree_sha256': manifest['repository_content_tree_sha256'],
+              'claim_count': 92,
+              'primary_kernel_receipt_count': 54,
+              'open_claim_count': inventory['counts']['open_claims'],
+          }
+          (root / 'pair-values.json').write_text(json.dumps(values, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          PY
+      - name: Materialize canonical candidate equality receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path('.qikvrt/evidence')
+          values = json.loads((root / 'pair-values.json').read_text(encoding='utf-8'))
+          shared_tree = (root / 'shared-tree.txt').read_text(encoding='ascii').strip()
+          receipt = {
+              'schema': 'qikvrt_global_completion_candidate_pair_equality_receipt_v1',
+              'scope_id': os.environ['SCOPE_ID'],
+              'state': 'CANDIDATE_PAIR_EQUAL',
+              'authority': {
+                  'repository': os.environ['AUTHORITY_REPOSITORY'],
+                  'exact_green_head': os.environ['AUTHORITY_EXACT_HEAD'],
+                  'main': os.environ['AUTHORITY_MAIN'],
+                  'workflow_runs': {
+                      'global_completion': 30320366228,
+                      'manuscript_proof': 30320417095,
+                      'mandatory_ci': 30320366300,
+                      'collective_review': 30320366260,
+                      'evidence_materialization': 30320366230,
+                      'live_watch': 30320366312,
+                      'integrity_repair': {'run_id': 30320366289, 'conclusion': 'skipped', 'reason': 'no_repair_needed'},
+                  },
+                  'artifacts': {
+                      'global_completion_sha256': '95ecc99909495fed0f3567e123716badb931f63d0d2c974447918eaa916de51b',
+                      'proof_object_sha256': '8f4b60d8655941fb0002602d856ecedc4ce4a29774390dabbb8d89349adbf028',
+                  },
+              },
+              'mirror': {
+                  'repository': os.environ['MIRROR_REPOSITORY'],
+                  'exact_green_head': os.environ['MIRROR_EXACT_HEAD'],
+                  'main': os.environ['MIRROR_MAIN'],
+                  'workflow_runs': {
+                      'global_completion': 30321259580,
+                      'manuscript_proof': 30321259634,
+                      'mandatory_ci': 30321259650,
+                      'collective_review': 30321259712,
+                      'evidence_materialization': 30321259585,
+                      'live_watch': 30321259605,
+                      'integrity_repair': {'run_id': 30321259558, 'conclusion': 'skipped', 'reason': 'no_repair_needed'},
+                  },
+                  'artifacts': {
+                      'global_completion_sha256': 'ece227cb4c850684483c4554d2a544484e269a806c752fae8c1e3ed66fa4df72',
+                      'proof_object_sha256': '440a272d7f98e97b5f088bf6b01bdfb0fdbf94a93e16e6e66580817a78d94c4c',
+                      'mandatory_ci_sha256': '63c0939e537c67ab4fb82ffa325a3aabb640ea0c67e63e1b441d5c60a1915b68',
+                      'collective_review_sha256': '94d188d18858bb116bf35fba6bd52f5f2956185f497b1423a335ccd1cc9619d0',
+                  },
+              },
+              'equality': {
+                  'full_git_diff_empty': True,
+                  'shared_git_tree_sha1': shared_tree,
+                  'repository_manifest_sha256': values['repository_manifest_sha256'],
+                  'repository_content_tree_sha256': values['repository_content_tree_sha256'],
+                  'global_claim_inventory_byte_identical': True,
+                  'global_traceability_byte_identical': True,
+                  'global_kernel_receipts_byte_identical': True,
+              },
+              'counts': {
+                  'claims': values['claim_count'],
+                  'primary_kernel_receipts': values['primary_kernel_receipt_count'],
+                  'open_claims': values['open_claim_count'],
+              },
+              'claims': {
+                  'candidate_pair_equality_verified': True,
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'fully_kernel_verified_overall_completion': False,
+              },
+              'next_effect': 'AUTHORIZE_GLOBAL_COMPLETION_FINALIZATION_INPUT',
+              'non_claims': [
+                  'final receipt already materialized',
+                  'finalized Authority/Mirror pair after receipt materialization',
+                  'unscoped proof of every possible proposition',
+                  'proof of OPEN, empirical, interpretive or normative claims as mathematical theorems',
+              ],
+          }
+          canonical = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          payload_hash = hashlib.sha256(canonical).hexdigest()
+          envelope = {
+              'canonicalization': 'UTF-8 JSON; recursively sorted object keys; separators comma and colon; no trailing newline in hashed payload',
+              'receipt_payload_sha256': payload_hash,
+              'receipt': receipt,
+          }
+          (root / 'candidate-pair-equality-receipt.json').write_text(json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          (root / 'receipt-hash.txt').write_text(payload_hash + '\n', encoding='ascii', newline='\n')
+          PY
+      - name: Persist Authority-side candidate equality receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          hash=$(cat .qikvrt/evidence/receipt-hash.txt)
+          tree=$(cat .qikvrt/evidence/shared-tree.txt)
+          manifest=$(jq -r '.repository_manifest_sha256' .qikvrt/evidence/pair-values.json)
+          content=$(jq -r '.repository_content_tree_sha256' .qikvrt/evidence/pair-values.json)
+          gh pr comment "$TARGET_AUTHORITY_PR" --repo "$GITHUB_REPOSITORY" --body "## Global completion candidate Authority/Mirror Equality Receipt\n\n- state: \`CANDIDATE_PAIR_EQUAL\`\n- scope: \`$SCOPE_ID\`\n- Authority main: \`$AUTHORITY_MAIN\`\n- Mirror main: \`$MIRROR_MAIN\`\n- shared Git tree: \`$tree\`\n- repository manifest SHA-256: \`$manifest\`\n- repository content-tree SHA-256: \`$content\`\n- claims: \`92\`\n- primary native Lean receipts: \`54\`\n- receipt payload SHA-256: \`$hash\`\n- execution run: \`$GITHUB_RUN_ID\`\n\nThis is candidate equality only. No \`PASS\`, \`FINAL_PASS\`, \`EFFECT_ACK_DONE\` or final completion receipt is claimed."
+      - name: Upload canonical candidate equality receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-candidate-pair-equality-599866-6a5b3c0a
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            .qikvrt/evidence/candidate-pair-equality-receipt.json
+            .qikvrt/evidence/receipt-hash.txt
+            .qikvrt/evidence/shared-tree.txt
+            .qikvrt/evidence/pair-values.json
