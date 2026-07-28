@@ -1,0 +1,201 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT persist Batch-002 evidence recovery once
+
+on:
+  push:
+    branches:
+      - trusted/persist-content-disposition-batch-002-recovery-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_persist_batch_002_evidence_recovery_once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-persist-batch-002-evidence-recovery-v1
+  cancel-in-progress: false
+
+jobs:
+  recover-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_AUTHORITY_MAIN: 98194f453cee0ddf4dd0a44b1d12b1d9f20a9709
+      EXPECTED_SOURCE_HEAD: cfe788e3a3812302dd0271fbb23a6a3bd32aa436
+      SOURCE_BRANCH: agent/batch-002-public-candidate-byte-freeze
+      TRIGGER_BRANCH: trusted/persist-content-disposition-batch-002-recovery-20260728-v1
+      EVIDENCE_BRANCH: evidence/content-disposition-batch-002-recovery-20260728-v1
+      PREPARATION_ARTIFACT_ID: '8697237384'
+      PREPARATION_ARTIFACT_SHA256: 93373b320431f7bac9808a2eb3606aedd1d4465e1183ec3f8f3566004efde428
+      BYTE_FREEZE_ARTIFACT_ID: '8697268299'
+      BYTE_FREEZE_ARTIFACT_SHA256: e810dc4d22341e3568f5cf47a45ae8516eb20ced8e4432610ba573a70accf0e6
+      TARGET_ROOT: release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002
+      FIXED_GIT_DATE: '2026-07-28T20:10:00+02:00'
+
+    steps:
+      - name: Check out exact trigger branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: trusted/persist-content-disposition-batch-002-recovery-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify frozen refs and recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$SOURCE_BRANCH | cut -f1)" = "$EXPECTED_SOURCE_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 2 ]
+          [ "${changed[0]}" = '.github/workflows/qikvrt_persist_batch_002_evidence_recovery_once.yml' ]
+          [ "${changed[1]}" = 'work-units/CREATE_PERSISTED_BATCH_002_EVIDENCE_RECOVERY_HEAD.json' ]
+
+      - name: Download and verify immutable workflow artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/batch002-recovery"
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$api/${PREPARATION_ARTIFACT_ID}/zip" \
+            -o "$RUNNER_TEMP/batch002-recovery/preparation.zip"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$api/${BYTE_FREEZE_ARTIFACT_ID}/zip" \
+            -o "$RUNNER_TEMP/batch002-recovery/byte-freeze.zip"
+          echo "$PREPARATION_ARTIFACT_SHA256  $RUNNER_TEMP/batch002-recovery/preparation.zip" | sha256sum -c -
+          echo "$BYTE_FREEZE_ARTIFACT_SHA256  $RUNNER_TEMP/batch002-recovery/byte-freeze.zip" | sha256sum -c -
+          unzip -t "$RUNNER_TEMP/batch002-recovery/preparation.zip"
+          unzip -t "$RUNNER_TEMP/batch002-recovery/byte-freeze.zip"
+
+      - name: Construct exact persisted evidence head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$EXPECTED_SOURCE_HEAD" "$EVIDENCE_BRANCH"
+          git checkout -B "$EVIDENCE_BRANCH" "origin/$EVIDENCE_BRANCH"
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_AUTHORITY_MAIN" ]
+
+          git diff --binary "$EXPECTED_AUTHORITY_MAIN" "$EXPECTED_SOURCE_HEAD" -- \
+            '.github/workflows/qikvrt_batch_002_public_candidate_byte_freeze.yml' \
+            '.github/workflows/qikvrt_content_disposition_batch_002.yml' \
+            'tests/test_qikvrt_content_disposition_batch_002.py' \
+            'tools/qikvrt_content_disposition_batch_002.py' \
+            'work-units/CREATE_AND_EXECUTE_CONTENT_DISPOSITION_BATCH_002_WORK_UNIT.json' \
+            'work-units/CREATE_EXACT_PUBLIC_CANDIDATE_BYTE_FREEZE_WORK_UNIT_FOR_BATCH_002.json' \
+            | git apply --index
+
+          rm -rf "$TARGET_ROOT"
+          mkdir -p "$TARGET_ROOT/preparation" "$TARGET_ROOT/public-candidate-byte-freeze"
+          unzip -q "$RUNNER_TEMP/batch002-recovery/preparation.zip" -d "$TARGET_ROOT/preparation"
+          unzip -q "$RUNNER_TEMP/batch002-recovery/byte-freeze.zip" -d "$TARGET_ROOT/public-candidate-byte-freeze"
+
+          python3 -B - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002')
+          prep = json.loads((root/'preparation/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json').read_text(encoding='utf-8'))
+          freeze = json.loads((root/'public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json').read_text(encoding='utf-8'))
+          assert prep['batch_id'] == 'CONTENT-DISPOSITION-BATCH-002'
+          assert prep['subject_count'] == 6
+          assert prep['completion_claims']['batch_executed'] is True
+          assert prep['completion_claims']['batch_complete'] is False
+          assert prep['completion_claims']['pass'] is False
+          assert prep['completion_claims']['final_pass'] is False
+          assert prep['completion_claims']['effect_ack_done'] is False
+          assert freeze['batch_id'] == 'CONTENT-DISPOSITION-BATCH-002'
+          assert freeze['record_count'] == 6
+          assert freeze['file_count'] == 70
+          assert freeze['completion_claims']['candidate_byte_freeze_complete'] is True
+          assert freeze['completion_claims']['claim_disposition_complete'] is False
+          assert freeze['completion_claims']['pass'] is False
+          assert freeze['completion_claims']['final_pass'] is False
+          assert freeze['completion_claims']['effect_ack_done'] is False
+          assert freeze['next_deterministic_effect'] == 'EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002'
+          binding = {
+            '_license': {
+              'classification': 'machine_readable_artifact_binding_receipt',
+              'copyright': 'Copyright 2026 Ingolf Lohmann',
+              'license': 'CC-BY-NC-ND-4.0',
+              'rights_holder': 'Ingolf Lohmann'
+            },
+            'schema': 'qikvrt_batch_002_evidence_recovery_binding_v1',
+            'source_authority': '98194f453cee0ddf4dd0a44b1d12b1d9f20a9709',
+            'source_head': 'cfe788e3a3812302dd0271fbb23a6a3bd32aa436',
+            'artifacts': [
+              {'run_id': 30381702166, 'artifact_id': 8697237384, 'sha256': '93373b320431f7bac9808a2eb3606aedd1d4465e1183ec3f8f3566004efde428'},
+              {'run_id': 30381702895, 'artifact_id': 8697268299, 'sha256': 'e810dc4d22341e3568f5cf47a45ae8516eb20ced8e4432610ba573a70accf0e6'}
+            ],
+            'persisted_receipts': {
+              'preparation': 'preparation/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json',
+              'public_candidate_byte_freeze': 'public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json'
+            },
+            'truth_boundary': {
+              'claim_disposition_complete': False,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False
+            },
+            'next_deterministic_effect': 'EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002'
+          }
+          (root/'BATCH_002_EVIDENCE_RECOVERY_BINDING.json').write_text(json.dumps(binding, sort_keys=True, indent=2)+'\n', encoding='utf-8')
+          PY
+
+          git add .github/workflows/qikvrt_batch_002_public_candidate_byte_freeze.yml \
+            .github/workflows/qikvrt_content_disposition_batch_002.yml \
+            tests/test_qikvrt_content_disposition_batch_002.py \
+            tools/qikvrt_content_disposition_batch_002.py \
+            work-units/CREATE_AND_EXECUTE_CONTENT_DISPOSITION_BATCH_002_WORK_UNIT.json \
+            work-units/CREATE_EXACT_PUBLIC_CANDIDATE_BYTE_FREEZE_WORK_UNIT_FOR_BATCH_002.json \
+            "$TARGET_ROOT"
+
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tests/test_qikvrt_content_disposition_batch_002.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --quiet && { echo 'No recovery delta'; exit 1; }
+
+          env \
+            GIT_AUTHOR_NAME='QIK-VRT Evidence Recovery' \
+            GIT_AUTHOR_EMAIL='ingolf.lohmann@live.com' \
+            GIT_AUTHOR_DATE="$FIXED_GIT_DATE" \
+            GIT_COMMITTER_NAME='QIK-VRT Evidence Recovery' \
+            GIT_COMMITTER_EMAIL='ingolf.lohmann@live.com' \
+            GIT_COMMITTER_DATE="$FIXED_GIT_DATE" \
+            git commit -m 'evidence: persist Batch-002 preparation and public-byte freeze'
+
+          evidence_head="$(git rev-parse HEAD)"
+          [ "$(git rev-parse HEAD^)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$evidence_head" ]
+          {
+            echo '## Persisted Batch-002 evidence recovery head'
+            echo
+            echo "- Authority baseline: \`$EXPECTED_AUTHORITY_MAIN\`"
+            echo "- Source implementation head: \`$EXPECTED_SOURCE_HEAD\`"
+            echo "- Evidence head: \`$evidence_head\`"
+            echo "- Preparation artifact: \`$PREPARATION_ARTIFACT_ID\` / \`$PREPARATION_ARTIFACT_SHA256\`"
+            echo "- Byte-freeze artifact: \`$BYTE_FREEZE_ARTIFACT_ID\` / \`$BYTE_FREEZE_ARTIFACT_SHA256\`"
+            echo '- Claim disposition complete: false'
+            echo '- PASS / FINAL_PASS / EFFECT_ACK_DONE: false'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce recovery truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse --abbrev-ref HEAD)" = "$EVIDENCE_BRANCH" ]
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
