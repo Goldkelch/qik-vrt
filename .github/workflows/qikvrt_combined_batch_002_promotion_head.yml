@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT combined Batch 002 promotion head
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.well-known/qik-vrt-self-disclosure.json'
+      - 'tools/qikvrt_self_disclosure.py'
+      - 'tools/qikvrt_transactional_workflow_trigger.py'
+      - 'tests/test_qikvrt_self_disclosure.py'
+      - 'policy/TRANSACTIONAL_GITHUB_WORKFLOW_TRIGGER.json'
+      - 'docs/TRANSACTIONAL_GITHUB_WORKFLOW_TRIGGER_PROTOCOL.md'
+      - '.github/workflows/qikvrt_combined_batch_002_promotion_head.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-combined-head:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify exact integrated source files
+        run: |
+          set -euo pipefail
+          test -f release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json
+          test -f tools/qikvrt_transactional_workflow_trigger.py
+          test -f .well-known/qik-vrt-self-disclosure.json
+      - name: Run focused tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest tests.test_qikvrt_self_disclosure
+          python3 tools/qikvrt_self_disclosure.py status > self-disclosure-status.json
+      - name: Validate truth boundary
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open('.well-known/qik-vrt-self-disclosure.json'))
+          assert d['state']=='AVAILABLE'
+          assert d['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
+          r=json.load(open('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json'))
+          assert r['record_count']==6 and r['file_count']==70
+          assert r['completion_claims']['candidate_byte_freeze_complete'] is True
+          assert r['completion_claims']['claim_disposition_complete'] is False
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-combined-batch-002-promotion-head-${{ github.run_id }}-${{ github.run_attempt }}
+          path: self-disclosure-status.json
+          retention-days: 90

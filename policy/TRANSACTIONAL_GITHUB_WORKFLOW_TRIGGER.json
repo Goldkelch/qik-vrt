@@ -1,0 +1,11 @@
+{
+  "schema": "qikvrt_transactional_github_workflow_trigger_policy_v1",
+  "copyright": "Copyright 2026 Ingolf Lohmann",
+  "license": "CC-BY-NC-ND-4.0",
+  "failure_class": "NON_ATOMIC_MULTI_COMMIT_WORKFLOW_TRIGGER_ORDERING_RACE",
+  "required_sequence": ["PAYLOAD_WRITES","MANIFEST_AND_HASH_BINDING","FINAL_READY_MARKER_WRITE","FAIL_CLOSED_TRIGGER_VERIFICATION","AUTHORIZED_EFFECT_EXECUTION","EFFECT_VERIFICATION","REVIEWED_PERSISTENCE"],
+  "workflow_trigger_rule": "A transactional workflow MUST watch only the final ready marker path and MUST NOT watch its own workflow file or intermediate payload files.",
+  "required_manifest_fields": ["schema","transaction_id","base_commit","allowed_changed_paths","required_changed_paths","required_files","ready_marker","completion_claims"],
+  "required_negative_tests": ["READY_MARKER_MISSING","READY_MARKER_INVALID","REQUIRED_CHANGED_PATH_MISSING","UNEXPECTED_CHANGED_PATH","REQUIRED_FILE_MISSING","REQUIRED_FILE_HASH_MISMATCH","FALSE_COMPLETION_CLAIM_IN_TRIGGER_MANIFEST"],
+  "completion_claims": {"pass": false, "final_pass": false, "effect_ack_done": false}
+}
