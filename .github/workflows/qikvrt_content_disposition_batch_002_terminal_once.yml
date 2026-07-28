@@ -5,13 +5,13 @@ name: QIK-VRT terminal content disposition Batch 002 once
 on:
   push:
     branches: [execution/content-disposition-batch-002-terminal-v1]
-    paths: [work-units/EXECUTE_BATCH_002_TERMINAL_READY_V5.json]
+    paths: [work-units/EXECUTE_BATCH_002_TERMINAL_READY_V6.json]
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-content-disposition-batch-002-terminal-v5
+  group: qikvrt-content-disposition-batch-002-terminal-v6
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import json,pathlib,subprocess
-          r=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V5.json').read_text())
+          r=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V6.json').read_text())
           assert r['state']=='READY'
           assert r['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
           assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==r['trigger_parent']
