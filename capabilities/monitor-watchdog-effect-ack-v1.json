@@ -1,0 +1,46 @@
+{
+  "schema": "qikvrt_capability_record_v1",
+  "capability_id": "qikvrt.monitor.watchdog.effect_ack.event_driven.v1",
+  "title": "Event-driven repository monitor/watchdog Effect Acknowledgement adapter",
+  "version": "1.0.0-candidate",
+  "status": "PARTIAL",
+  "capability_class": "monitoring",
+  "implementation_paths": [
+    ".github/workflows/qikvrt_event_driven_monitor_watchdog.yml",
+    "tools/qikvrt_effect_ack_event_adapter.py",
+    "tests/test_qikvrt_effect_ack_event_adapter.py",
+    "schemas/qikvrt-effect-ack-event-frame-v1.schema.json"
+  ],
+  "triggers": [
+    "push",
+    "pull_request",
+    "issues",
+    "issue_comment",
+    "workflow_run",
+    "release",
+    "create",
+    "delete",
+    "repository_dispatch",
+    "workflow_dispatch"
+  ],
+  "ledger_branch": "effect-ack-ledger",
+  "idempotency": "event_id is derived from canonical source and payload digest; duplicate frames must be byte-identical",
+  "retry_semantics": "GitHub Actions rerun produces a separately bound run attempt while preserving payload identity",
+  "failure_classes": [
+    "EVENT_FRAME_SCHEMA_INVALID",
+    "EVENT_LEDGER_NON_APPEND_ONLY",
+    "EVENT_LEDGER_PUSH_RECURSION",
+    "EVENT_ACK_ARTIFACT_MISSING",
+    "EFFECT_ACK_EVENT_SINK_NOT_CONNECTED"
+  ],
+  "current_boundary": {
+    "authority_exact_head_gates_green": false,
+    "authority_promoted": false,
+    "mirror_synchronized": false,
+    "external_chat_event_sink_connected": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  },
+  "next_deterministic_effect": "RUN_EXACT_HEAD_GATES_AND_VERIFY_FIRST_EVENT_FRAME"
+}
