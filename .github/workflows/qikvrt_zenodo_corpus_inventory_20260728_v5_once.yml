@@ -1,0 +1,374 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT authenticated Zenodo corpus proof inventory v5 once
+
+on:
+  push:
+    branches:
+      - execution/zenodo-corpus-inventory-20260728-v5
+    paths:
+      - .github/workflows/qikvrt_zenodo_corpus_inventory_20260728_v5_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-zenodo-corpus-inventory-20260728-v5
+  cancel-in-progress: false
+
+jobs:
+  inventory-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: ce7958840476e2bde67ccee63e421135a53bfec4
+      TARGET_BRANCH: execution/zenodo-corpus-inventory-20260728-v5
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_zenodo_corpus_inventory_20260728_v5_once.yml
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28
+
+    steps:
+      - name: Check out exact inventory branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/zenodo-corpus-inventory-20260728-v5
+          fetch-depth: 0
+
+      - name: Verify one-path read-only authorization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY.json" ]
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_PROOF_INDEX.json" ]
+
+      - name: Execute promoted read-only corpus inventory
+        id: inventory
+        shell: bash
+        run: |
+          set -uo pipefail
+          observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf 'observed_at=%s\n' "$observed_at" >> "$GITHUB_OUTPUT"
+          set +e
+          python3 -B tools/qikvrt_zenodo_corpus_proof_v2.py \
+            --output-dir "$OUTPUT_DIR" \
+            --observed-at "$observed_at" \
+            > .qikvrt-zenodo-corpus-inventory-v5.log 2>&1
+          status=$?
+          set -e
+          printf 'exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] && grep -qx 'ZENODO_CORPUS_INVENTORY_STATE=verified' .qikvrt-zenodo-corpus-inventory-v5.log; then
+            echo 'success=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'success=false' >> "$GITHUB_OUTPUT"
+          fi
+          sed -n '1,240p' .qikvrt-zenodo-corpus-inventory-v5.log
+
+      - name: Persist fail-closed execution receipt
+        if: steps.inventory.outputs.success != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_DIR"
+          cp .qikvrt-zenodo-corpus-inventory-v5.log "$OUTPUT_DIR/INVENTORY_DIAGNOSTIC_V5.log"
+          INVENTORY_EXIT_CODE='${{ steps.inventory.outputs.exit_code }}' \
+          INVENTORY_OBSERVED_AT='${{ steps.inventory.outputs.observed_at }}' \
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          out = pathlib.Path('release/zenodo-corpus-proof-2026-07-28')
+          log = (out / 'INVENTORY_DIAGNOSTIC_V5.log').read_bytes()
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_failed_inventory_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_diagnostic_v2',
+              'state': 'BLOCK',
+              'observed_at': os.environ['INVENTORY_OBSERVED_AT'],
+              'source_authority': 'ce7958840476e2bde67ccee63e421135a53bfec4',
+              'parser': 'tools/qikvrt_zenodo_corpus_proof_v2.py',
+              'exit_code': int(os.environ['INVENTORY_EXIT_CODE']),
+              'log_path': 'release/zenodo-corpus-proof-2026-07-28/INVENTORY_DIAGNOSTIC_V5.log',
+              'log_sha256': hashlib.sha256(log).hexdigest(),
+              'remote_mutation_performed': False,
+              'completion_claims': {
+                  'corpus_inventory_complete': False,
+                  'zenodo_proof_publication_executed': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+          }
+          (out / 'INVENTORY_DIAGNOSTIC_V5.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          PY
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected diagnostic path: $path" >&2; exit 1;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist blocked Zenodo corpus inventory v5 diagnostic'
+          git push origin "HEAD:$TARGET_BRANCH"
+          exit 1
+
+      - name: Validate and classify the observed corpus without discarding evidence
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+
+          root = pathlib.Path.cwd()
+          out = root / 'release/zenodo-corpus-proof-2026-07-28'
+          minimum = json.loads((out / 'KNOWN_PUBLISHED_RECORDS_MINIMUM.json').read_text(encoding='utf-8'))
+          index = json.loads((out / 'ZENODO_CORPUS_PROOF_INDEX.json').read_text(encoding='utf-8'))
+          inventory = json.loads((out / 'ZENODO_CORPUS_INVENTORY.json').read_text(encoding='utf-8'))
+
+          if index.get('schema') != 'qikvrt_zenodo_corpus_proof_index_v1':
+              raise SystemExit('BLOCK: corpus proof index schema differs')
+          if inventory.get('schema') != 'qikvrt_zenodo_corpus_inventory_v1':
+              raise SystemExit('BLOCK: corpus inventory schema differs')
+
+          records = index.get('records')
+          if not isinstance(records, list) or not records:
+              raise SystemExit('BLOCK: observed record list is empty')
+          ids = [int(item['record_id']) for item in records]
+          if ids != sorted(ids) or len(ids) != len(set(ids)):
+              raise SystemExit('BLOCK: observed record identities are unordered or duplicated')
+          if inventory.get('record_count') != len(records) or index.get('record_count') != len(records):
+              raise SystemExit('BLOCK: corpus record counts differ')
+          if index.get('public_byte_verified_count') != len(records):
+              raise SystemExit('BLOCK: public-byte verified count differs')
+          claims = index.get('completion_claims')
+          if not isinstance(claims, dict):
+              raise SystemExit('BLOCK: index completion claims are absent')
+          if claims.get('public_record_and_file_integrity_complete') is not True:
+              raise SystemExit('BLOCK: public record and file integrity is not complete')
+          if claims.get('all_content_claims_final_pass') is not False:
+              raise SystemExit('BLOCK: false content-level final pass')
+          if claims.get('proof_corpus_publication_executed') is not False:
+              raise SystemExit('BLOCK: false proof-corpus publication claim')
+          if claims.get('final_pass') is not False:
+              raise SystemExit('BLOCK: false final pass')
+
+          total_files = 0
+          envelope_hashes = []
+          for record in records:
+              path = root / record['envelope_path']
+              raw = path.read_bytes()
+              envelope = json.loads(raw.decode('utf-8'))
+              if int(envelope['record']['record_id']) != int(record['record_id']):
+                  raise SystemExit('BLOCK: envelope record identity differs')
+              if envelope['record'].get('published_state_verified') is not True:
+                  raise SystemExit('BLOCK: envelope published state is not verified')
+              coverage = envelope.get('coverage')
+              completion = envelope.get('completion_claims')
+              files = envelope.get('public_files')
+              if not isinstance(coverage, dict) or not isinstance(completion, dict):
+                  raise SystemExit('BLOCK: envelope truth boundary is absent')
+              if coverage.get('publication_identity_complete') is not True:
+                  raise SystemExit('BLOCK: envelope publication identity is incomplete')
+              if coverage.get('public_file_integrity_complete') is not True:
+                  raise SystemExit('BLOCK: envelope public file integrity is incomplete')
+              if completion.get('publication_integrity_proved') is not True:
+                  raise SystemExit('BLOCK: envelope publication integrity is not proved')
+              if completion.get('all_natural_language_claims_formally_proved') is not False:
+                  raise SystemExit('BLOCK: false natural-language theorem inflation')
+              if completion.get('final_pass') is not False:
+                  raise SystemExit('BLOCK: false envelope final pass')
+              if not isinstance(files, list) or not files:
+                  raise SystemExit('BLOCK: envelope public file list is empty')
+              if not all(item.get('public_byte_redownload_verified') is True for item in files):
+                  raise SystemExit('BLOCK: an envelope public byte was not redownload-verified')
+              if not all(isinstance(item.get('sha256'), str) and len(item['sha256']) == 64 for item in files):
+                  raise SystemExit('BLOCK: an envelope SHA-256 is malformed')
+              total_files += len(files)
+              envelope_hashes.append({
+                  'record_id': int(record['record_id']),
+                  'path': path.relative_to(root).as_posix(),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+              })
+
+          minimum_ids = sorted({int(value) for value in minimum['record_ids']})
+          observed_ids = sorted(ids)
+          missing_ids = sorted(set(minimum_ids) - set(observed_ids))
+          additional_ids = sorted(set(observed_ids) - set(minimum_ids))
+          minimum_complete = not missing_ids
+          state = 'OBSERVED_CORPUS_VERIFIED' if minimum_complete else 'OBSERVED_CORPUS_VERIFIED_WITH_MINIMUM_GAP'
+
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_zenodo_corpus_inventory_validation',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_validation_v1',
+              'state': state,
+              'observed_at': index['observed_at'],
+              'source_authority': 'ce7958840476e2bde67ccee63e421135a53bfec4',
+              'parser': 'tools/qikvrt_zenodo_corpus_proof_v2.py',
+              'account_scope': index['account_scope'],
+              'record_count': len(records),
+              'public_file_count': total_files,
+              'public_byte_verified_record_count': index['public_byte_verified_count'],
+              'observed_record_ids': observed_ids,
+              'known_minimum_record_ids': minimum_ids,
+              'missing_known_minimum_record_ids': missing_ids,
+              'additional_observed_record_ids': additional_ids,
+              'historical_minimum_guard_complete': minimum_complete,
+              'envelope_hashes': envelope_hashes,
+              'remote_mutation_performed': False,
+              'completion_claims': {
+                  'authenticated_inventory_executed': True,
+                  'observed_public_record_and_file_integrity_complete': True,
+                  'historical_minimum_guard_complete': minimum_complete,
+                  'all_content_claims_dispositioned': False,
+                  'proof_corpus_publication_executed': False,
+                  'mirror_synchronized': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+              'next_deterministic_effect': (
+                  'RECONCILE_MISSING_MINIMUM_RECORDS'
+                  if missing_ids
+                  else 'REVIEW_AND_DISPOSITION_ALL_HISTORICAL_CONTENT_CLAIMS'
+              ),
+          }
+          (out / 'ZENODO_CORPUS_INVENTORY_VALIDATION.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          report_lines = [
+              '<!--',
+              'SPDX-License-Identifier: CC-BY-NC-ND-4.0',
+              'Copyright 2026 Ingolf Lohmann.',
+              '-->',
+              '',
+              '# Validierung der authentisierten Zenodo-Korpusinventur',
+              '',
+              f'**Zustand:** `{state}`  ',
+              f'**Beobachtungszeitpunkt:** `{index["observed_at"]}`  ',
+              f'**Beobachtete Records:** `{len(records)}`  ',
+              f'**Öffentlich bytegenau geprüfte Dateien:** `{total_files}`',
+              '',
+              '## Mengenabgleich',
+              '',
+              f'- bekannte Mindest-IDs: `{len(minimum_ids)}`',
+              f'- fehlende Mindest-IDs: `{missing_ids}`',
+              f'- zusätzlich beobachtete IDs: `{additional_ids}`',
+              '',
+              '## Wahrheitsgrenze',
+              '',
+              'Die authentisierte Inventur, die öffentliche Record-Prüfung und der Byte-Redownload sind für die beobachtete Menge abgeschlossen. Eine Differenz zur historischen Mindestliste wird nicht verworfen, sondern als eigener Befund persistiert. Die inhaltliche Claim-Disposition aller historischen Veröffentlichungen und die Zenodo-Publikation des Proof-Korpus bleiben offen.',
+              '',
+              '```text',
+              'PASS            = false',
+              'FINAL_PASS      = false',
+              'EFFECT_ACK_DONE = false',
+              '```',
+              '',
+          ]
+          (out / 'ZENODO_CORPUS_INVENTORY_VALIDATION_DE.md').write_text(
+              '\n'.join(report_lines), encoding='utf-8', newline='\n'
+          )
+
+          report = (out / 'CORPUS_PROOF_REPORT_DE.md').read_text(encoding='utf-8')
+          if 'NO_MACHINE_PROOF_NO_ZENODO_UPLOAD' not in report:
+              raise SystemExit('BLOCK: machine-proof policy is absent from corpus report')
+          if 'keine natürliche Sprache pauschal' not in report:
+              raise SystemExit('BLOCK: corpus report truth boundary is absent')
+
+          readme_path = out / 'README.md'
+          readme = readme_path.read_text(encoding='utf-8')
+          readme = readme.replace(
+              'AUTHENTICATED_CORPUS_INVENTORY = NOT_EXECUTED',
+              'AUTHENTICATED_CORPUS_INVENTORY = OBSERVED_VERIFIED',
+          )
+          readme = readme.replace(
+              'PUBLIC_BYTE_REDOWNLOAD         = NOT_EXECUTED',
+              'PUBLIC_BYTE_REDOWNLOAD         = OBSERVED_SET_VERIFIED',
+          )
+          readme = readme.replace(
+              'PROOF_ENVELOPES                = NOT_MATERIALIZED',
+              'PROOF_ENVELOPES                = MATERIALIZED',
+          )
+          readme += (
+              '\n## Live-Inventur-Receipt v5\n\n'
+              f'- state: `{state}`\n'
+              f'- observed_at: `{index["observed_at"]}`\n'
+              f'- observed records: `{len(records)}`\n'
+              f'- public files reverified: `{total_files}`\n'
+              f'- missing known minimum IDs: `{missing_ids}`\n'
+              f'- additional observed IDs: `{additional_ids}`\n'
+              '- Zenodo proof-corpus publication: `NOT_EXECUTED`\n'
+              '- completion: `EFFECT_ACK_CONTINUE`\n'
+          )
+          readme_path.write_text(readme, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Persist observed corpus evidence
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_zenodo_corpus_proof.py
+          python3 -B tests/test_zenodo_corpus_inventory_failure_receipt.py
+          python3 -B tests/test_zenodo_machine_proof_policy.py
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -ge 9 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected inventory output path: $path" >&2; exit 1;;
+            esac
+          done
+          [ ! -e "$EXECUTION_WORKFLOW" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist authenticated Zenodo corpus inventory v5'
+          git push origin "HEAD:$TARGET_BRANCH"
