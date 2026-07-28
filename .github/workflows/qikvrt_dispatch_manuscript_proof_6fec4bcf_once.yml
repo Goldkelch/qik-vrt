@@ -30,96 +30,92 @@ jobs:
       TARGET_WORKFLOW: qikvrt_manuscript_proof.yml
       TARGET_PR: '115'
     steps:
-      - name: Dispatch exact manuscript proof workflow
+      - name: Report dispatcher start
         shell: bash
         run: |
           set -euo pipefail
-          gh api -X POST \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/dispatches" \
-            -f ref="$TARGET_BRANCH"
-      - name: Resolve and gate exact workflow run
-        id: gate
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatcher started.\n\n- target head: \`$EXPECTED_SHA\`\n- target branch: \`$TARGET_BRANCH\`\n- dispatcher run: \`$GITHUB_RUN_ID\`\n\nThe dispatcher will reuse an existing successful workflow-dispatch run for this SHA or create and gate a new one."
+      - name: Reuse or dispatch exact manuscript proof workflow
+        id: resolve
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .qikvrt/evidence
-          run_id=''
-          for _attempt in $(seq 1 120); do
+          list_runs() {
             gh api --method GET \
               "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/runs" \
               -f branch="$TARGET_BRANCH" \
               -f event=workflow_dispatch \
-              -f per_page=20 > .qikvrt/evidence/manuscript-proof-runs.json
-            run_id=$(python3 - <<'PY'
-          import json, os
-          value = json.load(open('.qikvrt/evidence/manuscript-proof-runs.json', encoding='utf-8'))
-          expected = os.environ['EXPECTED_SHA']
-          for run in value.get('workflow_runs', []):
-              if run.get('head_sha') == expected:
-                  print(run['id'])
-                  break
-          PY
-            )
-            if [ -n "$run_id" ]; then
-              break
-            fi
-            sleep 5
-          done
-          if [ -z "$run_id" ]; then
-            echo 'BLOCK: exact workflow_dispatch run was not observed' >&2
-            exit 1
-          fi
-          for _attempt in $(seq 1 240); do
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
-              > .qikvrt/evidence/manuscript-proof-run.json
-            read -r status conclusion head_sha < <(python3 - <<'PY'
-          import json
-          run = json.load(open('.qikvrt/evidence/manuscript-proof-run.json', encoding='utf-8'))
-          print(run.get('status', ''), run.get('conclusion') or '', run.get('head_sha', ''))
-          PY
-            )
-            if [ "$head_sha" != "$EXPECTED_SHA" ]; then
-              echo "BLOCK: run $run_id head $head_sha differs from $EXPECTED_SHA" >&2
-              exit 1
-            fi
-            if [ "$status" = completed ]; then
-              if [ "$conclusion" != success ]; then
-                echo "BLOCK: manuscript proof run $run_id concluded $conclusion" >&2
-                exit 1
-              fi
-              break
-            fi
-            sleep 5
-          done
-          if [ "${status:-}" != completed ] || [ "${conclusion:-}" != success ]; then
-            echo "BLOCK: manuscript proof run $run_id did not complete successfully" >&2
-            exit 1
-          fi
-          RUN_ID="$run_id" python3 - <<'PY'
-          import json, os
-          receipt = {
-              'schema': 'qikvrt_exact_head_workflow_dispatch_receipt_v1',
-              'repository': os.environ['GITHUB_REPOSITORY'],
-              'workflow': os.environ['TARGET_WORKFLOW'],
-              'target_branch': os.environ['TARGET_BRANCH'],
-              'head_sha': os.environ['EXPECTED_SHA'],
-              'run_id': int(os.environ['RUN_ID']),
-              'event': 'workflow_dispatch',
-              'status': 'completed',
-              'conclusion': 'success',
-              'scope': 'fresh_manuscript_lean_kernel_axiom_proof_escape_and_proof_object_gate',
+              -f per_page=30 > .qikvrt/evidence/manuscript-proof-runs.json
           }
-          with open('.qikvrt/evidence/manuscript-proof-dispatch-receipt.json', 'w', encoding='utf-8', newline='\n') as handle:
-              json.dump(receipt, handle, indent=2, sort_keys=True)
-              handle.write('\n')
-          PY
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-      - name: Persist exact-head verification notice
+          list_runs
+          run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .status == "completed" and .conclusion == "success")][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+          reused=false
+          if [ -z "$run_id" ]; then
+            gh api -X POST \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/dispatches" \
+              -f ref="$TARGET_BRANCH"
+            for _attempt in $(seq 1 120); do
+              list_runs
+              run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha)][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+              [ -n "$run_id" ] && break
+              sleep 5
+            done
+          else
+            reused=true
+          fi
+          if [ -z "$run_id" ]; then
+            echo 'BLOCK: exact workflow-dispatch run was not observed' >&2
+            exit 1
+          fi
+          printf 'run_id=%s\nreused=%s\n' "$run_id" "$reused" >> "$GITHUB_OUTPUT"
+      - name: Gate exact manuscript proof run
+        id: gate
         shell: bash
         run: |
           set -euo pipefail
-          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatch completed successfully.\n\n- head: \`$EXPECTED_SHA\`\n- workflow: \`$TARGET_WORKFLOW\`\n- event: \`workflow_dispatch\`\n- run ID: \`${{ steps.gate.outputs.run_id }}\`\n- scope: fresh Lean build, source/claim graph, axiom audits, proof-escape rejection and proof-object runtime evidence\n\nNo global completion claim is made by this execution receipt."
+          run_id='${{ steps.resolve.outputs.run_id }}'
+          status=''
+          conclusion=''
+          for _attempt in $(seq 1 240); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > .qikvrt/evidence/manuscript-proof-run.json
+            status=$(jq -r '.status // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            conclusion=$(jq -r '.conclusion // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            head_sha=$(jq -r '.head_sha // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            event=$(jq -r '.event // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            if [ "$head_sha" != "$EXPECTED_SHA" ] || [ "$event" != workflow_dispatch ]; then
+              echo "BLOCK: run $run_id identity differs: head=$head_sha event=$event" >&2
+              exit 1
+            fi
+            [ "$status" = completed ] && break
+            sleep 5
+          done
+          if [ "$status" != completed ] || [ "$conclusion" != success ]; then
+            echo "BLOCK: manuscript proof run $run_id ended status=$status conclusion=$conclusion" >&2
+            exit 1
+          fi
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$TARGET_WORKFLOW" \
+            --arg target_branch "$TARGET_BRANCH" \
+            --arg head_sha "$EXPECTED_SHA" \
+            --argjson run_id "$run_id" \
+            --argjson reused '${{ steps.resolve.outputs.reused }}' \
+            '{schema:"qikvrt_exact_head_workflow_dispatch_receipt_v1",repository:$repository,workflow:$workflow,target_branch:$target_branch,head_sha:$head_sha,run_id:$run_id,event:"workflow_dispatch",status:"completed",conclusion:"success",reused_existing_success:$reused,scope:"fresh_manuscript_lean_kernel_axiom_proof_escape_and_proof_object_gate"}' \
+            > .qikvrt/evidence/manuscript-proof-dispatch-receipt.json
+      - name: Persist exact-head verification notice
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatch completed successfully.\n\n- head: \`$EXPECTED_SHA\`\n- workflow: \`$TARGET_WORKFLOW\`\n- event: \`workflow_dispatch\`\n- run ID: \`${{ steps.resolve.outputs.run_id }}\`\n- reused existing success: \`${{ steps.resolve.outputs.reused }}\`\n- scope: fresh Lean build, source/claim graph, axiom audits, proof-escape rejection and proof-object runtime evidence\n\nNo global completion claim is made by this execution receipt."
+      - name: Persist dispatcher block notice
+        if: failure()
+        shell: bash
+        run: |
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Exact-head manuscript proof dispatcher: **BLOCK**.\n\n- target head: \`$EXPECTED_SHA\`\n- dispatcher run: \`$GITHUB_RUN_ID\`\n- resolved target run: \`${{ steps.resolve.outputs.run_id }}\`\n\nNo completion or kernel-success claim is made."
       - name: Upload dispatch receipt
+        if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-manuscript-proof-dispatch-6fec4bcf
