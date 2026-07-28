@@ -1,0 +1,201 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT canonical Zenodo union final pair verification once
+
+on:
+  push:
+    branches:
+      - verification/canonical-union-final-pair-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_canonical_union_final_pair_20260728_once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-canonical-union-final-pair-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  verify-final-pair:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EXPECTED_AUTHORITY_MAIN: 4892e74458f15762c7b873344bc85b238e3739b1
+      EXPECTED_MIRROR_MAIN: f17aa8eca00b0e5e75d5bd44f1b5fb96d760cc0d
+      EXPECTED_BRANCH: verification/canonical-union-final-pair-20260728-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_canonical_union_final_pair_20260728_once.yml
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      RECEIPT_PATH: pair-receipt/CANONICAL_UNION_FINAL_PAIR_RECEIPT.json
+      OBSERVED_AT: '2026-07-28T16:55:00+02:00'
+
+    steps:
+      - name: Check out read-only verifier branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: verification/canonical-union-final-pair-20260728-v1
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact verifier boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$WORKFLOW_PATH" ]
+
+      - name: Fetch and compare final Authority and Mirror trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote remove mirror 2>/dev/null || true
+          git remote add mirror "https://github.com/${MIRROR_REPOSITORY}.git"
+          observed_authority="$(git ls-remote origin refs/heads/main | cut -f1)"
+          observed_mirror="$(git ls-remote mirror refs/heads/main | cut -f1)"
+          [ "$observed_authority" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$observed_mirror" = "$EXPECTED_MIRROR_MAIN" ]
+          git fetch --no-tags origin "$EXPECTED_AUTHORITY_MAIN"
+          git fetch --no-tags mirror "$EXPECTED_MIRROR_MAIN"
+          authority_tree="$(git rev-parse "$EXPECTED_AUTHORITY_MAIN^{tree}")"
+          mirror_tree="$(git rev-parse "$EXPECTED_MIRROR_MAIN^{tree}")"
+          [ "$authority_tree" = "$mirror_tree" ]
+          git diff --exit-code "$EXPECTED_AUTHORITY_MAIN" "$EXPECTED_MIRROR_MAIN" --
+          echo "PAIR_TREE=$authority_tree" >> "$GITHUB_ENV"
+
+      - name: Verify both final repository states independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          authority_root="$RUNNER_TEMP/qikvrt-pair-authority"
+          mirror_root="$RUNNER_TEMP/qikvrt-pair-mirror"
+          git worktree add --detach "$authority_root" "$EXPECTED_AUTHORITY_MAIN"
+          git worktree add --detach "$mirror_root" "$EXPECTED_MIRROR_MAIN"
+          for root in "$authority_root" "$mirror_root"; do
+            PYTHONDONTWRITEBYTECODE=1 python3 -B "$root/tools/qikvrt_integrity.py" verify
+            PYTHONDONTWRITEBYTECODE=1 python3 -B "$root/tests/test_zenodo_union_disposition.py"
+          done
+          cmp --silent "$authority_root/REPOSITORY_FILE_MANIFEST.json" "$mirror_root/REPOSITORY_FILE_MANIFEST.json"
+          cmp --silent "$authority_root/REPOSITORY_FILE_MANIFEST.json.sha256" "$mirror_root/REPOSITORY_FILE_MANIFEST.json.sha256"
+          cmp --silent "$authority_root/SHA256SUMS.txt" "$mirror_root/SHA256SUMS.txt"
+          cmp --silent \
+            "$authority_root/release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_CORPUS.json" \
+            "$mirror_root/release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_CORPUS.json"
+          cmp --silent \
+            "$authority_root/release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json" \
+            "$mirror_root/release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json"
+
+      - name: Build canonical scoped final-pair receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pair-receipt
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          authority = root / 'qikvrt-pair-authority'
+          mirror = root / 'qikvrt-pair-mirror'
+          union_rel = pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_CORPUS.json')
+          receipt_rel = pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json')
+
+          def sha256(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          manifest = json.loads((authority / 'REPOSITORY_FILE_MANIFEST.json').read_text(encoding='utf-8'))
+          union = json.loads((authority / union_rel).read_text(encoding='utf-8'))
+          source_receipt = json.loads((authority / receipt_rel).read_text(encoding='utf-8'))
+          payload = {
+              'schema': 'qikvrt_canonical_union_final_pair_receipt_v1',
+              'scope_id': 'qikvrt-zenodo-canonical-union-2026-07-28-v1',
+              'state': 'PAIR_SYNCHRONIZED_SCOPE_BOUND',
+              'observed_at': os.environ['OBSERVED_AT'],
+              'verification_run_id': int(os.environ['GITHUB_RUN_ID']),
+              'authority': {
+                  'repository': 'Goldkelch/qik-vrt',
+                  'main': os.environ['EXPECTED_AUTHORITY_MAIN'],
+                  'exact_evidence_head': '495e3fcb4d86998a00a7df3277ac7af940ecdd23',
+                  'gate_runs': {
+                      'ci': 30369100276,
+                      'repository_materialization': 30369106055,
+                      'collective_review': 30369100620,
+                      'global_claim_completion': 30369105867,
+                      'live_status': 30369100664,
+                      'integrity_repair_skipped': 30369100320,
+                  },
+              },
+              'mirror': {
+                  'repository': 'ingolf-lohmann/qik-vrt',
+                  'main': os.environ['EXPECTED_MIRROR_MAIN'],
+                  'exact_evidence_head': '63c56dc0e3f134dbb3af82b13d8c8429e3ca2489',
+                  'gate_runs': {
+                      'ci': 30369851420,
+                      'repository_materialization': 30369851476,
+                      'collective_review': 30369851707,
+                      'global_claim_completion': 30369851441,
+                      'live_status': 30369851407,
+                      'integrity_repair_skipped': 30369851582,
+                  },
+              },
+              'shared_git_tree_sha1': os.environ['PAIR_TREE'],
+              'repository_manifest_sha256': sha256(authority / 'REPOSITORY_FILE_MANIFEST.json'),
+              'repository_content_tree_sha256': manifest['repository_content_tree_sha256'],
+              'canonical_union_sha256': sha256(authority / union_rel),
+              'canonical_union_content_sha256': union['canonical_union_content_sha256'],
+              'union_disposition_receipt_sha256': sha256(authority / receipt_rel),
+              'union_disposition_receipt_payload_sha256': source_receipt['receipt_payload_sha256'],
+              'record_count': union['record_count'],
+              'claim_subject_count': source_receipt['claim_subject_count'],
+              'first_batch_subject_count': source_receipt['first_batch_subject_count'],
+              'checks': {
+                  'git_tree_equal': True,
+                  'complete_file_diff_empty': True,
+                  'manifest_byte_equal': True,
+                  'manifest_detached_hash_byte_equal': True,
+                  'sha256_index_byte_equal': True,
+                  'canonical_union_byte_equal': True,
+                  'union_disposition_receipt_byte_equal': True,
+                  'authority_integrity_verified': True,
+                  'mirror_integrity_verified': True,
+                  'authority_union_contract_verified': True,
+                  'mirror_union_contract_verified': True,
+                  'authority_exact_head_gates_green': True,
+                  'mirror_exact_head_gates_green': True,
+              },
+              'completion_claims': {
+                  'canonical_union_built': True,
+                  'content_claim_disposition_started': True,
+                  'authority_mirror_pair_synchronized_for_scope': True,
+                  'all_content_claims_dispositioned': False,
+                  'content_correction_review_complete': False,
+                  'all_required_corrected_candidates_returned_to_owner': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+              'next_deterministic_effect': 'EXECUTE_CONTENT_DISPOSITION_BATCH_001',
+          }
+          canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          wrapper = dict(payload)
+          wrapper['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          output = pathlib.Path(os.environ['RECEIPT_PATH'])
+          output.write_text(json.dumps(wrapper, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          print('PAIR_RECEIPT_PAYLOAD_SHA256=' + wrapper['receipt_payload_sha256'])
+          PY
+
+      - name: Upload canonical final-pair receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-canonical-union-final-pair-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+          path: pair-receipt/CANONICAL_UNION_FINAL_PAIR_RECEIPT.json
