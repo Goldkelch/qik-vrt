@@ -1,0 +1,708 @@
+{
+  "_license": {
+    "classification": "machine_readable_retrospective_claim_matrix",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "batch_id": "CONTENT-DISPOSITION-BATCH-001",
+  "claim_count": 36,
+  "claims": [
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-001",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.states_count",
+        "QIKVRT.EffectAck.V1.states_pairwise",
+        "QIKVRT.EffectAck.V1.states_complete",
+        "QIKVRT.EffectAck.V1.connectionDecisions_count",
+        "QIKVRT.EffectAck.V1.connectionDecisions_pairwise",
+        "QIKVRT.EffectAck.V1.connectionDecisions_complete"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "4",
+            "5.1",
+            "Appendix A"
+          ],
+          "source_path": "QIKVRTEffectAck/Model.lean"
+        }
+      ],
+      "statement": "The modeled version-1 state and connection-decision enumerations each contain five pairwise distinct constructors.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-002",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.coreDone_eq_true_iff"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "4.1"
+          ],
+          "source_path": "QIKVRTEffectAck/Model.lean"
+        }
+      ],
+      "statement": "The executable coreDone Boolean is true exactly when all seventeen abstract CoreDone conditions hold.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-003",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.selectState_eq_done_iff"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "4.2"
+          ],
+          "source_path": "QIKVRTEffectAck/Safety.lean"
+        }
+      ],
+      "statement": "After the separately modeled consumer admission checks, the deterministic selector returns DONE exactly under the disclosed priority-clear and CoreDone conditions.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-004",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.predecessorInvalid_blocks",
+        "QIKVRT.EffectAck.V1.deadlineExceeded_blocks",
+        "QIKVRT.EffectAck.V1.missingEffectCheckableReception_nacks",
+        "QIKVRT.EffectAck.V1.integrityFailure_blocks",
+        "QIKVRT.EffectAck.V1.explicitBlock_precedes_later_outcomes",
+        "QIKVRT.EffectAck.V1.explicitIsolate_precedes_done"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "4.2"
+          ],
+          "source_path": "QIKVRTEffectAck/Safety.lean"
+        }
+      ],
+      "statement": "Within the post-admission selector, predecessor failure, deadline, absent effect-checkable reception, integrity failure, explicit BLOCK and explicit ISOLATE obey the modeled Draft-01 priority order.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-005",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.authorized_implies_recorded_and_recomputed_done",
+        "QIKVRT.EffectAck.V1.authorized_implies_consumer_checks"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "3",
+            "4.1",
+            "4.2"
+          ],
+          "source_path": "QIKVRTEffectAck/Safety.lean"
+        }
+      ],
+      "statement": "Ordinary authorization implies all modeled consumer checks, a recorded DONE and a DONE recomputed from the supplied snapshot.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "NORMATIVE_PROTOCOL",
+      "claim_id": "EA-LEAN-006",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.nonDone_record_never_authorized",
+        "QIKVRT.EffectAck.V1.stale_record_never_authorized"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "3",
+            "4.3",
+            "11"
+          ],
+          "source_path": "QIKVRTEffectAck/Safety.lean"
+        }
+      ],
+      "statement": "A non-DONE record and a record marked stale cannot satisfy the modeled ordinary-release authorization predicate.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "COUNTEREXAMPLE",
+      "claim_id": "EA-LEAN-007",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.transportAck_is_not_effectAuthorization"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "NORMATIVE_MODEL",
+      "source_refs": [
+        {
+          "sections": [
+            "1",
+            "3",
+            "4"
+          ],
+          "source_path": "QIKVRTEffectAck/Safety.lean"
+        }
+      ],
+      "statement": "A concrete snapshot with transport acknowledgement but no effect-checkable reception selects NACK and is not authorized.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "CONDITIONAL_SOFTWARE_THEOREM",
+      "claim_id": "EA-LEAN-008",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.completelyMediated_execution_implies_done"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "CONDITIONAL_EXTENSION",
+      "source_refs": [
+        {
+          "sections": [
+            "3",
+            "9.3",
+            "14"
+          ],
+          "source_path": "QIKVRTEffectAck/Mediation.lean"
+        }
+      ],
+      "statement": "Under complete mediation, every scoped ordinary executor invocation implies a recorded DONE and a DONE recomputed from the supplied snapshot.",
+      "status": "KERNEL_PROVED_CONDITIONAL"
+    },
+    {
+      "boundary": "CONDITIONAL_CYBERPHYSICAL_THEOREM",
+      "claim_id": "EA-LEAN-009",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.physicalOccurrence_implies_authorized_done_conditionally"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "CONDITIONAL_EXTENSION",
+      "source_refs": [
+        {
+          "sections": [
+            "14"
+          ],
+          "source_path": "QIKVRTEffectAck/Mediation.lean"
+        }
+      ],
+      "statement": "Under complete mediation and a faithful causal bridge, every scoped physical occurrence has a causing executor invocation with recorded DONE and DONE recomputed from the supplied snapshot.",
+      "status": "KERNEL_PROVED_CONDITIONAL"
+    },
+    {
+      "boundary": "INFORMATION_THEOREM",
+      "claim_id": "EA-LEAN-010",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.semanticReconstruction_iff_fiberConstant"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "ANALYTIC_EXTENSION",
+      "source_refs": [
+        {
+          "sections": [],
+          "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+        }
+      ],
+      "statement": "A target meaning is reconstructible on the observation image exactly when it is constant on every observation fiber.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "INFORMATION_THEOREM",
+      "claim_id": "EA-LEAN-011",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.exactHistoricalReconstruction_implies_injective"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "ANALYTIC_EXTENSION",
+      "source_refs": [
+        {
+          "sections": [],
+          "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+        }
+      ],
+      "statement": "Exact historical reconstruction by a left inverse requires an injective observation.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "COUNTEREXAMPLE",
+      "claim_id": "EA-LEAN-012",
+      "epistemic_class": "FORMAL_PROVED",
+      "proof_refs": [
+        "QIKVRT.EffectAck.V1.noExactDecoder_forCollapsedObservation"
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "ANALYTIC_EXTENSION",
+      "source_refs": [
+        {
+          "sections": [],
+          "source_path": "QIKVRTEffectAck/InformationBoundary.lean"
+        }
+      ],
+      "statement": "A collapsed observation of two distinguishable Boolean sources admits no exact decoder.",
+      "status": "KERNEL_PROVED"
+    },
+    {
+      "boundary": "IMPLEMENTATION_CONFORMANCE",
+      "claim_id": "EA-OPEN-001",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "SCOPE_BOUNDARY",
+      "source_refs": [
+        {
+          "sections": [
+            "5",
+            "6",
+            "7",
+            "8",
+            "9.1",
+            "10",
+            "11",
+            "12"
+          ],
+          "source_path": null
+        }
+      ],
+      "statement": "Full Draft-01 wire parsing, closed-schema handling, JCS/SHA-256 behavior, version negotiation, authentication and independent interoperability remain outside this Lean model.",
+      "status": "OPEN"
+    },
+    {
+      "boundary": "EMPIRICAL_PHYSICS",
+      "claim_id": "EA-OPEN-002",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "SCOPE_BOUNDARY",
+      "source_refs": [
+        {
+          "sections": [
+            "14"
+          ],
+          "source_path": null
+        }
+      ],
+      "statement": "Hardware correctness, sensor and actuator trust, calibrated measurement, fault coverage and physical safety require empirical evidence and are not consequences of the software proof.",
+      "status": "EMPIRICAL_OPEN"
+    },
+    {
+      "boundary": "TOTALITY_CLAIM",
+      "claim_id": "EA-OPEN-003",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "SCOPE_BOUNDARY",
+      "source_refs": [
+        {
+          "sections": [],
+          "source_path": null
+        }
+      ],
+      "statement": "Neither Draft-01 nor this formalization establishes a universal decoder, recovery of all lost information, all mathematics, all physics or the entire universe; the separate collapsed-observation theorem proves only a concrete general inversion boundary.",
+      "status": "OPEN"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::SPEC-001",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "The supplied draft -01 XML contains the frozen 35-field wire record, five states, five decisions, exact 17-line CoreDone conjunction and expected state-priority anchors.",
+      "status": "PASS"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-001",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": 2621440,
+          "model_status": "PASS"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Every abstract flag assignment selects exactly one of the five version-1 states and matches an independently structured first-match priority oracle.",
+      "status": "PASS"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-002",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": 5242880,
+          "model_status": "PASS"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Ordinary release occurs if and only if the selected state is EFFECT_ACK_DONE and the consumer admission is valid.",
+      "status": "PASS"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-003",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Transport acknowledgement is not sufficient for ordinary release: these assignments contain transport_ack=true but do not select DONE.",
+      "status": "PASS"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-004",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Every abstract DONE conjunct is individually necessary in the all-DONE baseline.",
+      "status": "PASS"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-005",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS_CONDITIONAL"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Under the stated assumptions, a non-DONE state cannot request ordinary execution through the protected wrapper.",
+      "status": "PASS_CONDITIONAL"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::EA-006",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS_MODEL_CONDITIONAL"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "A present forecast may change a present decision without a later outcome acting as a backward input.",
+      "status": "PASS_MODEL_CONDITIONAL"
+    },
+    {
+      "boundary": "toy model only: two paths, regular-file modes and three payloads; Git history, refs, symlinks, submodules, LFS and external dependencies are outside this model",
+      "claim_id": "MODEL::REP-001",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS_BOUNDED_MODEL"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "The toy canonical repository codec is injective, exactly decodable and replica-stable over its complete bounded universe.",
+      "status": "PASS_BOUNDED_MODEL"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::RE-001",
+      "epistemic_class": "EMPIRICALLY_EVIDENCED",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "PASS_BOUNDED_MODEL_WITH_COUNTEREXAMPLES"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "In the complete finite universes tested, effect-relevant semantics factors through an observation exactly when it is constant on observation fibers; exact historical inversion requires injectivity.",
+      "status": "PASS_BOUNDED_MODEL_WITH_COUNTEREXAMPLES"
+    },
+    {
+      "boundary": "STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "claim_id": "MODEL::RUNTIME-001",
+      "epistemic_class": "OPEN",
+      "proof_refs": [
+        {
+          "cases": null,
+          "model_status": "CONTINUE_PARTIAL_CORE_ONLY"
+        }
+      ],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "finite exhaustive or bounded model stated in proof-report.json",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "Static field inspection reports whether the current Python ResponsibilityProtocol record has the exact draft -01 wire field set.",
+      "status": "CONTINUE_PARTIAL_CORE_ONLY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::computabilityAndResources",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "computabilityAndResources: EXECUTABLE RECONSTRUCTION REQUIRES EFFECTIVE COMPUTABILITY, SUFFICIENT ACCESS, AUTHORIZATION, TIME AND RESOURCES",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::deploymentNonBypassability",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "deploymentNonBypassability: CONDITIONAL_ON_COMPLETE_MEDIATION_AND_NO_SIDE_CHANNEL",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::fullDraft01WireConformance",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "fullDraft01WireConformance: CONTINUE_NOT_PROVED_BY_THIS_MODEL",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::ietfConsensusOrRfcStatus",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "ietfConsensusOrRfcStatus: NOT_CLAIMED",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::modelToSpecBinding",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "modelToSpecBinding: STRUCTURAL_XML_ANCHORS_CHECKED; BEHAVIORAL REFINEMENT OF EVERY WIRE, PARSER, AUTHENTICATION AND DEPLOYMENT PATH NOT PROVED",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::physicalSafety",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "physicalSafety: REQUIRES_HARDWARE_SENSOR_ACTUATOR_FAULT_MODEL_AND_EMPIRICAL_VALIDATION",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::pythonRuntimeBehavior",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "pythonRuntimeBehavior: NOT_PROVED_BY_ABSTRACT_ENUMERATION",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::semanticReconstructionEngine",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "semanticReconstructionEngine: OUTSIDE_MODEL",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::universalHistoricalOrSemanticReconstruction",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "universalHistoricalOrSemanticReconstruction: FALSE_WITHOUT_INJECTIVE_INFORMATION_COMPLETE_OBSERVATION",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::universalPolicyOrEvidenceLanguage",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "universalPolicyOrEvidenceLanguage: NOT_DEFINED_BY_DRAFT_01",
+      "status": "OPEN_BOUNDARY"
+    },
+    {
+      "boundary": "Must remain non-factual beyond the named model or evidence scope.",
+      "claim_id": "BOUNDARY::universalTerminationOrEventualDONE",
+      "epistemic_class": "OPEN",
+      "proof_refs": [],
+      "publication_language_status": "COMPATIBLE_WITH_DISPOSITION",
+      "scope": "explicit proof-report boundary",
+      "source_refs": [
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json"
+      ],
+      "statement": "universalTerminationOrEventualDONE: NOT_PROVED",
+      "status": "OPEN_BOUNDARY"
+    }
+  ],
+  "classification_summary": {
+    "EMPIRICALLY_EVIDENCED": 9,
+    "FORMAL_PROVED": 12,
+    "INTERPRETATIVE": 0,
+    "NORMATIVE": 0,
+    "OPEN": 15,
+    "SOURCE_BOUND": 0
+  },
+  "completion_claims": {
+    "all_claims_terminally_classified": true,
+    "all_formal_claims_have_machine_proof_bindings": true,
+    "claim_disposition_complete": true,
+    "claim_inventory_complete_for_subject": true,
+    "content_change_review_complete": true,
+    "effect_ack_done": false,
+    "final_pass": false,
+    "pass": false
+  },
+  "content_change_decision": {
+    "corrected_candidate_required": false,
+    "prepublication_return_receipt_required": false,
+    "reason": "All publication-relevant claims are terminally classified and the published text or metadata preserves the validated scope and open boundaries.",
+    "required": false,
+    "state": "NO_CONTENT_CHANGE_REQUIRED"
+  },
+  "payload_multiset_sha256": "685123cd60e2fd7b0261d6ed82fca551ffd966ce1f98f718b057a047af1e481c",
+  "public_record_verification": [
+    {
+      "all_public_bytes_reverified": true,
+      "conceptdoi": "10.5281/zenodo.21498772",
+      "doi": "10.5281/zenodo.21498773",
+      "payload_multiset_sha256": "685123cd60e2fd7b0261d6ed82fca551ffd966ce1f98f718b057a047af1e481c",
+      "public_file_count": 12,
+      "record_id": 21498773
+    }
+  ],
+  "record_ids": [
+    21498773
+  ],
+  "schema": "qikvrt_retrospective_claim_matrix_v1",
+  "source_artifacts": [
+    {
+      "bytes": 11647,
+      "path": "formalization/QIKVRT_Formalization_v2.0/effect_ack/DRAFT01_CLAIM_MATRIX.json",
+      "sha256": "df13e45d0af2050ecd8fb9d6cd132882021cbd0e2550b678fb06c23b4f56892a"
+    },
+    {
+      "bytes": 31305,
+      "path": "docs/publications/2026-07-22-effect-ack-universal-effect-control/ARTICLE_DE.md",
+      "sha256": "7d1b92ee6df450be1469cacae894d43adff30938997e7a502a383fc5e9a2adbe"
+    },
+    {
+      "bytes": 10865,
+      "path": "docs/publications/2026-07-22-effect-ack-universal-effect-control/proof-report.json",
+      "sha256": "f2e71e29512c73dd34bcc3db2dc852298e0713531441fcb922f14c6647b29392"
+    }
+  ],
+  "subject_id": "SUBJECT-685123cd60e2fd7b"
+}
