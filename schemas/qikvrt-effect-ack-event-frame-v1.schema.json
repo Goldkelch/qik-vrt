@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/schemas/qikvrt-effect-ack-event-frame-v1.schema.json",
+  "title": "QIK-VRT Effect Acknowledgement Event Frame v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "event_id",
+    "observed_at",
+    "source",
+    "state",
+    "next_deterministic_effect",
+    "productive_progress_claimed",
+    "pass",
+    "final_pass",
+    "effect_ack_done",
+    "payload_sha256",
+    "frame_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "qikvrt_effect_ack_event_frame_v1"},
+    "event_id": {"type": "string", "pattern": "^qikvrt-[a-z_]+-[0-9a-f]{24}$"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "source": {
+      "type": "object",
+      "required": ["repository", "event_name", "run_id", "run_attempt"],
+      "properties": {
+        "repository": {"type": "string"},
+        "event_name": {"type": "string"},
+        "run_id": {"type": "integer", "minimum": 1},
+        "run_attempt": {"type": "integer", "minimum": 1},
+        "delivery_hint": {"type": ["string", "null"]},
+        "actor": {"type": ["string", "null"]},
+        "ref": {"type": ["string", "null"]},
+        "sha": {"type": ["string", "null"]}
+      }
+    },
+    "state": {"enum": ["EFFECT_ACK_CONTINUE", "BLOCK"]},
+    "next_deterministic_effect": {"type": "string", "minLength": 1},
+    "productive_progress_claimed": {"const": false},
+    "pass": {"const": false},
+    "final_pass": {"const": false},
+    "effect_ack_done": {"const": false},
+    "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
