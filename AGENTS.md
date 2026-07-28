@@ -81,6 +81,32 @@ verified `DONE` result or a concrete external `BLOCK` that cannot be repaired
 with the already authorized repository capabilities. Commentary, discussion,
 or an unchanged intermediate status MUST NOT replace continued execution.
 
+## Mandatory machine proof before every Zenodo publication
+
+`NO_MACHINE_PROOF_NO_ZENODO_UPLOAD` is mandatory for every future publication
+of Ingolf Lohmann on Zenodo. Before any production mutation, the exact candidate
+bytes MUST be frozen and every publication claim MUST have a stable ID, scope,
+epistemic classification and resolvable proof, evidence, source or explicit
+`OPEN` disposition. Formal claims require a kernel receipt. Empirical claims
+require evidence. Normative and interpretative claims MUST be identified as
+such and MUST NOT be represented as mathematical theorems.
+
+Whenever claim review requires a change to the original content, the complete
+corrected candidate and a visible change notice MUST be returned to Ingolf
+Lohmann before upload. A candidate-specific
+`qikvrt_prepublication_return_receipt_v1` MUST bind the returned paths, byte
+sizes, SHA-256 digests and Git blob identities. The bytes later uploaded to
+Zenodo MUST be identical to the returned candidate bytes.
+
+Legacy publication manifests remain readable only for historical verification.
+They MUST NOT create a new production record. Every new upload MUST use the
+proof-bearing v2 manifest, include its `MACHINE_PROOF_BUNDLE.json` in the public
+Zenodo fileset, pass public byte-exact redownload verification, and persist the
+result on Authority and Mirror before pair equality can be claimed.
+
+The normative policy is `policy/zenodo-machine-proof-policy-v1.json`; its human
+contract is `policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md`.
+
 ## Bounded collective adaptation
 
 1. Observe only accessible, authorized state and record the measurement method,
