@@ -7,12 +7,26 @@ on:
   push:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "policy/GLOBAL_COMPLETION_SCOPE.json"
+      - "GLOBAL_CLAIM_INVENTORY.json"
+      - "GLOBAL_TRACEABILITY.json"
+      - "GLOBAL_KERNEL_RECEIPTS.json"
+      - "GLOBAL_COMPLETION_RECEIPT.json"
+      - "tools/qikvrt_global_completion.py"
+      - "tests/test_global_completion.py"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
   pull_request:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "policy/GLOBAL_COMPLETION_SCOPE.json"
+      - "GLOBAL_CLAIM_INVENTORY.json"
+      - "GLOBAL_TRACEABILITY.json"
+      - "GLOBAL_KERNEL_RECEIPTS.json"
+      - "GLOBAL_COMPLETION_RECEIPT.json"
+      - "tools/qikvrt_global_completion.py"
+      - "tests/test_global_completion.py"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -31,6 +45,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -137,14 +153,79 @@ jobs:
           set -euo pipefail
           python3 scripts/verify_proof_object_manifest.py \
             | tee .lake/build/qikvrt-proof-object-runtime-evidence.json
-      - name: Upload proof-object runtime evidence
+      - name: Verify exact-tag global completion and kernel-receipt coverage
+        if: steps.proof_object_manifest.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python3 ../../tools/qikvrt_global_completion.py check --require-tag
+          python3 ../../tests/test_global_completion.py
+      - name: Materialize exact-head global kernel runtime receipt
+        if: steps.proof_object_manifest.outcome == 'success'
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          formal = Path('.').resolve()
+          root = formal.parents[1]
+
+          def digest(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          scope = json.loads((root / 'policy/GLOBAL_COMPLETION_SCOPE.json').read_text(encoding='utf-8'))
+          inventory = json.loads((root / 'GLOBAL_CLAIM_INVENTORY.json').read_text(encoding='utf-8'))
+          kernel = json.loads((root / 'GLOBAL_KERNEL_RECEIPTS.json').read_text(encoding='utf-8'))
+          runtime = formal / '.lake/build/qikvrt-proof-object-runtime-evidence.json'
+          receipt = {
+              'schema': 'qikvrt_global_kernel_runtime_receipt_v1',
+              'state': 'KERNEL_GATES_PASSED_ON_EXACT_CANDIDATE_WITH_TAG_INPUT_EQUIVALENCE',
+              'scope_id': scope['scope_id'],
+              'exact_tag': scope['baseline']['tag'],
+              'tag_authority_commit': scope['baseline']['authority_commit'],
+              'tag_mirror_commit': scope['baseline']['mirror_commit'],
+              'candidate_commit': os.environ['CANDIDATE_SHA'],
+              'workflow_run_id': int(os.environ['WORKFLOW_RUN_ID']),
+              'workflow_run_attempt': int(os.environ['WORKFLOW_RUN_ATTEMPT']),
+              'claim_count': inventory['counts']['claims'],
+              'kernel_eligible_claim_count': inventory['counts']['kernel_eligible'],
+              'kernel_receipt_count': kernel['counts']['receipts'],
+              'global_claim_inventory_sha256': digest(root / 'GLOBAL_CLAIM_INVENTORY.json'),
+              'global_traceability_sha256': digest(root / 'GLOBAL_TRACEABILITY.json'),
+              'global_kernel_receipts_sha256': digest(root / 'GLOBAL_KERNEL_RECEIPTS.json'),
+              'global_completion_receipt_sha256': digest(root / 'GLOBAL_COMPLETION_RECEIPT.json'),
+              'proof_object_runtime_evidence_sha256': digest(runtime),
+              'non_claims': [
+                  'unqualified PASS',
+                  'FINAL_PASS',
+                  'repository-wide timeless EFFECT_ACK_DONE',
+                  'truth of empirical or interpretive claims',
+                  'fully kernel-verified overall completion',
+              ],
+          }
+          target = formal / '.lake/build/qikvrt-global-kernel-runtime-receipt.json'
+          target.write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+      - name: Upload proof-object and global kernel runtime evidence
         if: steps.proof_object_manifest.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qikvrt-proof-object-runtime-evidence
+          name: qikvrt-global-kernel-runtime-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30
-          path: >-
+          path: |
             formalization/QIKVRT_Formalization_v2.0/.lake/build/qikvrt-proof-object-runtime-evidence.json
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/qikvrt-global-kernel-runtime-receipt.json
           if-no-files-found: error
       - name: Emit cumulative runtime metrics
         if: always()
