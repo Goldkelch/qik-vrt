@@ -1,0 +1,221 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT hardened authenticated Zenodo corpus proof inventory v4 once
+
+on:
+  push:
+    branches:
+      - execution/zenodo-corpus-inventory-20260728-v4
+    paths:
+      - .github/workflows/qikvrt_zenodo_corpus_inventory_20260728_v4_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-zenodo-corpus-inventory-20260728-v4
+  cancel-in-progress: false
+
+jobs:
+  inventory-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: 65a173cbc666b5555e6251f97cba32b05ac983d9
+      TARGET_BRANCH: execution/zenodo-corpus-inventory-20260728-v4
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_zenodo_corpus_inventory_20260728_v4_once.yml
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28
+      OBSERVED_AT: '2026-07-28T10:10:00Z'
+
+    steps:
+      - name: Check out exact inventory branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/zenodo-corpus-inventory-20260728-v4
+          fetch-depth: 0
+
+      - name: Verify one-path read-only authorization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY.json" ]
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_PROOF_INDEX.json" ]
+
+      - name: Execute hardened read-only corpus inventory
+        id: inventory
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          python3 -B tools/qikvrt_zenodo_corpus_proof_v2.py \
+            --output-dir "$OUTPUT_DIR" \
+            --observed-at "$OBSERVED_AT" \
+            > .qikvrt-zenodo-corpus-inventory.log 2>&1
+          status=$?
+          set -e
+          printf 'exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] && grep -qx 'ZENODO_CORPUS_INVENTORY_STATE=verified' .qikvrt-zenodo-corpus-inventory.log; then
+            echo 'success=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'success=false' >> "$GITHUB_OUTPUT"
+          fi
+          sed -n '1,240p' .qikvrt-zenodo-corpus-inventory.log
+
+      - name: Persist fail-closed diagnostic receipt
+        if: steps.inventory.outputs.success != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_DIR"
+          cp .qikvrt-zenodo-corpus-inventory.log "$OUTPUT_DIR/INVENTORY_DIAGNOSTIC_V4.log"
+          INVENTORY_EXIT_CODE='${{ steps.inventory.outputs.exit_code }}' python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          out = pathlib.Path('release/zenodo-corpus-proof-2026-07-28')
+          log = (out / 'INVENTORY_DIAGNOSTIC_V4.log').read_bytes()
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_failed_inventory_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_diagnostic_v1',
+              'observed_at': '2026-07-28T10:10:00Z',
+              'source_authority': '65a173cbc666b5555e6251f97cba32b05ac983d9',
+              'exit_code': int(os.environ['INVENTORY_EXIT_CODE']),
+              'log_path': 'release/zenodo-corpus-proof-2026-07-28/INVENTORY_DIAGNOSTIC_V4.log',
+              'log_sha256': hashlib.sha256(log).hexdigest(),
+              'remote_mutation_performed': False,
+              'state': 'BLOCK',
+              'completion_claims': {
+                  'corpus_inventory_complete': False,
+                  'zenodo_proof_publication_executed': False,
+                  'final_pass': False,
+              },
+          }
+          (out / 'INVENTORY_DIAGNOSTIC_V4.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          PY
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected diagnostic path: $path" >&2; exit 1;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist blocked Zenodo corpus inventory v4 diagnostic'
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Enforce complete proof-envelope truth boundaries
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+
+          root = pathlib.Path.cwd()
+          out = root / 'release/zenodo-corpus-proof-2026-07-28'
+          minimum = json.loads((out / 'KNOWN_PUBLISHED_RECORDS_MINIMUM.json').read_text(encoding='utf-8'))
+          index = json.loads((out / 'ZENODO_CORPUS_PROOF_INDEX.json').read_text(encoding='utf-8'))
+          inventory = json.loads((out / 'ZENODO_CORPUS_INVENTORY.json').read_text(encoding='utf-8'))
+          records = index['records']
+          ids = [int(item['record_id']) for item in records]
+          assert index['schema'] == 'qikvrt_zenodo_corpus_proof_index_v1'
+          assert inventory['schema'] == 'qikvrt_zenodo_corpus_inventory_v1'
+          assert ids == sorted(ids)
+          assert len(ids) == len(set(ids)) == index['record_count']
+          assert inventory['record_count'] == index['record_count']
+          assert index['public_byte_verified_count'] == index['record_count']
+          assert set(minimum['record_ids']).issubset(set(ids))
+          assert index['completion_claims']['public_record_and_file_integrity_complete'] is True
+          assert index['completion_claims']['all_content_claims_final_pass'] is False
+          assert index['completion_claims']['proof_corpus_publication_executed'] is False
+          assert index['completion_claims']['final_pass'] is False
+          for record in records:
+              envelope = json.loads((root / record['envelope_path']).read_text(encoding='utf-8'))
+              assert envelope['record']['record_id'] == record['record_id']
+              assert envelope['record']['published_state_verified'] is True
+              assert envelope['coverage']['publication_identity_complete'] is True
+              assert envelope['coverage']['public_file_integrity_complete'] is True
+              assert envelope['completion_claims']['publication_integrity_proved'] is True
+              assert envelope['completion_claims']['all_natural_language_claims_formally_proved'] is False
+              assert envelope['completion_claims']['final_pass'] is False
+              assert envelope['public_files']
+              assert all(item['public_byte_redownload_verified'] is True for item in envelope['public_files'])
+          report = (out / 'CORPUS_PROOF_REPORT_DE.md').read_text(encoding='utf-8')
+          assert 'NO_MACHINE_PROOF_NO_ZENODO_UPLOAD' in report
+          assert 'keine natürliche Sprache pauschal' in report
+          readme_path = out / 'README.md'
+          readme = readme_path.read_text(encoding='utf-8')
+          readme = readme.replace('AUTHENTICATED_CORPUS_INVENTORY = NOT_EXECUTED', 'AUTHENTICATED_CORPUS_INVENTORY = PASS')
+          readme = readme.replace('PUBLIC_BYTE_REDOWNLOAD         = NOT_EXECUTED', 'PUBLIC_BYTE_REDOWNLOAD         = PASS')
+          readme = readme.replace('PROOF_ENVELOPES                = NOT_MATERIALIZED', 'PROOF_ENVELOPES                = MATERIALIZED')
+          readme += (
+              '\n## Live-Inventur-Receipt\n\n'
+              f'- observed_at: `{index["observed_at"]}`\n'
+              f'- records: `{index["record_count"]}`\n'
+              f'- public byte verifications: `{index["public_byte_verified_count"]}`\n'
+              f'- existing machine claim dispositions: `{index["existing_claim_disposition_count"]}`\n'
+              f'- content reviews still required: `{index["retrospective_content_review_required_count"]}`\n'
+              '- Zenodo proof-corpus publication: `NOT_EXECUTED`\n'
+              '- completion: `EFFECT_ACK_CONTINUE`\n'
+          )
+          readme_path.write_text(readme, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Persist successful proof-envelope inventory
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_zenodo_corpus_proof.py
+          python3 -B tests/test_zenodo_machine_proof_policy.py
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -ge 7 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected inventory output path: $path" >&2; exit 1;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist authenticated Zenodo corpus proof inventory'
+          git push origin "HEAD:$TARGET_BRANCH"
