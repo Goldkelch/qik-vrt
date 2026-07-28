@@ -1,0 +1,594 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT read-only Zenodo corpus inventory diagnostic 30347678298
+
+on:
+  push:
+    branches:
+      - diagnostic/zenodo-corpus-inventory-30347678298-v1
+    paths:
+      - .github/workflows/qikvrt_diagnose_zenodo_corpus_inventory_30347678298_once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-diagnose-zenodo-corpus-inventory-30347678298-v1
+  cancel-in-progress: false
+
+jobs:
+  diagnose-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: 5fd40bcc12304d92ae4066df3c06cf9acfb7eb98
+      TARGET_BRANCH: diagnostic/zenodo-corpus-inventory-30347678298-v1
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_diagnose_zenodo_corpus_inventory_30347678298_once.yml
+      SOURCE_RUN_ID: '30347678298'
+      SOURCE_JOB_ID: '90237623969'
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28
+      FAILURE_RECEIPT: release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_FAILURE_RECEIPT.json
+      DIAGNOSTIC_REPORT: release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_DIAGNOSTIC_DE.md
+
+    steps:
+      - name: Check out exact diagnostic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: diagnostic/zenodo-corpus-inventory-30347678298-v1
+          fetch-depth: 0
+
+      - name: Verify read-only diagnostic authorization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+          [ ! -e "$FAILURE_RECEIPT" ]
+          [ ! -e "$DIAGNOSTIC_REPORT" ]
+
+      - name: Recover secret-sanitized source failure signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/diagnostic
+          python3 -B - <<'PY'
+          from __future__ import annotations
+          import io
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.request
+          import zipfile
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          job_id = os.environ['SOURCE_JOB_ID']
+          token = os.environ['GH_TOKEN']
+          target = pathlib.Path('.qikvrt/diagnostic/source-job-signature.json')
+          result = {
+              'source_run_id': int(os.environ['SOURCE_RUN_ID']),
+              'source_job_id': int(job_id),
+              'log_access': 'NOT_ATTEMPTED',
+              'failure_signatures': [],
+          }
+          try:
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/{repository}/actions/jobs/{job_id}/logs',
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': 'Bearer ' + token,
+                      'User-Agent': 'qikvrt-zenodo-corpus-diagnostic/1.0',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  raw = response.read(32 * 1024 * 1024 + 1)
+              if len(raw) > 32 * 1024 * 1024:
+                  raise RuntimeError('source log exceeded bound')
+              if zipfile.is_zipfile(io.BytesIO(raw)):
+                  with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                      text = '\n'.join(
+                          archive.read(name).decode('utf-8', 'replace')
+                          for name in sorted(archive.namelist())
+                      )
+              else:
+                  text = raw.decode('utf-8', 'replace')
+              signatures = []
+              for line in text.splitlines():
+                  candidate = line.split('Z ', 1)[-1].strip()
+                  if 'BLOCK:' not in candidate and 'Traceback' not in candidate and 'Error:' not in candidate:
+                      continue
+                  candidate = re.sub(r'Bearer\s+\S+', 'Bearer [REDACTED]', candidate, flags=re.I)
+                  candidate = re.sub(r'access_token=[^&\s]+', 'access_token=[REDACTED]', candidate, flags=re.I)
+                  candidate = re.sub(r'([A-Za-z0-9_-]{20,})', lambda m: m.group(0) if m.group(0) in {
+                      'Zenodo', 'CorpusProofError', 'HTTPError', 'URLError'
+                  } else '[REDACTED-LONG-TOKEN]', candidate)
+                  signatures.append(candidate[:500])
+              result['log_access'] = 'SUCCESS'
+              result['failure_signatures'] = signatures[-8:]
+          except Exception as exc:
+              result['log_access'] = 'FAILED'
+              result['log_access_error_class'] = type(exc).__name__
+          target.write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Reexecute authenticated read-only inventory with bounded diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from __future__ import annotations
+          import datetime as dt
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from typing import Any
+
+          ORIGIN = 'https://zenodo.org'
+          TOKEN = os.environ['ZENODO_ACCESS_TOKEN']
+          ROOT = pathlib.Path.cwd()
+          RECEIPT = ROOT / os.environ['FAILURE_RECEIPT']
+          REPORT = ROOT / os.environ['DIAGNOSTIC_REPORT']
+          SOURCE = json.loads((ROOT / '.qikvrt/diagnostic/source-job-signature.json').read_text(encoding='utf-8'))
+          MAX_JSON = 32 * 1024 * 1024
+          MAX_FILE = 512 * 1024 * 1024
+          PAGE_SIZE = 100
+          MAX_PAGES = 100
+          DOI_RE = re.compile(r'^10\.5281/zenodo\.([1-9][0-9]*)$')
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def safe_endpoint(url: str, *, query_allowed: bool) -> tuple[str, str]:
+              parsed = urllib.parse.urlsplit(url)
+              host = (parsed.hostname or '').lower()
+              if parsed.scheme != 'https' or host != 'zenodo.org' or parsed.username or parsed.password or parsed.port not in (None, 443):
+                  raise RuntimeError('endpoint escaped approved Zenodo origin')
+              if parsed.fragment or (parsed.query and not query_allowed):
+                  raise RuntimeError('endpoint contains forbidden URL component')
+              path = parsed.path or '/'
+              return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, '')), path
+
+          def sanitize_location(value: str | None) -> dict[str, Any] | None:
+              if not value:
+                  return None
+              parsed = urllib.parse.urlsplit(value)
+              return {
+                  'scheme': parsed.scheme,
+                  'host': (parsed.hostname or '').lower(),
+                  'path': parsed.path,
+                  'query_keys': sorted(urllib.parse.parse_qs(parsed.query, keep_blank_values=True)),
+              }
+
+          def json_request(url: str, *, authenticated: bool, follow_redirects: bool) -> tuple[Any, dict[str, Any]]:
+              safe, requested_path = safe_endpoint(url, query_allowed=True)
+              headers = {'Accept': 'application/json', 'User-Agent': 'qikvrt-zenodo-corpus-diagnostic/1.0'}
+              if authenticated:
+                  headers['Authorization'] = 'Bearer ' + TOKEN
+              opener = urllib.request.build_opener() if follow_redirects else urllib.request.build_opener(NoRedirect())
+              request = urllib.request.Request(safe, headers=headers, method='GET')
+              try:
+                  response = opener.open(request, timeout=60)
+              except urllib.error.HTTPError as exc:
+                  return None, {
+                      'outcome': 'HTTP_ERROR',
+                      'status': int(exc.code),
+                      'requested_path': requested_path,
+                      'location': sanitize_location(exc.headers.get('Location')),
+                      'error_class': type(exc).__name__,
+                  }
+              except Exception as exc:
+                  return None, {
+                      'outcome': 'TRANSPORT_ERROR',
+                      'requested_path': requested_path,
+                      'error_class': type(exc).__name__,
+                  }
+              with response:
+                  final = urllib.parse.urlsplit(response.geturl())
+                  final_host = (final.hostname or '').lower()
+                  if final.scheme != 'https' or final_host != 'zenodo.org':
+                      return None, {
+                          'outcome': 'ORIGIN_ESCAPE',
+                          'requested_path': requested_path,
+                          'final_host': final_host,
+                          'final_path': final.path,
+                      }
+                  raw = response.read(MAX_JSON + 1)
+                  status = int(getattr(response, 'status', 200))
+              if len(raw) > MAX_JSON:
+                  return None, {'outcome': 'SIZE_BOUND_EXCEEDED', 'status': status, 'requested_path': requested_path, 'final_path': final.path}
+              try:
+                  value = json.loads(raw.decode('utf-8'))
+              except Exception as exc:
+                  return None, {'outcome': 'INVALID_JSON', 'status': status, 'requested_path': requested_path, 'final_path': final.path, 'error_class': type(exc).__name__}
+              return value, {'outcome': 'SUCCESS', 'status': status, 'requested_path': requested_path, 'final_path': final.path, 'bytes': len(raw)}
+
+          def public_bytes(url: str, *, record_id: int, name: str) -> tuple[bytes | None, dict[str, Any]]:
+              try:
+                  safe, requested_path = safe_endpoint(url, query_allowed=False)
+              except Exception as exc:
+                  return None, {'outcome': 'UNSAFE_URL', 'record_id': record_id, 'file_name': name, 'error_class': type(exc).__name__}
+              request = urllib.request.Request(safe, headers={
+                  'Accept': 'application/octet-stream, */*;q=0.1',
+                  'User-Agent': 'qikvrt-zenodo-corpus-diagnostic/1.0',
+              }, method='GET')
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      final = urllib.parse.urlsplit(response.geturl())
+                      if final.scheme != 'https' or (final.hostname or '').lower() != 'zenodo.org':
+                          return None, {'outcome': 'ORIGIN_ESCAPE', 'record_id': record_id, 'file_name': name, 'requested_path': requested_path, 'final_host': (final.hostname or '').lower(), 'final_path': final.path}
+                      data = response.read(MAX_FILE + 1)
+                      status = int(getattr(response, 'status', 200))
+              except urllib.error.HTTPError as exc:
+                  return None, {'outcome': 'HTTP_ERROR', 'status': int(exc.code), 'record_id': record_id, 'file_name': name, 'requested_path': requested_path, 'error_class': type(exc).__name__}
+              except Exception as exc:
+                  return None, {'outcome': 'TRANSPORT_ERROR', 'record_id': record_id, 'file_name': name, 'requested_path': requested_path, 'error_class': type(exc).__name__}
+              if len(data) > MAX_FILE:
+                  return None, {'outcome': 'SIZE_BOUND_EXCEEDED', 'record_id': record_id, 'file_name': name, 'requested_path': requested_path, 'status': status}
+              return data, {'outcome': 'SUCCESS', 'record_id': record_id, 'file_name': name, 'requested_path': requested_path, 'final_path': final.path, 'status': status, 'bytes': len(data), 'md5': hashlib.md5(data).hexdigest(), 'sha256': hashlib.sha256(data).hexdigest()}
+
+          def normalized_person(value: str) -> set[str]:
+              return set(re.findall(r'[a-z0-9]+', value.casefold()))
+
+          def attributable(metadata: Any) -> bool:
+              if not isinstance(metadata, dict) or not isinstance(metadata.get('creators'), list):
+                  return False
+              for creator in metadata['creators']:
+                  if isinstance(creator, dict) and isinstance(creator.get('name'), str):
+                      words = normalized_person(creator['name'])
+                      if {'ingolf', 'lohmann'}.issubset(words):
+                          return True
+              return False
+
+          def positive_int(value: Any) -> int | None:
+              try:
+                  number = int(value)
+              except (TypeError, ValueError):
+                  return None
+              return number if number > 0 else None
+
+          observed_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+          query = urllib.parse.urlencode({'size': PAGE_SIZE, 'sort': 'mostrecent', 'page': 1})
+          original_url = f'{ORIGIN}/api/deposit/depositions?{query}'
+          canonical_url = f'{ORIGIN}/api/deposit/depositions/?{query}'
+          original_value, original_probe = json_request(original_url, authenticated=True, follow_redirects=False)
+          canonical_value, canonical_probe = json_request(canonical_url, authenticated=True, follow_redirects=True)
+
+          pages: list[dict[str, Any]] = []
+          records: list[dict[str, Any]] = []
+          files: list[dict[str, Any]] = []
+          first_failure: dict[str, Any] | None = None
+          observed: dict[int, dict[str, Any]] = {}
+
+          for page in range(1, MAX_PAGES + 1):
+              page_query = urllib.parse.urlencode({'size': PAGE_SIZE, 'sort': 'mostrecent', 'page': page})
+              value, observation = json_request(f'{ORIGIN}/api/deposit/depositions/?{page_query}', authenticated=True, follow_redirects=True)
+              observation['page'] = page
+              if observation['outcome'] != 'SUCCESS':
+                  first_failure = {'failure_class': 'ACCOUNT_ENUMERATION_FAILURE', **observation}
+                  pages.append(observation)
+                  break
+              if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+                  observation['outcome'] = 'INVALID_SHAPE'
+                  observation['value_type'] = type(value).__name__
+                  first_failure = {'failure_class': 'ACCOUNT_ENUMERATION_SHAPE_FAILURE', **observation}
+                  pages.append(observation)
+                  break
+              observation['item_count'] = len(value)
+              new_count = 0
+              for item in value:
+                  raw_id = item.get('record_id', item.get('id'))
+                  record_id = positive_int(raw_id)
+                  if record_id is None:
+                      continue
+                  state = str(item.get('state', '')).lower()
+                  submitted = item.get('submitted') is True
+                  if not submitted and state not in {'done', 'published'}:
+                      continue
+                  if record_id not in observed:
+                      observed[record_id] = dict(item)
+                      new_count += 1
+              observation['new_published_record_count'] = new_count
+              pages.append(observation)
+              if len(value) < PAGE_SIZE or new_count == 0:
+                  break
+          else:
+              first_failure = {'failure_class': 'ACCOUNT_ENUMERATION_PAGINATION_BOUND_EXCEEDED', 'page': MAX_PAGES}
+
+          if first_failure is None:
+              for record_id in sorted(observed):
+                  deposition = observed[record_id]
+                  metadata = deposition.get('metadata')
+                  if not attributable(metadata):
+                      records.append({'record_id': record_id, 'attributable_to_ingolf_lohmann': False, 'outcome': 'SKIPPED_NOT_ATTRIBUTABLE'})
+                      continue
+                  public, observation = json_request(f'{ORIGIN}/api/records/{record_id}', authenticated=False, follow_redirects=True)
+                  record_obs = {'record_id': record_id, 'attributable_to_ingolf_lohmann': True, **observation}
+                  records.append(record_obs)
+                  if observation['outcome'] != 'SUCCESS' or not isinstance(public, dict):
+                      first_failure = {'failure_class': 'PUBLIC_RECORD_FETCH_FAILURE', **record_obs}
+                      break
+                  if positive_int(public.get('id')) != record_id:
+                      first_failure = {'failure_class': 'PUBLIC_RECORD_IDENTITY_MISMATCH', **record_obs}
+                      break
+                  if not attributable(public.get('metadata')):
+                      first_failure = {'failure_class': 'OWNER_ATTRIBUTION_FAILURE', **record_obs}
+                      break
+                  raw_files = public.get('files')
+                  entries: list[dict[str, Any]] = []
+                  if isinstance(raw_files, list):
+                      entries = [dict(item) for item in raw_files if isinstance(item, dict)]
+                  elif isinstance(raw_files, dict):
+                      source = raw_files.get('entries') if isinstance(raw_files.get('entries'), dict) else raw_files
+                      for key, item in source.items():
+                          if isinstance(item, dict):
+                              normalized = dict(item)
+                              normalized.setdefault('key', key)
+                              entries.append(normalized)
+                  if not entries:
+                      first_failure = {'failure_class': 'PUBLIC_FILESET_MISMATCH', 'record_id': record_id, 'outcome': 'NO_PUBLIC_FILES'}
+                      break
+                  seen_names: set[str] = set()
+                  for entry in entries:
+                      name = entry.get('key') or entry.get('filename') or entry.get('name')
+                      if not isinstance(name, str) or pathlib.PurePosixPath(name).name != name or name in seen_names:
+                          first_failure = {'failure_class': 'PUBLIC_FILESET_MISMATCH', 'record_id': record_id, 'outcome': 'UNSAFE_OR_DUPLICATE_FILE_NAME'}
+                          break
+                      seen_names.add(name)
+                      links = entry.get('links') if isinstance(entry.get('links'), dict) else {}
+                      url = links.get('content') or links.get('download') or links.get('self')
+                      if not isinstance(url, str) or not url:
+                          url = f'{ORIGIN}/api/records/{record_id}/files/{urllib.parse.quote(name, safe="")}/content'
+                      data, file_obs = public_bytes(url, record_id=record_id, name=name)
+                      if file_obs['outcome'] != 'SUCCESS' or data is None:
+                          first_failure = {'failure_class': 'PUBLIC_BYTE_REDOWNLOAD_FAILURE', **file_obs}
+                          files.append(file_obs)
+                          break
+                      declared_size = entry.get('size', entry.get('filesize'))
+                      if isinstance(declared_size, int) and declared_size != len(data):
+                          file_obs['outcome'] = 'SIZE_MISMATCH'
+                          file_obs['declared_size'] = declared_size
+                          first_failure = {'failure_class': 'PUBLIC_BYTE_REDOWNLOAD_FAILURE', **file_obs}
+                          files.append(file_obs)
+                          break
+                      declared_checksum = entry.get('checksum', entry.get('md5'))
+                      if isinstance(declared_checksum, str):
+                          expected_md5 = declared_checksum.split(':', 1)[-1].lower()
+                          if re.fullmatch(r'[0-9a-f]{32}', expected_md5) and expected_md5 != file_obs['md5']:
+                              file_obs['outcome'] = 'MD5_MISMATCH'
+                              file_obs['declared_md5'] = expected_md5
+                              first_failure = {'failure_class': 'PUBLIC_BYTE_REDOWNLOAD_FAILURE', **file_obs}
+                              files.append(file_obs)
+                              break
+                      files.append(file_obs)
+                  if first_failure is not None:
+                      break
+
+          redirect_location = original_probe.get('location') or {}
+          original_redirect_to_canonical = (
+              original_probe.get('outcome') == 'HTTP_ERROR'
+              and original_probe.get('status') in {301, 302, 307, 308}
+              and redirect_location.get('host') == 'zenodo.org'
+              and redirect_location.get('path') == '/api/deposit/depositions/'
+              and canonical_probe.get('outcome') == 'SUCCESS'
+          )
+
+          if original_redirect_to_canonical:
+              primary = 'ACCOUNT_ENUMERATION_REDIRECT_NOT_ACCEPTED'
+              confidence = 'HIGH'
+              explanation = 'The original client disables redirects and requested the no-trailing-slash deposition endpoint. Zenodo redirected that request to the canonical trailing-slash endpoint, which the diagnostic accepted successfully.'
+          elif first_failure is not None:
+              primary = first_failure['failure_class']
+              confidence = 'HIGH'
+              explanation = 'The read-only diagnostic reproduced the first bounded failure at the recorded page, record or file boundary.'
+          elif original_probe.get('outcome') != 'SUCCESS':
+              primary = 'ACCOUNT_ENUMERATION_ORIGINAL_ENDPOINT_FAILURE'
+              confidence = 'MEDIUM'
+              explanation = 'The original endpoint failed, but the canonical bounded traversal completed without another failure.'
+          else:
+              primary = 'TRANSIENT_FAILURE_NOT_REPRODUCED'
+              confidence = 'MEDIUM'
+              explanation = 'The bounded read-only traversal completed; the earlier failure was not reproduced under the current external state.'
+
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_failure_diagnostic_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_failure_receipt_v1',
+              'state': 'DIAGNOSED',
+              'observed_at': observed_at,
+              'source': {
+                  'repository': 'Goldkelch/qik-vrt',
+                  'authority_commit': os.environ['EXPECTED_AUTHORITY_MAIN'],
+                  'failed_run_id': int(os.environ['SOURCE_RUN_ID']),
+                  'failed_job_id': int(os.environ['SOURCE_JOB_ID']),
+                  'failed_step': 'Enumerate owned publications and verify every public byte',
+                  'source_log_signature': SOURCE,
+              },
+              'safety': {
+                  'zenodo_methods_executed': ['GET'],
+                  'zenodo_mutation_executed': False,
+                  'github_log_read_executed': True,
+                  'secrets_persisted': False,
+                  'authorization_header_persisted': False,
+                  'response_bodies_persisted': False,
+                  'bounded_metadata_only': True,
+              },
+              'probes': {
+                  'original_no_trailing_slash_no_redirect': original_probe,
+                  'canonical_trailing_slash_redirect_aware': canonical_probe,
+              },
+              'traversal': {
+                  'pages': pages,
+                  'published_records_observed': len(observed),
+                  'record_observations': records,
+                  'public_files_verified_before_stop': len([item for item in files if item.get('outcome') == 'SUCCESS']),
+                  'file_observations': files,
+                  'first_failure': first_failure,
+                  'full_bounded_traversal_completed': first_failure is None,
+              },
+              'classification': {
+                  'primary_failure_class': primary,
+                  'confidence': confidence,
+                  'explanation': explanation,
+                  'original_redirect_to_canonical_endpoint_verified': original_redirect_to_canonical,
+              },
+              'effect': {
+                  'diagnostic_executed': True,
+                  'failure_receipt_persisted': True,
+                  'corpus_inventory_completed': first_failure is None,
+                  'corpus_proof_envelopes_persisted': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'next_deterministic_effect': (
+                      'PATCH_ZENODO_CORPUS_CLIENT_CANONICAL_DEPOSITIONS_ENDPOINT_AND_REDIRECT_POLICY'
+                      if primary == 'ACCOUNT_ENUMERATION_REDIRECT_NOT_ACCEPTED'
+                      else 'PATCH_FIRST_REPRODUCED_READ_ONLY_FAILURE_CLASS'
+                  ),
+              },
+          }
+          RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+          RECEIPT.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+
+          report = f'''<!--
+          SPDX-License-Identifier: CC-BY-NC-ND-4.0
+          Copyright 2026 Ingolf Lohmann.
+          -->
+
+          # Read-only-Diagnose der Zenodo-Korpusinventur
+
+          **Quelllauf:** `{os.environ['SOURCE_RUN_ID']}`  
+          **Quelljob:** `{os.environ['SOURCE_JOB_ID']}`  
+          **Authority-Basis:** `{os.environ['EXPECTED_AUTHORITY_MAIN']}`  
+          **Beobachtet:** `{observed_at}`
+
+          ## Ergebnis
+
+          ```text
+          PRIMARY_FAILURE_CLASS = {primary}
+          CONFIDENCE            = {confidence}
+          ZENODO_METHODS        = GET
+          ZENODO_MUTATION       = false
+          SECRETS_PERSISTED     = false
+          ```
+
+          {explanation}
+
+          ## Gebundene Grenze
+
+          Die Diagnose beweist ausschließlich die technische Fehlerklasse des read-only Inventurpfads. Sie behauptet weder eine abgeschlossene Korpusinventur noch veröffentlichte Korpusbeweise, `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE`.
+
+          ## Nächster deterministischer Effekt
+
+          `{receipt['effect']['next_deterministic_effect']}`
+
+          **q.e.d.**  
+          **Ingolf Lohmann**
+          '''
+          REPORT.write_text('\n'.join(line[10:] if line.startswith('          ') else line for line in report.splitlines()) + '\n', encoding='utf-8', newline='\n')
+          print('ZENODO_CORPUS_DIAGNOSTIC_STATE=diagnosed')
+          print('ZENODO_CORPUS_PRIMARY_FAILURE_CLASS=' + primary)
+          print('ZENODO_CORPUS_ZENODO_MUTATION=false')
+          PY
+
+      - name: Verify diagnostic receipt semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          value = json.loads(pathlib.Path(os.environ['FAILURE_RECEIPT']).read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_zenodo_corpus_inventory_failure_receipt_v1'
+          assert value['state'] == 'DIAGNOSED'
+          assert value['source']['authority_commit'] == os.environ['EXPECTED_AUTHORITY_MAIN']
+          assert value['source']['failed_run_id'] == int(os.environ['SOURCE_RUN_ID'])
+          assert value['source']['failed_job_id'] == int(os.environ['SOURCE_JOB_ID'])
+          assert value['safety']['zenodo_methods_executed'] == ['GET']
+          assert value['safety']['zenodo_mutation_executed'] is False
+          assert value['safety']['secrets_persisted'] is False
+          assert value['effect']['diagnostic_executed'] is True
+          assert value['effect']['failure_receipt_persisted'] is True
+          assert value['effect']['corpus_proof_envelopes_persisted'] is False
+          assert value['effect']['proof_corpus_published_on_zenodo'] is False
+          assert value['classification']['primary_failure_class'] in {
+              'ACCOUNT_ENUMERATION_REDIRECT_NOT_ACCEPTED',
+              'ACCOUNT_ENUMERATION_FAILURE',
+              'ACCOUNT_ENUMERATION_SHAPE_FAILURE',
+              'ACCOUNT_ENUMERATION_PAGINATION_BOUND_EXCEEDED',
+              'PUBLIC_RECORD_FETCH_FAILURE',
+              'PUBLIC_RECORD_IDENTITY_MISMATCH',
+              'OWNER_ATTRIBUTION_FAILURE',
+              'PUBLIC_FILESET_MISMATCH',
+              'PUBLIC_BYTE_REDOWNLOAD_FAILURE',
+              'ACCOUNT_ENUMERATION_ORIGINAL_ENDPOINT_FAILURE',
+              'TRANSIENT_FAILURE_NOT_REPRODUCED',
+          }
+          raw = pathlib.Path(os.environ['FAILURE_RECEIPT']).read_text(encoding='utf-8')
+          assert os.environ['ZENODO_ACCESS_TOKEN'] not in raw
+          assert 'Authorization: Bearer' not in raw
+          PY
+
+      - name: Remove executor and materialize canonical diagnostic state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_zenodo_corpus_proof.py
+          python3 -B tests/test_zenodo_machine_proof_policy.py
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist receipt-only diagnostic state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          expected=(
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+            "$DIAGNOSTIC_REPORT"
+            "$FAILURE_RECEIPT"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq "${#expected_sorted[@]}" ]
+          for i in "${!expected_sorted[@]}"; do [ "${changed[$i]}" = "${expected_sorted[$i]}" ]; done
+          [ ! -e "$EXECUTION_WORKFLOW" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-diagnostic[bot]'
+          git config user.email 'qikvrt-zenodo-diagnostic[bot]@users.noreply.github.com'
+          git add -A -- \
+            "$FAILURE_RECEIPT" \
+            "$DIAGNOSTIC_REPORT" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist read-only Zenodo corpus inventory failure receipt'
+          git push origin "HEAD:$TARGET_BRANCH"
