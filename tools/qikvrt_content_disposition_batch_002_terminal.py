@@ -42,7 +42,7 @@ def pretty(x:Any): return json.dumps(x, ensure_ascii=False, sort_keys=True, inde
 def sha(b:bytes): return hashlib.sha256(b).hexdigest()
 def canon(x:Any): return json.dumps(x, ensure_ascii=False, sort_keys=True, separators=(",",":")).encode()
 
-def get(url:str, accept:str="application/octet-stream", limit:int=536870912)->bytes:
+def get(url:str, accept:str="application/octet-stream, */*;q=0.1", limit:int=536870912)->bytes:
     last=None
     for n in range(4):
         try:
@@ -142,7 +142,6 @@ def main()->int:
                     if key not in seen:
                         seen.add(key); claims.append(c); over=over or bool(OVERCLAIM.search(c["statement"]))
         if not claims: fail(f"no claims extracted for {sid}")
-        # Overclaim wording is terminally classified but requires a corrected version unless an explicit boundary file exists.
         correction=bool(over and not boundary); corrections += int(correction)
         summary={k:0 for k in sorted(CLASSES)}
         for c in claims: summary[c["epistemic_class"]]+=1
