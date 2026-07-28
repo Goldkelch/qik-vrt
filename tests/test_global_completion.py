@@ -38,6 +38,13 @@ def load(path: pathlib.Path) -> dict:
 
 
 class GlobalCompletionTests(unittest.TestCase):
+    def test_alpha2_historical_status_freeze_is_byte_current(self) -> None:
+        subprocess.run(
+            [sys.executable, "-B", "tools/qikvrt_freeze_alpha2_status.py", "check"],
+            cwd=ROOT,
+            check=True,
+        )
+
     def test_generator_is_byte_current(self) -> None:
         subprocess.run(
             [sys.executable, "-B", "tools/qikvrt_global_completion.py", "check"],
