@@ -1,0 +1,87 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_unit",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "acceptance": {
+    "all_content_claims_dispositioned": false,
+    "canonical_record_count": 24,
+    "content_claim_disposition_started": true,
+    "content_correction_review_complete": false,
+    "effect_ack_done": false,
+    "final_pass": false,
+    "mirror_synchronized": false,
+    "one_disposition_row_per_record": true,
+    "pass": false,
+    "payload_equivalence_collapsed": true,
+    "proof_corpus_published_on_zenodo": false,
+    "reconciled_source_set_exact": true,
+    "source_sets_disjoint": true,
+    "authenticated_source_set_exact": true
+  },
+  "authority_base": "2908c671733d589dc4636dba2fe693a9aff8dc70",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "mandatory_outputs": [
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_CORPUS.json",
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json",
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json",
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json",
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_REPORT_DE.md"
+  ],
+  "mirror_repository": "ingolf-lohmann/qik-vrt",
+  "next_effect": "Execute the union/disposition materializer on an isolated evidence branch and open a separate exact-head verification PR.",
+  "ordered_effects": [
+    {
+      "effect": "Bind the exact 11-record authenticated observation and exact 13-record public reconciliation with source hashes.",
+      "id": "bind-source-corpora"
+    },
+    {
+      "effect": "Construct one sorted, duplicate-free 24-record canonical union with DOI, concept DOI, public file hashes and source membership.",
+      "id": "construct-union"
+    },
+    {
+      "effect": "Group records by concept DOI without inferring an unproved version order.",
+      "id": "group-concept-lines"
+    },
+    {
+      "effect": "Group byte-equivalent public payloads by the multiset of file byte-count and SHA-256 pairs while ignoring filenames.",
+      "id": "collapse-payload-equivalence"
+    },
+    {
+      "effect": "Create one disposition row per record and one review subject per unique payload cluster.",
+      "id": "begin-content-disposition"
+    },
+    {
+      "effect": "Select the first deterministic content-disposition batch, prioritizing existing claim graphs and machine-proof bundle candidates.",
+      "id": "select-first-batch"
+    },
+    {
+      "effect": "Persist the union, disposition index, queue, report and truth-bounded receipt on an isolated evidence branch.",
+      "id": "persist-evidence"
+    },
+    {
+      "effect": "Regenerate repository integrity and run all mandatory gates on the resulting exact evidence head before Authority promotion.",
+      "id": "exact-head-gates"
+    },
+    {
+      "effect": "After Authority promotion, synchronize the exact tree to Mirror and persist reciprocal equality evidence.",
+      "id": "mirror-and-equality"
+    }
+  ],
+  "priority": "HIGHEST",
+  "schema": "qikvrt_work_unit_v1",
+  "source_transactions": {
+    "authenticated_inventory_receipt": "release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_RETRY_RECEIPT.json",
+    "authenticated_inventory_record_count": 11,
+    "public_reconciliation_receipt": "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/PUBLIC_RECORD_RECONCILIATION_RECEIPT.json",
+    "public_reconciliation_record_count": 13,
+    "recovery_authority_promotion": "2908c671733d589dc4636dba2fe693a9aff8dc70",
+    "recovery_exact_head": "0938d61ee320770a06bbfe6e26d47941cd5ad8b2",
+    "recovery_run": 30365656447
+  },
+  "status": "READY",
+  "title": "Build canonical Zenodo union corpus and begin content-claim disposition",
+  "work_unit_id": "BUILD-CANONICAL-UNION-CORPUS-AND-BEGIN-CONTENT-CLAIM-DISPOSITION-20260728"
+}
