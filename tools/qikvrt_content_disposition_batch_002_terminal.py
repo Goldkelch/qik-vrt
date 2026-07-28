@@ -100,7 +100,7 @@ def textual(data:bytes, source:dict[str,Any], prefix:str)->list[dict[str,Any]]:
     try: t=data.decode("utf-8")
     except UnicodeDecodeError: return []
     blocks=[]
-    for raw in re.split(r"\n\s*\n|(?m)^#{1,6}\s+|(?m)^[-*•]\s+",t):
+    for raw in re.split(r"\n\s*\n|^#{1,6}\s+|^[-*•]\s+",t,flags=re.M):
         x=" ".join(raw.strip().split())
         if 24<=len(x)<=1200 and not x.startswith(("http://","https://","SPDX-")):
             blocks.append(x)
