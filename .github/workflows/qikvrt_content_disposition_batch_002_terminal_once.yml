@@ -23,8 +23,6 @@ jobs:
     env:
       EXPECTED_BASE: 240bc42aef462f12bd6179ce7da2aa585844f531
       BRANCH: execution/content-disposition-batch-002-terminal-v1
-      READY: work-units/EXECUTE_BATCH_002_TERMINAL_READY.json
-      WORK_UNIT: work-units/EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002.json
     steps:
       - name: Check out exact execution branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -38,20 +36,16 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt'
           test "$GITHUB_REF_NAME" = "$BRANCH"
           python3 - <<'PY'
-          import hashlib,json,pathlib,subprocess
-          root=pathlib.Path('.')
-          ready=json.loads((root/'work-units/EXECUTE_BATCH_002_TERMINAL_READY.json').read_text())
-          wu=root/'work-units/EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002.json'
-          tool=root/'tools/qikvrt_content_disposition_batch_002_terminal.py'
-          test=root/'tests/test_content_disposition_batch_002_terminal.py'
+          import json,pathlib,subprocess
+          ready=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY.json').read_text())
           assert ready['state']=='READY'
           assert ready['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
-          for p in (wu,tool,test):
-              assert p.is_file(),p
-              assert ready['sha256'][p.as_posix()]==hashlib.sha256(p.read_bytes()).hexdigest()
+          for path,blob in ready['git_blob_sha1'].items():
+              assert pathlib.Path(path).is_file(),path
+              observed=subprocess.check_output(['git','rev-parse',f'HEAD:{path}'],text=True).strip()
+              assert observed==blob,(path,observed,blob)
           changed=subprocess.check_output(['git','diff','--name-only',ready['authority_base'],'HEAD','--'],text=True).splitlines()
-          allowed=set(ready['allowed_changed_paths'])
-          assert set(changed)==allowed,(changed,sorted(allowed))
+          assert set(changed)==set(ready['allowed_changed_paths']),(changed,ready['allowed_changed_paths'])
           assert ready['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
           PY
       - name: Run adversarial unit tests
