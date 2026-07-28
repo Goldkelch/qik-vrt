@@ -75,17 +75,26 @@ theorem responsibleRelease_eq_true_iff (snapshot : Snapshot) :
 theorem responsibleRelease_requires_uncertainty (snapshot : Snapshot) :
     responsibleRelease snapshot = true →
       snapshot.uncertaintyClassified = true := by
-  simp [responsibleRelease]
+  intro h
+  rcases (responsibleRelease_eq_true_iff snapshot).mp h with
+    ⟨_, _, _, _, _, uncertainty, _, _, _, _⟩
+  exact uncertainty
 
 theorem responsibleRelease_requires_gate (snapshot : Snapshot) :
     responsibleRelease snapshot = true →
       snapshot.gatePassed = true := by
-  simp [responsibleRelease]
+  intro h
+  rcases (responsibleRelease_eq_true_iff snapshot).mp h with
+    ⟨_, _, _, _, _, _, _, _, gate, _⟩
+  exact gate
 
 theorem responsibleRelease_requires_effect_observation (snapshot : Snapshot) :
     responsibleRelease snapshot = true →
       snapshot.effectObserved = true := by
-  simp [responsibleRelease]
+  intro h
+  rcases (responsibleRelease_eq_true_iff snapshot).mp h with
+    ⟨_, _, _, _, _, _, _, _, _, effectObserved⟩
+  exact effectObserved
 
 def selectState (snapshot : Snapshot) : RuntimeState :=
   if responsibleRelease snapshot = true then .effectAcknowledged
@@ -193,6 +202,6 @@ theorem selectState_effect_ack_iff (snapshot : Snapshot) :
   unfold selectState
   by_cases h : responsibleRelease snapshot = true
   · simp [h]
-  · simp [h]
+  · cases hbackend : snapshot.backendBound <;> simp [h, hbackend]
 
 end QIKVRT.QuantumClassicalRuntime.V1
