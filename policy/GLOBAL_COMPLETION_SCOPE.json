@@ -1,0 +1,118 @@
+{
+  "_license": {
+    "classification": "machine_readable_completion_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_global_completion_scope_v1",
+  "scope_id": "qikvrt-global-completion-v1-2026-07-28",
+  "scope_definition": "The complete machine-addressable claim universe for this completion operation consists of every entry in the three enumerated authoritative claim registries plus the four enumerated operational evidence claims. Narrative prose that is not registered in one of these sources is explicitly outside this completion universe and cannot inherit a proof or PASS status.",
+  "baseline": {
+    "tag": "v2026.07.28-authority-mirror-zenodo-equality-1.0.0",
+    "authority_repository": "Goldkelch/qik-vrt",
+    "authority_commit": "42389236ea638f5cd40c13a486b70b1e1bf03055",
+    "mirror_repository": "ingolf-lohmann/qik-vrt",
+    "mirror_commit": "5c710e98bea2a10035cf0ba2c8e30ffd5c98c279",
+    "shared_git_tree_sha1": "cc3f0421c7eb9255ec35cdd5a7326d3a21dabb9e",
+    "repository_manifest_sha256": "4c07246b9eb8a9947267d487f78b026b6078a2af7b0f0dbbe0542e01ac77a6c9",
+    "repository_content_tree_sha256": "344d9fdb75575d2e7696425f686feeb6e2b6645d5d02b51a42bf251036d85c11",
+    "post_publication_equality_receipt_sha256": "943de7d7ccc47b5ec74dfaf4f051984bb6ac6dbc2beb8c88424fec261a8bf8e1",
+    "tag_receipt_sha256": "caefdd45fce8512dc347dec87f8d343966cd68bb510256d5c342b7927c84499e"
+  },
+  "allowed_terminal_dispositions": [
+    "KERNEL_PROVED",
+    "KERNEL_PROVED_CONDITIONAL",
+    "EMPIRICAL_EVIDENCE_BOUND",
+    "INTERPRETIVE",
+    "NORMATIVE",
+    "OPEN",
+    "OUT_OF_SCOPE"
+  ],
+  "claim_sources": [
+    {
+      "id": "locked-manuscript-claim-graph",
+      "path": "formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json",
+      "git_blob_sha1": "b9f3686c6bb786fd03189c9320033b802488f796",
+      "expected_entries": 43,
+      "role": "authoritative_claim_registry"
+    },
+    {
+      "id": "locked-manuscript-appendix-matrix",
+      "path": "formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json",
+      "git_blob_sha1": "d4090b65c2559f9d3b4fb869e220cacc5c27e843",
+      "expected_entries": 34,
+      "role": "authoritative_epistemic_registry"
+    },
+    {
+      "id": "effect-ack-draft01-claim-matrix",
+      "path": "formalization/QIKVRT_Formalization_v2.0/effect_ack/DRAFT01_CLAIM_MATRIX.json",
+      "git_blob_sha1": "a5c99038db6b20a6acb16381ff333c81c922cc56",
+      "expected_entries": 15,
+      "role": "authoritative_protocol_claim_registry"
+    }
+  ],
+  "proof_sources": {
+    "proof_object_manifest_path": "formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json",
+    "proof_object_manifest_git_blob_sha1": "acae48fcb5896df8e3771e58c2caa26343c84496",
+    "manuscript_proof_workflow": ".github/workflows/qikvrt_manuscript_proof.yml",
+    "kernel_eligibility_rule": "A claim is kernel-eligible only when its authoritative registry supplies a direct Lean formalBinding or one or more direct proof_constants. Appendix rows may derive a disposition from related registered claims but are not independently kernel-eligible unless they carry a direct binding."
+  },
+  "operational_claims": [
+    {
+      "id": "OP-INTEGRITY-001",
+      "statement": "The tagged baseline repository integrity manifest is content-addressed and internally verified.",
+      "disposition": "EMPIRICAL_EVIDENCE_BOUND",
+      "evidence": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt"
+      ]
+    },
+    {
+      "id": "OP-AUTHORITY-MIRROR-EQUALITY-001",
+      "statement": "The tagged Authority and Mirror baseline have the same reconstructed Git tree and repository content-tree digest.",
+      "disposition": "EMPIRICAL_EVIDENCE_BOUND",
+      "evidence": [
+        "Goldkelch/qik-vrt#111 comment 5098208570",
+        "ingolf-lohmann/qik-vrt#60 comment 5098211451"
+      ]
+    },
+    {
+      "id": "OP-COMMON-TAG-001",
+      "statement": "Both repositories carry the same annotated post-publication equality tag over their repository-specific commits with identical content.",
+      "disposition": "EMPIRICAL_EVIDENCE_BOUND",
+      "evidence": [
+        "v2026.07.28-authority-mirror-zenodo-equality-1.0.0",
+        "Goldkelch/qik-vrt#111 comment 5098388821",
+        "ingolf-lohmann/qik-vrt#60 comment 5098389887"
+      ]
+    },
+    {
+      "id": "OP-ZENODO-PUBLICATION-001",
+      "statement": "The scoped Authority/Mirror equality receipt was published and independently gated on Zenodo.",
+      "disposition": "EMPIRICAL_EVIDENCE_BOUND",
+      "evidence": [
+        "release/authority-mirror-equality-2026-07-27/zenodo-publication.json",
+        "10.5281/zenodo.21633411",
+        "10.5281/zenodo.21633410"
+      ]
+    }
+  ],
+  "completion_rules": {
+    "inventory_complete": "Every source entry and operational claim occurs exactly once in GLOBAL_CLAIM_INVENTORY.json.",
+    "traceability_complete": "Every inventory entry has a source locator, terminal disposition and disposition evidence; every kernel-eligible entry has an Exact-Tag kernel receipt.",
+    "kernel_receipt_complete": "Every directly kernel-eligible claim is bound to the exact baseline tag, source hashes, proof constants and the repository proof workflow contract.",
+    "final_pass": "FINAL_PASS requires zero OPEN entries, green mandatory gates on one exact candidate head, and verified Authority/Mirror equality for that candidate.",
+    "effect_ack_done": "EFFECT_ACK_DONE is transaction-scoped and cannot be promoted to a repository-wide timeless property.",
+    "no_semantic_promotion": "Empirical, interpretive, normative and out-of-scope entries cannot be promoted to KERNEL_PROVED by metadata alone."
+  },
+  "explicit_exclusions": [
+    "unregistered narrative prose and historical payloads",
+    "truth of empirical physical, legal, medical, psychological, historical, metaphysical or spiritual assertions",
+    "independent peer review, standards consensus, external adoption or certification",
+    "universal recovery of lost or unobserved information",
+    "future repository states and effects not bound to this exact scope"
+  ]
+}
