@@ -1,5 +1,5 @@
 # One-shot read-only evidence workflow; no repository or external publication mutation.
-name: QIKVRT one-shot global completion pair tree evidence
+name: QIKVRT one-shot final completion pair tree evidence
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-global-completion-pair-tree-evidence
+  group: qikvrt-final-completion-pair-tree-evidence
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Read exact public commit trees and persist bounded receipt
+      - name: Read exact final public commit trees and persist bounded receipt
         shell: bash
         run: |
           set -euo pipefail
@@ -41,8 +41,8 @@ jobs:
 
           authority_repository = 'Goldkelch/qik-vrt'
           mirror_repository = 'ingolf-lohmann/qik-vrt'
-          authority_main = '599866689400bcb825e5534bd85e4653db44432f'
-          mirror_main = '6a5b3c0ace91a327258f945b82f3fb40c16b18fe'
+          authority_main = 'b77131935d74078763f6c4f316a7d6d3ce5276c6'
+          mirror_main = '9ceac37bb41ab947c903fda064078d355ab60e13'
 
           def get(path: str):
               request = urllib.request.Request(
@@ -50,7 +50,7 @@ jobs:
                   headers={
                       'Accept': 'application/vnd.github+json',
                       'X-GitHub-Api-Version': '2022-11-28',
-                      'User-Agent': 'qikvrt-pair-tree-evidence',
+                      'User-Agent': 'qikvrt-final-pair-tree-evidence',
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -69,25 +69,44 @@ jobs:
                   f'BLOCK Authority/Mirror Git tree differs: {authority_tree} != {mirror_tree}'
               )
           payload = {
-              'schema': 'qikvrt_global_completion_pair_tree_receipt_v1',
-              'state': 'PAIR_MAIN_GIT_TREE_EQUALITY_VERIFIED',
+              'schema': 'qikvrt_final_global_completion_pair_receipt_v1',
+              'state': 'FINAL_RECEIPT_PAIR_EQUALITY_VERIFIED',
+              'scope_id': 'qikvrt-global-claim-scope-v1',
               'authority': {
                   'repository': authority_repository,
                   'main': authority_main,
+                  'exact_green_head': 'ab95c76b14300a05c12ef1ae74ae14b2488588eb',
+                  'promotion_pull_request': 120,
                   'git_tree_sha1': authority_tree,
               },
               'mirror': {
                   'repository': mirror_repository,
                   'main': mirror_main,
+                  'exact_green_head': 'e6b3f1a7e0be975c9346637cda4a4ef6a910d24f',
+                  'promotion_pull_request': 66,
                   'git_tree_sha1': mirror_tree,
               },
               'shared_git_tree_sha1': authority_tree,
-              'repository_manifest_sha256': '5032ad6e1d6294bc683dc0fe15c76af86acfb4e458e57b2fe63688bd8c073230',
-              'repository_content_tree_sha256': 'bfd7ca0127be3bf2d5a5b6bb4927bfcd77a3f5a265b5518c677d69bde2e0b97e',
+              'repository_manifest_sha256': 'beb931ae3005032df1a69f04a8852435a119d16269b054d1db0f028dc4f9fb97',
+              'repository_content_tree_sha256': 'f2b58964b7aa5eba2021088621db3299027806b22b5b8ec1b87a09cf453f1734',
+              'global_completion_receipt': {
+                  'path': 'GLOBAL_COMPLETION_RECEIPT.json',
+                  'git_blob_sha1': '97466066860a57af412e79220a4dff43a82e300e',
+                  'state': 'FINAL_PASS',
+                  'scope_qualified': True,
+                  'claims': 92,
+                  'primary_kernel_receipts': 54,
+                  'open_claims': [
+                      'EFFECT_ACK::EA-OPEN-001',
+                      'EFFECT_ACK::EA-OPEN-002',
+                      'EFFECT_ACK::EA-OPEN-003',
+                  ],
+              },
               'non_claims': [
-                  'finalization receipt already materialized',
-                  'unscoped truth of empirical or interpretive claims',
-                  'future repository states',
+                  'proof that the three OPEN claims are mathematically proved',
+                  'unscoped truth of empirical, interpretive or normative claims',
+                  'future repository states or future effects',
+                  'IETF consensus, certification or independent peer review',
               ],
           }
           canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
@@ -100,15 +119,19 @@ jobs:
           cat /tmp/pair-tree.json
           digest="$(python3 -c 'import json; print(json.load(open("/tmp/pair-tree.json"))["payload_sha256"])')"
           tree="$(python3 -c 'import json; print(json.load(open("/tmp/pair-tree.json"))["payload"]["shared_git_tree_sha1"])')"
-          gh pr comment 117 --repo Goldkelch/qik-vrt --body "## Global completion pair-tree receipt
+          gh pr comment 120 --repo Goldkelch/qik-vrt --body "## Final global completion Authority/Mirror pair receipt
 
-- state: \`PAIR_MAIN_GIT_TREE_EQUALITY_VERIFIED\`
-- Authority main: \`599866689400bcb825e5534bd85e4653db44432f\`
-- Mirror main: \`6a5b3c0ace91a327258f945b82f3fb40c16b18fe\`
+- state: \`FINAL_RECEIPT_PAIR_EQUALITY_VERIFIED\`
+- scoped completion receipt state: \`FINAL_PASS\`
+- scope: \`qikvrt-global-claim-scope-v1\`
+- Authority main: \`b77131935d74078763f6c4f316a7d6d3ce5276c6\`
+- Mirror main: \`9ceac37bb41ab947c903fda064078d355ab60e13\`
 - shared Git tree SHA-1: \`$tree\`
-- manifest SHA-256: \`5032ad6e1d6294bc683dc0fe15c76af86acfb4e458e57b2fe63688bd8c073230\`
-- repository-content-tree SHA-256: \`bfd7ca0127be3bf2d5a5b6bb4927bfcd77a3f5a265b5518c677d69bde2e0b97e\`
+- manifest SHA-256: \`beb931ae3005032df1a69f04a8852435a119d16269b054d1db0f028dc4f9fb97\`
+- repository-content-tree SHA-256: \`f2b58964b7aa5eba2021088621db3299027806b22b5b8ec1b87a09cf453f1734\`
+- completion receipt Git blob: \`97466066860a57af412e79220a4dff43a82e300e\`
+- inventory: \`92\` claims; \`54\` primary kernel receipts; \`3\` explicit OPEN boundaries
 - canonical payload SHA-256: \`$digest\`
 - workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
-This receipt establishes only current pair-tree equality and does not itself materialize the final global completion receipt."
+The three OPEN EFFECT_ACK boundary claims remain open and are not represented as proved. The positive claims are qualified to the exact finite scope and current pair only."
