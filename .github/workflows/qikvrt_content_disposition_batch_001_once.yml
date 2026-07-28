@@ -1,0 +1,412 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT content disposition batch 001 once
+
+on:
+  push:
+    branches:
+      - trusted/execute-content-disposition-batch-001-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_content_disposition_batch_001_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-content-disposition-batch-001-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  execute-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_AUTHORITY_MAIN: 4892e74458f15762c7b873344bc85b238e3739b1
+      TRIGGER_BRANCH: trusted/execute-content-disposition-batch-001-20260728-v1
+      EVIDENCE_BRANCH: evidence/content-disposition-batch-001-20260728-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_content_disposition_batch_001_once.yml
+      TOOL_PATH: tools/qikvrt_content_disposition_batch_001.py
+      TEST_PATH: tests/test_content_disposition_batch_001.py
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-001
+      WORK_UNIT_PATH: work-units/EXECUTE_CONTENT_DISPOSITION_BATCH_001.json
+
+    steps:
+      - name: Check out frozen evidence branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: evidence/content-disposition-batch-001-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify trigger, Authority and evidence boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH" ]
+          [ "$(git ls-remote origin refs/heads/$TRIGGER_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git fetch --no-tags origin "$GITHUB_SHA"
+          [ "$(git show -s --format=%P "$GITHUB_SHA")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" "$GITHUB_SHA" -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$WORKFLOW_PATH" ]
+          [ ! -e "$OUTPUT_DIR/CONTENT_DISPOSITION_BATCH_001_RECEIPT.json" ]
+          [ ! -e "$TOOL_PATH" ]
+          [ ! -e "$TEST_PATH" ]
+
+      - name: Materialize bounded batch executor and test
+        shell: bash
+        env:
+          SCRIPT_B64: |
+            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
+          TEST_B64: |
+            H4sIAAAAAAACA51WUW/bNhB+z6+A4CkwbCrYpkVfFqRJ0DSZtSGIDYpgaO1QJCm2kCgpEklZcPzv
+            HUl2EmW54A9BF7307rvf/T5RrsCGpFNMPpl9yhdIyckHlKoVElB65LnKyTXiRyol+cF+FCaVKqXc
+            ljtUTk1XEpO8G+ucGqQ1GuY9SrJG+o0z5VqP3fVg0cIyhDzYkzEs40saY7gKzUruEytNfxFE39E
+            1/KmZT5TIEcTdUvqnD4kClFZlY+DaCQ27KcNqg+yq8PZZTKvH5K8qZKQ7Gq6Y4XosSq8R7kz2jQ
+            SMj2RaMwvRhCgZApbIjNZ+HwKKxmj4vY8KOJ7hGYHc7b9SbhlUMaSyYRQMuzKD9mMHbOgMeLDio3
+            noJQbkWTlEeL6ddoUeXLtiC68M9Rkd1Gy5QG3DOFOQQl4liCfFJlj4vMH0hm5LAIlD05KeSxZ0Jx
+            fQZxjc5zVJrf2D9n2IPKqwRAm4m7AY/PdBEu5C00KV8go9kXmUObG9E/wJL0BwtLwDj/bIHdS6XO
+            ykMPW92ncvlwIwmnG+wyP7n6vHSWCu17LaeiVXmwgr7sMy99r7KOa/XY9xJvraXaaX5n5r2OtElQ
+            lMQyLR03YxSYicDlc/M3tkC0o4s3WYlA77j3xPWCoKhpwm4KXO5I4hOp1UjI+gCK7d+Gb4Qu/u/7
+            GAYpH5kBIpwnBbKSKze5j4eN5zmKEwQet1xa+MeNifypRhEwdIYWJJc2wTHFFlH1JnsnsMJB2sse
+            LE2ZRHnoKvb5OgsTlj7jHrvBCu7ZyYkco8p7nQBTktWHzjdwbHQ7d1USFpWI6h1P0oSNZEKJnlCM
+            BEs3wSQSIqopHPS3sHJbnBWbCB0kAtoznnwiK9+F3RG9bseR9mJhA7zBiLglLaKCeMIIGk5SrDO1
+            D3RRKU3HCXrqhmwNj9r3WprTpMUc8iaFqqeUadQy5VeESIuWmiIK3zrDKZ5YC6uWMfwVD/g7PoNQ
+            pKObv2rkVSZRFkDX1DbNpeKDIoSuQvR0vlNXwiY0aozfSWNqr+5mJADN7+bzRtA8VeVXU3/rEn0r
+            E1jhkW4jpK49wwkl0zveANiB7CEWhEn07/fpl7O9yPiXaF4GvV2eKiXjeclHS93iRqcbpC078BM9
+            7m6XmRg1/5/G07kbOseTV5VDow+Z3tDBh2Qt2BRiEFx4NXy42gzmFzzkY3Em8ZAbFOqcFN7DoxNI
+            y82cw6OY6yveNMqzsmZzCT6MVBeOn8vs3D9Tj5udjktcv81VLkGRvIzXt9YsqENWqBdGD1aa7hcB
+            fj2TaRM7DeO1wmEiZ6xILFwf2ikPaRQ8UbjszaEOh4qjwu+kLFqG2B24qchdg3FrkblvQLlQnSiv
+            zgXGg/fkATGx1PE/Vysb2/PK1iV09mYN1uSjsDX4fVbUskx2/axM6mSlOKsmBaPc7ujGQnnT2U2W
+            J5yMZB3w6En1WbjbJMiQv48fueX8Z/Bphzcv2tX/GrSY77faXt7e6qp7gqaER9bXla+yKw8zFP8F
+            eP3NLB/6mSOce/MH6rqXf/tvn3/9ySfpl5M3Cf7iN5PUwzCe/yBv/qL75vf6zw9K/0/1/ATp0tbe
+            3gwAAA==
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$TOOL_PATH")" "$(dirname "$TEST_PATH")"
+          printf '%s' "$SCRIPT_B64" | tr -d '\n' | base64 --decode | gzip --decompress > "$TOOL_PATH"
+          printf '%s' "$TEST_B64" | tr -d '\n' | base64 --decode | gzip --decompress > "$TEST_PATH"
+          chmod 0755 "$TOOL_PATH"
+          python3 -B - <<'PY'
+          import pathlib
+          for raw in ('tools/qikvrt_content_disposition_batch_001.py', 'tests/test_content_disposition_batch_001.py'):
+              path = pathlib.Path(raw)
+              compile(path.read_text(encoding='utf-8'), raw, 'exec')
+          PY
+
+      - name: Execute batch 001 and repository gates
+        id: execute
+        shell: bash
+        run: |
+          set -euo pipefail
+          terminal="$RUNNER_TEMP/qikvrt-content-disposition-batch-001"
+          mkdir -p "$terminal"
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 python3 -B "$TOOL_PATH" >"$terminal/EXECUTION.log" 2>&1
+          execute_status=$?
+          if [ "$execute_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B "$TEST_PATH" >"$terminal/STATIC_VALIDATION.log" 2>&1
+            static_status=$?
+          else
+            static_status=125
+          fi
+          if [ "$execute_status" -eq 0 ] && [ "$static_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate >"$terminal/INTEGRITY_GENERATE.log" 2>&1
+            integrity_generate_status=$?
+          else
+            integrity_generate_status=125
+          fi
+          if [ "$integrity_generate_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify >"$terminal/INTEGRITY_VERIFY_PRE.log" 2>&1
+            integrity_pre_status=$?
+          else
+            integrity_pre_status=125
+          fi
+          if [ "$integrity_pre_status" -eq 0 ]; then
+            make test >"$terminal/MAKE_TEST.log" 2>&1
+            test_status=$?
+          else
+            test_status=125
+          fi
+          if [ "$test_status" -eq 0 ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify >"$terminal/INTEGRITY_VERIFY_POST.log" 2>&1
+            integrity_post_status=$?
+          else
+            integrity_post_status=125
+          fi
+          set -e
+          export EXECUTE_STATUS="$execute_status" STATIC_STATUS="$static_status" \
+            INTEGRITY_GENERATE_STATUS="$integrity_generate_status" INTEGRITY_PRE_STATUS="$integrity_pre_status" \
+            TEST_STATUS="$test_status" INTEGRITY_POST_STATUS="$integrity_post_status"
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          terminal = pathlib.Path(os.environ['RUNNER_TEMP']) / 'qikvrt-content-disposition-batch-001'
+          diagnostic = {
+              'schema': 'qikvrt_content_disposition_batch_001_execution_diagnostic_v1',
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'trigger_sha': os.environ['GITHUB_SHA'],
+              'authority_main': os.environ['EXPECTED_AUTHORITY_MAIN'],
+              'evidence_branch': os.environ['EVIDENCE_BRANCH'],
+              'zenodo_methods': ['GET'],
+              'zenodo_mutation_executed': False,
+              'statuses': {
+                  'execute': int(os.environ['EXECUTE_STATUS']),
+                  'static_validation': int(os.environ['STATIC_STATUS']),
+                  'integrity_generate': int(os.environ['INTEGRITY_GENERATE_STATUS']),
+                  'integrity_verify_pre': int(os.environ['INTEGRITY_PRE_STATUS']),
+                  'make_test': int(os.environ['TEST_STATUS']),
+                  'integrity_verify_post': int(os.environ['INTEGRITY_POST_STATUS']),
+              },
+          }
+          diagnostic['successful'] = all(value == 0 for value in diagnostic['statuses'].values())
+          (terminal / 'EXECUTION_DIAGNOSTIC.json').write_text(
+              json.dumps(diagnostic, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8', newline='\n')
+          PY
+          cat "$terminal/EXECUTION.log"
+          [ "$execute_status" -eq 0 ]
+          cat "$terminal/STATIC_VALIDATION.log"
+          [ "$static_status" -eq 0 ]
+          [ "$integrity_generate_status" -eq 0 ]
+          [ "$integrity_pre_status" -eq 0 ]
+          if [ "$test_status" -ne 0 ]; then tail -n 300 "$terminal/MAKE_TEST.log"; fi
+          [ "$test_status" -eq 0 ]
+          [ "$integrity_post_status" -eq 0 ]
+
+      - name: Upload batch evidence on every terminal path
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-content-disposition-batch-001-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/qikvrt-content-disposition-batch-001/**
+            ${{ env.OUTPUT_DIR }}/**
+            ${{ env.WORK_UNIT_PATH }}
+            ${{ env.TOOL_PATH }}
+            ${{ env.TEST_PATH }}
+
+      - name: Persist validated evidence on isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          receipt = json.loads(pathlib.Path(os.environ['OUTPUT_DIR'], 'CONTENT_DISPOSITION_BATCH_001_RECEIPT.json').read_text(encoding='utf-8'))
+          assert receipt['schema'] == 'qikvrt_content_disposition_batch_receipt_v1'
+          assert receipt['batch_id'] == 'CONTENT-DISPOSITION-BATCH-001'
+          assert receipt['state'] == 'BATCH_001_DISPOSITIONED_NO_CONTENT_CHANGE'
+          assert receipt['subject_count'] == 6
+          assert receipt['validation']['all_public_files_byte_reverified'] is True
+          assert receipt['validation']['all_claims_terminally_classified'] is True
+          assert receipt['validation']['formal_claims_have_machine_proof_bindings'] is True
+          assert receipt['validation']['corrected_candidate_count'] == 0
+          assert receipt['completion_claims']['all_content_claims_dispositioned'] is False
+          assert receipt['completion_claims']['proof_corpus_published_on_zenodo'] is False
+          assert receipt['completion_claims']['pass'] is False
+          assert receipt['completion_claims']['final_pass'] is False
+          assert receipt['completion_claims']['effect_ack_done'] is False
+          PY
+          mapfile -t changed < <({ git diff --name-only "$EXPECTED_AUTHORITY_MAIN" --; git ls-files --others --exclude-standard --; } | LC_ALL=C sort -u)
+          [ "${#changed[@]}" -ge 15 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt|\
+              "$TOOL_PATH"|"$TEST_PATH"|"$WORK_UNIT_PATH"|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json|\
+              release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json|\
+              "$OUTPUT_DIR"/*) ;;
+              *) echo "BLOCK: unexpected batch-001 persistence path: $path" >&2; exit 1 ;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git config user.name 'qikvrt-content-disposition[bot]'
+          git config user.email 'qikvrt-content-disposition[bot]@users.noreply.github.com'
+          git add -A -- \
+            "$TOOL_PATH" "$TEST_PATH" "$WORK_UNIT_PATH" "$OUTPUT_DIR" \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git commit -m 'evidence: execute content disposition batch 001'
+          evidence_head="$(git rev-parse HEAD)"
+          git push origin \
+            --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$EXPECTED_AUTHORITY_MAIN" \
+            "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$evidence_head" ]
+          echo "EVIDENCE_HEAD=$evidence_head" >> "$GITHUB_ENV"
+
+      - name: Enforce truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${EVIDENCE_HEAD:-}" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$EVIDENCE_HEAD" ]
+          python3 -B - <<'PY'
+          import json, os, pathlib
+          receipt = json.loads(pathlib.Path(os.environ['OUTPUT_DIR'], 'CONTENT_DISPOSITION_BATCH_001_RECEIPT.json').read_text(encoding='utf-8'))
+          assert receipt['next_deterministic_effect'] == 'EXECUTE_CONTENT_DISPOSITION_BATCH_002'
+          assert receipt['completion_claims']['pass'] is False
+          assert receipt['completion_claims']['final_pass'] is False
+          assert receipt['completion_claims']['effect_ack_done'] is False
+          PY
