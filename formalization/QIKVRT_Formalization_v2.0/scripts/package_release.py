@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
 """Build the deterministic QIK-VRT Formalization v2 alpha.2 source archive."""
 from __future__ import annotations
 
@@ -25,6 +26,23 @@ EXCLUDED_PARTS = {
     "build",
     "release",
     "release_authorization",
+}
+# Live completion status was introduced after the immutable Alpha-2 release and
+# is therefore not part of its closed historical input set.
+POST_ALPHA2_EXCLUSIONS = {
+    "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
+}
+# These three live text files legitimately advanced after Alpha-2.  The exact
+# published bytes are materialized from the hash-bound Alpha-2 archive by
+# tools/qikvrt_freeze_alpha2_status.py and substituted only inside this
+# historical package.  Current repository files remain current everywhere else.
+FROZEN_ALPHA2_INPUTS = {
+    path: "release/formalization-v2/alpha2-frozen/" + path
+    for path in (
+        "formalization/QIKVRT_Formalization_v2.0/README.md",
+        "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
+        "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+    )
 }
 EXACT_INPUTS = (
     ".github/workflows/qikvrt_manuscript_proof.yml",
@@ -129,12 +147,15 @@ def _regular_file(path: pathlib.Path) -> pathlib.Path:
 
 
 def release_inputs(root: pathlib.Path) -> list[pathlib.Path]:
-    """Return the closed, sorted alpha.2 input set."""
+    """Return the closed, sorted Alpha-2 path set."""
     formalization = root / FORMALIZATION_ROOT.relative_to(REPOSITORY_ROOT)
     inputs: set[pathlib.Path] = set()
     for path in formalization.rglob("*"):
         relative = path.relative_to(formalization)
         if any(part in EXCLUDED_PARTS for part in relative.parts):
+            continue
+        repository_relative = path.relative_to(root).as_posix()
+        if repository_relative in POST_ALPHA2_EXCLUSIONS:
             continue
         if path.is_file() and path.suffix != ".pyc":
             inputs.add(_regular_file(path))
@@ -143,10 +164,19 @@ def release_inputs(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(inputs, key=lambda path: path.relative_to(root).as_posix())
 
 
+def _payload_bytes(root: pathlib.Path, path: pathlib.Path) -> bytes:
+    repository_relative = path.relative_to(root).as_posix()
+    frozen_relative = FROZEN_ALPHA2_INPUTS.get(repository_relative)
+    if frozen_relative is None:
+        return path.read_bytes()
+    frozen = _regular_file(root / frozen_relative)
+    return frozen.read_bytes()
+
+
 def build_archive(root: pathlib.Path, output: pathlib.Path) -> str:
     files = release_inputs(root)
     payloads = [
-        (path.relative_to(root).as_posix(), path.read_bytes())
+        (path.relative_to(root).as_posix(), _payload_bytes(root, path))
         for path in files
     ]
     provenance = {
@@ -195,7 +225,7 @@ def build_zenodo_checksums(
     archive_checksum: pathlib.Path,
     output: pathlib.Path,
 ) -> None:
-    """Bind every alpha.2 upload except the checksum list itself."""
+    """Bind every Alpha-2 upload except the checksum list itself."""
     inputs = [
         (OUTPUT_NAME, _regular_file(archive)),
         (OUTPUT_NAME + ".sha256", _regular_file(archive_checksum)),
@@ -262,10 +292,7 @@ def main(argv: list[str] | None = None) -> int:
             checksum,
             args.zenodo_checksums.resolve(),
         )
-    print(output)
-    print(checksum)
-    if args.zenodo_checksums is not None:
-        print(args.zenodo_checksums.resolve())
+    print(digest)
     return 0
 
 
