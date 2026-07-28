@@ -154,6 +154,17 @@ jobs:
         run: python3 -B tools/qikvrt_global_completion.py check
       - name: Run positive and negative global completion tests
         run: python3 -B tests/test_global_completion.py
+      - name: Resolve Authority tag locally for Mirror-side source verification
+        if: github.repository == 'ingolf-lohmann/qik-vrt'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='v2026.07.28-authority-mirror-zenodo-equality-1.0.0'
+          authority='42389236ea638f5cd40c13a486b70b1e1bf03055'
+          git fetch --no-tags https://github.com/Goldkelch/qik-vrt.git "$authority"
+          [ "$(git rev-parse FETCH_HEAD)" = "$authority" ]
+          [ "$(git show -s --format=%T FETCH_HEAD)" = 'cc3f0421c7eb9255ec35cdd5a7326d3a21dabb9e' ]
+          git tag -f "$tag" "$authority"
       - name: Verify exact common-tag kernel source binding
         run: python3 -B tools/qikvrt_global_completion.py verify-tag
       - name: Verify completed manuscript graph and EFFECT_ACK boundaries
