@@ -1,0 +1,91 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "RECOVER-13-RECORD-RECONCILIATION-RECEIPT-20260728",
+  "title": "Recover and persist the 13-record public reconciliation receipt",
+  "status": "READY",
+  "priority": "HIGHEST",
+  "source_issue": 153,
+  "source_pull_request": 172,
+  "source_workflow_run": 30354498743,
+  "source_failure_class": "PUBLIC_RECONCILIATION_COMPLETED_BUT_RECEIPT_NOT_PERSISTED",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "mirror_repository": "ingolf-lohmann/qik-vrt",
+  "safety": {
+    "zenodo_methods_allowed": ["GET"],
+    "zenodo_mutation_forbidden": true,
+    "secret_persistence_forbidden": true,
+    "authorization_header_forbidden": true
+  },
+  "ordered_effects": [
+    {
+      "id": "source-diagnosis",
+      "effect": "Fetch and classify the source workflow job and step evidence without persisting credentials."
+    },
+    {
+      "id": "read-only-reconciliation",
+      "effect": "Re-execute public Records API and public file byte verification for exactly the 13 historical record IDs."
+    },
+    {
+      "id": "always-artifact",
+      "effect": "Upload the raw reconciliation matrix, 13 envelopes, receipt candidate and diagnostic receipt on every terminal path using an always() artifact step."
+    },
+    {
+      "id": "receipt-validation",
+      "effect": "Validate schema, exact ID set, terminal classification, byte-verification claims and no-mutation boundary as separate named gates."
+    },
+    {
+      "id": "evidence-only-persistence",
+      "effect": "Remove the one-shot workflow and persist only validated reconciliation evidence on the source recovery branch."
+    },
+    {
+      "id": "integrity-and-tests",
+      "effect": "Regenerate canonical integrity and execute the complete repository suite after evidence persistence."
+    },
+    {
+      "id": "trusted-exact-head",
+      "effect": "Create a separate trusted exact-head verification PR before Authority promotion."
+    },
+    {
+      "id": "mirror-and-equality",
+      "effect": "After Authority promotion, synchronize the exact tree to Mirror and produce reciprocal equality evidence."
+    }
+  ],
+  "mandatory_outputs": [
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/PUBLIC_RECORD_RECONCILIATION_RECEIPT.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/RECOVERY_DIAGNOSTIC_RECEIPT.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-20712301.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21244412.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21245282.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21245951.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21247297.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21247388.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21252415.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21252649.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21266670.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21488116.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21498774.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21501365.json",
+    "release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/proof-envelopes/zenodo-21518464.json"
+  ],
+  "failure_classes": [
+    "SOURCE_RUN_EVIDENCE_UNAVAILABLE",
+    "PUBLIC_RECORD_RECONCILIATION_ERROR",
+    "RECONCILIATION_RECEIPT_SCHEMA_INVALID",
+    "RECONCILIATION_ID_SET_MISMATCH",
+    "RECONCILIATION_ARTIFACT_NOT_UPLOADED",
+    "EVIDENCE_ONLY_BRANCH_NOT_PERSISTED",
+    "AUTHORITY_EXACT_HEAD_GATES_NOT_GREEN",
+    "MIRROR_SYNCHRONIZATION_NOT_VERIFIED"
+  ],
+  "acceptance": {
+    "all_13_ids_terminally_classified": true,
+    "artifact_on_every_terminal_path": true,
+    "no_false_pass": true,
+    "exact_head_binding_required": true,
+    "authority_mirror_receipt_required": true,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  },
+  "next_effect": "Execute the recovery-only workflow, persist its validated evidence head, and open a separate trusted exact-head verification PR."
+}
