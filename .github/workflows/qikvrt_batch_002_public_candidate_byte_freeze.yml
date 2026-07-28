@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT Batch 002 public candidate byte freeze
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - work-units/CREATE_EXACT_PUBLIC_CANDIDATE_BYTE_FREEZE_WORK_UNIT_FOR_BATCH_002.json
+      - .github/workflows/qikvrt_batch_002_public_candidate_byte_freeze.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freeze-public-candidate-bytes:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('work-units/CREATE_EXACT_PUBLIC_CANDIDATE_BYTE_FREEZE_WORK_UNIT_FOR_BATCH_002.json').read_text())
+          assert d['source_authority']=='98194f453cee0ddf4dd0a44b1d12b1d9f20a9709'
+          assert d['source_mirror']=='1bb5af6597e1d90075396a9abf6c61e993388a59'
+          assert d['source_batch_head']=='e416a459dcb353d8e04d3bf7630a85b0987a4ce2'
+          assert d['record_ids']==[21500322,21501365,21515074,21518464,21529081,21582781]
+          assert d['allowed_remote_operations']==['HTTPS_GET']
+          assert set(d['forbidden_remote_operations'])=={'POST','PUT','PATCH','DELETE'}
+          assert d['forbidden_secret_use'] is True
+          assert d['completion_claims']['pass'] is False
+          assert d['completion_claims']['final_pass'] is False
+          assert d['completion_claims']['effect_ack_done'] is False
+          PY
+
+      - name: Freeze exact public candidate bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re, urllib.parse, urllib.request
+          IDS=[21500322,21501365,21515074,21518464,21529081,21582781]
+          OUT=pathlib.Path('out/public-candidate-byte-freeze')
+          OUT.mkdir(parents=True,exist_ok=True)
+          (OUT/'records').mkdir(exist_ok=True)
+          (OUT/'files').mkdir(exist_ok=True)
+          def get(url, accept, limit, timeout):
+              req=urllib.request.Request(url,headers={'Accept':accept,'User-Agent':'qikvrt-byte-freeze/1.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:
+                  u=urllib.parse.urlsplit(r.geturl()); h=(u.hostname or '').lower()
+                  if u.scheme!='https' or not (h=='zenodo.org' or h.endswith('.zenodo.org')):
+                      raise RuntimeError('redirect escaped Zenodo')
+                  data=r.read(limit+1)
+                  if len(data)>limit: raise RuntimeError('response too large')
+                  return data
+          def entries(rec):
+              raw=rec.get('files'); out=[]
+              if isinstance(raw,list): out=[dict(x) for x in raw if isinstance(x,dict)]
+              elif isinstance(raw,dict):
+                  src=raw.get('entries') if isinstance(raw.get('entries'),dict) else raw
+                  for k,v in src.items():
+                      if isinstance(v,dict):
+                          z=dict(v); z.setdefault('key',k); out.append(z)
+              return out
+          records=[]; file_count=0; total_bytes=0
+          for rid in IDS:
+              rec=json.loads(get(f'https://zenodo.org/api/records/{rid}','application/json',32*1024*1024,60).decode('utf-8'))
+              md=rec.get('metadata') if isinstance(rec.get('metadata'),dict) else {}
+              creators=md.get('creators') if isinstance(md.get('creators'),list) else []
+              toks=lambda s: re.findall(r'[a-z0-9]+',str(s).casefold())
+              if not any('ingolf' in toks(c.get('name','')) and 'lohmann' in toks(c.get('name','')) for c in creators if isinstance(c,dict)):
+                  raise RuntimeError(f'creator attribution failed for {rid}')
+              row={'record_id':rid,'doi':rec.get('doi') or md.get('doi') or f'10.5281/zenodo.{rid}','conceptdoi':rec.get('conceptdoi') or md.get('conceptdoi'),'creator_attributed_to_ingolf_lohmann':True,'files':[]}
+              for f in entries(rec):
+                  name=f.get('key') or f.get('filename') or f.get('name')
+                  links=f.get('links') if isinstance(f.get('links'),dict) else {}
+                  url=links.get('content') or links.get('download') or links.get('self')
+                  if not isinstance(name,str) or not isinstance(url,str): raise RuntimeError(f'incomplete file metadata for {rid}')
+                  data=get(url,'application/octet-stream, */*;q=0.1',1024*1024*1024,180)
+                  md5=hashlib.md5(data).hexdigest(); sha=hashlib.sha256(data).hexdigest(); declared=f.get('checksum') or f.get('md5'); match=True
+                  if isinstance(declared,str):
+                      expected=declared.split(':',1)[-1].lower()
+                      if re.fullmatch(r'[0-9a-f]{32}',expected): match=(expected==md5)
+                  if not match: raise RuntimeError(f'checksum mismatch {rid}/{name}')
+                  env={'record_id':rid,'name':name,'bytes':len(data),'md5':md5,'sha256':sha,'declared_checksum':declared,'declared_checksum_match':match,'public_redownload_verified':True}
+                  safe=re.sub(r'[^A-Za-z0-9._-]+','_',name)
+                  (OUT/'files'/f'{rid}--{safe}.json').write_text(json.dumps(env,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+                  row['files'].append(env); file_count+=1; total_bytes+=len(data)
+              if not row['files']: raise RuntimeError(f'no public files for {rid}')
+              (OUT/'records'/f'zenodo-{rid}.json').write_text(json.dumps(row,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+              records.append(row)
+          receipt={'_license':{'classification':'machine_readable_public_candidate_byte_freeze_receipt','copyright':'Copyright 2026 Ingolf Lohmann','license':'CC-BY-NC-ND-4.0','rights_holder':'Ingolf Lohmann'},'schema':'qikvrt_public_candidate_byte_freeze_receipt_v1','batch_id':'CONTENT-DISPOSITION-BATCH-002','source_authority':'98194f453cee0ddf4dd0a44b1d12b1d9f20a9709','source_mirror':'1bb5af6597e1d90075396a9abf6c61e993388a59','source_batch_head':'e416a459dcb353d8e04d3bf7630a85b0987a4ce2','record_count':len(records),'file_count':file_count,'total_bytes':total_bytes,'records':records,'safety':{'remote_methods':['GET'],'zenodo_mutation_executed':False,'authorization_header_used':False,'secret_used':False},'completion_claims':{'candidate_byte_freeze_complete':True,'claim_disposition_complete':False,'pass':False,'final_pass':False,'effect_ack_done':False},'next_deterministic_effect':'EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002'}
+          (OUT/'PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          PY
+
+      - name: Validate frozen-byte receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('out/public-candidate-byte-freeze/PUBLIC_CANDIDATE_BYTE_FREEZE_RECEIPT.json').read_text())
+          assert d['record_count']==6 and d['file_count']>0 and d['total_bytes']>0
+          assert d['completion_claims']['candidate_byte_freeze_complete'] is True
+          assert d['completion_claims']['claim_disposition_complete'] is False
+          assert d['completion_claims']['pass'] is False
+          assert d['completion_claims']['final_pass'] is False
+          assert d['completion_claims']['effect_ack_done'] is False
+          assert len(list(Path('out/public-candidate-byte-freeze/records').glob('*.json')))==6
+          PY
+
+      - name: Publish immutable byte-freeze artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-batch-002-public-candidate-byte-freeze-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/public-candidate-byte-freeze
+          if-no-files-found: error
+          retention-days: 90
