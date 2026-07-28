@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT content disposition batch 001
+
+on:
+  pull_request:
+    paths:
+      - work-units/CONTENT_DISPOSITION_BATCH_001.json
+      - tools/qikvrt_content_disposition_batch.py
+      - tests/test_qikvrt_content_disposition_batch.py
+      - .github/workflows/qikvrt_content_disposition_batch_001.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execute-batch-001:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+
+      - name: Verify exact Authority and queue bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          work = json.loads(pathlib.Path('work-units/CONTENT_DISPOSITION_BATCH_001.json').read_text())
+          queue = pathlib.Path(work['source']['queue_path'])
+          if not queue.is_file():
+              raise SystemExit('BLOCK: queue missing')
+          active = json.loads(queue.read_text())['active_batch']
+          if active['batch_id'] != 'CONTENT-DISPOSITION-BATCH-001' or active['subject_count'] != 6:
+              raise SystemExit('BLOCK: batch binding mismatch')
+          if work['source']['authority'] != '4892e74458f15762c7b873344bc85b238e3739b1':
+              raise SystemExit('BLOCK: Authority binding mismatch')
+          if work['source']['mirror'] != 'f17aa8eca00b0e5e75d5bd44f1b5fb96d760cc0d':
+              raise SystemExit('BLOCK: Mirror binding mismatch')
+          print('BATCH_001_BINDING=PASS')
+          PY
+
+      - name: Execute fail-closed disposition preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/qikvrt-content-disposition-batch-001
+          python3 -B tools/qikvrt_content_disposition_batch.py \
+            --queue release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            --output-dir /tmp/qikvrt-content-disposition-batch-001
+
+      - name: Run focused non-regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_qikvrt_content_disposition_batch.py
+
+      - name: Validate truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          root = pathlib.Path('/tmp/qikvrt-content-disposition-batch-001')
+          receipt = json.loads((root / 'CONTENT_DISPOSITION_BATCH_001_RECEIPT.json').read_text())
+          assert receipt['subject_count'] == 6
+          assert receipt['execution']['all_six_subject_receipts_created'] is True
+          assert receipt['execution']['zenodo_mutation_executed'] is False
+          assert receipt['completion_claims']['batch_executed'] is True
+          assert receipt['completion_claims']['batch_complete'] is False
+          assert receipt['completion_claims']['pass'] is False
+          assert receipt['completion_claims']['final_pass'] is False
+          assert receipt['completion_claims']['effect_ack_done'] is False
+          assert len(list((root / 'subjects').glob('*.json'))) == 6
+          print('BATCH_001_TRUTH_BOUNDARY=PASS')
+          PY
+
+      - name: Publish immutable execution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-content-disposition-batch-001-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-content-disposition-batch-001
+          if-no-files-found: error
+          retention-days: 90
