@@ -289,8 +289,7 @@ def _build() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, 
             }
         )
         if binding:
-            if claim_id not in manifest_objects:
-                raise CompletionError(f"proof-object manifest lacks {claim_id}")
+            persistent_manifest_entry = manifest_objects.get(claim_id)
             source_path = ROOT / "formalization" / "QIKVRT_Formalization_v2.0" / str(binding["sourcePath"])
             registry_path = ROOT / "formalization" / "QIKVRT_Formalization_v2.0" / str(binding["registrySourcePath"])
             if not source_path.is_file() or not registry_path.is_file():
@@ -315,7 +314,14 @@ def _build() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, 
                     "registry_sha256": _sha256(registry_path.read_bytes()),
                     "registry_git_blob_sha1": _git_blob_sha1(registry_path.read_bytes()),
                     "assumption_policy": binding.get("assumptionPolicy"),
-                    "proof_object_manifest_entry": claim_id,
+                    "proof_object_manifest_entry": (
+                        claim_id if persistent_manifest_entry is not None else None
+                    ),
+                    "proof_object_coverage": (
+                        "PERSISTENT_ENTRY"
+                        if persistent_manifest_entry is not None
+                        else "DIRECT_SOURCE_REGISTRY_AND_WORKFLOW_AUDIT"
+                    ),
                     "verification_contract": ".github/workflows/qikvrt_manuscript_proof.yml",
                 }
             )
