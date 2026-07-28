@@ -28,6 +28,7 @@ class TransactionalWorkflowTriggerTests(unittest.TestCase):
             "transaction_id": "TEST-TRANSACTION",
             "base_commit": "0" * 40,
             "allowed_changed_paths": ["payload/a.txt", "ready.json", "transaction.json"],
+            "required_changed_paths": ["payload/a.txt", "ready.json", "transaction.json"],
             "required_files": [
                 {"path": "payload/a.txt", "sha256": sha256(root / "payload" / "a.txt")}
             ],
@@ -36,6 +37,12 @@ class TransactionalWorkflowTriggerTests(unittest.TestCase):
         }
         (root / "transaction.json").write_text(json.dumps(manifest), encoding="utf-8")
         return td, root
+
+    def ready(self, root: pathlib.Path, txid: str = "TEST-TRANSACTION"):
+        (root / "ready.json").write_text(
+            json.dumps({"state": "READY", "transaction_id": txid}) + "\n",
+            encoding="utf-8",
+        )
 
     def run_tool(self, root: pathlib.Path, changed):
         changed_file = root / "changed.txt"
@@ -54,27 +61,63 @@ class TransactionalWorkflowTriggerTests(unittest.TestCase):
             self.assertNotEqual(p.returncode, 0)
             self.assertIn("READY_MARKER_MISSING", p.stdout)
 
+    def test_mismatched_ready_marker_blocks(self):
+        td, root = self.make_case()
+        with td:
+            self.ready(root, "OTHER-TRANSACTION")
+            p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json"])
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("READY_MARKER_INVALID", p.stdout)
+
     def test_hash_mismatch_blocks(self):
         td, root = self.make_case()
         with td:
-            (root / "ready.json").write_text('{"state":"READY"}\n', encoding="utf-8")
+            self.ready(root)
             (root / "payload" / "a.txt").write_text("tampered\n", encoding="utf-8")
             p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json"])
             self.assertNotEqual(p.returncode, 0)
             self.assertIn("REQUIRED_FILE_HASH_MISMATCH", p.stdout)
 
+    def test_missing_required_file_blocks(self):
+        td, root = self.make_case()
+        with td:
+            self.ready(root)
+            (root / "payload" / "a.txt").unlink()
+            p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json"])
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("REQUIRED_FILE_MISSING", p.stdout)
+
+    def test_missing_required_changed_path_blocks(self):
+        td, root = self.make_case()
+        with td:
+            self.ready(root)
+            p = self.run_tool(root, ["ready.json", "transaction.json"])
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("REQUIRED_CHANGED_PATH_MISSING", p.stdout)
+
     def test_unexpected_changed_path_blocks(self):
         td, root = self.make_case()
         with td:
-            (root / "ready.json").write_text('{"state":"READY"}\n', encoding="utf-8")
+            self.ready(root)
             p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json", "extra.txt"])
             self.assertNotEqual(p.returncode, 0)
             self.assertIn("UNEXPECTED_CHANGED_PATH", p.stdout)
 
+    def test_false_completion_claim_blocks(self):
+        td, root = self.make_case()
+        with td:
+            self.ready(root)
+            manifest = json.loads((root / "transaction.json").read_text(encoding="utf-8"))
+            manifest["completion_claims"]["pass"] = True
+            (root / "transaction.json").write_text(json.dumps(manifest), encoding="utf-8")
+            p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json"])
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("FALSE_COMPLETION_CLAIM_IN_TRIGGER_MANIFEST", p.stdout)
+
     def test_complete_transaction_verifies(self):
         td, root = self.make_case()
         with td:
-            (root / "ready.json").write_text('{"state":"READY","transaction_id":"TEST-TRANSACTION"}\n', encoding="utf-8")
+            self.ready(root)
             p = self.run_tool(root, ["payload/a.txt", "ready.json", "transaction.json"])
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             receipt = json.loads(p.stdout)
