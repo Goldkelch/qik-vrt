@@ -1,6 +1,6 @@
 # Completion plan — QIK-VRT manuscript formalization v2.0
 
-Status: GLOBAL_FINALIZATION_ACTIVE
+Status: COMPLETED
 Authority repository: `Goldkelch/qik-vrt`
 Base tree: `a09cbdcbcc6c64975a06f2ddd92264547bc31ee0`
 Responsible human: Ingolf Lohmann
@@ -8,11 +8,11 @@ Responsible human: Ingolf Lohmann
 <!-- qikvrt-global-completion-plan:start -->
 ## Global completion state
 
-State: `GLOBAL_FINALIZATION_ACTIVE` for `qikvrt-global-claim-scope-v1`.
+State: `COMPLETED` for `qikvrt-global-claim-scope-v1`.
 
 The historical theorem tranches below are closed by the current claim graph: 20/20 definitions, 20/20 theorem-like environments, 42 strong Lean bindings and zero pending formal nodes. The broader ledger terminally classifies all 92 registered claims.
 
-Exact-head gates, Authority/Mirror promotion and the final completion receipt remain required.
+The bounded completion transaction is finalized by `GLOBAL_COMPLETION_RECEIPT.json`; OPEN claims remain explicit terminal boundaries.
 <!-- qikvrt-global-completion-plan:end -->
 
 ## Objective
