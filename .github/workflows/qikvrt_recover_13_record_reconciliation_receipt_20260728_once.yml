@@ -1,0 +1,339 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT recovery-only 13-record reconciliation receipt once
+
+on:
+  push:
+    branches:
+      - trusted/execute-reconciliation-receipt-recovery-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_recover_13_record_reconciliation_receipt_20260728_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-recover-13-record-reconciliation-receipt-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  recover-and-persist:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_AUTHORITY_MAIN: 1d5c92035ccad32fcd7168d11f946bb3fee20d01
+      WORK_UNIT_HEAD: 5305b35227cf2fd680cff98bd2c9fd9b8445f407
+      SOURCE_EXECUTION_HEAD: 50ad5163e1b3d16c500d2b674769d2ad6a117f4a
+      SOURCE_WORKFLOW: .github/workflows/qikvrt_public_record_reconciliation_13_ids_20260728_once.yml
+      TRIGGER_WORKFLOW: .github/workflows/qikvrt_recover_13_record_reconciliation_receipt_20260728_once.yml
+      EVIDENCE_BRANCH: evidence/reconciliation-receipt-recovery-20260728-v1
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation
+      OBSERVED_AT: '2026-07-28T14:00:00Z'
+      WORK_UNIT_ID: RECOVER-13-RECORD-RECONCILIATION-RECEIPT-20260728
+      SOURCE_RUN: '30354498743'
+
+    steps:
+      - name: Check out frozen evidence branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: evidence/reconciliation-receipt-recovery-20260728-v1
+          fetch-depth: 0
+
+      - name: Verify trigger, work-unit and evidence boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = 'trusted/execute-reconciliation-receipt-recovery-20260728-v1' ]
+          [ "$(git rev-parse HEAD)" = "$WORK_UNIT_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$WORK_UNIT_HEAD" ]
+          git fetch --no-tags origin "$GITHUB_SHA" "$SOURCE_EXECUTION_HEAD"
+          mapfile -t trigger_delta < <(git diff --name-only "$WORK_UNIT_HEAD" "$GITHUB_SHA" -- | LC_ALL=C sort)
+          [ "${#trigger_delta[@]}" -eq 1 ]
+          [ "${trigger_delta[0]}" = "$TRIGGER_WORKFLOW" ]
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          work = json.loads(pathlib.Path('work-units/RECOVER_13_RECORD_RECONCILIATION_RECEIPT.json').read_text(encoding='utf-8'))
+          assert work['schema'] == 'qikvrt_work_unit_v1'
+          assert work['work_unit_id'] == 'RECOVER-13-RECORD-RECONCILIATION-RECEIPT-20260728'
+          assert work['status'] == 'READY'
+          assert work['source_pull_request'] == 172
+          assert work['source_workflow_run'] == 30354498743
+          assert work['safety']['zenodo_methods_allowed'] == ['GET']
+          assert work['safety']['zenodo_mutation_forbidden'] is True
+          assert work['acceptance']['pass'] is False
+          assert work['acceptance']['final_pass'] is False
+          assert work['acceptance']['effect_ack_done'] is False
+          PY
+          [ ! -e "$OUTPUT_DIR/PUBLIC_RECORD_RECONCILIATION_RECEIPT.json" ]
+
+      - name: Diagnose source run through public GitHub API
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_DIR"
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.request
+          url = 'https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/30354498743/jobs'
+          request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'qikvrt-recovery/1.0'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              payload = json.loads(response.read(8 * 1024 * 1024).decode('utf-8'))
+          jobs = payload.get('jobs') if isinstance(payload, dict) else []
+          job = next((item for item in jobs if isinstance(item, dict) and item.get('name') == 'reconcile-and-persist'), None)
+          steps = [] if not isinstance(job, dict) else [
+              {'name': step.get('name'), 'status': step.get('status'), 'conclusion': step.get('conclusion'), 'number': step.get('number')}
+              for step in job.get('steps', []) if isinstance(step, dict)
+          ]
+          diagnosis = {
+              'schema': 'qikvrt_reconciliation_source_run_diagnosis_v1',
+              'observed_at': os.environ['OBSERVED_AT'],
+              'source_pr': 172,
+              'source_run': 30354498743,
+              'public_github_api_status': 200,
+              'job_id': None if not isinstance(job, dict) else job.get('id'),
+              'job_name': None if not isinstance(job, dict) else job.get('name'),
+              'job_conclusion': None if not isinstance(job, dict) else job.get('conclusion'),
+              'steps': steps,
+              'authorization_header_used': False,
+              'secret_used': False,
+          }
+          path = pathlib.Path(os.environ['OUTPUT_DIR']) / 'SOURCE_RUN_DIAGNOSIS.json'
+          path.write_text(json.dumps(diagnosis, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          PY
+
+      - name: Re-execute public GET-only reconciliation
+        id: reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show "$SOURCE_EXECUTION_HEAD:$SOURCE_WORKFLOW" > "$RUNNER_TEMP/source-reconciliation-workflow.yml"
+          python3 -B - <<'PY'
+          import os
+          import pathlib
+          import textwrap
+          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'source-reconciliation-workflow.yml'
+          lines = source.read_text(encoding='utf-8').splitlines(keepends=True)
+          start = next(index for index, line in enumerate(lines) if "python3 -B - <<'PY'" in line)
+          block = []
+          for line in lines[start + 1:]:
+              if line.strip() == 'PY':
+                  break
+              block.append(line)
+          script = textwrap.dedent(''.join(block))
+          old = "observed_at = '2026-07-28T11:20:00Z'"
+          new = f"observed_at = {os.environ['OBSERVED_AT']!r}"
+          if old not in script:
+              raise SystemExit('source observed_at binding not found')
+          script = script.replace(old, new, 1)
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'source-reconciliation.py'
+          target.write_text(script, encoding='utf-8', newline='\n')
+          compile(script, str(target), 'exec')
+          PY
+          set +e
+          python3 -B "$RUNNER_TEMP/source-reconciliation.py" > "$RUNNER_TEMP/reconciliation.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/reconciliation.log"
+          printf 'exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize and validate recovery evidence
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          RECONCILE_EXIT='${{ steps.reconcile.outputs.exit_code }}' python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          out = pathlib.Path(os.environ['OUTPUT_DIR'])
+          ids = [20712301, 21244412, 21245282, 21245951, 21247297, 21247388, 21252415, 21252649, 21266670, 21488116, 21498774, 21501365, 21518464]
+          error_classes = {'PUBLIC_API_ERROR', 'PUBLIC_FILE_VERIFICATION_ERROR', 'PUBLIC_RECORD_METADATA_INVALID'}
+          def write_json(path, value):
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          failures = []
+          checks = {}
+          try:
+              receipt_path = out / 'PUBLIC_RECORD_RECONCILIATION_RECEIPT.json'
+              receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+              diagnosis = json.loads((out / 'SOURCE_RUN_DIAGNOSIS.json').read_text(encoding='utf-8'))
+          except Exception as exc:
+              receipt = {}
+              diagnosis = {}
+              failures.append(f'RECOVERY_OUTPUT_UNREADABLE:{type(exc).__name__}:{exc}')
+          records = receipt.get('records') if isinstance(receipt, dict) else None
+          record_map = {item.get('record_id'): item for item in records if isinstance(item, dict)} if isinstance(records, list) else {}
+          for record_id in ids:
+              path = out / 'proof-envelopes' / f'zenodo-{record_id}.json'
+              if not path.is_file():
+                  failures.append(f'MISSING_ENVELOPE:{record_id}')
+                  continue
+              value = json.loads(path.read_text(encoding='utf-8'))
+              if value.get('schema') != 'qikvrt_public_record_reconciliation_envelope_v1':
+                  record = record_map.get(record_id, value if isinstance(value, dict) else {})
+                  value = {
+                      '_license': {
+                          'classification': 'machine_readable_public_record_reconciliation_envelope',
+                          'copyright': 'Copyright 2026 Ingolf Lohmann',
+                          'license': 'CC-BY-NC-ND-4.0',
+                          'rights_holder': 'Ingolf Lohmann',
+                      },
+                      'schema': 'qikvrt_public_record_reconciliation_envelope_v1',
+                      'observed_at': os.environ['OBSERVED_AT'],
+                      'work_unit_id': os.environ['WORK_UNIT_ID'],
+                      'record': record,
+                      'public_record_canonical_sha256': None,
+                      'completion_claims': {
+                          'public_identity_terminally_classified': record.get('terminal_classification') not in error_classes,
+                          'public_file_integrity_complete': False,
+                          'content_claim_review_complete': False,
+                          'pass': False,
+                          'final_pass': False,
+                          'effect_ack_done': False,
+                      },
+                  }
+                  write_json(path, value)
+              else:
+                  value['work_unit_id'] = os.environ['WORK_UNIT_ID']
+                  claims = value.setdefault('completion_claims', {})
+                  claims['pass'] = False
+                  claims['final_pass'] = False
+                  claims['effect_ack_done'] = False
+                  write_json(path, value)
+          receipt['work_unit_id'] = os.environ['WORK_UNIT_ID']
+          receipt['source_pull_request'] = 172
+          receipt['source_workflow_run'] = 30354498743
+          receipt['source_run_diagnosis_sha256'] = hashlib.sha256((out / 'SOURCE_RUN_DIAGNOSIS.json').read_bytes()).hexdigest()
+          receipt['scope_record_ids'] = ids
+          claims = receipt.setdefault('completion_claims', {})
+          claims['pass'] = False
+          claims['final_pass'] = False
+          claims['effect_ack_done'] = False
+          write_json(out / 'PUBLIC_RECORD_RECONCILIATION_RECEIPT.json', receipt)
+          write_json(out / 'PUBLIC_RECORD_RECONCILIATION_MATRIX.json', {'schema': 'qikvrt_public_record_reconciliation_matrix_v1', 'observed_at': os.environ['OBSERVED_AT'], 'records': receipt.get('records', [])})
+          steps = {step.get('name'): step.get('conclusion') for step in diagnosis.get('steps', []) if isinstance(step, dict)}
+          checks['source_run_publicly_observed'] = diagnosis.get('public_github_api_status') == 200
+          checks['source_reconciliation_was_success'] = steps.get('Reconcile public records and verify public bytes') == 'success'
+          checks['source_persistence_was_failure'] = steps.get('Verify receipt and persist evidence-only state') == 'failure'
+          checks['reconcile_exit_zero'] = os.environ.get('RECONCILE_EXIT') == '0'
+          checks['receipt_schema'] = receipt.get('schema') == 'qikvrt_public_record_reconciliation_receipt_v1'
+          checks['exact_id_set'] = receipt.get('scope_record_ids') == ids
+          checks['record_count'] = receipt.get('record_count') == 13 and len(receipt.get('records', [])) == 13
+          checks['unique_record_ids'] = {item.get('record_id') for item in receipt.get('records', []) if isinstance(item, dict)} == set(ids)
+          checks['receipt_state_reconciled'] = receipt.get('state') == 'RECONCILED'
+          checks['no_mutation'] = receipt.get('safety', {}).get('zenodo_methods') == ['GET'] and receipt.get('safety', {}).get('zenodo_mutation_executed') is False and receipt.get('safety', {}).get('secret_used') is False and receipt.get('safety', {}).get('authorization_header_used') is False
+          checks['false_completion_boundaries'] = all(receipt.get('completion_claims', {}).get(key) is False for key in ('pass', 'final_pass', 'effect_ack_done'))
+          terminal = True
+          byte_complete = True
+          envelope_complete = True
+          for record_id in ids:
+              envelope = json.loads((out / 'proof-envelopes' / f'zenodo-{record_id}.json').read_text(encoding='utf-8'))
+              record = envelope.get('record', {})
+              envelope_complete &= envelope.get('schema') == 'qikvrt_public_record_reconciliation_envelope_v1' and envelope.get('work_unit_id') == os.environ['WORK_UNIT_ID'] and record.get('record_id') == record_id
+              classification = record.get('terminal_classification')
+              terminal &= isinstance(classification, str) and classification not in error_classes
+              if record.get('public_record_visible') and record.get('published_state_verified'):
+                  files = record.get('public_files')
+                  byte_complete &= isinstance(files, list) and bool(files) and all(isinstance(item, dict) and item.get('public_byte_redownload_verified') is True and isinstance(item.get('sha256'), str) and re.fullmatch(r'[0-9a-f]{64}', item['sha256']) for item in files)
+          checks['one_valid_envelope_per_id'] = envelope_complete
+          checks['all_ids_terminally_classified'] = terminal
+          checks['public_bytes_verified_when_published'] = byte_complete
+          failures.extend(name for name, passed in checks.items() if not passed)
+          persistable = not failures
+          validation = {
+              'schema': 'qikvrt_reconciliation_recovery_validation_v1',
+              'observed_at': os.environ['OBSERVED_AT'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'work_unit_id': os.environ['WORK_UNIT_ID'],
+              'checks': checks,
+              'failures': failures,
+              'persistable': persistable,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          write_json(out / 'RECOVERY_VALIDATION_RECEIPT.json', validation)
+          diagnostic = {
+              '_license': {
+                  'classification': 'machine_readable_reconciliation_recovery_diagnostic',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_reconciliation_recovery_diagnostic_v1',
+              'observed_at': os.environ['OBSERVED_AT'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'work_unit_id': os.environ['WORK_UNIT_ID'],
+              'source_pr': 172,
+              'source_run': 30354498743,
+              'state': 'VALIDATED_FOR_EVIDENCE_PERSISTENCE' if persistable else 'BLOCK_VALIDATION',
+              'failure_class': None if persistable else 'RECONCILIATION_RECOVERY_VALIDATION_FAILED',
+              'validation_receipt_sha256': hashlib.sha256((out / 'RECOVERY_VALIDATION_RECEIPT.json').read_bytes()).hexdigest(),
+              'zenodo_methods': ['GET'],
+              'zenodo_mutation_executed': False,
+              'secret_persisted': False,
+              'authorization_header_used': False,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          write_json(out / 'RECOVERY_DIAGNOSTIC_RECEIPT.json', diagnostic)
+          print('persistable=' + ('true' if persistable else 'false'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write('persistable=' + ('true' if persistable else 'false') + '\n')
+          PY
+
+      - name: Upload recovery evidence on every terminal path
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-reconciliation-recovery-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: |
+            release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/**
+            ${{ runner.temp }}/reconciliation.log
+
+      - name: Persist validated evidence on isolated branch
+        id: persist
+        if: steps.validate.outputs.persistable == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$WORK_UNIT_HEAD" ]
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$WORK_UNIT_HEAD" ]
+          mapfile -t changed < <(git status --porcelain=v1 --untracked-files=all | sed 's/^...//' | LC_ALL=C sort -u)
+          [ "${#changed[@]}" -ge 18 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              release/zenodo-corpus-proof-2026-07-28/public-record-reconciliation/*) ;;
+              *) echo "BLOCK: unexpected evidence path: $path" >&2; exit 1;;
+            esac
+          done
+          git config user.name 'qikvrt-reconciliation-recovery[bot]'
+          git config user.email 'qikvrt-reconciliation-recovery[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR"
+          git commit -m 'evidence: recover 13-record public reconciliation receipt'
+          evidence_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:$EVIDENCE_BRANCH"
+          [ "$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)" = "$evidence_head" ]
+          printf 'evidence_head=%s\n' "$evidence_head" >> "$GITHUB_OUTPUT"
+          echo "Evidence head: $evidence_head" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce recovery truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ '${{ steps.validate.outputs.persistable }}' = 'true' ]
+          [ -n '${{ steps.persist.outputs.evidence_head }}' ]
+          echo 'Recovery evidence persisted; exact-head gates and promotion remain separate effects.'
