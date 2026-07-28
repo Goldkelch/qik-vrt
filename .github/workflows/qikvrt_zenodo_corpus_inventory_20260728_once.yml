@@ -47,8 +47,18 @@ jobs:
           [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
           [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
           mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
-          [ "${#changed[@]}" -eq 1 ]
-          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          expected=(
+            "$EXECUTION_WORKFLOW"
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq "${#expected_sorted[@]}" ]
+          for index in "${!expected_sorted[@]}"; do
+            [ "${changed[$index]}" = "${expected_sorted[$index]}" ]
+          done
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
           [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
           [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
           case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
@@ -62,15 +72,23 @@ jobs:
           python3 -B tools/qikvrt_zenodo_corpus_proof.py \
             --output-dir "$OUTPUT_DIR" \
             --observed-at "$OBSERVED_AT" \
-            | tee .qikvrt-zenodo-corpus-inventory.log
+            2>&1 | tee .qikvrt-zenodo-corpus-inventory.log
           grep -qx 'ZENODO_CORPUS_INVENTORY_STATE=verified' .qikvrt-zenodo-corpus-inventory.log
+
+      - name: Upload inventory diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zenodo-corpus-inventory-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt-zenodo-corpus-inventory.log
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Enforce minimum known record coverage and proof-envelope integrity
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import hashlib
           import json
           import pathlib
 
