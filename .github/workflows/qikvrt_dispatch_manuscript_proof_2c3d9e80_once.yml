@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT one-shot manuscript proof dispatch 2c3d9e80
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+    paths:
+      - .github/workflows/qikvrt_dispatch_manuscript_proof_2c3d9e80_once.yml
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-one-shot-manuscript-proof-2c3d9e80
+  cancel-in-progress: false
+
+jobs:
+  dispatch-and-gate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: trusted/pr132-status-article-zenodo-receipt-2c3d9e80
+      EXPECTED_SHA: 2c3d9e80b772ae928dd9064530c4032623dc8bab
+      TARGET_WORKFLOW: qikvrt_manuscript_proof.yml
+      TARGET_PR: '132'
+    steps:
+      - name: Reuse or dispatch exact manuscript proof workflow
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          list_runs() {
+            gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/runs" \
+              -f branch="$TARGET_BRANCH" \
+              -f event=workflow_dispatch \
+              -f per_page=30 > .qikvrt/evidence/manuscript-proof-runs.json
+          }
+          list_runs
+          run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .status == "completed" and .conclusion == "success")][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+          reused=false
+          if [ -z "$run_id" ]; then
+            gh api -X POST \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/dispatches" \
+              -f ref="$TARGET_BRANCH"
+            for _attempt in $(seq 1 120); do
+              list_runs
+              run_id=$(jq -r --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha)][0].id // empty' .qikvrt/evidence/manuscript-proof-runs.json)
+              [ -n "$run_id" ] && break
+              sleep 5
+            done
+          else
+            reused=true
+          fi
+          [ -n "$run_id" ] || { echo 'BLOCK: exact workflow-dispatch run not observed' >&2; exit 1; }
+          printf 'run_id=%s\nreused=%s\n' "$run_id" "$reused" >> "$GITHUB_OUTPUT"
+      - name: Gate exact manuscript proof run
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.resolve.outputs.run_id }}'
+          status=''
+          conclusion=''
+          for _attempt in $(seq 1 240); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > .qikvrt/evidence/manuscript-proof-run.json
+            status=$(jq -r '.status // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            conclusion=$(jq -r '.conclusion // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            head_sha=$(jq -r '.head_sha // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            event=$(jq -r '.event // empty' .qikvrt/evidence/manuscript-proof-run.json)
+            [ "$head_sha" = "$EXPECTED_SHA" ] || { echo "BLOCK: wrong head $head_sha" >&2; exit 1; }
+            [ "$event" = workflow_dispatch ] || { echo "BLOCK: wrong event $event" >&2; exit 1; }
+            [ "$status" = completed ] && break
+            sleep 5
+          done
+          [ "$status" = completed ] && [ "$conclusion" = success ] || {
+            echo "BLOCK: manuscript proof run $run_id ended status=$status conclusion=$conclusion" >&2
+            exit 1
+          }
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$TARGET_WORKFLOW" \
+            --arg target_branch "$TARGET_BRANCH" \
+            --arg head_sha "$EXPECTED_SHA" \
+            --argjson run_id "$run_id" \
+            --arg reused '${{ steps.resolve.outputs.reused }}' \
+            '{schema:"qikvrt_exact_head_workflow_dispatch_receipt_v1",repository:$repository,workflow:$workflow,target_branch:$target_branch,head_sha:$head_sha,run_id:$run_id,event:"workflow_dispatch",status:"completed",conclusion:"success",reused_existing_success:($reused=="true"),scope:"fresh_manuscript_lean_kernel_axiom_proof_escape_and_proof_object_gate"}' \
+            > .qikvrt/evidence/manuscript-proof-dispatch-receipt.json
+      - name: Persist exact-head notice
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --body "Fresh exact-head manuscript proof verification completed for the post-publication status article receipt.\n\n- head: \`$EXPECTED_SHA\`\n- workflow: \`$TARGET_WORKFLOW\`\n- event: \`workflow_dispatch\`\n- run ID: \`${{ steps.resolve.outputs.run_id }}\`\n- reused existing success: \`${{ steps.resolve.outputs.reused }}\`\n- scope: Lean build, source/claim graph, axiom audits, proof-escape rejection and proof-object runtime evidence."
+      - name: Upload dispatch receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-manuscript-proof-dispatch-2c3d9e80
+          retention-days: 30
+          if-no-files-found: error
+          path: .qikvrt/evidence/manuscript-proof-dispatch-receipt.json
