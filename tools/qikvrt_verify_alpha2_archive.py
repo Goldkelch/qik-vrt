@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Rebuild the Alpha-2 archive and report exact entry-level differences."""
+"""Rebuild the tagged Alpha-2 archive and report exact entry-level differences."""
 from __future__ import annotations
 
 import hashlib
@@ -14,11 +14,21 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py"
 ARCHIVE = ROOT / "release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip"
+ARCHIVE_SIDECAR = pathlib.Path(str(ARCHIVE) + ".sha256")
 SUMS = ROOT / "release/formalization-v2/ZENODO_SHA256SUMS-alpha.2"
+EXPECTED_ARCHIVE_SHA256 = "500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689"
+EXPECTED_ARCHIVE_BLOB_SHA1 = "fe03691a04c007bd6cb880cea0043c700ea4e1eb"
+EXPECTED_SIDECAR = (
+    EXPECTED_ARCHIVE_SHA256 + "  QIKVRT_Formalization_v2.0-alpha.2.zip\n"
+).encode("ascii")
 
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def git_blob_sha(data: bytes) -> str:
+    return hashlib.sha1(f"blob {len(data)}\0".encode("ascii") + data).hexdigest()
 
 
 def load_package_module():
@@ -51,6 +61,16 @@ def archive_map(path: pathlib.Path) -> tuple[list[str], dict[str, tuple[bytes, t
 
 def main() -> int:
     try:
+        tagged_bytes = ARCHIVE.read_bytes()
+        if sha(tagged_bytes) != EXPECTED_ARCHIVE_SHA256:
+            raise ValueError(
+                "tracked Alpha-2 archive differs from tagged SHA-256: "
+                f"expected {EXPECTED_ARCHIVE_SHA256}, got {sha(tagged_bytes)}"
+            )
+        if git_blob_sha(tagged_bytes) != EXPECTED_ARCHIVE_BLOB_SHA1:
+            raise ValueError("tracked Alpha-2 archive differs from tagged Git blob")
+        if ARCHIVE_SIDECAR.read_bytes() != EXPECTED_SIDECAR:
+            raise ValueError("tracked Alpha-2 checksum sidecar differs from tagged bytes")
         package = load_package_module()
         with tempfile.TemporaryDirectory(prefix="qikvrt-alpha2-diff-") as raw:
             temporary = pathlib.Path(raw)
@@ -94,15 +114,13 @@ def main() -> int:
                     errors.append(
                         f"ZIP metadata differs: {name}: expected {left_meta}, got {right_meta}"
                     )
-            if output.read_bytes() != ARCHIVE.read_bytes() and not errors:
+            if output.read_bytes() != tagged_bytes and not errors:
                 errors.append(
                     "raw ZIP differs despite equal entry bytes and selected metadata; "
-                    f"expected {sha(ARCHIVE.read_bytes())}, got {sha(output.read_bytes())}"
+                    f"expected {EXPECTED_ARCHIVE_SHA256}, got {sha(output.read_bytes())}"
                 )
-            if checksum.read_text(encoding="ascii") != pathlib.Path(
-                str(ARCHIVE) + ".sha256"
-            ).read_text(encoding="ascii"):
-                errors.append("archive checksum sidecar differs")
+            if checksum.read_bytes() != EXPECTED_SIDECAR:
+                errors.append("archive checksum sidecar derivation differs")
             if zenodo.read_bytes() != SUMS.read_bytes():
                 errors.append("Zenodo checksum list differs")
             if errors:
@@ -113,8 +131,8 @@ def main() -> int:
         print(f"BLOCK Alpha-2 archive verification: {exc}", file=sys.stderr)
         return 1
     print(
-        "PASS Alpha-2 archive reproduced byte-exactly: "
-        "1fc6edc074aa001680f6c244e4411ca44af036debc81f083a4665143f4c820bf"
+        "PASS tagged Alpha-2 archive reproduced byte-exactly: "
+        f"{EXPECTED_ARCHIVE_SHA256}"
     )
     return 0
 
