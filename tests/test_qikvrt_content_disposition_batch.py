@@ -5,14 +5,19 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from tools.qikvrt_content_disposition_batch import EXPECTED_SUBJECTS, execute
 
 
 def main() -> int:
-    queue = Path("release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json")
+    queue = REPOSITORY_ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json"
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         receipt = execute(queue, out)
