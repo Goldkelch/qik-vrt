@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from tools import qikvrt_zenodo_corpus_proof as corpus
+from tools import qikvrt_zenodo_corpus_proof_v2 as corpus_v2
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -20,7 +21,7 @@ class ZenodoCorpusProofTests(unittest.TestCase):
         self.assertFalse(corpus.attributed_to_ingolf({"creators": [{"name": "Other, Author"}]}))
 
     def test_public_file_shapes_are_normalized_without_network(self) -> None:
-        listed = corpus.public_files(
+        listed = corpus_v2.public_files(
             {
                 "files": [
                     {
@@ -34,7 +35,7 @@ class ZenodoCorpusProofTests(unittest.TestCase):
             123,
         )
         self.assertEqual(listed[0]["name"], "paper.pdf")
-        mapped = corpus.public_files(
+        mapped = corpus_v2.public_files(
             {
                 "files": {
                     "entries": {
@@ -49,6 +50,45 @@ class ZenodoCorpusProofTests(unittest.TestCase):
             123,
         )
         self.assertEqual(mapped[0]["name"], "evidence.json")
+
+    def test_safe_nested_public_file_key_is_preserved_exactly(self) -> None:
+        files = corpus_v2.public_files(
+            {
+                "files": [
+                    {
+                        "key": "source/article/paper.pdf",
+                        "size": 12,
+                        "checksum": "md5:" + "0" * 32,
+                    }
+                ]
+            },
+            21267021,
+        )
+        self.assertEqual(files[0]["name"], "source/article/paper.pdf")
+        self.assertEqual(
+            files[0]["download_url"],
+            "https://zenodo.org/api/records/21267021/files/source%2Farticle%2Fpaper.pdf/content",
+        )
+
+    def test_unsafe_public_file_keys_are_rejected(self) -> None:
+        for key in (
+            "../paper.pdf",
+            "/paper.pdf",
+            "nested\\paper.pdf",
+            "nested/./paper.pdf",
+            "nested/../paper.pdf",
+            "paper\x00.pdf",
+            "paper\n.pdf",
+        ):
+            with self.subTest(key=repr(key)):
+                with self.assertRaises(corpus_v2.PublicKeyError):
+                    corpus_v2.safe_public_key(key, 123)
+
+    def test_public_record_state_is_explicitly_verified(self) -> None:
+        self.assertTrue(corpus_v2.public_record_is_published({"is_published": True}))
+        self.assertTrue(corpus_v2.public_record_is_published({"status": "published"}))
+        self.assertTrue(corpus_v2.public_record_is_published({"state": "done"}))
+        self.assertFalse(corpus_v2.public_record_is_published({"status": "draft"}))
 
     def test_repository_reference_classification_is_truth_bounded(self) -> None:
         self.assertEqual(corpus.classify_repository_ref("proof/CLAIM_MATRIX.json"), "CLAIM_DISPOSITION")
@@ -88,8 +128,9 @@ class ZenodoCorpusProofTests(unittest.TestCase):
 
     def test_source_contains_no_embedded_token_or_account_secret(self) -> None:
         source = (ROOT / "tools/qikvrt_zenodo_corpus_proof.py").read_text(encoding="utf-8")
-        self.assertNotRegex(source, r"(?i)access_token=[A-Za-z0-9_-]{20,}")
-        self.assertNotIn("Bearer ey", source)
+        hardened = (ROOT / "tools/qikvrt_zenodo_corpus_proof_v2.py").read_text(encoding="utf-8")
+        self.assertNotRegex(source + hardened, r"(?i)access_token=[A-Za-z0-9_-]{20,}")
+        self.assertNotIn("Bearer ey", source + hardened)
 
     def test_write_json_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
