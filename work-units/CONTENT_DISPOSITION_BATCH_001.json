@@ -1,0 +1,63 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_unit",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "CONTENT-DISPOSITION-BATCH-001",
+  "title": "Execute content claim disposition batch 001",
+  "status": "READY_FOR_EXECUTION",
+  "source": {
+    "authority": "4892e74458f15762c7b873344bc85b238e3739b1",
+    "mirror": "f17aa8eca00b0e5e75d5bd44f1b5fb96d760cc0d",
+    "canonical_union_sha256": "f5797736bcab78020274c3a8a43f63b59fd4b518f11264401754138475d3bbff",
+    "queue_path": "release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json"
+  },
+  "subject_ids": [
+    "SUBJECT-187cfda66d1eda16",
+    "SUBJECT-45b9d1b677568ae7",
+    "SUBJECT-2beab714d1dc6019",
+    "SUBJECT-51a0cfc51bcbd722",
+    "SUBJECT-685123cd60e2fd7b",
+    "SUBJECT-d2dad396615a4c7c"
+  ],
+  "allowed_dispositions": [
+    "FORMAL_PROVED",
+    "EMPIRICALLY_EVIDENCED",
+    "SOURCE_BOUND",
+    "NORMATIVE",
+    "INTERPRETATIVE",
+    "OPEN"
+  ],
+  "ordered_steps": [
+    "verify exact Authority and queue bindings",
+    "freeze public Zenodo candidate bytes with GET only",
+    "reuse exact existing claim graphs and kernel receipts where present",
+    "extract machine-reviewable text units without theorem inflation",
+    "assign stable provisional claim IDs and terminal epistemic classes where evidence is sufficient",
+    "mark every unresolved statement REVIEW_REQUIRED and never infer proof from prose",
+    "produce one subject receipt and one batch receipt",
+    "publish an immutable workflow artifact on every terminal path",
+    "persist evidence only after independent exact-head verification"
+  ],
+  "safety": {
+    "zenodo_methods": ["GET"],
+    "zenodo_mutation_forbidden": true,
+    "secret_use_forbidden": true,
+    "authorization_header_forbidden": true,
+    "no_false_pass": true
+  },
+  "acceptance": {
+    "subject_count": 6,
+    "one_receipt_per_subject": true,
+    "stable_claim_ids_required": true,
+    "claim_disposition_or_review_required": true,
+    "content_change_decision_required": true,
+    "exact_candidate_byte_hashes_required": true,
+    "pass_forbidden_until_all_subjects_complete": true,
+    "mirror_and_pair_receipt_required_for_completion": true
+  },
+  "next_effect": "EXECUTE_CONTENT_DISPOSITION_BATCH_001_READ_ONLY"
+}
