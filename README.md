@@ -9,9 +9,9 @@
 <!-- qikvrt-global-completion:start -->
 ## Global claim-completion contract
 
-State: **`CANDIDATE_MATERIALIZED`** for **`qikvrt-global-claim-scope-v1`**. The finite scope contains 92 explicit registry claims: 43 manuscript graph nodes, 34 appendix rows, and 15 EFFECT_ACK claims.
+State: **`FINAL_PASS`** for **`qikvrt-global-claim-scope-v1`**. The finite scope contains 92 explicit registry claims: 43 manuscript graph nodes, 34 appendix rows, and 15 EFFECT_ACK claims.
 
-No global `PASS`, `FINAL_PASS` or `EFFECT_ACK_DONE` is claimed before exact-head gates and Authority/Mirror equality. *Global* is restricted to those registries. OPEN remains OPEN; empirical and interpretive claims are not converted into Lean theorems; future or unregistered prose is outside scope.
+`PASS`, `FINAL_PASS` and transaction-scoped `EFFECT_ACK_DONE` are granted by `GLOBAL_COMPLETION_RECEIPT.json`. *Global* is restricted to those registries. OPEN remains OPEN; empirical and interpretive claims are not converted into Lean theorems; future or unregistered prose is outside scope.
 
 Machine-readable authority:
 
@@ -19,6 +19,7 @@ Machine-readable authority:
 - `GLOBAL_CLAIM_INVENTORY.json`
 - `GLOBAL_SOURCE_CLAIM_DISPOSITION_TRACEABILITY.json`
 - `GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json`
+- `GLOBAL_COMPLETION_RECEIPT.json`
 <!-- qikvrt-global-completion:end -->
 
 **`TRANSPORT_ACK != EFFECT_ACK` — technical success is not yet accountable
