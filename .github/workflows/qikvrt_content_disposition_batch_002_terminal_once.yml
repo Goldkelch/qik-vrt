@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT terminal content disposition Batch 002 once
+
+on:
+  push:
+    branches:
+      - execution/content-disposition-batch-002-terminal-v1
+    paths:
+      - work-units/EXECUTE_BATCH_002_TERMINAL_READY.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-content-disposition-batch-002-terminal-v1
+  cancel-in-progress: false
+
+jobs:
+  execute-and-persist:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_BASE: 240bc42aef462f12bd6179ce7da2aa585844f531
+      BRANCH: execution/content-disposition-batch-002-terminal-v1
+      READY: work-units/EXECUTE_BATCH_002_TERMINAL_READY.json
+      WORK_UNIT: work-units/EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002.json
+    steps:
+      - name: Check out exact execution branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/content-disposition-batch-002-terminal-v1
+          fetch-depth: 0
+      - name: Verify marker-last transaction boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt'
+          test "$GITHUB_REF_NAME" = "$BRANCH"
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess
+          root=pathlib.Path('.')
+          ready=json.loads((root/'work-units/EXECUTE_BATCH_002_TERMINAL_READY.json').read_text())
+          wu=root/'work-units/EXECUTE_FULL_CLAIM_EXTRACTION_AND_TERMINAL_DISPOSITION_FOR_BATCH_002.json'
+          tool=root/'tools/qikvrt_content_disposition_batch_002_terminal.py'
+          test=root/'tests/test_content_disposition_batch_002_terminal.py'
+          assert ready['state']=='READY'
+          assert ready['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
+          for p in (wu,tool,test):
+              assert p.is_file(),p
+              assert ready['sha256'][p.as_posix()]==hashlib.sha256(p.read_bytes()).hexdigest()
+          changed=subprocess.check_output(['git','diff','--name-only',ready['authority_base'],'HEAD','--'],text=True).splitlines()
+          allowed=set(ready['allowed_changed_paths'])
+          assert set(changed)==allowed,(changed,sorted(allowed))
+          assert ready['completion_claims']=={'pass':False,'final_pass':False,'effect_ack_done':False}
+          PY
+      - name: Run adversarial unit tests
+        run: python3 -B tests/test_content_disposition_batch_002_terminal.py
+      - name: Execute public GET-only terminal disposition
+        run: python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py | tee /tmp/batch002-terminal.json
+      - name: Regenerate and verify repository integrity
+        run: |
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Run repository acceptance suite
+        run: make test
+      - name: Persist validated evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'QIK-VRT Repository Evidence Bot'
+          git config user.email 'ingolf.lohmann@live.com'
+          git add \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_INDEX.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition \
+            REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          test -n "$(git status --porcelain)"
+          git commit -m 'Persist terminal content disposition for Batch 002'
+          git push origin "HEAD:$BRANCH"
+      - name: Enforce truth boundary
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json')
+          r=json.loads(p.read_text())
+          assert r['state']=='TERMINALLY_DISPOSITIONED'
+          assert r['subject_count']==6
+          assert r['completion_claims']['batch_002_terminal_disposition_complete'] is True
+          assert r['completion_claims']['pass'] is False
+          assert r['completion_claims']['final_pass'] is False
+          assert r['completion_claims']['effect_ack_done'] is False
+          PY
