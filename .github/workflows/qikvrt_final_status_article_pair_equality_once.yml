@@ -1,0 +1,264 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT final canonical status article pair equality
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+    paths:
+      - .github/workflows/qikvrt_final_status_article_pair_equality_once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-final-pair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
+      AUTHORITY_MAIN: b47d4a5398978f79f199f0a7bcc132666d88cb36
+      AUTHORITY_EXACT_GREEN_HEAD: 2c3d9e80b772ae928dd9064530c4032623dc8bab
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      MIRROR_MAIN: dc217c8cb19bc113401a1f91dae27bf1733b5b5e
+      MIRROR_EXACT_GREEN_HEAD: c3931554f2f4bf0e12d0c21ae317eeab968e86ff
+    steps:
+      - name: Check out read-only evidence branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch and compare complete final Git trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote https://github.com/$AUTHORITY_REPOSITORY.git refs/heads/main | cut -f1)" = "$AUTHORITY_MAIN" ]
+          [ "$(git ls-remote https://github.com/$MIRROR_REPOSITORY.git refs/heads/main | cut -f1)" = "$MIRROR_MAIN" ]
+          git fetch --no-tags --depth=1 https://github.com/$AUTHORITY_REPOSITORY.git "$AUTHORITY_MAIN"
+          [ "$(git rev-parse FETCH_HEAD)" = "$AUTHORITY_MAIN" ]
+          git update-ref refs/qikvrt/authority "$AUTHORITY_MAIN"
+          git fetch --no-tags --depth=1 https://github.com/$MIRROR_REPOSITORY.git "$MIRROR_MAIN"
+          [ "$(git rev-parse FETCH_HEAD)" = "$MIRROR_MAIN" ]
+          git update-ref refs/qikvrt/mirror "$MIRROR_MAIN"
+          authority_tree=$(git rev-parse 'refs/qikvrt/authority^{tree}')
+          mirror_tree=$(git rev-parse 'refs/qikvrt/mirror^{tree}')
+          [ "$authority_tree" = "$mirror_tree" ]
+          git diff --exit-code refs/qikvrt/authority refs/qikvrt/mirror --
+          printf 'SHARED_GIT_TREE_SHA1=%s\n' "$authority_tree" >> "$GITHUB_ENV"
+      - name: Build canonical final pair receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          python3 -B - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          from typing import Any
+
+          AUTH = os.environ['AUTHORITY_MAIN']
+          MIRROR = os.environ['MIRROR_MAIN']
+          TREE = os.environ['SHARED_GIT_TREE_SHA1']
+          OUT = pathlib.Path('.qikvrt/evidence/final-status-article-pair-equality.json')
+
+          def git(*args: str) -> str:
+              return subprocess.check_output(['git', *args], text=True).strip()
+
+          def data(ref: str, path: str) -> bytes:
+              return subprocess.check_output(['git', 'show', f'{ref}:{path}'])
+
+          def blob(ref: str, path: str) -> str:
+              return git('rev-parse', f'{ref}:{path}')
+
+          def sha256_bytes(value: bytes) -> str:
+              return hashlib.sha256(value).hexdigest()
+
+          paths = {
+              'article': 'docs/publications/2026-07-28-canonical-closing-statement-historical-context/ARTICLE_DE.md',
+              'article_manifest': 'docs/publications/2026-07-28-canonical-closing-statement-historical-context/STATUS_ARTICLE_MANIFEST.json',
+              'article_readme': 'docs/publications/2026-07-28-canonical-closing-statement-historical-context/README.md',
+              'publication_request': 'release/canonical-closing-status-article-2026-07-28/publish-request.json',
+              'publication_receipt': 'release/canonical-closing-status-article-2026-07-28/zenodo-publication.json',
+              'article_test': 'tests/test_canonical_closing_status_article.py',
+              'completion_receipt': 'GLOBAL_COMPLETION_RECEIPT.json',
+              'repository_manifest': 'REPOSITORY_FILE_MANIFEST.json',
+              'repository_manifest_digest': 'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'sha256_index': 'SHA256SUMS.txt',
+          }
+          identities: dict[str, dict[str, Any]] = {}
+          for name, path in paths.items():
+              auth_blob = blob(AUTH, path)
+              mirror_blob = blob(MIRROR, path)
+              if auth_blob != mirror_blob:
+                  raise SystemExit(f'BLOCK: blob differs for {path}')
+              raw = data(AUTH, path)
+              if raw != data(MIRROR, path):
+                  raise SystemExit(f'BLOCK: bytes differ for {path}')
+              identities[name] = {
+                  'path': path,
+                  'git_blob_sha1': auth_blob,
+                  'bytes': len(raw),
+                  'sha256': sha256_bytes(raw),
+              }
+
+          article_manifest = json.loads(data(AUTH, paths['article_manifest']))
+          completion = json.loads(data(AUTH, paths['completion_receipt']))
+          publication = json.loads(data(AUTH, paths['publication_receipt']))
+          repository_manifest = json.loads(data(AUTH, paths['repository_manifest']))
+          detached = data(AUTH, paths['repository_manifest_digest']).decode('utf-8').strip().split()[0]
+
+          expected_claims = {
+              'PASS': True,
+              'FINAL_PASS': True,
+              'EFFECT_ACK_DONE': True,
+              'fully_kernel_verified_overall_completion': True,
+              'complete_claim_inventory': True,
+              'complete_lean_kernel_coverage': True,
+              'complete_source_claim_proof_traceability': True,
+          }
+          for key, value in expected_claims.items():
+              if completion['claims'].get(key) is not value:
+                  raise SystemExit(f'BLOCK: completion claim differs: {key}')
+          if completion['scope_id'] != 'qikvrt-global-claim-scope-v1':
+              raise SystemExit('BLOCK: completion scope differs')
+          if completion['claim_semantics']['open_claims_remain_open'] != [
+              'EFFECT_ACK::EA-OPEN-001',
+              'EFFECT_ACK::EA-OPEN-002',
+              'EFFECT_ACK::EA-OPEN-003',
+          ]:
+              raise SystemExit('BLOCK: OPEN boundaries differ')
+
+          if article_manifest['schema'] != 'qikvrt_canonical_status_article_manifest_v1':
+              raise SystemExit('BLOCK: article manifest schema differs')
+          if article_manifest['article']['git_blob_sha1'] != identities['article']['git_blob_sha1']:
+              raise SystemExit('BLOCK: article manifest/blob binding differs')
+          if publication['record_id'] != 21636774:
+              raise SystemExit('BLOCK: Zenodo record differs')
+          if publication['doi'] != '10.5281/zenodo.21636774':
+              raise SystemExit('BLOCK: Zenodo DOI differs')
+          if publication['conceptdoi'] != '10.5281/zenodo.21636773':
+              raise SystemExit('BLOCK: Zenodo concept DOI differs')
+          if publication['state'] != 'published':
+              raise SystemExit('BLOCK: Zenodo publication state differs')
+          recovery = publication.get('recovery', {})
+          if not (
+              recovery.get('public_record_reverified') is True
+              and recovery.get('all_public_files_byte_exact') is True
+              and recovery.get('duplicate_publication_performed') is False
+          ):
+              raise SystemExit('BLOCK: Zenodo recovery evidence differs')
+          if detached != identities['repository_manifest']['sha256']:
+              raise SystemExit('BLOCK: detached repository manifest digest differs')
+          if repository_manifest['repository_content_tree_sha256'] != '85815189ed0531e72f537b7a13c49ad7dfe1270d3897d7a4934938a4909e53b9':
+              raise SystemExit('BLOCK: repository content tree digest differs')
+
+          payload = {
+              'schema': 'qikvrt_canonical_status_article_final_pair_equality_payload_v1',
+              'scope': {
+                  'article_id': article_manifest['article_id'],
+                  'title': article_manifest['title'],
+                  'publication_date': article_manifest['publication_date'],
+                  'version': article_manifest['version'],
+                  'completion_scope_id': completion['scope_id'],
+                  'completion_transaction': completion['claim_semantics']['effect_ack_done_transaction'],
+              },
+              'authority': {
+                  'repository': os.environ['AUTHORITY_REPOSITORY'],
+                  'main': AUTH,
+                  'exact_green_head': os.environ['AUTHORITY_EXACT_GREEN_HEAD'],
+                  'article_pr': 122,
+                  'publication_receipt_pr': 132,
+                  'exact_head_gates': {
+                      'ci': 30330682591,
+                      'global_completion': 30330682580,
+                      'collective_review': 30330682606,
+                      'evidence_materialization': 30330682544,
+                      'live_watch': 30330682560,
+                      'integrity_repair_skipped': 30330682570,
+                      'manuscript_proof': 30330775012,
+                  },
+              },
+              'mirror': {
+                  'repository': os.environ['MIRROR_REPOSITORY'],
+                  'main': MIRROR,
+                  'exact_green_head': os.environ['MIRROR_EXACT_GREEN_HEAD'],
+                  'synchronization_pr': 69,
+                  'trusted_verification_pr': 71,
+                  'exact_head_gates': {
+                      'ci': 30331196794,
+                      'global_completion': 30331196815,
+                      'collective_review': 30331196793,
+                      'evidence_materialization': 30331196787,
+                      'live_watch': 30331196838,
+                      'integrity_repair_skipped': 30331196832,
+                      'manuscript_proof': 30331252638,
+                  },
+              },
+              'pair_equality': {
+                  'shared_git_tree_sha1': TREE,
+                  'complete_git_tree_equal': True,
+                  'complete_git_diff_empty': True,
+                  'repository_manifest_sha256': detached,
+                  'repository_content_tree_sha256': repository_manifest['repository_content_tree_sha256'],
+                  'all_listed_artifacts_byte_identical': True,
+              },
+              'identities': identities,
+              'zenodo': {
+                  'record_id': publication['record_id'],
+                  'doi': publication['doi'],
+                  'concept_doi': publication['conceptdoi'],
+                  'record_url': publication['record_url'],
+                  'source_effect_run_id': publication['recovery']['source_run_id'],
+                  'source_effect_job_id': publication['recovery']['source_job_id'],
+                  'public_record_reverified': publication['recovery']['public_record_reverified'],
+                  'all_public_files_byte_exact': publication['recovery']['all_public_files_byte_exact'],
+                  'duplicate_publication_performed': publication['recovery']['duplicate_publication_performed'],
+              },
+              'claims': {
+                  'status_article_persisted_on_authority': True,
+                  'status_article_persisted_on_mirror': True,
+                  'status_article_published_on_zenodo': True,
+                  'authority_mirror_final_tree_equal': True,
+                  'completion_claims_preserved_without_scope_expansion': True,
+              },
+              'open_boundaries': completion['claim_semantics']['open_claims_remain_open'],
+              'non_claims': [
+                  'The IETF Internet-Draft is not claimed to be an RFC.',
+                  'Publication of the Internet-Draft is not claimed to establish IETF consensus.',
+                  'No OPEN, empirical, interpretive, normative or OUT_OF_SCOPE claim is promoted to a Lean theorem by this status article.',
+                  'The historical framing is authorial interpretation, not a new kernel theorem.',
+                  'No duplicate Zenodo publication was performed during receipt recovery.',
+              ],
+          }
+          canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          wrapper = {
+              'schema': 'qikvrt_canonical_status_article_final_pair_equality_receipt_v1',
+              'payload': payload,
+              'payload_sha256': hashlib.sha256(canonical).hexdigest(),
+          }
+          OUT.write_text(json.dumps(wrapper, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          pathlib.Path(str(OUT) + '.sha256').write_text(
+              hashlib.sha256(OUT.read_bytes()).hexdigest() + '  ' + OUT.name + '\n',
+              encoding='utf-8',
+          )
+          print('SHARED_GIT_TREE_SHA1=' + TREE)
+          print('FINAL_PAIR_RECEIPT_PAYLOAD_SHA256=' + wrapper['payload_sha256'])
+          PY
+      - name: Upload canonical final pair receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-final-status-article-pair-equality
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            .qikvrt/evidence/final-status-article-pair-equality.json
+            .qikvrt/evidence/final-status-article-pair-equality.json.sha256
