@@ -9,12 +9,16 @@ import json
 import os
 import pathlib
 import re
+import sys
 import unittest
 from unittest import mock
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from tools import qikvrt_zenodo_publish as zenodo_publish
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
 DIR = ROOT / "docs/publications/2026-07-28-canonical-closing-statement-historical-context"
 ARTICLE = DIR / "ARTICLE_DE.md"
 MANIFEST = DIR / "STATUS_ARTICLE_MANIFEST.json"
