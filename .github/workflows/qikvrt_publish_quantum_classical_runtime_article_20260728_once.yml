@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT one-shot quantum-classical runtime article Zenodo publication
+
+on:
+  push:
+    branches:
+      - execution/quantum-classical-runtime-article-zenodo-20260728-v1
+    paths:
+      - .github/workflows/qikvrt_publish_quantum_classical_runtime_article_20260728_once.yml
+      - REPOSITORY_FILE_MANIFEST.json
+      - REPOSITORY_FILE_MANIFEST.json.sha256
+      - SHA256SUMS.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-quantum-classical-runtime-article-zenodo-20260728-v1
+  cancel-in-progress: false
+
+jobs:
+  publish-after-materialization:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: dad0d82f768d1ef4506aa41f7399507d72611900
+      TARGET_BRANCH: execution/quantum-classical-runtime-article-zenodo-20260728-v1
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_publish_quantum_classical_runtime_article_20260728_once.yml
+      MANIFEST: release/quantum-classical-runtime-article-2026-07-28/publish-request.json
+      EVIDENCE: release/quantum-classical-runtime-article-2026-07-28/zenodo-publication.json
+    steps:
+      - name: Check out exact materialized execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: execution/quantum-classical-runtime-article-zenodo-20260728-v1
+          fetch-depth: 0
+
+      - name: Require post-materialization authorization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_EVENT_NAME" = push ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote https://github.com/Goldkelch/qik-vrt.git refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t actual < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          expected=(
+            "$EXECUTION_WORKFLOW"
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#actual[@]}" -eq "${#expected_sorted[@]}" ]
+          for i in "${!expected_sorted[@]}"; do [ "${actual[$i]}" = "${expected_sorted[$i]}" ]; done
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          [ ! -e "$EVIDENCE" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+
+      - name: Verify exact article, proof and publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_quantum_classical_runtime_article.py
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY'
+          import pathlib
+          from tools import qikvrt_zenodo_publish as publish
+          root = pathlib.Path.cwd().resolve()
+          manifest = publish.load_manifest(root / 'release/quantum-classical-runtime-article-2026-07-28/publish-request.json', root)
+          assert manifest['repository'] == 'Goldkelch/qik-vrt'
+          assert manifest['metadata']['publication_type'] == 'article'
+          assert manifest['metadata']['version'] == '1.0.0-2026-07-28'
+          assert [x['git_blob_sha'] for x in manifest['files']] == [
+              '783d8eb88103ecd4fbf60d293dd64bf96d49cad5',
+              '6e942f06af3d251e911ef8662855a1c9526792c4',
+              '31e1aad06661680b46a89821c272649533491a07',
+              '9e6f71e09dd461797994e8e2a9bd9ca93537a8ef',
+              'adfda684598313af8070077aa6bbe04ca7a11977',
+              '1d0f806a62e1729893b4688e2322f7403a1cb931',
+              '768e4f645fc4cd69ed1c4058b7fc51dbd08bd1a5',
+          ]
+          PY
+
+      - name: Publish exact Git-blob-bound article and proof to production Zenodo
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' \
+          GITHUB_SHA="$EXPECTED_AUTHORITY_MAIN" \
+          python3 -B tools/qikvrt_zenodo_publish.py --manifest "$MANIFEST" \
+            | tee .qikvrt-quantum-classical-runtime-article-zenodo.log
+          grep -qx 'ZENODO_PUBLICATION_STATE=published' .qikvrt-quantum-classical-runtime-article-zenodo.log
+          test -s "$EVIDENCE"
+
+      - name: Verify public publication receipt and uploaded identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, pathlib, re
+          root = pathlib.Path.cwd()
+          evidence_path = root / 'release/quantum-classical-runtime-article-2026-07-28/zenodo-publication.json'
+          value = json.loads(evidence_path.read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_zenodo_publication_evidence_v1'
+          assert value['state'] == 'published'
+          assert value['repository'] == 'Goldkelch/qik-vrt'
+          assert value['repository_commit'] == 'dad0d82f768d1ef4506aa41f7399507d72611900'
+          assert value['version'] == '1.0.0-2026-07-28'
+          assert isinstance(value['record_id'], int) and value['record_id'] > 0
+          assert re.fullmatch(r'10\.5281/zenodo\.[1-9][0-9]*', value['doi'])
+          assert re.fullmatch(r'10\.5281/zenodo\.[1-9][0-9]*', value['conceptdoi'])
+          expected = {
+            'QIKVRT_Vom_verantwortungsgebundenen_Erkenntnisprozess_zur_virtuellen_Wirkungsmaschine_DE.md': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/ARTICLE_DE.md', '783d8eb88103ecd4fbf60d293dd64bf96d49cad5'),
+            'QIKVRT_ARTICLE_MANIFEST.json': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/ARTICLE_MANIFEST.json', '6e942f06af3d251e911ef8662855a1c9526792c4'),
+            'QIKVRT_CLAIM_MATRIX.json': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/CLAIM_MATRIX.json', '31e1aad06661680b46a89821c272649533491a07'),
+            'QIKVRT_KERNEL_PROOF_PLAN.json': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/KERNEL_PROOF_PLAN.json', '9e6f71e09dd461797994e8e2a9bd9ca93537a8ef'),
+            'QIKVRT_KERNEL_RECEIPT.json': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/KERNEL_RECEIPT.json', 'adfda684598313af8070077aa6bbe04ca7a11977'),
+            'QIKVRT_QuantumClassicalRuntime.lean': ('formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean', '1d0f806a62e1729893b4688e2322f7403a1cb931'),
+            'QIKVRT_OWNER_EFFECT_AUTHORIZATION.json': ('docs/publications/2026-07-28-verantwortungsgebundener-erkenntnisprozess-quantenklassische-wirkungsmaschine/OWNER_EFFECT_AUTHORIZATION.json', '768e4f645fc4cd69ed1c4058b7fc51dbd08bd1a5'),
+          }
+          assert {x['name'] for x in value['files']} == set(expected)
+          for item in value['files']:
+              source, blob = expected[item['name']]
+              data = (root / source).read_bytes()
+              assert item['path'] == source
+              assert item['git_blob_sha'] == blob
+              assert item['size'] == len(data)
+              assert item['sha256'] == hashlib.sha256(data).hexdigest()
+          PY
+
+      - name: Remove executor and materialize post-publication repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTION_WORKFLOW"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tests/test_quantum_classical_runtime_article.py
+          make test
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+          mapfile -t actual < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          expected=(
+            'REPOSITORY_FILE_MANIFEST.json'
+            'REPOSITORY_FILE_MANIFEST.json.sha256'
+            'SHA256SUMS.txt'
+            'release/quantum-classical-runtime-article-2026-07-28/zenodo-publication.json'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#actual[@]}" -eq "${#expected_sorted[@]}" ]
+          for i in "${!expected_sorted[@]}"; do [ "${actual[$i]}" = "${expected_sorted[$i]}" ]; done
+
+      - name: Persist publication receipt without executor
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head=$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)
+          [ "$remote_head" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-publication[bot]'
+          git config user.email 'qikvrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -A -- \
+            "$EVIDENCE" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EXECUTION_WORKFLOW"
+          git commit -m 'zenodo: persist quantum-classical runtime article publication receipt'
+          git push origin "HEAD:$TARGET_BRANCH"
