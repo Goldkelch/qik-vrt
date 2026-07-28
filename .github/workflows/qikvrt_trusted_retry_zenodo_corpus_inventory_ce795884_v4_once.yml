@@ -1,0 +1,378 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT trusted Zenodo corpus inventory retry ce795884 v4 once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/qikvrt_trusted_retry_zenodo_corpus_inventory_ce795884_v4_once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-trusted-zenodo-corpus-inventory-ce795884-v4
+  cancel-in-progress: false
+
+jobs:
+  inventory-and-persist:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: ce7958840476e2bde67ccee63e421135a53bfec4
+      TARGET_BRANCH: evidence/zenodo-corpus-inventory-ce795884-v4
+      TRIGGER_WORKFLOW: .github/workflows/qikvrt_trusted_retry_zenodo_corpus_inventory_ce795884_v4_once.yml
+      OUTPUT_DIR: release/zenodo-corpus-proof-2026-07-28
+      OBSERVED_AT: '2026-07-28T10:53:00Z'
+
+    steps:
+      - name: Check out frozen evidence target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: evidence/zenodo-corpus-inventory-ce795884-v4
+          fetch-depth: 0
+
+      - name: Verify trusted trigger and frozen target boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "${{ github.event.pull_request.base.sha }}" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "${{ github.event.pull_request.head.repo.full_name }}" = "$GITHUB_REPOSITORY" ]
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git fetch --no-tags origin '${{ github.event.pull_request.head.sha }}'
+          [ "$(git rev-parse FETCH_HEAD)" = '${{ github.event.pull_request.head.sha }}' ]
+          mapfile -t trigger_changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" FETCH_HEAD -- | LC_ALL=C sort)
+          [ "${#trigger_changed[@]}" -eq 1 ]
+          [ "${trigger_changed[0]}" = "$TRIGGER_WORKFLOW" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY.json" ]
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_PROOF_INDEX.json" ]
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY_RETRY_RECEIPT.json" ]
+          [ ! -e "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY_RETRY_FAILURE_RECEIPT.json" ]
+
+      - name: Execute promoted safe-key read-only corpus inventory
+        id: inventory
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          python3 -B tools/qikvrt_zenodo_corpus_proof_v2.py \
+            --output-dir "$OUTPUT_DIR" \
+            --observed-at "$OBSERVED_AT" \
+            > .qikvrt-zenodo-corpus-retry-v4.log 2>&1
+          status=$?
+          set -e
+          printf 'exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] && grep -qx 'ZENODO_CORPUS_INVENTORY_STATE=verified' .qikvrt-zenodo-corpus-retry-v4.log; then
+            echo 'success=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'success=false' >> "$GITHUB_OUTPUT"
+          fi
+          sed -n '1,240p' .qikvrt-zenodo-corpus-retry-v4.log
+
+      - name: Materialize named validation matrix and retry receipt
+        id: validate
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          INVENTORY_EXIT_CODE='${{ steps.inventory.outputs.exit_code }}' python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path.cwd()
+          out = root / 'release/zenodo-corpus-proof-2026-07-28'
+          minimum = json.loads((out / 'KNOWN_PUBLISHED_RECORDS_MINIMUM.json').read_text(encoding='utf-8'))
+          index_path = out / 'ZENODO_CORPUS_PROOF_INDEX.json'
+          inventory_path = out / 'ZENODO_CORPUS_INVENTORY.json'
+          report_path = out / 'CORPUS_PROOF_REPORT_DE.md'
+          index = json.loads(index_path.read_text(encoding='utf-8'))
+          inventory = json.loads(inventory_path.read_text(encoding='utf-8'))
+          records = index.get('records') if isinstance(index.get('records'), list) else []
+          ids = []
+          for item in records:
+              try:
+                  ids.append(int(item.get('record_id')))
+              except (AttributeError, TypeError, ValueError):
+                  ids.append(-1)
+
+          checks = {}
+          def check(name, value):
+              checks[name] = bool(value)
+
+          check('inventory_exit_code_zero', int(os.environ['INVENTORY_EXIT_CODE']) == 0)
+          check('proof_index_schema', index.get('schema') == 'qikvrt_zenodo_corpus_proof_index_v1')
+          check('inventory_schema', inventory.get('schema') == 'qikvrt_zenodo_corpus_inventory_v1')
+          check('record_ids_positive', bool(ids) and all(value > 0 for value in ids))
+          check('record_ids_sorted', ids == sorted(ids))
+          check('record_ids_unique', len(ids) == len(set(ids)))
+          check('record_count_matches_index', len(ids) == index.get('record_count'))
+          check('record_count_matches_inventory', inventory.get('record_count') == index.get('record_count'))
+          check('public_byte_count_matches', index.get('public_byte_verified_count') == index.get('record_count'))
+
+          minimum_ids = sorted({int(value) for value in minimum.get('record_ids', [])})
+          missing_minimum = sorted(set(minimum_ids) - set(ids))
+          check('historical_minimum_records_present', not missing_minimum)
+
+          completion = index.get('completion_claims') if isinstance(index.get('completion_claims'), dict) else {}
+          check('authenticated_api_inventory_claim', completion.get('account_inventory_complete_within_authenticated_api_observation') is True)
+          check('public_integrity_completion_claim', completion.get('public_record_and_file_integrity_complete') is True)
+          check('content_final_pass_remains_false', completion.get('all_content_claims_final_pass') is False)
+          check('proof_corpus_publication_remains_false', completion.get('proof_corpus_publication_executed') is False)
+          check('global_final_pass_remains_false', completion.get('final_pass') is False)
+
+          envelope_failures = []
+          observed_envelope_count = 0
+          for record in records:
+              if not isinstance(record, dict) or not isinstance(record.get('envelope_path'), str):
+                  envelope_failures.append({'record_id': record.get('record_id') if isinstance(record, dict) else None, 'failure': 'MISSING_ENVELOPE_PATH'})
+                  continue
+              path = root / record['envelope_path']
+              try:
+                  envelope = json.loads(path.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  envelope_failures.append({'record_id': record.get('record_id'), 'failure': type(exc).__name__})
+                  continue
+              observed_envelope_count += 1
+              public_files = envelope.get('public_files') if isinstance(envelope.get('public_files'), list) else []
+              envelope_completion = envelope.get('completion_claims') if isinstance(envelope.get('completion_claims'), dict) else {}
+              coverage = envelope.get('coverage') if isinstance(envelope.get('coverage'), dict) else {}
+              record_value = envelope.get('record') if isinstance(envelope.get('record'), dict) else {}
+              conditions = {
+                  'record_identity': record_value.get('record_id') == record.get('record_id'),
+                  'published_state': record_value.get('published_state_verified') is True,
+                  'publication_identity_complete': coverage.get('publication_identity_complete') is True,
+                  'public_file_integrity_complete': coverage.get('public_file_integrity_complete') is True,
+                  'publication_integrity_proved': envelope_completion.get('publication_integrity_proved') is True,
+                  'natural_language_not_falsely_formalized': envelope_completion.get('all_natural_language_claims_formally_proved') is False,
+                  'retrospective_content_review_open': envelope_completion.get('retrospective_content_review_complete') is False,
+                  'final_pass_false': envelope_completion.get('final_pass') is False,
+                  'public_files_present': bool(public_files),
+                  'every_public_file_redownload_verified': bool(public_files) and all(isinstance(item, dict) and item.get('public_byte_redownload_verified') is True for item in public_files),
+                  'every_public_file_sha256_bound': bool(public_files) and all(isinstance(item, dict) and isinstance(item.get('sha256'), str) and len(item['sha256']) == 64 for item in public_files),
+              }
+              failed = sorted(name for name, value in conditions.items() if not value)
+              if failed:
+                  envelope_failures.append({'record_id': record.get('record_id'), 'failure': 'ENVELOPE_CHECKS_FAILED', 'checks': failed})
+
+          check('one_valid_envelope_per_record', observed_envelope_count == len(records) and not envelope_failures)
+          report = report_path.read_text(encoding='utf-8') if report_path.is_file() else ''
+          check('report_binds_future_policy', 'NO_MACHINE_PROOF_NO_ZENODO_UPLOAD' in report)
+          check('report_rejects_false_theorem_inflation', 'keine natürliche Sprache pauschal' in report)
+
+          validation_success = all(checks.values())
+          public_integrity_verified = all(checks[name] for name in (
+              'inventory_exit_code_zero',
+              'proof_index_schema',
+              'inventory_schema',
+              'record_ids_positive',
+              'record_ids_sorted',
+              'record_ids_unique',
+              'record_count_matches_index',
+              'record_count_matches_inventory',
+              'public_byte_count_matches',
+              'authenticated_api_inventory_claim',
+              'public_integrity_completion_claim',
+              'one_valid_envelope_per_record',
+          ))
+
+          readme_path = out / 'README.md'
+          readme = readme_path.read_text(encoding='utf-8')
+          if public_integrity_verified:
+              readme = readme.replace('AUTHENTICATED_CORPUS_INVENTORY = NOT_EXECUTED', 'AUTHENTICATED_CORPUS_INVENTORY = VERIFIED')
+              readme = readme.replace('PUBLIC_BYTE_REDOWNLOAD         = NOT_EXECUTED', 'PUBLIC_BYTE_REDOWNLOAD         = VERIFIED')
+              readme = readme.replace('PROOF_ENVELOPES                = NOT_MATERIALIZED', 'PROOF_ENVELOPES                = MATERIALIZED')
+          readme += (
+              '\n## Wiederholungs-Inventur-Receipt v4\n\n'
+              f'- observed_at: `{index.get("observed_at")}`\n'
+              f'- records: `{index.get("record_count")}`\n'
+              f'- public byte verifications: `{index.get("public_byte_verified_count")}`\n'
+              f'- existing machine claim dispositions: `{index.get("existing_claim_disposition_count")}`\n'
+              f'- content reviews still required: `{index.get("retrospective_content_review_required_count")}`\n'
+              f'- historical minimum records present: `{not missing_minimum}`\n'
+              f'- missing historical minimum record IDs: `{missing_minimum}`\n'
+              '- Zenodo proof-corpus publication: `NOT_EXECUTED`\n'
+              '- Mirror synchronization: `NOT_EXECUTED`\n'
+              '- completion: `EFFECT_ACK_CONTINUE`\n'
+          )
+          readme_path.write_text(readme, encoding='utf-8', newline='\n')
+
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_authenticated_read_only_inventory_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_retry_receipt_v1',
+              'state': 'PUBLIC_RECORD_AND_FILE_INTEGRITY_VERIFIED' if validation_success else 'BLOCK_VALIDATION',
+              'observed_at': index.get('observed_at'),
+              'source_authority': 'ce7958840476e2bde67ccee63e421135a53bfec4',
+              'source_execution_run': int(os.environ['GITHUB_RUN_ID']),
+              'previous_validation_run': 30352271343,
+              'parser': {
+                  'path': 'tools/qikvrt_zenodo_corpus_proof_v2.py',
+                  'promoted_safe_relative_key_support': True,
+                  'diagnostic_receipt': 'release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_FAILURE_RECEIPT.json',
+              },
+              'inventory': {
+                  'record_count': index.get('record_count'),
+                  'public_byte_verified_count': index.get('public_byte_verified_count'),
+                  'existing_claim_disposition_count': index.get('existing_claim_disposition_count'),
+                  'retrospective_content_review_required_count': index.get('retrospective_content_review_required_count'),
+                  'inventory_sha256': hashlib.sha256(inventory_path.read_bytes()).hexdigest(),
+                  'proof_index_sha256': hashlib.sha256(index_path.read_bytes()).hexdigest(),
+                  'report_sha256': hashlib.sha256(report_path.read_bytes()).hexdigest(),
+                  'observed_envelope_count': observed_envelope_count,
+              },
+              'validation': {
+                  'checks': checks,
+                  'all_checks_passed': validation_success,
+                  'historical_minimum_record_ids': minimum_ids,
+                  'missing_historical_minimum_record_ids': missing_minimum,
+                  'envelope_failures': envelope_failures,
+                  'persist_guard': 'tracked_diff_union_untracked_output_paths',
+              },
+              'safety': {
+                  'zenodo_methods': ['GET'],
+                  'zenodo_mutation_executed': False,
+                  'secret_persisted': False,
+                  'authorization_header_persisted': False,
+              },
+              'completion_claims': {
+                  'authenticated_inventory_complete_within_observed_api_scope': completion.get('account_inventory_complete_within_authenticated_api_observation') is True,
+                  'public_record_and_file_integrity_complete': public_integrity_verified,
+                  'historical_minimum_guard_complete': not missing_minimum,
+                  'all_content_claims_final_pass': False,
+                  'content_correction_review_complete': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'mirror_synchronized': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+              'next_deterministic_effect': 'MATERIALIZE_AND_VERIFY_EXACT_INVENTORY_HEAD' if validation_success else 'RESOLVE_NAMED_INVENTORY_VALIDATION_FAILURES',
+          }
+          (out / 'ZENODO_CORPUS_INVENTORY_RETRY_RECEIPT.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+              stream.write('validation_success=' + ('true' if validation_success else 'false') + '\n')
+          print('INVENTORY_VALIDATION_STATE=' + ('verified' if validation_success else 'blocked'))
+          print('INVENTORY_RECORD_COUNT=' + str(index.get('record_count')))
+          print('MISSING_HISTORICAL_MINIMUM_RECORD_IDS=' + ','.join(map(str, missing_minimum)))
+          print('ENVELOPE_FAILURE_COUNT=' + str(len(envelope_failures)))
+          PY
+
+      - name: Persist inventory outputs and validation receipt
+        if: steps.inventory.outputs.success == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(
+            {
+              git diff --name-only "$EXPECTED_AUTHORITY_MAIN" --
+              git ls-files --others --exclude-standard -- "$OUTPUT_DIR"
+            } | LC_ALL=C sort -u
+          )
+          [ "${#changed[@]}" -ge 7 ]
+          for path in "${changed[@]}"; do
+            case "$path" in
+              release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected inventory output path: $path" >&2; exit 1;;
+            esac
+          done
+          [ -s "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY.json" ]
+          [ -s "$OUTPUT_DIR/ZENODO_CORPUS_PROOF_INDEX.json" ]
+          [ -s "$OUTPUT_DIR/ZENODO_CORPUS_INVENTORY_RETRY_RECEIPT.json" ]
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR"
+          git commit -m 'evidence: persist truth-bounded authenticated Zenodo corpus inventory'
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Persist fail-closed inventory-execution receipt
+        if: steps.inventory.outputs.success != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTPUT_DIR"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import re
+
+          out = pathlib.Path('release/zenodo-corpus-proof-2026-07-28')
+          log = pathlib.Path('.qikvrt-zenodo-corpus-retry-v4.log').read_text(encoding='utf-8', errors='replace')
+          block = next((line.strip() for line in log.splitlines() if line.startswith('BLOCK:')), 'BLOCK: inventory retry failed without a classified line')
+          sanitized = re.sub(r'(?i)(bearer|access[_-]?token|authorization)\s*[:=]\s*\S+', r'\1=[REDACTED]', block)
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_failed_inventory_retry_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_retry_failure_receipt_v1',
+              'state': 'BLOCK',
+              'observed_at': '2026-07-28T10:53:00Z',
+              'source_authority': 'ce7958840476e2bde67ccee63e421135a53bfec4',
+              'source_execution_run': int(__import__('os').environ['GITHUB_RUN_ID']),
+              'sanitized_first_failure': sanitized,
+              'sanitized_failure_sha256': hashlib.sha256(sanitized.encode('utf-8')).hexdigest(),
+              'zenodo_mutation_executed': False,
+              'completion_claims': {
+                  'corpus_inventory_complete': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+          }
+          (out / 'ZENODO_CORPUS_INVENTORY_RETRY_FAILURE_RECEIPT.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          PY
+          mapfile -t changed < <(
+            {
+              git diff --name-only "$EXPECTED_AUTHORITY_MAIN" --
+              git ls-files --others --exclude-standard -- "$OUTPUT_DIR"
+            } | LC_ALL=C sort -u
+          )
+          for path in "${changed[@]}"; do
+            case "$path" in
+              release/zenodo-corpus-proof-2026-07-28/*) ;;
+              *) echo "BLOCK: unexpected failed-inventory output path: $path" >&2; exit 1;;
+            esac
+          done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          git config user.name 'qikvrt-zenodo-corpus-proof[bot]'
+          git config user.email 'qikvrt-zenodo-corpus-proof[bot]@users.noreply.github.com'
+          git add -A -- "$OUTPUT_DIR"
+          git commit -m 'evidence: persist blocked authenticated Zenodo corpus inventory retry'
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Enforce fail-closed completion boundary
+        if: always() && (steps.inventory.outputs.success != 'true' || steps.validate.outputs.validation_success != 'true')
+        shell: bash
+        run: |
+          echo 'BLOCK: inventory execution or named validation matrix is incomplete; persisted receipt remains non-final' >&2
+          exit 1
