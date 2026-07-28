@@ -36,6 +36,7 @@ jobs:
       EXECUTION_WORKFLOW: .github/workflows/qikvrt_publish_canonical_status_article_20260728_once.yml
       MANIFEST: release/canonical-closing-status-article-2026-07-28/publish-request.json
       EVIDENCE: release/canonical-closing-status-article-2026-07-28/zenodo-publication.json
+      PREFLIGHT_LOG: .qikvrt-canonical-status-article-preflight.log
     steps:
       - name: Check out exact execution branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -59,11 +60,16 @@ jobs:
           [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
           case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
       - name: Verify article, completion and publication contract before effect
+        id: preflight
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          python3 -B tests/test_canonical_closing_status_article.py
-          GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY'
+          set -o pipefail
+          : > "$PREFLIGHT_LOG"
+          python3 -B tests/test_canonical_closing_status_article.py 2>&1 | tee -a "$PREFLIGHT_LOG"
+          test_status=${PIPESTATUS[0]}
+          if [ "$test_status" -ne 0 ]; then exit "$test_status"; fi
+          GITHUB_REPOSITORY='Goldkelch/qik-vrt' python3 -B - <<'PY' 2>&1 | tee -a "$PREFLIGHT_LOG"
           import pathlib
           from tools import qikvrt_zenodo_publish as publish
           root = pathlib.Path.cwd().resolve()
@@ -75,7 +81,22 @@ jobs:
               'f70ed8548a5303a7b970741cab48602c6c6439a9',
               '97466066860a57af412e79220a4dff43a82e300e',
           ]
+          print('PREFLIGHT_PUBLICATION_MANIFEST=PASS')
           PY
+          manifest_status=${PIPESTATUS[0]}
+          exit "$manifest_status"
+      - name: Persist pre-effect diagnostic
+        if: steps.preflight.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          diagnostic=$(tail -c 12000 "$PREFLIGHT_LOG" 2>/dev/null || true)
+          gh pr comment '${{ github.event.pull_request.number }}' --repo "$GITHUB_REPOSITORY" --body "Zenodo publication preflight blocked before remote effect.\n\n\`\`\`text\n${diagnostic}\n\`\`\`\n\nNo Zenodo draft, record or DOI was created by this attempt."
+      - name: Enforce successful pre-effect verification
+        if: steps.preflight.outcome == 'failure'
+        run: exit 1
       - name: Publish exact Git-blob-bound status article to production Zenodo
         shell: bash
         run: |
