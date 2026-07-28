@@ -11,6 +11,7 @@ on:
     paths:
       - tools/qikvrt_global_completion.py
       - tools/qikvrt_freeze_alpha2_status.py
+      - tools/qikvrt_verify_alpha2_archive.py
       - tests/test_global_completion.py
       - .github/workflows/qikvrt_global_completion.yml
       - formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py
@@ -19,6 +20,7 @@ on:
     paths:
       - tools/qikvrt_global_completion.py
       - tools/qikvrt_freeze_alpha2_status.py
+      - tools/qikvrt_verify_alpha2_archive.py
       - tests/test_global_completion.py
       - .github/workflows/qikvrt_global_completion.yml
       - release/formalization-v2/alpha2-frozen/**
@@ -65,6 +67,8 @@ jobs:
           python-version: '3.12'
       - name: Materialize frozen Alpha-2 status inputs
         run: python3 -B tools/qikvrt_freeze_alpha2_status.py generate
+      - name: Verify byte-exact historical Alpha-2 archive
+        run: python3 -B tools/qikvrt_verify_alpha2_archive.py
       - name: Materialize global completion ledger and status projections
         run: python3 -B tools/qikvrt_global_completion.py generate
       - name: Run deterministic global completion tests
@@ -114,6 +118,8 @@ jobs:
           python-version: '3.12'
       - name: Verify frozen Alpha-2 status inputs
         run: python3 -B tools/qikvrt_freeze_alpha2_status.py check
+      - name: Verify byte-exact historical Alpha-2 archive
+        run: python3 -B tools/qikvrt_verify_alpha2_archive.py
       - name: Verify deterministic global completion materialization
         run: python3 -B tools/qikvrt_global_completion.py check
       - name: Run positive and negative global completion tests
