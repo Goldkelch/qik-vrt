@@ -1,0 +1,114 @@
+# One-shot read-only evidence workflow; no repository or external publication mutation.
+name: QIKVRT one-shot global completion pair tree evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/qikvrt_pair_tree_evidence_once.yml
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-global-completion-pair-tree-evidence
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'evidence/global-completion-pair-tree-20260728'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Read exact public commit trees and persist bounded receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/pair-tree.json
+          from __future__ import annotations
+          import hashlib, json, urllib.request
+
+          authority_repository = 'Goldkelch/qik-vrt'
+          mirror_repository = 'ingolf-lohmann/qik-vrt'
+          authority_main = '599866689400bcb825e5534bd85e4653db44432f'
+          mirror_main = '6a5b3c0ace91a327258f945b82f3fb40c16b18fe'
+
+          def get(path: str):
+              request = urllib.request.Request(
+                  'https://api.github.com' + path,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'qikvrt-pair-tree-evidence',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          authority_ref = get(f'/repos/{authority_repository}/git/ref/heads/main')['object']['sha']
+          mirror_ref = get(f'/repos/{mirror_repository}/git/ref/heads/main')['object']['sha']
+          if authority_ref != authority_main:
+              raise SystemExit(f'BLOCK Authority main moved: {authority_ref}')
+          if mirror_ref != mirror_main:
+              raise SystemExit(f'BLOCK Mirror main moved: {mirror_ref}')
+          authority_tree = get(f'/repos/{authority_repository}/git/commits/{authority_main}')['tree']['sha']
+          mirror_tree = get(f'/repos/{mirror_repository}/git/commits/{mirror_main}')['tree']['sha']
+          if authority_tree != mirror_tree:
+              raise SystemExit(
+                  f'BLOCK Authority/Mirror Git tree differs: {authority_tree} != {mirror_tree}'
+              )
+          payload = {
+              'schema': 'qikvrt_global_completion_pair_tree_receipt_v1',
+              'state': 'PAIR_MAIN_GIT_TREE_EQUALITY_VERIFIED',
+              'authority': {
+                  'repository': authority_repository,
+                  'main': authority_main,
+                  'git_tree_sha1': authority_tree,
+              },
+              'mirror': {
+                  'repository': mirror_repository,
+                  'main': mirror_main,
+                  'git_tree_sha1': mirror_tree,
+              },
+              'shared_git_tree_sha1': authority_tree,
+              'repository_manifest_sha256': '5032ad6e1d6294bc683dc0fe15c76af86acfb4e458e57b2fe63688bd8c073230',
+              'repository_content_tree_sha256': 'bfd7ca0127be3bf2d5a5b6bb4927bfcd77a3f5a265b5518c677d69bde2e0b97e',
+              'non_claims': [
+                  'finalization receipt already materialized',
+                  'unscoped truth of empirical or interpretive claims',
+                  'future repository states',
+              ],
+          }
+          canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          envelope = {
+              'payload_sha256': hashlib.sha256(canonical).hexdigest(),
+              'payload': payload,
+          }
+          print(json.dumps(envelope, ensure_ascii=False, indent=2, sort_keys=True))
+          PY
+          cat /tmp/pair-tree.json
+          digest="$(python3 -c 'import json; print(json.load(open("/tmp/pair-tree.json"))["payload_sha256"])')"
+          tree="$(python3 -c 'import json; print(json.load(open("/tmp/pair-tree.json"))["payload"]["shared_git_tree_sha1"])')"
+          gh pr comment 117 --repo Goldkelch/qik-vrt --body "## Global completion pair-tree receipt
+
+- state: \`PAIR_MAIN_GIT_TREE_EQUALITY_VERIFIED\`
+- Authority main: \`599866689400bcb825e5534bd85e4653db44432f\`
+- Mirror main: \`6a5b3c0ace91a327258f945b82f3fb40c16b18fe\`
+- shared Git tree SHA-1: \`$tree\`
+- manifest SHA-256: \`5032ad6e1d6294bc683dc0fe15c76af86acfb4e458e57b2fe63688bd8c073230\`
+- repository-content-tree SHA-256: \`bfd7ca0127be3bf2d5a5b6bb4927bfcd77a3f5a265b5518c677d69bde2e0b97e\`
+- canonical payload SHA-256: \`$digest\`
+- workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+This receipt establishes only current pair-tree equality and does not itself materialize the final global completion receipt."
