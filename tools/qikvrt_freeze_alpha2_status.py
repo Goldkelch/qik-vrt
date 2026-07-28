@@ -4,7 +4,7 @@
 """Materialize immutable text inputs from the published Alpha-2 source archive.
 
 The historical Alpha-2 ZIP must remain reproducible after live status documents
-advance.  Only the three explicitly named text paths are projected from the
+advance. Only the three explicitly named text paths are projected from the
 already hash-bound archive; all other archive inputs still come directly from
 the current repository paths used by the Alpha-2 packaging contract.
 """
@@ -20,7 +20,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / "release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip"
-ARCHIVE_SHA256 = "1fc6edc074aa001680f6c244e4411ca44af036debc81f083a4665143f4c820bf"
+ARCHIVE_SHA256 = "500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689"
 PREFIX = "QIKVRT_Formalization_v2.0-alpha.2/"
 FREEZE_ROOT = ROOT / "release/formalization-v2/alpha2-frozen"
 PATHS = (
@@ -38,7 +38,7 @@ def _sha256(data: bytes) -> str:
 def _load() -> tuple[dict[str, bytes], dict[str, object]]:
     raw = ARCHIVE.read_bytes()
     if _sha256(raw) != ARCHIVE_SHA256:
-        raise ValueError("Alpha-2 archive SHA-256 differs from the fixed release")
+        raise ValueError("Alpha-2 archive SHA-256 differs from the fixed tagged release")
     projected: dict[str, bytes] = {}
     with zipfile.ZipFile(ARCHIVE) as archive:
         names = archive.namelist()
@@ -69,6 +69,7 @@ def _load() -> tuple[dict[str, bytes], dict[str, object]]:
             "path": ARCHIVE.relative_to(ROOT).as_posix(),
             "sha256": ARCHIVE_SHA256,
             "prefix": PREFIX,
+            "authority_tag_commit": "42389236ea638f5cd40c13a486b70b1e1bf03055",
         },
         "files": [
             {
@@ -80,7 +81,7 @@ def _load() -> tuple[dict[str, bytes], dict[str, object]]:
             for path in PATHS
         ],
         "purpose": (
-            "Preserve the already published Alpha-2 archive bytes while live "
+            "Preserve the tagged and published Alpha-2 archive bytes while live "
             "README, completion-plan and package implementation status advances."
         ),
     }
