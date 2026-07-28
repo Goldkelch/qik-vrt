@@ -1,0 +1,364 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT persist Zenodo corpus inventory diagnostic 30347678298 v2
+
+on:
+  push:
+    branches:
+      - recovery/zenodo-corpus-inventory-diagnostic-30347678298-v2
+    paths:
+      - .github/workflows/qikvrt_persist_zenodo_corpus_inventory_diagnostic_30347678298_v2_once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-persist-zenodo-corpus-diagnostic-30347678298-v2
+  cancel-in-progress: false
+
+jobs:
+  diagnose-and-persist-receipt-only:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      EXPECTED_AUTHORITY_MAIN: 5fd40bcc12304d92ae4066df3c06cf9acfb7eb98
+      TARGET_BRANCH: recovery/zenodo-corpus-inventory-diagnostic-30347678298-v2
+      EXECUTION_WORKFLOW: .github/workflows/qikvrt_persist_zenodo_corpus_inventory_diagnostic_30347678298_v2_once.yml
+      SOURCE_RUN_ID: '30347678298'
+      SOURCE_JOB_ID: '90237623969'
+      FIRST_DIAGNOSTIC_RUN_ID: '30349335789'
+      FIRST_DIAGNOSTIC_JOB_ID: '90242861555'
+      FAILURE_RECEIPT: release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_FAILURE_RECEIPT.json
+      DIAGNOSTIC_REPORT: release/zenodo-corpus-proof-2026-07-28/ZENODO_CORPUS_INVENTORY_DIAGNOSTIC_DE.md
+
+    steps:
+      - name: Check out clean recovery branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: recovery/zenodo-corpus-inventory-diagnostic-30347678298-v2
+          fetch-depth: 0
+
+      - name: Verify receipt-only recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = 'Goldkelch/qik-vrt' ]
+          [ "$GITHUB_REF_NAME" = "$TARGET_BRANCH" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git merge-base HEAD "$EXPECTED_AUTHORITY_MAIN")" = "$EXPECTED_AUTHORITY_MAIN" ]
+          [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_AUTHORITY_MAIN" ]
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" HEAD -- | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
+          [ -n "${ZENODO_ACCESS_TOKEN:-}" ]
+          [ "${#ZENODO_ACCESS_TOKEN}" -ge 20 ]
+          case "$ZENODO_ACCESS_TOKEN" in *[[:space:]]*) exit 1;; esac
+          [ ! -e "$FAILURE_RECEIPT" ]
+          [ ! -e "$DIAGNOSTIC_REPORT" ]
+
+      - name: Reproduce and classify the first read-only failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from __future__ import annotations
+          import datetime as dt
+          import io
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          import zipfile
+          from typing import Any
+
+          root = pathlib.Path.cwd()
+          token = os.environ['ZENODO_ACCESS_TOKEN']
+          receipt_path = root / os.environ['FAILURE_RECEIPT']
+          report_path = root / os.environ['DIAGNOSTIC_REPORT']
+          query = urllib.parse.urlencode({'size': 100, 'sort': 'mostrecent', 'page': 1})
+          original_url = f'https://zenodo.org/api/deposit/depositions?{query}'
+          canonical_url = f'https://zenodo.org/api/deposit/depositions/?{query}'
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def safe_location(value: str | None) -> dict[str, Any] | None:
+              if not value:
+                  return None
+              parsed = urllib.parse.urlsplit(value)
+              return {
+                  'scheme': parsed.scheme,
+                  'host': (parsed.hostname or '').lower(),
+                  'path': parsed.path,
+                  'query_keys': sorted(urllib.parse.parse_qs(parsed.query, keep_blank_values=True)),
+              }
+
+          def probe(url: str, *, follow_redirects: bool) -> tuple[Any, dict[str, Any]]:
+              parsed = urllib.parse.urlsplit(url)
+              if parsed.scheme != 'https' or (parsed.hostname or '').lower() != 'zenodo.org':
+                  raise RuntimeError('probe URL escaped approved Zenodo origin')
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'Accept': 'application/json',
+                      'Authorization': 'Bearer ' + token,
+                      'User-Agent': 'qikvrt-zenodo-corpus-diagnostic/2.0',
+                  },
+                  method='GET',
+              )
+              opener = urllib.request.build_opener() if follow_redirects else urllib.request.build_opener(NoRedirect())
+              try:
+                  response = opener.open(request, timeout=60)
+              except urllib.error.HTTPError as exc:
+                  return None, {
+                      'outcome': 'HTTP_ERROR',
+                      'status': int(exc.code),
+                      'requested_path': parsed.path,
+                      'location': safe_location(exc.headers.get('Location')),
+                      'error_class': type(exc).__name__,
+                  }
+              except Exception as exc:
+                  return None, {
+                      'outcome': 'TRANSPORT_ERROR',
+                      'requested_path': parsed.path,
+                      'error_class': type(exc).__name__,
+                  }
+              with response:
+                  final = urllib.parse.urlsplit(response.geturl())
+                  raw = response.read(32 * 1024 * 1024 + 1)
+                  status = int(getattr(response, 'status', 200))
+              if final.scheme != 'https' or (final.hostname or '').lower() != 'zenodo.org':
+                  return None, {
+                      'outcome': 'ORIGIN_ESCAPE',
+                      'requested_path': parsed.path,
+                      'final_host': (final.hostname or '').lower(),
+                      'final_path': final.path,
+                  }
+              if len(raw) > 32 * 1024 * 1024:
+                  return None, {'outcome': 'SIZE_BOUND_EXCEEDED', 'status': status, 'requested_path': parsed.path, 'final_path': final.path}
+              try:
+                  value = json.loads(raw.decode('utf-8'))
+              except Exception as exc:
+                  return None, {'outcome': 'INVALID_JSON', 'status': status, 'requested_path': parsed.path, 'final_path': final.path, 'error_class': type(exc).__name__}
+              return value, {
+                  'outcome': 'SUCCESS',
+                  'status': status,
+                  'requested_path': parsed.path,
+                  'final_path': final.path,
+                  'response_shape': type(value).__name__,
+                  'item_count': len(value) if isinstance(value, list) else None,
+              }
+
+          def source_signature(job_id: int) -> dict[str, Any]:
+              result: dict[str, Any] = {'job_id': job_id, 'log_access': 'NOT_ATTEMPTED', 'failure_signatures': []}
+              try:
+                  request = urllib.request.Request(
+                      f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/actions/jobs/{job_id}/logs',
+                      headers={
+                          'Accept': 'application/vnd.github+json',
+                          'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                          'User-Agent': 'qikvrt-zenodo-corpus-diagnostic/2.0',
+                          'X-GitHub-Api-Version': '2022-11-28',
+                      },
+                  )
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      raw = response.read(32 * 1024 * 1024 + 1)
+                  if len(raw) > 32 * 1024 * 1024:
+                      raise RuntimeError('log exceeds diagnostic bound')
+                  if zipfile.is_zipfile(io.BytesIO(raw)):
+                      with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                          text = '\n'.join(archive.read(name).decode('utf-8', 'replace') for name in sorted(archive.namelist()))
+                  else:
+                      text = raw.decode('utf-8', 'replace')
+                  signatures = []
+                  for line in text.splitlines():
+                      candidate = line.split('Z ', 1)[-1].strip()
+                      if 'BLOCK:' not in candidate and 'Error:' not in candidate:
+                          continue
+                      candidate = re.sub(r'Bearer\s+\S+', 'Bearer [REDACTED]', candidate, flags=re.I)
+                      candidate = re.sub(r'access_token=[^&\s]+', 'access_token=[REDACTED]', candidate, flags=re.I)
+                      signatures.append(candidate[:500])
+                  result['log_access'] = 'SUCCESS'
+                  result['failure_signatures'] = signatures[-8:]
+              except Exception as exc:
+                  result['log_access'] = 'FAILED'
+                  result['log_access_error_class'] = type(exc).__name__
+              return result
+
+          original_value, original = probe(original_url, follow_redirects=False)
+          canonical_value, canonical = probe(canonical_url, follow_redirects=True)
+          location = original.get('location') or {}
+          redirect_verified = (
+              original.get('outcome') == 'HTTP_ERROR'
+              and original.get('status') in {301, 302, 307, 308}
+              and location.get('host') == 'zenodo.org'
+              and location.get('path') == '/api/deposit/depositions/'
+              and canonical.get('outcome') == 'SUCCESS'
+              and isinstance(canonical_value, list)
+          )
+
+          if redirect_verified:
+              primary = 'ACCOUNT_ENUMERATION_REDIRECT_NOT_ACCEPTED'
+              confidence = 'HIGH'
+              explanation = (
+                  'The failed client requested the no-trailing-slash depositions endpoint while disabling redirects. '
+                  'Zenodo redirected to the canonical trailing-slash endpoint; the canonical authenticated GET returned a valid list.'
+              )
+              next_effect = 'PATCH_ZENODO_CORPUS_CLIENT_CANONICAL_DEPOSITIONS_ENDPOINT_AND_REDIRECT_POLICY'
+          elif original.get('status') in {401, 403} or canonical.get('status') in {401, 403}:
+              primary = 'ACCOUNT_ENUMERATION_AUTHORIZATION_FAILURE'
+              confidence = 'HIGH'
+              explanation = 'The authenticated depositions endpoint rejected the read-only request.'
+              next_effect = 'REPAIR_ZENODO_READ_AUTHORIZATION_WITHOUT_TOKEN_DISCLOSURE'
+          elif canonical.get('outcome') != 'SUCCESS':
+              primary = 'ACCOUNT_ENUMERATION_FAILURE'
+              confidence = 'HIGH'
+              explanation = 'The canonical authenticated depositions endpoint failed at the first bounded request.'
+              next_effect = 'PATCH_FIRST_REPRODUCED_ACCOUNT_ENUMERATION_FAILURE'
+          elif not isinstance(canonical_value, list):
+              primary = 'ACCOUNT_ENUMERATION_SHAPE_FAILURE'
+              confidence = 'HIGH'
+              explanation = 'The canonical endpoint returned JSON with an unexpected non-list shape.'
+              next_effect = 'PATCH_ZENODO_CORPUS_ENUMERATION_RESPONSE_DECODER'
+          else:
+              primary = 'TRANSIENT_FAILURE_NOT_REPRODUCED'
+              confidence = 'MEDIUM'
+              explanation = 'Both bounded probes completed without reproducing the earlier failure.'
+              next_effect = 'RETRY_FULL_READ_ONLY_CORPUS_INVENTORY_WITH_DIAGNOSTIC_TELEMETRY'
+
+          observed_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_failure_diagnostic_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_corpus_inventory_failure_receipt_v1',
+              'state': 'DIAGNOSED',
+              'observed_at': observed_at,
+              'source': {
+                  'repository': 'Goldkelch/qik-vrt',
+                  'authority_commit': os.environ['EXPECTED_AUTHORITY_MAIN'],
+                  'failed_run_id': int(os.environ['SOURCE_RUN_ID']),
+                  'failed_job_id': int(os.environ['SOURCE_JOB_ID']),
+                  'failed_step': 'Enumerate owned publications and verify every public byte',
+                  'first_diagnostic_run_id': int(os.environ['FIRST_DIAGNOSTIC_RUN_ID']),
+                  'first_diagnostic_job_id': int(os.environ['FIRST_DIAGNOSTIC_JOB_ID']),
+                  'source_failure_signature': source_signature(int(os.environ['SOURCE_JOB_ID'])),
+              },
+              'safety': {
+                  'zenodo_methods_executed': ['GET'],
+                  'zenodo_mutation_executed': False,
+                  'secrets_persisted': False,
+                  'authorization_headers_persisted': False,
+                  'response_bodies_persisted': False,
+                  'bounded_metadata_only': True,
+              },
+              'probes': {
+                  'original_no_trailing_slash_no_redirect': original,
+                  'canonical_trailing_slash_redirect_aware': canonical,
+              },
+              'classification': {
+                  'primary_failure_class': primary,
+                  'confidence': confidence,
+                  'explanation': explanation,
+                  'original_redirect_to_canonical_endpoint_verified': redirect_verified,
+              },
+              'effect': {
+                  'diagnostic_executed': True,
+                  'failure_receipt_persisted': True,
+                  'corpus_inventory_completed': False,
+                  'corpus_proof_envelopes_persisted': False,
+                  'proof_corpus_published_on_zenodo': False,
+                  'next_deterministic_effect': next_effect,
+              },
+          }
+          receipt_path.parent.mkdir(parents=True, exist_ok=True)
+          receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8', newline='\n')
+          report = f'''<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright 2026 Ingolf Lohmann.
+-->
+
+# Read-only-Diagnose der Zenodo-Korpusinventur
+
+**Quelllauf:** `{os.environ['SOURCE_RUN_ID']}`  
+**Quelljob:** `{os.environ['SOURCE_JOB_ID']}`  
+**Authority-Basis:** `{os.environ['EXPECTED_AUTHORITY_MAIN']}`  
+**Beobachtet:** `{observed_at}`
+
+## Ergebnis
+
+```text
+PRIMARY_FAILURE_CLASS = {primary}
+CONFIDENCE            = {confidence}
+ZENODO_METHODS        = GET
+ZENODO_MUTATION       = false
+SECRETS_PERSISTED     = false
+```
+
+{explanation}
+
+## Nachweisgrenze
+
+Die Diagnose bindet ausschließlich die technische Fehlerklasse des read-only Inventurpfads. Sie behauptet keine abgeschlossene Korpusinventur, keine veröffentlichten Korpusbeweise und keinen `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE`.
+
+## Nächster deterministischer Effekt
+
+`{next_effect}`
+
+**q.e.d.**  
+**Ingolf Lohmann**
+'''
+          report_path.write_text(report, encoding='utf-8', newline='\n')
+          print('ZENODO_CORPUS_DIAGNOSTIC_STATE=diagnosed')
+          print('ZENODO_CORPUS_PRIMARY_FAILURE_CLASS=' + primary)
+          print('ZENODO_CORPUS_ZENODO_MUTATION=false')
+          PY
+
+      - name: Verify and persist receipt-only state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          import pathlib
+          receipt = pathlib.Path(os.environ['FAILURE_RECEIPT'])
+          value = json.loads(receipt.read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_zenodo_corpus_inventory_failure_receipt_v1'
+          assert value['state'] == 'DIAGNOSED'
+          assert value['source']['authority_commit'] == os.environ['EXPECTED_AUTHORITY_MAIN']
+          assert value['source']['failed_run_id'] == int(os.environ['SOURCE_RUN_ID'])
+          assert value['source']['failed_job_id'] == int(os.environ['SOURCE_JOB_ID'])
+          assert value['safety']['zenodo_methods_executed'] == ['GET']
+          assert value['safety']['zenodo_mutation_executed'] is False
+          assert value['safety']['secrets_persisted'] is False
+          assert value['effect']['diagnostic_executed'] is True
+          assert value['effect']['failure_receipt_persisted'] is True
+          raw = receipt.read_text(encoding='utf-8')
+          assert os.environ['ZENODO_ACCESS_TOKEN'] not in raw
+          assert 'Authorization: Bearer' not in raw
+          PY
+          rm -- "$EXECUTION_WORKFLOW"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_AUTHORITY_MAIN" -- | LC_ALL=C sort)
+          expected=("$DIAGNOSTIC_REPORT" "$FAILURE_RECEIPT")
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          [ "${#changed[@]}" -eq 2 ]
+          for i in "${!expected_sorted[@]}"; do [ "${changed[$i]}" = "${expected_sorted[$i]}" ]; done
+          [ "$(git ls-remote origin refs/heads/$TARGET_BRANCH | cut -f1)" = "$GITHUB_SHA" ]
+          git config user.name 'qikvrt-zenodo-diagnostic[bot]'
+          git config user.email 'qikvrt-zenodo-diagnostic[bot]@users.noreply.github.com'
+          git add -A -- "$FAILURE_RECEIPT" "$DIAGNOSTIC_REPORT" "$EXECUTION_WORKFLOW"
+          git commit -m 'evidence: persist read-only Zenodo corpus inventory failure receipt'
+          git push origin "HEAD:$TARGET_BRANCH"
