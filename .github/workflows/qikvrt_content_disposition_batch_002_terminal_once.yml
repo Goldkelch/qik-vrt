@@ -4,16 +4,14 @@ name: QIK-VRT terminal content disposition Batch 002 once
 
 on:
   push:
-    branches:
-      - execution/content-disposition-batch-002-terminal-v1
-    paths:
-      - work-units/EXECUTE_BATCH_002_TERMINAL_READY_V3.json
+    branches: [execution/content-disposition-batch-002-terminal-v1]
+    paths: [work-units/EXECUTE_BATCH_002_TERMINAL_READY_V4.json]
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-content-disposition-batch-002-terminal-v3
+  group: qikvrt-content-disposition-batch-002-terminal-v4
   cancel-in-progress: false
 
 jobs:
@@ -30,13 +28,12 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Verify exact event transaction
-        shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import json,pathlib,subprocess
-          r=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V3.json').read_text())
+          r=json.loads(pathlib.Path('work-units/EXECUTE_BATCH_002_TERMINAL_READY_V4.json').read_text())
           assert r['state']=='READY'
           assert r['authority_base']=='240bc42aef462f12bd6179ce7da2aa585844f531'
           assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==r['trigger_parent']
@@ -46,12 +43,12 @@ jobs:
           PY
       - name: Run adversarial unit tests
         run: python3 -B tests/test_content_disposition_batch_002_terminal.py
-      - name: Execute public GET-only terminal disposition
-        run: python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py | tee /tmp/batch002-terminal.json
-      - name: Materialize isolated evidence worktree
+      - name: Execute and atomically transfer generated evidence
         shell: bash
         run: |
           set -euo pipefail
+          python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py | tee /tmp/batch002-terminal.json
+          test -f release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json
           git fetch --no-tags origin "$EVIDENCE_BRANCH"
           test "$(git rev-parse origin/$EVIDENCE_BRANCH)" = "$AUTHORITY_BASE"
           evidence_root="$RUNNER_TEMP/batch002-terminal-evidence"
@@ -64,9 +61,9 @@ jobs:
             release/zenodo-corpus-proof-2026-07-28/canonical-union/CONTENT_CLAIM_DISPOSITION_QUEUE.json \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition \
             | tar -xf - -C "$evidence_root"
+          test -f "$evidence_root/release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json"
           echo "EVIDENCE_ROOT=$evidence_root" >> "$GITHUB_ENV"
-      - name: Verify evidence, integrity and full acceptance suite
-        shell: bash
+      - name: Verify evidence integrity and complete acceptance suite
         run: |
           set -euo pipefail
           cd "$EVIDENCE_ROOT"
@@ -77,8 +74,7 @@ jobs:
           python3 -B tools/qikvrt_integrity.py verify
           python3 - <<'PY'
           import json,pathlib
-          p=pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json')
-          r=json.loads(p.read_text())
+          r=json.loads(pathlib.Path('release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json').read_text())
           assert r['state']=='TERMINALLY_DISPOSITIONED'
           assert r['subject_count']==6
           assert r['completion_claims']['batch_002_terminal_disposition_complete'] is True
@@ -86,8 +82,7 @@ jobs:
           assert r['completion_claims']['final_pass'] is False
           assert r['completion_claims']['effect_ack_done'] is False
           PY
-      - name: Persist exact validated evidence under frozen lease
-        shell: bash
+      - name: Persist exact evidence under frozen lease
         run: |
           set -euo pipefail
           cd "$EVIDENCE_ROOT"
@@ -96,9 +91,7 @@ jobs:
           git add -A
           test -n "$(git status --porcelain)"
           git commit -m 'Persist terminal content disposition for Batch 002'
-          git push origin \
-            --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$AUTHORITY_BASE" \
-            "HEAD:refs/heads/$EVIDENCE_BRANCH"
+          git push origin --force-with-lease="refs/heads/$EVIDENCE_BRANCH:$AUTHORITY_BASE" "HEAD:refs/heads/$EVIDENCE_BRANCH"
           persisted="$(git ls-remote origin refs/heads/$EVIDENCE_BRANCH | cut -f1)"
           test "$persisted" = "$(git rev-parse HEAD)"
           echo "PERSISTED_EVIDENCE_HEAD=$persisted" >> "$GITHUB_ENV"
