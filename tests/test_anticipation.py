@@ -21,6 +21,7 @@ class GlobalSystemClosureContractTests(unittest.TestCase):
             receipt["completion_claims"],
             {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
         )
+        self.assertEqual(receipt["verified_projection_count"], 7)
 
     def test_monotonic_improvement_is_measured_and_non_regressing(self) -> None:
         self.assertEqual(
@@ -84,7 +85,108 @@ class GlobalSystemClosureContractTests(unittest.TestCase):
             write_json(root / anticipation.POLICY_PATH, policy)
             write_json(root / anticipation.EVIDENCE_PATH, evidence)
             with self.assertRaisesRegex(anticipation.ClosureError, "PR boundary"):
-                anticipation.check(root)
+                anticipation.validate_functionality_evidence(evidence)
+
+
+class AnticipationProjectionTests(unittest.TestCase):
+    def test_repository_projections_are_byte_current(self) -> None:
+        expected = anticipation.expected_projections()
+        self.assertEqual(set(expected), set(anticipation.PROJECTION_PATHS))
+        for relative, raw in expected.items():
+            self.assertEqual((anticipation.ROOT / relative).read_bytes(), raw)
+
+    def test_repeated_derivation_is_byte_identical(self) -> None:
+        policy, evidence = anticipation.load_contract()
+        input_value = anticipation.load_anticipation_input()
+        first = anticipation.build_projections(policy, evidence, input_value)
+        second = anticipation.build_projections(policy, evidence, input_value)
+        self.assertEqual(first, second)
+
+    def test_equivalent_planner_is_replaceable(self) -> None:
+        policy, evidence = anticipation.load_contract()
+        input_value = anticipation.load_anticipation_input()
+
+        def replacement(value: dict[str, object]) -> dict[str, object]:
+            return copy.deepcopy(value["next_effect"])
+
+        canonical = anticipation.build_projections(policy, evidence, input_value)
+        replaced = anticipation.build_projections(
+            policy, evidence, input_value, planner=replacement
+        )
+        self.assertEqual(canonical, replaced)
+
+    def test_competing_planner_fails_closed(self) -> None:
+        policy, evidence = anticipation.load_contract()
+        input_value = anticipation.load_anticipation_input()
+
+        def competing(value: dict[str, object]) -> dict[str, object]:
+            result = copy.deepcopy(value["next_effect"])
+            result["effect_id"] = "DIFFERENT_EFFECT"
+            return result
+
+        with self.assertRaisesRegex(
+            anticipation.ClosureError, "TREND_DERIVATION_NONDETERMINISTIC"
+        ):
+            anticipation.build_projections(
+                policy, evidence, input_value, planner=competing
+            )
+
+    def test_insufficient_observations_fail_closed(self) -> None:
+        input_value = anticipation.load_anticipation_input()
+        input_value["observations"] = input_value["observations"][:1]
+        with self.assertRaisesRegex(
+            anticipation.ClosureError, "INSUFFICIENT_VERIFIED_OBSERVATIONS"
+        ):
+            anticipation.validate_input(input_value)
+
+    def test_activity_without_gate_change_is_not_progress(self) -> None:
+        observations = [
+            {"metrics": {"gates": 2, "receipts": 1}},
+            {"metrics": {"gates": 2, "receipts": 1}},
+        ]
+        trend = anticipation.derive_trend(observations)
+        self.assertEqual(trend["direction"], "STABLE")
+        self.assertFalse(trend["productive_progress"])
+
+    def test_checkpoint_chain_is_contiguous_and_false_pass_free(self) -> None:
+        first = anticipation.read_json(
+            anticipation.ROOT / anticipation.CHECKPOINT_1_PATH
+        )
+        second = anticipation.read_json(
+            anticipation.ROOT / anticipation.CHECKPOINT_2_PATH
+        )
+        self.assertEqual(
+            second["previous_checkpoint_sha256"], first["checkpoint_sha256"]
+        )
+        self.assertEqual(
+            first["checkpoint_sha256"],
+            anticipation.checkpoint_hash(
+                first, previous_checkpoint_sha256=anticipation.ZERO_SHA256
+            ),
+        )
+        self.assertEqual(
+            second["checkpoint_sha256"],
+            anticipation.checkpoint_hash(
+                second,
+                previous_checkpoint_sha256=first["checkpoint_sha256"],
+            ),
+        )
+        for checkpoint in (first, second):
+            self.assertEqual(checkpoint["external_effect"], "NONE")
+            self.assertFalse(any(checkpoint["completion_claims"].values()))
+
+    def test_materialization_has_no_external_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy, evidence = anticipation.load_contract()
+            input_value = anticipation.load_anticipation_input()
+            write_json(root / anticipation.POLICY_PATH, policy)
+            write_json(root / anticipation.EVIDENCE_PATH, evidence)
+            write_json(root / anticipation.INPUT_PATH, input_value)
+            receipt = anticipation.materialize(root)
+            self.assertEqual(receipt["external_effect"], "NONE")
+            self.assertEqual(receipt["effect_state"], "EFFECT_ACK_CONTINUE")
+            self.assertEqual(receipt["output_count"], 7)
 
 
 if __name__ == "__main__":

@@ -3,12 +3,13 @@
   "capability_id": "qikvrt.repository.anticipation.v1",
   "title": "Repository Trend and Anticipation Engine",
   "description": "Derives one canonical next valid repository state and one minimal deterministic next effect from verified ordered observations, discrete derivatives and transition rules.",
-  "semantic_version": "1.0.0-draft",
-  "status": "PARTIAL",
+  "semantic_version": "1.1.0-draft",
+  "status": "IMPLEMENTED_LOCAL_PROJECTIONS",
   "capability_class": "monitoring",
   "implementation_locations": [
     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
     "schemas/qikvrt-anticipation-state.schema.json",
+    "tools/qikvrt_anticipation.py",
     "anticipation/",
     "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
     "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
@@ -46,7 +47,10 @@
     "planner replacement conformance test"
   ],
   "evidence": [
-    "PR #102 branch artifacts"
+    "PR #102 branch artifacts",
+    "system-closure/ARCHITECTURE_FUNCTIONALITY_EVIDENCE.json",
+    "receipts/anticipation/0001-contract-bound.json",
+    "receipts/anticipation/0002-anticipation-materialized.json"
   ],
   "failure_classes": [
     "INSUFFICIENT_VERIFIED_OBSERVATIONS",
@@ -58,11 +62,11 @@
     "AUTHORITY_MIRROR_STATE_DIVERGENCE",
     "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
   ],
-  "next_effect": "Execute work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json on the exact PR head and materialize tested anticipation projections.",
+  "next_effect": "Materialize fail-closed targeted-node and Zenodo effect intents without external mutation.",
   "owner_only_bootstrap_actions": [],
   "provenance": {
     "repository": "Goldkelch/qik-vrt",
-    "branch": "agent/repository-capability-self-disclosure-v1",
+    "branch": "agent/global-system-closure-v1",
     "sha256_binding": "PENDING_INTEGRITY_MATERIALIZATION"
   }
 }

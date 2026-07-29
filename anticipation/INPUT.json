@@ -1,0 +1,63 @@
+{
+  "_license": {
+    "classification": "machine_readable_anticipation_input",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_anticipation_input_v1",
+  "scope_id": "qikvrt-global-system-closure-v1",
+  "repository": "Goldkelch/qik-vrt",
+  "source_revision": "git-tree:0543b81980317d91e32777b3efc2fc85346dfa84",
+  "observed_at": "2026-07-29T14:58:59Z",
+  "observations": [
+    {
+      "state_id": "denk-mengenlehre-pr-202-exact-head",
+      "observed_at": "2026-07-29T14:18:54Z",
+      "classification": "TEILFORTSCHRITT",
+      "productive_chain_position": "REMOTE_EXACT_HEAD_CHECKS_VERIFIED",
+      "metrics": {
+        "bound_artifact_groups": 4,
+        "verified_gate_groups": 5
+      },
+      "evidence": [
+        "https://github.com/Goldkelch/qik-vrt/pull/202",
+        "git-commit:cfe218ca57d75a4245f335258995862cff997b69",
+        "git-tree:9cd3e4e18bfb90a48d18604b80c37931d8d87409"
+      ]
+    },
+    {
+      "state_id": "global-system-closure-contract-bound",
+      "observed_at": "2026-07-29T14:58:59Z",
+      "classification": "TEILFORTSCHRITT",
+      "productive_chain_position": "CONTRACT_BOUND",
+      "metrics": {
+        "bound_artifact_groups": 5,
+        "verified_gate_groups": 6
+      },
+      "evidence": [
+        "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
+        "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
+        "system-closure/ARCHITECTURE_FUNCTIONALITY_EVIDENCE.json",
+        "git-tree:0543b81980317d91e32777b3efc2fc85346dfa84"
+      ]
+    }
+  ],
+  "next_effect": {
+    "effect_id": "MATERIALIZE_FAIL_CLOSED_EFFECT_INTENTS",
+    "description": "Materialize and validate inert targeted-node and Zenodo intents without dispatching or publishing.",
+    "executor_capability": "qikvrt.repository.anticipation.v1",
+    "preconditions": [
+      "GLOBAL_SYSTEM_CLOSURE_CONTRACT_VALID",
+      "ANTICIPATION_PROJECTIONS_BYTE_CURRENT",
+      "EFFECT_ACK_DEFAULT_CONTINUE"
+    ],
+    "expected_receipt": "receipts/anticipation/0003-effect-intents-gated.json"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
