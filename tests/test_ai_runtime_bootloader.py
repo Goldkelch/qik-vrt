@@ -97,6 +97,19 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertIn('report["state"] = "BLOCK"', source)
         self.assertNotIn("shell=True", source)
 
+    def test_ci_fetches_history_required_by_handoff_source_evidence(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "qikvrt_ci.yml"
+        ).read_text(encoding="utf-8")
+        checkout = (
+            "      - uses: "
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 "
+            "# v7.0.1\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+        )
+        self.assertIn(checkout, workflow)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
