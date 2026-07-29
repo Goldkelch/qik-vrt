@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import pathlib
 import re
+import sys
 from typing import Any, Mapping
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -30,21 +32,37 @@ OWNER_PACKAGE = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union/c
 OWNER_RECEIPT = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/corrected-candidate/SUBJECT-43c59da1cfd26267/OWNER_RETURN_RECEIPT.json"
 WORK_UNIT = ROOT / "work-units/CREATE_CORRECTED_CANDIDATE_FOR_BATCH_002.json"
 
-SOURCE_FILES = {
-    ROOT / "publications/ontology-des-unterschieds-reverse-engineering/META_REVIEW.md":
+FROZEN_PUBLIC_FILES = {
+    "META_REVIEW.md":
         "855687ec791c5d054ea235ad0388217954fdc0dc2d3e053684820a46289ac629",
-    ROOT / "publications/ontology-des-unterschieds-reverse-engineering/ORIGINAL_ARTICLE.md":
+    "ORIGINAL_ARTICLE.md":
         "0cc8077b032d805406f5cafe599dfa91f90e28a5bfa68292aaf4aaa232058589",
-    ROOT / "publications/ontology-des-unterschieds-reverse-engineering/PUBLICATION.json":
+    "PUBLICATION.json":
         "a58c0f7fbe5ef0bf0e3fca1bcd379fedcf99e1a0b6bdf507d48682d50ac703dc",
-    ROOT / "publications/ontology-des-unterschieds-reverse-engineering/README.md":
+    "README.md":
         "ed923d53022888f67ac49da271ae12bdaf9cf725b3986699b075a42cba0bae15",
+}
+REPOSITORY_SOURCE_FILES = {
+    "META_REVIEW.md":
+        "855687ec791c5d054ea235ad0388217954fdc0dc2d3e053684820a46289ac629",
+    "ORIGINAL_ARTICLE.md":
+        "0cc8077b032d805406f5cafe599dfa91f90e28a5bfa68292aaf4aaa232058589",
+    "PUBLICATION.json":
+        "adfcc0457baad9c120c054aa5acea3c575eaba135597a4002ab26eb2d92c6c27",
+    "README.md":
+        "ed923d53022888f67ac49da271ae12bdaf9cf725b3986699b075a42cba0bae15",
+}
+SOURCE_FILES = {
+    ROOT / "publications/ontology-des-unterschieds-reverse-engineering" / name:
+        digest
+    for name, digest in REPOSITORY_SOURCE_FILES.items()
 }
 
 EXPECTED_OVERCLAIM_IDS = (
     "21582781-META-REVIEW-md-0002",
     "21582781-ORIGINAL-ARTICLE-md-0001",
     "21582781-ORIGINAL-ARTICLE-md-0067",
+    "21582781-ORIGINAL-ARTICLE-md-0211",
 )
 OVERCLAIM = re.compile(
     r"\b(alles|allumfassend|absolut|universal(?:e|er|es)?|"
@@ -80,7 +98,7 @@ def verify_source_files() -> None:
             fail(f"source file missing: {path.relative_to(ROOT)}")
         actual = sha256_bytes(path.read_bytes())
         if actual != expected:
-            fail(f"frozen source drift: {path.relative_to(ROOT)}")
+            fail(f"repository source drift: {path.relative_to(ROOT)}")
 
 
 def detected_overclaims(matrix: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -174,6 +192,15 @@ def verify_candidate(
         fail("candidate subject mismatch")
     if source.get("record_id") != RECORD_ID or source.get("doi") != DOI:
         fail("candidate record/DOI mismatch")
+    if source.get("frozen_public_files") != FROZEN_PUBLIC_FILES:
+        fail("frozen public-file binding mismatch")
+    if source.get("repository_source_files") != REPOSITORY_SOURCE_FILES:
+        fail("repository source-file binding mismatch")
+    publication_source = publication_correction.get("source", {})
+    if publication_source.get("frozen_public_files") != FROZEN_PUBLIC_FILES:
+        fail("publication frozen-file binding mismatch")
+    if publication_source.get("repository_source_files") != REPOSITORY_SOURCE_FILES:
+        fail("publication repository-file binding mismatch")
 
     detected = detected_overclaims(matrix)
     if tuple(row["claim_id"] for row in detected) != EXPECTED_OVERCLAIM_IDS:
@@ -287,7 +314,8 @@ def verify_owner_receipt(
             fail(f"false owner-return completion claim: {key}")
 
 
-def verify() -> dict[str, Any]:
+def verify(root: pathlib.Path = ROOT) -> dict[str, Any]:
+    del root  # Paths are intentionally fixed to the repository root.
     verify_source_files()
     matrix = read_json(MATRIX)
     decisions = read_json(DECISIONS)
