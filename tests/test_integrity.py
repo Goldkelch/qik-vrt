@@ -180,11 +180,25 @@ class IntegrityGenerationTests(unittest.TestCase):
             capsule.capsule_sha256,
             "414ae95e9182db4fbd3d0658baea6b7aa10ea9d4d3f4b2190c11341095d0710f",
         )
-        self.assertTrue(
+        source_commit_is_local = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPOSITORY_ROOT),
+                "cat-file",
+                "-e",
+                f"{capsule.commit_sha1}^{{commit}}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode == 0
+        self.assertEqual(
             integrity.cross_check_portable_git_source_capsule(
                 REPOSITORY_ROOT,
                 capsule,
-            )
+            ),
+            source_commit_is_local,
         )
         evidence = integrity.portable_git_source_evidence(capsule)
         self.assertEqual(
@@ -335,7 +349,21 @@ class IntegrityGenerationTests(unittest.TestCase):
             REPOSITORY_ROOT,
             relative,
         )
-        with mock.patch.object(integrity, "_git", return_value=b"drift"):
+        locally_available = mock.Mock(
+            timed_out=False,
+            output_limit_exceeded=False,
+            returncode=0,
+            stderr="",
+            stdout="",
+        )
+        with (
+            mock.patch.object(
+                integrity,
+                "run_bounded",
+                return_value=locally_available,
+            ),
+            mock.patch.object(integrity, "_git", return_value=b"drift"),
+        ):
             with self.assertRaisesRegex(ValueError, "disagrees"):
                 integrity.cross_check_portable_git_source_capsule(
                     REPOSITORY_ROOT,
