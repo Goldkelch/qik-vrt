@@ -14,7 +14,10 @@ import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-P = ROOT / "tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py"
+P = ROOT / (
+    "tools/"
+    "qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
+)
 S = importlib.util.spec_from_file_location("post_acceptance_status", P)
 m = importlib.util.module_from_spec(S)
 assert S.loader is not None
@@ -105,10 +108,16 @@ class T(unittest.TestCase):
             "qikvrt-zenodo-canonical-union-2026-07-28-v1"
         ]
         batch = corpus["batch_002"]
+        later = batch["post_acceptance"]
+        self.assertEqual(batch["state"], "TERMINALLY_DISPOSITIONED")
         self.assertEqual(
-            batch["state"],
-            "CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND",
+            batch["evidence"],
+            {
+                "path": m.TERMINAL_RECEIPT_REL,
+                "sha256": m.TERMINAL_RECEIPT_SHA256,
+            },
         )
+        self.assertEqual(later["state"], m.POST_ACCEPTANCE_STATE)
         for key in (
             "owner_return_complete",
             "owner_acceptance_recorded",
@@ -117,7 +126,7 @@ class T(unittest.TestCase):
             "mirror_promotion_complete",
             "reciprocal_equality_receipt_complete",
         ):
-            self.assertIs(batch[key], True, key)
+            self.assertIs(later[key], True, key)
         self.assertEqual(
             corpus["next_action"],
             "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
@@ -202,7 +211,7 @@ class T(unittest.TestCase):
         self.assertTrue(set(durable["required"]).issubset(self.progress))
         self.assertEqual(
             self.progress["projection_owner"]["tool"],
-            "tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py",
+            m.TOOL_REL,
         )
         effects = self.progress["repository_effects"]
         self.assertTrue(
