@@ -40,6 +40,12 @@ class DenkMengenlehreContractTests(unittest.TestCase):
         self.assertFalse(model.conjunctive_batch_pass(gates))
         self.assertFalse(model.conjunctive_batch_pass(gates[:5]))
 
+    def test_exact_checkout_accepts_detached_head_but_not_dirty_bytes(self) -> None:
+        commit = "1" * 40
+        self.assertTrue(model.exact_checkout_bound(commit, ""))
+        self.assertFalse(model.exact_checkout_bound(commit, " M file"))
+        self.assertFalse(model.exact_checkout_bound("HEAD", ""))
+
     def test_empty_set_is_initial_state_not_mutated_container(self) -> None:
         set_model = self.policy["set_model"]
         self.assertEqual(set_model["initial_evidence"], [])

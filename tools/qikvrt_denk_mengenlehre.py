@@ -352,6 +352,12 @@ def conjunctive_batch_pass(gates: list[Mapping[str, Any]]) -> bool:
     return observed == expected and all(gate.get("pass") is True for gate in gates)
 
 
+def exact_checkout_bound(commit: str, worktree_status: str) -> bool:
+    """Bind an exact clean commit without requiring a named local branch."""
+
+    return bool(SHA1_RE.fullmatch(commit) and not worktree_status)
+
+
 def build_report() -> dict[str, Any]:
     policy = _load_policy()
     gate_ids = _gate_ids(policy)
@@ -527,11 +533,7 @@ def build_report() -> dict[str, Any]:
         "--porcelain=v1",
         "--untracked-files=all",
     )
-    exact_checkout = bool(
-        SHA1_RE.fullmatch(commit)
-        and ref_name != "HEAD"
-        and not worktree_status
-    )
+    exact_checkout = exact_checkout_bound(commit, worktree_status)
     prerequisite_pass = all(gate["pass"] for gate in (g1, g2, g3, g4, g5))
     g6_pass = bool(prerequisite_pass and integrity_ok and exact_checkout)
     g6 = _gate(
