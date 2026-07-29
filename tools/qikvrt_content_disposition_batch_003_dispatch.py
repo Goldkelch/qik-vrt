@@ -93,7 +93,6 @@ EXPECTED_SOURCE_BLOBS = {
     POST: "106dcab562f8c0d9d0295b103b40275b34fcbb1b",
     PROOF_ENVELOPE: "2ccc06b2205106eb1cd65b96161321c4df3bbc5c",
     HISTORICAL_RECEIPT: "83c80c53d330eb929defb3739ecc9184e6754639",
-    LIVE_INDEX: "266306879c512de97869175afe31fc0c6f549c54",
 }
 
 ACTIVE_SUBJECT_IDS = (
@@ -119,6 +118,45 @@ PUBLIC_INDEX = {
     "sha256": "47c5d7107098c0527c80aa0d65deeeb6a15ce1496588fda3fda087d4d18d5ff4",
 }
 
+LIVE_INDEX_BASE_ENTRY_COUNT = 4
+LIVE_INDEX_BASE_PREFIX_SHA256 = (
+    "724a6c7c20f5c5e404fac69a7fabfef8f299e92e8a43a192ecaf1f9477c0467b"
+)
+LIVE_INDEX_BASE_UPDATED_AT = "2026-07-29T22:08:06Z"
+LIVE_INDEX_LICENSE = {
+    "classification": "machine_readable_equality_evidence_index",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann",
+}
+LIVE_INDEX_MANIFEST_INTEGRATION = {
+    "direct_generated_manifest_mutation": False,
+    "method": (
+        "The deterministic integrity generator includes this index and every "
+        "referenced receipt as immutable files in REPOSITORY_FILE_MANIFEST.json."
+    ),
+}
+LIVE_INDEX_KEYS = {
+    "_license",
+    "equality_receipts",
+    "manifest_integration",
+    "schema",
+    "updated_at",
+}
+LIVE_INDEX_ENTRY_KEYS = {
+    "authority",
+    "file_sha256",
+    "git_blob_sha1",
+    "mirror",
+    "path",
+    "receipt_id",
+    "scope",
+    "source_receipt_payload_sha256",
+    "state",
+}
+LIVE_INDEX_SIDE_KEYS = {"main", "pull_request", "repository"}
+
 
 def git_blob_sha1(data: bytes) -> str:
     framed = f"blob {len(data)}\0".encode("ascii") + data
@@ -133,6 +171,128 @@ def md5_bytes(data: bytes) -> str:
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
+def canonical_json_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def is_hex(value: Any, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def validate_live_index(index: Mapping[str, Any] | None = None) -> None:
+    if index is None:
+        index = read_json(LIVE_INDEX)
+    if set(index) != LIVE_INDEX_KEYS:
+        fail("live equality-receipt index key set drift")
+    if index.get("_license") != LIVE_INDEX_LICENSE:
+        fail("live equality-receipt index license drift")
+    if index.get("schema") != "qikvrt_equality_receipt_index_v1":
+        fail("live equality-receipt index schema drift")
+    if index.get("manifest_integration") != LIVE_INDEX_MANIFEST_INTEGRATION:
+        fail("live equality-receipt index manifest-integration drift")
+
+    updated_at = index.get("updated_at")
+    if (
+        not isinstance(updated_at, str)
+        or not updated_at.endswith("Z")
+        or updated_at < LIVE_INDEX_BASE_UPDATED_AT
+    ):
+        fail("live equality-receipt index timestamp drift")
+
+    rows = index.get("equality_receipts")
+    if not isinstance(rows, list) or len(rows) < LIVE_INDEX_BASE_ENTRY_COUNT:
+        fail("live equality-receipt index history was truncated")
+    if (
+        sha256_bytes(
+            canonical_json_bytes(rows[:LIVE_INDEX_BASE_ENTRY_COUNT])
+        )
+        != LIVE_INDEX_BASE_PREFIX_SHA256
+    ):
+        fail("live equality-receipt index historical prefix drift")
+    if len(rows) == LIVE_INDEX_BASE_ENTRY_COUNT:
+        if updated_at != LIVE_INDEX_BASE_UPDATED_AT:
+            fail("unchanged live equality-receipt index timestamp drift")
+    elif updated_at <= LIVE_INDEX_BASE_UPDATED_AT:
+        fail("appended live equality-receipt index lacks a later timestamp")
+
+    receipt_ids: set[str] = set()
+    paths: set[str] = set()
+    for offset, row in enumerate(rows):
+        if not isinstance(row, Mapping) or set(row) != LIVE_INDEX_ENTRY_KEYS:
+            fail(f"live equality-receipt index entry key drift: {offset}")
+        authority = row.get("authority")
+        mirror = row.get("mirror")
+        if (
+            not isinstance(authority, Mapping)
+            or set(authority) != LIVE_INDEX_SIDE_KEYS
+            or not isinstance(mirror, Mapping)
+            or set(mirror) != LIVE_INDEX_SIDE_KEYS
+        ):
+            fail(f"live equality-receipt index side binding drift: {offset}")
+        if (
+            authority.get("repository") != "Goldkelch/qik-vrt"
+            or mirror.get("repository") != "ingolf-lohmann/qik-vrt"
+            or not is_hex(authority.get("main"), 40)
+            or not is_hex(mirror.get("main"), 40)
+            or isinstance(authority.get("pull_request"), bool)
+            or not isinstance(authority.get("pull_request"), int)
+            or authority.get("pull_request", 0) <= 0
+            or isinstance(mirror.get("pull_request"), bool)
+            or not isinstance(mirror.get("pull_request"), int)
+            or mirror.get("pull_request", 0) <= 0
+        ):
+            fail(f"live equality-receipt index repository binding drift: {offset}")
+
+        receipt_id = row.get("receipt_id")
+        scope = row.get("scope")
+        relative = row.get("path")
+        if (
+            not isinstance(receipt_id, str)
+            or not receipt_id
+            or not isinstance(scope, str)
+            or not scope
+            or not isinstance(relative, str)
+            or not relative
+            or row.get("state") != "equality_verified_for_scoped_promotion"
+            or not is_hex(row.get("file_sha256"), 64)
+            or not is_hex(row.get("git_blob_sha1"), 40)
+            or not is_hex(row.get("source_receipt_payload_sha256"), 64)
+        ):
+            fail(f"live equality-receipt index identity drift: {offset}")
+        if receipt_id in receipt_ids or relative in paths:
+            fail(f"live equality-receipt index duplicate entry: {offset}")
+        receipt_ids.add(receipt_id)
+        paths.add(relative)
+
+        pure = pathlib.PurePosixPath(relative)
+        if (
+            pure.is_absolute()
+            or any(part in {"", ".", ".."} for part in pure.parts)
+            or pure.parts[:2] != ("evidence", "receipts")
+            or pure.name == "index.json"
+            or pure.suffix != ".json"
+        ):
+            fail(f"unsafe live equality-receipt index path: {offset}")
+        receipt_path = ROOT.joinpath(*pure.parts)
+        if not receipt_path.is_file() or receipt_path.is_symlink():
+            fail(f"live equality-receipt index target missing: {relative}")
+        raw = receipt_path.read_bytes()
+        if (
+            sha256_bytes(raw) != row.get("file_sha256")
+            or git_blob_sha1(raw) != row.get("git_blob_sha1")
+        ):
+            fail(f"live equality-receipt index target identity drift: {relative}")
+
+
 def validate_source_blobs() -> None:
     for path, expected in EXPECTED_SOURCE_BLOBS.items():
         if not path.is_file():
@@ -140,6 +300,7 @@ def validate_source_blobs() -> None:
         actual = git_blob_sha1(path.read_bytes())
         if actual != expected:
             fail(f"dispatch source blob drift: {path.relative_to(ROOT)}")
+    validate_live_index()
 
 
 def validate_queue(queue: Mapping[str, Any]) -> None:
