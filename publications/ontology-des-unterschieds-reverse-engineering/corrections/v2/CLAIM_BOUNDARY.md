@@ -22,14 +22,19 @@ candidate. The correction is additive and versioned.
 ## Bound overclaim findings
 
 The retrospective claim matrix detected evidence-overreach because the frozen
-record contains the expression *universaler Reverse-Engineering-Mechanismus*
-without a filename-level boundary artifact recognized by the deterministic
+record contains boundary-sensitive expressions recognized by the deterministic
 Batch-002 classifier. The correction binds these exact extracted claims:
 
 1. `21582781-META-REVIEW-md-0002` — referential use of the article title.
 2. `21582781-ORIGINAL-ARTICLE-md-0001` — the article title.
 3. `21582781-ORIGINAL-ARTICLE-md-0067` — “Ein universaler
    Reverse-Engineering-Mechanismus muss nicht jedes Ergebnis erraten.”
+4. `21582781-ORIGINAL-ARTICLE-md-0211` — “Alles Erkennbare beginnt damit,
+   dass etwas nicht dasselbe ist.”
+
+The fourth statement is read as a scope-bounded methodological premise about
+recognition in this model, not as an empirically established universal law over
+all possible cognition or reality.
 
 ## Corrected scientific reading
 
