@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,15 +86,28 @@ def main() -> None:
         assert digest == row["claim_matrix_sha256"]
 
     assert queue["completion_claims"]["first_batch_executed"] is True
-    assert queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-002"
-    assert queue["active_batch"]["state"] == "READY"
-    assert queue["remaining_subject_count"] == 7
-    assert queue["next_deterministic_effect"] == "EXECUTE_CONTENT_DISPOSITION_BATCH_002"
+    if queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-002":
+        assert queue["active_batch"]["state"] == "READY"
+        assert queue["remaining_subject_count"] == 7
+        assert queue["next_deterministic_effect"] == "EXECUTE_CONTENT_DISPOSITION_BATCH_002"
+    else:
+        assert queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-003"
+        assert queue["active_batch"]["state"] == "READY"
+        assert queue["remaining_subject_count"] == 1
+        assert (
+            queue["next_deterministic_effect"]
+            == "CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002"
+        )
     assert union_receipt["completion_claims"]["content_disposition_batch_001_completed"] is True
     assert union_receipt["completion_claims"]["all_content_claims_dispositioned"] is False
     assert union_receipt["completion_claims"]["pass"] is False
     assert work_unit["work_unit_id"] == "EXECUTE-CONTENT-DISPOSITION-BATCH-001-20260728"
     assert work_unit["pass"] is False
+    subprocess.run(
+        [sys.executable,"-B","tools/qikvrt_content_disposition_batch_001.py","--check"],
+        cwd=ROOT,
+        check=True,
+    )
     print("test_content_disposition_batch_001: PASS")
 
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse, hashlib, json, re, subprocess, sys
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 FORM = ROOT / "formalization/QIKVRT_Formalization_v2.0"
@@ -19,12 +19,14 @@ FREADME = FORM / "README.md"
 PLAN = FORM / "COMPLETION_PLAN.md"
 FSTATUS = FORM / "GLOBAL_COMPLETION_STATUS.json"
 README, STATUS, AI = ROOT / "README.md", ROOT / "STATUS.md", ROOT / "AI_PROGRESS.json"
+BATCH_002_RECEIPT = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json"
 SCOPE = ROOT / "GLOBAL_COMPLETION_SCOPE.json"
 INVENTORY = ROOT / "GLOBAL_CLAIM_INVENTORY.json"
 TRACE = ROOT / "GLOBAL_SOURCE_CLAIM_DISPOSITION_TRACEABILITY.json"
 KERNEL = ROOT / "GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json"
 FINAL_INPUT = ROOT / "GLOBAL_COMPLETION_FINALIZATION_INPUT.json"
 FINAL_RECEIPT = ROOT / "GLOBAL_COMPLETION_RECEIPT.json"
+GLOBAL_RUN_EVIDENCE = ROOT / "evidence/receipts/global-completion-exact-head-runs-2026-07-29.json"
 
 SCOPE_ID = "qikvrt-global-claim-scope-v1"
 TAG = "v2026.07.28-authority-mirror-zenodo-equality-1.0.0"
@@ -228,10 +230,200 @@ def ai(final: bool,inv: dict[str,Any])->dict[str,Any]:
     return {"schema":"qikvrt-ai-progress/2.0","operation_id":"global-claim-completion-2026-07-28","scope_id":SCOPE_ID,"repository":AUTH_REPO,"state":"COMPLETED" if final else "RUNNING","percent":100 if final else 80,"current_action":"No remaining action inside the bounded global completion transaction" if final else pending[0],"completed_steps":complete,"pending_steps":pending,"claims":{"PASS":final,"FINAL_PASS":final,"EFFECT_ACK_DONE":final,"fully_kernel_verified_overall_completion":final,"complete_claim_inventory":True,"complete_lean_kernel_coverage":final,"complete_source_claim_proof_traceability":final,"scope_qualified":True},"counts":inv["counts"],"supersedes":{"schema":"qikvrt-ai-progress/1.0","source_git_blob_sha1":"a69cfafbafaff69373fe2fc8933de52512381990","reason":"stale branch-specific 87-percent projection replaced by global scoped status"}}
 def fstatus(final: bool,inv: dict[str,Any])->dict[str,Any]: return {"_license":LIC,"schema":"qikvrt_formalization_global_completion_status_v1","scope_id":SCOPE_ID,"state":"FINAL_PASS" if final else "CANDIDATE_MATERIALIZED","manuscript":{"formal_environments":"40/40","definitions":"20/20","theorem_like_environments":"20/20","strong_lean_bindings":42,"conditional_bindings":6,"pending_formal_nodes":0},"global_inventory":inv["counts"],"proof_map":"MANUSCRIPT_PROOF_MAP.md","verification_report":"VERIFICATION_REPORT.md","global_inventory_path":rel(INVENTORY),"global_receipt_path":rel(FINAL_RECEIPT) if final else None}
 
+def validate_terminal_batch_002_receipt(receipt:Mapping[str,Any]) -> None:
+    completion=receipt.get("completion_claims")
+    validation=receipt.get("validation")
+    if (
+        receipt.get("schema")!="qikvrt_content_disposition_batch_receipt_v2"
+        or receipt.get("batch_id")!="CONTENT-DISPOSITION-BATCH-002"
+        or receipt.get("state")!="TERMINALLY_DISPOSITIONED"
+        or receipt.get("subject_count")!=6
+        or receipt.get("claim_count")!=1489
+        or receipt.get("content_change_required_count")!=1
+        or receipt.get("next_deterministic_effect")!="CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002"
+        or not isinstance(receipt.get("union_id"),str)
+        or not isinstance(completion,Mapping)
+        or completion.get("batch_002_executed") is not True
+        or completion.get("batch_002_terminal_disposition_complete") is not True
+        or any(
+            completion.get(key) is not False
+            for key in (
+                "all_content_claims_dispositioned",
+                "proof_corpus_published_on_zenodo",
+                "pass","final_pass","effect_ack_done",
+            )
+        )
+        or not isinstance(validation,Mapping)
+        or validation.get("no_false_completion") is not True
+    ):
+        raise ValueError("terminal Batch-002 ownership receipt contract mismatch")
+
+def terminal_batch_002_receipt() -> dict[str,Any] | None:
+    if not BATCH_002_RECEIPT.exists():
+        return None
+    receipt=load(BATCH_002_RECEIPT)
+    validate_terminal_batch_002_receipt(receipt)
+    return receipt
+
+def validate_root_progress_owner(
+    progress:Mapping[str,Any],
+    global_receipt:Mapping[str,Any],
+    batch_002_receipt:Mapping[str,Any] | None=None,
+) -> None:
+    if batch_002_receipt is None:
+        loaded=terminal_batch_002_receipt()
+        if loaded is None:
+            raise ValueError("root AI progress owner requires terminal Batch-002 evidence")
+        batch_002_receipt=loaded
+    else:
+        validate_terminal_batch_002_receipt(batch_002_receipt)
+    if progress.get("schema")!="qikvrt-ai-progress/3.0":
+        raise ValueError("root AI progress must use the durable v3 ownership contract")
+    if not isinstance(progress.get("operation_id"),str) or not progress["operation_id"]:
+        raise ValueError("root AI progress operation owner is missing")
+    owner=progress.get("projection_owner")
+    if not isinstance(owner,Mapping):
+        raise ValueError("root AI progress projection owner is missing")
+    tool=owner.get("tool")
+    check_command=owner.get("check_command")
+    if (
+        not isinstance(tool,str)
+        or not tool.startswith("tools/")
+        or ".." in Path(tool).parts
+        or not (ROOT/tool).is_file()
+        or not isinstance(check_command,str)
+        or tool not in check_command
+        or "--check" not in check_command
+    ):
+        raise ValueError("root AI progress projection owner is not executable or checkable")
+    scopes=progress.get("scopes")
+    global_scope=scopes.get(SCOPE_ID) if isinstance(scopes,Mapping) else None
+    if not isinstance(global_scope,Mapping):
+        raise ValueError("root AI progress lost the bounded global completion scope")
+    claims=global_scope.get("claims")
+    if (
+        global_scope.get("state")!="FINAL_PASS"
+        or global_scope.get("effect_state")!="EFFECT_ACK_DONE"
+        or global_scope.get("evidence")!=rel(FINAL_RECEIPT)
+        or not isinstance(claims,Mapping)
+        or any(claims.get(key) is not True for key in ("PASS","FINAL_PASS","EFFECT_ACK_DONE"))
+    ):
+        raise ValueError("root AI progress global scope no longer matches its terminal semantics")
+    evidence=global_scope.get("pass_evidence")
+    expected_pair=global_receipt.get("candidate_pair")
+    expected_checks=global_receipt.get("exact_head_gates")
+    expected_equality=global_receipt.get("authority_mirror_equality_receipt_sha256")
+    if not isinstance(evidence,Mapping):
+        raise ValueError("root AI progress global scope lacks structured PASS evidence")
+    evidence_file=evidence.get("evidence")
+    evidence_checks=evidence.get("checks")
+    exact_runs=(
+        evidence_checks.get("exact_head_runs")
+        if isinstance(evidence_checks,Mapping) else None
+    )
+    if (
+        not isinstance(evidence_checks,Mapping)
+        or evidence_checks.get("receipt_gate_matrix")!=expected_checks
+        or not isinstance(evidence_file,Mapping)
+        or evidence_file.get("path")!=rel(FINAL_RECEIPT)
+        or evidence_file.get("sha256")!=sha(FINAL_RECEIPT.read_bytes())
+        or evidence_file.get("finalization_input_path")!=rel(FINAL_INPUT)
+        or evidence_file.get("finalization_input_sha256")!=sha(FINAL_INPUT.read_bytes())
+        or evidence_file.get("exact_head_run_evidence_path")!=rel(GLOBAL_RUN_EVIDENCE)
+        or evidence_file.get("exact_head_run_evidence_sha256")!=sha(GLOBAL_RUN_EVIDENCE.read_bytes())
+        or evidence_file.get("candidate_pair")!=expected_pair
+        or evidence_file.get("authority_mirror_equality_receipt_sha256")!=expected_equality
+        or evidence_file.get("equality_payload_present_in_repository") is not False
+    ):
+        raise ValueError("root AI progress global PASS evidence drift")
+    required_gates={
+        "global_completion","manuscript_proof","mandatory_repository_gates",
+    }
+    expected_run_ids={
+        "authority":(30320366228,90154785419),
+        "mirror":(30321259580,90157437963),
+    }
+    if (
+        not isinstance(exact_runs,Mapping)
+        or set(exact_runs)!=set(expected_run_ids)
+        or any(
+            not isinstance(exact_runs.get(side),Mapping)
+            or (
+                exact_runs[side].get("run_id"),
+                exact_runs[side].get("job_id"),
+            )!=expected_run_ids[side]
+            or not isinstance(exact_runs[side].get("gate_steps"),Mapping)
+            or set(exact_runs[side]["gate_steps"])!=required_gates
+            or any(
+                not isinstance(step,Mapping)
+                or step.get("conclusion")!="success"
+                for step in exact_runs[side]["gate_steps"].values()
+            )
+            for side in expected_run_ids
+        )
+    ):
+        raise ValueError("root AI progress global exact-head run evidence drift")
+    repositories=evidence.get("repository")
+    expected_sources={
+        AUTH_REPO:expected_pair.get("authority_exact_head") if isinstance(expected_pair,Mapping) else None,
+        MIRROR_REPO:expected_pair.get("mirror_exact_head") if isinstance(expected_pair,Mapping) else None,
+    }
+    expected_refs={
+        AUTH_REPO:"actions/runs/30320366228",
+        MIRROR_REPO:"actions/runs/30321259580",
+    }
+    if (
+        not isinstance(repositories,list)
+        or len(repositories)!=2
+        or any(not isinstance(item,Mapping) for item in repositories)
+        or {
+            item.get("repository"):item.get("source_sha")
+            for item in repositories
+            if isinstance(item,Mapping)
+        }!=expected_sources
+        or any(
+            item.get("ref_name")!=expected_refs.get(item.get("repository"))
+            for item in repositories
+            if isinstance(item,Mapping)
+        )
+    ):
+        raise ValueError("root AI progress global repository/ref/SHA binding drift")
+    corpus_id=str(batch_002_receipt["union_id"])
+    corpus_scope=scopes.get(corpus_id) if isinstance(scopes,Mapping) else None
+    if not isinstance(corpus_scope,Mapping):
+        raise ValueError("root AI progress lost the terminal Batch-002 corpus scope")
+    corpus_counts=corpus_scope.get("counts")
+    batch_002=corpus_scope.get("batch_002")
+    batch_evidence=batch_002.get("evidence") if isinstance(batch_002,Mapping) else None
+    if (
+        not isinstance(corpus_counts,Mapping)
+        or corpus_counts.get("subjects")!=19
+        or not isinstance(corpus_counts.get("dispositioned_subjects"),int)
+        or corpus_counts["dispositioned_subjects"]<12
+        or not isinstance(batch_002,Mapping)
+        or batch_002.get("state")!="TERMINALLY_DISPOSITIONED"
+        or batch_002.get("subjects")!=batch_002_receipt["subject_count"]
+        or batch_002.get("claims")!=batch_002_receipt["claim_count"]
+        or batch_002.get("content_change_required_count")!=batch_002_receipt["content_change_required_count"]
+        or not isinstance(batch_evidence,Mapping)
+        or batch_evidence.get("path")!=rel(BATCH_002_RECEIPT)
+        or batch_evidence.get("sha256")!=sha(BATCH_002_RECEIPT.read_bytes())
+    ):
+        raise ValueError("root AI progress terminal Batch-002 scope evidence drift")
 
 def outputs()->tuple[dict[Path,str],bool]:
     inv,byid=build_inventory(); ker=build_kernel(inv,byid); tr=build_trace(inv,ker); fin=validate_final(load(FINAL_INPUT)) if FINAL_INPUT.exists() else None; final=fin is not None
-    out={SCOPE:pretty(scope()),INVENTORY:pretty(inv),TRACE:pretty(tr),KERNEL:pretty(ker),AI:pretty(ai(final,inv)),FSTATUS:pretty(fstatus(final,inv))}
+    out={SCOPE:pretty(scope()),INVENTORY:pretty(inv),TRACE:pretty(tr),KERNEL:pretty(ker),FSTATUS:pretty(fstatus(final,inv))}
+    # The terminal Batch-002 receipt cedes root projection to an explicit,
+    # checkable owner. The owner is intentionally generic so a later workflow
+    # can supersede it while retaining the separately bounded global scope.
+    batch_002=terminal_batch_002_receipt()
+    if batch_002 is None:
+        out[AI]=pretty(ai(final,inv))
+    else:
+        if not final or not FINAL_RECEIPT.exists():
+            raise ValueError("terminal Batch-002 ownership requires the bounded global completion receipt")
+        validate_root_progress_owner(load(AI),load(FINAL_RECEIPT),batch_002)
     if fin: out[FINAL_RECEIPT]=pretty(completion_receipt(fin,inv,tr,ker))
     out[README]=marked(README.read_text(encoding="utf-8"),"global-completion",root_block(final,inv),"![QIK-VRT — five-state auditable effect release](docs/assets/qikvrt-social-preview.png)")
     fr=FREADME.read_text(encoding="utf-8").replace("# QIK-VRT manuscript formalization v2.0 (work in progress)","# QIK-VRT manuscript formalization v2.0",1)

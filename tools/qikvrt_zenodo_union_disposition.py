@@ -21,6 +21,7 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
@@ -137,6 +138,79 @@ def write_text(path: pathlib.Path, text: str, *, check: bool) -> None:
 
 def write_json(path: pathlib.Path, value: Any, *, check: bool) -> None:
     write_text(path, pretty_text(value), check=check)
+
+def downstream_projection_active(
+    expected_index: Mapping[str, Any],
+    expected_queue: Mapping[str, Any],
+    expected_receipt: Mapping[str, Any],
+) -> bool:
+    if not all(
+        path.is_file()
+        for path in (DISPOSITION_INDEX_PATH, DISPOSITION_QUEUE_PATH, RECEIPT_PATH)
+    ):
+        return False
+    current_index=read_json(DISPOSITION_INDEX_PATH)
+    current_queue=read_json(DISPOSITION_QUEUE_PATH)
+    current_receipt=read_json(RECEIPT_PATH)
+    states=(
+        current_index.get("state"),
+        current_queue.get("state"),
+        current_receipt.get("state"),
+    )
+    initial_states=(
+        expected_index.get("state"),
+        expected_queue.get("state"),
+        expected_receipt.get("state"),
+    )
+    return states!=initial_states
+
+def validate_downstream_projection(
+    expected_index: Mapping[str, Any],
+    expected_queue: Mapping[str, Any],
+    expected_receipt: Mapping[str, Any],
+) -> None:
+    current_index=read_json(DISPOSITION_INDEX_PATH)
+    current_queue=read_json(DISPOSITION_QUEUE_PATH)
+    current_receipt=read_json(RECEIPT_PATH)
+    for current,name,schema in (
+        (current_index,"index",SCHEMA_INDEX),
+        (current_queue,"queue",SCHEMA_QUEUE),
+        (current_receipt,"receipt",SCHEMA_RECEIPT),
+    ):
+        if current.get("schema")!=schema or current.get("union_id")!=UNION_ID:
+            fail(f"downstream {name} identity drift")
+    immutable_receipt_keys=(
+        "work_unit_id","observed_at","source_binding_sha256",
+        "canonical_union_content_sha256","record_count",
+        "observed_record_count","reconciled_record_count",
+        "claim_subject_count","first_batch_subject_count",
+        "concept_line_count","payload_cluster_count",
+        "duplicate_payload_cluster_count","receipt_payload_sha256",
+    )
+    if any(
+        current_receipt.get(key)!=expected_receipt.get(key)
+        for key in immutable_receipt_keys
+    ):
+        fail("downstream receipt changed the canonical-union identity payload")
+    if current_index.get("record_count")!=expected_index.get("record_count"):
+        fail("downstream index record count drift")
+    if current_queue.get("schema")!=expected_queue.get("schema"):
+        fail("downstream queue schema drift")
+    try:
+        checked=subprocess.run(
+            [sys.executable,"-B","tools/ai_handoff.py"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            check=False,
+        )
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise UnionError(f"downstream projection check failed to execute: {exc}") from exc
+    if checked.returncode!=0:
+        detail=checked.stderr.strip() or checked.stdout.strip() or "no diagnostic"
+        fail(f"downstream projection is stale: {detail}")
 
 
 def positive_int(raw: Any, label: str) -> int:
@@ -731,14 +805,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     union, index, queue, receipt, report = build_outputs(args.observed_at)
     validate_outputs(union, index, queue, receipt)
     write_json(CANONICAL_UNION_PATH, union, check=args.check)
-    write_json(DISPOSITION_INDEX_PATH, index, check=args.check)
-    write_json(DISPOSITION_QUEUE_PATH, queue, check=args.check)
-    write_json(RECEIPT_PATH, receipt, check=args.check)
     write_text(REPORT_PATH, report, check=args.check)
+    downstream=downstream_projection_active(index,queue,receipt)
+    if downstream:
+        validate_downstream_projection(index,queue,receipt)
+    else:
+        write_json(DISPOSITION_INDEX_PATH, index, check=args.check)
+        write_json(DISPOSITION_QUEUE_PATH, queue, check=args.check)
+        write_json(RECEIPT_PATH, receipt, check=args.check)
     print(f"CANONICAL_UNION_RECORD_COUNT={union['record_count']}")
     print(f"CLAIM_SUBJECT_COUNT={index['claim_subject_count']}")
     print(f"FIRST_BATCH_SUBJECT_COUNT={queue['active_batch']['subject_count']}")
-    print(f"STATE={receipt['state']}")
+    if downstream:
+        print(f"GENERATOR_BASE_STATE={receipt['state']}")
+        print(f"STATE={read_json(RECEIPT_PATH)['state']}")
+    else:
+        print(f"STATE={receipt['state']}")
     return 0
 
 

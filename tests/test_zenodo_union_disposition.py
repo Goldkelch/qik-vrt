@@ -68,7 +68,6 @@ def main() -> int:
     )
 
     assert index["schema"] == "qikvrt_content_claim_disposition_index_v1"
-    assert index["state"] == "STARTED"
     assert index["record_count"] == 24
     assert len(index["records"]) == 24
     assert index["claim_subject_count"] <= 24
@@ -76,15 +75,8 @@ def main() -> int:
     assert index["completion_claims"]["all_content_claims_dispositioned"] is False
 
     assert queue["schema"] == "qikvrt_content_claim_disposition_queue_v1"
-    assert queue["state"] == "ACTIVE"
-    assert queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-001"
-    assert queue["active_batch"]["state"] == "READY"
-    assert 1 <= queue["active_batch"]["subject_count"] <= 6
-    assert queue["completion_claims"]["first_batch_executed"] is False
-    assert queue["next_deterministic_effect"] == "EXECUTE_CONTENT_DISPOSITION_BATCH_001"
 
     assert receipt["schema"] == "qikvrt_canonical_union_and_disposition_receipt_v1"
-    assert receipt["state"] == "CANONICAL_UNION_BUILT_CONTENT_DISPOSITION_STARTED"
     assert receipt["record_count"] == 24
     assert receipt["validation"]["authenticated_source_set_exact"] is True
     assert receipt["validation"]["reconciled_source_set_exact"] is True
@@ -97,6 +89,33 @@ def main() -> int:
     completion = receipt["completion_claims"]
     assert completion["canonical_union_built"] is True
     assert completion["content_claim_disposition_started"] is True
+    if receipt["state"] == "CANONICAL_UNION_BUILT_CONTENT_DISPOSITION_STARTED":
+        assert index["state"] == "STARTED"
+        assert queue["state"] == "ACTIVE"
+        assert queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-001"
+        assert queue["active_batch"]["state"] == "READY"
+        assert 1 <= queue["active_batch"]["subject_count"] <= 6
+        assert queue["completion_claims"]["first_batch_executed"] is False
+        assert queue["next_deterministic_effect"] == "EXECUTE_CONTENT_DISPOSITION_BATCH_001"
+    else:
+        assert receipt["state"] == "CONTENT_DISPOSITION_BATCH_002_TERMINALLY_DISPOSITIONED_CORRECTION_REQUIRED"
+        assert index["state"] == "BATCH_002_TERMINALLY_DISPOSITIONED_CORRECTION_REQUIRED_BATCH_003_READY"
+        assert queue["state"] == "BATCH_002_CORRECTION_REQUIRED_BATCH_003_READY"
+        assert sum(
+            row["claim_disposition_complete"] is True
+            for row in index["claim_subjects"]
+        ) == 12
+        assert queue["active_batch"]["batch_id"] == "CONTENT-DISPOSITION-BATCH-003"
+        assert queue["active_batch"]["state"] == "READY"
+        assert queue["active_batch"]["subject_count"] == 6
+        assert queue["remaining_subject_count"] == 1
+        assert (
+            queue["next_deterministic_effect"]
+            == "CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002"
+        )
+        assert receipt["status_projection_sha256"]
+        assert completion["content_disposition_batch_002_terminal_disposition_complete"] is True
+        assert completion["content_disposition_batch_002_correction_required"] is True
     for key in (
         "all_content_claims_dispositioned",
         "content_correction_review_complete",

@@ -94,6 +94,7 @@ class ZenodoCorpusProofTests(unittest.TestCase):
         self.assertEqual(corpus.classify_repository_ref("proof/CLAIM_MATRIX.json"), "CLAIM_DISPOSITION")
         self.assertEqual(corpus.classify_repository_ref("proof/KERNEL_RECEIPT.json"), "FORMAL_PROOF")
         self.assertEqual(corpus.classify_repository_ref("release/zenodo-publication.json"), "EVIDENCE")
+        self.assertEqual(corpus.classify_repository_ref("release/publish-request.json"), "OTHER")
         self.assertEqual(corpus.classify_repository_ref("docs/ARTICLE_DE.md"), "SOURCE_OR_CONTENT")
 
     def test_report_never_claims_all_natural_language_is_formally_proved(self) -> None:
