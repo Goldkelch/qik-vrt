@@ -10,24 +10,27 @@
     "Build the canonical 24-record Zenodo union with 19 byte-distinct claim subjects",
     "Terminally disposition Batch 001 with six subjects",
     "Terminally disposition Batch 002 with 6 subjects and 1489 claims",
-    "Stage Batch 003 deterministically with six subjects and one subject beyond the active batch"
+    "Stage Batch 003 deterministically with six subjects and one subject beyond the active batch",
+    "Create the required corrected Batch-002 candidate and return it to Ingolf Lohmann",
+    "Record Ingolf Lohmann's explicit ACCEPT decision for the exact corrected candidate",
+    "Promote the accepted corrected candidate through Authority PR #209 and Mirror PR #100",
+    "Persist the independently gated reciprocal equality receipt through Authority PR #213 and Mirror PR #101"
   ],
-  "current_action": "No live operation owns this stable handoff snapshot.",
+  "current_action": "No live operation owns this stable post-acceptance handoff snapshot.",
   "effect_state": "EFFECT_ACK_CONTINUE",
   "incomplete_scope_count": 1,
-  "next_action": "CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002",
+  "next_action": "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
   "operation_id": "zenodo-canonical-union-content-disposition-2026-07-28",
   "pending_steps": [
-    "Create the required corrected Batch-002 candidate and return it to the responsible owner",
-    "Terminally disposition the seven remaining Zenodo claim subjects",
+    "Terminally disposition the seven remaining Zenodo claim subjects beginning with Batch 003",
     "Build and verify the retrospective proof corpus before any publication effect",
-    "Bind any later Authority promotion, Mirror synchronization and symmetric-scope claim to fresh repository evidence"
+    "Require separate authorization and byte verification for every later Zenodo mutation"
   ],
   "percent": 63,
   "percent_scope": "qikvrt-zenodo-canonical-union-2026-07-28-v1",
   "projection_owner": {
-    "check_command": "python3 -B tools/qikvrt_content_disposition_batch_002_terminal.py --check-status-projection",
-    "tool": "tools/qikvrt_content_disposition_batch_002_terminal.py"
+    "check_command": "python3 -B tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py --check-status-projection",
+    "tool": "tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
   },
   "ref_name": "evidence/content-disposition-batch-002-terminal-20260728-v1",
   "repository": "Goldkelch/qik-vrt",
@@ -36,7 +39,7 @@
     "mirror_synchronization": "NOT_EVALUATED",
     "proof_corpus_publication": "NOT_EVALUATED",
     "reciprocal_equality_receipt": "NOT_EVALUATED",
-    "scope": "Not evaluated by this content-status projection; inspect fresh repository evidence."
+    "scope": "The compatibility fields remain NOT_EVALUATED; exact current Authority, Mirror and reciprocal-receipt evidence is bound inside the Zenodo corpus scope by release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json."
   },
   "schema": "qikvrt-ai-progress/3.1",
   "scopes": {
@@ -156,16 +159,52 @@
         "subjects": 6
       },
       "batch_002": {
+        "authority_promotion_complete": true,
         "claims": 1489,
         "content_change_required_count": 1,
+        "content_correction_review_complete": true,
+        "corrected_candidate_count": 1,
+        "corrected_candidate_required_count": 1,
         "evidence": {
           "path": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json",
           "sha256": "e656e54e5d15733a3930a280e5933f36c6c91e5b1827534d662983cb640bcadc"
         },
+        "mirror_promotion_complete": true,
+        "owner_acceptance_recorded": true,
+        "owner_return_complete": true,
+        "post_acceptance": {
+          "authority_promotion_complete": true,
+          "content_correction_review_complete": true,
+          "corrected_candidate_count": 1,
+          "corrected_candidate_required_count": 1,
+          "evidence": {
+            "owner_acceptance": {
+              "git_blob_sha1": "afe07dcbecd285917533f284287e560eaf7e29f7",
+              "path": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/corrected-candidate/SUBJECT-43c59da1cfd26267/OWNER_ACCEPTANCE_RECEIPT.json",
+              "sha256": "2de79451450e42af5e2e33f892ea5fbaa1a69ca8683ce34e79f145352a06e23e"
+            },
+            "post_acceptance_projection": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json",
+            "reciprocal_equality": {
+              "git_blob_sha1": "fe9f2deac6eb935842829b21bd9625cb93a00269",
+              "path": "evidence/receipts/authority-mirror-equality-2026-07-29-batch002-corrected-pr209-pr100.json",
+              "sha256": "ba5267f60417f39ceb21efe271d191d0ba40d65dddbc6d17d47c72e672348658"
+            },
+            "terminal_disposition": {
+              "path": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json",
+              "sha256": "e656e54e5d15733a3930a280e5933f36c6c91e5b1827534d662983cb640bcadc"
+            }
+          },
+          "mirror_promotion_complete": true,
+          "owner_acceptance_recorded": true,
+          "owner_return_complete": true,
+          "reciprocal_equality_receipt_complete": true,
+          "state": "CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND"
+        },
+        "reciprocal_equality_receipt_complete": true,
         "state": "TERMINALLY_DISPOSITIONED",
         "subjects": 6
       },
-      "boundary": "Retrospective content-claim disposition only; publication, corpus PASS and owner-return completion remain unproved.",
+      "boundary": "Batch-002 correction creation, owner return, owner acceptance, Authority promotion, Mirror promotion and reciprocal equality are complete for the bound scope. Seven claim subjects, the retrospective proof corpus and any Zenodo mutation remain open.",
       "claims": {
         "EFFECT_ACK_DONE": false,
         "FINAL_PASS": false,
@@ -178,8 +217,8 @@
         "subjects": 19
       },
       "effect_state": "EFFECT_ACK_CONTINUE",
-      "evidence": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json",
-      "next_action": "CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002",
+      "evidence": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json",
+      "next_action": "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
       "percent": 63,
       "queued_after_active": 1,
       "state": "CONTINUE"
@@ -206,9 +245,9 @@
     "source_repository": "Goldkelch/qik-vrt",
     "verification_mode": "portable-git-object-closure"
   },
-  "source_semantics": "Projection input provenance; not a claim about the current remote head.",
+  "source_semantics": "Historical terminal-disposition source capsule preserved unchanged; the current post-acceptance state is an additive evidence overlay bound by release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json.",
   "source_sha": "4fd73232cc8d2189e14c950b376bb72ffcaf744e",
   "state": "IDLE",
-  "union_receipt_state": "CONTENT_DISPOSITION_BATCH_002_TERMINALLY_DISPOSITIONED_CORRECTION_REQUIRED",
-  "updated_at": "2026-07-29T08:27:51Z"
+  "union_receipt_state": "CONTENT_DISPOSITION_BATCH_002_CORRECTION_ACCEPTED_PROMOTED_RECIPROCALLY_BOUND_BATCH_003_READY",
+  "updated_at": "2026-07-29T22:16:38Z"
 }
