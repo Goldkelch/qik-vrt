@@ -11,9 +11,9 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 P = ROOT / "tools/qikvrt_content_disposition_batch_002_terminal.py"
-POST_P = (
-    ROOT
-    / "tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py"
+POST_P = ROOT / (
+    "tools/"
+    "qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
 )
 BASE = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union"
 OUT = BASE / "content-disposition-batch-002/terminal-disposition"
@@ -228,7 +228,7 @@ class T(unittest.TestCase):
         )
         self.assertEqual(
             self.progress["projection_owner"]["tool"],
-            "tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py",
+            post.TOOL_REL,
         )
         self.assertEqual(
             self.progress["next_action"],
@@ -237,10 +237,12 @@ class T(unittest.TestCase):
         corpus = self.progress["scopes"][
             "qikvrt-zenodo-canonical-union-2026-07-28-v1"
         ]
+        batch = corpus["batch_002"]
         self.assertEqual(corpus["counts"]["open_subjects"], 7)
+        self.assertEqual(batch["state"], "TERMINALLY_DISPOSITIONED")
         self.assertEqual(
-            corpus["batch_002"]["state"],
-            "CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND",
+            batch["post_acceptance"]["state"],
+            post.POST_ACCEPTANCE_STATE,
         )
         self.assertEqual(
             self.queue["next_deterministic_effect"],
