@@ -5,9 +5,11 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -172,7 +174,7 @@ class T(unittest.TestCase):
         p=self.progress
         required={"schema","operation_id","repository","ref_name","source_sha","state","percent","current_action","completed_steps","pending_steps","blockers","next_action","updated_at"}
         self.assertTrue(required.issubset(p))
-        self.assertEqual(p["schema"],"qikvrt-ai-progress/3.0")
+        self.assertEqual(p["schema"],"qikvrt-ai-progress/3.1")
         self.assertEqual(p["state"],"IDLE")
         self.assertEqual(p["effect_state"],"EFFECT_ACK_CONTINUE")
         self.assertEqual(p["next_action"],self.queue["next_deterministic_effect"])
@@ -187,6 +189,25 @@ class T(unittest.TestCase):
         self.assertNotIn("authority_pr",effects)
         self.assertTrue(all(value=="NOT_EVALUATED" for key,value in effects.items() if key!="scope"))
         self.assertEqual(p["source_evidence"],m.build_source_evidence())
+        self.assertEqual(
+            p["source_evidence"]["verification_mode"],
+            "portable-git-object-closure",
+        )
+        self.assertEqual(p["source_evidence"]["source_repository"],m.AUTH_REPO)
+        self.assertEqual(p["source_evidence"]["root_tree"],m.SOURCE_TREE)
+        capsule=m.source_capsule()
+        self.assertEqual(len(capsule.objects),13)
+        self.assertEqual(len(capsule.files),6)
+        self.assertEqual(sum(len(value) for value in capsule.files.values()),62594)
+        self.assertEqual(
+            p["source_evidence"]["capsule"],
+            {
+                "path":m.SOURCE_CAPSULE_RELATIVE,
+                "bytes":capsule.capsule_bytes,
+                "sha256":capsule.capsule_sha256,
+                "git_blob_sha1":capsule.capsule_git_blob_sha1,
+            },
+        )
         self.assertEqual(
             set(p["source_evidence"]["blobs"]),
             set(m.source_evidence_paths()),
@@ -209,6 +230,14 @@ class T(unittest.TestCase):
             m.validate_ai_progress(bad)
         bad=copy.deepcopy(self.progress)
         bad["source_evidence"]["blobs"][next(iter(bad["source_evidence"]["blobs"]))]="0"*40
+        with self.assertRaises(m.E):
+            m.validate_ai_progress(bad)
+        bad=copy.deepcopy(self.progress)
+        bad["source_evidence"]["capsule"]["sha256"]="0"*64
+        with self.assertRaises(m.E):
+            m.validate_ai_progress(bad)
+        bad=copy.deepcopy(self.progress)
+        bad["source_evidence"]["root_tree"]="0"*40
         with self.assertRaises(m.E):
             m.validate_ai_progress(bad)
         bad=copy.deepcopy(self.progress)
@@ -337,6 +366,27 @@ class T(unittest.TestCase):
             cwd=ROOT,
             check=True,
         )
+        with tempfile.TemporaryDirectory() as empty_objects:
+            environment=dict(os.environ)
+            environment.update({
+                "GIT_OBJECT_DIRECTORY":empty_objects,
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES":"",
+                "GIT_NO_LAZY_FETCH":"1",
+                "GIT_NO_REPLACE_OBJECTS":"1",
+                "GIT_TERMINAL_PROMPT":"0",
+            })
+            completed=subprocess.run(
+                [sys.executable,"-B",str(P),"--check-status-projection"],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+            )
+        self.assertEqual(completed.returncode,0,completed.stderr)
+        self.assertIn('"state": "PASS"',completed.stdout)
 
 
 if __name__=="__main__":

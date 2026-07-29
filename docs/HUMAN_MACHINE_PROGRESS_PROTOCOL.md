@@ -63,11 +63,23 @@ The repository runtime MUST improve cumulatively by reusing and refining existin
 
 ## Durable multi-scope handoff
 
-`AI_PROGRESS.json` uses the durable `qikvrt-ai-progress/3.0` variant of
+`AI_PROGRESS.json` uses the durable `qikvrt-ai-progress/3.1` variant of
 `schemas/human_machine_progress.schema.json` when several repository scopes
 must be represented together. The root snapshot MUST be `IDLE` when no live
 operation owns it and MUST label its ref and SHA as projection-input
 provenance, not as current remote state.
+
+The projection input MUST be bound by a committed
+`portable-git-object-closure`. Its capsule contains the exact source commit
+payload, every Git tree object needed to traverse the selected paths, and the
+selected blob payloads. Validators MUST recompute every Git SHA-1 using the
+canonical object header, recompute every payload SHA-256, traverse each path
+from the commit's root tree, reject missing or surplus objects, and verify the
+capsule file's own byte, SHA-256, and Git-blob binding. When the declared
+source commit exists locally, all embedded objects MUST additionally be
+byte-identical to local Git. The proof remains bounded: it does not establish
+complete history, a current remote ref, repository synchronization, merge,
+publication, deployment, or repository-wide `PASS`.
 
 Every scope has its own evidence, boundary, percentage and effect state. A
 scope-specific `PASS`, `FINAL_PASS` or `EFFECT_ACK_DONE` MUST remain nested

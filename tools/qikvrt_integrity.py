@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import contextlib
 import fcntl
 import hashlib
@@ -15,7 +17,7 @@ import re
 import stat
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ROOT_STR = str(ROOT)
@@ -31,7 +33,24 @@ LOCK_NAME = ".qikvrt-integrity.lock"
 SCHEMA = "qikvrt_repository_integrity_manifest_v3"
 GENERATOR_VERSION = "3.1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+GIT_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 INTEGRITY_PATHS = {MANIFEST_NAME, INDEX_NAME, DETACHED_NAME}
+PORTABLE_GIT_SOURCE_CAPSULE_SCHEMA = "qikvrt_portable_git_source_capsule_v1"
+PORTABLE_GIT_SOURCE_VERIFICATION_MODE = "portable-git-object-closure"
+MAX_PORTABLE_GIT_SOURCE_CAPSULE_BYTES = 2 * 1024 * 1024
+MAX_PORTABLE_GIT_SOURCE_OBJECTS = 128
+MAX_PORTABLE_GIT_SOURCE_PATHS = 64
+PORTABLE_GIT_SOURCE_NON_CLAIMS = (
+    "complete repository snapshot",
+    "complete parent-history verification",
+    "current remote-ref verification",
+    "current repository status",
+    "semantic consistency of embedded historical files",
+    (
+        "repository PASS, FINAL_PASS, EFFECT_ACK_DONE, merge, synchronization, "
+        "publication or deployment"
+    ),
+)
 LEGACY_GLOBAL_INVENTORIES = (
     {
         "path": "MANIFEST.json",
@@ -73,6 +92,22 @@ MAX_INTEGRITY_METADATA_BYTES = 64 * 1024 * 1024
 class Verification:
     ok: bool
     message: str
+
+
+@dataclass(frozen=True)
+class PortableGitSourceCapsule:
+    relative_path: str
+    repository: str
+    ref_name: str
+    commit_sha1: str
+    root_tree_sha1: str
+    parent_sha1: tuple[str, ...]
+    files: dict[str, bytes]
+    blobs: dict[str, str]
+    objects: dict[str, tuple[str, bytes]]
+    capsule_bytes: int
+    capsule_sha256: str
+    capsule_git_blob_sha1: str
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -146,11 +181,479 @@ def _safe_path(raw: str) -> str:
     return path.as_posix()
 
 
+def _git_object_sha1(object_type: str, payload: bytes) -> str:
+    if object_type not in {"blob", "commit", "tree"}:
+        raise ValueError(f"unsupported Git object type: {object_type!r}")
+    header = f"{object_type} {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload, usedforsecurity=False).hexdigest()
+
+
+def _require_exact_mapping(
+    value: Any,
+    keys: set[str],
+    label: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise ValueError(f"{label} must contain exactly {sorted(keys)}")
+    return value
+
+
+def _require_sha1(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not GIT_SHA1_RE.fullmatch(value):
+        raise ValueError(f"{label} must be a lowercase Git SHA-1")
+    return value
+
+
+def _require_sha256(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not SHA256_RE.fullmatch(value):
+        raise ValueError(f"{label} must be a lowercase SHA-256")
+    return value
+
+
+def _require_positive_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _parse_git_tree(payload: bytes, object_id: str) -> dict[bytes, tuple[str, str]]:
+    entries: dict[bytes, tuple[str, str]] = {}
+    offset = 0
+    while offset < len(payload):
+        space = payload.find(b" ", offset)
+        nul = payload.find(b"\0", space + 1)
+        if space <= offset or nul <= space + 1 or nul + 21 > len(payload):
+            raise ValueError(f"malformed Git tree payload: {object_id}")
+        try:
+            mode = payload[offset:space].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"non-ASCII Git tree mode: {object_id}") from exc
+        name = payload[space + 1:nul]
+        if (
+            not re.fullmatch(r"[0-7]{5,6}", mode)
+            or not name
+            or name in {b".", b".."}
+            or b"/" in name
+            or name in entries
+        ):
+            raise ValueError(f"invalid or duplicate Git tree entry: {object_id}")
+        target = payload[nul + 1:nul + 21].hex()
+        entries[name] = (mode, target)
+        offset = nul + 21
+    if offset != len(payload):
+        raise ValueError(f"trailing bytes in Git tree payload: {object_id}")
+    return entries
+
+
+def _portable_capsule_binding(
+    relative_path: str,
+    raw: bytes,
+) -> dict[str, Any]:
+    return {
+        "path": relative_path,
+        "bytes": len(raw),
+        "sha256": _sha256_bytes(raw),
+        "git_blob_sha1": _git_object_sha1("blob", raw),
+    }
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key in portable Git source capsule: {key!r}")
+        value[key] = item
+    return value
+
+
+def load_portable_git_source_capsule(
+    root: pathlib.Path,
+    relative_path: str,
+    *,
+    expected_binding: Mapping[str, Any] | None = None,
+) -> PortableGitSourceCapsule:
+    """Validate a bounded selected-path Git proof without network or history.
+
+    The capsule embeds the original commit payload, every tree payload needed
+    to traverse the selected paths, and the selected blob payloads. Recomputing
+    each loose-object identity proves the same commit->tree->path->blob
+    relationship that ``git rev-parse <commit>:<path>`` establishes, while
+    remaining portable across repositories whose current commits differ.
+    """
+
+    safe_relative = _safe_path(relative_path)
+    if safe_relative != relative_path:
+        raise ValueError("portable Git source capsule path is not normalized")
+    raw = _regular_file_bytes(
+        root,
+        safe_relative,
+        max_bytes=MAX_PORTABLE_GIT_SOURCE_CAPSULE_BYTES,
+    )
+    binding = _portable_capsule_binding(safe_relative, raw)
+    if expected_binding is not None:
+        expected = _require_exact_mapping(
+            expected_binding,
+            {"path", "bytes", "sha256", "git_blob_sha1"},
+            "portable Git source capsule binding",
+        )
+        expected_bytes = _require_positive_int(
+            expected.get("bytes"),
+            "portable Git source capsule binding bytes",
+        )
+        expected_sha256 = _require_sha256(
+            expected.get("sha256"),
+            "portable Git source capsule binding SHA-256",
+        )
+        expected_blob = _require_sha1(
+            expected.get("git_blob_sha1"),
+            "portable Git source capsule binding Git blob",
+        )
+        if (
+            expected.get("path") != safe_relative
+            or expected_bytes != binding["bytes"]
+            or expected_sha256 != binding["sha256"]
+            or expected_blob != binding["git_blob_sha1"]
+        ):
+            raise ValueError("portable Git source capsule binding drift")
+    try:
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_strict_json_object,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"portable Git source capsule is invalid JSON: {exc}") from exc
+    capsule = _require_exact_mapping(
+        value,
+        {
+            "_license",
+            "schema",
+            "capsule_id",
+            "authority_source",
+            "object_format",
+            "selection",
+            "objects",
+            "non_claims",
+        },
+        "portable Git source capsule",
+    )
+    if capsule.get("schema") != PORTABLE_GIT_SOURCE_CAPSULE_SCHEMA:
+        raise ValueError("unsupported portable Git source capsule schema")
+    capsule_id = capsule.get("capsule_id")
+    if (
+        not isinstance(capsule_id, str)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{7,127}", capsule_id)
+    ):
+        raise ValueError("portable Git source capsule id is invalid")
+    license_value = _require_exact_mapping(
+        capsule.get("_license"),
+        {
+            "copyright",
+            "rights_holder",
+            "license",
+            "license_text_ref",
+            "classification",
+        },
+        "portable Git source capsule license",
+    )
+    if (
+        license_value.get("license") != "CC-BY-NC-ND-4.0"
+        or license_value.get("license_text_ref")
+        != "LICENSES/CC-BY-NC-ND-4.0.txt"
+        or license_value.get("classification")
+        != "portable_git_source_capsule_json"
+    ):
+        raise ValueError("portable Git source capsule license boundary drift")
+    source = _require_exact_mapping(
+        capsule.get("authority_source"),
+        {
+            "repository",
+            "ref_name",
+            "commit_sha1",
+            "root_tree_sha1",
+            "parent_sha1",
+        },
+        "portable Git source authority",
+    )
+    repository = source.get("repository")
+    ref_name = source.get("ref_name")
+    if (
+        not isinstance(repository, str)
+        or not re.fullmatch(r"[^/]+/[^/]+", repository)
+        or not isinstance(ref_name, str)
+        or not ref_name
+    ):
+        raise ValueError("portable Git source repository or ref is invalid")
+    commit_sha1 = _require_sha1(
+        source.get("commit_sha1"),
+        "portable Git source commit",
+    )
+    root_tree_sha1 = _require_sha1(
+        source.get("root_tree_sha1"),
+        "portable Git source root tree",
+    )
+    parents_value = source.get("parent_sha1")
+    if (
+        not isinstance(parents_value, list)
+        or len(parents_value) > 16
+        or any(
+            not isinstance(parent, str) or not GIT_SHA1_RE.fullmatch(parent)
+            for parent in parents_value
+        )
+        or len(set(parents_value)) != len(parents_value)
+    ):
+        raise ValueError("portable Git source parent list is invalid")
+    parent_sha1 = tuple(parents_value)
+    object_format = _require_exact_mapping(
+        capsule.get("object_format"),
+        {"algorithm", "payload_encoding", "identity_formula"},
+        "portable Git source object format",
+    )
+    if dict(object_format) != {
+        "algorithm": "git-sha1",
+        "payload_encoding": "base64",
+        "identity_formula": "sha1(type + SP + decimal_length + NUL + payload)",
+    }:
+        raise ValueError("portable Git source object format drift")
+    non_claims = capsule.get("non_claims")
+    if non_claims != list(PORTABLE_GIT_SOURCE_NON_CLAIMS):
+        raise ValueError("portable Git source non-claim boundary drift")
+
+    objects_value = capsule.get("objects")
+    if (
+        not isinstance(objects_value, list)
+        or not 1 <= len(objects_value) <= MAX_PORTABLE_GIT_SOURCE_OBJECTS
+    ):
+        raise ValueError("portable Git source object count is invalid")
+    objects: dict[str, tuple[str, bytes]] = {}
+    total_payload_bytes = 0
+    for index, raw_entry in enumerate(objects_value):
+        entry = _require_exact_mapping(
+            raw_entry,
+            {"type", "sha1", "bytes", "payload_sha256", "payload_base64"},
+            f"portable Git source object {index}",
+        )
+        object_type = entry.get("type")
+        if object_type not in {"blob", "commit", "tree"}:
+            raise ValueError(f"portable Git source object type is invalid: {index}")
+        object_id = _require_sha1(
+            entry.get("sha1"),
+            f"portable Git source object SHA-1 {index}",
+        )
+        if object_id in objects:
+            raise ValueError(f"duplicate portable Git source object: {object_id}")
+        declared_bytes = _require_positive_int(
+            entry.get("bytes"),
+            f"portable Git source object bytes {index}",
+        )
+        declared_sha256 = _require_sha256(
+            entry.get("payload_sha256"),
+            f"portable Git source object SHA-256 {index}",
+        )
+        encoded = entry.get("payload_base64")
+        if not isinstance(encoded, str):
+            raise ValueError(f"portable Git source object Base64 is invalid: {index}")
+        try:
+            payload = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(
+                f"portable Git source object Base64 is invalid: {index}"
+            ) from exc
+        if base64.b64encode(payload).decode("ascii") != encoded:
+            raise ValueError(
+                f"portable Git source object Base64 is non-canonical: {index}"
+            )
+        total_payload_bytes += len(payload)
+        if (
+            declared_bytes != len(payload)
+            or declared_sha256 != _sha256_bytes(payload)
+            or object_id != _git_object_sha1(str(object_type), payload)
+        ):
+            raise ValueError(f"portable Git source object identity drift: {object_id}")
+        objects[object_id] = (str(object_type), payload)
+    if total_payload_bytes > MAX_PORTABLE_GIT_SOURCE_CAPSULE_BYTES:
+        raise ValueError("portable Git source object payload bound exceeded")
+
+    commit_object = objects.get(commit_sha1)
+    if commit_object is None or commit_object[0] != "commit":
+        raise ValueError("portable Git source commit object is missing")
+    commit_header, separator, _message = commit_object[1].partition(b"\n\n")
+    if not separator:
+        raise ValueError("portable Git source commit payload is malformed")
+    commit_lines = commit_header.splitlines()
+    tree_lines = [line[5:] for line in commit_lines if line.startswith(b"tree ")]
+    parent_lines = [line[7:] for line in commit_lines if line.startswith(b"parent ")]
+    try:
+        commit_tree = (
+            tree_lines[0].decode("ascii") if len(tree_lines) == 1 else ""
+        )
+        commit_parents = tuple(line.decode("ascii") for line in parent_lines)
+    except UnicodeDecodeError as exc:
+        raise ValueError("portable Git source commit headers are non-ASCII") from exc
+    if (
+        commit_tree != root_tree_sha1
+        or commit_parents != parent_sha1
+        or any(not GIT_SHA1_RE.fullmatch(parent) for parent in commit_parents)
+    ):
+        raise ValueError("portable Git source commit/tree/parent binding drift")
+
+    selection = _require_exact_mapping(
+        capsule.get("selection"),
+        {"closure", "complete_history", "path_count", "paths"},
+        "portable Git source selection",
+    )
+    if (
+        selection.get("closure") != "selected-path-proof"
+        or selection.get("complete_history") is not False
+    ):
+        raise ValueError("portable Git source selection boundary drift")
+    paths_value = selection.get("paths")
+    declared_path_count = _require_positive_int(
+        selection.get("path_count"),
+        "portable Git source path count",
+    )
+    if (
+        not isinstance(paths_value, list)
+        or not 1 <= len(paths_value) <= MAX_PORTABLE_GIT_SOURCE_PATHS
+        or declared_path_count != len(paths_value)
+    ):
+        raise ValueError("portable Git source selected path count is invalid")
+
+    files: dict[str, bytes] = {}
+    blobs: dict[str, str] = {}
+    selected_paths: list[str] = []
+    required_objects = {commit_sha1}
+    parsed_trees: dict[str, dict[bytes, tuple[str, str]]] = {}
+    for index, raw_entry in enumerate(paths_value):
+        entry = _require_exact_mapping(
+            raw_entry,
+            {"path", "mode", "blob_sha1", "bytes", "sha256"},
+            f"portable Git source selected path {index}",
+        )
+        raw_path = entry.get("path")
+        if not isinstance(raw_path, str):
+            raise ValueError(f"portable Git source selected path is invalid: {index}")
+        source_path = _safe_path(raw_path)
+        if source_path != raw_path or source_path in files:
+            raise ValueError(
+                f"portable Git source selected path is non-canonical or duplicate: {raw_path!r}"
+            )
+        mode = entry.get("mode")
+        if mode not in {"100644", "100755"}:
+            raise ValueError(f"portable Git source selected mode is invalid: {source_path}")
+        declared_blob = _require_sha1(
+            entry.get("blob_sha1"),
+            f"portable Git source selected blob {source_path}",
+        )
+        declared_bytes = _require_positive_int(
+            entry.get("bytes"),
+            f"portable Git source selected bytes {source_path}",
+        )
+        declared_sha256 = _require_sha256(
+            entry.get("sha256"),
+            f"portable Git source selected SHA-256 {source_path}",
+        )
+        tree_id = root_tree_sha1
+        parts = pathlib.PurePosixPath(source_path).parts
+        for part_index, part in enumerate(parts):
+            tree_object = objects.get(tree_id)
+            if tree_object is None or tree_object[0] != "tree":
+                raise ValueError(
+                    f"portable Git source path tree object is missing: {source_path}"
+                )
+            required_objects.add(tree_id)
+            tree_entries = parsed_trees.get(tree_id)
+            if tree_entries is None:
+                tree_entries = _parse_git_tree(tree_object[1], tree_id)
+                parsed_trees[tree_id] = tree_entries
+            target = tree_entries.get(part.encode("utf-8"))
+            if target is None:
+                raise ValueError(
+                    f"portable Git source path is absent from its tree: {source_path}"
+                )
+            actual_mode, target_id = target
+            if part_index < len(parts) - 1:
+                if actual_mode not in {"40000", "040000"}:
+                    raise ValueError(
+                        f"portable Git source intermediate path is not a tree: {source_path}"
+                    )
+                tree_id = target_id
+                continue
+            blob_object = objects.get(target_id)
+            if (
+                actual_mode != mode
+                or target_id != declared_blob
+                or blob_object is None
+                or blob_object[0] != "blob"
+            ):
+                raise ValueError(
+                    f"portable Git source path mode/blob binding drift: {source_path}"
+                )
+            payload = blob_object[1]
+            if (
+                declared_bytes != len(payload)
+                or declared_sha256 != _sha256_bytes(payload)
+            ):
+                raise ValueError(
+                    f"portable Git source selected payload drift: {source_path}"
+                )
+            required_objects.add(target_id)
+            files[source_path] = payload
+            blobs[source_path] = target_id
+            selected_paths.append(source_path)
+    if selected_paths != sorted(selected_paths):
+        raise ValueError("portable Git source selected paths are not sorted")
+    if set(objects) != required_objects:
+        raise ValueError("portable Git source object set is not the exact selected closure")
+
+    return PortableGitSourceCapsule(
+        relative_path=safe_relative,
+        repository=str(repository),
+        ref_name=str(ref_name),
+        commit_sha1=commit_sha1,
+        root_tree_sha1=root_tree_sha1,
+        parent_sha1=parent_sha1,
+        files=files,
+        blobs=blobs,
+        objects=objects,
+        capsule_bytes=int(binding["bytes"]),
+        capsule_sha256=str(binding["sha256"]),
+        capsule_git_blob_sha1=str(binding["git_blob_sha1"]),
+    )
+
+
+def portable_git_source_evidence(
+    capsule: PortableGitSourceCapsule,
+) -> dict[str, Any]:
+    return {
+        "verification_mode": PORTABLE_GIT_SOURCE_VERIFICATION_MODE,
+        "source_repository": capsule.repository,
+        "ref_name": capsule.ref_name,
+        "commit": capsule.commit_sha1,
+        "root_tree": capsule.root_tree_sha1,
+        "blobs": dict(capsule.blobs),
+        "capsule": {
+            "path": capsule.relative_path,
+            "bytes": capsule.capsule_bytes,
+            "sha256": capsule.capsule_sha256,
+            "git_blob_sha1": capsule.capsule_git_blob_sha1,
+        },
+    }
+
+
 def _git(root: pathlib.Path, *arguments: str) -> bytes:
+    environment = dict(os.environ)
+    environment.update(
+        {
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
     try:
         process = run_bounded(
             ["git", "-C", str(root), *arguments],
             cwd=root,
+            env=environment,
             timeout=30,
             max_output_bytes=16 * 1024 * 1024,
         )
@@ -164,6 +667,71 @@ def _git(root: pathlib.Path, *arguments: str) -> bytes:
         error = process.stderr.strip()
         raise RuntimeError(f"git {' '.join(arguments)} failed: {error}")
     return process.stdout.encode("utf-8", errors="surrogateescape")
+
+
+def cross_check_portable_git_source_capsule(
+    root: pathlib.Path,
+    capsule: PortableGitSourceCapsule,
+) -> bool:
+    """Cross-check embedded objects when the declared commit exists locally.
+
+    Absence is not failure because the capsule itself proves the bounded object
+    closure. If the commit is present, every embedded object becomes a
+    mandatory byte-for-byte second check and disagreement fails closed.
+    """
+
+    environment = dict(os.environ)
+    environment.update(
+        {
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    try:
+        available = run_bounded(
+            [
+                "git",
+                "-C",
+                str(root),
+                "cat-file",
+                "-e",
+                f"{capsule.commit_sha1}^{{commit}}",
+            ],
+            cwd=root,
+            env=environment,
+            timeout=10,
+            max_output_bytes=1024 * 1024,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError(
+            f"local Git availability check failed for source capsule: {exc}"
+        ) from exc
+    if available.timed_out:
+        raise RuntimeError("local Git availability check timed out")
+    if available.output_limit_exceeded:
+        raise RuntimeError("local Git availability check exceeded its output bound")
+    if available.returncode != 0:
+        diagnostic = available.stderr.lower()
+        absent_markers = (
+            "not a valid object name",
+            "could not get object info",
+            "bad object",
+            "invalid object name",
+        )
+        if any(marker in diagnostic for marker in absent_markers):
+            return False
+        raise RuntimeError(
+            "local Git availability check failed: "
+            + (available.stderr.strip() or f"exit {available.returncode}")
+        )
+    for object_id, (object_type, expected_payload) in capsule.objects.items():
+        actual_payload = _git(root, "cat-file", object_type, object_id)
+        if actual_payload != expected_payload:
+            raise ValueError(
+                f"local Git object disagrees with portable source capsule: {object_id}"
+            )
+    return True
 
 
 def is_transient(relative: str) -> bool:

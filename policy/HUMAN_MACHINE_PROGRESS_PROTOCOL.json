@@ -32,7 +32,7 @@
     "complete_persistence_before_response": true
   },
   "tracked_snapshot": {
-    "schema": "qikvrt-ai-progress/3.0",
+    "schema": "qikvrt-ai-progress/3.1",
     "required_fields": [
       "source_semantics",
       "source_evidence",
@@ -43,7 +43,13 @@
     ],
     "ownerless_state": "IDLE",
     "projection_input_ref_and_sha_are_not_current_remote_state": true,
-    "projection_input_sha_must_resolve_to_bound_commit_and_evidence_blobs": true,
+    "projection_input_must_have_portable_git_object_closure": true,
+    "portable_closure_must_recompute_commit_tree_and_blob_git_identities": true,
+    "portable_closure_must_traverse_selected_paths_from_commit_root_tree": true,
+    "portable_closure_must_reject_missing_or_surplus_objects": true,
+    "portable_closure_must_bind_capsule_bytes_sha256_and_git_blob": true,
+    "available_local_git_objects_must_match_capsule_bytes": true,
+    "portable_closure_does_not_prove_current_ref_history_or_repository_effects": true,
     "scope_specific_release_claims_remain_nested": true,
     "done_scope_requires_repository_ref_sha_checks_and_evidence": true,
     "incomplete_scope_cannot_inherit_pass": true,
