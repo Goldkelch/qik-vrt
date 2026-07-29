@@ -7,7 +7,8 @@ Copyright (c) 2026 Ingolf Lohmann.
 
 **Responsible owner:** Ingolf Lohmann  
 **Return state:** `RETURNED_FOR_OWNER_ACCEPTANCE`  
-**Authority base:** `6a1555cd5ad418d9b243e2514d3271fb6c3a1585`
+**Authority base:** `6a1555cd5ad418d9b243e2514d3271fb6c3a1585`  
+**Authority PR:** `#209`
 
 ## Corpus correction requiring the owner decision
 
@@ -22,23 +23,23 @@ reason     = Potential evidence-overreach without an explicit boundary artifact
 ```
 
 The published bytes remain unchanged. The candidate adds an explicit,
-versioned boundary for the three machine-bound overclaim findings and preserves
+versioned boundary for the four machine-bound overclaim findings and preserves
 the original article as historical evidence.
 
 Candidate artifacts:
 
 ```text
 publications/ontology-des-unterschieds-reverse-engineering/corrections/v2/CLAIM_BOUNDARY.md
-sha256 b5852d0dc81c989875df4467eea270f64547b1e38f7317ec0c43e6f9251763bd
+sha256 11f4060b10c5ea3dd22b16991e0e1ce634216c3755622737114ae8411a21563a
 
 publications/ontology-des-unterschieds-reverse-engineering/corrections/v2/PUBLICATION_CORRECTION.json
-sha256 b3eac6126cc3b1b209c98ecf760de2e0c3b3830082b9c652ae1d312fb28751dd
+sha256 61be90279cfa955c9834e6eb4d4e6943692f46eda5a285cd07e06a266fab5674
 
 publications/ontology-des-unterschieds-reverse-engineering/corrections/v2/README.md
 sha256 9b57f554b1a475b8ab38e4c6da8d2c448dd32ced8bf73d36636e6180fd4c47fe
 
 release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/corrected-candidate/SUBJECT-43c59da1cfd26267/CORRECTED_CLAIM_DISPOSITION.json
-sha256 c36a1a6d21b52bb4cc5f838b6fa2f2b84009b67fbde44b5397586cef0acd9447
+sha256 dec4ffa47cf58f963ac4e00e51034890ff3c707583e49c3d26f9b08bc4a6eb62
 ```
 
 ## Separately returned Denk-Mengenlehre candidate
@@ -68,7 +69,7 @@ No decision is inferred from repository creation or from this return package.
 Until an explicit decision exists:
 
 ```text
-OWNER_ACCEPTANCE                  = PENDING
+OWNER_ACCEPTANCE                   = PENDING
 CONTENT_CORRECTION_REVIEW_COMPLETE = false
 ZENODO_MUTATION_AUTHORIZED         = false
 PASS                               = false
