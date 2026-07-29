@@ -17,6 +17,7 @@ import io
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -41,6 +42,7 @@ BATCH_INDEX = OUT / "CONTENT_DISPOSITION_BATCH_001_SUBJECT_INDEX.json"
 CHANGE_DECISIONS = OUT / "CONTENT_CHANGE_DECISIONS.json"
 REPORT = OUT / "CONTENT_DISPOSITION_BATCH_001_REPORT_DE.md"
 WORK_UNIT = ROOT / "work-units" / "EXECUTE_CONTENT_DISPOSITION_BATCH_001.json"
+BATCH_002_RECEIPT = UNION_DIR / "content-disposition-batch-002/terminal-disposition/CONTENT_DISPOSITION_BATCH_002_RECEIPT.json"
 
 EXPECTED_AUTHORITY = "4892e74458f15762c7b873344bc85b238e3739b1"
 UNION_ID = "qikvrt-zenodo-canonical-union-2026-07-28-v1"
@@ -109,6 +111,42 @@ def write_text(path: pathlib.Path, text: str, *, check: bool) -> None:
 
 def write_json(path: pathlib.Path, value: Any, *, check: bool) -> None:
     write_text(path, pretty(value), check=check)
+
+def validate_downstream_handoff() -> None:
+    batch_001=read_json(BATCH_RECEIPT)
+    batch_002=read_json(BATCH_002_RECEIPT)
+    batch_002_completion=(
+        batch_002.get("completion_claims")
+        if isinstance(batch_002,Mapping) else None
+    )
+    if (
+        not isinstance(batch_001,Mapping)
+        or batch_001.get("schema")!="qikvrt_content_disposition_batch_receipt_v1"
+        or batch_001.get("batch_id")!=BATCH_ID
+        or batch_001.get("state")!="BATCH_001_DISPOSITIONED_NO_CONTENT_CHANGE"
+        or not isinstance(batch_002,Mapping)
+        or batch_002.get("schema")!="qikvrt_content_disposition_batch_receipt_v2"
+        or batch_002.get("batch_id")!="CONTENT-DISPOSITION-BATCH-002"
+        or batch_002.get("state")!="TERMINALLY_DISPOSITIONED"
+        or not isinstance(batch_002_completion,Mapping)
+        or batch_002_completion.get("batch_002_terminal_disposition_complete") is not True
+    ):
+        fail("downstream Batch-002 handoff receipt contract mismatch")
+    try:
+        checked=subprocess.run(
+            [sys.executable,"-B","tools/ai_handoff.py"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            check=False,
+        )
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise BatchError(f"downstream projection check failed to execute: {exc}") from exc
+    if checked.returncode!=0:
+        detail=checked.stderr.strip() or checked.stdout.strip() or "no diagnostic"
+        fail(f"downstream projection is stale: {detail}")
 
 
 def source_artifact(path: pathlib.Path) -> dict[str, Any]:
@@ -867,6 +905,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if BATCH_002_RECEIPT.is_file():
+            validate_downstream_handoff()
+            print("CONTENT_DISPOSITION_BATCH_001=DISPOSITIONED_NO_CONTENT_CHANGE")
+            print("DOWNSTREAM_STATE=CONTENT_DISPOSITION_BATCH_002_TERMINALLY_DISPOSITIONED")
+            return 0
         build(args.check)
     except BatchError as exc:
         print(f"BLOCK: {exc}", file=sys.stderr)

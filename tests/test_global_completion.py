@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import copy
+import importlib.util
 import json
 import pathlib
 import subprocess
@@ -18,6 +20,12 @@ KERNEL = ROOT / "GLOBAL_EXACT_TAG_KERNEL_RECEIPTS.json"
 FINAL_INPUT = ROOT / "GLOBAL_COMPLETION_FINALIZATION_INPUT.json"
 FINAL_RECEIPT = ROOT / "GLOBAL_COMPLETION_RECEIPT.json"
 FORMAL_STATUS = ROOT / "formalization" / "QIKVRT_Formalization_v2.0" / "GLOBAL_COMPLETION_STATUS.json"
+AI_PROGRESS = ROOT / "AI_PROGRESS.json"
+GENERATOR = ROOT / "tools/qikvrt_global_completion.py"
+spec = importlib.util.spec_from_file_location("global_completion", GENERATOR)
+generator = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(generator)
 
 ALLOWED = {
     "KERNEL_PROVED",
@@ -149,6 +157,35 @@ class GlobalCompletionTests(unittest.TestCase):
         else:
             self.assertFalse(FINAL_RECEIPT.exists())
             self.assertEqual(status["state"], "CANDIDATE_MATERIALIZED")
+
+    def test_root_projection_owner_is_explicit_and_supersedable(self) -> None:
+        receipt = generator.terminal_batch_002_receipt()
+        self.assertIsNotNone(receipt)
+        progress = load(AI_PROGRESS)
+        global_receipt = load(FINAL_RECEIPT)
+        generator.validate_root_progress_owner(progress, global_receipt)
+        future = copy.deepcopy(progress)
+        future["operation_id"] = "future-content-disposition-owner"
+        future["projection_owner"] = {
+            "tool": "tools/qikvrt_global_completion.py",
+            "check_command": "python3 -B tools/qikvrt_global_completion.py --check",
+        }
+        generator.validate_root_progress_owner(future, global_receipt)
+        lost_scope = copy.deepcopy(future)
+        del lost_scope["scopes"][receipt["union_id"]]
+        with self.assertRaises(ValueError):
+            generator.validate_root_progress_owner(
+                lost_scope,
+                global_receipt,
+                receipt,
+            )
+        del future["projection_owner"]
+        with self.assertRaises(ValueError):
+            generator.validate_root_progress_owner(future, global_receipt)
+        false_terminal = copy.deepcopy(receipt)
+        false_terminal["completion_claims"]["pass"] = True
+        with self.assertRaises(ValueError):
+            generator.validate_terminal_batch_002_receipt(false_terminal)
 
 
 if __name__ == "__main__":

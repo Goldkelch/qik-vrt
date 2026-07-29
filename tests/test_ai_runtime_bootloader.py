@@ -33,6 +33,18 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertEqual(boot["accepted_states"], ["PASS", "CONTINUE"])
         self.assertEqual(boot["blocking_state"], "BLOCK")
         self.assertGreaterEqual(len(boot["lifecycle"]), 8)
+        self.assertEqual(
+            context["progress_protocol"]["machine_schema"],
+            "schemas/human_machine_progress.schema.json",
+        )
+        self.assertIn(
+            "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md",
+            context["required_read_order"],
+        )
+        self.assertIn(
+            "schemas/human_machine_progress.schema.json",
+            context["required_read_order"],
+        )
         for authority in (
             "tools/ai_handoff.py",
             "tools/qikvrt_integrity.py",
@@ -74,6 +86,7 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
             f"{completed.stderr}",
         )
         self.assertIn("AI_HANDOFF_STATUS=VALID", completed.stdout)
+        self.assertIn("AI_PROGRESS_CHECK=", completed.stdout)
 
     def test_bootloader_source_preserves_effect_boundary(self) -> None:
         source = (ROOT / "tools/ai_runtime_bootloader.py").read_text(encoding="utf-8")

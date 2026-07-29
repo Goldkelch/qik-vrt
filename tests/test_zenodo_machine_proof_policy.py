@@ -363,6 +363,18 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
             value = json.loads(receipt_path.read_text())
             value["candidate_files"][0]["sha256"] = "0" * 64
             receipt_path.write_text(json.dumps(value) + "\n")
+            bundle = json.loads(bundle_path.read_text())
+            for index, artifact in enumerate(bundle["artifacts"]):
+                if artifact["path"] == "proof/PREPUBLICATION_RETURN_RECEIPT.json":
+                    bundle["artifacts"][index] = bound(
+                        root,
+                        "proof/PREPUBLICATION_RETURN_RECEIPT.json",
+                        kind="RETURN_RECEIPT",
+                    )
+                    break
+            else:
+                self.fail("fixture lacks its bound prepublication return receipt")
+            bundle_path.write_text(json.dumps(bundle) + "\n")
             with self.assertRaisesRegex(proof.ProofGateError, "returned candidate SHA-256 mismatch"):
                 proof.validate_bundle(root, bundle_path)
 

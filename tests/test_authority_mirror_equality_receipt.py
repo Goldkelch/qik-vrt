@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 from tools import qikvrt_integrity as integrity
+from tools import qikvrt_zenodo_actions as zenodo
 from tools import qikvrt_zenodo_publish as zenodo_publish
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -18,11 +19,21 @@ INDEX_PATH = ROOT / "evidence" / "receipts" / "index.json"
 PUBLISH_REQUEST_PATH = (
     ROOT / "release" / "authority-mirror-equality-2026-07-27" / "publish-request.json"
 )
+PUBLICATION_EVIDENCE_PATH = (
+    ROOT / "release" / "authority-mirror-equality-2026-07-27" / "zenodo-publication.json"
+)
+PUBLIC_PROOF_ENVELOPE_PATH = (
+    ROOT
+    / "release"
+    / "zenodo-corpus-proof-2026-07-28"
+    / "proof-envelopes"
+    / "zenodo-21633411.json"
+)
 
 EXPECTED_RECEIPT_SHA256 = "2372fae39499febbb005d771cb2ce62bde7967a79cdd5e3b159a3591fc80ac98"
 EXPECTED_RECEIPT_GIT_BLOB = "83c80c53d330eb929defb3739ecc9184e6754639"
-EXPECTED_INDEX_SHA256 = "47c5d7107098c0527c80aa0d65deeeb6a15ce1496588fda3fda087d4d18d5ff4"
-EXPECTED_INDEX_GIT_BLOB = "24ed0bf0736b444d51e6773c66b57301cb6b9727"
+EXPECTED_PUBLISHED_INDEX_SHA256 = "47c5d7107098c0527c80aa0d65deeeb6a15ce1496588fda3fda087d4d18d5ff4"
+EXPECTED_PUBLISHED_INDEX_GIT_BLOB = "24ed0bf0736b444d51e6773c66b57301cb6b9727"
 EXPECTED_SOURCE_RECEIPT_PAYLOAD_SHA256 = (
     "ef3550482c22c2858669b086137922a2220b6e65863f3f4d2d8239392afd7fb1"
 )
@@ -40,6 +51,12 @@ class AuthorityMirrorEqualityReceiptTests(unittest.TestCase):
         self.index_raw = INDEX_PATH.read_bytes()
         self.index = json.loads(self.index_raw.decode("utf-8"))
         self.publish_request = json.loads(PUBLISH_REQUEST_PATH.read_text(encoding="utf-8"))
+        self.publication_evidence = json.loads(
+            PUBLICATION_EVIDENCE_PATH.read_text(encoding="utf-8")
+        )
+        self.public_proof_envelope = json.loads(
+            PUBLIC_PROOF_ENVELOPE_PATH.read_text(encoding="utf-8")
+        )
 
     def test_receipt_is_content_addressed_and_scope_bound(self) -> None:
         self.assertEqual(hashlib.sha256(self.receipt_raw).hexdigest(), EXPECTED_RECEIPT_SHA256)
@@ -93,12 +110,14 @@ class AuthorityMirrorEqualityReceiptTests(unittest.TestCase):
         ):
             self.assertFalse(self.receipt["claims"][key])
 
-    def test_index_is_appendable_and_exactly_binds_receipt(self) -> None:
-        self.assertEqual(hashlib.sha256(self.index_raw).hexdigest(), EXPECTED_INDEX_SHA256)
-        self.assertEqual(git_blob_sha(self.index_raw), EXPECTED_INDEX_GIT_BLOB)
+    def test_index_is_appendable_and_exactly_binds_receipts(self) -> None:
         self.assertEqual(self.index["schema"], "qikvrt_equality_receipt_index_v1")
-        self.assertEqual(len(self.index["equality_receipts"]), 1)
-        entry = self.index["equality_receipts"][0]
+        self.assertGreaterEqual(len(self.index["equality_receipts"]), 2)
+        by_id = {
+            entry["receipt_id"]: entry for entry in self.index["equality_receipts"]
+        }
+        self.assertEqual(len(by_id), len(self.index["equality_receipts"]))
+        entry = by_id["authority-mirror-equality-2026-07-27-pr106-pr56"]
         self.assertEqual(entry["path"], RECEIPT_PATH.relative_to(ROOT).as_posix())
         self.assertEqual(entry["file_sha256"], EXPECTED_RECEIPT_SHA256)
         self.assertEqual(entry["git_blob_sha1"], EXPECTED_RECEIPT_GIT_BLOB)
@@ -106,6 +125,13 @@ class AuthorityMirrorEqualityReceiptTests(unittest.TestCase):
             entry["source_receipt_payload_sha256"],
             EXPECTED_SOURCE_RECEIPT_PAYLOAD_SHA256,
         )
+        for indexed in self.index["equality_receipts"]:
+            receipt_raw = (ROOT / indexed["path"]).read_bytes()
+            self.assertEqual(
+                hashlib.sha256(receipt_raw).hexdigest(),
+                indexed["file_sha256"],
+            )
+            self.assertEqual(git_blob_sha(receipt_raw), indexed["git_blob_sha1"])
         self.assertFalse(
             self.index["manifest_integration"]["direct_generated_manifest_mutation"]
         )
@@ -116,31 +142,54 @@ class AuthorityMirrorEqualityReceiptTests(unittest.TestCase):
         self.assertTrue(immutable)
         self.assertEqual(reason, "")
 
-    def test_generic_zenodo_request_is_valid_and_git_blob_bound(self) -> None:
-        self.assertEqual(
-            self.publish_request["schema"],
-            zenodo_publish.SCHEMA,
-        )
+    def test_historical_zenodo_request_is_published_and_fail_closed_after_append(self) -> None:
+        self.assertEqual(self.publish_request["schema"], zenodo_publish.SCHEMA)
         self.assertEqual(
             self.publish_request["evidence_path"],
             "release/authority-mirror-equality-2026-07-27/zenodo-publication.json",
         )
         self.assertEqual(
             [entry["git_blob_sha"] for entry in self.publish_request["files"]],
-            [EXPECTED_RECEIPT_GIT_BLOB, EXPECTED_INDEX_GIT_BLOB],
+            [EXPECTED_RECEIPT_GIT_BLOB, EXPECTED_PUBLISHED_INDEX_GIT_BLOB],
+        )
+        self.assertEqual(self.publication_evidence["state"], "published")
+        self.assertEqual(self.publication_evidence["record_id"], 21633411)
+        self.assertEqual(
+            self.publication_evidence["manifest_sha256"],
+            hashlib.sha256(PUBLISH_REQUEST_PATH.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            [entry["git_blob_sha"] for entry in self.publication_evidence["files"]],
+            [EXPECTED_RECEIPT_GIT_BLOB, EXPECTED_PUBLISHED_INDEX_GIT_BLOB],
+        )
+        self.assertEqual(
+            [entry["sha256"] for entry in self.publication_evidence["files"]],
+            [EXPECTED_RECEIPT_SHA256, EXPECTED_PUBLISHED_INDEX_SHA256],
+        )
+        public_files = {
+            entry["name"]: entry for entry in self.public_proof_envelope["public_files"]
+        }
+        self.assertTrue(
+            public_files["equality-receipts-index.json"][
+                "public_byte_redownload_verified"
+            ]
+        )
+        self.assertEqual(
+            public_files["equality-receipts-index.json"]["sha256"],
+            EXPECTED_PUBLISHED_INDEX_SHA256,
         )
         with mock.patch.dict(
             os.environ,
             {"GITHUB_REPOSITORY": "Goldkelch/qik-vrt"},
             clear=False,
         ):
-            materialized = zenodo_publish.load_manifest(PUBLISH_REQUEST_PATH, ROOT)
+            with self.assertRaisesRegex(
+                zenodo.ZenodoError,
+                "Git blob mismatch for evidence/receipts/index.json",
+            ):
+                zenodo_publish.load_manifest(PUBLISH_REQUEST_PATH, ROOT)
         self.assertEqual(
-            [entry["sha256"] for entry in materialized["files"]],
-            [EXPECTED_RECEIPT_SHA256, EXPECTED_INDEX_SHA256],
-        )
-        self.assertEqual(
-            materialized["metadata"]["version"],
+            self.publish_request["metadata"]["version"],
             "1.0.0-2026-07-27",
         )
 

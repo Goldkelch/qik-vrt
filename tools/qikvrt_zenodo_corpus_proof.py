@@ -402,6 +402,8 @@ def repository_index(root: pathlib.Path) -> tuple[dict[str, list[str]], list[tup
 
 def classify_repository_ref(path: str) -> str:
     upper = path.upper()
+    if pathlib.PurePosixPath(path).name.lower() == "zenodo-publication.json":
+        return "EVIDENCE"
     if "CLAIM_MATRIX" in upper or "CLAIM_GRAPH" in upper or "CLAIM_INVENTORY" in upper:
         return "CLAIM_DISPOSITION"
     if "KERNEL_RECEIPT" in upper or "PROOF_OBJECT" in upper or upper.endswith(".LEAN"):

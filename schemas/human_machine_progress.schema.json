@@ -2,28 +2,288 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Goldkelch/qik-vrt/schemas/human_machine_progress.schema.json",
   "title": "QIK-VRT Human-Machine Progress",
-  "type": "object",
-  "required": ["schema", "repository", "operation", "status", "gates"],
-  "properties": {
-    "schema": {"const": "qikvrt_human_machine_progress_v1"},
-    "repository": {"type": "string", "minLength": 3},
-    "operation": {"type": "string", "minLength": 1},
-    "status": {"enum": ["IN_PROGRESS", "PASS", "BLOCK", "FAIL", "TIMEOUT"]},
-    "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
-    "gates": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["name", "state"],
-        "properties": {
-          "name": {"type": "string", "minLength": 1},
-          "state": {"enum": ["PENDING", "RUNNING", "PASS", "BLOCK", "FAIL", "SKIPPED"]},
-          "evidence": {"type": ["string", "null"]}
-        },
-        "additionalProperties": false
+  "oneOf": [
+    {"$ref": "#/$defs/liveFrameV1"},
+    {"$ref": "#/$defs/durableSnapshotV3"}
+  ],
+  "$defs": {
+    "liveFrameV1": {
+      "type": "object",
+      "required": ["schema", "repository", "operation", "status", "gates"],
+      "properties": {
+        "schema": {"const": "qikvrt_human_machine_progress_v1"},
+        "repository": {"type": "string", "minLength": 3},
+        "operation": {"type": "string", "minLength": 1},
+        "status": {"enum": ["IN_PROGRESS", "PASS", "BLOCK", "FAIL", "TIMEOUT"]},
+        "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "state"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "state": {"enum": ["PENDING", "RUNNING", "PASS", "BLOCK", "FAIL", "SKIPPED"]},
+              "evidence": {"type": ["string", "null"]}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "claimState": {
+      "type": "object",
+      "required": ["PASS", "FINAL_PASS", "EFFECT_ACK_DONE"],
+      "properties": {
+        "PASS": {"type": "boolean"},
+        "FINAL_PASS": {"type": "boolean"},
+        "EFFECT_ACK_DONE": {"type": "boolean"}
+      },
+      "additionalProperties": {"type": "boolean"}
+    },
+    "nonReleaseClaims": {
+      "type": "object",
+      "properties": {
+        "PASS": {"const": false},
+        "FINAL_PASS": {"const": false},
+        "EFFECT_ACK_DONE": {"const": false}
       }
+    },
+    "releaseClaims": {
+      "type": "object",
+      "properties": {
+        "PASS": {"const": true},
+        "FINAL_PASS": {"const": true},
+        "EFFECT_ACK_DONE": {"const": true}
+      }
+    },
+    "passEvidence": {
+      "type": "object",
+      "required": ["repository", "checks", "evidence"],
+      "properties": {
+        "repository": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["repository", "ref_name", "source_sha"],
+            "properties": {
+              "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+              "ref_name": {"type": "string", "minLength": 1},
+              "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "checks": {"type": "object", "minProperties": 1},
+        "evidence": {"type": "object", "minProperties": 1}
+      },
+      "additionalProperties": false
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "required": ["ref_name", "commit", "blobs"],
+      "properties": {
+        "ref_name": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "blobs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "projectionOwner": {
+      "type": "object",
+      "required": ["tool", "check_command"],
+      "properties": {
+        "tool": {"type": "string", "pattern": "^tools/[^.].*\\.py$"},
+        "check_command": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "scopeStatus": {
+      "type": "object",
+      "required": ["state", "effect_state", "percent", "claims", "evidence", "boundary"],
+      "properties": {
+        "state": {"enum": ["RUNNING", "WAITING", "FINAL_PASS", "CONTINUE", "BLOCK", "FAIL"]},
+        "effect_state": {"enum": ["EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_BLOCK"]},
+        "percent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "claims": {"$ref": "#/$defs/claimState"},
+        "counts": {"type": "object"},
+        "evidence": {"type": "string", "minLength": 1},
+        "pass_evidence": {"$ref": "#/$defs/passEvidence"},
+        "boundary": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effect_state": {"enum": ["EFFECT_ACK_CONTINUE", "EFFECT_ACK_BLOCK"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {"not": {"const": "FINAL_PASS"}},
+              "claims": {"$ref": "#/$defs/nonReleaseClaims"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effect_state": {"const": "EFFECT_ACK_DONE"}
+            },
+            "required": ["effect_state"]
+          },
+          "then": {
+            "required": ["pass_evidence"],
+            "properties": {
+              "state": {"const": "FINAL_PASS"},
+              "claims": {"$ref": "#/$defs/releaseClaims"}
+            }
+          }
+        }
+      ]
+    },
+    "durableSnapshotV3": {
+      "type": "object",
+      "required": [
+        "schema",
+        "operation_id",
+        "repository",
+        "ref_name",
+        "source_sha",
+        "source_semantics",
+        "source_evidence",
+        "state",
+        "effect_state",
+        "percent",
+        "percent_scope",
+        "current_action",
+        "completed_steps",
+        "pending_steps",
+        "blockers",
+        "next_action",
+        "updated_at",
+        "claims",
+        "scopes",
+        "incomplete_scope_count",
+        "repository_effects",
+        "projection_owner",
+        "union_receipt_state"
+      ],
+      "properties": {
+        "schema": {"const": "qikvrt-ai-progress/3.0"},
+        "operation_id": {"type": "string", "minLength": 1},
+        "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+        "ref_name": {"type": "string", "minLength": 1},
+        "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "state": {"enum": ["IDLE", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
+        "effect_state": {"enum": ["EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_BLOCK"]},
+        "percent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "percent_scope": {"type": "string", "minLength": 1},
+        "current_action": {"type": "string", "minLength": 1},
+        "completed_steps": {"type": "array", "items": {"type": "string"}},
+        "pending_steps": {"type": "array", "items": {"type": "string"}},
+        "blockers": {"type": "array", "items": {"type": "string"}},
+        "next_action": {"type": "string", "minLength": 1},
+        "updated_at": {"type": "string", "format": "date-time"},
+        "source_semantics": {"type": "string", "minLength": 1},
+        "source_evidence": {"$ref": "#/$defs/sourceEvidence"},
+        "claims": {"$ref": "#/$defs/claimState"},
+        "scopes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/scopeStatus"}
+        },
+        "incomplete_scope_count": {"type": "integer", "minimum": 0},
+        "repository_effects": {
+          "type": "object",
+          "required": [
+            "scope",
+            "authority_promotion",
+            "mirror_synchronization",
+            "reciprocal_equality_receipt",
+            "proof_corpus_publication"
+          ],
+          "properties": {
+            "scope": {"type": "string", "minLength": 1},
+            "authority_promotion": {"const": "NOT_EVALUATED"},
+            "mirror_synchronization": {"const": "NOT_EVALUATED"},
+            "reciprocal_equality_receipt": {"const": "NOT_EVALUATED"},
+            "proof_corpus_publication": {"const": "NOT_EVALUATED"}
+          },
+          "additionalProperties": false
+        },
+        "projection_owner": {"$ref": "#/$defs/projectionOwner"},
+        "union_receipt_state": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effect_state": {"enum": ["EFFECT_ACK_CONTINUE", "EFFECT_ACK_BLOCK"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {"not": {"const": "PASS"}},
+              "claims": {"$ref": "#/$defs/nonReleaseClaims"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "incomplete_scope_count": {"minimum": 1}
+            },
+            "required": ["incomplete_scope_count"]
+          },
+          "then": {
+            "properties": {
+              "state": {"enum": ["IDLE", "RUNNING", "WAITING", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
+              "effect_state": {"const": "EFFECT_ACK_CONTINUE"},
+              "claims": {"$ref": "#/$defs/nonReleaseClaims"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effect_state": {"const": "EFFECT_ACK_DONE"}
+            },
+            "required": ["effect_state"]
+          },
+          "then": {
+            "properties": {
+              "state": {"const": "PASS"},
+              "incomplete_scope_count": {"const": 0},
+              "claims": {"$ref": "#/$defs/releaseClaims"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "incomplete_scope_count": {"const": 0}
+            },
+            "required": ["incomplete_scope_count"]
+          },
+          "then": {
+            "properties": {
+              "state": {"const": "PASS"},
+              "effect_state": {"const": "EFFECT_ACK_DONE"},
+              "claims": {"$ref": "#/$defs/releaseClaims"}
+            }
+          }
+        }
+      ]
     }
-  },
-  "additionalProperties": false
+  }
 }
