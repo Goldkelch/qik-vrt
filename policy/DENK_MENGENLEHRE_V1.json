@@ -1,0 +1,184 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "classification": "interpretive_formal_model_policy_json"
+  },
+  "schema": "qikvrt-denk-mengenlehre/1.0",
+  "scope_id": "qikvrt-denk-mengenlehre-v1",
+  "qualified_batch_alias": "DENK-MENGENLEHRE-BATCH-002",
+  "distinct_from": [
+    "CONTENT-DISPOSITION-BATCH-002",
+    "github-actions-artifact-8696689772"
+  ],
+  "author": "Ingolf Lohmann",
+  "thesis": "Denken ist Mengenlehre und inkludiert die leere Menge!",
+  "epistemic_classification": "INTERPRETIVE_FORMAL_MODEL",
+  "formal_boundary": {
+    "finite_set_operations_executable": true,
+    "cognition_identical_to_zfc_proved": false,
+    "self_membership_claim": false,
+    "repository_evidence_is_truth_claim": false,
+    "poster_is_proof": false,
+    "scoped_pass_is_repository_wide_pass": false
+  },
+  "artifacts": {
+    "specification": "docs/axiome/denk_mengenlehre_v1.md",
+    "prompt_template": "docs/prompt_templates/denk_mengenlehre.md",
+    "policy": "policy/DENK_MENGENLEHRE_V1.json",
+    "power_set": "docs/denk_mengenlehre/batch_002/POTENZMENGE.json",
+    "exclusion_boundary": "docs/denk_mengenlehre/batch_002/KOMPLEMENT.md",
+    "validator": "tools/qikvrt_denk_mengenlehre.py",
+    "tests": "tests/test_denk_mengenlehre.py"
+  },
+  "axioms": [
+    {
+      "id": "A1",
+      "name": "REPRESENTATION",
+      "statement": "A verified thought state is modeled as a finite set of typed claim, requirement and evidence identifiers."
+    },
+    {
+      "id": "A2",
+      "name": "EMPTY_BASE_STATE",
+      "statement": "The empty set is the selected initial evidence state E0."
+    },
+    {
+      "id": "A3",
+      "name": "EVIDENCE_UNION",
+      "statement": "Evidence is accumulated by union; PASS predicates are combined by logical conjunction."
+    },
+    {
+      "id": "A4",
+      "name": "TYPED_REQUIREMENT_COVERAGE",
+      "statement": "Gate coverage holds exactly when required requirement IDs are a subset of verified requirement IDs."
+    },
+    {
+      "id": "A5",
+      "name": "DECLARED_GATE_POWER_SET",
+      "statement": "The power set of the six declared gate IDs contains 64 unique subsets."
+    },
+    {
+      "id": "A6",
+      "name": "RELATIVE_COMPLEMENT",
+      "statement": "Excluded inputs are the complement of allowed inputs relative to an explicit finite candidate-input universe."
+    },
+    {
+      "id": "A7",
+      "name": "TYPED_SELF_REFERENCE",
+      "statement": "A repository descriptor refers to this scope; the system is not asserted to be a member of itself."
+    }
+  ],
+  "set_model": {
+    "gate_ids": [
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5",
+      "G6"
+    ],
+    "status_domain": [
+      "PENDING",
+      "FAIL",
+      "PASS"
+    ],
+    "initial_evidence": [],
+    "evidence_transition": "E_(i+1) = E_i union Evidence(G_(i+1))",
+    "batch_pass_formula": "AND(status(G_i) == PASS for every G_i in G)",
+    "evidence_formula": "UNION(Evidence(G_i) for every G_i in G)",
+    "power_set_cardinality": 64,
+    "power_set_semantics": "All subsets of gate IDs classified as passed; not all ternary status assignments."
+  },
+  "self_reference": {
+    "descriptor_path": "AI_CONTEXT.json",
+    "descriptor_collection": "reasoning_models",
+    "descriptor_key": "qikvrt-denk-mengenlehre-v1",
+    "referent_scope_id": "qikvrt-denk-mengenlehre-v1",
+    "relation": "descriptor_references_scope",
+    "system_member_of_itself": false
+  },
+  "requirements": [
+    "R1_CORE_ARTIFACTS_MATERIALIZED",
+    "R2_EMPTY_INITIAL_STATE",
+    "R3_TYPED_SELF_REFERENCE",
+    "R4_POWER_SET_ENUMERATED",
+    "R5_CONJUNCTIVE_PASS_SEMANTICS",
+    "R6_RELATIVE_COMPLEMENT_PARTITION",
+    "R7_SCOPE_IDENTITY_DISTINCT",
+    "R8_FALSE_PASS_EXCLUDED"
+  ],
+  "candidate_input_universe": [
+    "repository_evidence",
+    "chat_memory",
+    "model_memory",
+    "unbound_external_source",
+    "unmaterialized_expected_output",
+    "unverified_visual_asset",
+    "foreign_historical_artifact"
+  ],
+  "allowed_inputs": [
+    "repository_evidence"
+  ],
+  "loaded_inputs": [
+    "repository_evidence"
+  ],
+  "excluded_inputs": [
+    "chat_memory",
+    "model_memory",
+    "unbound_external_source",
+    "unmaterialized_expected_output",
+    "unverified_visual_asset",
+    "foreign_historical_artifact"
+  ],
+  "gates": [
+    {
+      "id": "G1",
+      "name": "MATERIALIZATION",
+      "predicate": "Core artifacts exist and AI_CONTEXT.json binds this scope."
+    },
+    {
+      "id": "G2",
+      "name": "TYPED_SELF_REFERENCE",
+      "predicate": "The descriptor references this scope and the validator is bound by repository integrity."
+    },
+    {
+      "id": "G3",
+      "name": "POWER_SET",
+      "predicate": "POTENZMENGE.json canonically enumerates all 64 subsets of G1 through G6."
+    },
+    {
+      "id": "G4",
+      "name": "REQUIREMENT_COVERAGE",
+      "predicate": "Every required requirement ID has a successful executable check."
+    },
+    {
+      "id": "G5",
+      "name": "RELATIVE_COMPLEMENT",
+      "predicate": "The input universe is partitioned and no excluded input class is loaded."
+    },
+    {
+      "id": "G6",
+      "name": "CONJUNCTIVE_FINALIZATION",
+      "predicate": "G1 through G5, repository integrity and an exact clean Git checkout all pass."
+    }
+  ],
+  "non_claims": [
+    "System is a member of itself.",
+    "The repository is a member of thought and thought is a member of the repository.",
+    "Repository evidence automatically establishes truth.",
+    "Materialization of seven axioms proves their consistency.",
+    "Enumeration of the declared power set proves that no requirement is missing.",
+    "A visual poster is a formal proof.",
+    "A scoped gate PASS establishes repository-wide PASS, FINAL_PASS, EFFECT_ACK_DONE, merge, synchronization, publication or deployment."
+  ],
+  "verification": {
+    "materialize_command": "python3 -B tools/qikvrt_denk_mengenlehre.py materialize",
+    "verify_command": "python3 -B tools/qikvrt_denk_mengenlehre.py verify --json",
+    "integrity_generate_command": "python3 -B tools/qikvrt_integrity.py generate",
+    "integrity_verify_command": "python3 -B tools/qikvrt_integrity.py verify",
+    "fail_closed": true,
+    "artifact_identity": "sha256 of the canonical gate report before the artifact field is attached"
+  }
+}

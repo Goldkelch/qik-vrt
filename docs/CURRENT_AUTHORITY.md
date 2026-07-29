@@ -46,6 +46,10 @@ path to the current operational authority.
 - `docs/Die_Spirale_des_entscheidenden_Unterschieds.md` — full German-language
   synthesis, including the universal ontology of difference and the distinct
   proof and correspondence levels used by the work
+- `docs/axiome/denk_mengenlehre_v1.md` and
+  `policy/DENK_MENGENLEHRE_V1.json` — the scope-qualified interpretive-formal
+  Denk-Mengenlehre model, with typed self-reference, explicit set boundaries,
+  a finite six-gate power set, and a fail-closed executable validator
 
 ## Release anchor
 
