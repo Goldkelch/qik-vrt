@@ -10,11 +10,22 @@ changed by this transaction; any evidence-overreach is recorded as a required
 versioned correction.
 """
 from __future__ import annotations
-import copy, datetime as dt, hashlib, json, pathlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import copy, datetime as dt, functools, hashlib, json, pathlib, re, sys, time, urllib.error, urllib.parse, urllib.request
 from collections import Counter
 from typing import Any, Mapping
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT_STR = str(ROOT)
+if ROOT_STR not in sys.path:
+    sys.path.insert(0, ROOT_STR)
+
+from tools.qikvrt_integrity import (
+    PortableGitSourceCapsule,
+    cross_check_portable_git_source_capsule,
+    load_portable_git_source_capsule,
+    portable_git_source_evidence,
+)
+
 BASE = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union"
 QUEUE = BASE / "CONTENT_CLAIM_DISPOSITION_QUEUE.json"
 INDEX = BASE / "CONTENT_CLAIM_DISPOSITION_INDEX.json"
@@ -33,9 +44,15 @@ PROJECTION_UPDATED_AT = "2026-07-29T08:27:51Z"
 UNION_OBSERVED_AT = "2026-07-28T16:20:00+02:00"
 SOURCE_UNION_RECORDED_AT = "2026-07-28T17:10:00+02:00"
 SOURCE_SHA = "4fd73232cc8d2189e14c950b376bb72ffcaf744e"
+SOURCE_TREE = "93551633d0c2ee8c02ae232e23914acd06b7d858"
 REMOTE_REF = "evidence/content-disposition-batch-002-terminal-20260728-v1"
 AUTH_REPO = "Goldkelch/qik-vrt"
 MIRROR_REPO = "ingolf-lohmann/qik-vrt"
+SOURCE_CAPSULE_RELATIVE = (
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/"
+    "content-disposition-batch-002/status-projection-source-capsule/"
+    "SOURCE_CAPSULE.json"
+)
 SUBJECT_IDS = [
  "SUBJECT-5d4c516db0fdaaf5", "SUBJECT-59493a8ae380798d",
  "SUBJECT-3e026c784df87b95", "SUBJECT-c9d87f4435178b09",
@@ -67,29 +84,16 @@ def readj(p:pathlib.Path): return json.loads(p.read_text(encoding="utf-8"))
 def pretty(x:Any): return json.dumps(x, ensure_ascii=False, sort_keys=True, indent=2)+"\n"
 def sha(b:bytes): return hashlib.sha256(b).hexdigest()
 def canon(x:Any): return json.dumps(x, ensure_ascii=False, sort_keys=True, separators=(",",":")).encode()
-def git_object(spec:str)->str:
-    try:
-        return subprocess.check_output(["git","rev-parse",spec],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
-    except (OSError,subprocess.CalledProcessError) as ex:
-        fail(f"Git source evidence is unavailable: {spec}: {ex}")
 
-def git_bytes(spec:str)->bytes:
+def source_json(path:str)->dict[str,Any]:
     try:
-        return subprocess.check_output(
-            ["git","show",spec],
-            cwd=ROOT,
-            stderr=subprocess.DEVNULL,
-        )
-    except (OSError,subprocess.CalledProcessError) as ex:
-        fail(f"Git source bytes are unavailable: {spec}: {ex}")
-
-def git_json(path:str)->dict[str,Any]:
-    try:
-        value=json.loads(git_bytes(f"{SOURCE_SHA}:{path}"))
+        value=json.loads(source_capsule().files[path])
+    except KeyError as ex:
+        fail(f"portable source path is absent: {path}: {ex}")
     except json.JSONDecodeError as ex:
-        fail(f"Git source JSON is invalid: {path}: {ex}")
+        fail(f"portable source JSON is invalid: {path}: {ex}")
     if not isinstance(value,dict):
-        fail(f"Git source JSON is not an object: {path}")
+        fail(f"portable source JSON is not an object: {path}")
     return value
 
 def source_evidence_paths()->tuple[str,...]:
@@ -102,24 +106,31 @@ def source_evidence_paths()->tuple[str,...]:
         AI_STATUS.relative_to(ROOT).as_posix(),
     )
 
+@functools.lru_cache(maxsize=1)
+def source_capsule()->PortableGitSourceCapsule:
+    try:
+        capsule=load_portable_git_source_capsule(ROOT,SOURCE_CAPSULE_RELATIVE)
+        cross_check_portable_git_source_capsule(ROOT,capsule)
+    except (OSError,RuntimeError,UnicodeError,ValueError) as ex:
+        fail(f"portable Git source capsule is invalid: {ex}")
+    if (
+        capsule.repository!=AUTH_REPO
+        or capsule.ref_name!=REMOTE_REF
+        or capsule.commit_sha1!=SOURCE_SHA
+        or capsule.root_tree_sha1!=SOURCE_TREE
+        or set(capsule.files)!=set(source_evidence_paths())
+    ):
+        fail("portable Git source capsule identity or selected path set drift")
+    return capsule
+
 def build_source_evidence()->dict[str,Any]:
-    commit=git_object(f"{SOURCE_SHA}^{{commit}}")
-    if commit!=SOURCE_SHA:
-        fail("projection-input commit does not resolve to the declared source SHA")
-    return {
-        "ref_name":REMOTE_REF,
-        "commit":commit,
-        "blobs":{
-            path:git_object(f"{SOURCE_SHA}:{path}")
-            for path in source_evidence_paths()
-        },
-    }
+    return portable_git_source_evidence(source_capsule())
 
 def source_projection_inputs()->tuple[dict[str,Any],dict[str,Any],dict[str,Any]]:
     return (
-        git_json(QUEUE.relative_to(ROOT).as_posix()),
-        git_json(INDEX.relative_to(ROOT).as_posix()),
-        git_json(UNION_RECEIPT.relative_to(ROOT).as_posix()),
+        source_json(QUEUE.relative_to(ROOT).as_posix()),
+        source_json(INDEX.relative_to(ROOT).as_posix()),
+        source_json(UNION_RECEIPT.relative_to(ROOT).as_posix()),
     )
 
 def validate_source_union_identity(union_receipt:Mapping[str,Any])->None:
@@ -463,7 +474,7 @@ def validate_ai_progress(progress:Mapping[str,Any])->None:
     if not required.issubset(progress):
         fail(f"AI progress missing fields: {sorted(required-set(progress))}")
     if (
-        progress.get("schema")!="qikvrt-ai-progress/3.0"
+        progress.get("schema")!="qikvrt-ai-progress/3.1"
         or progress.get("state") not in {
             "IDLE","RUNNING","WAITING","PASS","BLOCK",
             "FAIL","TIMEOUT","CANCELLED",
@@ -729,7 +740,7 @@ def build_ai_progress(
     corpus_percent=(len(complete)*100)//len(index["claim_subjects"])
     global_counts=global_receipt["counts"]
     progress={
-        "schema":"qikvrt-ai-progress/3.0",
+        "schema":"qikvrt-ai-progress/3.1",
         "operation_id":"zenodo-canonical-union-content-disposition-2026-07-28",
         "repository":"Goldkelch/qik-vrt",
         "ref_name":REMOTE_REF,
@@ -905,7 +916,7 @@ mandatory external gates.
 def status_projection(check:bool)->int:
     receipt_path=OUT/"CONTENT_DISPOSITION_BATCH_002_RECEIPT.json"
     source_queue,source_index,source_union=source_projection_inputs()
-    source_receipt=git_json(receipt_path.relative_to(ROOT).as_posix())
+    source_receipt=source_json(receipt_path.relative_to(ROOT).as_posix())
     receipt=copy.deepcopy(source_receipt)
     receipt.update({
         "work_unit_id":WORK_UNIT_ID,
@@ -929,8 +940,9 @@ def status_projection(check:bool)->int:
         AI_PROGRESS:pretty(progress),
         AI_STATUS:render_ai_status(progress),
     }
+    capsule=source_capsule()
     source={
-        path:git_bytes(f"{SOURCE_SHA}:{path.relative_to(ROOT).as_posix()}")
+        path:capsule.files[path.relative_to(ROOT).as_posix()]
         for path in expected
     }
     current={
@@ -1027,6 +1039,6 @@ if __name__=="__main__":
         if sys.argv[1:]:
             fail("usage: qikvrt_content_disposition_batch_002_terminal.py [--repair-status-projection|--check-status-projection]")
         raise SystemExit(main())
-    except (E,OSError,KeyError,TypeError,ValueError,json.JSONDecodeError,subprocess.CalledProcessError) as ex:
+    except (E,OSError,KeyError,TypeError,ValueError,json.JSONDecodeError) as ex:
         print(json.dumps({"state":"BLOCK","failure":str(ex),"pass":False,"final_pass":False,"effect_ack_done":False},ensure_ascii=False))
         raise SystemExit(2)

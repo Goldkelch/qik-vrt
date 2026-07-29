@@ -277,7 +277,7 @@ def validate_root_progress_owner(
         batch_002_receipt=loaded
     else:
         validate_terminal_batch_002_receipt(batch_002_receipt)
-    if progress.get("schema")!="qikvrt-ai-progress/3.0":
+    if progress.get("schema")!="qikvrt-ai-progress/3.1":
         raise ValueError("root AI progress must use the durable v3 ownership contract")
     if not isinstance(progress.get("operation_id"),str) or not progress["operation_id"]:
         raise ValueError("root AI progress operation owner is missing")

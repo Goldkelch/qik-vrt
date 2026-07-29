@@ -18,6 +18,17 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
+ROOT_STR = str(ROOT)
+if ROOT_STR not in sys.path:
+    sys.path.insert(0, ROOT_STR)
+
+from tools.qikvrt_integrity import (
+    PORTABLE_GIT_SOURCE_VERIFICATION_MODE,
+    cross_check_portable_git_source_capsule,
+    load_portable_git_source_capsule,
+    portable_git_source_evidence,
+)
+
 CONTEXT_PATH = ROOT / "AI_CONTEXT.json"
 SUPPORTED_CONTEXT_SCHEMAS = frozenset(
     {
@@ -108,8 +119,8 @@ def validate_progress(context: dict[str, Any]) -> str:
     missing = [key for key in required_fields if key not in progress]
     if missing:
         fail("AI progress missing durable fields: " + ", ".join(sorted(missing)))
-    if progress.get("schema") != "qikvrt-ai-progress/3.0":
-        fail("AI progress must use qikvrt-ai-progress/3.0")
+    if progress.get("schema") != "qikvrt-ai-progress/3.1":
+        fail("AI progress must use qikvrt-ai-progress/3.1")
     source_sha = progress.get("source_sha")
     if not isinstance(source_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         fail("AI progress source_sha is invalid")
@@ -124,8 +135,6 @@ def validate_progress(context: dict[str, Any]) -> str:
         fail("AI progress source evidence ref drift")
     if evidence.get("commit") != source_sha:
         fail("AI progress source evidence commit drift")
-    if git_value("rev-parse", f"{source_sha}^{{commit}}") != source_sha:
-        fail("AI progress source commit is unavailable")
     blobs = require(evidence, "blobs", dict)
     if not blobs:
         fail("AI progress source evidence must bind at least one blob")
@@ -137,9 +146,35 @@ def validate_progress(context: dict[str, Any]) -> str:
             or ".." in Path(path).parts
             or not isinstance(expected, str)
             or not re.fullmatch(r"[0-9a-f]{40}", expected)
-            or git_value("rev-parse", f"{source_sha}:{path}") != expected
         ):
             fail(f"AI progress source blob binding is invalid: {path!r}")
+    if evidence.get("verification_mode") != PORTABLE_GIT_SOURCE_VERIFICATION_MODE:
+        fail("AI progress source evidence verification mode drift")
+    capsule_binding = require(evidence, "capsule", dict)
+    capsule_path = capsule_binding.get("path")
+    if not isinstance(capsule_path, str):
+        fail("AI progress source capsule path is invalid")
+    try:
+        capsule = load_portable_git_source_capsule(
+            ROOT,
+            capsule_path,
+            expected_binding=capsule_binding,
+        )
+        cross_check_portable_git_source_capsule(ROOT, capsule)
+    except (OSError, RuntimeError, UnicodeError, ValueError) as exc:
+        fail(f"AI progress portable source capsule is invalid: {exc}")
+    if evidence != portable_git_source_evidence(capsule):
+        fail("AI progress source evidence does not match its portable Git closure")
+    canonical_repositories = (
+        context.get("project", {})
+        .get("canonicality", {})
+        .get("repositories", [])
+    )
+    if (
+        not canonical_repositories
+        or evidence.get("source_repository") != canonical_repositories[0]
+    ):
+        fail("AI progress portable source repository is not the Authority")
     scopes = require(progress, "scopes", dict)
     if not scopes:
         fail("AI progress must contain at least one bounded scope")
