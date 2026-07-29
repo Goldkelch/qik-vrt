@@ -2,15 +2,13 @@
 
 Repository: `Goldkelch/qik-vrt`
 
-Historical projection input ref: `evidence/content-disposition-batch-002-terminal-20260728-v1`
-
-Historical projection source: `4fd73232cc8d2189e14c950b376bb72ffcaf744e`
-
 Post-acceptance overlay: `release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json`
 
-Updated at: `2026-07-29T22:16:38Z`
+Batch-003 dispatch receipt: `release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json`
 
-Snapshot state: **`IDLE`**. Overall effect state:
+Updated at: `2026-07-29T23:05:40Z`
+
+Snapshot state: **`WORKING`**. Overall effect state:
 **`EFFECT_ACK_CONTINUE`**. No unqualified repository-wide
 `PASS`, `FINAL_PASS`, Zenodo publication or corpus completion is claimed.
 
@@ -19,12 +17,11 @@ Snapshot state: **`IDLE`**. Overall effect state:
 
 - ✓ Canonical 24-record union and 19 claim subjects bound
 - ✓ Batch 001 terminally dispositioned
-- ✓ Batch 002 terminally dispositioned
-- ✓ Corrected Batch-002 candidate created and returned to Ingolf Lohmann
-- ✓ Owner decision `ACCEPT` recorded
-- ✓ Authority PR #209 and Mirror PR #100 promoted
-- ✓ Reciprocal receipt Authority PR #213 / Mirror PR #101 promoted
-- □ Seven remaining claim subjects
+- ✓ Batch 002 correction accepted, promoted and reciprocally bound
+- ✓ Batch 003 dispatched with six subjects
+- ▶ First work package active: `SUBJECT-2581811b342e505d`
+- □ Exact public `equality-receipts-index.json` freeze recovery
+- □ Six Batch-003 subjects and one later subject remain disposition-incomplete
 - □ Retrospective proof corpus and any later publication effect
 
 ## Bounded global claim scope
@@ -42,31 +39,22 @@ statement.
 12/19 subjects dispositioned
 (63%), 7 open.
 
-- Batch 002 claim disposition: `TERMINALLY_DISPOSITIONED`, 6 subjects,
-  1489 claims.
-- Batch 002 correction chain: `CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND`.
-- Owner return and content-correction review: complete.
-- Authority promotion: PR #209, merge `524fabd51f3492aa99da1430557f4f515074450e`.
-- Mirror promotion: PR #100, merge `a8b85fbf3222da1e528505a760c184d48e112329`.
-- Reciprocal receipt: PR #213 / PR #101,
-  SHA-256 `ba5267f60417f39ceb21efe271d191d0ba40d65dddbc6d17d47c72e672348658`.
-- Batch 003: `READY` with 6 subjects;
-  1 further subject remains beyond the active batch.
+- Batch 002: `TERMINALLY_DISPOSITIONED`; post-acceptance chain `CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND`.
+- Batch 003: `DISPATCHED_FIRST_SUBJECT_ACTIVE` with 6 subjects.
+- Active subject: `SUBJECT-2581811b342e505d`.
+- Active work package: `release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/subjects/SUBJECT-2581811b342e505d/CLAIM_EXTRACTION_WORK_PACKAGE.json`.
+- Claim extraction complete: `false`.
 - Corpus `PASS`, `FINAL_PASS`, `EFFECT_ACK_DONE`, Zenodo mutation and
   proof-corpus publication: **not established**.
 
-## Repository evidence boundary
+## Active evidence boundary
 
-The historical terminal queue, index and union receipt remain immutable. The
-post-acceptance overlay binds the Owner `ACCEPT` receipt, both promotions and
-the independently gated reciprocal equality receipt. It advances only the
-content-disposition next action; it does not rewrite the earlier event records.
-
-## BLOCKER
-
-No internal Batch-002 correction or owner-return blocker remains. Seven claim
-subjects and the retrospective proof corpus remain incomplete.
+The exact historical receipt bytes are already repository-bound. The live
+`evidence/receipts/index.json` contains later receipts and therefore cannot
+substitute for the published `equality-receipts-index.json` freeze. Recovery and
+hash verification of that exact public freeze is the first active technical
+effect.
 
 ## NEXT
 
-`EXECUTE_CONTENT_DISPOSITION_BATCH_003`
+`RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D`

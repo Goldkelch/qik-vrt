@@ -213,7 +213,7 @@
         "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
         "ref_name": {"type": "string", "minLength": 1},
         "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "state": {"enum": ["IDLE", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
+        "state": {"enum": ["IDLE", "WORKING", "RUNNING", "WAITING", "PASS", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
         "effect_state": {"enum": ["EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_BLOCK"]},
         "percent": {"type": "integer", "minimum": 0, "maximum": 100},
         "percent_scope": {"type": "string", "minLength": 1},
@@ -277,7 +277,7 @@
           },
           "then": {
             "properties": {
-              "state": {"enum": ["IDLE", "RUNNING", "WAITING", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
+              "state": {"enum": ["IDLE", "WORKING", "RUNNING", "WAITING", "BLOCK", "FAIL", "TIMEOUT", "CANCELLED"]},
               "effect_state": {"const": "EFFECT_ACK_CONTINUE"},
               "claims": {"$ref": "#/$defs/nonReleaseClaims"}
             }

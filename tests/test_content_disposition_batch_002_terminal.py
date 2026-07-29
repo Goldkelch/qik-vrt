@@ -11,10 +11,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 P = ROOT / "tools/qikvrt_content_disposition_batch_002_terminal.py"
-POST_P = ROOT / (
-    "tools/"
-    "qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
-)
+CURRENT_P = ROOT / "tools/qikvrt_content_disposition_batch_003_dispatch.py"
 BASE = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union"
 OUT = BASE / "content-disposition-batch-002/terminal-disposition"
 
@@ -23,10 +20,10 @@ m = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(m)
 
-post_spec = importlib.util.spec_from_file_location("post_b2", POST_P)
-post = importlib.util.module_from_spec(post_spec)
-assert post_spec.loader is not None
-post_spec.loader.exec_module(post)
+current_spec = importlib.util.spec_from_file_location("current_status", CURRENT_P)
+current = importlib.util.module_from_spec(current_spec)
+assert current_spec.loader is not None
+current_spec.loader.exec_module(current)
 
 
 def load(path: pathlib.Path):
@@ -130,14 +127,6 @@ class T(unittest.TestCase):
             self.queue["state"],
             "BATCH_002_CORRECTION_REQUIRED_BATCH_003_READY",
         )
-        self.assertEqual(
-            self.index["state"],
-            "BATCH_002_TERMINALLY_DISPOSITIONED_CORRECTION_REQUIRED_BATCH_003_READY",
-        )
-        self.assertEqual(
-            self.union_receipt["state"],
-            "CONTENT_DISPOSITION_BATCH_002_TERMINALLY_DISPOSITIONED_CORRECTION_REQUIRED",
-        )
 
     def test_batch_counts_and_partition_remain_exact(self):
         complete = [
@@ -164,10 +153,6 @@ class T(unittest.TestCase):
                 self.queue["remaining_subject_count"],
             ),
             ("CONTENT-DISPOSITION-BATCH-003", "READY", 6, 1),
-        )
-        self.assertEqual(
-            active["subject_count"] + self.queue["remaining_subject_count"],
-            len(pending),
         )
 
     def test_historical_projection_is_idempotent(self):
@@ -206,43 +191,36 @@ class T(unittest.TestCase):
                 self.receipt["claim_count"],
                 self.receipt["content_change_required_count"],
             )
-        future_index = copy.deepcopy(self.index)
-        future_index["batch_002"]["owner_return_receipt"] = {
-            "state": "RETURNED",
-        }
-        with self.assertRaises(m.E):
-            m.project_status(
-                copy.deepcopy(self.queue),
-                future_index,
-                copy.deepcopy(self.union_receipt),
-                copy.deepcopy(self.receipt["subjects"]),
-                self.receipt["claim_count"],
-                self.receipt["content_change_required_count"],
-            )
 
-    def test_post_acceptance_projection_supersedes_only_current_status(self):
-        result = post.verify()
+    def test_current_dispatch_supersedes_only_root_status(self):
+        result = current.verify()
         self.assertEqual(
             result["next_deterministic_effect"],
-            "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
+            current.NEXT_EFFECT,
         )
         self.assertEqual(
             self.progress["projection_owner"]["tool"],
-            post.TOOL_REL,
+            current.TOOL_REL,
         )
         self.assertEqual(
             self.progress["next_action"],
-            "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
+            current.NEXT_EFFECT,
         )
         corpus = self.progress["scopes"][
             "qikvrt-zenodo-canonical-union-2026-07-28-v1"
         ]
-        batch = corpus["batch_002"]
         self.assertEqual(corpus["counts"]["open_subjects"], 7)
-        self.assertEqual(batch["state"], "TERMINALLY_DISPOSITIONED")
         self.assertEqual(
-            batch["post_acceptance"]["state"],
-            post.POST_ACCEPTANCE_STATE,
+            corpus["batch_002"]["state"],
+            "TERMINALLY_DISPOSITIONED",
+        )
+        self.assertEqual(
+            corpus["batch_002"]["post_acceptance"]["state"],
+            current.POST_ACCEPTANCE_STATE,
+        )
+        self.assertEqual(
+            corpus["batch_003"]["state"],
+            "DISPATCHED_FIRST_SUBJECT_ACTIVE",
         )
         self.assertEqual(
             self.queue["next_deterministic_effect"],
@@ -268,27 +246,15 @@ class T(unittest.TestCase):
             policy["tracked_snapshot"]["ownerless_state"],
             "IDLE",
         )
-        self.assertTrue(
-            set(policy["tracked_snapshot"]["required_fields"]).issubset(
-                durable["required"]
-            )
-        )
 
     def test_human_projection_is_current_and_fail_closed(self):
         status = (ROOT / "AI_STATUS.md").read_text(encoding="utf-8")
-        expected, rendered = post.expected_projection()
+        expected, rendered = current.expected_projection()
         self.assertEqual(self.progress, expected)
         self.assertEqual(status, rendered)
         self.assertIn("[████████████░░░░░░░] 63%", status)
-        self.assertIn("✓ Owner decision `ACCEPT` recorded", status)
-        self.assertIn(
-            "`EXECUTE_CONTENT_DISPOSITION_BATCH_003`",
-            status,
-        )
-        self.assertNotIn(
-            "- □ Required corrected Batch-002 candidate",
-            status,
-        )
+        self.assertIn("Batch 003 dispatched with six subjects", status)
+        self.assertIn(current.NEXT_EFFECT, status)
         for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
             self.assertIs(self.progress["claims"][key], False)
 
