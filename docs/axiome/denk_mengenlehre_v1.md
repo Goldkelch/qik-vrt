@@ -13,6 +13,34 @@ Copyright (c) 2026 Ingolf Lohmann.
 >
 > Ingolf Lohmann
 
+## Kanonische visuelle Evidenz
+
+![Poster: Denken ist Mengenlehre und inkludiert die leere Menge](denk_mengenlehre_poster.jpg)
+
+Das von Ingolf Lohmann bereitgestellte Poster ist unter
+`docs/axiome/denk_mengenlehre_poster.jpg` ohne Umkodierung an diesen Scope
+gebunden:
+
+- Medientyp: `image/jpeg`
+- Abmessungen: `1055 × 1491` Pixel
+- Bytezahl: `133768`
+- SHA-256:
+  `7fcd688b7f90d541a18080f4f51adc5d5934d5c15694b16ebaced65bd8e1ed3a`
+- Git-Blob-SHA-1: `b733142e6f695689a6d0a74a77faa0c5bff25462`
+- Rechteinhaber und Autor: Ingolf Lohmann
+- Lizenz: CC BY-NC-ND 4.0
+- Eingang: vom verantwortlichen Menschen als Rasterdatei bereitgestellt
+- Transportdateiname:
+  `Denken ist Mengenlehre und inkludiert die leere Menge! q.e.d. Ingolf Lohmann  .jpg`
+- Eingebettete EXIF-, XMP-, ICC-, Kommentar- oder Rechte-Metadaten: keine
+- Entstehungsmethode und etwaiges Drittmaterial:
+  `NOT_ESTABLISHED_BY_REPOSITORY_EVIDENCE`
+
+Die Gestaltung visualisiert den Leitsatz mit Mengenklammern, leerer Menge,
+Venn-Diagramm, Teilmengenrelation und Grundmenge. Sie ist erklärende,
+hashgebundene Visualisierung. Sie ist weder ein formaler Beweis der Axiome
+A1–A7 noch ein eigenständiger PASS-Nachweis.
+
 ## Epistemischer Status und Scope
 
 `qikvrt-denk-mengenlehre-v1` ist ein interpretatives, formal präzisiertes
@@ -181,7 +209,7 @@ Gates neu auszuführen.
 - Fehlende oder nicht parsebare Evidenz ergibt `BLOCK`, niemals implizit
   `PASS`.
 - `AXIOMS_PRESENT` bedeutet Präsenz, nicht Konsistenzbeweis.
-- Ein Poster ist erklärende Visualisierung, kein Beweis.
+- Das kanonisch gebundene Poster ist erklärende Visualisierung, kein Beweis.
 - Chat, Modellgedächtnis, ungebundene externe Quellen und nicht
   materialisierte Soll-Ausgaben sind keine kanonische Evidenz.
 - Der scope-qualifizierte Gate-PASS ist kein Repository-weiter

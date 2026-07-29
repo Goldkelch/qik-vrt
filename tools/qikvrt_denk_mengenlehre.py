@@ -96,6 +96,126 @@ def _file_record(relative: pathlib.PurePosixPath) -> dict[str, object]:
     }
 
 
+def jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+    """Return JPEG width and height from a start-of-frame marker."""
+
+    if len(data) < 4 or data[:2] != b"\xff\xd8":
+        return None
+    offset = 2
+    start_of_frame_markers = {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+    while offset < len(data):
+        while offset < len(data) and data[offset] == 0xFF:
+            offset += 1
+        if offset >= len(data):
+            return None
+        marker = data[offset]
+        offset += 1
+        if marker == 0xD9:
+            return None
+        if marker == 0xD8 or 0xD0 <= marker <= 0xD7:
+            continue
+        if offset + 2 > len(data):
+            return None
+        segment_length = int.from_bytes(data[offset : offset + 2], "big")
+        if segment_length < 2 or offset + segment_length > len(data):
+            return None
+        if marker in start_of_frame_markers:
+            if segment_length < 7:
+                return None
+            height = int.from_bytes(data[offset + 3 : offset + 5], "big")
+            width = int.from_bytes(data[offset + 5 : offset + 7], "big")
+            return width, height
+        offset += segment_length
+    return None
+
+
+def git_blob_sha1(data: bytes) -> str:
+    """Return the canonical SHA-1 identity of a Git blob."""
+
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
+
+
+def _poster_contract(
+    policy: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    record: Mapping[str, object],
+) -> tuple[bool, dict[str, object]]:
+    visual_evidence = policy.get("visual_evidence")
+    poster = (
+        visual_evidence.get("poster")
+        if isinstance(visual_evidence, dict)
+        else None
+    )
+    poster_path = _relative_path(artifacts.get("poster"), "poster")
+    data = (ROOT / poster_path).read_bytes()
+    dimensions = jpeg_dimensions(data)
+    passed = bool(
+        isinstance(poster, dict)
+        and poster.get("path") == str(poster_path)
+        and poster.get("media_type") == "image/jpeg"
+        and poster.get("bytes") == record.get("bytes")
+        and poster.get("sha256") == record.get("sha256")
+        and poster.get("git_blob_sha1") == git_blob_sha1(data)
+        and poster.get("pixel_width") == 1055
+        and poster.get("pixel_height") == 1491
+        and dimensions == (1055, 1491)
+        and poster.get("role") == "EXPLANATORY_VISUALIZATION"
+        and poster.get("author") == "Ingolf Lohmann"
+        and poster.get("rights_holder") == "Ingolf Lohmann"
+        and poster.get("license") == "CC-BY-NC-ND-4.0"
+        and poster.get("ingest_method") == "RESPONSIBLE_HUMAN_PROVIDED_UPLOAD"
+        and poster.get("generation_method")
+        == "NOT_ESTABLISHED_BY_REPOSITORY_EVIDENCE"
+        and poster.get("third_party_material_status")
+        == "NOT_ESTABLISHED_BY_REPOSITORY_EVIDENCE"
+        and poster.get("embedded_rights_metadata_present") is False
+        and poster.get("source_bytes_preserved") is True
+        and poster.get("formal_proof") is False
+        and data.endswith(b"\xff\xd9")
+    )
+    evidence = {
+        "path": str(poster_path),
+        "media_type": poster.get("media_type") if isinstance(poster, dict) else None,
+        "bytes": record.get("bytes"),
+        "sha256": record.get("sha256"),
+        "git_blob_sha1": git_blob_sha1(data),
+        "pixel_width": dimensions[0] if dimensions else None,
+        "pixel_height": dimensions[1] if dimensions else None,
+        "source_bytes_preserved": (
+            poster.get("source_bytes_preserved")
+            if isinstance(poster, dict)
+            else None
+        ),
+        "formal_proof": (
+            poster.get("formal_proof") if isinstance(poster, dict) else None
+        ),
+        "generation_method": (
+            poster.get("generation_method") if isinstance(poster, dict) else None
+        ),
+        "third_party_material_status": (
+            poster.get("third_party_material_status")
+            if isinstance(poster, dict)
+            else None
+        ),
+    }
+    return passed, evidence
+
+
 def _require_string_list(
     container: Mapping[str, Any],
     key: str,
@@ -291,9 +411,13 @@ def _context_descriptor(
     if not isinstance(descriptor, dict):
         return False, None
     expected_artifacts = policy.get("artifacts")
+    if not isinstance(expected_artifacts, dict):
+        raise ContractError("artifacts must be an object")
+    poster_path = expected_artifacts.get("poster")
     bound = bool(
         descriptor.get("scope_id") == SCOPE_ID
         and descriptor.get("specification") == expected_artifacts.get("specification")
+        and descriptor.get("visual_evidence") == [poster_path]
         and descriptor.get("prompt_template")
         == expected_artifacts.get("prompt_template")
         and descriptor.get("policy") == str(POLICY_PATH)
@@ -305,6 +429,7 @@ def _context_descriptor(
     read_order = context.get("required_read_order")
     required_paths = {
         str(expected_artifacts.get("specification")),
+        str(poster_path),
         str(expected_artifacts.get("prompt_template")),
         str(POLICY_PATH),
     }
@@ -365,18 +490,32 @@ def build_report() -> dict[str, Any]:
     if not isinstance(artifacts, dict):
         raise ContractError("artifacts must be an object")
 
-    core_names = ("specification", "prompt_template", "policy")
+    core_names = ("specification", "poster", "prompt_template", "policy")
     core_records = [
         _file_record(_relative_path(artifacts.get(name), name))
         for name in core_names
     ]
+    poster_record = core_records[core_names.index("poster")]
+    poster_contract_bound, poster_evidence = _poster_contract(
+        policy,
+        artifacts,
+        poster_record,
+    )
     context_bound, descriptor = _context_descriptor(policy)
-    g1_pass = context_bound and len(core_records) == len(core_names)
+    g1_pass = bool(
+        context_bound
+        and poster_contract_bound
+        and len(core_records) == len(core_names)
+    )
     g1 = _gate(
         "G1",
         "MATERIALIZATION",
         g1_pass,
-        {"artifacts": core_records, "context_descriptor": descriptor},
+        {
+            "artifacts": core_records,
+            "context_descriptor": descriptor,
+            "poster_contract": poster_evidence,
+        },
         "core artifacts or AI_CONTEXT binding are incomplete",
     )
 
@@ -490,6 +629,7 @@ def build_report() -> dict[str, Any]:
             and formal_boundary.get("poster_is_proof") is False
             and formal_boundary.get("scoped_pass_is_repository_wide_pass") is False
         ),
+        "R9_VISUAL_EVIDENCE_BOUND": poster_contract_bound,
     }
     required = set(_require_string_list(policy, "requirements"))
     verified = {key for key, value in requirement_checks.items() if value}

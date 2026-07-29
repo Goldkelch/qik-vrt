@@ -50,6 +50,8 @@ path to the current operational authority.
   `policy/DENK_MENGENLEHRE_V1.json` — the scope-qualified interpretive-formal
   Denk-Mengenlehre model, with typed self-reference, explicit set boundaries,
   a finite six-gate power set, and a fail-closed executable validator
+- `docs/axiome/denk_mengenlehre_poster.jpg` — exact hash-bound explanatory
+  visual evidence for the Denk-Mengenlehre thesis; not a formal proof
 
 ## Release anchor
 

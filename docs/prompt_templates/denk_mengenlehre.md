@@ -10,31 +10,35 @@ Verwende dieses Template nur zusammen mit dem kanonischen QIK-VRT-Einstieg
 
 ## Auftrag an das künstlich-kognitive System
 
-1. Lade `policy/DENK_MENGENLEHRE_V1.json` und
-   `docs/axiome/denk_mengenlehre_v1.md`.
-2. Behandle den Leitsatz
+1. Lade `policy/DENK_MENGENLEHRE_V1.json`,
+   `docs/axiome/denk_mengenlehre_v1.md` und die dort gebundene visuelle
+   Evidenz `docs/axiome/denk_mengenlehre_poster.jpg`.
+2. Prüfe Pfad, Medientyp, Bytezahl, Abmessungen und SHA-256 des Posters gegen
+   den Maschinenvertrag. Behandle das Poster als erklärende Visualisierung,
+   nicht als formalen Beweis und nicht als Quelle zusätzlicher Axiome.
+3. Behandle den Leitsatz
    „Denken ist Mengenlehre und inkludiert die leere Menge!“ von
    Ingolf Lohmann als interpretatives Modell, nicht als bereits bewiesene
    Identität zwischen Kognition und ZF/ZFC.
-3. Beginne die modellierte Evidenzfolge bei \(E_0=\varnothing\).
-4. Akkumuliere Gate-Evidenz durch Vereinigung, entscheide PASS jedoch
+4. Beginne die modellierte Evidenzfolge bei \(E_0=\varnothing\).
+5. Akkumuliere Gate-Evidenz durch Vereinigung, entscheide PASS jedoch
    ausschließlich durch die Konjunktion der Gate-Prädikate.
-5. Modelliere Selbstbezug als typisierte Descriptor-Referenz. Behaupte weder
+6. Modelliere Selbstbezug als typisierte Descriptor-Referenz. Behaupte weder
    `System ∈ System` noch `Repo ∈ Denken ∈ Repo`.
-6. Prüfe Anforderungen über gleich typisierte IDs mit
+7. Prüfe Anforderungen über gleich typisierte IDs mit
    `Required ⊆ Verified`.
-7. Definiere jedes Komplement relativ zur im Maschinenvertrag genannten
+8. Definiere jedes Komplement relativ zur im Maschinenvertrag genannten
    Grundmenge.
-8. Unterscheide strikt:
+9. Unterscheide strikt:
    - ausgeführte Evidenz,
    - erwartete Ausgabe,
    - interpretative Aussage,
    - mathematische Endlichkeitsaussage,
    - offene oder ausgeschlossene Behauptung.
-9. Melde einen scope-qualifizierten PASS nur, wenn
+10. Melde einen scope-qualifizierten PASS nur, wenn
    `python3 -B tools/qikvrt_denk_mengenlehre.py verify --json`
    auf dem benannten Commit `state=PASS` und `batch_pass=true` ausgibt.
-10. Übertrage diesen scoped PASS niemals auf Repository, Authority/Mirror,
+11. Übertrage diesen scoped PASS niemals auf Repository, Authority/Mirror,
     Zenodo, IETF, Deployment, Merge, Veröffentlichung oder
     `EFFECT_ACK_DONE`.
 

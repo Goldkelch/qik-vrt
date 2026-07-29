@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import pathlib
 import unittest
+from unittest import mock
 
 from tools import qikvrt_denk_mengenlehre as model
 
@@ -81,6 +84,56 @@ class DenkMengenlehreContractTests(unittest.TestCase):
         )
         self.assertIn("CONTENT-DISPOSITION-BATCH-002", distinct)
         self.assertIn("github-actions-artifact-8696689772", distinct)
+
+    def test_poster_is_exact_visual_evidence_and_not_proof(self) -> None:
+        poster = self.policy["visual_evidence"]["poster"]
+        path = ROOT / poster["path"]
+        data = path.read_bytes()
+        self.assertEqual(len(data), poster["bytes"])
+        self.assertEqual(hashlib.sha256(data).hexdigest(), poster["sha256"])
+        self.assertEqual(model.git_blob_sha1(data), poster["git_blob_sha1"])
+        self.assertEqual(
+            model.jpeg_dimensions(data),
+            (poster["pixel_width"], poster["pixel_height"]),
+        )
+        self.assertEqual(poster["media_type"], "image/jpeg")
+        self.assertEqual(poster["role"], "EXPLANATORY_VISUALIZATION")
+        self.assertEqual(
+            poster["generation_method"],
+            "NOT_ESTABLISHED_BY_REPOSITORY_EVIDENCE",
+        )
+        self.assertEqual(
+            poster["third_party_material_status"],
+            "NOT_ESTABLISHED_BY_REPOSITORY_EVIDENCE",
+        )
+        self.assertIs(poster["embedded_rights_metadata_present"], False)
+        self.assertIs(poster["source_bytes_preserved"], True)
+        self.assertIs(poster["formal_proof"], False)
+        context = model._load_json(model.CONTEXT_PATH)
+        descriptor = context["reasoning_models"][model.SCOPE_ID]
+        self.assertEqual(descriptor["visual_evidence"], [poster["path"]])
+        self.assertIn(poster["path"], context["required_read_order"])
+
+    def test_poster_contract_rejects_digest_drift(self) -> None:
+        policy = copy.deepcopy(self.policy)
+        policy["visual_evidence"]["poster"]["sha256"] = "0" * 64
+        poster_path = model._relative_path(
+            policy["artifacts"]["poster"],
+            "poster",
+        )
+        record = model._file_record(poster_path)
+        bound, _ = model._poster_contract(policy, policy["artifacts"], record)
+        self.assertFalse(bound)
+
+    def test_context_descriptor_rejects_visual_reference_drift(self) -> None:
+        context = model._load_json(model.CONTEXT_PATH)
+        drifted = copy.deepcopy(context)
+        drifted["reasoning_models"][model.SCOPE_ID]["visual_evidence"] = [
+            "docs/axiome/not-the-canonical-poster.jpg"
+        ]
+        with mock.patch.object(model, "_load_json", return_value=drifted):
+            bound, _ = model._context_descriptor(self.policy)
+        self.assertFalse(bound)
 
     def test_json_loader_rejects_duplicate_keys(self) -> None:
         with self.assertRaises(model.ContractError):
