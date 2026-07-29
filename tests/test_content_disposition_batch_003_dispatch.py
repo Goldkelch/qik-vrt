@@ -35,6 +35,7 @@ class T(unittest.TestCase):
         cls.corpus = load(m.CORPUS)
         cls.envelope = load(m.PROOF_ENVELOPE)
         cls.progress = load(m.AI_PROGRESS)
+        cls.live_index = load(m.LIVE_INDEX)
 
     def test_positive(self):
         result = m.verify()
@@ -101,6 +102,40 @@ class T(unittest.TestCase):
             m.sha256_bytes(m.LIVE_INDEX.read_bytes()),
             m.PUBLIC_INDEX["sha256"],
         )
+
+    def test_live_index_accepts_only_verified_append_only_growth(self):
+        m.validate_live_index(self.live_index)
+        rows = self.live_index["equality_receipts"]
+        self.assertGreaterEqual(len(rows), m.LIVE_INDEX_BASE_ENTRY_COUNT)
+        self.assertEqual(
+            m.sha256_bytes(
+                m.canonical_json_bytes(
+                    rows[:m.LIVE_INDEX_BASE_ENTRY_COUNT]
+                )
+            ),
+            m.LIVE_INDEX_BASE_PREFIX_SHA256,
+        )
+
+    def test_live_index_prefix_mutation_blocks(self):
+        bad = copy.deepcopy(self.live_index)
+        bad["equality_receipts"][0]["authority"]["main"] = "0" * 40
+        with self.assertRaises(m.E):
+            m.validate_live_index(bad)
+
+    def test_live_index_prefix_reordering_blocks(self):
+        bad = copy.deepcopy(self.live_index)
+        bad["equality_receipts"][0], bad["equality_receipts"][1] = (
+            bad["equality_receipts"][1],
+            bad["equality_receipts"][0],
+        )
+        with self.assertRaises(m.E):
+            m.validate_live_index(bad)
+
+    def test_live_index_receipt_identity_tamper_blocks(self):
+        bad = copy.deepcopy(self.live_index)
+        bad["equality_receipts"][-1]["file_sha256"] = "0" * 64
+        with self.assertRaises(m.E):
+            m.validate_live_index(bad)
 
     def test_projection_has_active_owner_without_progress_inflation(self):
         progress, status = m.expected_projection()
