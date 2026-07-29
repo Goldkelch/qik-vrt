@@ -11,7 +11,14 @@ the blob that existed at dispatch time.
 
 from __future__ import annotations
 
+import pathlib
+import sys
 from typing import Any, Mapping
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT_STR = str(ROOT)
+if ROOT_STR not in sys.path:
+    sys.path.insert(0, ROOT_STR)
 
 from tools import qikvrt_content_disposition_batch_003_dispatch_legacy as _legacy
 from tools.qikvrt_content_disposition_batch_003_dispatch_legacy import *  # noqa: F401,F403
