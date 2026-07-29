@@ -3,13 +3,17 @@
   "capability_id": "qikvrt.repository.anticipation.v1",
   "title": "Repository Trend and Anticipation Engine",
   "description": "Derives one canonical next valid repository state and one minimal deterministic next effect from verified ordered observations, discrete derivatives and transition rules.",
-  "semantic_version": "1.1.0-draft",
-  "status": "IMPLEMENTED_LOCAL_PROJECTIONS",
+  "semantic_version": "1.2.0-draft",
+  "status": "IMPLEMENTED_LOCAL_PROJECTIONS_AND_GATED_INTENTS",
   "capability_class": "monitoring",
   "implementation_locations": [
     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
     "schemas/qikvrt-anticipation-state.schema.json",
     "tools/qikvrt_anticipation.py",
+    "schemas/qikvrt-targeted-effect-envelope.schema.json",
+    "anticipation/effects/TARGETED_EFFECT_ENVELOPE.json",
+    "anticipation/effects/TARGETED_EFFECT_EVALUATION.json",
+    "release/system-closure-v1/ZENODO_PUBLICATION_QUEUE.json",
     "anticipation/",
     "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
     "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
@@ -44,13 +48,18 @@
     "activity-versus-progress test",
     "single-next-effect invariant",
     "post-dispatch re-observation test",
-    "planner replacement conformance test"
+    "planner replacement conformance test",
+    "single-node exact-target negative tests",
+    "predetermined-time window negative tests",
+    "transport-acknowledgement boundary test",
+    "Zenodo machine-proof queue negative test"
   ],
   "evidence": [
     "PR #102 branch artifacts",
     "system-closure/ARCHITECTURE_FUNCTIONALITY_EVIDENCE.json",
     "receipts/anticipation/0001-contract-bound.json",
-    "receipts/anticipation/0002-anticipation-materialized.json"
+    "receipts/anticipation/0002-anticipation-materialized.json",
+    "receipts/anticipation/0003-effect-intents-gated.json"
   ],
   "failure_classes": [
     "INSUFFICIENT_VERIFIED_OBSERVATIONS",
@@ -62,7 +71,7 @@
     "AUTHORITY_MIRROR_STATE_DIVERGENCE",
     "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
   ],
-  "next_effect": "Materialize fail-closed targeted-node and Zenodo effect intents without external mutation.",
+  "next_effect": "Revalidate the exact target node and build the candidate-specific claim inventory and Lean/Lake proof plan without external mutation.",
   "owner_only_bootstrap_actions": [],
   "provenance": {
     "repository": "Goldkelch/qik-vrt",

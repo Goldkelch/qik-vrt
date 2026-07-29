@@ -10,9 +10,12 @@ anticipation projections and inert external-effect intent evaluation.
 from __future__ import annotations
 
 import argparse
+import copy
+import datetime as dt
 import hashlib
 import json
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -28,6 +31,7 @@ from tools.qikvrt_seed_common import (
     write_json,
     write_text,
 )
+from src.qikvrt_effect_ack import EffectState, ResponsibilityProtocol
 
 
 POLICY_PATH = Path("policy/GLOBAL_SYSTEM_CLOSURE_V1.json")
@@ -40,6 +44,16 @@ DERIVATIVES_PATH = Path("anticipation/derivatives.json")
 NEXT_EFFECT_PATH = Path("anticipation/next-effect.json")
 CHECKPOINT_1_PATH = Path("receipts/anticipation/0001-contract-bound.json")
 CHECKPOINT_2_PATH = Path("receipts/anticipation/0002-anticipation-materialized.json")
+TARGETED_ENVELOPE_PATH = Path(
+    "anticipation/effects/TARGETED_EFFECT_ENVELOPE.json"
+)
+TARGETED_EVALUATION_PATH = Path(
+    "anticipation/effects/TARGETED_EFFECT_EVALUATION.json"
+)
+ZENODO_QUEUE_PATH = Path(
+    "release/system-closure-v1/ZENODO_PUBLICATION_QUEUE.json"
+)
+CHECKPOINT_3_PATH = Path("receipts/anticipation/0003-effect-intents-gated.json")
 POLICY_SCHEMA = "qikvrt_global_system_closure_policy_v1"
 EVIDENCE_SCHEMA = "qikvrt_architecture_functionality_evidence_v1"
 INPUT_SCHEMA = "qikvrt_anticipation_input_v1"
@@ -54,6 +68,8 @@ PROJECTION_PATHS = (
     NEXT_EFFECT_PATH,
     CHECKPOINT_1_PATH,
     CHECKPOINT_2_PATH,
+    TARGETED_EVALUATION_PATH,
+    CHECKPOINT_3_PATH,
 )
 
 
@@ -220,6 +236,44 @@ def json_line(value: Any) -> str:
     )
 
 
+def parse_utc(value: Any, label: str) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ClosureError(f"{label} must be an RFC3339 UTC timestamp")
+    try:
+        parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ClosureError(f"{label} must be an RFC3339 UTC timestamp") from exc
+    if parsed.tzinfo != dt.timezone.utc:
+        raise ClosureError(f"{label} must be UTC")
+    return parsed
+
+
+def safe_relative_path(raw: Any, label: str) -> Path:
+    if not isinstance(raw, str) or not raw or "\\" in raw:
+        raise ClosureError(f"{label} must be a repository-relative path")
+    path = Path(raw)
+    if path.is_absolute() or ".." in path.parts or "." in path.parts:
+        raise ClosureError(f"{label} is unsafe")
+    return path
+
+
+def bound_file(root: Path, raw_path: Any, label: str) -> tuple[Path, bytes]:
+    relative = safe_relative_path(raw_path, label)
+    path = root / relative
+    current = path
+    while current != root:
+        if current.is_symlink():
+            raise ClosureError(f"{label} traverses a symlink")
+        current = current.parent
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise ClosureError(f"{label} cannot be read: {exc}") from exc
+    if not path.is_file():
+        raise ClosureError(f"{label} is not a regular file")
+    return relative, payload
+
+
 def validate_input(value: Mapping[str, Any]) -> None:
     require_exact_keys(
         value,
@@ -315,6 +369,420 @@ def validate_input(value: Mapping[str, Any]) -> None:
         "EFFECT_ACK_DONE": False,
     }:
         raise ClosureError("anticipation input contains a false completion claim")
+
+
+def load_targeted_envelope(root: Path = ROOT) -> dict[str, Any]:
+    try:
+        value = read_json(root / TARGETED_ENVELOPE_PATH, "targeted effect envelope")
+    except SeedError as exc:
+        raise ClosureError(str(exc)) from exc
+    require_exact_keys(
+        value,
+        {
+            "_license",
+            "schema",
+            "envelope_id",
+            "effect_scope",
+            "payload",
+            "target",
+            "timing",
+            "authorization",
+            "checkpoint",
+            "dispatch",
+            "non_claims",
+        },
+        "targeted effect envelope",
+    )
+    if value["schema"] != "qikvrt_targeted_effect_envelope_v1":
+        raise ClosureError("targeted effect envelope schema drift")
+    if (
+        not isinstance(value["envelope_id"], str)
+        or not value["envelope_id"]
+        or len(value["envelope_id"]) > 128
+    ):
+        raise ClosureError("targeted effect envelope ID is invalid")
+    require_exact_keys(
+        value["payload"], {"path", "bytes", "sha256"}, "targeted payload"
+    )
+    require_exact_keys(
+        value["target"],
+        {
+            "node_guid",
+            "repository",
+            "ref",
+            "registry_path",
+            "registry_entry_sha256",
+            "registry_index_path",
+            "registry_index_sha256",
+            "registry_status_path",
+            "registry_status_sha256",
+        },
+        "targeted node",
+    )
+    try:
+        node_guid = str(uuid.UUID(value["target"]["node_guid"]))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ClosureError("target node GUID is invalid") from exc
+    if node_guid != value["target"]["node_guid"]:
+        raise ClosureError("target node GUID is not canonical")
+    require_exact_keys(
+        value["timing"],
+        {"not_before_utc", "expires_utc", "evaluated_at_utc"},
+        "target timing",
+    )
+    not_before = parse_utc(value["timing"]["not_before_utc"], "not_before_utc")
+    expires = parse_utc(value["timing"]["expires_utc"], "expires_utc")
+    parse_utc(value["timing"]["evaluated_at_utc"], "evaluated_at_utc")
+    if not_before >= expires:
+        raise ClosureError("target delivery time window is empty")
+    require_exact_keys(
+        value["authorization"],
+        {
+            "responsible_human",
+            "origin_authenticated",
+            "effect_ack_state",
+            "effect_ack_protocol_path",
+            "effect_ack_protocol_hash",
+            "effect_ack_evaluated_at_utc",
+        },
+        "target authorization",
+    )
+    states = {state.value for state in EffectState}
+    if value["authorization"]["effect_ack_state"] not in states:
+        raise ClosureError("target authorization has an invalid EFFECT_ACK state")
+    if type(value["authorization"]["origin_authenticated"]) is not bool:
+        raise ClosureError("origin_authenticated must be boolean")
+    protocol_hash = value["authorization"]["effect_ack_protocol_hash"]
+    if protocol_hash is not None and (
+        not isinstance(protocol_hash, str)
+        or not protocol_hash.startswith("sha256:")
+        or len(protocol_hash) != 71
+        or any(character not in "0123456789abcdef" for character in protocol_hash[7:])
+    ):
+        raise ClosureError("effect ACK protocol hash is invalid")
+    protocol_path = value["authorization"]["effect_ack_protocol_path"]
+    if protocol_path is not None:
+        safe_relative_path(protocol_path, "effect_ack_protocol_path")
+    effect_evaluated = value["authorization"]["effect_ack_evaluated_at_utc"]
+    if effect_evaluated is not None:
+        parse_utc(effect_evaluated, "effect_ack_evaluated_at_utc")
+    require_exact_keys(
+        value["checkpoint"],
+        {"previous_checkpoint_path", "previous_checkpoint_sha256"},
+        "target checkpoint",
+    )
+    if value["checkpoint"]["previous_checkpoint_path"] != CHECKPOINT_2_PATH.as_posix():
+        raise ClosureError("target envelope predecessor path drift")
+    require_exact_keys(
+        value["dispatch"],
+        {"state", "attempted", "transport_ack", "effect_receipt"},
+        "target dispatch",
+    )
+    if value["dispatch"] != {
+        "state": "NOT_DISPATCHED",
+        "attempted": False,
+        "transport_ack": False,
+        "effect_receipt": None,
+    }:
+        raise ClosureError("tracked targeted envelope must remain inert")
+    if (
+        not isinstance(value["non_claims"], list)
+        or "transport acknowledgement is effect acknowledgement"
+        not in value["non_claims"]
+        or "delivery was completed" not in value["non_claims"]
+    ):
+        raise ClosureError("target envelope non-claims are incomplete")
+    return value
+
+
+def targeted_effect_subject(envelope: Mapping[str, Any]) -> bytes:
+    """Canonical bytes that make an EFFECT_ACK decision target/time specific."""
+    return canonical_json_bytes(
+        {
+            "schema": "qikvrt_targeted_effect_subject_v1",
+            "envelope_id": envelope["envelope_id"],
+            "effect_scope": envelope["effect_scope"],
+            "payload": envelope["payload"],
+            "target": envelope["target"],
+            "timing": {
+                "not_before_utc": envelope["timing"]["not_before_utc"],
+                "expires_utc": envelope["timing"]["expires_utc"],
+                "evaluated_at_utc": envelope["timing"]["evaluated_at_utc"],
+            },
+            "checkpoint": envelope["checkpoint"],
+        }
+    )
+
+
+def evaluate_targeted_envelope(
+    envelope: Mapping[str, Any], root: Path = ROOT
+) -> dict[str, Any]:
+    """Evaluate one signed-outer-envelope candidate without network or dispatch."""
+    target = envelope["target"]
+    payload = envelope["payload"]
+    timing = envelope["timing"]
+    authorization = envelope["authorization"]
+    failures: list[str] = []
+    checks: dict[str, bool] = {}
+
+    _payload_path, payload_bytes = bound_file(root, payload["path"], "payload.path")
+    checks["payload_bytes_exact"] = (
+        type(payload["bytes"]) is int
+        and payload["bytes"] == len(payload_bytes)
+        and payload["sha256"] == sha256_bytes(payload_bytes)
+    )
+    if not checks["payload_bytes_exact"]:
+        failures.append("PAYLOAD_HASH_OR_SIZE_MISMATCH")
+
+    registry_bindings = (
+        ("registry_path", "registry_entry_sha256"),
+        ("registry_index_path", "registry_index_sha256"),
+        ("registry_status_path", "registry_status_sha256"),
+    )
+    registry_values: dict[str, dict[str, Any]] = {}
+    for path_key, hash_key in registry_bindings:
+        relative, raw = bound_file(root, target[path_key], f"target.{path_key}")
+        exact = target[hash_key] == sha256_bytes(raw)
+        checks[f"{path_key}_exact"] = exact
+        if not exact:
+            failures.append(f"{path_key.upper()}_DIGEST_MISMATCH")
+        try:
+            registry_values[path_key] = read_json(
+                root / relative, f"target.{path_key}"
+            )
+        except SeedError as exc:
+            raise ClosureError(str(exc)) from exc
+
+    index_matches = [
+        node
+        for node in registry_values["registry_index_path"].get("nodes", [])
+        if node.get("guid") == target["node_guid"]
+    ]
+    status_matches = [
+        node
+        for node in registry_values["registry_status_path"].get("nodes", [])
+        if node.get("guid") == target["node_guid"]
+    ]
+    checks["exactly_one_index_match"] = len(index_matches) == 1
+    checks["exactly_one_status_match"] = len(status_matches) == 1
+    if not checks["exactly_one_index_match"] or not checks["exactly_one_status_match"]:
+        failures.append("TARGET_NODE_NOT_UNIQUE")
+
+    node_entry = registry_values["registry_path"]
+    checks["registry_entry_identity_exact"] = (
+        node_entry.get("guid") == target["node_guid"]
+        and node_entry.get("repository") == target["repository"]
+        and node_entry.get("node_branch") == target["ref"]
+    )
+    if not checks["registry_entry_identity_exact"]:
+        failures.append("TARGET_REGISTRY_ENTRY_MISMATCH")
+
+    index_node = index_matches[0] if len(index_matches) == 1 else {}
+    checks["index_identity_exact"] = (
+        index_node.get("repository") == target["repository"]
+        and index_node.get("node_branch") == target["ref"]
+        and index_node.get("registry_path") == target["registry_path"]
+    )
+    checks["target_active"] = (
+        index_node.get("registry_status") == "ACCEPTED"
+        and index_node.get("policy_status") == "ACTIVE"
+        and index_node.get("effective_status") == "ACTIVE"
+    )
+    if not checks["index_identity_exact"]:
+        failures.append("TARGET_INDEX_IDENTITY_MISMATCH")
+    if not checks["target_active"]:
+        failures.append("TARGET_NODE_NOT_ACTIVE")
+
+    evaluated_at = parse_utc(timing["evaluated_at_utc"], "evaluated_at_utc")
+    not_before = parse_utc(timing["not_before_utc"], "not_before_utc")
+    expires = parse_utc(timing["expires_utc"], "expires_utc")
+    status_node = status_matches[0] if len(status_matches) == 1 else {}
+    try:
+        heartbeat_expires = parse_utc(
+            status_node.get("expires_utc"), "target heartbeat expires_utc"
+        )
+    except ClosureError:
+        heartbeat_expires = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    checks["target_fresh"] = (
+        status_node.get("heartbeat_status") == "FRESH"
+        and heartbeat_expires > evaluated_at
+    )
+    if not checks["target_fresh"]:
+        failures.append("TARGET_NODE_NOT_FRESH")
+    checks["not_before_reached"] = evaluated_at >= not_before
+    checks["not_expired"] = evaluated_at < expires
+    if not checks["not_expired"]:
+        failures.append("DELIVERY_WINDOW_EXPIRED")
+
+    checkpoint = read_json(root / CHECKPOINT_2_PATH, "checkpoint 2")
+    checks["checkpoint_exact"] = (
+        envelope["checkpoint"]["previous_checkpoint_sha256"]
+        == checkpoint.get("checkpoint_sha256")
+    )
+    if not checks["checkpoint_exact"]:
+        failures.append("PREVIOUS_CHECKPOINT_MISMATCH")
+
+    checks["responsible_human_named"] = (
+        authorization["responsible_human"] == "Ingolf Lohmann"
+    )
+    checks["origin_authenticated"] = authorization["origin_authenticated"] is True
+    checks["effect_ack_protocol_verified"] = False
+    protocol_path = authorization["effect_ack_protocol_path"]
+    if protocol_path is not None:
+        try:
+            protocol_value = read_json(
+                root / safe_relative_path(protocol_path, "effect_ack_protocol_path"),
+                "effect ACK protocol",
+            )
+            protocol = ResponsibilityProtocol.from_dict(protocol_value)
+        except (SeedError, ValueError, TypeError, KeyError) as exc:
+            failures.append("EFFECT_ACK_PROTOCOL_INVALID")
+        else:
+            subject = targeted_effect_subject(envelope)
+            checks["effect_ack_protocol_verified"] = (
+                protocol.state is EffectState.EFFECT_ACK_DONE
+                and protocol.protocol_hash
+                == authorization["effect_ack_protocol_hash"]
+                and protocol.input_id == envelope["envelope_id"]
+                and protocol.input_hash == "sha256:" + sha256_bytes(subject)
+                and protocol.responsibility_owner
+                == authorization["responsible_human"]
+                and protocol.created_utc
+                == authorization["effect_ack_evaluated_at_utc"]
+                == envelope["timing"]["evaluated_at_utc"]
+            )
+            if not checks["effect_ack_protocol_verified"]:
+                failures.append("EFFECT_ACK_PROTOCOL_BINDING_MISMATCH")
+    checks["effect_ack_done"] = (
+        authorization["effect_ack_state"] == EffectState.EFFECT_ACK_DONE.value
+        and checks["effect_ack_protocol_verified"]
+    )
+    if (
+        authorization["effect_ack_state"] == EffectState.EFFECT_ACK_DONE.value
+        and not checks["effect_ack_protocol_verified"]
+    ):
+        failures.append("FALSE_EFFECT_ACK_DONE")
+    integrity_failure = any(
+        failure.endswith("MISMATCH")
+        or failure in {
+            "TARGET_NODE_NOT_UNIQUE",
+            "TARGET_NODE_NOT_ACTIVE",
+            "TARGET_NODE_NOT_FRESH",
+            "DELIVERY_WINDOW_EXPIRED",
+            "EFFECT_ACK_PROTOCOL_INVALID",
+            "FALSE_EFFECT_ACK_DONE",
+        }
+        for failure in failures
+    )
+    if integrity_failure:
+        state = "BLOCK"
+    elif not checks["not_before_reached"]:
+        state = "CONTINUE_NOT_YET_DUE"
+    elif not (
+        checks["responsible_human_named"]
+        and checks["origin_authenticated"]
+        and checks["effect_ack_done"]
+    ):
+        state = "CONTINUE_AWAITING_FRESH_EFFECT_ACK"
+    else:
+        state = "ELIGIBLE_FOR_SEPARATELY_AUTHORIZED_DISPATCH"
+    eligible = state == "ELIGIBLE_FOR_SEPARATELY_AUTHORIZED_DISPATCH"
+    return {
+        "schema": "qikvrt_targeted_effect_evaluation_v1",
+        "envelope_id": envelope["envelope_id"],
+        "envelope_sha256": canonical_digest(envelope),
+        "evaluated_at_utc": timing["evaluated_at_utc"],
+        "state": state,
+        "checks": checks,
+        "failure_classes": sorted(set(failures)),
+        "dispatch_eligible": eligible,
+        "dispatch_attempted": False,
+        "transport_ack_is_effect_ack": False,
+        "effect_state": authorization["effect_ack_state"],
+        "next_effect": (
+            "REVALIDATE_TARGET_NODE_AND_REEVALUATE_EFFECT_ACK"
+            if not eligible
+            else "HAND_TO_SEPARATELY_AUTHORIZED_IDEMPOTENT_EXECUTOR"
+        ),
+    }
+
+
+def load_zenodo_queue(root: Path = ROOT) -> dict[str, Any]:
+    try:
+        value = read_json(root / ZENODO_QUEUE_PATH, "Zenodo publication queue")
+    except SeedError as exc:
+        raise ClosureError(str(exc)) from exc
+    require_exact_keys(
+        value,
+        {
+            "_license",
+            "schema",
+            "scope_id",
+            "source_revision",
+            "candidate_id",
+            "state",
+            "publication_intent_recorded",
+            "exact_candidate_upload_authorization",
+            "candidate",
+            "proof",
+            "gates",
+            "network_effect",
+            "hard_gate",
+            "next_effect",
+            "completion_claims",
+        },
+        "Zenodo publication queue",
+    )
+    if (
+        value["schema"] != "qikvrt_zenodo_publication_queue_v1"
+        or value["scope_id"] != SCOPE_ID
+        or value["state"] != "BLOCKED_AWAITING_MACHINE_PROOF"
+    ):
+        raise ClosureError("Zenodo queue identity or state drift")
+    if value["hard_gate"] != "NO_MACHINE_PROOF_NO_ZENODO_UPLOAD":
+        raise ClosureError("Zenodo queue hard gate drift")
+    if value["exact_candidate_upload_authorization"] is not False:
+        raise ClosureError("Zenodo queue must not pre-authorize an upload")
+    if value["candidate"] != {
+        "frozen": False,
+        "files": [],
+        "primary_document_path": None,
+    }:
+        raise ClosureError("Zenodo queue has an unfrozen or ambiguous candidate")
+    if any(value["gates"].values()):
+        raise ClosureError("Zenodo queue contains a premature satisfied gate")
+    if any(value["network_effect"].values()):
+        raise ClosureError("Zenodo queue contains a false network effect")
+    if any(value["completion_claims"].values()):
+        raise ClosureError("Zenodo queue contains a false completion claim")
+    proof = value["proof"]
+    for key in ("lean_toolchain", "lakefile"):
+        path = safe_relative_path(proof[key], f"proof.{key}")
+        if not (root / path).is_file():
+            raise ClosureError(f"declared Lean/Lake source is missing: {path}")
+    for path_key, present_key in (
+        ("kernel_receipt_path", "kernel_receipt_present"),
+        ("machine_proof_bundle_path", "machine_proof_bundle_present"),
+    ):
+        path = safe_relative_path(proof[path_key], f"proof.{path_key}")
+        actual = (root / path).is_file()
+        if proof[present_key] is not actual:
+            raise ClosureError(f"Zenodo queue presence drift: {path}")
+    return value
+
+
+def evaluate_zenodo_queue(value: Mapping[str, Any]) -> dict[str, Any]:
+    missing_gates = sorted(key for key, passed in value["gates"].items() if not passed)
+    return {
+        "schema": "qikvrt_zenodo_queue_evaluation_v1",
+        "candidate_id": value["candidate_id"],
+        "state": "BLOCKED_AWAITING_MACHINE_PROOF",
+        "hard_gate": value["hard_gate"],
+        "missing_gates": missing_gates,
+        "network_mutation_allowed": False,
+        "network_mutation_attempted": False,
+        "next_effect": value["next_effect"],
+    }
 
 
 def observation_projection(observation: Mapping[str, Any]) -> dict[str, Any]:
@@ -527,6 +995,195 @@ def build_projections(
     }
 
 
+def build_stage3_outputs(
+    base_outputs: Mapping[Path, bytes],
+    input_value: Mapping[str, Any],
+    envelope: Mapping[str, Any],
+    targeted_evaluation: Mapping[str, Any],
+    zenodo_queue: Mapping[str, Any],
+    zenodo_evaluation: Mapping[str, Any],
+    root: Path = ROOT,
+) -> dict[Path, bytes]:
+    current = json.loads(base_outputs[CURRENT_PATH])
+    stage3_observation_input = {
+        "state_id": "global-system-closure-effect-intents-gated",
+        "observed_at": envelope["timing"]["evaluated_at_utc"],
+        "classification": "TEILFORTSCHRITT",
+        "productive_chain_position": "EFFECT_INTENTS_GATED",
+        "metrics": {
+            "bound_artifact_groups": 7,
+            "verified_gate_groups": 8,
+        },
+        "evidence": [
+            TARGETED_ENVELOPE_PATH.as_posix(),
+            TARGETED_EVALUATION_PATH.as_posix(),
+            ZENODO_QUEUE_PATH.as_posix(),
+            "schemas/qikvrt-targeted-effect-envelope.schema.json",
+            zenodo_queue["source_revision"],
+        ],
+    }
+    all_observation_inputs = [
+        *copy.deepcopy(input_value["observations"]),
+        stage3_observation_input,
+    ]
+    stage3_observation = observation_projection(stage3_observation_input)
+    trend = derive_trend(all_observation_inputs)
+    derivatives = derive_derivatives(all_observation_inputs)
+    next_effect = {
+        "effect_id": "REVALIDATE_TARGET_AND_BUILD_MACHINE_PROOF",
+        "description": (
+            "Revalidate the exact target node and build the candidate-specific "
+            "claim inventory and Lean/Lake proof plan; perform no external effect."
+        ),
+        "executor_capability": "qikvrt.repository.anticipation.v1",
+        "preconditions": [
+            "TARGET_NODE_ACTIVE_AND_FRESH",
+            "EXACT_CANDIDATE_FROZEN",
+            "COMPLETE_CLAIM_INVENTORY",
+            "LEAN_LAKE_KERNEL_RECEIPTS_WHERE_APPLICABLE",
+            "FRESH_EFFECT_SPECIFIC_EFFECT_ACK_DONE_BEFORE_ANY_DISPATCH",
+        ],
+        "expected_receipt": "receipts/anticipation/0004-candidate-verified.json",
+    }
+    current["schema_version"] = STATE_SCHEMA
+    current["observation_id"] = "gsc-anticipation-0003"
+    current["observed_at"] = stage3_observation["observed_at"]
+    current["current_state"] = {
+        "state_id": stage3_observation["state_id"],
+        "classification": stage3_observation["classification"],
+        "productive_chain_position": stage3_observation[
+            "productive_chain_position"
+        ],
+        "scope_id": SCOPE_ID,
+        "effect_state": "EFFECT_ACK_CONTINUE",
+    }
+    current["state_history"].append(
+        {
+            "state_id": stage3_observation["state_id"],
+            "observed_at": stage3_observation["observed_at"],
+            "state_digest": stage3_observation["state_digest"],
+        }
+    )
+    current["trend"] = trend
+    current["derivatives"] = derivatives
+    current["anticipated_state"] = {
+        "state_id": "global-system-closure-candidate-verified",
+        "derivation_rule": "earliest safe incomplete persistence stage",
+        "deterministic": True,
+    }
+    current["next_effect"] = next_effect
+    combined_failures = sorted(
+        {
+            *targeted_evaluation["failure_classes"],
+            *zenodo_evaluation["missing_gates"],
+        }
+    )
+    current["execution"] = {
+        "status": "BLOCKED",
+        "automatically_dispatched": False,
+        "failure_class": ",".join(combined_failures),
+    }
+    current["evidence"] = [
+        POLICY_PATH.as_posix(),
+        EVIDENCE_PATH.as_posix(),
+        INPUT_PATH.as_posix(),
+        TARGETED_ENVELOPE_PATH.as_posix(),
+        TARGETED_EVALUATION_PATH.as_posix(),
+        ZENODO_QUEUE_PATH.as_posix(),
+    ]
+    stage3_basis = {
+        "stage2_source_revision": input_value["source_revision"],
+        "stage3_source_revision": zenodo_queue["source_revision"],
+        "targeted_envelope_sha256": canonical_digest(envelope),
+        "targeted_evaluation_sha256": canonical_digest(targeted_evaluation),
+        "zenodo_queue_sha256": canonical_digest(zenodo_queue),
+        "zenodo_evaluation_sha256": canonical_digest(zenodo_evaluation),
+    }
+    current["provenance"] = {
+        "source_revision": zenodo_queue["source_revision"],
+        "sha256": canonical_digest(stage3_basis),
+    }
+    trends = {
+        "schema": "qikvrt_anticipation_trends_v1",
+        "scope_id": SCOPE_ID,
+        "source_revision": zenodo_queue["source_revision"],
+        "trend": trend,
+        "observation_count": len(all_observation_inputs),
+    }
+    derivative_projection = {
+        "schema": "qikvrt_anticipation_derivatives_v1",
+        "scope_id": SCOPE_ID,
+        "source_revision": zenodo_queue["source_revision"],
+        "derivatives": derivatives,
+    }
+    next_effect_projection = {
+        "schema": "qikvrt_anticipation_next_effect_v1",
+        "scope_id": SCOPE_ID,
+        "effect_state": "EFFECT_ACK_CONTINUE",
+        "next_effect": next_effect,
+        "dispatch_authorized": False,
+        "targeted_delivery_state": targeted_evaluation["state"],
+        "zenodo_queue_state": zenodo_evaluation["state"],
+        "completion_claims": input_value["completion_claims"],
+    }
+    history_records = [
+        observation_projection(item) for item in all_observation_inputs
+    ]
+    final_primary = {
+        CURRENT_PATH: canonical_json_bytes(current),
+        HISTORY_PATH: (
+            "\n".join(json_line(item) for item in history_records) + "\n"
+        ).encode("utf-8"),
+        TRENDS_PATH: canonical_json_bytes(trends),
+        DERIVATIVES_PATH: canonical_json_bytes(derivative_projection),
+        NEXT_EFFECT_PATH: canonical_json_bytes(next_effect_projection),
+        TARGETED_EVALUATION_PATH: canonical_json_bytes(targeted_evaluation),
+    }
+    checkpoint_2 = json.loads(base_outputs[CHECKPOINT_2_PATH])
+    additional_bindings: dict[str, dict[str, Any]] = {}
+    for relative in (
+        TARGETED_ENVELOPE_PATH,
+        ZENODO_QUEUE_PATH,
+        Path("schemas/qikvrt-targeted-effect-envelope.schema.json"),
+    ):
+        _path, raw = bound_file(root, relative.as_posix(), relative.as_posix())
+        additional_bindings[relative.as_posix()] = {
+            "bytes": len(raw),
+            "sha256": sha256_bytes(raw),
+        }
+    output_bindings = {
+        path.as_posix(): {"bytes": len(raw), "sha256": sha256_bytes(raw)}
+        for path, raw in final_primary.items()
+    }
+    checkpoint_3 = {
+        "schema": "qikvrt_closure_checkpoint_v1",
+        "scope_id": SCOPE_ID,
+        "checkpoint_id": "gsc-0003-effect-intents-gated",
+        "stage": "EFFECT_INTENTS_GATED",
+        "observed_at": envelope["timing"]["evaluated_at_utc"],
+        "source_revision": zenodo_queue["source_revision"],
+        "previous_checkpoint_sha256": checkpoint_2["checkpoint_sha256"],
+        "bindings": {**output_bindings, **additional_bindings},
+        "effect_state": "EFFECT_ACK_CONTINUE",
+        "external_effect": "NONE_INTENTS_ONLY",
+        "recovery": (
+            "No remote effect exists to roll back. After any future attempted "
+            "remote effect, observe and use idempotent replay or forward repair."
+        ),
+        "completion_claims": input_value["completion_claims"],
+    }
+    checkpoint_3["checkpoint_sha256"] = checkpoint_hash(
+        checkpoint_3,
+        previous_checkpoint_sha256=checkpoint_2["checkpoint_sha256"],
+    )
+    return {
+        **final_primary,
+        CHECKPOINT_1_PATH: base_outputs[CHECKPOINT_1_PATH],
+        CHECKPOINT_2_PATH: base_outputs[CHECKPOINT_2_PATH],
+        CHECKPOINT_3_PATH: canonical_json_bytes(checkpoint_3),
+    }
+
+
 def load_anticipation_input(root: Path = ROOT) -> dict[str, Any]:
     try:
         value = read_json(root / INPUT_PATH, "anticipation input")
@@ -539,7 +1196,20 @@ def load_anticipation_input(root: Path = ROOT) -> dict[str, Any]:
 def expected_projections(root: Path = ROOT) -> dict[Path, bytes]:
     policy, evidence = load_contract(root)
     input_value = load_anticipation_input(root)
-    return build_projections(policy, evidence, input_value)
+    base_outputs = build_projections(policy, evidence, input_value)
+    envelope = load_targeted_envelope(root)
+    targeted_evaluation = evaluate_targeted_envelope(envelope, root)
+    zenodo_queue = load_zenodo_queue(root)
+    zenodo_evaluation = evaluate_zenodo_queue(zenodo_queue)
+    return build_stage3_outputs(
+        base_outputs,
+        input_value,
+        envelope,
+        targeted_evaluation,
+        zenodo_queue,
+        zenodo_evaluation,
+        root,
+    )
 
 
 def materialize(root: Path = ROOT) -> dict[str, Any]:
@@ -598,7 +1268,7 @@ def check(root: Path = ROOT) -> dict[str, Any]:
         "functionality_evidence_sha256": canonical_digest(evidence),
         "verified_projection_count": len(verified),
         "latest_checkpoint_sha256": json.loads(
-            (root / CHECKPOINT_2_PATH).read_text(encoding="utf-8")
+            (root / CHECKPOINT_3_PATH).read_text(encoding="utf-8")
         )["checkpoint_sha256"],
         "completion_claims": {
             "PASS": False,

@@ -6,7 +6,7 @@
   "priority": "HIGHEST",
   "authority_repository": "Goldkelch/qik-vrt",
   "mirror_repository": "ingolf-lohmann/qik-vrt",
-  "source_branch": "agent/repository-capability-self-disclosure-v1",
+  "source_branch": "agent/global-system-closure-v1",
   "inputs": [
     "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
     "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
@@ -78,7 +78,11 @@
     "tests/test_activity_vs_progress.*",
     "tests/test_post_dispatch_reobservation.*",
     "tests/test_component_replacement.*",
-    "receipts/anticipation/"
+    "receipts/anticipation/",
+    "schemas/qikvrt-targeted-effect-envelope.schema.json",
+    "anticipation/effects/TARGETED_EFFECT_ENVELOPE.json",
+    "anticipation/effects/TARGETED_EFFECT_EVALUATION.json",
+    "release/system-closure-v1/ZENODO_PUBLICATION_QUEUE.json"
   ],
   "materialized_stages": [
     {
@@ -90,7 +94,21 @@
       "order": 2,
       "stage": "ANTICIPATION_MATERIALIZED",
       "receipt": "receipts/anticipation/0002-anticipation-materialized.json"
+    },
+    {
+      "order": 3,
+      "stage": "EFFECT_INTENTS_GATED",
+      "receipt": "receipts/anticipation/0003-effect-intents-gated.json"
     }
+  ],
+  "current_blockers": [
+    "TARGET_NODE_NOT_FRESH",
+    "EXACT_CANDIDATE_NOT_FROZEN",
+    "COMPLETE_CLAIM_INVENTORY_MISSING",
+    "FRESH_LEAN_LAKE_KERNEL_RECEIPTS_MISSING",
+    "CANDIDATE_SPECIFIC_RETURN_RECEIPT_MISSING",
+    "EXACT_UPLOAD_AUTHORIZATION_MISSING",
+    "AUTHORITY_MIRROR_COMPATIBILITY_NOT_VERIFIED"
   ],
   "mandatory_gates": [
     "SCHEMA_VALIDATION",

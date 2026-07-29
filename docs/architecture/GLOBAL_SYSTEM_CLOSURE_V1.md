@@ -112,6 +112,24 @@ Claims, negative und Grenztests, Korrektur und kandidatenspezifische
 Rücklieferung, exakte Upload-Freigabe, v2-Proof-Bundle sowie anschließender
 öffentlicher Byte-Redownload.
 
+## Implementierter Snapshot
+
+Die Referenzmaterialisierung liegt unter `anticipation/` und
+`receipts/anticipation/`. Der äußere Envelope
+`anticipation/effects/TARGETED_EFFECT_ENVELOPE.json` bindet eine inerte
+Readiness-Information an genau den registrierten Node
+`a84f157a-cef2-4c47-bca9-8f407085bdbe` und an das feste Zeitfenster
+`2026-08-01T12:00:00Z` bis `2026-08-01T12:15:00Z`. Die deterministische
+Auswertung blockiert, weil die persistierte Node-Freshness abgelaufen ist;
+Herkunft und effect-spezifischer ACK sind ebenfalls nicht freigegeben. Es
+wurde nichts übertragen.
+
+`release/system-closure-v1/ZENODO_PUBLICATION_QUEUE.json` hält die spätere
+Publikationsabsicht fest, jedoch weder einen eingefrorenen Kandidaten noch eine
+Upload-Freigabe. Der Zustand ist
+`BLOCKED_AWAITING_MACHINE_PROOF`; es wurde kein Zenodo-Netzwerkeffekt
+versucht.
+
 ## Abschluss
 
 Der neue Scope heißt `qikvrt-global-system-closure-v1`. Er ist ausdrücklich

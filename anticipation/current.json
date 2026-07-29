@@ -2,55 +2,60 @@
   "anticipated_state": {
     "derivation_rule": "earliest safe incomplete persistence stage",
     "deterministic": true,
-    "state_id": "global-system-closure-effect-intents-gated"
+    "state_id": "global-system-closure-candidate-verified"
   },
   "current_state": {
     "classification": "TEILFORTSCHRITT",
     "effect_state": "EFFECT_ACK_CONTINUE",
-    "productive_chain_position": "CONTRACT_BOUND",
+    "productive_chain_position": "EFFECT_INTENTS_GATED",
     "scope_id": "qikvrt-global-system-closure-v1",
-    "state_id": "global-system-closure-contract-bound"
+    "state_id": "global-system-closure-effect-intents-gated"
   },
   "derivatives": [
     {
       "interpretation": "latest verified discrete metric difference",
       "name": "bound_artifact_groups",
       "order": 1,
-      "value": 1
+      "value": 2
     },
     {
       "interpretation": "latest verified discrete metric difference",
       "name": "verified_gate_groups",
       "order": 1,
-      "value": 1
+      "value": 2
     }
   ],
   "evidence": [
     "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
     "system-closure/ARCHITECTURE_FUNCTIONALITY_EVIDENCE.json",
-    "anticipation/INPUT.json"
+    "anticipation/INPUT.json",
+    "anticipation/effects/TARGETED_EFFECT_ENVELOPE.json",
+    "anticipation/effects/TARGETED_EFFECT_EVALUATION.json",
+    "release/system-closure-v1/ZENODO_PUBLICATION_QUEUE.json"
   ],
   "execution": {
     "automatically_dispatched": false,
-    "failure_class": null,
-    "status": "PENDING"
+    "failure_class": "TARGET_NODE_NOT_FRESH,all_claims_dispositioned,candidate_returned_to_owner,candidate_specific_return_receipt,complete_claim_inventory,exact_candidate_frozen,exact_upload_authorization,formal_claims_have_fresh_lean_lake_receipts,negative_and_boundary_tests_green,v2_manifest_ready",
+    "status": "BLOCKED"
   },
   "next_effect": {
-    "description": "Materialize and validate inert targeted-node and Zenodo intents without dispatching or publishing.",
-    "effect_id": "MATERIALIZE_FAIL_CLOSED_EFFECT_INTENTS",
+    "description": "Revalidate the exact target node and build the candidate-specific claim inventory and Lean/Lake proof plan; perform no external effect.",
+    "effect_id": "REVALIDATE_TARGET_AND_BUILD_MACHINE_PROOF",
     "executor_capability": "qikvrt.repository.anticipation.v1",
-    "expected_receipt": "receipts/anticipation/0003-effect-intents-gated.json",
+    "expected_receipt": "receipts/anticipation/0004-candidate-verified.json",
     "preconditions": [
-      "GLOBAL_SYSTEM_CLOSURE_CONTRACT_VALID",
-      "ANTICIPATION_PROJECTIONS_BYTE_CURRENT",
-      "EFFECT_ACK_DEFAULT_CONTINUE"
+      "TARGET_NODE_ACTIVE_AND_FRESH",
+      "EXACT_CANDIDATE_FROZEN",
+      "COMPLETE_CLAIM_INVENTORY",
+      "LEAN_LAKE_KERNEL_RECEIPTS_WHERE_APPLICABLE",
+      "FRESH_EFFECT_SPECIFIC_EFFECT_ACK_DONE_BEFORE_ANY_DISPATCH"
     ]
   },
-  "observation_id": "gsc-anticipation-0002",
-  "observed_at": "2026-07-29T14:58:59Z",
+  "observation_id": "gsc-anticipation-0003",
+  "observed_at": "2026-07-29T15:03:48Z",
   "provenance": {
-    "sha256": "cc02fe8a9e397222e1e0c489160e7f250d82e94a6fb745ffb568988cdd69ee31",
-    "source_revision": "git-tree:0543b81980317d91e32777b3efc2fc85346dfa84"
+    "sha256": "1702547de05e4b44dc876cb0c4c25883b5dc02043a9f6facb944f85e82071c85",
+    "source_revision": "git-tree:bbcf0924c4203b0c1ec485f7ef8824f1817193ca"
   },
   "repository": "Goldkelch/qik-vrt",
   "schema_version": "qikvrt_anticipation_state_v1",
@@ -64,10 +69,16 @@
       "observed_at": "2026-07-29T14:58:59Z",
       "state_digest": "9d630565233609445ec5837be1b3f36ab9432a910364bdb2e41649e34c461376",
       "state_id": "global-system-closure-contract-bound"
+    },
+    {
+      "observed_at": "2026-07-29T15:03:48Z",
+      "state_digest": "5cf2f6e167b96a4dfd5256fe89e3b25c709accb46242699548631812b71d691e",
+      "state_id": "global-system-closure-effect-intents-gated"
     }
   ],
   "trend": {
     "basis": [
+      "NON_REGRESSING_GATE_IMPROVEMENT",
       "NON_REGRESSING_GATE_IMPROVEMENT"
     ],
     "direction": "ADVANCING",

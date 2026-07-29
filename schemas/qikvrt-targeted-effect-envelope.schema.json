@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/qikvrt-targeted-effect-envelope.schema.json",
+  "title": "QIK-VRT Targeted Effect Outer Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_license",
+    "schema",
+    "envelope_id",
+    "effect_scope",
+    "payload",
+    "target",
+    "timing",
+    "authorization",
+    "checkpoint",
+    "dispatch",
+    "non_claims"
+  ],
+  "properties": {
+    "_license": {"type": "object"},
+    "schema": {"const": "qikvrt_targeted_effect_envelope_v1"},
+    "envelope_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{7,127}$"
+    },
+    "effect_scope": {"type": "string", "minLength": 1, "maxLength": 256},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_guid",
+        "repository",
+        "ref",
+        "registry_path",
+        "registry_entry_sha256",
+        "registry_index_path",
+        "registry_index_sha256",
+        "registry_status_path",
+        "registry_status_sha256"
+      ],
+      "properties": {
+        "node_guid": {"type": "string", "format": "uuid"},
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "ref": {"type": "string", "minLength": 1},
+        "registry_path": {"type": "string", "minLength": 1},
+        "registry_entry_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "registry_index_path": {"const": "registry/NODEMESH_INDEX.json"},
+        "registry_index_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "registry_status_path": {"const": "registry/NODEMESH_STATUS.json"},
+        "registry_status_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["not_before_utc", "expires_utc", "evaluated_at_utc"],
+      "properties": {
+        "not_before_utc": {"type": "string", "format": "date-time"},
+        "expires_utc": {"type": "string", "format": "date-time"},
+        "evaluated_at_utc": {"type": "string", "format": "date-time"}
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "responsible_human",
+        "origin_authenticated",
+        "effect_ack_state",
+        "effect_ack_protocol_path",
+        "effect_ack_protocol_hash",
+        "effect_ack_evaluated_at_utc"
+      ],
+      "properties": {
+        "responsible_human": {"type": "string", "minLength": 1},
+        "origin_authenticated": {"type": "boolean"},
+        "effect_ack_state": {
+          "enum": [
+            "EFFECT_NACK",
+            "EFFECT_ACK_CONTINUE",
+            "EFFECT_ACK_DONE",
+            "EFFECT_ACK_ISOLATE",
+            "EFFECT_ACK_BLOCK"
+          ]
+        },
+        "effect_ack_protocol_path": {
+          "type": ["string", "null"]
+        },
+        "effect_ack_protocol_hash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "effect_ack_evaluated_at_utc": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous_checkpoint_path", "previous_checkpoint_sha256"],
+      "properties": {
+        "previous_checkpoint_path": {
+          "const": "receipts/anticipation/0002-anticipation-materialized.json"
+        },
+        "previous_checkpoint_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "attempted", "transport_ack", "effect_receipt"],
+      "properties": {
+        "state": {"const": "NOT_DISPATCHED"},
+        "attempted": {"const": false},
+        "transport_ack": {"const": false},
+        "effect_receipt": {"type": "null"}
+      }
+    },
+    "non_claims": {
+      "type": "array",
+      "minItems": 4,
+      "items": {"type": "string"}
+    }
+  }
+}

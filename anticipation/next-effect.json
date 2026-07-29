@@ -7,16 +7,20 @@
   "dispatch_authorized": false,
   "effect_state": "EFFECT_ACK_CONTINUE",
   "next_effect": {
-    "description": "Materialize and validate inert targeted-node and Zenodo intents without dispatching or publishing.",
-    "effect_id": "MATERIALIZE_FAIL_CLOSED_EFFECT_INTENTS",
+    "description": "Revalidate the exact target node and build the candidate-specific claim inventory and Lean/Lake proof plan; perform no external effect.",
+    "effect_id": "REVALIDATE_TARGET_AND_BUILD_MACHINE_PROOF",
     "executor_capability": "qikvrt.repository.anticipation.v1",
-    "expected_receipt": "receipts/anticipation/0003-effect-intents-gated.json",
+    "expected_receipt": "receipts/anticipation/0004-candidate-verified.json",
     "preconditions": [
-      "GLOBAL_SYSTEM_CLOSURE_CONTRACT_VALID",
-      "ANTICIPATION_PROJECTIONS_BYTE_CURRENT",
-      "EFFECT_ACK_DEFAULT_CONTINUE"
+      "TARGET_NODE_ACTIVE_AND_FRESH",
+      "EXACT_CANDIDATE_FROZEN",
+      "COMPLETE_CLAIM_INVENTORY",
+      "LEAN_LAKE_KERNEL_RECEIPTS_WHERE_APPLICABLE",
+      "FRESH_EFFECT_SPECIFIC_EFFECT_ACK_DONE_BEFORE_ANY_DISPATCH"
     ]
   },
   "schema": "qikvrt_anticipation_next_effect_v1",
-  "scope_id": "qikvrt-global-system-closure-v1"
+  "scope_id": "qikvrt-global-system-closure-v1",
+  "targeted_delivery_state": "BLOCK",
+  "zenodo_queue_state": "BLOCKED_AWAITING_MACHINE_PROOF"
 }
