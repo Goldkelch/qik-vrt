@@ -2,16 +2,17 @@
 
 Repository: `Goldkelch/qik-vrt`
 
-Projection input ref: `evidence/content-disposition-batch-002-terminal-20260728-v1`
+Historical projection input ref: `evidence/content-disposition-batch-002-terminal-20260728-v1`
 
-Projection source: `4fd73232cc8d2189e14c950b376bb72ffcaf744e`
+Historical projection source: `4fd73232cc8d2189e14c950b376bb72ffcaf744e`
 
-Updated at: `2026-07-29T08:27:51Z`
+Post-acceptance overlay: `release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json`
+
+Updated at: `2026-07-29T22:16:38Z`
 
 Snapshot state: **`IDLE`**. Overall effect state:
 **`EFFECT_ACK_CONTINUE`**. No unqualified repository-wide
-`PASS`, `FINAL_PASS`, publication, merge, synchronization or symmetric
-canonicality is claimed by this handoff.
+`PASS`, `FINAL_PASS`, Zenodo publication or corpus completion is claimed.
 
 `[████████████░░░░░░░] 63%` — Zenodo-Subject-Disposition
 (12/19)
@@ -19,50 +20,53 @@ canonicality is claimed by this handoff.
 - ✓ Canonical 24-record union and 19 claim subjects bound
 - ✓ Batch 001 terminally dispositioned
 - ✓ Batch 002 terminally dispositioned
-- □ Required corrected Batch-002 candidate and owner return
+- ✓ Corrected Batch-002 candidate created and returned to Ingolf Lohmann
+- ✓ Owner decision `ACCEPT` recorded
+- ✓ Authority PR #209 and Mirror PR #100 promoted
+- ✓ Reciprocal receipt Authority PR #213 / Mirror PR #101 promoted
 - □ Seven remaining claim subjects
 - □ Retrospective proof corpus and any later publication effect
 
 ## Bounded global claim scope
 
 `qikvrt-global-claim-scope-v1`: **`FINAL_PASS`**, 100% inside its declared
-finite boundary (92 claims, 54 primary
-kernel receipts, 3 claims retained `OPEN`). Evidence:
-`GLOBAL_COMPLETION_RECEIPT.json` plus the commit-bound run observation
-`evidence/receipts/global-completion-exact-head-runs-2026-07-29.json`.
-The external equality payload itself is not stored here; the repository binds
-only its authorized SHA-256 through the finalization input and scoped receipt.
-This historical state does not extend to the Zenodo corpus, unregistered prose,
-or current repository symmetry.
+finite boundary (92 claims,
+54 primary kernel receipts,
+3 claims retained `OPEN`). This bounded historical
+scope does not establish completion of the Zenodo corpus or any unregistered
+statement.
 
 ## Zenodo canonical-union corpus
 
-`qikvrt-zenodo-canonical-union-2026-07-28-v1`: **`CONTINUE`**, 12/19
-subjects dispositioned (63%), 7 open.
+`qikvrt-zenodo-canonical-union-2026-07-28-v1`: **`CONTINUE`**,
+12/19 subjects dispositioned
+(63%), 7 open.
 
-- Batch 002: `TERMINALLY_DISPOSITIONED`, 6 subjects, 1489 claims,
-  1 required correction.
+- Batch 002 claim disposition: `TERMINALLY_DISPOSITIONED`, 6 subjects,
+  1489 claims.
+- Batch 002 correction chain: `CORRECTION_ACCEPTED_PROMOTED_AND_RECIPROCALLY_BOUND`.
+- Owner return and content-correction review: complete.
+- Authority promotion: PR #209, merge `524fabd51f3492aa99da1430557f4f515074450e`.
+- Mirror promotion: PR #100, merge `a8b85fbf3222da1e528505a760c184d48e112329`.
+- Reciprocal receipt: PR #213 / PR #101,
+  SHA-256 `ba5267f60417f39ceb21efe271d191d0ba40d65dddbc6d17d47c72e672348658`.
 - Batch 003: `READY` with 6 subjects;
   1 further subject remains beyond the active batch.
-- Required content effect: `CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002`.
-- Corpus `PASS`, `FINAL_PASS`, `EFFECT_ACK_DONE` and proof-corpus publication:
-  **not established**.
+- Corpus `PASS`, `FINAL_PASS`, `EFFECT_ACK_DONE`, Zenodo mutation and
+  proof-corpus publication: **not established**.
 
-## Repository effects
+## Repository evidence boundary
 
-This content-status projection does not evaluate current PR, merge, Authority,
-Mirror or reciprocal-equality state. Its ref and SHA identify the projection
-input, not a current remote head. Any such claim requires fresh repository
-evidence bound to the current commit and run. The `QIKVRT live status watch`
-is telemetry only; branch-level watcher output is not exact-head evidence and
-does not establish PR, check, merge, promotion or synchronization state.
+The historical terminal queue, index and union receipt remain immutable. The
+post-acceptance overlay binds the Owner `ACCEPT` receipt, both promotions and
+the independently gated reciprocal equality receipt. It advances only the
+content-disposition next action; it does not rewrite the earlier event records.
 
 ## BLOCKER
 
-No internal projection blocker. Exact-head gates, responsible-human promotion,
-the corrected-candidate owner return and all later irreversible effects remain
-mandatory external gates.
+No internal Batch-002 correction or owner-return blocker remains. Seven claim
+subjects and the retrospective proof corpus remain incomplete.
 
 ## NEXT
 
-`CREATE_CORRECTED_CANDIDATES_AND_RETURN_TO_OWNER_FOR_BATCH_002`
+`EXECUTE_CONTENT_DISPOSITION_BATCH_003`

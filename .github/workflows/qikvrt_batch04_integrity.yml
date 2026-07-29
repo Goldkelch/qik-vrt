@@ -118,6 +118,18 @@ jobs:
           )
           PY
           python3 -B tests/test_formalization_v2_release_workflow.py
+      - name: Refresh post-acceptance content-disposition status when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
+          receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
+          if [ ! -f "$script" ] || [ ! -f "$receipt" ]; then
+            echo "Post-acceptance content-disposition projection is not present on this branch."
+            exit 0
+          fi
+          python3 -B "$script" --materialize
+          python3 -B "$script" --check-status-projection
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
@@ -147,6 +159,8 @@ jobs:
             release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
             release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
             release/formalization-v2-alpha2-zenodo.json \
+            AI_PROGRESS.json \
+            AI_STATUS.md \
             REPOSITORY_FILE_MANIFEST.json \
             REPOSITORY_FILE_MANIFEST.json.sha256 \
             SHA256SUMS.txt
