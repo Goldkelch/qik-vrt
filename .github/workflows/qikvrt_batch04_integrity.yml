@@ -118,18 +118,23 @@ jobs:
           )
           PY
           python3 -B tests/test_formalization_v2_release_workflow.py
-      - name: Refresh post-acceptance content-disposition status when present
+      - name: Refresh current content-disposition status when present
         shell: bash
         run: |
           set -euo pipefail
-          script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
-          receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
-          if [ ! -f "$script" ] || [ ! -f "$receipt" ]; then
-            echo "Post-acceptance content-disposition projection is not present on this branch."
-            exit 0
+          dispatch_script="tools/qikvrt_content_disposition_batch_003_dispatch.py"
+          dispatch_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json"
+          post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
+          post_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
+          if [ -f "$dispatch_script" ] && [ -f "$dispatch_receipt" ]; then
+            python3 -B "$dispatch_script" --materialize
+            python3 -B "$dispatch_script" --check-status-projection
+          elif [ -f "$post_script" ] && [ -f "$post_receipt" ]; then
+            python3 -B "$post_script" --materialize
+            python3 -B "$post_script" --check-status-projection
+          else
+            echo "No current content-disposition status projector is present on this branch."
           fi
-          python3 -B "$script" --materialize
-          python3 -B "$script" --check-status-projection
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
