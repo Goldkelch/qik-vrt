@@ -14,23 +14,25 @@
     "Create the required corrected Batch-002 candidate and return it to Ingolf Lohmann",
     "Record Ingolf Lohmann's explicit ACCEPT decision for the exact corrected candidate",
     "Promote the accepted corrected candidate through Authority PR #209 and Mirror PR #100",
-    "Persist the independently gated reciprocal equality receipt through Authority PR #213 and Mirror PR #101"
+    "Persist the independently gated reciprocal equality receipt through Authority PR #213 and Mirror PR #101",
+    "Dispatch Batch 003 with six subjects and materialize the first claim-extraction work package"
   ],
-  "current_action": "No live operation owns this stable post-acceptance handoff snapshot.",
+  "current_action": "Batch 003 is dispatched. The active work package owns SUBJECT-2581811b342e505d and is fail-closed on recovery of the exact published equality-receipts-index.json bytes.",
   "effect_state": "EFFECT_ACK_CONTINUE",
   "incomplete_scope_count": 1,
-  "next_action": "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
+  "next_action": "RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D",
   "operation_id": "zenodo-canonical-union-content-disposition-2026-07-28",
   "pending_steps": [
-    "Terminally disposition the seven remaining Zenodo claim subjects beginning with Batch 003",
-    "Build and verify the retrospective proof corpus before any publication effect",
-    "Require separate authorization and byte verification for every later Zenodo mutation"
+    "Recover and hash-verify the exact public equality-receipts-index.json freeze",
+    "Extract and terminally classify every claim for SUBJECT-2581811b342e505d",
+    "Process the five remaining Batch-003 subjects and the final queued subject",
+    "Build and verify the retrospective proof corpus before any publication effect"
   ],
   "percent": 63,
   "percent_scope": "qikvrt-zenodo-canonical-union-2026-07-28-v1",
   "projection_owner": {
-    "check_command": "python3 -B tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py --check-status-projection",
-    "tool": "tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
+    "check_command": "python3 -B tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection",
+    "tool": "tools/qikvrt_content_disposition_batch_003_dispatch.py"
   },
   "ref_name": "evidence/content-disposition-batch-002-terminal-20260728-v1",
   "repository": "Goldkelch/qik-vrt",
@@ -154,8 +156,10 @@
     },
     "qikvrt-zenodo-canonical-union-2026-07-28-v1": {
       "active_batch": {
+        "active_subject": "SUBJECT-2581811b342e505d",
+        "active_work_package": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/subjects/SUBJECT-2581811b342e505d/CLAIM_EXTRACTION_WORK_PACKAGE.json",
         "batch_id": "CONTENT-DISPOSITION-BATCH-003",
-        "state": "READY",
+        "state": "DISPATCHED",
         "subjects": 6
       },
       "batch_002": {
@@ -204,6 +208,16 @@
         "state": "TERMINALLY_DISPOSITIONED",
         "subjects": 6
       },
+      "batch_003": {
+        "active_subject": "SUBJECT-2581811b342e505d",
+        "active_work_package": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/subjects/SUBJECT-2581811b342e505d/CLAIM_EXTRACTION_WORK_PACKAGE.json",
+        "claim_extraction_complete": false,
+        "dispatch_receipt": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json",
+        "next_action": "RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D",
+        "state": "DISPATCHED_FIRST_SUBJECT_ACTIVE",
+        "subjects": 6,
+        "terminal": false
+      },
       "boundary": "Batch-002 correction creation, owner return, owner acceptance, Authority promotion, Mirror promotion and reciprocal equality are complete for the bound scope. Seven claim subjects, the retrospective proof corpus and any Zenodo mutation remain open.",
       "claims": {
         "EFFECT_ACK_DONE": false,
@@ -218,7 +232,7 @@
       },
       "effect_state": "EFFECT_ACK_CONTINUE",
       "evidence": "release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json",
-      "next_action": "EXECUTE_CONTENT_DISPOSITION_BATCH_003",
+      "next_action": "RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D",
       "percent": 63,
       "queued_after_active": 1,
       "state": "CONTINUE"
@@ -247,7 +261,7 @@
   },
   "source_semantics": "Historical terminal-disposition source capsule preserved unchanged; the current post-acceptance state is an additive evidence overlay bound by release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json.",
   "source_sha": "4fd73232cc8d2189e14c950b376bb72ffcaf744e",
-  "state": "IDLE",
-  "union_receipt_state": "CONTENT_DISPOSITION_BATCH_002_CORRECTION_ACCEPTED_PROMOTED_RECIPROCALLY_BOUND_BATCH_003_READY",
-  "updated_at": "2026-07-29T22:16:38Z"
+  "state": "WORKING",
+  "union_receipt_state": "CONTENT_DISPOSITION_BATCH_003_DISPATCHED_FIRST_SUBJECT_ACTIVE",
+  "updated_at": "2026-07-29T23:05:40Z"
 }
