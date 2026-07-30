@@ -1779,11 +1779,15 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
             value = json.loads(manifest_path.read_text(encoding="utf-8"))
             value["source_head"] = "c" * 40
             manifest_path.write_text(json.dumps(value) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(
-                zenodo.ZenodoError,
-                "source_head differs from the v2 manifest",
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "owner/repository"},
             ):
-                publish.load_manifest(manifest_path, root)
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "source_head differs from the v2 manifest",
+                ):
+                    publish.load_manifest(manifest_path, root)
 
     def test_generic_publisher_matches_natural_person_to_creator_name_forms(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1952,11 +1956,15 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 json.dumps(authorization) + "\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(
-                zenodo.ZenodoError,
-                "differs from the exact repository bytes",
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "owner/repository"},
             ):
-                publish.load_manifest(manifest_path, root)
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "differs from the exact repository bytes",
+                ):
+                    publish.load_manifest(manifest_path, root)
 
     def test_recomputed_denial_statement_cannot_authorize_upload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1989,11 +1997,15 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
             policy = json.loads(policy_path.read_text(encoding="utf-8"))
             policy["activation"]["principal"]["name"] = "Someone Else"
             policy_path.write_text(json.dumps(policy) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(
-                zenodo.ZenodoError,
-                "active Zenodo proof policy exact byte identity",
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "owner/repository"},
             ):
-                publish.load_manifest(manifest_path, root)
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "active Zenodo proof policy exact byte identity",
+                ):
+                    publish.load_manifest(manifest_path, root)
 
     def test_owner_authorization_must_not_be_uploaded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -2009,11 +2021,30 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 }
             )
             manifest_path.write_text(json.dumps(value) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(
-                zenodo.ZenodoError,
-                "exact proof-bearing set",
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "owner/repository"},
             ):
-                publish.load_manifest(manifest_path, root)
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "exact proof-bearing set",
+                ):
+                    publish.load_manifest(manifest_path, root)
+
+    def test_load_manifest_rejects_foreign_executing_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            _, manifest_path = self.fixture(root)
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "other/repository"},
+                clear=True,
+            ):
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "manifest repository differs from the executing repository",
+                ):
+                    publish.load_manifest(manifest_path, root)
 
     def test_production_requires_exact_repository_execution_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
