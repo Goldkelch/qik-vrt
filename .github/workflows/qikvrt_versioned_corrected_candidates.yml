@@ -44,18 +44,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B -m py_compile tools/qikvrt_create_versioned_corrected_candidates.py
+          python3 -B -m py_compile \
+            tools/qikvrt_create_versioned_corrected_candidates.py \
+            tools/qikvrt_create_versioned_corrected_candidates_entrypoint.py
       - name: Recover exact public bytes and materialize six candidates
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_create_versioned_corrected_candidates.py --materialize \
+          python3 -B tools/qikvrt_create_versioned_corrected_candidates_entrypoint.py --materialize \
             | tee /tmp/qikvrt-versioned-corrected-candidates.log
       - name: Verify committed candidate contract offline
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_create_versioned_corrected_candidates.py --check
+          python3 -B tools/qikvrt_create_versioned_corrected_candidates_entrypoint.py --check
           grep -Fx 'PASS=false' /tmp/qikvrt-versioned-corrected-candidates.log
           grep -Fx 'FINAL_PASS=false' /tmp/qikvrt-versioned-corrected-candidates.log
           grep -Fx 'EFFECT_ACK_DONE=false' /tmp/qikvrt-versioned-corrected-candidates.log
@@ -80,6 +82,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             tools/qikvrt_create_versioned_corrected_candidates.py \
+            tools/qikvrt_create_versioned_corrected_candidates_entrypoint.py \
             .github/workflows/qikvrt_versioned_corrected_candidates.yml \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates \
             work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json \
