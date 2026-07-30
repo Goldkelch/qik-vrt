@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT owner acceptance integrity materialization
+
+on:
+  push:
+    branches:
+      - agent/owner-accept-six-versioned-candidates-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-owner-acceptance-integrity-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_REF: agent/owner-accept-six-versioned-candidates-v1
+      EXPECTED_PARENT: 8624843c10c9cfea094d72ecd63dee5b37ea4bd3
+      ACCEPTANCE_RECEIPT_SHA256: 58000ba0768cab4aee06c60b625df9fdc5b422c2ed0d14dde4fc55199d1eff72
+      EXECUTOR_PATH: .github/workflows/qikvrt_owner_acceptance_integrity_materialize.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify exact one-shot transport and owner acceptance binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD)" = "$EXECUTOR_PATH"
+          receipt='release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json'
+          printf '%s  %s\n' "$ACCEPTANCE_RECEIPT_SHA256" "$receipt" | sha256sum -c -
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(Path(
+              'release/zenodo-corpus-proof-2026-07-28/canonical-union/'
+              'versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json'
+          ).read_text(encoding='utf-8'))
+          marker = json.loads(Path(
+              'work-units/OWNER_ACCEPTANCE_READY_MARKER.json'
+          ).read_text(encoding='utf-8'))
+          decision = json.loads(Path(
+              'work-units/OWNER_DECISION_VERSIONED_CORRECTED_CANDIDATES.json'
+          ).read_text(encoding='utf-8'))
+          promote = json.loads(Path(
+              'work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json'
+          ).read_text(encoding='utf-8'))
+
+          expected_head = 'd09da70355fa8e01d95deacc9a2b53aeef516eb5'
+          expected_sha = '58000ba0768cab4aee06c60b625df9fdc5b422c2ed0d14dde4fc55199d1eff72'
+          expected_hashes = {
+              'SUBJECT-172dd9bc2738fa43': '10591f0bfd314af227a1b75cb3a85d3db032c4ea5a9dd4129a94830cd2dabe59',
+              'SUBJECT-b4849e1a2d6b2270': '43def64a5bb351bbb1fd4a589878aceef86a5b4b989091ed63884d56f1396724',
+              'SUBJECT-7956d8acdc473825': 'ec3c4a8712a2f24a8c074e3d487bcfc16541edfd6a3fdf567bf6b25dcb5752ec',
+              'SUBJECT-ce2390f18618ad0c': 'b0414047e9e9ab0cd28782d4963acc9c2a9ee7deb99705a7bec6118fa3227ef3',
+              'SUBJECT-780b9bf86425cee3': '7fe183f215ca7044081a5123c7b3d46a812ac21cc7770ae7a9a5acca620d3eea',
+              'SUBJECT-7fdb36aa7c07c07d': '4f1255749f3d09f9fc0cad2c8a9071dbf244cef0c7dc3c883226be8d1be1bbd6',
+          }
+          observed_hashes = {
+              item['subject_id']: item['candidate_sha256']
+              for item in receipt['decisions']
+          }
+          checks = [
+              receipt['decision'] == 'ACCEPT',
+              receipt['state'] == 'ACCEPTED',
+              receipt['candidate_binding']['accepted_head'] == expected_head,
+              receipt['decision_evidence']['id'] == 4816178499,
+              observed_hashes == expected_hashes,
+              marker['accepted_candidate_head'] == expected_head,
+              marker['acceptance_receipt_sha256'] == expected_sha,
+              marker['state'] == 'READY_FOR_EXACT_HEAD_VERIFICATION',
+              decision['state'] == 'ACCEPTED_ALL_SIX',
+              decision['completion_claims']['zenodo_mutation_authorized'] is False,
+              promote['state'] == 'READY',
+              promote['completion_claims']['authority_promotion_complete'] is False,
+              promote['completion_claims']['mirror_synchronized'] is False,
+              promote['completion_claims']['pass'] is False,
+              promote['completion_claims']['final_pass'] is False,
+              promote['completion_claims']['effect_ack_done'] is False,
+          ]
+          if not all(checks):
+              raise SystemExit('BLOCK: owner acceptance binding differs from the authorized exact scope')
+          PY
+      - name: Verify repository with transport executor present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 tools/qikvrt_integrity.py verify
+      - name: Remove executor and materialize final acceptance evidence tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -- "$EXECUTOR_PATH"
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 tools/qikvrt_integrity.py verify
+      - name: Persist only final integrity outputs and executor deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s\n' \
+            "$EXECUTOR_PATH" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt | sort)
+          actual=$(git diff --name-only | sort)
+          test "$actual" = "$expected"
+          test -z "$(git ls-files --others --exclude-standard)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            "$EXECUTOR_PATH" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git commit -m 'ci: bind owner acceptance to repository integrity'
+          git push origin "HEAD:$TARGET_REF"
