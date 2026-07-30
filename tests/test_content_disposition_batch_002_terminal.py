@@ -13,6 +13,8 @@ class T(unittest.TestCase):
   cls.receipt=load(OUT/'CONTENT_DISPOSITION_BATCH_002_RECEIPT.json');cls.queue=load(BASE/'CONTENT_CLAIM_DISPOSITION_QUEUE.json');cls.index=load(BASE/'CONTENT_CLAIM_DISPOSITION_INDEX.json');cls.union_receipt=load(BASE/'CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json');cls.progress=load(ROOT/'AI_PROGRESS.json')
  @staticmethod
  def current_projection_contract():
+  if current.FINAL_CORPUS_RECEIPT.is_file():
+   advanced=current._advanced_module();return {'next_effect':advanced.NEXT_EFFECT,'tool':advanced.TOOL_REL,'open_subjects':0,'batch_state':'TERMINALLY_DISPOSITIONED','bar':'[███████████████████] 100%','status_marker':'All 19 canonical claim subjects terminally classified'}
   if current.SECOND_SUBJECT_RECEIPT.is_file():
    advanced=current._advanced_module();return {'next_effect':advanced.NEXT_EFFECT,'tool':advanced.TOOL_REL,'open_subjects':5,'batch_state':'SECOND_SUBJECT_TERMINAL_CORRECTION_REQUIRED_NEXT_SUBJECT_READY','bar':'[██████████████░░░░░] 74%','status_marker':'5715/5715 assertion nodes classified'}
   if current.ADVANCED_SUBJECT_RECEIPT.is_file():
