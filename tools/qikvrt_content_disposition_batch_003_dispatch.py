@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Ingolf Lohmann.
-"""Append-tolerant compatibility front-end for the Batch-003 dispatcher.
+"""Append-tolerant current-state front-end for the Batch-003 dispatcher.
 
-The immutable dispatch inputs remain exact-blob-bound.  The live reciprocal
-receipt index is an append-only registry owned by the equality-receipt
-subsystem and must therefore be validated semantically rather than frozen to
-the blob that existed at dispatch time.
+The immutable dispatch inputs remain exact-blob-bound. The live reciprocal
+receipt index is an append-only registry and is validated semantically. Once a
+subject-disposition receipt is present, status materialization delegates to the
+subject-specific fail-closed projector without rewriting the historical
+dispatch layer.
 """
 
 from __future__ import annotations
@@ -36,6 +37,18 @@ _REQUIRED_PRE_DISPATCH_RECEIPT_IDS = frozenset(
         "authority-mirror-equality-2026-07-29-batch002-terminal-pr201-pr96",
         "authority-mirror-equality-2026-07-29-batch002-corrected-pr209-pr100",
     }
+)
+
+SUBJECT_DISPOSITION_REL = (
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/"
+    "content-disposition-batch-003/subjects/SUBJECT-2581811b342e505d/"
+    "SUBJECT_DISPOSITION_RECEIPT.json"
+)
+SUBJECT_DISPOSITION = ROOT / SUBJECT_DISPOSITION_REL
+SECOND_SUBJECT_ID = "SUBJECT-172dd9bc2738fa43"
+NEXT_EFFECT = (
+    "EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_"
+    "BATCH_003_SUBJECT_172DD9BC2738FA43"
 )
 
 
@@ -90,10 +103,45 @@ def validate_source_blobs() -> None:
     validate_live_index()
 
 
-# The delegated projection and CLI resolve this name in the legacy module.
+# The delegated historical projection resolves this name in the legacy module.
 _legacy.EXPECTED_SOURCE_BLOBS = EXPECTED_SOURCE_BLOBS
 _legacy.validate_source_blobs = validate_source_blobs
 
 
+def _active_module():
+    if SUBJECT_DISPOSITION.is_file():
+        from tools import (
+            qikvrt_content_disposition_batch_003_subject_2581811b342e505d
+            as subject,
+        )
+
+        return subject
+    return _legacy
+
+
+def expected_projection():
+    return _active_module().expected_projection()
+
+
+def verify():
+    return _active_module().verify()
+
+
+def materialize() -> None:
+    _active_module().materialize()
+
+
+def validate_progress(progress: Mapping[str, Any]) -> None:
+    _active_module().validate_progress(progress)
+
+
+def render_ai_status(progress: Mapping[str, Any]) -> str:
+    return _active_module().render_ai_status(progress)
+
+
+def main(argv: list[str] | None = None) -> int:
+    return _active_module().main(argv)
+
+
 if __name__ == "__main__":
-    raise SystemExit(_legacy.main())
+    raise SystemExit(main())
