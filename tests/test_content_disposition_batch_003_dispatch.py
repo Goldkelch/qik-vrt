@@ -82,7 +82,11 @@ class T(unittest.TestCase):
     def test_root_projection_is_owned_by_most_advanced_projector(self):
         expected, status = m.expected_projection()
         self.assertEqual(self.progress, expected)
-        self.assertEqual(m.AI_PROGRESS.read_text(encoding="utf-8"), m.pretty(expected))
+        renderer = m.pretty
+        if m.ADVANCED_SUBJECT_RECEIPT.is_file():
+            advanced = m._advanced_module()
+            renderer = advanced.pretty
+        self.assertEqual(m.AI_PROGRESS.read_text(encoding="utf-8"), renderer(expected))
         self.assertEqual(m.AI_STATUS.read_text(encoding="utf-8"), status)
         if m.ADVANCED_SUBJECT_RECEIPT.is_file():
             corpus = expected["scopes"]["qikvrt-zenodo-canonical-union-2026-07-28-v1"]
