@@ -36,10 +36,10 @@ class T(unittest.TestCase):
    self.assertEqual(expected['percent'],74);self.assertEqual(corpus['counts']['dispositioned_subjects'],14);self.assertEqual(corpus['counts']['open_subjects'],5);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-b4849e1a2d6b2270')
   elif m.ADVANCED_SUBJECT_RECEIPT.is_file():
    self.assertEqual(expected['percent'],68);self.assertEqual(corpus['counts']['dispositioned_subjects'],13);self.assertEqual(corpus['counts']['open_subjects'],6);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-172dd9bc2738fa43')
- def test_repository_evidence_prefers_terminal_remaining_archive_projection(self):
-  remaining='remaining_script="tools/qikvrt_content_disposition_batch_003_remaining_archives.py"';second='second_script="tools/qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43.py"';branch='if [ -f "$remaining_script" ] && [ -f "$remaining_receipt" ]; then';older='elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then'
-  for value in (remaining,second,branch,older,'--materialize --json','--check --json','python3 -B "$candidate_entrypoint" --check'):self.assertIn(value,self.workflow)
-  self.assertLess(self.workflow.index(remaining),self.workflow.index(second));self.assertLess(self.workflow.index(branch),self.workflow.index(older));self.assertEqual(self.workflow.count('tools.qikvrt_content_disposition_batch_003_remaining_archives'),2)
+ def test_repository_evidence_preserves_returned_candidate_state(self):
+  remaining='if [ -f "$remaining_script" ] && [ -f "$remaining_receipt" ]; then';candidate='if [ -f "$candidate_entrypoint" ] && [ -f "$candidate_package" ]; then';older='elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then';segment=self.workflow[self.workflow.index(remaining):self.workflow.index(older)]
+  for value in (remaining,candidate,older,'--materialize --json','--check --json','python3 -B "$candidate_entrypoint" --check'):self.assertIn(value,self.workflow)
+  self.assertLess(self.workflow.index(remaining),self.workflow.index(older));self.assertLess(segment.index(candidate),segment.index('else'));self.assertLess(segment.index('--check --json'),segment.index('else'));self.assertGreater(segment.index('--materialize --json'),segment.index('else'));self.assertEqual(self.workflow.count('tools.qikvrt_content_disposition_batch_003_remaining_archives'),3)
  def test_wrong_first_subject_blocks(self):
   bad=copy.deepcopy(self.dispatch);bad['batch']['subjects'][0]['subject_id']='SUBJECT-172dd9bc2738fa43'
   with self.assertRaises(m.E):m.validate_dispatch(bad,self.package,self.work)
