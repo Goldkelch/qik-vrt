@@ -3,8 +3,8 @@
   "capability_id": "qikvrt.repository.anticipation.v1",
   "title": "Repository Trend and Anticipation Engine",
   "description": "Derives one canonical next valid repository state and one minimal deterministic next effect from verified ordered observations, discrete derivatives and transition rules.",
-  "semantic_version": "1.1.0-draft",
-  "status": "PARTIAL_LOCAL_PROJECTIONS_IMPLEMENTED",
+  "semantic_version": "1.2.0-draft",
+  "status": "PARTIAL_LOCAL_PROJECTIONS_AND_TARGET_VALIDATION_IMPLEMENTED",
   "capability_class": "monitoring",
   "implementation_locations": [
     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
@@ -13,6 +13,9 @@
     "schemas/qikvrt-anticipation-state.schema.json",
     "tools/qikvrt_anticipation.py",
     "tests/test_anticipation.py",
+    "schemas/qikvrt-targeted-effect-envelope.schema.json",
+    "tools/qikvrt_targeted_effect.py",
+    "tests/test_targeted_effect.py",
     "anticipation/",
     "receipts/anticipation/",
     "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
@@ -50,7 +53,11 @@
     "post-dispatch re-observation test",
     "planner replacement conformance test",
     "current-status source-binding tamper test",
-    "hash-linked checkpoint continuity test"
+    "hash-linked checkpoint continuity test",
+    "single-node exact-target negative tests",
+    "target-time window negative tests",
+    "effect-specific protocol binding test",
+    "transport-acknowledgement boundary test"
   ],
   "evidence": [
     "receipts/anticipation/0001-contract-bound.json",
@@ -64,13 +71,20 @@
     "EXECUTION_RECEIPT_MISSING",
     "PRODUCTIVE_CHAIN_STALLED",
     "AUTHORITY_MIRROR_STATE_DIVERGENCE",
-    "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
+    "COMPONENT_IDENTITY_DEPENDENCY_DETECTED",
+    "PAYLOAD_HASH_OR_SIZE_MISMATCH",
+    "TARGET_NODE_NOT_UNIQUE",
+    "TARGET_NODE_NOT_ACTIVE",
+    "TARGET_NODE_NOT_FRESH",
+    "DELIVERY_WINDOW_EXPIRED",
+    "PREVIOUS_CHECKPOINT_MISMATCH",
+    "FALSE_EFFECT_ACK_DONE"
   ],
   "next_effect": "Reconcile the tracked post-promotion Authority status while preserving Mirror synchronization, reciprocal equality and Zenodo mutation as separate effects.",
   "owner_only_bootstrap_actions": [],
   "provenance": {
     "repository": "Goldkelch/qik-vrt",
-    "branch": "agent/global-system-closure-current-v1",
+    "branch": "agent/targeted-effect-envelope-current-v1",
     "sha256_binding": "PENDING_INTEGRITY_MATERIALIZATION"
   }
 }
