@@ -121,14 +121,20 @@ class T(unittest.TestCase):
 
     def test_projection_release_inflation_blocks(self):
         progress, _ = m.expected_projection()
-        validator = m._advanced_module().validate_progress_projection if m.ADVANCED_SUBJECT_RECEIPT.is_file() else m.validate_progress
+        if m.ADVANCED_SUBJECT_RECEIPT.is_file():
+            advanced = m._advanced_module()
+            validator = advanced.validate_progress_projection
+            error_type = advanced.SubjectDispositionError
+        else:
+            validator = m.validate_progress
+            error_type = m.E
         for path in ("top", "corpus"):
             bad = copy.deepcopy(progress)
             if path == "top":
                 bad["claims"]["PASS"] = True
             else:
                 bad["scopes"]["qikvrt-zenodo-canonical-union-2026-07-28-v1"]["claims"]["PASS"] = True
-            with self.assertRaises(m.E):
+            with self.assertRaises(error_type):
                 validator(bad)
 
 
