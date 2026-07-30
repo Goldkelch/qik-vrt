@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT Batch-003 remaining subject disposition
+
+on:
+  push:
+    branches:
+      - agent/batch003-subject-172dd-public-freeze-probe
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-batch003-remaining-disposition-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.actor != 'dependabot[bot]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TARGET_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Materialize all remaining subject dispositions read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_content_disposition_batch_003_remaining_archives.py \
+            --materialize --json \
+            | tee /tmp/qikvrt-remaining-disposition.log
+          grep -F '"pass": false' /tmp/qikvrt-remaining-disposition.log
+          grep -F '"final_pass": false' /tmp/qikvrt-remaining-disposition.log
+          grep -F '"effect_ack_done": false' /tmp/qikvrt-remaining-disposition.log
+          grep -F '"zenodo_mutation_authorized": false' /tmp/qikvrt-remaining-disposition.log
+          grep -F '"proof_corpus_published_on_zenodo": false' /tmp/qikvrt-remaining-disposition.log
+      - name: Verify deterministic materialization without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_content_disposition_batch_003_remaining_archives.py --check --json
+          python3 -B tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection --json
+      - name: Regenerate and verify repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+      - name: Run complete repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          python3 tools/qikvrt_integrity.py verify
+      - name: Persist exact evidence head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-b4849e1a2d6b2270 \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7956d8acdc473825 \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-ce2390f18618ad0c \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-780b9bf86425cee3 \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-7fdb36aa7c07c07d \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/CONTENT_DISPOSITION_BATCH_003_RECEIPT.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus \
+            work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json \
+            work-units/REQUEST_SEPARATE_ZENODO_MUTATION_AUTHORIZATION_RETROSPECTIVE_PROOF_CORPUS.json \
+            AI_PROGRESS.json \
+            AI_STATUS.md \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo 'Evidence is already byte-current.'
+            exit 0
+          fi
+          git commit -m 'evidence: disposition remaining Zenodo subjects and verify proof corpus'
+          git push origin "HEAD:$TARGET_REF"
