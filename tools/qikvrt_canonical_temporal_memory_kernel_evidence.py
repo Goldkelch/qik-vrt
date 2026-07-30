@@ -65,9 +65,9 @@ ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SAFE_ARTIFACT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-AXIOM_LINE = re.compile(
-    r"^'(?P<name>[^']+)' (?:does not depend on any axioms|"
-    r"depends on axioms: \[(?P<axioms>[^]]*)\])$"
+AXIOM_REPORT = re.compile(
+    r"'(?P<name>[^']+)' (?:does not depend on any axioms|"
+    r"depends on axioms:\s*\[(?P<axioms>[^]]*)\])"
 )
 
 
@@ -218,6 +218,45 @@ def strip_lean_comments_and_strings(source: str) -> str:
     require(depth == 0, "Lean source has an unterminated block comment")
     require(not in_string, "Lean source has an unterminated string")
     return "".join(output)
+
+
+def parse_axiom_reports(
+    output: str,
+    expected_theorems: list[str],
+) -> dict[str, list[str]]:
+    """Parse Lean reports without assuming one physical output line per theorem."""
+    normalized = re.sub(r"\s+", " ", output)
+    expected = set(expected_theorems)
+    short_names = {
+        theorem.rsplit(".", 1)[-1]: theorem
+        for theorem in expected_theorems
+    }
+    require(
+        len(short_names) == len(expected),
+        "expected theorem short names are not unique",
+    )
+    observed: dict[str, list[str]] = {}
+    for match in AXIOM_REPORT.finditer(normalized):
+        reported = match.group("name")
+        theorem = (
+            reported
+            if reported in expected
+            else short_names.get(reported)
+        )
+        if theorem is None:
+            continue
+        require(
+            theorem not in observed,
+            f"duplicate runtime axiom report for {theorem}",
+        )
+        observed[theorem] = sorted(
+            {
+                item.strip()
+                for item in (match.group("axioms") or "").split(",")
+                if item.strip()
+            }
+        )
+    return observed
 
 
 def static_validation(
@@ -508,21 +547,7 @@ def runtime_evidence(
         ["lake", "env", "lean", str(audit_path.relative_to(PROJECT))],
         PROJECT,
     )
-    observed_axioms: dict[str, list[str]] = {}
-    for line in audit_output.splitlines():
-        match = AXIOM_LINE.match(line.strip())
-        if match is None:
-            continue
-        theorem = match.group("name")
-        if theorem not in plan["theorems"]:
-            continue
-        observed_axioms[theorem] = sorted(
-            {
-                item.strip()
-                for item in (match.group("axioms") or "").split(",")
-                if item.strip()
-            }
-        )
+    observed_axioms = parse_axiom_reports(audit_output, plan["theorems"])
     require(
         set(observed_axioms) == set(plan["theorems"]),
         "runtime axiom reports are incomplete",

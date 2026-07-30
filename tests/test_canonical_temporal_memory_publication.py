@@ -436,6 +436,30 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
         self.assertEqual(value["formal_claim_count"], 4)
         self.assertEqual(value["theorem_count"], 9)
 
+    def test_axiom_report_parser_accepts_wrapping_and_rejects_duplicates(self) -> None:
+        first, second = THEOREMS[:2]
+        output = (
+            f"'{first}' depends on axioms:\n"
+            "[propext]\n"
+            f"'{second.rsplit('.', 1)[-1]}' does not depend on any\n"
+            "axioms\n"
+        )
+        self.assertEqual(
+            kernel_evidence.parse_axiom_reports(output, [first, second]),
+            {
+                first: ["propext"],
+                second: [],
+            },
+        )
+        with self.assertRaisesRegex(
+            kernel_evidence.EvidenceError,
+            "duplicate runtime axiom report",
+        ):
+            kernel_evidence.parse_axiom_reports(
+                output + f"'{first}' depends on axioms: [propext]\n",
+                [first, second],
+            )
+
     def test_static_validation_rejects_plan_and_claim_mismatches(self) -> None:
         plan = json.loads(PLAN.read_text(encoding="utf-8"))
         claims = json.loads(CLAIMS.read_text(encoding="utf-8"))
