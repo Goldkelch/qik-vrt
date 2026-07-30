@@ -123,11 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           subject_script="tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py"
-          subject_bootstrap="tools/qikvrt_materialize_batch003_subject_executor.py"
           subject_work_unit="work-units/RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D.json"
-          if [ ! -f "$subject_script" ] && [ -f "$subject_bootstrap" ]; then
-            python3 -B "$subject_bootstrap"
-          fi
           dispatch_script="tools/qikvrt_content_disposition_batch_003_dispatch.py"
           dispatch_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json"
           post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
