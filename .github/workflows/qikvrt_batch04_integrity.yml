@@ -26,9 +26,10 @@ concurrency:
 jobs:
   materialize:
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       github.actor != 'dependabot[bot]')
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.actor != 'dependabot[bot]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -122,15 +123,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          subject_script="tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py"
-          subject_work_unit="work-units/RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D.json"
+          second_script="tools/qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43.py"
+          recursive_probe="tools/qikvrt_batch003_subject_172dd_recursive_probe.py"
+          second_report="$RUNNER_TEMP/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.json"
+          first_script="tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py"
+          first_work_unit="work-units/RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D.json"
           dispatch_script="tools/qikvrt_content_disposition_batch_003_dispatch.py"
           dispatch_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json"
           post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
           post_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
-          if [ -f "$subject_script" ] && [ -f "$subject_work_unit" ]; then
-            python3 -B "$subject_script" --verify-public-record --materialize
-            python3 -B "$subject_script" --check
+          if [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then
+            python3 -B -m tools.qikvrt_batch003_subject_172dd_recursive_probe \
+              --output "$second_report"
+            python3 -B "$second_script" --report "$second_report" --materialize
+            python3 -B "$second_script" --check
+          elif [ -f "$first_script" ] && [ -f "$first_work_unit" ]; then
+            python3 -B "$first_script" --verify-public-record --materialize
+            python3 -B "$first_script" --check
             python3 -B -m unittest -v \
               tests.test_content_disposition_batch_003_subject_2581811b342e505d \
               tests.test_content_disposition_batch_003_dispatch
@@ -173,13 +182,10 @@ jobs:
             release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
             release/formalization-v2-alpha2-zenodo.json \
             tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/PUBLIC_FREEZE_RECOVERY_RECEIPT.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/CLAIM_MATRIX.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/SOURCE_TO_CLAIM_TRACEABILITY.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/ASSERTION_NODE_COVERAGE.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/CONTENT_CHANGE_DECISION.json \
-            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/SUBJECT_DISPOSITION_RECEIPT.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d \
             work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
+            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
             AI_PROGRESS.json \
             AI_STATUS.md \
             REPOSITORY_FILE_MANIFEST.json \
