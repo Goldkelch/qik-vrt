@@ -45,9 +45,13 @@ jobs:
           python3 -B tools/qikvrt_batch003_subject_172dd_public_probe.py \
             --output probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.json \
             | tee probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.log
+          python3 -B tools/qikvrt_batch003_subject_172dd_recursive_probe.py \
+            --output probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.json \
+            | tee probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.log
           sha256sum \
             probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.json \
-            > probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.json.sha256
+            probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.json \
+            > probe-output/PROBE_SHA256SUMS.txt
       - name: Upload immutable read-only probe evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -56,11 +60,13 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           path: probe-output/**
-      - name: Enforce non-mutation completion boundary
+      - name: Enforce recursive extraction and non-mutation boundary
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fx 'PASS=false' probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.log
-          grep -Fx 'FINAL_PASS=false' probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.log
-          grep -Fx 'EFFECT_ACK_DONE=false' probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.log
-          grep -Fx 'ZENODO_MUTATION=false' probe-output/SUBJECT-172dd9bc2738fa43_PUBLIC_ARCHIVE_PROBE.log
+          grep -F '"nested_archive_content_extracted": true' \
+            probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.json
+          grep -Fx 'PASS=false' probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.log
+          grep -Fx 'FINAL_PASS=false' probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.log
+          grep -Fx 'EFFECT_ACK_DONE=false' probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.log
+          grep -Fx 'ZENODO_MUTATION=false' probe-output/SUBJECT-172dd9bc2738fa43_RECURSIVE_PUBLIC_ARCHIVE_PROBE.log
