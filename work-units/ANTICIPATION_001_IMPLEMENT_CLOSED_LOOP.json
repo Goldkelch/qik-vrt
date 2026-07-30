@@ -2,12 +2,14 @@
   "schema_version": "qikvrt_work_unit_v1",
   "work_unit_id": "ANTICIPATION-001",
   "title": "Implement repository-native trend, anticipation and closed observation loop",
-  "status": "READY",
+  "status": "IN_PROGRESS",
   "priority": "HIGHEST",
   "authority_repository": "Goldkelch/qik-vrt",
   "mirror_repository": "ingolf-lohmann/qik-vrt",
-  "source_branch": "agent/repository-capability-self-disclosure-v1",
+  "source_branch": "agent/global-system-closure-current-v1",
   "inputs": [
+    "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
+    "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
     "schemas/qikvrt-anticipation-state.schema.json",
     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
     "capabilities/anticipation.json",
@@ -62,6 +64,8 @@
     }
   ],
   "required_outputs": [
+    "tools/qikvrt_anticipation.py",
+    "tests/test_anticipation.py",
     "anticipation/current.json",
     "anticipation/history.jsonl",
     "anticipation/trends.json",
@@ -74,6 +78,25 @@
     "tests/test_post_dispatch_reobservation.*",
     "tests/test_component_replacement.*",
     "receipts/anticipation/"
+  ],
+  "materialized_stages": [
+    {
+      "order": 1,
+      "stage": "CONTRACT_BOUND",
+      "receipt": "receipts/anticipation/0001-contract-bound.json"
+    },
+    {
+      "order": 2,
+      "stage": "ANTICIPATION_MATERIALIZED",
+      "receipt": "receipts/anticipation/0002-anticipation-materialized.json"
+    }
+  ],
+  "current_blockers": [
+    "POST_PROMOTION_STATUS_PROJECTION_NOT_RECONCILED",
+    "DISPATCH_AND_REOBSERVE_NOT_IMPLEMENTED",
+    "RCP_API_NOT_IMPLEMENTED",
+    "AUTHORITY_MIRROR_COMPATIBILITY_NOT_VERIFIED",
+    "PUBLICATION_PROJECTIONS_NOT_BOUND"
   ],
   "mandatory_gates": [
     "SCHEMA_VALIDATION",
