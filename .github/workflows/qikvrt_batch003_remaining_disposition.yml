@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_content_disposition_batch_003_remaining_archives.py \
+          python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
             --materialize --json \
             | tee /tmp/qikvrt-remaining-disposition.log
           grep -F '"pass": false' /tmp/qikvrt-remaining-disposition.log
@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_content_disposition_batch_003_remaining_archives.py --check --json
+          python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives --check --json
           python3 -B tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection --json
       - name: Regenerate and verify repository integrity
         shell: bash
