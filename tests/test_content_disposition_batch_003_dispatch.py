@@ -3,9 +3,7 @@
 # Copyright 2026 Ingolf Lohmann.
 from __future__ import annotations
 import copy,importlib.util,json,pathlib,unittest
-ROOT=pathlib.Path(__file__).resolve().parents[1]
-P=ROOT/'tools/qikvrt_content_disposition_batch_003_dispatch.py'
-S=importlib.util.spec_from_file_location('batch003_dispatch',P);m=importlib.util.module_from_spec(S);assert S.loader is not None;S.loader.exec_module(m)
+ROOT=pathlib.Path(__file__).resolve().parents[1];P=ROOT/'tools/qikvrt_content_disposition_batch_003_dispatch.py';S=importlib.util.spec_from_file_location('batch003_dispatch',P);m=importlib.util.module_from_spec(S);assert S.loader is not None;S.loader.exec_module(m)
 def load(path:pathlib.Path):return json.loads(path.read_text(encoding='utf-8'))
 class T(unittest.TestCase):
  @classmethod
@@ -13,7 +11,9 @@ class T(unittest.TestCase):
   cls.dispatch=load(m.DISPATCH);cls.package=load(m.WORK_PACKAGE);cls.work=load(m.WORK_UNIT);cls.queue=load(m.QUEUE);cls.corpus=load(m.CORPUS);cls.envelope=load(m.PROOF_ENVELOPE);cls.progress=load(m.AI_PROGRESS)
  def test_positive(self):
   result=m.verify();self.assertEqual(result['batch_id'],'CONTENT-DISPOSITION-BATCH-003')
-  if m.SECOND_SUBJECT_RECEIPT.is_file():
+  if m.FINAL_CORPUS_RECEIPT.is_file():
+   self.assertEqual(result['state'],'ALL_19_SUBJECTS_DISPOSITIONED_PROOF_CORPUS_VERIFIED_PUBLICATION_NOT_AUTHORIZED');self.assertEqual(result['active_subject'],'NONE');self.assertEqual(result['open_subject_count'],0);self.assertTrue(result['claim_extraction_complete']);self.assertIs(result['proof_corpus_published_on_zenodo'],False)
+  elif m.SECOND_SUBJECT_RECEIPT.is_file():
    self.assertEqual(result['state'],'BATCH_003_DISPATCH_PRESERVED_ADVANCED_PROJECTION_CURRENT');self.assertEqual(result['active_subject'],'SUBJECT-b4849e1a2d6b2270');self.assertEqual(result['open_subject_count'],5);self.assertTrue(result['claim_extraction_complete'])
   elif m.ADVANCED_SUBJECT_RECEIPT.is_file():
    self.assertEqual(result['state'],'BATCH_003_DISPATCH_PRESERVED_ADVANCED_PROJECTION_CURRENT');self.assertEqual(result['active_subject'],'SUBJECT-172dd9bc2738fa43');self.assertEqual(result['open_subject_count'],6);self.assertTrue(result['claim_extraction_complete'])
@@ -29,9 +29,10 @@ class T(unittest.TestCase):
  def test_root_projection_is_owned_by_most_advanced_projector(self):
   expected,status=m.expected_projection();self.assertEqual(self.progress,expected);renderer=m.pretty
   if m.ADVANCED_SUBJECT_RECEIPT.is_file():renderer=m._advanced_module().pretty
-  self.assertEqual(m.AI_PROGRESS.read_text(encoding='utf-8'),renderer(expected));self.assertEqual(m.AI_STATUS.read_text(encoding='utf-8'),status)
-  corpus=expected['scopes']['qikvrt-zenodo-canonical-union-2026-07-28-v1']
-  if m.SECOND_SUBJECT_RECEIPT.is_file():
+  self.assertEqual(m.AI_PROGRESS.read_text(encoding='utf-8'),renderer(expected));self.assertEqual(m.AI_STATUS.read_text(encoding='utf-8'),status);corpus=expected['scopes']['qikvrt-zenodo-canonical-union-2026-07-28-v1']
+  if m.FINAL_CORPUS_RECEIPT.is_file():
+   self.assertEqual(expected['percent'],100);self.assertEqual(corpus['counts']['dispositioned_subjects'],19);self.assertEqual(corpus['counts']['open_subjects'],0);self.assertTrue(corpus['batch_003']['terminal']);self.assertIs(corpus['retrospective_proof_corpus']['published_on_zenodo'],False)
+  elif m.SECOND_SUBJECT_RECEIPT.is_file():
    self.assertEqual(expected['percent'],74);self.assertEqual(corpus['counts']['dispositioned_subjects'],14);self.assertEqual(corpus['counts']['open_subjects'],5);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-b4849e1a2d6b2270')
   elif m.ADVANCED_SUBJECT_RECEIPT.is_file():
    self.assertEqual(expected['percent'],68);self.assertEqual(corpus['counts']['dispositioned_subjects'],13);self.assertEqual(corpus['counts']['open_subjects'],6);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-172dd9bc2738fa43')
