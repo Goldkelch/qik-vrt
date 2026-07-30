@@ -137,12 +137,15 @@ jobs:
           post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
           post_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
           if [ -f "$remaining_script" ] && [ -f "$remaining_receipt" ]; then
-            python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
-              --materialize --json
-            python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
-              --check --json
             if [ -f "$candidate_entrypoint" ] && [ -f "$candidate_package" ]; then
+              python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
+                --check --json
               python3 -B "$candidate_entrypoint" --check
+            else
+              python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
+                --materialize --json
+              python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \
+                --check --json
             fi
           elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then
             python3 -B -m tools.qikvrt_batch003_subject_172dd_recursive_probe \
