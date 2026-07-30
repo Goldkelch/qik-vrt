@@ -371,7 +371,15 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             f"{THEOREM_NAMESPACE}.future_boundary_does_not_overwrite_past",
         }
         for theorem in THEOREMS:
-            expected = [] if theorem in axiom_free else ["propext"]
+            if theorem in axiom_free:
+                expected = []
+            elif theorem.rsplit(".", 1)[-1] in {
+                "identifier_bound_eq_true_iff",
+                "reciprocal_closure_requires_cause_and_effect",
+            }:
+                expected = ["Quot.sound", "propext"]
+            else:
+                expected = ["propext"]
             self.assertEqual(
                 plan["axiom_audit"]["expected_axioms_by_theorem"][theorem],
                 expected,
