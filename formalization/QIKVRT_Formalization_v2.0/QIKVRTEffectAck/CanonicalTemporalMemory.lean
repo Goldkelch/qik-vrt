@@ -33,6 +33,8 @@ structure CanonicalArchive where
 deriving DecidableEq, Repr
 
 structure ProspectiveRelease where
+  causeId : Nat
+  anticipatedEffectId : Nat
   pastArchive : CanonicalArchive
   futureArchive : CanonicalArchive
   causeBound : Bool
@@ -104,6 +106,8 @@ def invalidFuture : CanonicalArchive where
   canonicalEncoding := true
 
 def admittedCandidate : ProspectiveRelease where
+  causeId := 7
+  anticipatedEffectId := 11
   pastArchive := validPast
   futureArchive := validFuture
   causeBound := true
@@ -111,6 +115,8 @@ def admittedCandidate : ProspectiveRelease where
   effectAckDone := true
 
 def futureRejectedCandidate : ProspectiveRelease where
+  causeId := 7
+  anticipatedEffectId := 11
   pastArchive := validPast
   futureArchive := invalidFuture
   causeBound := true
@@ -118,6 +124,9 @@ def futureRejectedCandidate : ProspectiveRelease where
   effectAckDone := true
 
 theorem future_boundary_is_counterfactually_relevant :
+    admittedCandidate.causeId = futureRejectedCandidate.causeId ∧
+    admittedCandidate.anticipatedEffectId =
+      futureRejectedCandidate.anticipatedEffectId ∧
     admittedCandidate.pastArchive = futureRejectedCandidate.pastArchive ∧
     admittedCandidate.causeBound = futureRejectedCandidate.causeBound ∧
     admittedCandidate.policyPassed = futureRejectedCandidate.policyPassed ∧
@@ -138,16 +147,31 @@ theorem future_boundary_does_not_overwrite_past
   rfl
 
 structure EffectReceipt where
-  causeBound : Bool
+  causeId : Nat
+  observedEffectId : Nat
   effectObserved : Bool
   receiptBound : Bool
 deriving Repr
+
+def identifierBound
+    (prospective : ProspectiveRelease)
+    (receipt : EffectReceipt) : Bool :=
+  prospective.causeId == receipt.causeId &&
+  prospective.anticipatedEffectId == receipt.observedEffectId
+
+theorem identifier_bound_eq_true_iff
+    (prospective : ProspectiveRelease)
+    (receipt : EffectReceipt) :
+    identifierBound prospective receipt = true ↔
+      prospective.causeId = receipt.causeId ∧
+      prospective.anticipatedEffectId = receipt.observedEffectId := by
+  simp [identifierBound]
 
 def reciprocalClosure
     (prospective : ProspectiveRelease)
     (receipt : EffectReceipt) : Bool :=
   release prospective &&
-  receipt.causeBound &&
+  identifierBound prospective receipt &&
   receipt.effectObserved &&
   receipt.receiptBound
 
@@ -155,7 +179,7 @@ def ReciprocalConditions
     (prospective : ProspectiveRelease)
     (receipt : EffectReceipt) : Prop :=
   release prospective = true ∧
-  receipt.causeBound = true ∧
+  identifierBound prospective receipt = true ∧
   receipt.effectObserved = true ∧
   receipt.receiptBound = true
 
@@ -172,16 +196,20 @@ theorem reciprocal_closure_requires_cause_and_effect
     reciprocalClosure prospective receipt = true →
       prospective.causeBound = true ∧
       futureValid prospective = true ∧
-      receipt.causeBound = true ∧
+      prospective.causeId = receipt.causeId ∧
+      prospective.anticipatedEffectId = receipt.observedEffectId ∧
       receipt.effectObserved = true := by
   intro h
   have conditions := (reciprocal_closure_eq_true_iff prospective receipt).mp h
   have released := conditions.1
   have releaseConditions := (release_eq_true_iff prospective).mp released
+  have identifiers :=
+    (identifier_bound_eq_true_iff prospective receipt).mp conditions.2.1
   exact
     ⟨releaseConditions.2.2.1,
       releaseConditions.2.1,
-      conditions.2.1,
+      identifiers.1,
+      identifiers.2,
       conditions.2.2.1⟩
 
 end QIKVRT.CanonicalTemporalMemory.V1

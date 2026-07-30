@@ -43,6 +43,7 @@ POST_ALPHA2_EXCLUSIONS = {
 FROZEN_ALPHA2_INPUTS = {
     path: "release/formalization-v2/alpha2-frozen/" + path
     for path in (
+        ".github/workflows/qikvrt_manuscript_proof.yml",
         "formalization/QIKVRT_Formalization_v2.0/README.md",
         "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
         "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",

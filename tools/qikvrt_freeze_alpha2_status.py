@@ -3,10 +3,11 @@
 # Copyright 2026 Ingolf Lohmann.
 """Materialize immutable text inputs from the published Alpha-2 source archive.
 
-The historical Alpha-2 ZIP must remain reproducible after live status documents
-advance. Only the three explicitly named text paths are projected from the
-already hash-bound archive; all other archive inputs still come directly from
-the current repository paths used by the Alpha-2 packaging contract.
+The historical Alpha-2 ZIP must remain reproducible after live status,
+entrypoint, or proof-workflow files advance. Only the explicitly named text
+paths are projected from the already hash-bound archive; all other archive
+inputs still come directly from the current repository paths used by the
+Alpha-2 packaging contract.
 """
 from __future__ import annotations
 
@@ -24,9 +25,11 @@ ARCHIVE_SHA256 = "500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e6
 PREFIX = "QIKVRT_Formalization_v2.0-alpha.2/"
 FREEZE_ROOT = ROOT / "release/formalization-v2/alpha2-frozen"
 PATHS = (
+    ".github/workflows/qikvrt_manuscript_proof.yml",
     "formalization/QIKVRT_Formalization_v2.0/README.md",
     "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
     "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
 )
 MANIFEST = FREEZE_ROOT / "FREEZE_MANIFEST.json"
 
@@ -82,7 +85,8 @@ def _load() -> tuple[dict[str, bytes], dict[str, object]]:
         ],
         "purpose": (
             "Preserve the tagged and published Alpha-2 archive bytes while live "
-            "README, completion-plan and package implementation status advances."
+            "workflow, entrypoint, README, completion-plan and package "
+            "implementation status advances."
         ),
     }
     return projected, manifest

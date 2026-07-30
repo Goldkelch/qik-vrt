@@ -19,6 +19,7 @@ machine-proof bundle itself.
 - `EVIDENCE_BOUNDARY.md`
 - `CLAIM_MATRIX.json`
 - `SOURCE_EVIDENCE_BINDINGS.json`
+- `KERNEL_PROOF_PLAN.json`
 - `BOUNDARY_TEST_REPORT.json`
 - `PDF_RENDER_VALIDATION.json`
 - `CITATION.cff`

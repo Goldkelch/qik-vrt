@@ -18,14 +18,24 @@
     "final_state": "PASS",
     "historical_archive_regression": {
       "detection": "The first full run rejected inclusion of the new post-Alpha-2 Lean source in the immutable Alpha-2 archive.",
-      "repair": "Added only CanonicalTemporalMemory.lean to the existing POST_ALPHA2_EXCLUSIONS set.",
-      "retest": "The Alpha-2 reproducibility test and the complete make test gate passed; the historical archive remained byte-exact."
+      "repair": "Excluded only CanonicalTemporalMemory.lean as a post-Alpha-2 source and projected the changed live workflow and Lean entrypoint from byte-bound frozen Alpha-2 copies.",
+      "retest": "The Alpha-2 reproducibility test and the complete make test gate passed; the historical ZIP remained byte-exact at SHA-256 500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689."
+    },
+    "pre_final_observation": {
+      "detection": "The first run after adding the final candidate files stopped at the repository-integrity verifier because the generated inventory predated those files.",
+      "repair": "Regenerated only REPOSITORY_FILE_MANIFEST.json, SHA256SUMS.txt and REPOSITORY_FILE_MANIFEST.json.sha256 with the repository generator.",
+      "retest": "The complete make test gate then passed from compile through the final integrity verification."
     },
     "repository_integrity": {
-      "classified_entries": 3096,
-      "immutable_digests": 3087,
+      "classified_entries": 3099,
+      "immutable_digests": 3090,
       "state": "PASS"
     }
+  },
+  "kernel_gate": {
+    "boundary": "The local gate validates the exact source, theorem inventory and receipt contract but is not a Lean kernel execution.",
+    "exact_head_receipt_present": false,
+    "state": "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
   },
   "model_boundaries": {
     "actual_future_observation_required_for_present_release": false,
@@ -43,7 +53,7 @@
     "command": "python3 -B -m unittest -v tests.test_canonical_temporal_memory_publication",
     "exit_code": 0,
     "state": "PASS",
-    "tests": 9
+    "tests": 13
   },
-  "tested_at": "2026-07-30T17:46:00+02:00"
+  "tested_at": "2026-07-30T18:41:57+02:00"
 }

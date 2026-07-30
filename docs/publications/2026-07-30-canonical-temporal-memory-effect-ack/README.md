@@ -5,72 +5,88 @@ Copyright 2026 Ingolf Lohmann.
 
 # QIK-VRT: kanonischer Speicher zwischen Vergangenheit und Zukunft
 
-Dieses Verzeichnis enthält den reproduzierbaren Publikationskandidaten
+Dieses Verzeichnis enthält den noch unveröffentlichten Working-Paper-Kandidaten
 `qikvrt-canonical-temporal-memory-effect-ack-v1`.
 
 Die wissenschaftlich engste Kernaussage lautet:
 
-> Im QIK-VRT Effect-Acknowledgement-Protokoll ist eine kanonisch
-> repräsentierte, zukunftsindexierte Wirkungsbedingung ein nicht eliminierbarer
-> und kontrafaktisch relevanter Eingang der gegenwärtigen Freigabe. Diese
-> operationale Retrokausalität überschreibt keinen bestehenden
-> Vergangenheitsrecord und behauptet kein rückwärts gerichtetes physikalisches
-> Signal.
+> In der definierten QIK-VRT-Freigabefunktion ist eine gegenwärtig vorhandene,
+> kanonisch repräsentierte und zukunftsindexierte Wirkungsbedingung ein
+> funktional relevanter Eingang. Das Paper bezeichnet diese
+> Protokollabhängigkeit autorenseitig als operationale Retrokausalität; es
+> behauptet damit weder ein Signal aus einer aktualen Zukunft noch eine
+> nachträgliche Änderung eines Vergangenheitsrecords.
 
 ## Artefakte
 
 | Datei | Rolle |
 |---|---|
-| `QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.pdf` | zitierfähiger 15-seitiger Working-Paper-Kandidat |
+| `QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.pdf` | gespeicherter PDF-Kandidatenstand; seine genaue Gültigkeit ist ausschließlich durch den zugehörigen Render-Receipt bestimmt |
 | `QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.tex` | reproduzierbare XeLaTeX-Quelle |
-| `CLAIM_MATRIX.json` | vollständige typisierte Claim-Inventur |
-| `SOURCE_EVIDENCE_BINDINGS.json` | DOI-, Standard-, Draft- und Repository-Bindungen |
-| `BOUNDARY_TEST_REPORT.json` | positive und negative Modell-/Repository-Gates |
+| `CLAIM_MATRIX.json` | typisierte Inventur der 22 Hauptclaims dieses Paper-Scopes |
+| `SOURCE_EVIDENCE_BINDINGS.json` | vollständige Claim-, TeX-Zitations-, DOI-, Standard-, Draft- und Repository-Bindungen |
+| `BOUNDARY_TEST_REPORT.json` | positive und negative Python-/Repository-Gates; kein Lean-Kernel-Receipt |
 | `EVIDENCE_BOUNDARY.md` | explizite Nachweis- und Nichtnachweisgrenzen |
 | `PDF_RENDER_VALIDATION.json` | Build-, Font-, Seiten- und visuelle QA-Evidenz |
-| `CITATION.cff` | Zitationsmetadaten ohne vorweggenommenen DOI |
+| `KERNEL_PROOF_PLAN.json` | erwartete Lean-Sätze, Toolchain und Receipt-Vertrag; noch kein Beweisreceipt |
+| `CITATION.cff` | Kandidatenmetadaten ohne vorweggenommenen DOI oder Veröffentlichungsdatum |
 | `LICENSE_NOTICE.md` | dateibezogene Lizenzgrenzen |
 | `ZENODO_FILESET.md` | vorgesehener, noch nicht autorisierter Upload-Scope |
 
-Der formale Kern liegt in:
+Der formale Quellkern liegt in:
 
 - `formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean`
 
-Ein kandidaten- und Exact-Head-gebundener `KERNEL_RECEIPT.json`, ein
+Die Claims `CTM-001` bis `CTM-004` bleiben
+`FORMAL_PENDING_KERNEL`. Ein kandidaten- und Exact-Head-gebundener
+`KERNEL_RECEIPT.json`, ein
 `PREPUBLICATION_RETURN_RECEIPT.json`, das
 `MACHINE_PROOF_BUNDLE.json` und ein v2-`publish-request.json` werden erst nach
 den zugehörigen Gates materialisiert. Ihr Fehlen im Kandidatenstadium ist
-fail-closed und keine Publikationsbehauptung.
+fail-closed. Insbesondere macht weder ein erfolgreicher Python-Test noch das
+bloße Vorliegen der Lean-Quelle daraus bereits `FORMAL_PROVED`.
 
 ## PDF reproduzieren
 
 Vom Publikationsverzeichnis:
 
 ```sh
-xelatex -interaction=nonstopmode -halt-on-error \
+SOURCE_DATE_EPOCH=1785369600 FORCE_SOURCE_DATE=1 \
+  xelatex -interaction=nonstopmode -halt-on-error \
   QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.tex
-xelatex -interaction=nonstopmode -halt-on-error \
+SOURCE_DATE_EPOCH=1785369600 FORCE_SOURCE_DATE=1 \
+  xelatex -interaction=nonstopmode -halt-on-error \
   QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.tex
-xelatex -interaction=nonstopmode -halt-on-error \
+SOURCE_DATE_EPOCH=1785369600 FORCE_SOURCE_DATE=1 \
+  xelatex -interaction=nonstopmode -halt-on-error \
   QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.tex
 ```
 
-Der gespeicherte PDF-Kandidat wird zusätzlich mit Poppler vollständig in
-Seitenbilder gerendert und jede Seite auf Schnitt, Überlagerung,
-Schriftlesbarkeit, Tabellenumbruch und Leerseiten geprüft.
+Nach jeder Änderung der TeX-Quelle muss der PDF-Kandidat neu gebaut und der
+`PDF_RENDER_VALIDATION.json` neu erzeugt werden. Ein älterer Receipt belegt nur
+die darin ausdrücklich genannten Quell- und PDF-Hashes. Die visuelle Prüfung
+rendert alle gespeicherten PDF-Seiten mit Poppler und kontrolliert Schnitt,
+Überlagerung, Schriftlesbarkeit, Tabellenumbruch und Leerseiten.
 
 ## Veröffentlichungsstatus
 
-Der momentane Zustand ist `CANDIDATE_PREPUBLICATION`.
+Der in diesen Artefakten festgehaltene Freeze-Zustand ist
+`CANDIDATE_PREPUBLICATION`.
 
 - kein Zenodo-DOI wird vorweggenommen;
+- kein Veröffentlichungsdatum wird in `CITATION.cff` vorweggenommen;
 - kein IETF-Portalupdate wird vorweggenommen;
+- ein vorhandener Internet-Draft wird ausdrücklich nicht als IETF-Billigung
+  oder Konsens behandelt;
 - kein Repository-weites `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE` wird
   behauptet;
 - die ontische physikalische und die panpsychistische Erweiterung bleiben
   ausdrücklich offen beziehungsweise interpretativ.
 
-Nach einer bytegenauen Rückgabe an Ingolf Lohmann ist eine separate,
-kandidatengebundene Uploadfreigabe erforderlich. Nach Veröffentlichung müssen
-öffentlicher Record, öffentliche Dateien und Re-Downloads bytegenau geprüft,
-in Authority und Mirror persistiert und erneut reziprok verglichen werden.
+Dieser Freeze ist eine historische, scope-gebundene Beobachtung. Spätere
+Merge-, Mirror-, Kernel- oder Publikationsreceipts dürfen den operativen Status
+fortschreiben, müssen aber ihre eigenen Heads, Trees, Manifeste, Hashes und
+Zeitstempel nennen. Vor einem Upload ist eine separate, kandidatengebundene
+Freigabe erforderlich. Nach Veröffentlichung müssen öffentlicher Record,
+öffentliche Dateien und Re-Downloads bytegenau geprüft und die daraus
+abgeleiteten Receipts erneut in Authority und Mirror gebunden werden.

@@ -4,12 +4,20 @@
 
 from __future__ import annotations
 
+import collections
+import copy
 import hashlib
 import itertools
 import json
+import os
 import pathlib
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
+
+from tools import qikvrt_canonical_temporal_memory_kernel_evidence as kernel_evidence
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -27,31 +35,76 @@ PDF = (
 )
 CLAIMS = PUBLICATION / "CLAIM_MATRIX.json"
 SOURCES = PUBLICATION / "SOURCE_EVIDENCE_BINDINGS.json"
+PLAN = PUBLICATION / "KERNEL_PROOF_PLAN.json"
 BOUNDARY = PUBLICATION / "EVIDENCE_BOUNDARY.md"
 RENDER = PUBLICATION / "PDF_RENDER_VALIDATION.json"
 ZENODO_SUMS = PUBLICATION / "ZENODO_SHA256SUMS"
-LEAN = (
-    ROOT
-    / "formalization/QIKVRT_Formalization_v2.0"
-    / "QIKVRTEffectAck/CanonicalTemporalMemory.lean"
-)
-ENTRY = (
-    ROOT
-    / "formalization/QIKVRT_Formalization_v2.0"
-    / "QIKVRTEffectAck.lean"
-)
+ZENODO_FILESET = PUBLICATION / "ZENODO_FILESET.md"
+KERNEL_TOOL = ROOT / "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
+PROJECT = ROOT / "formalization/QIKVRT_Formalization_v2.0"
+LEAN = PROJECT / "QIKVRTEffectAck/CanonicalTemporalMemory.lean"
+ENTRY = PROJECT / "QIKVRTEffectAck.lean"
 SCOPE = "qikvrt-canonical-temporal-memory-effect-ack-v1"
 
-THEOREMS = {
-    "release_eq_true_iff",
-    "release_requires_valid_past",
-    "release_requires_valid_future",
-    "release_requires_effect_ack",
-    "future_boundary_is_counterfactually_relevant",
-    "future_boundary_does_not_overwrite_past",
-    "reciprocal_closure_eq_true_iff",
-    "reciprocal_closure_requires_cause_and_effect",
+THEOREM_NAMESPACE = "QIKVRT.CanonicalTemporalMemory.V1"
+THEOREMS = (
+    f"{THEOREM_NAMESPACE}.release_eq_true_iff",
+    f"{THEOREM_NAMESPACE}.release_requires_valid_past",
+    f"{THEOREM_NAMESPACE}.release_requires_valid_future",
+    f"{THEOREM_NAMESPACE}.release_requires_effect_ack",
+    f"{THEOREM_NAMESPACE}.future_boundary_is_counterfactually_relevant",
+    f"{THEOREM_NAMESPACE}.future_boundary_does_not_overwrite_past",
+    f"{THEOREM_NAMESPACE}.identifier_bound_eq_true_iff",
+    f"{THEOREM_NAMESPACE}.reciprocal_closure_eq_true_iff",
+    f"{THEOREM_NAMESPACE}.reciprocal_closure_requires_cause_and_effect",
+)
+FORMAL_IDS = {f"CTM-{index:03d}" for index in range(1, 5)}
+FORMAL_MODES = {
+    "AWAITING_EXACT_HEAD_KERNEL_RECEIPT": (
+        "FORMAL_PENDING_KERNEL",
+        "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+    ),
+    "KERNEL_VERIFIED": ("FORMAL_PROVED", "KERNEL_VERIFIED"),
 }
+NONFORMAL_CLASSES = {
+    "EMPIRICALLY_EVIDENCED",
+    "INTERPRETATIVE",
+    "NORMATIVE",
+    "OPEN",
+    "SOURCE_BOUND",
+}
+CLAIM_KEYS = {
+    "boundary",
+    "claim_id",
+    "classification",
+    "proof_refs",
+    "sources",
+    "statement",
+    "status",
+}
+
+
+def git_blob_sha1(data: bytes) -> str:
+    return hashlib.sha1(  # noqa: S324 - canonical Git object identity
+        f"blob {len(data)}\0".encode("ascii") + data
+    ).hexdigest()
+
+
+def latex_citation_keys(text: str) -> list[str]:
+    groups = re.findall(
+        r"\\cite(?:\[[^]]*\])?(?:\[[^]]*\])?\{([^}]+)\}",
+        text,
+    )
+    return [
+        key.strip()
+        for group in groups
+        for key in group.split(",")
+        if key.strip()
+    ]
+
+
+def latex_bibliography_keys(text: str) -> list[str]:
+    return re.findall(r"\\bibitem(?:\[[^]]*\])?\{([^}]+)\}", text)
 
 
 def release(
@@ -79,11 +132,14 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             PDF,
             CLAIMS,
             SOURCES,
+            PLAN,
             BOUNDARY,
             RENDER,
             ZENODO_SUMS,
             LEAN,
             ENTRY,
+            KERNEL_TOOL,
+            ZENODO_FILESET,
         ):
             self.assertTrue(path.is_file(), path)
             self.assertGreater(path.stat().st_size, 0, path)
@@ -126,64 +182,390 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
         entry = ENTRY.read_text(encoding="utf-8")
         self.assertIn("import QIKVRTEffectAck.CanonicalTemporalMemory", entry)
         for theorem in THEOREMS:
-            self.assertRegex(source, rf"\btheorem\s+{re.escape(theorem)}\b")
+            short_name = theorem.rsplit(".", 1)[-1]
+            self.assertRegex(source, rf"\btheorem\s+{re.escape(short_name)}\b")
         for prohibited in (r"\bsorry\b", r"\badmit\b", r"\baxiom\b", r"\bunsafe\b"):
             self.assertIsNone(re.search(prohibited, source), prohibited)
         self.assertIn("does not assume an observation arriving from the physical", source)
 
     def test_claim_inventory_is_complete_typed_and_fail_closed(self) -> None:
         value = json.loads(CLAIMS.read_text(encoding="utf-8"))
-        self.assertEqual(value["publication_id"], SCOPE)
-        self.assertEqual(value["claim_count"], 10)
-        self.assertEqual(len(value["claims"]), 10)
         self.assertEqual(
-            {item["claim_id"] for item in value["claims"]},
-            {f"CTM-{index:03d}" for index in range(1, 11)},
+            value["schema"],
+            "qikvrt_canonical_temporal_memory_claim_matrix_v2",
         )
+        self.assertEqual(value["publication_id"], SCOPE)
+        self.assertEqual(value["claim_count"], 22)
+        self.assertEqual(len(value["claims"]), 22)
+        self.assertEqual(
+            [item["claim_id"] for item in value["claims"]],
+            [f"CTM-{index:03d}" for index in range(1, 23)],
+        )
+        self.assertIn(value["proof_state"], FORMAL_MODES)
+        formal_class, formal_status = FORMAL_MODES[value["proof_state"]]
         self.assertEqual(
             {item["classification"] for item in value["claims"]},
+            NONFORMAL_CLASSES | {formal_class},
+        )
+        self.assertEqual(
+            value["completion_claims"],
             {
-                "FORMAL_PROVED",
-                "SOURCE_BOUND",
-                "NORMATIVE",
-                "INTERPRETATIVE",
-                "OPEN",
+                "effect_ack_done": False,
+                "final_pass": False,
+                "pass": False,
+                "system_wide_completion": "UNCLAIMED",
             },
         )
-        self.assertFalse(value["completion_claims"]["pass"])
-        self.assertFalse(value["completion_claims"]["final_pass"])
-        self.assertFalse(value["completion_claims"]["effect_ack_done"])
+        formal = [
+            item
+            for item in value["claims"]
+            if item["classification"] in {"FORMAL_PENDING_KERNEL", "FORMAL_PROVED"}
+        ]
+        self.assertEqual({item["claim_id"] for item in formal}, FORMAL_IDS)
+        self.assertEqual({item["classification"] for item in formal}, {formal_class})
+        self.assertEqual({item["status"] for item in formal}, {formal_status})
         self.assertEqual(
-            value["completion_claims"]["system_wide_completion"],
-            "UNCLAIMED",
-        )
-        self.assertIn(
-            value["proof_state"],
-            {"AWAITING_EXACT_HEAD_KERNEL_RECEIPT", "KERNEL_VERIFIED"},
-        )
-
-    def test_source_bindings_cover_every_external_claim_source(self) -> None:
-        value = json.loads(SOURCES.read_text(encoding="utf-8"))
-        self.assertEqual(value["scope_id"], SCOPE)
-        identifiers = {item["id"] for item in value["bindings"]}
-        self.assertTrue(
             {
-                "RFC8785",
-                "RFC6920",
-                "W3C-PROV-DM",
-                "ABL-1964",
-                "WHARTON-ARGAMAN-2020",
-                "MA-KOFLER-ZEILINGER-2016",
-                "EFFECT-ACK-DRAFT-01",
-                "TONONI-KOCH-2015",
-                "SETH-BAYNE-2022",
-            }.issubset(identifiers)
+                proof_ref
+                for item in formal
+                for proof_ref in item["proof_refs"]
+            },
+            set(THEOREMS),
         )
-        for item in value["bindings"]:
-            self.assertTrue(item["claim_ids"])
-            self.assertTrue("doi" in item or "locator" in item)
+        for item in value["claims"]:
+            self.assertEqual(set(item), CLAIM_KEYS)
+            self.assertTrue(item["statement"].strip())
+            self.assertTrue(item["boundary"].strip())
+            self.assertTrue(item["sources"])
+            self.assertEqual(len(item["sources"]), len(set(item["sources"])))
+            self.assertEqual(len(item["proof_refs"]), len(set(item["proof_refs"])))
+            if item["claim_id"] not in FORMAL_IDS:
+                self.assertEqual(item["proof_refs"], [])
 
-    def test_candidate_checksum_index_is_complete_and_current(self) -> None:
+    def test_source_bindings_are_bidirectional_and_citations_are_exact(self) -> None:
+        claims = json.loads(CLAIMS.read_text(encoding="utf-8"))
+        sources = json.loads(SOURCES.read_text(encoding="utf-8"))
+        self.assertEqual(sources["schema"], "qikvrt_source_evidence_bindings_v2")
+        self.assertEqual(sources["scope_id"], SCOPE)
+
+        bindings = sources["bindings"]
+        binding_ids = [item["id"] for item in bindings]
+        self.assertEqual(len(binding_ids), len(set(binding_ids)))
+        claim_ids = {item["claim_id"] for item in claims["claims"]}
+        matrix_pairs = {
+            (item["claim_id"], source_id)
+            for item in claims["claims"]
+            for source_id in item["sources"]
+        }
+        binding_pairs = {
+            (claim_id, item["id"])
+            for item in bindings
+            for claim_id in item["claim_ids"]
+        }
+        self.assertEqual({source_id for _, source_id in matrix_pairs}, set(binding_ids))
+        self.assertEqual(binding_pairs, matrix_pairs)
+
+        required = {
+            "boundary",
+            "claim_ids",
+            "id",
+            "role",
+            "retrieval",
+            "source_type",
+            "tex_cite_keys",
+            "title",
+            "version",
+        }
+        pending_refresh_id = "PDF_RENDER_VALIDATION.json#completion_claims"
+        for item in bindings:
+            self.assertTrue(required.issubset(item), item["id"])
+            self.assertTrue(item["claim_ids"], item["id"])
+            self.assertEqual(len(item["claim_ids"]), len(set(item["claim_ids"])))
+            self.assertTrue(set(item["claim_ids"]) <= claim_ids, item["id"])
+            self.assertIsInstance(item["tex_cite_keys"], list, item["id"])
+            self.assertEqual(
+                len(item["tex_cite_keys"]),
+                len(set(item["tex_cite_keys"])),
+                item["id"],
+            )
+            self.assertIsInstance(item["retrieval"], dict, item["id"])
+            self.assertTrue(item["retrieval"], item["id"])
+            self.assertTrue(item["boundary"].strip(), item["id"])
+            self.assertTrue("doi" in item or "locator" in item, item["id"])
+
+            for snapshot in item.get("repository_snapshots", []):
+                snapshot_path = ROOT / snapshot["path"]
+                self.assertTrue(snapshot_path.is_file(), item["id"])
+                snapshot_data = snapshot_path.read_bytes()
+                self.assertEqual(
+                    snapshot["size_bytes"],
+                    len(snapshot_data),
+                    item["id"],
+                )
+                self.assertEqual(
+                    snapshot["sha256"],
+                    hashlib.sha256(snapshot_data).hexdigest(),
+                    item["id"],
+                )
+                self.assertEqual(
+                    snapshot["git_blob_sha1"],
+                    git_blob_sha1(snapshot_data),
+                    item["id"],
+                )
+
+            if "path" not in item:
+                continue
+            bound_path = ROOT / item["path"]
+            self.assertTrue(bound_path.is_file(), item["id"])
+            if (
+                item.get("content_state")
+                == "LOCAL_REFERENCE_PENDING_FINAL_REFRESH"
+            ):
+                self.assertEqual(item["id"], pending_refresh_id)
+                self.assertEqual(
+                    item["content_state"],
+                    "LOCAL_REFERENCE_PENDING_FINAL_REFRESH",
+                )
+                self.assertNotIn("sha256", item)
+                self.assertNotIn("git_blob_sha1", item)
+                self.assertNotIn("size_bytes", item)
+                continue
+            data = bound_path.read_bytes()
+            self.assertEqual(item["size_bytes"], len(data), item["id"])
+            self.assertEqual(
+                item["sha256"],
+                hashlib.sha256(data).hexdigest(),
+                item["id"],
+            )
+            self.assertEqual(item["git_blob_sha1"], git_blob_sha1(data), item["id"])
+
+        text = TEX.read_text(encoding="utf-8")
+        cited = latex_citation_keys(text)
+        bibliography = latex_bibliography_keys(text)
+        mapped = [
+            cite_key
+            for item in bindings
+            for cite_key in item["tex_cite_keys"]
+        ]
+        self.assertEqual(len(bibliography), 28)
+        self.assertTrue(
+            all(count == 1 for count in collections.Counter(bibliography).values())
+        )
+        self.assertEqual(set(cited), set(bibliography))
+        self.assertEqual(set(mapped), set(bibliography))
+        self.assertTrue(
+            all(count == 1 for count in collections.Counter(mapped).values())
+        )
+
+    def test_kernel_plan_and_static_tool_bind_the_exact_source(self) -> None:
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+        self.assertEqual(plan["schema"], "qikvrt_publication_kernel_proof_plan_v1")
+        self.assertEqual(plan["publication_id"], SCOPE)
+        self.assertEqual(plan["theorems"], list(THEOREMS))
+        self.assertEqual(
+            set(plan["axiom_audit"]["expected_axioms_by_theorem"]),
+            set(THEOREMS),
+        )
+        axiom_free = {
+            f"{THEOREM_NAMESPACE}.future_boundary_is_counterfactually_relevant",
+            f"{THEOREM_NAMESPACE}.future_boundary_does_not_overwrite_past",
+        }
+        for theorem in THEOREMS:
+            expected = [] if theorem in axiom_free else ["propext"]
+            self.assertEqual(
+                plan["axiom_audit"]["expected_axioms_by_theorem"][theorem],
+                expected,
+            )
+
+        source_data = LEAN.read_bytes()
+        self.assertEqual(
+            plan["source"],
+            {
+                "bytes": len(source_data),
+                "compiled_object": (
+                    ".lake/build/lib/lean/"
+                    "QIKVRTEffectAck/CanonicalTemporalMemory.olean"
+                ),
+                "git_blob_sha1": git_blob_sha1(source_data),
+                "path": "QIKVRTEffectAck/CanonicalTemporalMemory.lean",
+                "sha256": hashlib.sha256(source_data).hexdigest(),
+            },
+        )
+        self.assertEqual(plan["entrypoint"], "QIKVRTEffectAck.lean")
+        self.assertEqual(
+            plan["lean_toolchain"],
+            {
+                "path": "lean-toolchain",
+                "value": "leanprover/lean4:v4.19.0",
+            },
+        )
+        self.assertEqual(
+            plan["completion_claims"],
+            {
+                "ietf_revision_02_posted": False,
+                "system_wide_completion": "UNCLAIMED",
+                "zenodo_published": False,
+            },
+        )
+
+        static = kernel_evidence.static_validation(PLAN, CLAIMS)
+        self.assertEqual(len(static["formal_claims"]), 4)
+        self.assertEqual(static["plan"]["theorems"], list(THEOREMS))
+        self.assertEqual(static["source"]["sha256"], plan["source"]["sha256"])
+
+    def test_static_tool_cli_reports_only_static_input_verification(self) -> None:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1",
+            }
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", str(KERNEL_TOOL), "--static-only"],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value["publication_id"], SCOPE)
+        self.assertEqual(value["state"], "STATIC_INPUTS_VERIFIED")
+        self.assertEqual(value["formal_claim_count"], 4)
+        self.assertEqual(value["theorem_count"], 9)
+
+    def test_static_validation_rejects_plan_and_claim_mismatches(self) -> None:
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+        claims = json.loads(CLAIMS.read_text(encoding="utf-8"))
+        cases = []
+
+        wrong_source = copy.deepcopy(plan)
+        wrong_source["source"]["sha256"] = "0" * 64
+        cases.append(
+            ("source identity", wrong_source, claims, "plan source SHA-256 differs")
+        )
+
+        missing_theorem = copy.deepcopy(plan)
+        missing_theorem["theorems"] = missing_theorem["theorems"][:-1]
+        cases.append(
+            (
+                "theorem inventory",
+                missing_theorem,
+                claims,
+                "claim/proof theorem union differs",
+            )
+        )
+
+        wrong_claim_ref = copy.deepcopy(claims)
+        wrong_claim_ref["claims"][0]["proof_refs"][0] = (
+            f"{THEOREM_NAMESPACE}.not_a_theorem"
+        )
+        cases.append(
+            (
+                "claim proof reference",
+                plan,
+                wrong_claim_ref,
+                "claim/proof theorem union differs",
+            )
+        )
+
+        for label, mutated_plan, mutated_claims, message in cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory(prefix="qikvrt-ctm-test-") as raw:
+                    directory = pathlib.Path(raw)
+                    plan_path = directory / "plan.json"
+                    claims_path = directory / "claims.json"
+                    plan_path.write_text(
+                        json.dumps(mutated_plan),
+                        encoding="utf-8",
+                    )
+                    claims_path.write_text(
+                        json.dumps(mutated_claims),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        kernel_evidence.EvidenceError,
+                        message,
+                    ):
+                        kernel_evidence.static_validation(plan_path, claims_path)
+
+    def test_formal_state_is_atomic_in_pending_and_verified_modes(self) -> None:
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+        observed = json.loads(CLAIMS.read_text(encoding="utf-8"))
+
+        def in_mode(proof_state: str) -> dict[str, object]:
+            value = copy.deepcopy(observed)
+            classification, status = FORMAL_MODES[proof_state]
+            value["proof_state"] = proof_state
+            for item in value["claims"]:
+                if item["claim_id"] in FORMAL_IDS:
+                    item["classification"] = classification
+                    item["status"] = status
+            return value
+
+        pending = in_mode("AWAITING_EXACT_HEAD_KERNEL_RECEIPT")
+        verified = in_mode("KERNEL_VERIFIED")
+        invalid_states = []
+
+        wrong_aggregate = copy.deepcopy(pending)
+        wrong_aggregate["proof_state"] = "KERNEL_VERIFIED"
+        invalid_states.append(
+            (
+                "aggregate state",
+                wrong_aggregate,
+                "claim-matrix proof_state differs from the aggregate formal mode",
+            )
+        )
+
+        mixed = copy.deepcopy(pending)
+        mixed["claims"][0]["classification"] = "FORMAL_PROVED"
+        mixed["claims"][0]["status"] = "KERNEL_VERIFIED"
+        invalid_states.append(
+            (
+                "mixed formal modes",
+                mixed,
+                "formal claims mix pending and kernel-verified modes",
+            )
+        )
+
+        wrong_status = copy.deepcopy(verified)
+        wrong_status["claims"][0]["status"] = (
+            "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        )
+        invalid_states.append(
+            (
+                "verified claim without receipt state",
+                wrong_status,
+                "proved status lacks kernel verification",
+            )
+        )
+
+        with tempfile.TemporaryDirectory(prefix="qikvrt-ctm-state-test-") as raw:
+            directory = pathlib.Path(raw)
+            plan_path = directory / "plan.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            for label, value in (("pending", pending), ("verified", verified)):
+                with self.subTest(label=label):
+                    claims_path = directory / f"{label}.json"
+                    claims_path.write_text(json.dumps(value), encoding="utf-8")
+                    static = kernel_evidence.static_validation(
+                        plan_path,
+                        claims_path,
+                    )
+                    self.assertEqual(len(static["formal_claims"]), 4)
+            for label, value, message in invalid_states:
+                with self.subTest(label=label):
+                    claims_path = directory / f"invalid-{label}.json"
+                    claims_path.write_text(json.dumps(value), encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        kernel_evidence.EvidenceError,
+                        message,
+                    ):
+                        kernel_evidence.static_validation(plan_path, claims_path)
+
+    def test_checksum_index_is_current_complete_and_candidate_scoped(self) -> None:
         actual = {}
         for line in ZENODO_SUMS.read_text(encoding="ascii").splitlines():
             digest, name = line.split("  ", 1)
@@ -195,6 +577,7 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             "CITATION.cff",
             "CLAIM_MATRIX.json",
             "EVIDENCE_BOUNDARY.md",
+            "KERNEL_PROOF_PLAN.json",
             "LICENSE_NOTICE.md",
             "PDF_RENDER_VALIDATION.json",
             PDF.name,
@@ -204,11 +587,28 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             "ZENODO_FILESET.md",
         }
         self.assertEqual(set(actual), expected_names)
-        for name, digest in actual.items():
+        for name, expected_digest in actual.items():
+            path = PUBLICATION / name
+            self.assertTrue(path.is_file(), name)
             self.assertEqual(
-                hashlib.sha256((PUBLICATION / name).read_bytes()).hexdigest(),
-                digest,
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                expected_digest,
+                name,
             )
+        fileset_text = ZENODO_FILESET.read_text(encoding="utf-8")
+        primary_section = fileset_text.split(
+            "## Primary and reproducibility files",
+            1,
+        )[1].split("## Required prepublication proof files", 1)[0]
+        declared = set(re.findall(r"^- `([^`]+)`$", primary_section, re.MULTILINE))
+        self.assertEqual(declared, expected_names | {"ZENODO_SHA256SUMS"})
+        self.assertNotIn("KERNEL_RECEIPT.json", actual)
+        self.assertNotIn("MACHINE_PROOF_BUNDLE.json", actual)
+        self.assertFalse(
+            json.loads(PLAN.read_text(encoding="utf-8"))["completion_claims"][
+                "zenodo_published"
+            ]
+        )
 
     def test_paper_states_literal_thesis_and_scientific_boundaries(self) -> None:
         text = TEX.read_text(encoding="utf-8")
@@ -239,8 +639,16 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
         value = json.loads(RENDER.read_text(encoding="utf-8"))
         self.assertEqual(value["scope_id"], SCOPE)
         self.assertEqual(value["state"], "PDF_VISUALLY_VERIFIED")
-        self.assertEqual(value["pdf"]["pages"], 15)
+        self.assertEqual(value["pdf"]["pages"], 17)
         self.assertTrue(value["visual_qa"]["all_pages_inspected"])
+        self.assertEqual(value["visual_qa"]["inspected_pages"], list(range(1, 18)))
+        for receipt_key, path in (("source", TEX), ("pdf", PDF)):
+            data = path.read_bytes()
+            receipt = value[receipt_key]
+            self.assertEqual(receipt["path"], path.relative_to(ROOT).as_posix())
+            self.assertEqual(receipt["bytes"], len(data))
+            self.assertEqual(receipt["sha256"], hashlib.sha256(data).hexdigest())
+            self.assertEqual(receipt["git_blob_sha1"], git_blob_sha1(data))
         self.assertFalse(value["completion_claims"]["zenodo_published"])
         self.assertFalse(value["completion_claims"]["ietf_revision_02_posted"])
 
