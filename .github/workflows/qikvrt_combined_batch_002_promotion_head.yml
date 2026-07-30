@@ -8,6 +8,7 @@ on:
       - '.well-known/qik-vrt-self-disclosure.json'
       - 'tools/qikvrt_self_disclosure.py'
       - 'tools/qikvrt_transactional_workflow_trigger.py'
+      - 'tests/test_transactional_workflow_trigger.py'
       - 'tests/test_qikvrt_self_disclosure.py'
       - 'policy/TRANSACTIONAL_GITHUB_WORKFLOW_TRIGGER.json'
       - 'docs/TRANSACTIONAL_GITHUB_WORKFLOW_TRIGGER_PROTOCOL.md'
@@ -31,6 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest tests.test_qikvrt_self_disclosure
+          python3 -m unittest tests.test_transactional_workflow_trigger
           python3 tools/qikvrt_self_disclosure.py status > self-disclosure-status.json
       - name: Validate truth boundary
         run: |
