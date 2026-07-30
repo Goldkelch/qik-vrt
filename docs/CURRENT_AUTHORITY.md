@@ -23,6 +23,9 @@ path to the current operational authority.
   five-state core
 - `tools/qikvrt_adaptive_runtime.sh` and `runtime/` — bounded proposal-only
   collective adaptation and exact-key verified cache reuse
+- `tools/qikvrt_anticipation.py`, `anticipation/`, and
+  `receipts/anticipation/` — deterministic current-status projection and
+  hash-linked, effect-free closure checkpoints
 - `tools/qikvrt_zenodo_actions.py` — hash-bound DOI reserve/finalize client
 - `api/qikvrt_github_api.openapi.yaml` — external API contract
 
