@@ -1,0 +1,40 @@
+{
+  "_license": {
+    "classification": "machine_readable_versioned_correction_candidate",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "claim_selection": {
+    "method": "Use exactly decision.correction_claim_ids from each bound CONTENT_CHANGE_DECISION.json.",
+    "unlisted_claims_changed": false
+  },
+  "historical_source_bytes": {
+    "immutable": true,
+    "rewrite_permitted": false,
+    "role": "historical_public_evidence"
+  },
+  "mandatory_candidate_boundary": {
+    "effect_ack_done": false,
+    "final_pass": false,
+    "owner_decision": "PENDING",
+    "pass": false,
+    "proof_corpus_published_on_zenodo": false,
+    "zenodo_mutation_authorized": false
+  },
+  "operations": [
+    {
+      "applies_when": "Claim status is CONTRADICTED_BY_RECURSIVE_BYTE_AUDIT or the bound internal hash audit marks the assertion mismatched.",
+      "effect": "Generate a new versioned manifest from exact candidate bytes; retain old hash values only in provenance; never alter historical public bytes.",
+      "operation_id": "REGENERATE_INTERNAL_MANIFEST_BINDINGS"
+    },
+    {
+      "applies_when": "Claim is an unbound PASS, FINAL_PASS, EFFECT_ACK_DONE, P_nash, persistence, completion or universality assertion.",
+      "effect": "Replace the positive assertion in the versioned candidate with a bounded NOT_REVALIDATED statement and explicit false completion/publication fields.",
+      "operation_id": "NARROW_UNBOUND_POSITIVE_STATUS"
+    }
+  ],
+  "policy_id": "remaining-corpus-subject-corrections-20260730-v1",
+  "schema": "qikvrt_versioned_correction_policy_v1",
+  "source_evidence_head": "f60810b56a35f6e3434f1cacaca05a83e494aba2"
+}
