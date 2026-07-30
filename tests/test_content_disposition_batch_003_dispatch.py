@@ -3,12 +3,12 @@
 # Copyright 2026 Ingolf Lohmann.
 from __future__ import annotations
 import copy,importlib.util,json,pathlib,unittest
-ROOT=pathlib.Path(__file__).resolve().parents[1];P=ROOT/'tools/qikvrt_content_disposition_batch_003_dispatch.py';S=importlib.util.spec_from_file_location('batch003_dispatch',P);m=importlib.util.module_from_spec(S);assert S.loader is not None;S.loader.exec_module(m)
+ROOT=pathlib.Path(__file__).resolve().parents[1];P=ROOT/'tools/qikvrt_content_disposition_batch_003_dispatch.py';WORKFLOW=ROOT/'.github/workflows/qikvrt_repository_evidence.yml';S=importlib.util.spec_from_file_location('batch003_dispatch',P);m=importlib.util.module_from_spec(S);assert S.loader is not None;S.loader.exec_module(m)
 def load(path:pathlib.Path):return json.loads(path.read_text(encoding='utf-8'))
 class T(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
-  cls.dispatch=load(m.DISPATCH);cls.package=load(m.WORK_PACKAGE);cls.work=load(m.WORK_UNIT);cls.queue=load(m.QUEUE);cls.corpus=load(m.CORPUS);cls.envelope=load(m.PROOF_ENVELOPE);cls.progress=load(m.AI_PROGRESS)
+  cls.dispatch=load(m.DISPATCH);cls.package=load(m.WORK_PACKAGE);cls.work=load(m.WORK_UNIT);cls.queue=load(m.QUEUE);cls.corpus=load(m.CORPUS);cls.envelope=load(m.PROOF_ENVELOPE);cls.progress=load(m.AI_PROGRESS);cls.workflow=WORKFLOW.read_text(encoding='utf-8')
  def test_positive(self):
   result=m.verify();self.assertEqual(result['batch_id'],'CONTENT-DISPOSITION-BATCH-003')
   if m.FINAL_CORPUS_RECEIPT.is_file():
@@ -36,6 +36,10 @@ class T(unittest.TestCase):
    self.assertEqual(expected['percent'],74);self.assertEqual(corpus['counts']['dispositioned_subjects'],14);self.assertEqual(corpus['counts']['open_subjects'],5);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-b4849e1a2d6b2270')
   elif m.ADVANCED_SUBJECT_RECEIPT.is_file():
    self.assertEqual(expected['percent'],68);self.assertEqual(corpus['counts']['dispositioned_subjects'],13);self.assertEqual(corpus['counts']['open_subjects'],6);self.assertEqual(corpus['batch_003']['active_subject'],'SUBJECT-172dd9bc2738fa43')
+ def test_repository_evidence_prefers_terminal_remaining_archive_projection(self):
+  remaining='remaining_script="tools/qikvrt_content_disposition_batch_003_remaining_archives.py"';second='second_script="tools/qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43.py"';branch='if [ -f "$remaining_script" ] && [ -f "$remaining_receipt" ]; then';older='elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then'
+  for value in (remaining,second,branch,older,'python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \\\n              --materialize --json','python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives \\\n              --check --json','python3 -B "$candidate_entrypoint" --check'):self.assertIn(value,self.workflow)
+  self.assertLess(self.workflow.index(remaining),self.workflow.index(second));self.assertLess(self.workflow.index(branch),self.workflow.index(older))
  def test_wrong_first_subject_blocks(self):
   bad=copy.deepcopy(self.dispatch);bad['batch']['subjects'][0]['subject_id']='SUBJECT-172dd9bc2738fa43'
   with self.assertRaises(m.E):m.validate_dispatch(bad,self.package,self.work)
