@@ -24,13 +24,15 @@ Die wissenschaftlich engste Kernaussage lautet:
 | `QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.pdf` | gespeicherter PDF-Kandidatenstand; seine genaue Gültigkeit ist ausschließlich durch den zugehörigen Render-Receipt bestimmt |
 | `QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.tex` | reproduzierbare XeLaTeX-Quelle |
 | `CLAIM_MATRIX.json` | typisierte Inventur der 22 Hauptclaims dieses Paper-Scopes |
+| `CLAIM_MATRIX_H0_PENDING.json` | bytegenaue historische Pending-Ausgangsmatrix zur Offline-Rekonstruktion des H0→H1-Übergangs |
 | `SOURCE_EVIDENCE_BINDINGS.json` | vollständige Claim-, TeX-Zitations-, DOI-, Standard-, Draft- und Repository-Bindungen |
 | `BOUNDARY_TEST_REPORT.json` | positive und negative Python-/Repository-Gates; kein Lean-Kernel-Receipt |
 | `EVIDENCE_BOUNDARY.md` | explizite Nachweis- und Nichtnachweisgrenzen |
 | `PDF_RENDER_VALIDATION.json` | Build-, Font-, Seiten- und visuelle QA-Evidenz |
 | `KERNEL_PROOF_PLAN.json` | erwartete Lean-Sätze, Toolchain und Receipt-Vertrag |
-| `KERNEL_RECEIPT.json` | Exact-Head-, Artefakt-, Axiom- und Claim-Übergangsbeleg; bis zum nächsten Head-Lauf im transparenten Bootstrap-Zustand |
+| `KERNEL_RECEIPT.json` | finaler zweistufiger Exact-Head-, Artefakt-, Axiom- und Claim-Übergangsbeleg mit expliziter Selbstinklusionsgrenze |
 | `KERNEL_EVIDENCE_H0_PENDING.json` | unveränderte Rohbytes des erfolgreichen H0-CI-Kernel-Artefakts für die Pending-Ausgangsmatrix |
+| `KERNEL_EVIDENCE_H1_TARGET.json` | unveränderte Rohbytes des erfolgreichen H1-CI-Kernel-Artefakts für die materialisierte Zielmatrix |
 | `CHANGE_NOTICE.md` | sichtbare wissenschaftliche Präzisierungen gegenüber der wortwörtlichen Ausgangsthese |
 | `ORIGINAL_THESIS_TRANSCRIPT.md` | wortwörtliche, vom Autor gelieferte Ausgangsthese und unmittelbare Korrektur |
 | `CITATION.cff` | Kandidatenmetadaten ohne vorweggenommenen DOI oder Veröffentlichungsdatum |
@@ -45,14 +47,24 @@ Die Claims `CTM-001` bis `CTM-004` sind gemeinsam `FORMAL_PROVED` /
 `KERNEL_VERIFIED`. Grundlage ist der persistierte `KERNEL_RECEIPT.json`, der
 den erfolgreichen Exact-Head-Lauf, die exakte Lean-Quelle, neun Theoreme,
 Axiomberichte und das kompilierte Objekt bindet. Der aktuelle
-Bootstrap-Zustand erlaubt ausschließlich die deterministische Umschaltung der
-vier formalen Claims und verlangt noch die Exact-Head-Bestätigung der
-Zielmatrix. Er ist deshalb noch kein Upload-Gate.
+Receipt-Zustand `KERNEL_VERIFIED` schließt die zweistufige Prüfung: H0 bindet
+die Pending-Ausgangsmatrix, H1 bindet die unveränderten Aussagen und
+Beweisreferenzen in der materialisierten Zielmatrix. Der Receipt selbst wird
+erst im direkten H2-Nachfolger materialisiert und beansprucht daher
+ausdrücklich keine kryptographisch unmögliche Selbstinklusion. Erst ein
+späteres, kandidatengebundenes Machine-Proof-Bundle kann ihn als Upload-Gate
+verwenden.
+
+Die zusätzlich persistierte `CLAIM_MATRIX_H0_PENDING.json` ist bytegleich mit
+dem Matrix-Blob aus H0. Ein Offline-Gate kann deshalb nachrechnen, dass H1 nur
+die vier erlaubten Formalstatusfelder und den aggregierten `proof_state`
+ändert; Aussagen, Grenzen, Quellen und Beweisreferenzen bleiben gleich.
 
 Ein `PREPUBLICATION_RETURN_RECEIPT.json`, das
 `MACHINE_PROOF_BUNDLE.json`, die einmalige Owner-Autorisierung und ein
-v2-`publish-request.json` werden erst nach Rückgabe und Freigabe der exakten
-Kandidatenbytes materialisiert. Ihr Fehlen ist fail-closed.
+v2-`publish-request.json` werden in dieser azyklischen Reihenfolge erst nach
+Rückgabe der exakten Kandidatenbytes materialisiert: Return-Receipt, Bundle,
+Owner-Entscheidung, Publish-Request. Ihr Fehlen ist fail-closed.
 
 ## PDF reproduzieren
 

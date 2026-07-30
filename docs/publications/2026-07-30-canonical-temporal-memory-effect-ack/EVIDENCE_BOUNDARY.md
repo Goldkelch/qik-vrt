@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Evidenz- und Geltungsgrenze
 
-## Formaler Quellstand: Kernel verifiziert, Ziel-Head-Bestätigung ausstehend
+## Formaler Quellstand: Kernel verifiziert, Ziel-Head bestätigt
 
 Der Lean-Quelltext spezifiziert im endlichen Bool-/Strukturmodell
 `qikvrt-canonical-temporal-memory-effect-ack-v1` folgende
@@ -23,27 +23,50 @@ Konformitätseigenschaften:
    Wirkungsidentitäten sowie die ausgewiesenen Bool-Bedingungen.
 
 Diese Aussagen sind in `CLAIM_MATRIX.json` gemeinsam als `FORMAL_PROVED` /
-`KERNEL_VERIFIED` klassifiziert. Der persistierte `KERNEL_RECEIPT.json` bindet
-den erfolgreichen Exact-Head-Lauf `30563967509` auf
-`72c1e1eda99456c599549c914b51cd6b0fb8e7b2`, die dort geprüfte Lean-Quelle,
-alle neun Theoreme, ihre ausgewiesenen Axiomabhängigkeiten, das kompilierte
-Objekt und die unveränderten inhaltlichen Felder der vier Claims.
+`KERNEL_VERIFIED` klassifiziert. Der persistierte `KERNEL_RECEIPT.json`
+schließt die bewusst zweistufige, zirkelfreie Umschaltung:
 
-Der gegenwärtige Receipt-Zustand
-`BOOTSTRAP_KERNEL_VERIFIED_AWAITING_TARGET_HEAD_CONFIRMATION` bezeichnet die
-bewusst zweistufige, zirkelfreie Umschaltung: Der Lauf prüfte die
-`FORMAL_PENDING_KERNEL`-Ausgangsmatrix; der Receipt erlaubt ausschließlich die
-atomare Statusänderung derselben vier Claims. Ein weiterer erfolgreicher
-Exact-Head-Lauf muss bestätigen, dass Quelltext, Beweisreferenzen und
-Claimaussagen unverändert blieben und die Zielmatrix exakt materialisiert ist.
-Vor dieser Bestätigung darf kein finaler Maschinenbeweis- oder Uploadstatus
-gesetzt werden.
+1. H0, Run `30563967509` auf
+   `72c1e1eda99456c599549c914b51cd6b0fb8e7b2`, kernel-verifizierte die
+   `FORMAL_PENDING_KERNEL`-Ausgangsmatrix.
+2. H1, Run `30571883000` auf
+   `1ffee224f5f5ca600a22338a920a9da2b4712393`, kernel-verifizierte die
+   materialisierte Zielmatrix. Lean-Quelle, alle neun Theoreme,
+   Axiomabhängigkeiten, kompiliertes Objekt, Claimaussagen und
+   Beweisreferenzen blieben dabei exakt gebunden.
 
-Die vom Workflow erzeugten 5.712 Rohbytes sind zusätzlich unverändert als
-`KERNEL_EVIDENCE_H0_PENDING.json` persistiert. Ihre SHA-256- und
-Git-Blob-Identität entspricht exakt dem in Run `30563967509` veröffentlichten
-Artefakt. Dadurch hängt die spätere Überprüfbarkeit nicht von dessen
-zeitbegrenzter GitHub-Artifact-Retention ab.
+Der Receipt-Zustand ist deshalb `KERNEL_VERIFIED`; die Ziel-Head-Bestätigung
+ist nicht mehr ausstehend. H0 bleibt als
+`TRANSITION_SOURCE_ONLY_NOT_ACTIVE_GATE` vollständig erhalten, während die
+unqualifizierten aktiven Receipt-Felder H1 bezeichnen.
+
+Die jeweils 5.712 Rohbytes sind unverändert als
+`KERNEL_EVIDENCE_H0_PENDING.json` und `KERNEL_EVIDENCE_H1_TARGET.json`
+persistiert. Ihre SHA-256- und Git-Blob-Identitäten entsprechen den
+Artefakten der Runs `30563967509` und `30571883000`. Dadurch hängt die spätere
+Überprüfbarkeit nicht von deren zeitbegrenzter GitHub-Artifact-Retention ab.
+`CLAIM_MATRIX_H0_PENDING.json` persistiert zusätzlich die 14.133 historischen
+H0-Matrixbytes. Der Offline-Validator rekonstruiert daraus den atomaren
+Übergang und blockiert jede Änderung außerhalb der vier ausgewiesenen
+Formalstatuspaare und des aggregierten `proof_state`.
+
+Artefakt-ID, Archivdigest, Erzeugungs- und Ablaufzeit sind zeitgestempelte
+GitHub-API-Beobachtungen. Das Offline-Gate prüft deren Typen und Formate sowie
+die exakte Identität der persistierten entpackten Rohdatei; ohne erneuten
+Netzzugriff authentisiert es nicht nachträglich den GitHub-Dienst oder die
+fortdauernde Verfügbarkeit des zeitlich befristeten Remote-Artefakts.
+Das kompilierte `.olean`-Objekt wird identitär zwischen H0, H1 und Receipt
+gebunden, aber nicht als eigene Binärdatei im Paper-Bundle persistiert. Seine
+erneute Byteprüfung verlangt deshalb einen reproduzierenden Build mit der
+gebundenen Lean-Toolchain; der Offline-Receipt allein ersetzt diesen Build
+nicht.
+
+Der finale Receipt wird erst im direkten H2-Nachfolger von H1 materialisiert.
+Er enthält weder seinen eigenen künftigen Commit noch seinen eigenen
+Git-Blob-Hash und setzt `self_inclusion_claimed=false`. Die äußere Bindung des
+Receipt-Bytes erfolgt durch Git-Historie und das spätere
+Machine-Proof-Bundle; dies ist eine notwendige Selbstreferenzgrenze, keine
+fehlende Kernel-Bestätigung.
 
 Die formalen Resultate sind Eigenschaften der ausdrücklich definierten
 Funktionen und Strukturen. Sie beweisen weder einen physikalischen Kanal aus
@@ -81,9 +104,10 @@ Die Bindung hat folgende Grenzen:
 
 Die Referenzimplementierung und die Konformitätstests sind durch Pfad,
 Dateigröße, SHA-256 und Git-Blob-ID an die jeweils beobachteten
-Working-Tree-Bytes gebunden. Diese Inhaltsidentitäten sind keine Behauptung,
-dass die noch nicht commitgebundenen Bytes bereits auf `main`, Authority oder
-Mirror materialisiert seien.
+Bytes gebunden. Der formale Quelltext und die wissenschaftlichen
+Kandidatenbytes sind auf dem Publikationsbranch bis H1 commitgebunden. Diese
+Inhaltsidentitäten sind keine Behauptung, dass dieselben Bytes bereits auf
+`main`, Authority-Main oder Mirror-Main materialisiert seien.
 
 `BOUNDARY_TEST_REPORT.json` dokumentiert Python-/Repository-Gates und verweist
 getrennt auf den Exact-Head-Lean-Lauf. Ein lokaler Lauf von `make test` bleibt

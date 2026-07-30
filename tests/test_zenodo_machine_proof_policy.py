@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import hashlib
 import json
 import os
@@ -159,6 +160,453 @@ def transition_matrix_identity(root: pathlib.Path) -> dict[str, object]:
         "sha256": bound_identity["sha256"],
         "git_blob_sha1": bound_identity["git_blob_sha"],
     }
+
+
+def kernel_identity(root: pathlib.Path, relative: str) -> dict[str, object]:
+    data = (root / relative).read_bytes()
+    return {
+        "path": relative,
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "git_blob_sha1": blob(data),
+    }
+
+
+def persisted_kernel_evidence_identity(
+    root: pathlib.Path,
+    relative: str,
+) -> dict[str, object]:
+    data = (root / relative).read_bytes()
+    return {
+        "bytes": len(data),
+        "git_blob_sha1": blob(data),
+        "name": proof.CANONICAL_KERNEL_ARTIFACT_FILE_NAME,
+        "persisted_path": relative,
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def kernel_archive_artifact(
+    root: pathlib.Path,
+    relative: str,
+    *,
+    artifact_id: int,
+    archive_label: bytes,
+    created_at: str,
+    expires_at: str,
+) -> dict[str, object]:
+    return {
+        "archive_digest": "sha256:" + hashlib.sha256(archive_label).hexdigest(),
+        "archive_size_bytes": len(archive_label),
+        "created_at": created_at,
+        "expires_at": expires_at,
+        "file": persisted_kernel_evidence_identity(root, relative),
+        "id": artifact_id,
+        "name": proof.CANONICAL_KERNEL_ARTIFACT_NAME,
+    }
+
+
+def enable_canonical_kernel_receipt_v2(
+    root: pathlib.Path,
+    bundle_path: pathlib.Path,
+) -> dict[str, str]:
+    branch = "publication/canonical-fixture-v2"
+    h0_head = "1" * 40
+    h0_tree = "2" * 40
+    h1_head = "3" * 40
+    h1_tree = "4" * 40
+    h0_matrix_relative = "proof/CLAIM_MATRIX_H0_PENDING.json"
+    h0_evidence_relative = "proof/KERNEL_EVIDENCE_H0.json"
+    h1_evidence_relative = "proof/KERNEL_EVIDENCE_H1.json"
+    h1_matrix_relative = "proof/CLAIM_MATRIX.json"
+    h1_matrix_value = json.loads(
+        (root / h1_matrix_relative).read_text(encoding="utf-8")
+    )
+    h1_matrix_value["proof_state"] = "KERNEL_VERIFIED"
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    matrix_formal_claim = next(
+        claim
+        for claim in h1_matrix_value["claims"]
+        if claim["classification"] == "FORMAL_PROVED"
+    )
+    second_statement = "The second fixture theorem is kernel checked."
+    second_matrix_claim = copy.deepcopy(matrix_formal_claim)
+    second_matrix_claim.update(
+        {
+            "claim_id": "C-FORMAL-SECOND",
+            "proof_refs": ["Fixture.second_theorem"],
+            "statement": second_statement,
+        }
+    )
+    h1_matrix_value["claims"].append(second_matrix_claim)
+    h1_matrix_value["claim_count"] = len(h1_matrix_value["claims"])
+    bundle_formal_claim = next(
+        claim
+        for claim in bundle["claims"]
+        if claim["classification"] == "FORMAL_PROVED"
+    )
+    second_bundle_claim = copy.deepcopy(bundle_formal_claim)
+    second_bundle_claim.update(
+        {
+            "claim_id": "C-FORMAL-SECOND",
+            "proof_refs": [
+                "proof/KERNEL_RECEIPT.json#Fixture.second_theorem"
+            ],
+            "statement": second_statement,
+        }
+    )
+    bundle["claims"].append(second_bundle_claim)
+    write(
+        root,
+        h1_matrix_relative,
+        (
+            json.dumps(h1_matrix_value, sort_keys=True, indent=2) + "\n"
+        ).encode(),
+    )
+    refresh_artifact(root, bundle, h1_matrix_relative, "CLAIM_MATRIX")
+    bundle_path.write_text(
+        json.dumps(bundle, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    formal_claim_ids = [
+        claim["claim_id"]
+        for claim in h1_matrix_value["claims"]
+        if claim["classification"] == "FORMAL_PROVED"
+    ]
+    h0_matrix_value = copy.deepcopy(h1_matrix_value)
+    h0_matrix_value["proof_state"] = "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+    for claim in h0_matrix_value["claims"]:
+        if claim["claim_id"] in formal_claim_ids:
+            claim["classification"] = "FORMAL_PENDING_KERNEL"
+            claim["status"] = (
+                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+            )
+    write(
+        root,
+        h0_matrix_relative,
+        (
+            json.dumps(h0_matrix_value, sort_keys=True, indent=2) + "\n"
+        ).encode(),
+    )
+    persisted_h0_matrix = kernel_identity(root, h0_matrix_relative)
+    h0_matrix = {
+        **persisted_h0_matrix,
+        "path": h1_matrix_relative,
+    }
+    h1_matrix = transition_matrix_identity(root)
+    source = kernel_identity(root, "proof/SOURCE.txt")
+    axioms = {
+        "Fixture.theorem": [],
+        "Fixture.second_theorem": [],
+    }
+    plan_relative = "proof/KERNEL_PROOF_PLAN.json"
+    compiled_relative = "proof/CanonicalTemporalMemory.olean"
+    write(root, plan_relative, b'{"fixture":"kernel-proof-plan"}\n')
+    write(root, compiled_relative, b"fixture compiled object\n")
+    plan = kernel_identity(root, plan_relative)
+    compiled_object = kernel_identity(root, compiled_relative)
+    project_prefix = pathlib.PurePosixPath("proof/kernel-project")
+    entrypoint_name = "QIKVRTEffectAck.lean"
+    entrypoint_local_relative = (project_prefix / entrypoint_name).as_posix()
+    toolchain_name = "lean-toolchain"
+    toolchain_local_relative = (project_prefix / toolchain_name).as_posix()
+    toolchain_value = "leanprover/lean4:v4.19.0"
+    write(root, entrypoint_local_relative, b"import Fixture\n")
+    write(root, toolchain_local_relative, (toolchain_value + "\n").encode())
+    entrypoint = {
+        **kernel_identity(root, entrypoint_local_relative),
+        "path": entrypoint_name,
+    }
+    lean_toolchain = {
+        **kernel_identity(root, toolchain_local_relative),
+        "path": toolchain_name,
+        "value": toolchain_value,
+    }
+    receipt_toolchain = {
+        "lean_toolchain": toolchain_value,
+        "locked": True,
+        "path": toolchain_local_relative,
+        "sha256": lean_toolchain["sha256"],
+    }
+    exact_source_output = hashlib.sha256(b"").hexdigest()
+    axiom_audit_output = hashlib.sha256(b"fixture axiom audit").hexdigest()
+    evidence_runtime = {
+        "cache_replaces_kernel_verification": False,
+        "dynamic_axiom_audit": {
+            "argv": ["lake", "env", "lean", ".lake/build/FixtureAudit.lean"],
+            "exit_code": 0,
+            "output_sha256": axiom_audit_output,
+        },
+        "exact_source_kernel_check": {
+            "argv": ["lake", "env", "lean", entrypoint_name],
+            "exit_code": 0,
+            "output_sha256": exact_source_output,
+        },
+        "fresh_project_build_required_before_object_binding": True,
+    }
+    receipt_runtime = {
+        "dynamic_axiom_audit_output_sha256": axiom_audit_output,
+        "exact_source_kernel_check_exit_code": 0,
+        "exact_source_kernel_check_output_sha256": exact_source_output,
+    }
+    proof_refs_by_claim = {
+        claim["claim_id"]: claim["proof_refs"]
+        for claim in h1_matrix_value["claims"]
+        if claim["claim_id"] in formal_claim_ids
+    }
+    formal_bindings = []
+    for claim_id in formal_claim_ids:
+        proof_refs = proof_refs_by_claim[claim_id]
+        formal_bindings.append(
+            {
+                "axioms_by_theorem": {
+                    theorem: axioms[theorem] for theorem in proof_refs
+                },
+                "claim_id": claim_id,
+                "compiled_object_sha256": compiled_object["sha256"],
+                "proof_refs": proof_refs,
+                "source_sha256": source["sha256"],
+            }
+        )
+
+    def evidence(
+        *,
+        head: str,
+        matrix: dict[str, object],
+        run_id: int,
+    ) -> dict[str, Any]:
+        return {
+            "schema": proof.CANONICAL_KERNEL_EVIDENCE_SCHEMA,
+            "state": "KERNEL_VERIFIED",
+            "publication_id": FIXTURE_PUBLICATION_ID,
+            "claim_matrix": matrix,
+            "source": source,
+            "axioms_by_theorem": axioms,
+            "plan": plan,
+            "compiled_object": compiled_object,
+            "entrypoint": entrypoint,
+            "lean_toolchain": lean_toolchain,
+            "runtime": evidence_runtime,
+            "formal_bindings": formal_bindings,
+            "formal_claim_count": len(formal_claim_ids),
+            "theorem_count": len(axioms),
+            "workflow": {
+                "repository": "owner/repository",
+                "sha": head,
+                "ref": "refs/heads/" + branch,
+                "event": "push",
+                "run_id": str(run_id),
+                "run_attempt": "1",
+            },
+        }
+
+    write(
+        root,
+        h0_evidence_relative,
+        (
+            json.dumps(
+                evidence(head=h0_head, matrix=h0_matrix, run_id=100),
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
+        ).encode(),
+    )
+    write(
+        root,
+        h1_evidence_relative,
+        (
+            json.dumps(
+                evidence(head=h1_head, matrix=h1_matrix, run_id=101),
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
+        ).encode(),
+    )
+
+    def candidate(head: str, tree: str) -> dict[str, object]:
+        return {
+            "branch": branch,
+            "head": head,
+            "repository": "owner/repository",
+            "tree": tree,
+        }
+
+    def workflow(head: str, run_id: int) -> dict[str, object]:
+        return {
+            "conclusion": "success",
+            "event": "push",
+            "exact_head_bound": True,
+            "run_attempt": 1,
+            "run_id": run_id,
+            "sha": head,
+        }
+
+    receipt = {
+        "schema": proof.CANONICAL_KERNEL_RECEIPT_SCHEMA,
+        "state": "KERNEL_VERIFIED",
+        "scope_id": FIXTURE_PUBLICATION_ID,
+        "receipt_stage": proof.CANONICAL_RECEIPT_STAGE,
+        "verification_stage": proof.CANONICAL_VERIFICATION_STAGE,
+        "bootstrap_h0": {
+            "role": proof.CANONICAL_BOOTSTRAP_ROLE,
+            "verified_candidate": candidate(h0_head, h0_tree),
+            "claim_matrix": h0_matrix,
+            "persisted_claim_matrix": persisted_h0_matrix,
+            "workflow": workflow(h0_head, 100),
+            "artifact": kernel_archive_artifact(
+                root,
+                h0_evidence_relative,
+                artifact_id=1000,
+                archive_label=b"H0 archive fixture",
+                created_at="2026-07-30T17:00:09Z",
+                expires_at="2026-08-29T17:00:09Z",
+            ),
+        },
+        "verified_candidate": candidate(h1_head, h1_tree),
+        "workflow": workflow(h1_head, 101),
+        "artifact": kernel_archive_artifact(
+            root,
+            h1_evidence_relative,
+            artifact_id=1001,
+            archive_label=b"H1 archive fixture",
+            created_at="2026-07-30T18:46:39Z",
+            expires_at="2026-08-29T18:46:39Z",
+        ),
+        "claim_transition": {
+            "allowed_changes": {
+                "claim_ids": formal_claim_ids,
+                "classification": {
+                    "from": "FORMAL_PENDING_KERNEL",
+                    "to": "FORMAL_PROVED",
+                },
+                "matrix_proof_state": {
+                    "from": "AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+                    "to": "KERNEL_VERIFIED",
+                },
+                "status": {
+                    "from": (
+                        "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_"
+                        "KERNEL_RECEIPT"
+                    ),
+                    "to": "KERNEL_VERIFIED",
+                },
+            },
+            "proof_refs_and_statements_unchanged": True,
+            "source_claim_matrix": h0_matrix,
+            "target_claim_matrix": h1_matrix,
+            "target_exact_head_confirmation_required": False,
+        },
+        "source": source,
+        "axioms_by_theorem": axioms,
+        "compiled_object": compiled_object,
+        "entrypoint": entrypoint,
+        "formal_claim_count": len(formal_claim_ids),
+        "plan": plan,
+        "runtime": receipt_runtime,
+        "theorem_count": len(axioms),
+        "theorems": list(axioms),
+        "toolchain": receipt_toolchain,
+        "materialization_boundary": {
+            "stage": "H2",
+            "required_relation": "SINGLE_PARENT_SUCCESSOR",
+            "predecessor_head": h1_head,
+            "containing_head_binding": "EXTERNAL_TO_RECEIPT",
+            "containing_tree_binding": "EXTERNAL_TO_RECEIPT",
+            "self_inclusion_claimed": False,
+        },
+    }
+
+    def replace(value: dict[str, Any]) -> None:
+        value.clear()
+        value.update(receipt)
+
+    mutate_kernel_receipt(root, bundle_path, replace)
+    return {
+        "h0_evidence": h0_evidence_relative,
+        "h0_head": h0_head,
+        "h1_evidence": h1_evidence_relative,
+        "h1_head": h1_head,
+    }
+
+
+def mutate_canonical_kernel_evidence(
+    root: pathlib.Path,
+    bundle_path: pathlib.Path,
+    stage: str,
+    mutation: Callable[[dict[str, Any]], None],
+) -> None:
+    relative = (
+        "proof/KERNEL_EVIDENCE_H0.json"
+        if stage == "H0"
+        else "proof/KERNEL_EVIDENCE_H1.json"
+    )
+    path = root / relative
+    evidence = json.loads(path.read_text(encoding="utf-8"))
+    mutation(evidence)
+    path.write_text(
+        json.dumps(evidence, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    def rebind(receipt: dict[str, Any]) -> None:
+        artifact = (
+            receipt["bootstrap_h0"]["artifact"]
+            if stage == "H0"
+            else receipt["artifact"]
+        )
+        artifact["file"] = persisted_kernel_evidence_identity(root, relative)
+
+    mutate_kernel_receipt(root, bundle_path, rebind)
+
+
+def mutate_canonical_h0_claim_matrix(
+    root: pathlib.Path,
+    bundle_path: pathlib.Path,
+    mutation: Callable[[dict[str, Any]], None],
+) -> None:
+    receipt_path = root / "proof/KERNEL_RECEIPT.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    persisted_relative = receipt["bootstrap_h0"]["persisted_claim_matrix"][
+        "path"
+    ]
+    persisted_path = root / persisted_relative
+    matrix = json.loads(persisted_path.read_text(encoding="utf-8"))
+    mutation(matrix)
+    persisted_path.write_text(
+        json.dumps(matrix, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    persisted_identity = kernel_identity(root, persisted_relative)
+    historical_identity = {
+        **persisted_identity,
+        "path": receipt["claim_transition"]["source_claim_matrix"]["path"],
+    }
+    receipt["bootstrap_h0"]["persisted_claim_matrix"] = persisted_identity
+    receipt["bootstrap_h0"]["claim_matrix"] = historical_identity
+    receipt["claim_transition"]["source_claim_matrix"] = historical_identity
+
+    evidence_relative = receipt["bootstrap_h0"]["artifact"]["file"][
+        "persisted_path"
+    ]
+    evidence_path = root / evidence_relative
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["claim_matrix"] = historical_identity
+    evidence_path.write_text(
+        json.dumps(evidence, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    receipt["bootstrap_h0"]["artifact"][
+        "file"
+    ] = persisted_kernel_evidence_identity(root, evidence_relative)
+
+    def replace(value: dict[str, Any]) -> None:
+        value.clear()
+        value.update(receipt)
+
+    mutate_kernel_receipt(root, bundle_path, replace)
 
 
 def mutate_authorization(
@@ -2332,6 +2780,520 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                     root = pathlib.Path(temporary)
                     bundle_path, _ = self.fixture(root)
                     mutate_kernel_receipt(root, bundle_path, mutation)
+                    with self.assertRaisesRegex(proof.ProofGateError, error):
+                        proof.validate_bundle(root, bundle_path)
+
+    def test_canonical_kernel_receipt_v2_h2_h1_chain_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            bundle_path, _ = self.fixture(root)
+            stages = enable_canonical_kernel_receipt_v2(root, bundle_path)
+            validated = proof.validate_bundle(root, bundle_path)
+            self.assertTrue(validated["machine_proof_complete"])
+            receipt = json.loads(
+                (root / "proof/KERNEL_RECEIPT.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                receipt["verified_candidate"]["head"],
+                stages["h1_head"],
+            )
+            self.assertNotEqual(
+                receipt["bootstrap_h0"]["verified_candidate"]["head"],
+                receipt["verified_candidate"]["head"],
+            )
+            self.assertFalse(
+                receipt["claim_transition"][
+                    "target_exact_head_confirmation_required"
+                ]
+            )
+
+    def test_canonical_kernel_receipt_v2_validates_archive_provenance(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "missing archive id",
+                lambda receipt: receipt["artifact"].pop("id"),
+                "missing=id",
+            ),
+            (
+                "invalid archive id type",
+                lambda receipt: receipt["artifact"].update({"id": True}),
+                "id must be a positive integer",
+            ),
+            (
+                "wrong archive name",
+                lambda receipt: receipt["artifact"].update(
+                    {"name": "unbound-evidence"}
+                ),
+                "name differs from the canonical artifact name",
+            ),
+            (
+                "malformed archive digest",
+                lambda receipt: receipt["artifact"].update(
+                    {"archive_digest": "sha256:not-a-digest"}
+                ),
+                "archive_digest has an invalid digest",
+            ),
+            (
+                "invalid archive size type",
+                lambda receipt: receipt["artifact"].update(
+                    {"archive_size_bytes": False}
+                ),
+                "archive_size_bytes must be a positive integer",
+            ),
+            (
+                "malformed creation timestamp",
+                lambda receipt: receipt["artifact"].update(
+                    {"created_at": "2026-07-30"}
+                ),
+                "created_at must be an RFC3339 date-time",
+            ),
+            (
+                "expiry precedes creation",
+                lambda receipt: receipt["artifact"].update(
+                    {"expires_at": "2026-07-29T18:46:39Z"}
+                ),
+                "expires_at must be later than created_at",
+            ),
+            (
+                "H0/H1 archive id reused",
+                lambda receipt: receipt["artifact"].update(
+                    {"id": receipt["bootstrap_h0"]["artifact"]["id"]}
+                ),
+                "H0/H1 artifact IDs must differ",
+            ),
+            (
+                "H0/H1 archive digest reused",
+                lambda receipt: receipt["artifact"].update(
+                    {
+                        "archive_digest": receipt["bootstrap_h0"][
+                            "artifact"
+                        ]["archive_digest"]
+                    }
+                ),
+                "H0/H1 archive digests must differ",
+            ),
+            (
+                "H0/H1 raw file digest reused",
+                lambda receipt: receipt["artifact"]["file"].update(
+                    {
+                        "sha256": receipt["bootstrap_h0"]["artifact"]["file"][
+                            "sha256"
+                        ]
+                    }
+                ),
+                "H0/H1 raw file SHA-256 must differ",
+            ),
+        )
+        for label, mutation, error in cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    enable_canonical_kernel_receipt_v2(root, bundle_path)
+                    mutate_kernel_receipt(root, bundle_path, mutation)
+                    with self.assertRaisesRegex(proof.ProofGateError, error):
+                        proof.validate_bundle(root, bundle_path)
+
+    def test_canonical_kernel_receipt_v2_requires_exact_stage_and_boundary(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "schema downgrade",
+                lambda receipt: receipt.update(
+                    {"schema": "qikvrt_fixture_kernel_receipt_v2"}
+                ),
+                "canonical kernel receipt context requires the exact v2 schema",
+            ),
+            (
+                "schema removed",
+                lambda receipt: receipt.pop("schema"),
+                "canonical kernel receipt context requires the exact v2 schema",
+            ),
+            (
+                "state",
+                lambda receipt: receipt.update(
+                    {
+                        "state": (
+                            "BOOTSTRAP_KERNEL_VERIFIED_"
+                            "AWAITING_TARGET_HEAD_CONFIRMATION"
+                        )
+                    }
+                ),
+                "state must equal KERNEL_VERIFIED",
+            ),
+            (
+                "H2 stage",
+                lambda receipt: receipt.update({"receipt_stage": "H1"}),
+                "H2 receipt_stage differs",
+            ),
+            (
+                "H1 stage",
+                lambda receipt: receipt.update({"verification_stage": "H0"}),
+                "H1 verification_stage differs",
+            ),
+            (
+                "successor predecessor",
+                lambda receipt: receipt["materialization_boundary"].update(
+                    {
+                        "predecessor_head": receipt["bootstrap_h0"][
+                            "verified_candidate"
+                        ]["head"]
+                    }
+                ),
+                "H2 materialization boundary differs",
+            ),
+            (
+                "self inclusion",
+                lambda receipt: receipt["materialization_boundary"].update(
+                    {"self_inclusion_claimed": True}
+                ),
+                "H2 materialization boundary differs",
+            ),
+            (
+                "transition still pending",
+                lambda receipt: receipt["claim_transition"].update(
+                    {"target_exact_head_confirmation_required": True}
+                ),
+                "target H1 confirmation is not closed",
+            ),
+            (
+                "proof-ref preservation flag",
+                lambda receipt: receipt["claim_transition"].update(
+                    {"proof_refs_and_statements_unchanged": False}
+                ),
+                "must preserve proof refs and statements",
+            ),
+            (
+                "allowed classification transition",
+                lambda receipt: receipt["claim_transition"][
+                    "allowed_changes"
+                ]["classification"].update({"from": "FORMAL_PROVED"}),
+                "allowed_changes contract differs",
+            ),
+        )
+        for label, mutation, error in cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    enable_canonical_kernel_receipt_v2(root, bundle_path)
+                    mutate_kernel_receipt(root, bundle_path, mutation)
+                    with self.assertRaisesRegex(proof.ProofGateError, error):
+                        proof.validate_bundle(root, bundle_path)
+
+    def test_canonical_publication_id_blocks_schema_and_marker_downgrade(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            bundle_path, _ = self.fixture(root)
+            enable_canonical_kernel_receipt_v2(root, bundle_path)
+
+            def downgrade(receipt: dict[str, Any]) -> None:
+                receipt["schema"] = "qikvrt_fixture_kernel_receipt_v2"
+                for marker in proof.CANONICAL_KERNEL_MARKERS:
+                    receipt.pop(marker, None)
+
+            mutate_kernel_receipt(root, bundle_path, downgrade)
+            with (
+                mock.patch.object(
+                    proof,
+                    "CANONICAL_KERNEL_PUBLICATION_ID",
+                    FIXTURE_PUBLICATION_ID,
+                ),
+                self.assertRaisesRegex(
+                    proof.ProofGateError,
+                    "canonical kernel receipt context requires "
+                    "the exact v2 schema",
+                ),
+            ):
+                proof.validate_bundle(root, bundle_path)
+
+    def test_canonical_kernel_receipt_v2_binds_h0_bootstrap_evidence(
+        self,
+    ) -> None:
+        receipt_cases = (
+            (
+                "H0 artifact identity",
+                lambda receipt: receipt["bootstrap_h0"]["artifact"][
+                    "file"
+                ].update({"sha256": "0" * 64}),
+                "exact raw evidence identity differs",
+            ),
+            (
+                "persisted H0 matrix identity",
+                lambda receipt: receipt["bootstrap_h0"][
+                    "persisted_claim_matrix"
+                ].update({"sha256": "0" * 64}),
+                "exact persisted H0 matrix identity differs",
+            ),
+            (
+                "H0 source matrix",
+                lambda receipt: receipt["bootstrap_h0"][
+                    "claim_matrix"
+                ].update({"sha256": "0" * 64}),
+                "H0 matrix differs from transition source",
+            ),
+            (
+                "H0 collapsed onto H1",
+                lambda receipt: receipt["claim_transition"].update(
+                    {
+                        "source_claim_matrix": receipt["claim_transition"][
+                            "target_claim_matrix"
+                        ]
+                    }
+                ),
+                "H0 and H1 matrices must differ",
+            ),
+            (
+                "H0 workflow head",
+                lambda receipt: receipt["bootstrap_h0"]["workflow"].update(
+                    {"sha": receipt["verified_candidate"]["head"]}
+                ),
+                "sha differs from its verified candidate head",
+            ),
+        )
+        for label, mutation, error in receipt_cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    enable_canonical_kernel_receipt_v2(root, bundle_path)
+                    mutate_kernel_receipt(root, bundle_path, mutation)
+                    with self.assertRaisesRegex(proof.ProofGateError, error):
+                        proof.validate_bundle(root, bundle_path)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            bundle_path, _ = self.fixture(root)
+            enable_canonical_kernel_receipt_v2(root, bundle_path)
+            mutate_canonical_kernel_evidence(
+                root,
+                bundle_path,
+                "H0",
+                lambda evidence: evidence["claim_matrix"].update(
+                    {"sha256": "0" * 64}
+                ),
+            )
+            with self.assertRaisesRegex(
+                proof.ProofGateError,
+                "H0 raw evidence matrix differs",
+            ):
+                proof.validate_bundle(root, bundle_path)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            bundle_path, _ = self.fixture(root)
+            enable_canonical_kernel_receipt_v2(root, bundle_path)
+            mutate_canonical_h0_claim_matrix(
+                root,
+                bundle_path,
+                lambda matrix: matrix["claims"][0].update(
+                    {"statement": "silently changed H0 statement"}
+                ),
+            )
+            with self.assertRaisesRegex(
+                proof.ProofGateError,
+                "matrix transition exceeds allowed changes",
+            ):
+                proof.validate_bundle(root, bundle_path)
+
+    def test_canonical_kernel_receipt_v2_binds_active_h1_evidence(
+        self,
+    ) -> None:
+        def swap_formal_binding_proofs(evidence: dict[str, Any]) -> None:
+            first, second = evidence["formal_bindings"][:2]
+            first_refs = first["proof_refs"]
+            second_refs = second["proof_refs"]
+            first["proof_refs"] = second_refs
+            second["proof_refs"] = first_refs
+            for binding in (first, second):
+                binding["axioms_by_theorem"] = {
+                    theorem: evidence["axioms_by_theorem"][theorem]
+                    for theorem in binding["proof_refs"]
+                }
+
+        receipt_cases = (
+            (
+                "H1 artifact identity",
+                lambda receipt: receipt["artifact"]["file"].update(
+                    {"git_blob_sha1": "0" * 40}
+                ),
+                "exact raw evidence identity differs",
+            ),
+            (
+                "top-level candidate remains H0",
+                lambda receipt: receipt["verified_candidate"].update(
+                    {
+                        "head": receipt["bootstrap_h0"][
+                            "verified_candidate"
+                        ]["head"]
+                    }
+                ),
+                "active fields still identify H0",
+            ),
+            (
+                "top-level artifact remains H0",
+                lambda receipt: receipt.update(
+                    {"artifact": receipt["bootstrap_h0"]["artifact"]}
+                ),
+                "H0/H1 artifact IDs must differ",
+            ),
+            (
+                "top-level workflow remains H0",
+                lambda receipt: receipt["workflow"].update(
+                    {
+                        "run_id": receipt["bootstrap_h0"]["workflow"][
+                            "run_id"
+                        ]
+                    }
+                ),
+                "run_id differs from its raw evidence",
+            ),
+            (
+                "repository source bytes",
+                lambda receipt: receipt["source"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "source differs from repository bytes",
+            ),
+            (
+                "theorem axiom inventory",
+                lambda receipt: receipt["axioms_by_theorem"].update(
+                    {"Fixture.unbound": []}
+                ),
+                "theorem/axiom inventory differs",
+            ),
+            (
+                "boolean theorem count",
+                lambda receipt: receipt.update({"theorem_count": True}),
+                "theorem_count differs",
+            ),
+            (
+                "boolean formal claim count",
+                lambda receipt: receipt.update({"formal_claim_count": True}),
+                "formal_claim_count differs",
+            ),
+        )
+        for label, mutation, error in receipt_cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    enable_canonical_kernel_receipt_v2(root, bundle_path)
+                    mutate_kernel_receipt(root, bundle_path, mutation)
+                    with self.assertRaisesRegex(proof.ProofGateError, error):
+                        proof.validate_bundle(root, bundle_path)
+
+        evidence_cases = (
+            (
+                "workflow head",
+                lambda evidence: evidence["workflow"].update(
+                    {"sha": "5" * 40}
+                ),
+                "sha differs from its verified candidate head",
+            ),
+            (
+                "target matrix",
+                lambda evidence: evidence["claim_matrix"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "H1 raw evidence target matrix differs",
+            ),
+            (
+                "source",
+                lambda evidence: evidence["source"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "H1 source sha256 differs",
+            ),
+            (
+                "axioms",
+                lambda evidence: evidence.update(
+                    {"axioms_by_theorem": {"Fixture.theorem": ["propext"]}}
+                ),
+                "H1 axioms differ",
+            ),
+            (
+                "plan",
+                lambda evidence: evidence["plan"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "H1 raw evidence plan differs from the receipt",
+            ),
+            (
+                "compiled object",
+                lambda evidence: evidence["compiled_object"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "H1 raw evidence compiled_object differs from the receipt",
+            ),
+            (
+                "theorem count",
+                lambda evidence: evidence.update({"theorem_count": 3}),
+                "H1 raw evidence theorem_count differs",
+            ),
+            (
+                "boolean theorem count",
+                lambda evidence: evidence.update({"theorem_count": True}),
+                "H1 raw evidence theorem_count differs",
+            ),
+            (
+                "boolean formal claim count",
+                lambda evidence: evidence.update({"formal_claim_count": True}),
+                "H1 raw evidence formal_claim_count differs",
+            ),
+            (
+                "formal source binding",
+                lambda evidence: evidence["formal_bindings"][0].update(
+                    {"source_sha256": "0" * 64}
+                ),
+                "source binding differs",
+            ),
+            (
+                "claimwise proof-ref swap",
+                swap_formal_binding_proofs,
+                "proof_refs differ from its matrix claim",
+            ),
+            (
+                "entrypoint",
+                lambda evidence: evidence["entrypoint"].update(
+                    {"sha256": "0" * 64}
+                ),
+                "entrypoint differs from the receipt",
+            ),
+            (
+                "lean toolchain",
+                lambda evidence: evidence["lean_toolchain"].update(
+                    {"value": "leanprover/lean4:v0.0.0"}
+                ),
+                "lean toolchain value differs from the receipt",
+            ),
+            (
+                "runtime",
+                lambda evidence: evidence["runtime"][
+                    "dynamic_axiom_audit"
+                ].update({"output_sha256": "0" * 64}),
+                "runtime differs from the receipt",
+            ),
+        )
+        for label, mutation, error in evidence_cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    enable_canonical_kernel_receipt_v2(root, bundle_path)
+                    mutate_canonical_kernel_evidence(
+                        root,
+                        bundle_path,
+                        "H1",
+                        mutation,
+                    )
                     with self.assertRaisesRegex(proof.ProofGateError, error):
                         proof.validate_bundle(root, bundle_path)
 

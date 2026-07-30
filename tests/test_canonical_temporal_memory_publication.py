@@ -34,10 +34,12 @@ PDF = (
     / "QIK-VRT_Kanonischer_Speicher_Retrokausalitaet_EFFECT_ACK_2026-07-30.pdf"
 )
 CLAIMS = PUBLICATION / "CLAIM_MATRIX.json"
+CLAIMS_H0 = PUBLICATION / "CLAIM_MATRIX_H0_PENDING.json"
 SOURCES = PUBLICATION / "SOURCE_EVIDENCE_BINDINGS.json"
 PLAN = PUBLICATION / "KERNEL_PROOF_PLAN.json"
 KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT.json"
 KERNEL_EVIDENCE_H0 = PUBLICATION / "KERNEL_EVIDENCE_H0_PENDING.json"
+KERNEL_EVIDENCE_H1 = PUBLICATION / "KERNEL_EVIDENCE_H1_TARGET.json"
 BOUNDARY = PUBLICATION / "EVIDENCE_BOUNDARY.md"
 RENDER = PUBLICATION / "PDF_RENDER_VALIDATION.json"
 ZENODO_SUMS = PUBLICATION / "ZENODO_SHA256SUMS"
@@ -614,7 +616,16 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
 
         self.assertEqual(
             receipt["schema"],
-            "qikvrt_canonical_temporal_memory_kernel_receipt_v1",
+            "qikvrt_canonical_temporal_memory_kernel_receipt_v2",
+        )
+        self.assertEqual(receipt["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            receipt["receipt_stage"],
+            "H2_SUCCESSOR_MATERIALIZATION",
+        )
+        self.assertEqual(
+            receipt["verification_stage"],
+            "H1_TARGET_EXACT_HEAD",
         )
         self.assertEqual(receipt["scope_id"], SCOPE)
         self.assertEqual(receipt["formal_claim_count"], 4)
@@ -648,6 +659,9 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             },
         )
         self.assertTrue(transition["proof_refs_and_statements_unchanged"])
+        self.assertFalse(
+            transition["target_exact_head_confirmation_required"]
+        )
 
         for key, path in (
             ("target_claim_matrix", CLAIMS),
@@ -695,14 +709,16 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             receipt["artifact"]["file"]["sha256"],
             r"^[0-9a-f]{64}$",
         )
-        raw_evidence = KERNEL_EVIDENCE_H0.read_bytes()
+        raw_evidence = KERNEL_EVIDENCE_H1.read_bytes()
         self.assertEqual(
             receipt["artifact"]["file"],
             {
                 "bytes": len(raw_evidence),
                 "git_blob_sha1": git_blob_sha1(raw_evidence),
                 "name": "qikvrt-canonical-temporal-memory-kernel-evidence.json",
-                "persisted_path": KERNEL_EVIDENCE_H0.relative_to(ROOT).as_posix(),
+                "persisted_path": KERNEL_EVIDENCE_H1.relative_to(
+                    ROOT
+                ).as_posix(),
                 "sha256": hashlib.sha256(raw_evidence).hexdigest(),
             },
         )
@@ -713,11 +729,165 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             receipt["verified_candidate"]["head"],
         )
         self.assertEqual(
+            receipt["workflow"]["sha"],
+            receipt["verified_candidate"]["head"],
+        )
+        self.assertEqual(
             raw_value["claim_matrix"]["sha256"],
-            transition["source_claim_matrix"]["sha256"],
+            transition["target_claim_matrix"]["sha256"],
         )
         self.assertEqual(raw_value["source"]["sha256"], receipt["source"]["sha256"])
         self.assertEqual(raw_value["axioms_by_theorem"], receipt["axioms_by_theorem"])
+
+        bootstrap = receipt["bootstrap_h0"]
+        self.assertEqual(
+            bootstrap["role"],
+            "TRANSITION_SOURCE_ONLY_NOT_ACTIVE_GATE",
+        )
+        self.assertEqual(
+            bootstrap["claim_matrix"],
+            transition["source_claim_matrix"],
+        )
+        h0_matrix_bytes = CLAIMS_H0.read_bytes()
+        self.assertEqual(
+            bootstrap["persisted_claim_matrix"],
+            {
+                "bytes": len(h0_matrix_bytes),
+                "git_blob_sha1": git_blob_sha1(h0_matrix_bytes),
+                "path": CLAIMS_H0.relative_to(ROOT).as_posix(),
+                "sha256": hashlib.sha256(h0_matrix_bytes).hexdigest(),
+            },
+        )
+        self.assertEqual(
+            {
+                key: bootstrap["persisted_claim_matrix"][key]
+                for key in ("bytes", "git_blob_sha1", "sha256")
+            },
+            {
+                key: transition["source_claim_matrix"][key]
+                for key in ("bytes", "git_blob_sha1", "sha256")
+            },
+        )
+        h0_matrix = json.loads(h0_matrix_bytes)
+        h1_matrix = claims
+        self.assertEqual(
+            {
+                key: value
+                for key, value in h0_matrix.items()
+                if key not in {"claims", "proof_state"}
+            },
+            {
+                key: value
+                for key, value in h1_matrix.items()
+                if key not in {"claims", "proof_state"}
+            },
+        )
+        self.assertEqual(
+            h0_matrix["proof_state"],
+            "AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+        )
+        self.assertEqual(h1_matrix["proof_state"], "KERNEL_VERIFIED")
+        h0_claims = {
+            item["claim_id"]: item
+            for item in h0_matrix["claims"]
+        }
+        h1_claims = {
+            item["claim_id"]: item
+            for item in h1_matrix["claims"]
+        }
+        self.assertEqual(set(h0_claims), set(h1_claims))
+        for claim_id in sorted(h0_claims):
+            source_claim = h0_claims[claim_id]
+            target_claim = h1_claims[claim_id]
+            if claim_id in FORMAL_IDS:
+                self.assertEqual(
+                    source_claim["classification"],
+                    "FORMAL_PENDING_KERNEL",
+                )
+                self.assertEqual(
+                    target_claim["classification"],
+                    "FORMAL_PROVED",
+                )
+                self.assertEqual(
+                    source_claim["status"],
+                    (
+                        "PROOF_SOURCE_PRESENT_"
+                        "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+                    ),
+                )
+                self.assertEqual(
+                    target_claim["status"],
+                    "KERNEL_VERIFIED",
+                )
+                self.assertEqual(
+                    {
+                        key: value
+                        for key, value in source_claim.items()
+                        if key not in {"classification", "status"}
+                    },
+                    {
+                        key: value
+                        for key, value in target_claim.items()
+                        if key not in {"classification", "status"}
+                    },
+                )
+            else:
+                self.assertEqual(source_claim, target_claim)
+        raw_bootstrap = KERNEL_EVIDENCE_H0.read_bytes()
+        self.assertEqual(
+            bootstrap["artifact"]["file"],
+            {
+                "bytes": len(raw_bootstrap),
+                "git_blob_sha1": git_blob_sha1(raw_bootstrap),
+                "name": "qikvrt-canonical-temporal-memory-kernel-evidence.json",
+                "persisted_path": KERNEL_EVIDENCE_H0.relative_to(
+                    ROOT
+                ).as_posix(),
+                "sha256": hashlib.sha256(raw_bootstrap).hexdigest(),
+            },
+        )
+        bootstrap_value = json.loads(raw_bootstrap)
+        self.assertEqual(bootstrap_value["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            bootstrap_value["workflow"]["sha"],
+            bootstrap["verified_candidate"]["head"],
+        )
+        self.assertEqual(
+            bootstrap["workflow"]["sha"],
+            bootstrap["verified_candidate"]["head"],
+        )
+        self.assertEqual(
+            bootstrap_value["claim_matrix"]["sha256"],
+            transition["source_claim_matrix"]["sha256"],
+        )
+        self.assertEqual(
+            bootstrap["workflow"]["run_id"],
+            int(bootstrap_value["workflow"]["run_id"]),
+        )
+        self.assertNotEqual(
+            bootstrap["verified_candidate"]["head"],
+            receipt["verified_candidate"]["head"],
+        )
+
+        materialization = receipt["materialization_boundary"]
+        self.assertEqual(materialization["stage"], "H2")
+        self.assertEqual(
+            materialization["required_relation"],
+            "SINGLE_PARENT_SUCCESSOR",
+        )
+        self.assertEqual(
+            materialization["predecessor_head"],
+            receipt["verified_candidate"]["head"],
+        )
+        self.assertEqual(
+            materialization["containing_head_binding"],
+            "EXTERNAL_TO_RECEIPT",
+        )
+        self.assertEqual(
+            materialization["containing_tree_binding"],
+            "EXTERNAL_TO_RECEIPT",
+        )
+        self.assertFalse(materialization["self_inclusion_claimed"])
         self.assertEqual(
             receipt["completion_claims"],
             {
@@ -739,17 +909,97 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
                 "semantic_truth_of_arbitrary_archived_content_proved": False,
             },
         )
-        if receipt["state"] == (
-            "BOOTSTRAP_KERNEL_VERIFIED_AWAITING_TARGET_HEAD_CONFIRMATION"
-        ):
-            self.assertTrue(
-                transition["target_exact_head_confirmation_required"]
+
+    def test_final_receipt_first_git_materialization_is_direct_h2_successor(
+        self,
+    ) -> None:
+        receipt = json.loads(KERNEL_RECEIPT.read_text(encoding="utf-8"))
+        boundary = receipt["materialization_boundary"]
+        expected_blob = git_blob_sha1(KERNEL_RECEIPT.read_bytes())
+        relative = KERNEL_RECEIPT.relative_to(ROOT).as_posix()
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        expected_branch = receipt["verified_candidate"]["branch"]
+        publication_branch_context = (
+            branch == expected_branch
+            or os.environ.get("GITHUB_REF") == f"refs/heads/{expected_branch}"
+            or os.environ.get("GITHUB_HEAD_REF") == expected_branch
+        )
+        if not publication_branch_context:
+            return
+        history = subprocess.run(
+            ["git", "log", "--format=%H", "HEAD", "--", relative],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        matching_commits = []
+        for commit in history:
+            observed_blob = subprocess.run(
+                ["git", "rev-parse", f"{commit}:{relative}"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if observed_blob == expected_blob:
+                matching_commits.append(commit)
+
+        if not matching_commits:
+            self.assertEqual(
+                boundary["containing_head_binding"],
+                "EXTERNAL_TO_RECEIPT",
             )
-        else:
-            self.assertEqual(receipt["state"], "KERNEL_VERIFIED")
-            self.assertFalse(
-                transition["target_exact_head_confirmation_required"]
+            self.assertEqual(
+                boundary["containing_tree_binding"],
+                "EXTERNAL_TO_RECEIPT",
             )
+            return
+
+        introductions = []
+        for commit in matching_commits:
+            parents = subprocess.run(
+                ["git", "show", "-s", "--format=%P", commit],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.split()
+            parent_has_same_blob = False
+            for parent in parents:
+                parent_result = subprocess.run(
+                    ["git", "rev-parse", f"{parent}:{relative}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if (
+                    parent_result.returncode == 0
+                    and parent_result.stdout.strip() == expected_blob
+                ):
+                    parent_has_same_blob = True
+                    break
+            if not parent_has_same_blob:
+                introductions.append((commit, parents))
+
+        self.assertEqual(len(introductions), 1)
+        _introduction, parents = introductions[0]
+        self.assertEqual(
+            parents,
+            [boundary["predecessor_head"]],
+        )
+        self.assertEqual(
+            boundary["required_relation"],
+            "SINGLE_PARENT_SUCCESSOR",
+        )
+        self.assertFalse(boundary["self_inclusion_claimed"])
 
     def test_checksum_index_is_current_complete_and_candidate_scoped(self) -> None:
         actual = {}
@@ -763,8 +1013,10 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             "CHANGE_NOTICE.md",
             "CITATION.cff",
             "CLAIM_MATRIX.json",
+            "CLAIM_MATRIX_H0_PENDING.json",
             "EVIDENCE_BOUNDARY.md",
             "KERNEL_EVIDENCE_H0_PENDING.json",
+            "KERNEL_EVIDENCE_H1_TARGET.json",
             "KERNEL_RECEIPT.json",
             "KERNEL_PROOF_PLAN.json",
             "LICENSE_NOTICE.md",
