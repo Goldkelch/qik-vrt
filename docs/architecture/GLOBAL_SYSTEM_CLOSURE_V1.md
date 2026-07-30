@@ -68,6 +68,21 @@ Target/time/payload envelope validation is deliberately separable from this
 core. A concrete target, dispatch record, or publication queue is not part of
 the closure-core projection.
 
+## Generic targeted-effect envelope
+
+`schemas/qikvrt-targeted-effect-envelope.schema.json` and
+`tools/qikvrt_targeted_effect.py` define a generic outer envelope around an
+unchanged EFFECT_ACK record. The evaluator binds one payload, one canonical
+node GUID, one repository/ref tuple, exact registry bytes, one non-empty time
+window, one predecessor checkpoint and an optional fresh effect-specific
+protocol.
+
+It accepts only an inert tracked dispatch state. A valid result can become
+`ELIGIBLE_FOR_SEPARATELY_AUTHORIZED_DISPATCH`, but the evaluator never attempts
+that dispatch and never treats eligibility, scheduler due state, or transport
+acknowledgement as authorization. No concrete node, live window, payload,
+evaluation, or dispatch receipt is tracked by this generic layer.
+
 ## Current-main projection
 
 `tools/qikvrt_anticipation.py` consumes an input bound to the current Authority

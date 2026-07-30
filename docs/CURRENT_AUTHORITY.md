@@ -26,6 +26,9 @@ path to the current operational authority.
 - `tools/qikvrt_anticipation.py`, `anticipation/`, and
   `receipts/anticipation/` — deterministic current-status projection and
   hash-linked, effect-free closure checkpoints
+- `tools/qikvrt_targeted_effect.py` and
+  `schemas/qikvrt-targeted-effect-envelope.schema.json` — generic inert
+  target/time/payload validation without dispatch
 - `tools/qikvrt_zenodo_actions.py` — hash-bound DOI reserve/finalize client
 - `api/qikvrt_github_api.openapi.yaml` — external API contract
 
