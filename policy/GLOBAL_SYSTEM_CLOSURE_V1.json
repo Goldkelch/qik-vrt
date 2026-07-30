@@ -1,0 +1,71 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_global_system_closure_policy_v1",
+  "scope_id": "qikvrt-global-system-closure-v1",
+  "version": "1.1.0",
+  "authority": "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
+  "entrypoint": "AI",
+  "canonical_chain": [
+    "INTERACTION",
+    "EVIDENCE",
+    "WORK_UNIT",
+    "CANDIDATE",
+    "GATES",
+    "EFFECT_ACK",
+    "EFFECT",
+    "RECEIPT",
+    "OBSERVATION"
+  ],
+  "persistence_stages": [
+    "CONTRACT_BOUND",
+    "ANTICIPATION_MATERIALIZED",
+    "EFFECT_INTENTS_GATED",
+    "CANDIDATE_VERIFIED",
+    "AUTHORITY_OBSERVED",
+    "MIRROR_OBSERVED",
+    "RECEIPT_CLOSED"
+  ],
+  "monotonic_improvement": {
+    "accepted_transitions": [
+      "NON_REGRESSING_GATE_IMPROVEMENT",
+      "BYTE_STABLE_NO_OP"
+    ],
+    "regression_becomes_canonical": false,
+    "unmeasured_improvement_claim_allowed": false,
+    "adaptive_runtime_may_modify_tracked_state": false
+  },
+  "effect_boundary": {
+    "state_machine": "src/qikvrt_effect_ack.py",
+    "required_release_state": "EFFECT_ACK_DONE",
+    "default_state": "EFFECT_ACK_CONTINUE",
+    "transport_ack_is_effect_ack": false,
+    "scheduler_due_is_authorization": false,
+    "fresh_effect_specific_evaluation_required": true,
+    "adaptive_runtime_may_issue_done": false
+  },
+  "recovery": {
+    "pre_remote_effect": "SMALL_GIT_CHECKPOINT_REVERT",
+    "post_remote_effect": "OBSERVE_THEN_IDEMPOTENT_REPLAY_OR_FORWARD_REPAIR",
+    "external_state_unknown_must_not_claim_rollback": true
+  },
+  "status_projection": {
+    "source_paths": [
+      "AI_PROGRESS.json",
+      "AI_STATUS.md"
+    ],
+    "scope_separation_required": true,
+    "repository_wide_completion_inference_allowed": false,
+    "external_effects_may_be_dispatched": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
