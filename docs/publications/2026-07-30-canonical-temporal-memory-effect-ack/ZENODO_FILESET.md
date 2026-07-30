@@ -20,8 +20,12 @@ machine-proof bundle itself.
 - `CLAIM_MATRIX.json`
 - `SOURCE_EVIDENCE_BINDINGS.json`
 - `KERNEL_PROOF_PLAN.json`
+- `KERNEL_RECEIPT.json`
+- `KERNEL_EVIDENCE_H0_PENDING.json`
 - `BOUNDARY_TEST_REPORT.json`
 - `PDF_RENDER_VALIDATION.json`
+- `CHANGE_NOTICE.md`
+- `ORIGINAL_THESIS_TRANSCRIPT.md`
 - `CITATION.cff`
 - `LICENSE_NOTICE.md`
 - `ZENODO_FILESET.md`
@@ -31,13 +35,14 @@ machine-proof bundle itself.
 
 The following files do not exist until their prerequisites are satisfied:
 
-- `KERNEL_RECEIPT.json` after exact-head Lean verification;
 - `PREPUBLICATION_RETURN_RECEIPT.json` after the exact candidate is returned to
   Ingolf Lohmann;
 - `MACHINE_PROOF_BUNDLE.json` after every claim and referenced artifact is
   bound and the owner has authorized these exact bytes.
 
-All three are mandatory members of the actual upload fileset. Any content
+Both are mandatory members of the actual upload fileset. The repository-side
+Owner-Autorisierung and the v2 `publish-request.json` are mandatory gates but
+are not uploaded. Any content
 correction after return requires a visible `CHANGE_NOTICE.md`, new hashes and
 a new candidate-specific authorization.
 

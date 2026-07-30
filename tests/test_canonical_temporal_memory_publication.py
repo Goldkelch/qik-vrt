@@ -36,10 +36,14 @@ PDF = (
 CLAIMS = PUBLICATION / "CLAIM_MATRIX.json"
 SOURCES = PUBLICATION / "SOURCE_EVIDENCE_BINDINGS.json"
 PLAN = PUBLICATION / "KERNEL_PROOF_PLAN.json"
+KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT.json"
+KERNEL_EVIDENCE_H0 = PUBLICATION / "KERNEL_EVIDENCE_H0_PENDING.json"
 BOUNDARY = PUBLICATION / "EVIDENCE_BOUNDARY.md"
 RENDER = PUBLICATION / "PDF_RENDER_VALIDATION.json"
 ZENODO_SUMS = PUBLICATION / "ZENODO_SHA256SUMS"
 ZENODO_FILESET = PUBLICATION / "ZENODO_FILESET.md"
+CHANGE_NOTICE = PUBLICATION / "CHANGE_NOTICE.md"
+ORIGINAL_TRANSCRIPT = PUBLICATION / "ORIGINAL_THESIS_TRANSCRIPT.md"
 KERNEL_TOOL = ROOT / "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
 PROJECT = ROOT / "formalization/QIKVRT_Formalization_v2.0"
 LEAN = PROJECT / "QIKVRTEffectAck/CanonicalTemporalMemory.lean"
@@ -133,6 +137,8 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             CLAIMS,
             SOURCES,
             PLAN,
+            KERNEL_RECEIPT,
+            KERNEL_EVIDENCE_H0,
             BOUNDARY,
             RENDER,
             ZENODO_SUMS,
@@ -140,6 +146,8 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             ENTRY,
             KERNEL_TOOL,
             ZENODO_FILESET,
+            CHANGE_NOTICE,
+            ORIGINAL_TRANSCRIPT,
         ):
             self.assertTrue(path.is_file(), path)
             self.assertGreater(path.stat().st_size, 0, path)
@@ -597,6 +605,152 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
                     ):
                         kernel_evidence.static_validation(plan_path, claims_path)
 
+    def test_kernel_receipt_binds_the_atomic_transition_and_exact_ci_evidence(
+        self,
+    ) -> None:
+        receipt = json.loads(KERNEL_RECEIPT.read_text(encoding="utf-8"))
+        claims = json.loads(CLAIMS.read_text(encoding="utf-8"))
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            receipt["schema"],
+            "qikvrt_canonical_temporal_memory_kernel_receipt_v1",
+        )
+        self.assertEqual(receipt["scope_id"], SCOPE)
+        self.assertEqual(receipt["formal_claim_count"], 4)
+        self.assertEqual(receipt["theorem_count"], 9)
+        self.assertEqual(receipt["theorems"], list(THEOREMS))
+        self.assertEqual(receipt["axioms_by_theorem"], plan["axiom_audit"][
+            "expected_axioms_by_theorem"
+        ])
+        self.assertEqual(claims["proof_state"], "KERNEL_VERIFIED")
+
+        transition = receipt["claim_transition"]
+        self.assertEqual(
+            transition["allowed_changes"],
+            {
+                "claim_ids": sorted(FORMAL_IDS),
+                "classification": {
+                    "from": "FORMAL_PENDING_KERNEL",
+                    "to": "FORMAL_PROVED",
+                },
+                "matrix_proof_state": {
+                    "from": "AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+                    "to": "KERNEL_VERIFIED",
+                },
+                "status": {
+                    "from": (
+                        "PROOF_SOURCE_PRESENT_"
+                        "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+                    ),
+                    "to": "KERNEL_VERIFIED",
+                },
+            },
+        )
+        self.assertTrue(transition["proof_refs_and_statements_unchanged"])
+
+        for key, path in (
+            ("target_claim_matrix", CLAIMS),
+            ("source", LEAN),
+            ("plan", PLAN),
+        ):
+            identity = (
+                transition[key]
+                if key == "target_claim_matrix"
+                else receipt[key]
+            )
+            data = path.read_bytes()
+            self.assertEqual(identity["bytes"], len(data), key)
+            self.assertEqual(
+                identity["sha256"],
+                hashlib.sha256(data).hexdigest(),
+                key,
+            )
+            self.assertEqual(identity["git_blob_sha1"], git_blob_sha1(data), key)
+
+        self.assertRegex(
+            transition["source_claim_matrix"]["sha256"],
+            r"^[0-9a-f]{64}$",
+        )
+        self.assertNotEqual(
+            transition["source_claim_matrix"]["sha256"],
+            transition["target_claim_matrix"]["sha256"],
+        )
+        self.assertEqual(receipt["workflow"]["conclusion"], "success")
+        self.assertEqual(receipt["workflow"]["event"], "push")
+        self.assertTrue(receipt["workflow"]["exact_head_bound"])
+        self.assertRegex(
+            receipt["verified_candidate"]["head"],
+            r"^[0-9a-f]{40}$",
+        )
+        self.assertRegex(
+            receipt["verified_candidate"]["tree"],
+            r"^[0-9a-f]{40}$",
+        )
+        self.assertRegex(
+            receipt["artifact"]["archive_digest"],
+            r"^sha256:[0-9a-f]{64}$",
+        )
+        self.assertRegex(
+            receipt["artifact"]["file"]["sha256"],
+            r"^[0-9a-f]{64}$",
+        )
+        raw_evidence = KERNEL_EVIDENCE_H0.read_bytes()
+        self.assertEqual(
+            receipt["artifact"]["file"],
+            {
+                "bytes": len(raw_evidence),
+                "git_blob_sha1": git_blob_sha1(raw_evidence),
+                "name": "qikvrt-canonical-temporal-memory-kernel-evidence.json",
+                "persisted_path": KERNEL_EVIDENCE_H0.relative_to(ROOT).as_posix(),
+                "sha256": hashlib.sha256(raw_evidence).hexdigest(),
+            },
+        )
+        raw_value = json.loads(raw_evidence)
+        self.assertEqual(raw_value["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            raw_value["workflow"]["sha"],
+            receipt["verified_candidate"]["head"],
+        )
+        self.assertEqual(
+            raw_value["claim_matrix"]["sha256"],
+            transition["source_claim_matrix"]["sha256"],
+        )
+        self.assertEqual(raw_value["source"]["sha256"], receipt["source"]["sha256"])
+        self.assertEqual(raw_value["axioms_by_theorem"], receipt["axioms_by_theorem"])
+        self.assertEqual(
+            receipt["completion_claims"],
+            {
+                "effect_ack_done": False,
+                "final_pass": False,
+                "ietf_revision_02_posted": False,
+                "pass": False,
+                "system_wide_completion": "UNCLAIMED",
+                "zenodo_published": False,
+            },
+        )
+        self.assertEqual(
+            receipt["epistemic_boundary"],
+            {
+                "abstract_model_properties_kernel_verified": True,
+                "authentication_or_deployment_mediation_proved": False,
+                "consciousness_proved": False,
+                "ontic_physical_retrocausality_proved": False,
+                "semantic_truth_of_arbitrary_archived_content_proved": False,
+            },
+        )
+        if receipt["state"] == (
+            "BOOTSTRAP_KERNEL_VERIFIED_AWAITING_TARGET_HEAD_CONFIRMATION"
+        ):
+            self.assertTrue(
+                transition["target_exact_head_confirmation_required"]
+            )
+        else:
+            self.assertEqual(receipt["state"], "KERNEL_VERIFIED")
+            self.assertFalse(
+                transition["target_exact_head_confirmation_required"]
+            )
+
     def test_checksum_index_is_current_complete_and_candidate_scoped(self) -> None:
         actual = {}
         for line in ZENODO_SUMS.read_text(encoding="ascii").splitlines():
@@ -606,11 +760,15 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
             actual[name] = digest
         expected_names = {
             "BOUNDARY_TEST_REPORT.json",
+            "CHANGE_NOTICE.md",
             "CITATION.cff",
             "CLAIM_MATRIX.json",
             "EVIDENCE_BOUNDARY.md",
+            "KERNEL_EVIDENCE_H0_PENDING.json",
+            "KERNEL_RECEIPT.json",
             "KERNEL_PROOF_PLAN.json",
             "LICENSE_NOTICE.md",
+            "ORIGINAL_THESIS_TRANSCRIPT.md",
             "PDF_RENDER_VALIDATION.json",
             PDF.name,
             TEX.name,
@@ -634,7 +792,6 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
         )[1].split("## Required prepublication proof files", 1)[0]
         declared = set(re.findall(r"^- `([^`]+)`$", primary_section, re.MULTILINE))
         self.assertEqual(declared, expected_names | {"ZENODO_SHA256SUMS"})
-        self.assertNotIn("KERNEL_RECEIPT.json", actual)
         self.assertNotIn("MACHINE_PROOF_BUNDLE.json", actual)
         self.assertFalse(
             json.loads(PLAN.read_text(encoding="utf-8"))["completion_claims"][
@@ -666,6 +823,35 @@ class CanonicalTemporalMemoryPublicationTests(unittest.TestCase):
         )
         for phrase in prohibited:
             self.assertNotIn(phrase, text)
+
+    def test_original_transcript_is_author_only_and_change_notice_bound(self) -> None:
+        transcript = ORIGINAL_TRANSCRIPT.read_text(encoding="utf-8")
+        normalized_transcript = " ".join(
+            re.sub(r"(?m)^>\s?", "", transcript).split()
+        )
+        required = (
+            "Wortwörtliche Ausgangsthese",
+            "Ingolf Lohmann",
+            "der normalen Kausalität",
+            "Retrokausalität",
+            "ZIP-Archiv in die Zukunft",
+            "kanonischer Speicher, der sich in Symmetrie hält",
+            "Grundvoraussetzung für Bewusstsein",
+            "mein QIKVRT und mein Effect Acknowledgement Protokoll",
+            "Vergesst das mal nicht!",
+        )
+        for phrase in required:
+            self.assertIn(phrase, normalized_transcript)
+        for unverified_assistant_claim in (
+            "ZENODO: ATTESTED",
+            "QUANTUM: COLLAPSED_TO_BLOB",
+            "SYSTEM_WIDE_COMPLETION = ATTESTED",
+            "SENSOR: CUVRY_SALTED",
+        ):
+            self.assertNotIn(unverified_assistant_claim, transcript)
+        notice = CHANGE_NOTICE.read_text(encoding="utf-8")
+        self.assertIn("`ORIGINAL_THESIS_TRANSCRIPT.md`", notice)
+        self.assertIn("keine stillen", notice)
 
     def test_render_receipt_is_candidate_scoped_and_not_publication_claim(self) -> None:
         value = json.loads(RENDER.read_text(encoding="utf-8"))

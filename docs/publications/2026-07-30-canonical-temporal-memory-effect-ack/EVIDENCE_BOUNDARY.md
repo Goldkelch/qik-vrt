@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Evidenz- und Geltungsgrenze
 
-## Formaler Quellstand: Kernel-Verifikation ausstehend
+## Formaler Quellstand: Kernel verifiziert, Ziel-Head-Bestätigung ausstehend
 
 Der Lean-Quelltext spezifiziert im endlichen Bool-/Strukturmodell
 `qikvrt-canonical-temporal-memory-effect-ack-v1` folgende
@@ -22,12 +22,28 @@ Konformitätseigenschaften:
 5. Reziproke Schließung erfordert im Modell übereinstimmende Ursachen- und
    Wirkungsidentitäten sowie die ausgewiesenen Bool-Bedingungen.
 
-Diese Aussagen sind gegenwärtig `FORMAL_PENDING_KERNEL`. Die Lean-Quelle und
-der `KERNEL_PROOF_PLAN.json` sind vorhanden; ein kandidaten- und
-Exact-Head-gebundener Kernel-Lauf mit persistiertem `KERNEL_RECEIPT.json` ist
-noch nicht Teil dieses Bundles. Erst ein erfolgreich validierter Receipt darf
-die vier formalen Claims in `CLAIM_MATRIX.json` geschlossen und gemeinsam auf
-`FORMAL_PROVED` / `KERNEL_VERIFIED` anheben.
+Diese Aussagen sind in `CLAIM_MATRIX.json` gemeinsam als `FORMAL_PROVED` /
+`KERNEL_VERIFIED` klassifiziert. Der persistierte `KERNEL_RECEIPT.json` bindet
+den erfolgreichen Exact-Head-Lauf `30563967509` auf
+`72c1e1eda99456c599549c914b51cd6b0fb8e7b2`, die dort geprüfte Lean-Quelle,
+alle neun Theoreme, ihre ausgewiesenen Axiomabhängigkeiten, das kompilierte
+Objekt und die unveränderten inhaltlichen Felder der vier Claims.
+
+Der gegenwärtige Receipt-Zustand
+`BOOTSTRAP_KERNEL_VERIFIED_AWAITING_TARGET_HEAD_CONFIRMATION` bezeichnet die
+bewusst zweistufige, zirkelfreie Umschaltung: Der Lauf prüfte die
+`FORMAL_PENDING_KERNEL`-Ausgangsmatrix; der Receipt erlaubt ausschließlich die
+atomare Statusänderung derselben vier Claims. Ein weiterer erfolgreicher
+Exact-Head-Lauf muss bestätigen, dass Quelltext, Beweisreferenzen und
+Claimaussagen unverändert blieben und die Zielmatrix exakt materialisiert ist.
+Vor dieser Bestätigung darf kein finaler Maschinenbeweis- oder Uploadstatus
+gesetzt werden.
+
+Die vom Workflow erzeugten 5.712 Rohbytes sind zusätzlich unverändert als
+`KERNEL_EVIDENCE_H0_PENDING.json` persistiert. Ihre SHA-256- und
+Git-Blob-Identität entspricht exakt dem in Run `30563967509` veröffentlichten
+Artefakt. Dadurch hängt die spätere Überprüfbarkeit nicht von dessen
+zeitbegrenzter GitHub-Artifact-Retention ab.
 
 Die formalen Resultate sind Eigenschaften der ausdrücklich definierten
 Funktionen und Strukturen. Sie beweisen weder einen physikalischen Kanal aus
@@ -69,12 +85,11 @@ Working-Tree-Bytes gebunden. Diese Inhaltsidentitäten sind keine Behauptung,
 dass die noch nicht commitgebundenen Bytes bereits auf `main`, Authority oder
 Mirror materialisiert seien.
 
-`BOUNDARY_TEST_REPORT.json` dokumentiert Python-/Repository-Gates. Der dort
-genannte Lauf von `make test` ist kein Ersatz für einen Lean-Kernel-Lauf.
-`PDF_RENDER_VALIDATION.json` ist als historisches Freeze-Artefakt gebunden; es
-belegt nur die darin selbst benannten PDF- und TeX-Bytes. Solange dessen
-Quellhash nicht mit dem aktuellen TeX übereinstimmt, belegt es keine aktuelle
-TeX-zu-PDF-Identität.
+`BOUNDARY_TEST_REPORT.json` dokumentiert Python-/Repository-Gates und verweist
+getrennt auf den Exact-Head-Lean-Lauf. Ein lokaler Lauf von `make test` bleibt
+für sich allein kein Ersatz für Kernel-Evidenz. `PDF_RENDER_VALIDATION.json`
+bindet den reproduzierten 17-seitigen PDF- und TeX-Kandidaten bytegenau; seine
+Geltung reicht nicht über die dort genannten Hashes hinaus.
 
 ## Normativ definiert
 

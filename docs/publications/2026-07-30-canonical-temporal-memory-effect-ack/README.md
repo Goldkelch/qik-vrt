@@ -28,7 +28,11 @@ Die wissenschaftlich engste Kernaussage lautet:
 | `BOUNDARY_TEST_REPORT.json` | positive und negative Python-/Repository-Gates; kein Lean-Kernel-Receipt |
 | `EVIDENCE_BOUNDARY.md` | explizite Nachweis- und Nichtnachweisgrenzen |
 | `PDF_RENDER_VALIDATION.json` | Build-, Font-, Seiten- und visuelle QA-Evidenz |
-| `KERNEL_PROOF_PLAN.json` | erwartete Lean-Sätze, Toolchain und Receipt-Vertrag; noch kein Beweisreceipt |
+| `KERNEL_PROOF_PLAN.json` | erwartete Lean-Sätze, Toolchain und Receipt-Vertrag |
+| `KERNEL_RECEIPT.json` | Exact-Head-, Artefakt-, Axiom- und Claim-Übergangsbeleg; bis zum nächsten Head-Lauf im transparenten Bootstrap-Zustand |
+| `KERNEL_EVIDENCE_H0_PENDING.json` | unveränderte Rohbytes des erfolgreichen H0-CI-Kernel-Artefakts für die Pending-Ausgangsmatrix |
+| `CHANGE_NOTICE.md` | sichtbare wissenschaftliche Präzisierungen gegenüber der wortwörtlichen Ausgangsthese |
+| `ORIGINAL_THESIS_TRANSCRIPT.md` | wortwörtliche, vom Autor gelieferte Ausgangsthese und unmittelbare Korrektur |
 | `CITATION.cff` | Kandidatenmetadaten ohne vorweggenommenen DOI oder Veröffentlichungsdatum |
 | `LICENSE_NOTICE.md` | dateibezogene Lizenzgrenzen |
 | `ZENODO_FILESET.md` | vorgesehener, noch nicht autorisierter Upload-Scope |
@@ -37,14 +41,18 @@ Der formale Quellkern liegt in:
 
 - `formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean`
 
-Die Claims `CTM-001` bis `CTM-004` bleiben
-`FORMAL_PENDING_KERNEL`. Ein kandidaten- und Exact-Head-gebundener
-`KERNEL_RECEIPT.json`, ein
-`PREPUBLICATION_RETURN_RECEIPT.json`, das
-`MACHINE_PROOF_BUNDLE.json` und ein v2-`publish-request.json` werden erst nach
-den zugehörigen Gates materialisiert. Ihr Fehlen im Kandidatenstadium ist
-fail-closed. Insbesondere macht weder ein erfolgreicher Python-Test noch das
-bloße Vorliegen der Lean-Quelle daraus bereits `FORMAL_PROVED`.
+Die Claims `CTM-001` bis `CTM-004` sind gemeinsam `FORMAL_PROVED` /
+`KERNEL_VERIFIED`. Grundlage ist der persistierte `KERNEL_RECEIPT.json`, der
+den erfolgreichen Exact-Head-Lauf, die exakte Lean-Quelle, neun Theoreme,
+Axiomberichte und das kompilierte Objekt bindet. Der aktuelle
+Bootstrap-Zustand erlaubt ausschließlich die deterministische Umschaltung der
+vier formalen Claims und verlangt noch die Exact-Head-Bestätigung der
+Zielmatrix. Er ist deshalb noch kein Upload-Gate.
+
+Ein `PREPUBLICATION_RETURN_RECEIPT.json`, das
+`MACHINE_PROOF_BUNDLE.json`, die einmalige Owner-Autorisierung und ein
+v2-`publish-request.json` werden erst nach Rückgabe und Freigabe der exakten
+Kandidatenbytes materialisiert. Ihr Fehlen ist fail-closed.
 
 ## PDF reproduzieren
 

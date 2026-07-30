@@ -1,5 +1,5 @@
 {
-  "schema": "qikvrt_runtime_capability_v4",
+  "schema": "qikvrt_runtime_capability_v5",
   "capability": "zenodo-production-publication",
   "profile": "publication",
   "implementation": "tools/qikvrt_zenodo_publish.py",
@@ -17,7 +17,9 @@
     "workflow_specific_constants": false,
     "metadata_source": "repository manifest",
     "artifact_identity": "repository path plus exact Git blob SHA-1",
-    "proof_policy": "policy/zenodo-machine-proof-policy-v1.json"
+    "proof_policy": "policy/zenodo-machine-proof-policy-v2.json",
+    "proof_bundle_schema": "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
+    "return_receipt_schema": "policy/qikvrt-prepublication-return-receipt-v2.schema.json"
   },
   "credential": {
     "environment_variable": "ZENODO_ACCESS_TOKEN",
@@ -31,7 +33,9 @@
       "tools/qikvrt_zenodo_publish.py",
       "tools/qikvrt_zenodo_machine_proof.py",
       "tools/qikvrt_zenodo_actions.py",
-      "policy/zenodo-machine-proof-policy-v1.json",
+      "policy/zenodo-machine-proof-policy-v2.json",
+      "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
+      "policy/qikvrt-prepublication-return-receipt-v2.schema.json",
       "runtime/capabilities/ZENODO_PUBLICATION_CAPABILITY.json"
     ],
     "contents": [
@@ -51,20 +55,33 @@
     "NO_COMPLETE_CLAIM_MATRIX_NO_UPLOAD",
     "NO_PREPUBLICATION_RETURN_RECEIPT_NO_CHANGED_CONTENT_UPLOAD",
     "RETURNED_BYTES_MUST_EQUAL_UPLOADED_BYTES",
-    "PROOF_BUNDLE_MUST_BE_IN_ZENODO_FILESET"
+    "PROOF_BUNDLE_MUST_BE_IN_ZENODO_FILESET",
+    "EXACT_UPLOAD_SET_ONLY_NO_EXTRAS",
+    "NO_CANONICAL_OWNER_DECISION_NO_EFFECT",
+    "NO_GLOBAL_GIT_CONSUMPTION_REF_NO_ZENODO_EFFECT",
+    "NO_TOKEN_IN_METADATA_AUTHORIZATION_OR_UPLOAD_BYTES"
   ],
   "legacy_behavior": {
     "v1_manifests_remain_readable": true,
-    "v1_manifests_may_start_new_production_mutation": false
+    "v1_manifests_may_start_new_production_mutation": false,
+    "v1_policy_and_schemas_are_byte_frozen": true,
+    "v1_proof_contracts_may_start_new_production_mutation": false
   },
   "verification": [
     "closed generic v2 manifest contract",
+    "exact v2 bundle/return license, publication-ID and RFC3339 instance semantics",
+    "execution-head binding for active and byte-frozen legacy contract files",
     "Git blob identity gate",
     "complete claim-disposition gate",
     "formal kernel receipt gate",
     "source and evidence resolution gate",
     "OPEN wording boundary gate",
     "candidate-specific prepublication return receipt gate",
+    "canonical candidate-bound natural-person authorization event",
+    "platform/repository attestation boundary without biometric claim",
+    "atomic create-only repository-remote Git consumption ref",
+    "cross-checkout concurrent replay rejection",
+    "credential token leak rejection across metadata, proof, authorization and upload bytes",
     "returned-candidate/upload-candidate byte identity gate",
     "proof bundle inclusion in Zenodo fileset",
     "standard-library compilation",
@@ -75,7 +92,7 @@
     "published metadata and DOI gate",
     "repository evidence commit"
   ],
-  "recovery": "Existing publication evidence blocks duplicate mutation. Interrupted runs leave no DONE claim and require explicit remote-state reconciliation before retry.",
+  "recovery": "Existing publication evidence or the create-only/non-force repository-remote authorization-consumption ref blocks duplicate mutation for cooperating publishers. Privileged ref deletion or force-update remains an external repository-ruleset boundary. Interrupted runs leave no DONE claim and require explicit remote-state reconciliation before retry.",
   "rollback": "No destructive rollback of a published DOI. Corrections require a new version with preserved history and a new prepublication return receipt.",
   "effect_boundary": "A workflow result is not publication evidence until the proof-bearing evidence JSON is committed and the public record has passed the client's independent public GET and byte-redownload gates.",
   "rights_holder": "Ingolf Lohmann",

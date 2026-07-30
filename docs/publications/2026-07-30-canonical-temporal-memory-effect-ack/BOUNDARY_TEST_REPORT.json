@@ -27,24 +27,48 @@
       "retest": "The complete make test gate then passed from compile through the final integrity verification."
     },
     "repository_integrity": {
-      "classified_entries": 3099,
-      "immutable_digests": 3090,
+      "classified_entries": 3106,
+      "immutable_digests": 3097,
       "state": "PASS"
     }
   },
   "kernel_gate": {
-    "boundary": "The local gate validates the exact source, theorem inventory and receipt contract but is not a Lean kernel execution.",
-    "exact_head_receipt_present": false,
+    "boundary": "Exact-head run 30563967509 kernel-verified the source and pending matrix. The persisted bootstrap receipt permits only the four-claim atomic status transition and still requires an exact-head run over the materialized target matrix before final receipt status.",
+    "diagnostic_runs": [
+      {
+        "candidate_head": "2c87c8fdd7ebc533d69b46e0932b21519c13737d",
+        "failure": "The first evidence parser did not normalize wrapped Lean axiom reports.",
+        "run_id": 30563082943,
+        "state": "EXPECTED_PARSER_DIAGNOSTIC"
+      },
+      {
+        "candidate_head": "99fb9e89dda6a635204e7c58ca4c0d9d2c0f23cb",
+        "failure": "The exact observed Quot.sound dependency was absent from the expected axiom policy.",
+        "run_id": 30563578608,
+        "state": "EXPECTED_AXIOM_POLICY_DIAGNOSTIC"
+      }
+    ],
+    "exact_head_receipt_present": true,
     "last_exact_head_observation": {
       "axiom_parser": "PASS",
-      "candidate_head": "99fb9e89dda6a635204e7c58ca4c0d9d2c0f23cb",
+      "artifact": {
+        "archive_digest": "sha256:393925bab800d7e75241c0cd9e42fc2fa5bf6cfc888a9ad9a6db1ebcbcc594b4",
+        "file_sha256": "fdf658750b363e38f00c4ca66a2efe9bd71c20615d1cb25c43a478eb25718768",
+        "id": 8768053551,
+        "name": "qikvrt-canonical-temporal-memory-kernel-evidence"
+      },
+      "candidate_head": "72c1e1eda99456c599549c914b51cd6b0fb8e7b2",
+      "candidate_tree": "70a7fcf1bcf11507945515058a7bc8cc02ff8be2",
+      "conclusion": "success",
       "lean_build": "PASS",
-      "policy_repair": "The expected policy now records Quot.sound in addition to propext for identifier_bound_eq_true_iff and reciprocal_closure_requires_cause_and_effect, exactly matching the observed allowed foundational dependencies.",
-      "receipt_emitted": false,
-      "run_id": 30563578608,
-      "state": "EXPECTED_AXIOM_POLICY_DELTA"
+      "receipt_emitted": true,
+      "run_id": 30563967509,
+      "run_number": 289,
+      "source_claim_matrix_sha256": "1c66ae3c0e8227e749f4ed45995b980684eeff7dd71a4d3faa15f79c11fb7b98",
+      "state": "KERNEL_VERIFIED",
+      "workflow": "QIK-VRT manuscript proof coverage"
     },
-    "state": "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+    "state": "BOOTSTRAP_KERNEL_VERIFIED_AWAITING_TARGET_HEAD_CONFIRMATION"
   },
   "model_boundaries": {
     "actual_future_observation_required_for_present_release": false,
@@ -62,7 +86,7 @@
     "command": "python3 -B -m unittest -v tests.test_canonical_temporal_memory_publication",
     "exit_code": 0,
     "state": "PASS",
-    "tests": 14
+    "tests": 16
   },
-  "tested_at": "2026-07-30T18:57:05+02:00"
+  "tested_at": "2026-07-30T20:38:07+02:00"
 }
