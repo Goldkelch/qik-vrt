@@ -33,6 +33,7 @@ EXCLUDED_PARTS = {
 POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean",
     "formalization/QIKVRT_Formalization_v2.0/tests/test_quantum_classical_runtime_article.py",
 }
 # These live text files legitimately advanced after Alpha-2. The exact
