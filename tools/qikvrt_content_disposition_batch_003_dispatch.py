@@ -3,10 +3,13 @@
 # Copyright 2026 Ingolf Lohmann.
 """Append-tolerant compatibility front-end for the Batch-003 dispatcher.
 
-The immutable dispatch inputs remain exact-blob-bound.  The live reciprocal
+The immutable dispatch inputs remain exact-blob-bound. The live reciprocal
 receipt index is an append-only registry owned by the equality-receipt
 subsystem and must therefore be validated semantically rather than frozen to
-the blob that existed at dispatch time.
+the blob that existed at dispatch time. Once the first subject disposition is
+materialized, this compatibility layer preserves and validates the historical
+dispatch while delegating the root status projection to the more advanced
+subject projector. It never rewrites an advanced projection back to dispatch.
 """
 
 from __future__ import annotations
@@ -37,6 +40,17 @@ _REQUIRED_PRE_DISPATCH_RECEIPT_IDS = frozenset(
         "authority-mirror-equality-2026-07-29-batch002-corrected-pr209-pr100",
     }
 )
+
+ADVANCED_SUBJECT_RECEIPT = (
+    ROOT
+    / "release/zenodo-corpus-proof-2026-07-28/canonical-union/"
+    "content-disposition-batch-003/subject-dispositions/"
+    "SUBJECT-2581811b342e505d/SUBJECT_DISPOSITION_RECEIPT.json"
+)
+
+_BASE_EXPECTED_PROJECTION = _legacy.expected_projection
+_BASE_VERIFY = _legacy.verify
+_BASE_MATERIALIZE = _legacy.materialize
 
 
 def validate_live_index(index: Mapping[str, Any] | None = None) -> None:
@@ -90,9 +104,61 @@ def validate_source_blobs() -> None:
     validate_live_index()
 
 
-# The delegated projection and CLI resolve this name in the legacy module.
+def base_expected_projection() -> tuple[dict[str, Any], str]:
+    """Return the immutable dispatch projection without reading root status files."""
+    return _BASE_EXPECTED_PROJECTION()
+
+
+def _advanced_module() -> Any:
+    from tools import (  # type: ignore
+        qikvrt_content_disposition_batch_003_subject_2581811b342e505d as advanced,
+    )
+
+    return advanced
+
+
+def expected_projection() -> tuple[dict[str, Any], str]:
+    if ADVANCED_SUBJECT_RECEIPT.is_file():
+        return _advanced_module().build_progress_projection()
+    return _BASE_EXPECTED_PROJECTION()
+
+
+def verify() -> dict[str, Any]:
+    if not ADVANCED_SUBJECT_RECEIPT.is_file():
+        return _BASE_VERIFY()
+
+    _BASE_EXPECTED_PROJECTION()
+    advanced = _advanced_module()
+    advanced_result = advanced.verify_materialized()
+    return {
+        "schema": "qikvrt_batch_003_dispatch_verification_v1",
+        "state": "BATCH_003_DISPATCH_PRESERVED_ADVANCED_PROJECTION_CURRENT",
+        "batch_id": BATCH_ID,
+        "active_subject": advanced.NEXT_SUBJECT_ID,
+        "active_subject_count": 5,
+        "open_subject_count": 6,
+        "next_deterministic_effect": advanced.NEXT_EFFECT,
+        "claim_extraction_complete": True,
+        "advanced_subject_state": advanced_result["state"],
+        "zenodo_mutation_authorized": False,
+        "pass": False,
+        "final_pass": False,
+        "effect_ack_done": False,
+    }
+
+
+def materialize() -> None:
+    if ADVANCED_SUBJECT_RECEIPT.is_file():
+        _advanced_module().verify_materialized()
+        return
+    _BASE_MATERIALIZE()
+
+
 _legacy.EXPECTED_SOURCE_BLOBS = EXPECTED_SOURCE_BLOBS
 _legacy.validate_source_blobs = validate_source_blobs
+_legacy.expected_projection = expected_projection
+_legacy.verify = verify
+_legacy.materialize = materialize
 
 
 if __name__ == "__main__":
