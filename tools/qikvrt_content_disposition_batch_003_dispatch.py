@@ -219,7 +219,7 @@ def materialize() -> None:
     if stage != STAGE_DISPATCH:
         advanced = _advanced_module(stage)
         if stage == STAGE_FINAL_CORPUS:
-            advanced.current.materialize(check=False)
+            advanced.current.materialize()
         else:
             advanced.verify_materialized()
         return
