@@ -41,6 +41,27 @@ class T(unittest.TestCase):
         )
         cls.progress = load(ROOT / "AI_PROGRESS.json")
 
+    @staticmethod
+    def current_projection_contract():
+        if current.ADVANCED_SUBJECT_RECEIPT.is_file():
+            advanced = current._advanced_module()
+            return {
+                "next_effect": advanced.NEXT_EFFECT,
+                "tool": advanced.TOOL_REL,
+                "open_subjects": 6,
+                "batch_state": "FIRST_SUBJECT_TERMINAL_NEXT_SUBJECT_READY",
+                "bar": "[█████████████░░░░░░] 68%",
+                "status_marker": "39/39 claims terminally classified",
+            }
+        return {
+            "next_effect": current.NEXT_EFFECT,
+            "tool": current.TOOL_REL,
+            "open_subjects": 7,
+            "batch_state": "DISPATCHED_FIRST_SUBJECT_ACTIVE",
+            "bar": "[████████████░░░░░░░] 63%",
+            "status_marker": "Batch 003 dispatched with six subjects",
+        }
+
     def test_epistemic_classification_boundaries(self):
         self.assertEqual(m.classify("Diese Frage bleibt offen."), "OPEN")
         self.assertEqual(
@@ -193,23 +214,27 @@ class T(unittest.TestCase):
             )
 
     def test_current_dispatch_supersedes_only_root_status(self):
+        contract = self.current_projection_contract()
         result = current.verify()
         self.assertEqual(
             result["next_deterministic_effect"],
-            current.NEXT_EFFECT,
+            contract["next_effect"],
         )
         self.assertEqual(
             self.progress["projection_owner"]["tool"],
-            current.TOOL_REL,
+            contract["tool"],
         )
         self.assertEqual(
             self.progress["next_action"],
-            current.NEXT_EFFECT,
+            contract["next_effect"],
         )
         corpus = self.progress["scopes"][
             "qikvrt-zenodo-canonical-union-2026-07-28-v1"
         ]
-        self.assertEqual(corpus["counts"]["open_subjects"], 7)
+        self.assertEqual(
+            corpus["counts"]["open_subjects"],
+            contract["open_subjects"],
+        )
         self.assertEqual(
             corpus["batch_002"]["state"],
             "TERMINALLY_DISPOSITIONED",
@@ -220,7 +245,7 @@ class T(unittest.TestCase):
         )
         self.assertEqual(
             corpus["batch_003"]["state"],
-            "DISPATCHED_FIRST_SUBJECT_ACTIVE",
+            contract["batch_state"],
         )
         self.assertEqual(
             self.queue["next_deterministic_effect"],
@@ -248,13 +273,14 @@ class T(unittest.TestCase):
         )
 
     def test_human_projection_is_current_and_fail_closed(self):
+        contract = self.current_projection_contract()
         status = (ROOT / "AI_STATUS.md").read_text(encoding="utf-8")
         expected, rendered = current.expected_projection()
         self.assertEqual(self.progress, expected)
         self.assertEqual(status, rendered)
-        self.assertIn("[████████████░░░░░░░] 63%", status)
-        self.assertIn("Batch 003 dispatched with six subjects", status)
-        self.assertIn(current.NEXT_EFFECT, status)
+        self.assertIn(contract["bar"], status)
+        self.assertIn(contract["status_marker"], status)
+        self.assertIn(contract["next_effect"], status)
         for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
             self.assertIs(self.progress["claims"][key], False)
 

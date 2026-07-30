@@ -118,15 +118,23 @@ jobs:
           )
           PY
           python3 -B tests/test_formalization_v2_release_workflow.py
-      - name: Refresh current content-disposition status when present
+      - name: Refresh most advanced content-disposition status when present
         shell: bash
         run: |
           set -euo pipefail
+          subject_script="tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py"
+          subject_work_unit="work-units/RECOVER_EXACT_PUBLIC_INDEX_BYTES_AND_EXTRACT_CLASSIFY_BATCH_003_SUBJECT_2581811B342E505D.json"
           dispatch_script="tools/qikvrt_content_disposition_batch_003_dispatch.py"
           dispatch_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/dispatch/BATCH_003_DISPATCH_RECEIPT.json"
           post_script="tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py"
           post_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-002/post-acceptance/POST_ACCEPTANCE_STATUS_PROJECTION.json"
-          if [ -f "$dispatch_script" ] && [ -f "$dispatch_receipt" ]; then
+          if [ -f "$subject_script" ] && [ -f "$subject_work_unit" ]; then
+            python3 -B "$subject_script" --verify-public-record --materialize
+            python3 -B "$subject_script" --check
+            python3 -B -m unittest -v \
+              tests.test_content_disposition_batch_003_subject_2581811b342e505d \
+              tests.test_content_disposition_batch_003_dispatch
+          elif [ -f "$dispatch_script" ] && [ -f "$dispatch_receipt" ]; then
             python3 -B "$dispatch_script" --materialize
             python3 -B "$dispatch_script" --check-status-projection
           elif [ -f "$post_script" ] && [ -f "$post_receipt" ]; then
@@ -164,6 +172,14 @@ jobs:
             release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
             release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
             release/formalization-v2-alpha2-zenodo.json \
+            tools/qikvrt_content_disposition_batch_003_subject_2581811b342e505d.py \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/PUBLIC_FREEZE_RECOVERY_RECEIPT.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/CLAIM_MATRIX.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/SOURCE_TO_CLAIM_TRACEABILITY.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/ASSERTION_NODE_COVERAGE.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/CONTENT_CHANGE_DECISION.json \
+            release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-2581811b342e505d/SUBJECT_DISPOSITION_RECEIPT.json \
+            work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
             AI_PROGRESS.json \
             AI_STATUS.md \
             REPOSITORY_FILE_MANIFEST.json \
