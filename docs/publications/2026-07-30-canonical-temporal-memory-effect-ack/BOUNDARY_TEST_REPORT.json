@@ -1,0 +1,157 @@
+{
+  "_license": {
+    "classification": "machine_readable_boundary_test_report",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "completion_claims": {
+    "effect_ack_done": false,
+    "final_pass": false,
+    "pass": false,
+    "system_wide_completion": "UNCLAIMED"
+  },
+  "full_repository_gate": {
+    "command": "make test",
+    "final_exit_code": 0,
+    "final_state": "PASS",
+    "historical_archive_regression": {
+      "detection": "The first full run rejected inclusion of the new post-Alpha-2 Lean source in the immutable Alpha-2 archive.",
+      "repair": "Excluded only CanonicalTemporalMemory.lean as a post-Alpha-2 source and projected the changed live workflow and Lean entrypoint from byte-bound frozen Alpha-2 copies.",
+      "retest": "The Alpha-2 reproducibility test and the complete make test gate passed; the historical ZIP remained byte-exact at SHA-256 500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689."
+    },
+    "pre_final_observation": {
+      "detection": "The first run after adding the final candidate files stopped at the repository-integrity verifier because the generated inventory predated those files.",
+      "repair": "Regenerated only REPOSITORY_FILE_MANIFEST.json, SHA256SUMS.txt and REPOSITORY_FILE_MANIFEST.json.sha256 with the repository generator.",
+      "retest": "The complete make test gate then passed from compile through the final integrity verification."
+    },
+    "repository_integrity": {
+      "classified_entries": 3108,
+      "immutable_digests": 3099,
+      "state": "PASS"
+    }
+  },
+  "kernel_gate": {
+    "bootstrap_exact_head_observation": {
+      "artifact": {
+        "archive_digest": "sha256:393925bab800d7e75241c0cd9e42fc2fa5bf6cfc888a9ad9a6db1ebcbcc594b4",
+        "file_sha256": "fdf658750b363e38f00c4ca66a2efe9bd71c20615d1cb25c43a478eb25718768",
+        "id": 8768053551,
+        "name": "qikvrt-canonical-temporal-memory-kernel-evidence"
+      },
+      "candidate_head": "72c1e1eda99456c599549c914b51cd6b0fb8e7b2",
+      "candidate_tree": "70a7fcf1bcf11507945515058a7bc8cc02ff8be2",
+      "claim_matrix_sha256": "1c66ae3c0e8227e749f4ed45995b980684eeff7dd71a4d3faa15f79c11fb7b98",
+      "conclusion": "success",
+      "persisted_claim_matrix": {
+        "bytes": 14133,
+        "git_blob_sha1": "af61b6d8818dff39eab2f7fff5cfcc36aac157fb",
+        "path": "CLAIM_MATRIX_H0_PENDING.json",
+        "sha256": "1c66ae3c0e8227e749f4ed45995b980684eeff7dd71a4d3faa15f79c11fb7b98"
+      },
+      "role": "TRANSITION_SOURCE_ONLY_NOT_ACTIVE_GATE",
+      "run_id": 30563967509,
+      "run_number": 289
+    },
+    "boundary": "H0 exact-head run 30563967509 kernel-verified the pending source matrix. H1 exact-head run 30571883000 separately kernel-verified the materialized target matrix with unchanged source, statements and proof references. The final receipt is a direct-successor materialization and explicitly makes no self-inclusion claim.",
+    "corroborating_merge_context_observation": {
+      "artifact": {
+        "archive_digest": "sha256:c5ca0a4ce7e707e8ac2fdd8d84dc8c2fc239fdc1f5127affb70c8f080630ac3a",
+        "archive_size_bytes": 1777,
+        "id": 8771120179,
+        "name": "qikvrt-canonical-temporal-memory-kernel-evidence"
+      },
+      "conclusion": "success",
+      "event": "pull_request",
+      "job_id": 90970392528,
+      "proof_semantic_payload_equal_after_removing_workflow_context": true,
+      "pull_request_head": "1ffee224f5f5ca600a22338a920a9da2b4712393",
+      "raw_file_bytes": 5677,
+      "raw_file_sha256": "d4403fa2fcb1fe46264c72170d5340976114fef063278ee26ed34eda45ef9beb",
+      "ref": "refs/pull/278/merge",
+      "role": "CORROBORATING_PR_MERGE_CONTEXT_NOT_ACTIVE_RECEIPT_GATE",
+      "run_id": 30571889731,
+      "run_number": 292,
+      "workflow_sha": "c867c1dcb6148453e44dca96d1e135e95c77b809"
+    },
+    "diagnostic_runs": [
+      {
+        "candidate_head": "2c87c8fdd7ebc533d69b46e0932b21519c13737d",
+        "failure": "The first evidence parser did not normalize wrapped Lean axiom reports.",
+        "run_id": 30563082943,
+        "state": "EXPECTED_PARSER_DIAGNOSTIC"
+      },
+      {
+        "candidate_head": "99fb9e89dda6a635204e7c58ca4c0d9d2c0f23cb",
+        "failure": "The exact observed Quot.sound dependency was absent from the expected axiom policy.",
+        "run_id": 30563578608,
+        "state": "EXPECTED_AXIOM_POLICY_DIAGNOSTIC"
+      }
+    ],
+    "exact_head_receipt_present": true,
+    "last_exact_head_observation": {
+      "axiom_parser": "PASS",
+      "artifact": {
+        "archive_digest": "sha256:b37001f05aa974a79c27108541ca9d50d5deb4bc1f8928f7da8039cc3be84650",
+        "file_sha256": "a8638f28cd5772d73bbc08cd4c8c8e3b00b6e69439e995a033e2a1c0d5e2fe04",
+        "id": 8771111656,
+        "name": "qikvrt-canonical-temporal-memory-kernel-evidence"
+      },
+      "candidate_head": "1ffee224f5f5ca600a22338a920a9da2b4712393",
+      "candidate_tree": "ffd6fa76fafc59833fb792bd099f8c21f42c2d31",
+      "conclusion": "success",
+      "lean_build": "PASS",
+      "run_id": 30571883000,
+      "run_number": 291,
+      "state": "KERNEL_VERIFIED",
+      "target_claim_matrix_sha256": "6ca018de971cc351091c36e11a708ef852e6079991289b10a962603aef0fadcb",
+      "target_evidence_emitted": true,
+      "workflow": "QIK-VRT manuscript proof coverage"
+    },
+    "materialization_boundary": {
+      "containing_head_binding": "EXTERNAL_TO_RECEIPT",
+      "predecessor_head": "1ffee224f5f5ca600a22338a920a9da2b4712393",
+      "self_inclusion_claimed": false,
+      "stage": "H2"
+    },
+    "offline_transition_reconstruction": {
+      "allowed_claim_ids": [
+        "CTM-001",
+        "CTM-002",
+        "CTM-003",
+        "CTM-004"
+      ],
+      "source": "CLAIM_MATRIX_H0_PENDING.json",
+      "state": "PASS",
+      "target": "CLAIM_MATRIX.json",
+      "undeclared_changes": 0
+    },
+    "state": "KERNEL_VERIFIED"
+  },
+  "model_boundaries": {
+    "actual_future_observation_required_for_present_release": false,
+    "canonical_hash_proves_semantic_truth": false,
+    "consciousness_proved": false,
+    "future_boundary_counterfactually_relevant": true,
+    "ietf_consensus_claimed": false,
+    "ontic_physical_retrocausality_proved": false,
+    "past_projection_overwritten": false,
+    "system_wide_completion_claimed": false
+  },
+  "publication_id": "qikvrt-canonical-temporal-memory-effect-ack-v1",
+  "schema": "qikvrt_canonical_temporal_memory_boundary_test_report_v1",
+  "targeted_gate": {
+    "command": "python3 -B -m unittest -v tests.test_canonical_temporal_memory_publication",
+    "exit_code": 0,
+    "state": "PASS",
+    "tests": 17
+  },
+  "tested_at": "2026-07-30T21:25:32+02:00",
+  "zenodo_machine_proof_gate": {
+    "command": "python3 -B -m unittest -v tests.test_zenodo_machine_proof_policy",
+    "exit_code": 0,
+    "state": "PASS",
+    "tests": 55
+  }
+}

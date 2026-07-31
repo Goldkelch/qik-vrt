@@ -1,0 +1,2254 @@
+<!DOCTYPE html>
+<html lang="en" class="Internet-Draft">
+<head>
+<meta charset="utf-8">
+<meta content="Common,Latin" name="scripts">
+<meta content="initial-scale=1.0" name="viewport">
+<title>QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title>
+<meta content="Ingolf Lohmann" name="author">
+<meta content="
+       Transport acknowledgements establish technical receipt; they do not establish that a received information unit is understood, policy-compliant, or authorized to produce a downstream effect.  This document defines an Experimental application-layer control record, called EFFECT_ACK, that separates receipt from effect authorization. 
+       The protocol has five closed version-1 outcomes.  Ordinary downstream release is permitted only for EFFECT_ACK_DONE and only after validation of the record, its policy and evidence bindings, its freshness, and its authenticated origin.  This document specifies the state-selection algorithm, version handling, a deterministic JSON representation, hash chaining, timeout behavior, conformance requirements, and security and privacy boundaries. 
+       This protocol does not modify TCP, QUIC, or the OSI model; does not solve the halting problem; and does not establish the truth of external evidence.  It provides a machine-checkable authorization boundary under explicitly stated deployment assumptions. 
+    " name="description">
+<meta content="xml2rfc 3.34.0" name="generator">
+<meta content="acknowledgement" name="keyword">
+<meta content="authorization" name="keyword">
+<meta content="effect gate" name="keyword">
+<meta content="fail closed" name="keyword">
+<meta content="audit record" name="keyword">
+<meta content="draft-lohmann-qikvrt-effect-ack-02" name="ietf.draft">
+<!-- Generator version information:
+  xml2rfc 3.34.0
+    Python 3.12.13
+    ConfigArgParse 1.7.5
+    google-i18n-address 3.1.1
+    intervaltree 3.2.1
+    Jinja2 3.1.6
+    lxml 6.1.1
+    natsort 8.4.0
+    platformdirs 4.11.0
+    pycountry 26.2.16
+    pypdf 6.14.2
+    PyYAML 6.0.3
+    requests 2.34.2
+    wcwidth 0.8.2
+-->
+<link href="draft-lohmann-qikvrt-effect-ack-02.xml" rel="alternate" type="application/rfc+xml">
+<link href="#copyright" rel="license">
+<style type="text/css">/*
+
+  NOTE: Changes at the bottom of this file overrides some earlier settings.
+
+  Once the style has stabilized and has been adopted as an official RFC style,
+  this can be consolidated so that style settings occur only in one place, but
+  for now the contents of this file consists first of the initial CSS work as
+  provided to the RFC Formatter (xml2rfc) work, followed by itemized and
+  commented changes found necessary during the development of the v3
+  formatters.
+
+*/
+
+/* fonts */
+@import url('https://static.ietf.org/fonts/noto-sans/import.css'); /* Sans-serif */
+@import url('https://static.ietf.org/fonts/noto-serif/import.css'); /* Serif (print) */
+@import url('https://static.ietf.org/fonts/roboto-mono/import.css'); /* Monospace */
+
+:root {
+  --font-sans: 'Noto Sans', Arial, Helvetica, sans-serif;
+  --font-serif: 'Noto Serif', 'Times', 'Times New Roman', serif;
+  --font-mono: 'Roboto Mono', Courier, 'Courier New', monospace;
+}
+
+@viewport {
+  zoom: 1.0;
+}
+@-ms-viewport {
+  width: extend-to-zoom;
+  zoom: 1.0;
+}
+/* general and mobile first */
+html {
+}
+body {
+  max-width: 90%;
+  margin: 1.5em auto;
+  color: #222;
+  background-color: #fff;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  scroll-behavior: smooth;
+  overflow-wrap: break-word;
+}
+.ears {
+  display: none;
+}
+
+/* headings */
+#title, h1, h2, h3, h4, h5, h6 {
+  margin: 1em 0 0.5em;
+  font-weight: bold;
+  line-height: 1.3;
+}
+#title {
+  clear: both;
+  border-bottom: 1px solid #ddd;
+  margin: 0 0 0.5em 0;
+  padding: 1em 0 0.5em;
+}
+.author {
+  padding-bottom: 4px;
+}
+h1 {
+  font-size: 26px;
+  margin: 1em 0;
+}
+h2 {
+  font-size: 22px;
+  margin-top: -20px;  /* provide offset for in-page anchors */
+  padding-top: 33px;
+}
+h3 {
+  font-size: 18px;
+  margin-top: -36px;  /* provide offset for in-page anchors */
+  padding-top: 42px;
+}
+h4 {
+  font-size: 16px;
+  margin-top: -36px;  /* provide offset for in-page anchors */
+  padding-top: 42px;
+}
+h5, h6 {
+  font-size: 14px;
+}
+#n-copyright-notice {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 1em;
+  margin-bottom: 1em;
+}
+/* general structure */
+p {
+  padding: 0;
+  margin: 0 0 1em 0;
+  text-align: left;
+}
+div, span {
+  position: relative;
+}
+div {
+  margin: 0;
+}
+.alignRight.art-text {
+  background-color: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  padding: 1em 1em 0;
+  margin-bottom: 1.5em;
+}
+.alignRight.art-text pre {
+  padding: 0;
+}
+.alignRight {
+  margin: 1em 0;
+}
+.alignRight > *:first-child {
+  border: none;
+  margin: 0;
+  float: right;
+  clear: both;
+}
+.alignRight > *:nth-child(2) {
+  clear: both;
+  display: block;
+  border: none;
+}
+svg {
+  display: block;
+}
+@media print {
+  svg {
+    max-height: 850px;
+    max-width: 660px;
+  }
+}
+svg[font-family~="serif" i], svg [font-family~="serif" i] {
+  font-family: var(--font-serif);
+}
+svg[font-family~="sans-serif" i], svg [font-family~="sans-serif" i] {
+  font-family: var(--font-sans);
+}
+svg[font-family~="monospace" i], svg [font-family~="monospace" i] {
+  font-family: var(--font-mono);
+}
+.alignCenter.art-text {
+  background-color: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  padding: 1em 1em 0;
+  margin-bottom: 1.5em;
+}
+.alignCenter.art-text pre {
+  padding: 0;
+}
+.alignCenter {
+  margin: 1em 0;
+}
+.alignCenter > *:first-child {
+  display: table;
+  border: none;
+  margin: 0 auto;
+}
+
+/* lists */
+ol, ul {
+  padding: 0;
+  margin: 0 0 1em 2em;
+}
+ol ol, ul ul, ol ul, ul ol {
+  margin-left: 1em;
+}
+li {
+  margin: 0 0 0.25em 0;
+}
+.ulCompact li {
+  margin: 0;
+}
+ul.empty, .ulEmpty {
+  list-style-type: none;
+}
+ul.empty li, .ulEmpty li {
+  margin-top: 0.5em;
+}
+ul.ulBare, li.ulBare {
+  margin-left: 0em !important;
+}
+ul.compact, .ulCompact,
+ol.compact, .olCompact {
+  line-height: 100%;
+  margin: 0 0 0 2em;
+}
+
+/* definition lists */
+dl {
+}
+dl > dt {
+  float: left;
+  margin-right: 1em;
+}
+/* 
+dl.nohang > dt {
+  float: none;
+}
+*/
+dl > dd {
+  margin-bottom: .8em;
+  min-height: 1.3em;
+}
+dl.compact > dd, .dlCompact > dd {
+  margin-bottom: 0em;
+}
+dl > dd > dl {
+  margin-top: 0.5em;
+  margin-bottom: 0em;
+}
+
+/* links */
+a {
+  text-decoration: none;
+}
+a[href] {
+  color: #22e; /* Arlen: WCAG 2019 */
+}
+a[href]:hover {
+  background-color: #f2f2f2;
+}
+figcaption a[href],
+a[href].selfRef {
+  color: #222;
+}
+/* XXX probably not this:
+a.selfRef:hover {
+  background-color: transparent;
+  cursor: default;
+} */
+
+/* Figures */
+tt, code, pre {
+  background-color: #f9f9f9;
+  font-family: var(--font-mono);
+}
+pre {
+  border: 1px solid #eee;
+  margin: 0;
+  padding: 1em;
+}
+img {
+  max-width: 100%;
+}
+figure {
+  margin: 0;
+}
+figure blockquote {
+  margin: 0.8em 0.4em 0.4em;
+}
+figcaption {
+  font-style: italic;
+  margin: 0 0 1em 0;
+}
+@media screen {
+  pre {
+    overflow-x: auto;
+    max-width: 100%;
+    max-width: calc(100% - 22px);
+  }
+}
+
+/* aside, blockquote */
+aside, blockquote {
+  margin-left: 0;
+  padding: 1.2em 2em;
+}
+blockquote {
+  background-color: #f9f9f9;
+  color: #111; /* Arlen: WCAG 2019 */
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  margin: 1em 0;
+}
+blockquote > *:last-child {
+  margin-bottom: 0;
+}
+cite {
+  display: block;
+  text-align: right;
+  font-style: italic;
+}
+.xref {
+  overflow-wrap: normal;
+}
+
+/* tables */
+table {
+  width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  border: 1px solid #eee;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5em 0.75em;
+}
+th {
+  text-align: left;
+  background-color: #e9e9e9;
+}
+tr:nth-child(2n+1) > td {
+  background-color: #f5f5f5;
+}
+table caption {
+  font-style: italic;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+table p {
+  /* XXX to avoid bottom margin on table row signifiers. If paragraphs should
+     be allowed within tables more generally, it would be far better to select on a class. */
+  margin: 0;
+}
+
+/* pilcrow */
+a.pilcrow {
+  color: #666; /* Arlen: AHDJ 2019 */
+  text-decoration: none;
+  visibility: hidden;
+  user-select: none;
+  -ms-user-select: none;
+  -o-user-select:none;
+  -moz-user-select: none;
+  -khtml-user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+@media screen {
+  aside:hover > a.pilcrow,
+  p:hover > a.pilcrow,
+  blockquote:hover > a.pilcrow,
+  div:hover > a.pilcrow,
+  li:hover > a.pilcrow,
+  pre:hover > a.pilcrow {
+    visibility: visible;
+  }
+  a.pilcrow:hover {
+    background-color: transparent;
+  }
+}
+
+/* misc */
+hr {
+  border: 0;
+  border-top: 1px solid #eee;
+}
+.bcp14 {
+  font-variant: small-caps;
+}
+
+.role {
+  font-variant: all-small-caps;
+}
+
+/* info block */
+#identifiers {
+  margin: 0;
+  font-size: 0.9em;
+}
+#identifiers dt {
+  width: 3em;
+  clear: left;
+}
+#identifiers dd {
+  float: left;
+  margin-bottom: 0;
+}
+/* Fix PDF info block run off issue */
+@media print {
+  #identifiers dd {
+    max-width: 100%;
+  }
+}
+#identifiers .authors .author {
+  display: inline-block;
+  margin-right: 1.5em;
+}
+#identifiers .authors .org {
+  font-style: italic;
+}
+
+/* The prepared/rendered info at the very bottom of the page */
+.docInfo {
+  color: #666; /* Arlen: WCAG 2019 */
+  font-size: 0.9em;
+  font-style: italic;
+  margin-top: 2em;
+}
+.docInfo .prepared {
+  float: left;
+}
+.docInfo .prepared {
+  float: right;
+}
+
+/* table of contents */
+#toc  {
+  padding: 0.75em 0 2em 0;
+  margin-bottom: 1em;
+}
+nav.toc ul {
+  margin: 0 0.5em 0 0;
+  padding: 0;
+  list-style: none;
+}
+nav.toc li {
+  line-height: 1.3em;
+  margin: 0.75em 0;
+  padding-left: 1.2em;
+  text-indent: -1.2em;
+}
+/* references */
+.references dt {
+  text-align: right;
+  font-weight: bold;
+  min-width: 7em;
+}
+.references dd {
+  margin-left: 8em;
+  overflow: auto;
+}
+
+.refInstance {
+  margin-bottom: 1.25em;
+}
+
+.refSubseries {
+  margin-bottom: 1.25em;
+}
+
+.references .ascii {
+  margin-bottom: 0.25em;
+}
+
+/* index */
+.index ul {
+  margin: 0 0 0 1em;
+  padding: 0;
+  list-style: none;
+}
+.index ul ul {
+  margin: 0;
+}
+.index li {
+  margin: 0;
+  text-indent: -2em;
+  padding-left: 2em;
+  padding-bottom: 5px;
+}
+.indexIndex {
+  margin: 0.5em 0 1em;
+}
+.index a {
+  font-weight: 700;
+}
+/* make the index two-column on all but the smallest screens */
+@media (min-width: 600px) {
+  .index ul {
+    -moz-column-count: 2;
+    -moz-column-gap: 20px;
+  }
+  .index ul ul {
+    -moz-column-count: 1;
+    -moz-column-gap: 0;
+  }
+}
+
+/* authors */
+address.vcard {
+  font-style: normal;
+  margin: 1em 0;
+}
+
+address.vcard .nameRole {
+  font-weight: 700;
+  margin-left: 0;
+}
+address.vcard .label {
+  font-family: var(--font-sans);
+  margin: 0.5em 0;
+}
+address.vcard .type {
+  display: none;
+}
+.alternative-contact {
+  margin: 1.5em 0 1em;
+}
+hr.addr {
+  border-top: 1px dashed;
+  margin: 0;
+  color: #ddd;
+  max-width: calc(100% - 16px);
+}
+
+/* temporary notes */
+.rfcEditorRemove::before {
+  position: absolute;
+  top: 0.2em;
+  right: 0.2em;
+  padding: 0.2em;
+  content: "The RFC Editor will remove this note";
+  color: #9e2a00; /* Arlen: WCAG 2019 */
+  background-color: #ffd; /* Arlen: WCAG 2019 */
+}
+.rfcEditorRemove {
+  position: relative;
+  padding-top: 1.8em;
+  background-color: #ffd; /* Arlen: WCAG 2019 */
+  border-radius: 3px;
+}
+.cref {
+  background-color: #ffd; /* Arlen: WCAG 2019 */
+  padding: 2px 4px;
+}
+.crefSource {
+  font-style: italic;
+}
+/* alternative layout for smaller screens */
+@media screen and (max-width: 1023px) {
+  body {
+    padding-top: 2em;
+  }
+  #title {
+    padding: 1em 0;
+  }
+  h1 {
+    font-size: 24px;
+  }
+  h2 {
+    font-size: 20px;
+    margin-top: -18px;  /* provide offset for in-page anchors */
+    padding-top: 38px;
+  }
+  #identifiers dd {
+    max-width: 60%;
+  }
+  #toc {
+    position: fixed;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    padding: 0;
+    margin: 0;
+    background-color: inherit;
+    border-bottom: 1px solid #ccc;
+  }
+  #toc h2 {
+    margin: -1px 0 0 0;
+    padding: 4px 0 4px 6px;
+    padding-right: 1em;
+    min-width: 190px;
+    font-size: 1.1em;
+    text-align: right;
+    background-color: #444;
+    color: white;
+    cursor: pointer;
+  }
+  #toc h2::before { /* css hamburger */
+    float: right;
+    position: relative;
+    width: 1em;
+    height: 1px;
+    left: -164px;
+    margin: 6px 0 0 0;
+    background: white none repeat scroll 0 0;
+    box-shadow: 0 4px 0 0 white, 0 8px 0 0 white;
+    content: "";
+  }
+  #toc nav {
+    display: none;
+    padding: 0.5em 1em 1em;
+    overflow: auto;
+    height: calc(100vh - 48px);
+    border-left: 1px solid #ddd;
+  }
+}
+
+/* alternative layout for wide screens */
+@media screen and (min-width: 1024px) {
+  body {
+    max-width: 724px;
+    margin: 42px auto;
+    padding-left: 1.5em;
+    padding-right: 29em;
+  }
+  #toc {
+    position: fixed;
+    top: 42px;
+    right: 42px;
+    width: 25%;
+    margin: 0;
+    padding: 0 1em;
+    z-index: 1;
+  }
+  #toc h2 {
+    border-top: none;
+    border-bottom: 1px solid #ddd;
+    font-size: 1em;
+    font-weight: normal;
+    margin: 0;
+    padding: 0.25em 1em 1em 0;
+  }
+  #toc nav {
+    display: block;
+    height: calc(90vh - 84px);
+    bottom: 0;
+    padding: 0.5em 0 0;
+    overflow: auto;
+  }
+  img { /* future proofing */
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* pagination */
+@media print {
+  body {
+    width: 100%;
+  }
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+  #n-copyright-notice {
+    border-bottom: none;
+  }
+  #toc, #n-introduction {
+    page-break-before: always;
+  }
+  #toc {
+    border-top: none;
+    padding-top: 0;
+  }
+  figure, pre {
+    page-break-inside: avoid;
+  }
+  figure {
+    overflow: scroll;
+  }
+  .breakable pre {
+    break-inside: auto;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+  }
+  h2+*, h3+*, h4+*, h5+*, h6+* {
+    page-break-before: avoid;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 10pt;
+  }
+  table {
+    border: 1px solid #ddd;
+  }
+  td {
+    border-top: 1px solid #ddd;
+  }
+}
+
+/* This is commented out here, as the string-set: doesn't
+   pass W3C validation currently */
+/*
+.ears thead .left {
+  string-set: ears-top-left content();
+}
+
+.ears thead .center {
+  string-set: ears-top-center content();
+}
+
+.ears thead .right {
+  string-set: ears-top-right content();
+}
+
+.ears tfoot .left {
+  string-set: ears-bottom-left content();
+}
+
+.ears tfoot .center {
+  string-set: ears-bottom-center content();
+}
+
+.ears tfoot .right {
+  string-set: ears-bottom-right content();
+}
+*/
+
+@page :first {
+  padding-top: 0;
+  @top-left {
+    content: normal;
+    border: none;
+  }
+  @top-center {
+    content: normal;
+    border: none;
+  }
+  @top-right {
+    content: normal;
+    border: none;
+  }
+}
+
+@page {
+  size: A4;
+  margin-bottom: 45mm;
+  padding-top: 20px;
+  /* The following is commented out here, but set appropriately by in code, as
+     the content depends on the document */
+  /*
+  @top-left {
+    content: 'Internet-Draft';
+    vertical-align: bottom;
+    border-bottom: solid 1px #ccc;
+  }
+  @top-left {
+    content: string(ears-top-left);
+    vertical-align: bottom;
+    border-bottom: solid 1px #ccc;
+  }
+  @top-center {
+    content: string(ears-top-center);
+    vertical-align: bottom;
+    border-bottom: solid 1px #ccc;
+  }
+  @top-right {
+    content: string(ears-top-right);
+    vertical-align: bottom;
+    border-bottom: solid 1px #ccc;
+  }
+  @bottom-left {
+    content: string(ears-bottom-left);
+    vertical-align: top;
+    border-top: solid 1px #ccc;
+  }
+  @bottom-center {
+    content: string(ears-bottom-center);
+    vertical-align: top;
+    border-top: solid 1px #ccc;
+  }
+  @bottom-right {
+      content: '[Page ' counter(page) ']';
+      vertical-align: top;
+      border-top: solid 1px #ccc;
+  }
+  */
+
+}
+
+/* Changes introduced to fix issues found during implementation */
+/* Make sure links are clickable even if overlapped by following H* */
+a {
+  z-index: 2;
+}
+/* Separate body from document info even without intervening H1 */
+section {
+  clear: both;
+}
+
+
+/* Top align author divs, to avoid names without organization dropping level with org names */
+.author {
+  vertical-align: top;
+}
+
+/* Leave room in document info to show Internet-Draft on one line */
+#identifiers dt {
+  width: 8em;
+}
+
+/* Don't waste quite as much whitespace between label and value in doc info */
+#identifiers dd {
+  margin-left: 1em;
+}
+
+/* Give floating toc a background color (needed when it's a div inside section */
+#toc {
+  background-color: white;
+}
+
+/* Make the collapsed ToC header render white on gray also when it's a link */
+@media screen and (max-width: 1023px) {
+  #toc h2 a,
+  #toc h2 a:link,
+  #toc h2 a:focus,
+  #toc h2 a:hover,
+  #toc a.toplink,
+  #toc a.toplink:hover {
+    color: white;
+    background-color: #444;
+    text-decoration: none;
+  }
+}
+
+/* Give the bottom of the ToC some whitespace */
+@media screen and (min-width: 1024px) {
+  #toc {
+    padding: 0 0 1em 1em;
+  }
+}
+
+/* Style section numbers with more space between number and title */
+.section-number {
+  padding-right: 0.5em;
+}
+
+/* prevent monospace from becoming overly large */
+tt, code, pre {
+  font-size: 95%;
+}
+
+/* Fix the height/width aspect for ascii art*/
+.sourcecode pre,
+.art-text pre {
+  line-height: 1.12;
+}
+
+
+/* Add styling for a link in the ToC that points to the top of the document */
+a.toplink {
+  float: right;
+  margin-right: 0.5em;
+}
+
+/* Fix the dl styling to match the RFC 7992 attributes */
+dl > dt,
+dl.dlParallel > dt {
+  float: left;
+  margin-right: 1em;
+}
+dl.dlNewline > dt {
+  float: none;
+}
+
+/* Provide styling for table cell text alignment */
+table td.text-left,
+table th.text-left {
+  text-align: left;
+}
+table td.text-center,
+table th.text-center {
+  text-align: center;
+}
+table td.text-right,
+table th.text-right {
+  text-align: right;
+}
+
+/* Make the alternative author contact information look less like just another
+   author, and group it closer with the primary author contact information */
+.alternative-contact {
+  margin: 0.5em 0 0.25em 0;
+}
+address .non-ascii {
+  margin: 0 0 0 2em;
+}
+
+/* With it being possible to set tables with alignment
+  left, center, and right, { width: 100%; } does not make sense */
+table {
+  width: auto;
+}
+
+/* Avoid reference text that sits in a block with very wide left margin,
+   because of a long floating dt label.*/
+.references dd {
+  overflow: visible;
+}
+
+/* Control caption placement */
+caption {
+  caption-side: bottom;
+}
+
+/* Limit the width of the author address vcard, so names in right-to-left
+   script don't end up on the other side of the page. */
+
+address.vcard {
+  max-width: 30em;
+  margin-right: auto;
+}
+
+/* For address alignment dependent on LTR or RTL scripts */
+address div.left {
+  text-align: left;
+}
+address div.right {
+  text-align: right;
+}
+
+/* Provide table alignment support.  We can't use the alignX classes above
+   since they do unwanted things with caption and other styling. */
+table.right {
+ margin-left: auto;
+ margin-right: 0;
+}
+table.center {
+ margin-left: auto;
+ margin-right: auto;
+}
+table.left {
+ margin-left: 0;
+ margin-right: auto;
+}
+
+/* Give the table caption label the same styling as the figcaption */
+caption a[href] {
+  color: #222;
+}
+
+@media print {
+  .toplink {
+    display: none;
+  }
+
+  /* avoid overwriting the top border line with the ToC header */
+  #toc {
+    padding-top: 1px;
+  }
+
+  /* Avoid page breaks inside dl and author address entries */
+  .vcard {
+    page-break-inside: avoid;
+  }
+
+}
+/* Tweak the bcp14 keyword presentation */
+.bcp14 {
+  font-variant: small-caps;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+/* Tweak the invisible space above H* in order not to overlay links in text above */
+ h2 {
+  margin-top: -18px;  /* provide offset for in-page anchors */
+  padding-top: 31px;
+ }
+ h3 {
+  margin-top: -18px;  /* provide offset for in-page anchors */
+  padding-top: 24px;
+ }
+ h4 {
+  margin-top: -18px;  /* provide offset for in-page anchors */
+  padding-top: 24px;
+ }
+/* Float artwork pilcrow to the right */
+@media screen {
+  .artwork a.pilcrow {
+    display: block;
+    line-height: 0.7;
+    margin-top: 0.15em;
+  }
+}
+/* Make pilcrows on dd visible */
+@media screen {
+  dd:hover > a.pilcrow {
+    visibility: visible;
+  }
+}
+/* Make the placement of figcaption match that of a table's caption
+   by removing the figure's added bottom margin */
+.alignLeft.art-text,
+.alignCenter.art-text,
+.alignRight.art-text {
+   margin-bottom: 0;
+}
+.alignLeft,
+.alignCenter,
+.alignRight {
+  margin: 1em 0 0 0;
+}
+/* In print, the pilcrow won't show on hover, so prevent it from taking up space,
+   possibly even requiring a new line */
+@media print {
+  a.pilcrow {
+    display: none;
+  }
+}
+/* Styling for the external metadata */
+div#external-metadata {
+  background-color: #eee;
+  padding: 0.5em;
+  margin-bottom: 0.5em;
+  display: none;
+}
+div#internal-metadata {
+  padding: 0.5em;                       /* to match the external-metadata padding */
+}
+/* Styling for title RFC Number */
+h1#rfcnum {
+  clear: both;
+  margin: 0 0 -1em;
+  padding: 1em 0 0 0;
+}
+/* Make .olPercent look the same as <ol><li> */
+dl.olPercent > dd {
+  margin-bottom: 0.25em;
+  min-height: initial;
+}
+/* Give aside some styling to set it apart */
+aside {
+  border-left: 1px solid #ddd;
+  margin: 1em 0 1em 2em;
+  padding: 0.2em 2em;
+}
+aside > dl,
+aside > ol,
+aside > ul,
+aside > table,
+aside > p {
+  margin-bottom: 0.5em;
+}
+/* Additional page break settings */
+@media print {
+  figcaption, table caption {
+    page-break-before: avoid;
+  }
+}
+/* Font size adjustments for print */
+@media print {
+  body  { font-size: 10pt;      line-height: normal; max-width: 96%; }
+  h1    { font-size: 1.72em;    padding-top: 1.5em; } /* 1*1.2*1.2*1.2 */
+  h2    { font-size: 1.44em;    padding-top: 1.5em; } /* 1*1.2*1.2 */
+  h3    { font-size: 1.2em;     padding-top: 1.5em; } /* 1*1.2 */
+  h4    { font-size: 1em;       padding-top: 1.5em; }
+  h5, h6 { font-size: 1em;      margin: initial; padding: 0.5em 0 0.3em; }
+}
+/* Sourcecode margin in print, when there's no pilcrow */
+@media print {
+  .artwork,
+  .artwork > pre,
+  .sourcecode {
+    margin-bottom: 1em;
+  }
+}
+/* Avoid narrow tables forcing too narrow table captions, which may render badly */
+table {
+  min-width: 20em;
+}
+/* ol type a */
+ol.type-a { list-style-type: lower-alpha; }
+ol.type-A { list-style-type: upper-alpha; }
+ol.type-i { list-style-type: lower-roman; }
+ol.type-I { list-style-type: upper-roman; }
+/* Apply the print table and row borders in general, on request from the RPC,
+and increase the contrast between border and odd row background slightly */
+table {
+  border: 1px solid #ddd;
+}
+td {
+  border-top: 1px solid #ddd;
+}
+tr {
+  break-inside: avoid;
+}
+tr:nth-child(2n+1) > td {
+  background-color: #f8f8f8;
+}
+/* Use style rules to govern display of the TOC. */
+@media screen and (max-width: 1023px) {
+  #toc nav { display: none; }
+  #toc.active nav { display: block; }
+}
+/* Add support for keepWithNext */
+.keepWithNext {
+  break-after: avoid-page;
+  break-after: avoid-page;
+}
+/* Add support for keepWithPrevious */
+.keepWithPrevious {
+  break-before: avoid-page;
+}
+/* Change the approach to avoiding breaks inside artwork etc. */
+figure, pre, table, .artwork, .sourcecode  {
+  break-before: auto;
+  break-after: auto;
+}
+/* Avoid breaks between <dt> and <dd> */
+dl {
+  break-before: auto;
+  break-inside: auto;
+}
+dt {
+  break-before: auto;
+  break-after: avoid-page;
+}
+dd {
+  break-before: avoid-page;
+  break-after: auto;
+  orphans: 3;
+  widows: 3
+}
+span.break, dd.break {
+  margin-bottom: 0;
+  min-height: 0;
+  break-before: auto;
+  break-inside: auto;
+  break-after: auto;
+}
+/* Undo break-before ToC */
+@media print {
+  #toc {
+    break-before: auto;
+  }
+}
+/* Text in compact lists should not get extra bottom margin space,
+   since that would makes the list not compact */
+ul.compact p, .ulCompact p,
+ol.compact p, .olCompact p {
+ margin: 0;
+}
+/* But the list as a whole needs the extra space at the end */
+section ul.compact,
+section .ulCompact,
+section ol.compact,
+section .olCompact {
+  margin-bottom: 1em;                    /* same as p not within ul.compact etc. */
+}
+/* The tt and code background above interferes with for instance table cell
+   backgrounds.  Changed to something a bit more selective. */
+tt, code {
+  background-color: transparent;
+}
+p tt, p code, li tt, li code, dt tt, dt code {
+  background-color: #f8f8f8;
+}
+/* Tweak the pre margin -- 0px doesn't come out well */
+pre {
+   margin-top: 0.5px;
+}
+/* Tweak the compact list text */
+ul.compact, .ulCompact,
+ol.compact, .olCompact,
+dl.compact, .dlCompact {
+  line-height: normal;
+}
+/* Don't add top margin for nested lists */
+li > ul, li > ol, li > dl,
+dd > ul, dd > ol, dd > dl,
+dl > dd > dl {
+  margin-top: initial;
+}
+/* Elements that should not be rendered on the same line as a <dt> */
+/* This should match the element list in writer.text.TextWriter.render_dl() */
+dd > div.artwork:first-child,
+dd > aside:first-child,
+dd > blockquote:first-child,
+dd > figure:first-child,
+dd > ol:first-child,
+dd > div.sourcecode:first-child,
+dd > table:first-child,
+dd > ul:first-child {
+  clear: left;
+}
+/* fix for weird browser behaviour when <dd/> is empty */
+dt+dd:empty::before{
+  content: "\00a0";
+}
+/* Make paragraph spacing inside <li> smaller than in body text, to fit better within the list */
+li > p {
+  margin-bottom: 0.5em
+}
+/* Don't let p margin spill out from inside list items */
+li > p:last-of-type:only-child {
+  margin-bottom: 0;
+}
+</style>
+<link href="rfc-local.css" rel="stylesheet" type="text/css">
+<script type="application/javascript">async function addMetadata(){try{const e=document.styleSheets[0].cssRules;for(let t=0;t<e.length;t++)if(/#identifiers/.exec(e[t].selectorText)){const a=e[t].cssText.replace("#identifiers","#external-updates");document.styleSheets[0].insertRule(a,document.styleSheets[0].cssRules.length)}}catch(e){console.log(e)}const e=document.getElementById("external-metadata");if(e)try{var t,a="",o=function(e){const t=document.getElementsByTagName("meta");for(let a=0;a<t.length;a++)if(t[a].getAttribute("name")===e)return t[a].getAttribute("content");return""}("rfc.number");if(o){t="https://www.rfc-editor.org/rfc/rfc"+o+".json";try{const e=await fetch(t);a=await e.json()}catch(e){t=document.URL.indexOf("html")>=0?document.URL.replace(/html$/,"json"):document.URL+".json";const o=await fetch(t);a=await o.json()}}if(!a)return;e.style.display="block";const s="",d="https://datatracker.ietf.org/doc",n="https://datatracker.ietf.org/ipr/search",c="https://www.rfc-editor.org/info",l=a.doc_id.toLowerCase(),i=a.doc_id.slice(0,3).toLowerCase(),f=a.doc_id.slice(3).replace(/^0+/,""),u={status:"Status",obsoletes:"Obsoletes",obsoleted_by:"Obsoleted By",updates:"Updates",updated_by:"Updated By",see_also:"See Also",errata_url:"Errata"};let h="<dl style='overflow:hidden' id='external-updates'>";["status","obsoletes","obsoleted_by","updates","updated_by","see_also","errata_url"].forEach(e=>{if("status"==e){a[e]=a[e].toLowerCase();var t=a[e].split(" "),o=t.length,w="",p=1;for(let e=0;e<o;e++)p<o?w=w+r(t[e])+" ":w+=r(t[e]),p++;a[e]=w}else if("obsoletes"==e||"obsoleted_by"==e||"updates"==e||"updated_by"==e){var g,m="",b=1;g=a[e].length;for(let t=0;t<g;t++)a[e][t]&&(a[e][t]=String(a[e][t]).toLowerCase(),m=b<g?m+"<a href='"+s+"/rfc/".concat(a[e][t])+"'>"+a[e][t].slice(3)+"</a>, ":m+"<a href='"+s+"/rfc/".concat(a[e][t])+"'>"+a[e][t].slice(3)+"</a>",b++);a[e]=m}else if("see_also"==e){var y,L="",C=1;y=a[e].length;for(let t=0;t<y;t++)if(a[e][t]){a[e][t]=String(a[e][t]);var _=a[e][t].slice(0,3),v=a[e][t].slice(3).replace(/^0+/,"");L=C<y?"RFC"!=_?L+"<a href='"+s+"/info/"+_.toLowerCase().concat(v.toLowerCase())+"'>"+_+" "+v+"</a>, ":L+"<a href='"+s+"/info/"+_.toLowerCase().concat(v.toLowerCase())+"'>"+v+"</a>, ":"RFC"!=_?L+"<a href='"+s+"/info/"+_.toLowerCase().concat(v.toLowerCase())+"'>"+_+" "+v+"</a>":L+"<a href='"+s+"/info/"+_.toLowerCase().concat(v.toLowerCase())+"'>"+v+"</a>",C++}a[e]=L}else if("errata_url"==e){var R="";R=a[e]?R+"<a href='"+a[e]+"'>Errata exist</a> | <a href='"+d+"/"+l+"'>Datatracker</a>| <a href='"+n+"/?"+i+"="+f+"&submit="+i+"'>IPR</a> | <a href='"+c+"/"+l+"'>Info page</a>":"<a href='"+d+"/"+l+"'>Datatracker</a> | <a href='"+n+"/?"+i+"="+f+"&submit="+i+"'>IPR</a> | <a href='"+c+"/"+l+"'>Info page</a>",a[e]=R}""!=a[e]?"Errata"==u[e]?h+=`<dt>More info:</dt><dd>${a[e]}</dd>`:h+=`<dt>${u[e]}:</dt><dd>${a[e]}</dd>`:"Errata"==u[e]&&(h+=`<dt>More info:</dt><dd>${a[e]}</dd>`)}),h+="</dl>",e.innerHTML=h}catch(e){console.log(e)}else console.log("Could not locate metadata <div> element");function r(e){return e.charAt(0).toUpperCase()+e.slice(1)}}window.removeEventListener("load",addMetadata),window.addEventListener("load",addMetadata);</script>
+</head>
+<body class="xml2rfc">
+<table class="ears">
+<thead><tr>
+<td class="left">Internet-Draft</td>
+<td class="center">QIK-VRT EFFECT_ACK</td>
+<td class="right">July 2026</td>
+</tr></thead>
+<tfoot><tr>
+<td class="left">Lohmann</td>
+<td class="center">Expires 1 February 2027</td>
+<td class="right">[Page]</td>
+</tr></tfoot>
+</table>
+<div id="external-metadata" class="document-information"></div>
+<div id="internal-metadata" class="document-information">
+<dl id="identifiers">
+<dt class="label-workgroup">Workgroup:</dt>
+<dd class="workgroup">Network Working Group</dd>
+<dt class="label-internet-draft">Internet-Draft:</dt>
+<dd class="internet-draft">draft-lohmann-qikvrt-effect-ack-02</dd>
+<dt class="label-published">Published:</dt>
+<dd class="published">
+<time datetime="2026-07-31" class="published">31 July 2026</time>
+    </dd>
+<dt class="label-intended-status">Intended Status:</dt>
+<dd class="intended-status">Experimental</dd>
+<dt class="label-expires">Expires:</dt>
+<dd class="expires"><time datetime="2027-02-01">1 February 2027</time></dd>
+<dt class="label-authors">Author:</dt>
+<dd class="authors">
+<div class="author">
+      <div class="author-name">I. Lohmann</div>
+<div class="org">Independent Researcher</div>
+</div>
+</dd>
+</dl>
+</div>
+<h1 id="title">QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</h1>
+<section id="section-abstract">
+      <h2 id="abstract"><a href="#abstract" class="selfRef">Abstract</a></h2>
+<p id="section-abstract-1">Transport acknowledgements establish technical receipt; they do not establish that a received information unit is understood, policy-compliant, or authorized to produce a downstream effect.  This document defines an Experimental application-layer control record, called EFFECT_ACK, that separates receipt from effect authorization.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
+<p id="section-abstract-2">The protocol has five closed version-1 outcomes.  Ordinary downstream release is permitted only for EFFECT_ACK_DONE and only after validation of the record, its policy and evidence bindings, its freshness, and its authenticated origin.  This document specifies the state-selection algorithm, version handling, a deterministic JSON representation, hash chaining, timeout behavior, conformance requirements, and security and privacy boundaries.<a href="#section-abstract-2" class="pilcrow">¶</a></p>
+<p id="section-abstract-3">This protocol does not modify TCP, QUIC, or the OSI model; does not solve the halting problem; and does not establish the truth of external evidence.  It provides a machine-checkable authorization boundary under explicitly stated deployment assumptions.<a href="#section-abstract-3" class="pilcrow">¶</a></p>
+</section>
+<div id="status-of-memo">
+<section id="section-boilerplate.1">
+        <h2 id="name-status-of-this-memo">
+<a href="#name-status-of-this-memo" class="section-name selfRef">Status of This Memo</a>
+        </h2>
+<p id="section-boilerplate.1-1">
+        This Internet-Draft is submitted in full conformance with the
+        provisions of BCP 78 and BCP 79.<a href="#section-boilerplate.1-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-2">
+        Internet-Drafts are working documents of the Internet Engineering Task
+        Force (IETF). Note that other groups may also distribute working
+        documents as Internet-Drafts. The list of current Internet-Drafts is
+        at <span><a href="https://datatracker.ietf.org/drafts/current/">https://datatracker.ietf.org/drafts/current/</a></span>.<a href="#section-boilerplate.1-2" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-3">
+        Internet-Drafts are draft documents valid for a maximum of six months
+        and may be updated, replaced, or obsoleted by other documents at any
+        time. It is inappropriate to use Internet-Drafts as reference
+        material or to cite them other than as "work in progress."<a href="#section-boilerplate.1-3" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-4">
+        This Internet-Draft will expire on 1 February 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="copyright">
+<section id="section-boilerplate.2">
+        <h2 id="name-copyright-notice">
+<a href="#name-copyright-notice" class="section-name selfRef">Copyright Notice</a>
+        </h2>
+<p id="section-boilerplate.2-1">
+            Copyright (c) 2026 IETF Trust and the persons identified as the
+            document authors. All rights reserved.<a href="#section-boilerplate.2-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.2-2">
+            This document is subject to BCP 78 and the IETF Trust's Legal
+            Provisions Relating to IETF Documents
+            (<span><a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a></span>) in effect on the date of
+            publication of this document. Please review these documents
+            carefully, as they describe your rights and restrictions with
+            respect to this document. Code Components extracted from this
+            document must include Revised BSD License text as described in
+            Section 4.e of the Trust Legal Provisions and are provided without
+            warranty as described in the Revised BSD License.<a href="#section-boilerplate.2-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="toc">
+<section id="section-toc.1">
+        <a href="#" onclick="scroll(0,0)" class="toplink">▲</a><h2 id="name-table-of-contents">
+<a href="#name-table-of-contents" class="section-name selfRef">Table of Contents</a>
+        </h2>
+<nav class="toc"><ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1">
+            <p id="section-toc.1-1.1.1" class="keepWithNext"><a href="#section-1" class="auto internal xref">1</a>.  <a href="#name-introduction" class="internal xref">Introduction</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.1">
+                <p id="section-toc.1-1.1.2.1.1" class="keepWithNext"><a href="#section-1.1" class="auto internal xref">1.1</a>.  <a href="#name-goals" class="internal xref">Goals</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.2">
+                <p id="section-toc.1-1.1.2.2.1" class="keepWithNext"><a href="#section-1.2" class="auto internal xref">1.2</a>.  <a href="#name-non-goals" class="internal xref">Non-Goals</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.2">
+            <p id="section-toc.1-1.2.1"><a href="#section-2" class="auto internal xref">2</a>.  <a href="#name-conventions-and-definitions" class="internal xref">Conventions and Definitions</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.3">
+            <p id="section-toc.1-1.3.1"><a href="#section-3" class="auto internal xref">3</a>.  <a href="#name-architecture-and-trust-boun" class="internal xref">Architecture and Trust Boundary</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4">
+            <p id="section-toc.1-1.4.1"><a href="#section-4" class="auto internal xref">4</a>.  <a href="#name-version-1-state-model" class="internal xref">Version-1 State Model</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.1">
+                <p id="section-toc.1-1.4.2.1.1"><a href="#section-4.1" class="auto internal xref">4.1</a>.  <a href="#name-done-predicate" class="internal xref">DONE Predicate</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.2">
+                <p id="section-toc.1-1.4.2.2.1"><a href="#section-4.2" class="auto internal xref">4.2</a>.  <a href="#name-state-selection-and-priorit" class="internal xref">State Selection and Priority</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.3">
+                <p id="section-toc.1-1.4.2.3.1"><a href="#section-4.3" class="auto internal xref">4.3</a>.  <a href="#name-re-evaluation-and-state-tra" class="internal xref">Re-evaluation and State Transitions</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5">
+            <p id="section-toc.1-1.5.1"><a href="#section-5" class="auto internal xref">5</a>.  <a href="#name-wire-representation" class="internal xref">Wire Representation</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.1">
+                <p id="section-toc.1-1.5.2.1.1"><a href="#section-5.1" class="auto internal xref">5.1</a>.  <a href="#name-responsibility-record" class="internal xref">Responsibility Record</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.2">
+                <p id="section-toc.1-1.5.2.2.1"><a href="#section-5.2" class="auto internal xref">5.2</a>.  <a href="#name-canonical-json-and-protocol" class="internal xref">Canonical JSON and Protocol Hash</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5.2.3">
+                <p id="section-toc.1-1.5.2.3.1"><a href="#section-5.3" class="auto internal xref">5.3</a>.  <a href="#name-version-chain-validation" class="internal xref">Version Chain Validation</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6">
+            <p id="section-toc.1-1.6.1"><a href="#section-6" class="auto internal xref">6</a>.  <a href="#name-version-negotiation-and-unk" class="internal xref">Version Negotiation and Unknown Values</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7">
+            <p id="section-toc.1-1.7.1"><a href="#section-7" class="auto internal xref">7</a>.  <a href="#name-timeouts-and-bounded-evalua" class="internal xref">Timeouts and Bounded Evaluation</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8">
+            <p id="section-toc.1-1.8.1"><a href="#section-8" class="auto internal xref">8</a>.  <a href="#name-policy-and-evidence-binding" class="internal xref">Policy and Evidence Binding</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9">
+            <p id="section-toc.1-1.9.1"><a href="#section-9" class="auto internal xref">9</a>.  <a href="#name-conformance-requirements" class="internal xref">Conformance Requirements</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.1">
+                <p id="section-toc.1-1.9.2.1.1"><a href="#section-9.1" class="auto internal xref">9.1</a>.  <a href="#name-wire-conformance" class="internal xref">Wire Conformance</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.2">
+                <p id="section-toc.1-1.9.2.2.1"><a href="#section-9.2" class="auto internal xref">9.2</a>.  <a href="#name-gate-conformance" class="internal xref">Gate Conformance</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.3">
+                <p id="section-toc.1-1.9.2.3.1"><a href="#section-9.3" class="auto internal xref">9.3</a>.  <a href="#name-deployment-conformance" class="internal xref">Deployment Conformance</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9.2.4">
+                <p id="section-toc.1-1.9.2.4.1"><a href="#section-9.4" class="auto internal xref">9.4</a>.  <a href="#name-test-vectors" class="internal xref">Test Vectors</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10">
+            <p id="section-toc.1-1.10.1"><a href="#section-10" class="auto internal xref">10</a>. <a href="#name-implementation-status" class="internal xref">Implementation Status</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.1">
+                <p id="section-toc.1-1.10.2.1.1"><a href="#section-10.1" class="auto internal xref">10.1</a>.  <a href="#name-research-and-formalization-" class="internal xref">Research and Formalization Status</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.11">
+            <p id="section-toc.1-1.11.1"><a href="#section-11" class="auto internal xref">11</a>. <a href="#name-security-considerations" class="internal xref">Security Considerations</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12">
+            <p id="section-toc.1-1.12.1"><a href="#section-12" class="auto internal xref">12</a>. <a href="#name-privacy-considerations" class="internal xref">Privacy Considerations</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13">
+            <p id="section-toc.1-1.13.1"><a href="#section-13" class="auto internal xref">13</a>. <a href="#name-iana-considerations" class="internal xref">IANA Considerations</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.14">
+            <p id="section-toc.1-1.14.1"><a href="#section-14" class="auto internal xref">14</a>. <a href="#name-formal-and-empirical-bounda" class="internal xref">Formal and Empirical Boundary</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.15">
+            <p id="section-toc.1-1.15.1"><a href="#section-15" class="auto internal xref">15</a>. <a href="#name-acknowledgements" class="internal xref">Acknowledgements</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.16">
+            <p id="section-toc.1-1.16.1"><a href="#section-16" class="auto internal xref">16</a>. <a href="#name-normative-references" class="internal xref">Normative References</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.17">
+            <p id="section-toc.1-1.17.1"><a href="#section-17" class="auto internal xref">17</a>. <a href="#name-informative-references" class="internal xref">Informative References</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.18">
+            <p id="section-toc.1-1.18.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-complete-version-1-cddl" class="internal xref">Complete Version-1 CDDL</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.19">
+            <p id="section-toc.1-1.19.1"><a href="#appendix-B" class="auto internal xref">Appendix B</a>.  <a href="#name-changes-from-revision-00" class="internal xref">Changes from Revision -00</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.20">
+            <p id="section-toc.1-1.20.1"><a href="#appendix-C" class="auto internal xref">Appendix C</a>.  <a href="#name-changes-from-revision-01" class="internal xref">Changes from Revision -01</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.21">
+            <p id="section-toc.1-1.21.1"><a href="#appendix-D" class="auto internal xref"></a><a href="#name-authors-address" class="internal xref">Author's Address</a></p>
+</li>
+        </ul>
+</nav>
+</section>
+</div>
+<div id="intro">
+<section id="section-1">
+      <h2 id="name-introduction">
+<a href="#section-1" class="section-number selfRef">1. </a><a href="#name-introduction" class="section-name selfRef">Introduction</a>
+      </h2>
+<p id="section-1-1">A transport acknowledgement answers a narrow question: did a protocol unit arrive or get processed at a transport-defined boundary?  It does not answer whether the content came from an authorized origin, whether its meaning was reconstructed in context, whether a proposed action complies with policy, or whether a responsible actor accepts the remaining risk.<a href="#section-1-1" class="pilcrow">¶</a></p>
+<p id="section-1-2">Systems that equate receipt or successful computation with permission can trigger an effect before these questions are resolved.  Examples include sending a payment, publishing content, changing an access-control rule, operating an actuator, or forwarding an instruction to another autonomous component.<a href="#section-1-2" class="pilcrow">¶</a></p>
+<p id="section-1-3">EFFECT_ACK inserts a logical authorization gate between reception and an effect executor.  The expression "Layer 4.5" is sometimes used informally for this placement.  It is not a new IETF or OSI layer and has no normative meaning in this document.  EFFECT_ACK is an application-layer record that can be carried over an authenticated application protocol.<a href="#section-1-3" class="pilcrow">¶</a></p>
+<p id="section-1-4">The central invariant is:<a href="#section-1-4" class="pilcrow">¶</a></p>
+<div class="lang-text sourcecode" id="section-1-5">
+<pre>
+Transport acknowledgement != authorization for downstream effect
+
+ordinary_release(record) is true
+    if and only if
+record.state == EFFECT_ACK_DONE
+    and the record passes every validation in this document.
+</pre><a href="#section-1-5" class="pilcrow">¶</a>
+</div>
+<div id="goals">
+<section id="section-1.1">
+        <h3 id="name-goals">
+<a href="#section-1.1" class="section-number selfRef">1.1. </a><a href="#name-goals" class="section-name selfRef">Goals</a>
+        </h3>
+<ul class="normal">
+<li class="normal" id="section-1.1-1.1">Define a closed, deterministic version-1 state model.<a href="#section-1.1-1.1" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.1-1.2">Bind the decision to an input, a versioned policy, and required evidence.<a href="#section-1.1-1.2" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.1-1.3">Fail closed on malformed, unsupported, unauthenticated, stale, or timed-out decisions.<a href="#section-1.1-1.3" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.1-1.4">Provide deterministic records suitable for independent validation and test vectors.<a href="#section-1.1-1.4" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.1-1.5">State precisely what a content hash proves and what it does not prove.<a href="#section-1.1-1.5" class="pilcrow">¶</a>
+</li>
+        </ul>
+</section>
+</div>
+<div id="non-goals">
+<section id="section-1.2">
+        <h3 id="name-non-goals">
+<a href="#section-1.2" class="section-number selfRef">1.2. </a><a href="#name-non-goals" class="section-name selfRef">Non-Goals</a>
+        </h3>
+<ul class="normal">
+<li class="normal" id="section-1.2-1.1">The protocol does not determine whether arbitrary programs halt.<a href="#section-1.2-1.1" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.2-1.2">The protocol does not make a policy ethically, legally, medically, or physically correct.<a href="#section-1.2-1.2" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.2-1.3">The protocol does not authenticate an origin merely by hashing a record.<a href="#section-1.2-1.3" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.2-1.4">The protocol does not reverse an effect that has already occurred.<a href="#section-1.2-1.4" class="pilcrow">¶</a>
+</li>
+          <li class="normal" id="section-1.2-1.5">The protocol does not define a universal policy language or evidence format.<a href="#section-1.2-1.5" class="pilcrow">¶</a>
+</li>
+        </ul>
+</section>
+</div>
+</section>
+</div>
+<div id="conventions">
+<section id="section-2">
+      <h2 id="name-conventions-and-definitions">
+<a href="#section-2" class="section-number selfRef">2. </a><a href="#name-conventions-and-definitions" class="section-name selfRef">Conventions and Definitions</a>
+      </h2>
+<p id="section-2-1">The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <span>[<a href="#RFC2119" class="cite xref">RFC2119</a>]</span> <span>[<a href="#RFC8174" class="cite xref">RFC8174</a>]</span> when, and only when, they appear in all capitals, as shown here.<a href="#section-2-1" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-2-2">
+        <dt id="section-2-2.1">Input unit</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.2">An octet sequence or immutable object whose proposed downstream effect is being evaluated.<a href="#section-2-2.2" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.3">Transport acknowledgement (TRANSPORT_ACK)</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.4">Evidence of receipt or processing at a transport-defined boundary.  It is not effect authorization.<a href="#section-2-2.4" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.5">Effect</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.6">A state change outside the evaluator, including a message, write, publication, financial transaction, access-control change, or actuator command.<a href="#section-2-2.6" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.7">Gate</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.8">The component that derives and validates an EFFECT_ACK record before ordinary release.<a href="#section-2-2.8" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.9">Effect executor</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.10">The component capable of producing the downstream effect.<a href="#section-2-2.10" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.11">Ordinary release</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.12">The normal, non-contained path from the gate to the effect executor.<a href="#section-2-2.12" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.13">Policy descriptor</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.14">An immutable, versioned description of the policy used for the decision.  This specification binds it by identifier, version, and SHA-256 digest but does not define its language.<a href="#section-2-2.14" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.15">Evidence reference</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.16">A content digest identifying evidence held outside the EFFECT_ACK record.  A digest is not evidence validation.<a href="#section-2-2.16" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-2.17">Effect-checkable reception</dt>
+        <dd style="margin-left: 1.5em" id="section-2-2.18">A reception for which an input identifier and an input digest are available at the gate.<a href="#section-2-2.18" class="pilcrow">¶</a>
+</dd>
+      <dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="architecture">
+<section id="section-3">
+      <h2 id="name-architecture-and-trust-boun">
+<a href="#section-3" class="section-number selfRef">3. </a><a href="#name-architecture-and-trust-boun" class="section-name selfRef">Architecture and Trust Boundary</a>
+      </h2>
+<p id="section-3-1">A deployment contains at least an input receiver, a policy and evidence evaluator, an EFFECT_ACK gate, and an effect executor.  The gate and executor form a security boundary: the executor MUST NOT treat transport success, process exit status, application return values, or message presence as release permission.<a href="#section-3-1" class="pilcrow">¶</a></p>
+<p id="section-3-2">The effect executor MUST accept ordinary release only when all of the following are true:<a href="#section-3-2" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-3-3">
+        <li id="section-3-3.1">The wire version is supported and the record is schema-valid.<a href="#section-3-3.1" class="pilcrow">¶</a>
+</li>
+        <li id="section-3-3.2">The record is authenticated according to the deployment security profile.<a href="#section-3-3.2" class="pilcrow">¶</a>
+</li>
+        <li id="section-3-3.3">The input, policy, evidence, version-chain, and freshness bindings validate.<a href="#section-3-3.3" class="pilcrow">¶</a>
+</li>
+        <li id="section-3-3.4">The state re-derived from the normative algorithm is EFFECT_ACK_DONE.<a href="#section-3-3.4" class="pilcrow">¶</a>
+</li>
+        <li id="section-3-3.5">The record says <code>ordinary_release=true</code>.<a href="#section-3-3.5" class="pilcrow">¶</a>
+</li>
+      </ol>
+<p id="section-3-4">A conforming gate MUST be on every path capable of reaching the protected effect.  If an alternate path can invoke the executor without this validation, the deployment is not effect-gate conformant even if its record generator passes unit tests.<a href="#section-3-4" class="pilcrow">¶</a></p>
+<p id="section-3-5">Records SHOULD be carried over a mutually authenticated, integrity-protected channel.  A deployment MAY use a separately signed envelope, but the signature format and key management are outside the scope of version 1.  The deployment profile MUST name the authentication mechanism and the principals authorized to assert policy decisions.<a href="#section-3-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="states">
+<section id="section-4">
+      <h2 id="name-version-1-state-model">
+<a href="#section-4" class="section-number selfRef">4. </a><a href="#name-version-1-state-model" class="section-name selfRef">Version-1 State Model</a>
+      </h2>
+<p id="section-4-1">Version 1 contains exactly the following five state strings.  A receiver MUST compare them case-sensitively.<a href="#section-4-1" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-4-2">
+        <dt id="section-4-2.1">EFFECT_NACK</dt>
+        <dd style="margin-left: 1.5em" id="section-4-2.2">No effect-checkable reception exists.  No ordinary release is permitted.<a href="#section-4-2.2" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-4-2.3">EFFECT_ACK_CONTINUE</dt>
+        <dd style="margin-left: 1.5em" id="section-4-2.4">Evaluation can continue, but one or more release conditions remain unsatisfied.  No ordinary release is permitted.<a href="#section-4-2.4" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-4-2.5">EFFECT_ACK_DONE</dt>
+        <dd style="margin-left: 1.5em" id="section-4-2.6">All version-1 release conditions are satisfied for the bound input, policy, evidence set, and decision version.  This is the only state eligible for ordinary release.<a href="#section-4-2.6" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-4-2.7">EFFECT_ACK_ISOLATE</dt>
+        <dd style="margin-left: 1.5em" id="section-4-2.8">The input or proposed effect is confined to an explicitly contained review or execution environment.  Isolation is not ordinary release.<a href="#section-4-2.8" class="pilcrow">¶</a>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-4-2.9">EFFECT_ACK_BLOCK</dt>
+        <dd style="margin-left: 1.5em" id="section-4-2.10">The proposed effect is stopped.  Repair or review requires a new, hash-linked record version.<a href="#section-4-2.10" class="pilcrow">¶</a>
+</dd>
+      <dd class="break"></dd>
+</dl>
+<div id="done-predicate">
+<section id="section-4.1">
+        <h3 id="name-done-predicate">
+<a href="#section-4.1" class="section-number selfRef">4.1. </a><a href="#name-done-predicate" class="section-name selfRef">DONE Predicate</a>
+        </h3>
+<p id="section-4.1-1">Let <code>CoreDone(r)</code> be true only when every expression below is true for record <code>r</code>.  Schema, authentication, freshness and chain validation are additional consumer release checks from <a href="#architecture" class="auto internal xref">Section 3</a>; they do not change the core state selected from a valid evaluation snapshot.<a href="#section-4.1-1" class="pilcrow">¶</a></p>
+<div class="lang-text sourcecode" id="section-4.1-2">
+<pre>
+r.transport_ack
+and sha256_identifier(r.input_hash)
+and r.origin_checked
+and r.context_checked
+and r.semantics_reconstructed
+and r.effect_anticipated
+and r.risk_classified
+and r.risk_level != "UNKNOWN"
+and r.responsibility_assigned
+and r.responsibility_owner != ""
+and r.connection_decided
+and r.connection_decision == "RELEASE"
+and r.policy_allows_release
+and not r.deadline_exceeded
+and r.open_questions == []
+and r.next_required_checks == []
+and set(r.required_evidence_refs) &lt;= set(r.evidence_refs)
+</pre><a href="#section-4.1-2" class="pilcrow">¶</a>
+</div>
+<p id="section-4.1-3">The policy triple is required and syntactically checked by the wire schema.  Its semantic validation and validation of the referenced evidence are consumer checks from <a href="#architecture" class="auto internal xref">Section 3</a>.  The JSON record carries check results, but an effect executor MUST NOT trust those booleans solely because they are present.  It MUST validate an authenticated assertion from an authorized evaluator or reperform the checks.  In particular, membership of a digest in <code>evidence_refs</code> proves neither availability nor truth of the referenced evidence.<a href="#section-4.1-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="selection">
+<section id="section-4.2">
+        <h3 id="name-state-selection-and-priorit">
+<a href="#section-4.2" class="section-number selfRef">4.2. </a><a href="#name-state-selection-and-priorit" class="section-name selfRef">State Selection and Priority</a>
+        </h3>
+<p id="section-4.2-1">A producer MUST select the state using the following priority order.  A consumer MUST independently rederive the result.  A mismatch MUST prevent ordinary release.<a href="#section-4.2-1" class="pilcrow">¶</a></p>
+<div class="lang-pseudocode sourcecode" id="section-4.2-2">
+<pre>
+if record cannot be safely parsed, its version is unsupported,
+   or required authentication is absent:
+    fail closed without ordinary release
+else if predecessor_invalid:
+    state = EFFECT_ACK_BLOCK
+else if deadline_exceeded:
+    state = EFFECT_ACK_BLOCK
+else if not effect_checkable_reception:
+    state = EFFECT_NACK
+else if integrity_failure:
+    state = EFFECT_ACK_BLOCK
+else if connection_decision == BLOCK:
+    state = EFFECT_ACK_BLOCK
+else if connection_decision == ISOLATE:
+    state = EFFECT_ACK_ISOLATE
+else if connection_decision == RELEASE
+        and CoreDone(record with candidate state EFFECT_ACK_DONE):
+    state = EFFECT_ACK_DONE
+else:
+    state = EFFECT_ACK_CONTINUE
+
+ordinary_release = (state == EFFECT_ACK_DONE)
+</pre><a href="#section-4.2-2" class="pilcrow">¶</a>
+</div>
+<p id="section-4.2-3">Predecessor failure is evaluated before the local snapshot and produces BLOCK.  A local timeout is next and also produces BLOCK.  In exact refinement with the reference evaluator, absence of an effect-checkable reception then produces NACK before local payload-integrity checks.  This ordering is safe because NACK never permits release.  For an effect-checkable reception, integrity failure precedes explicit BLOCK, explicit ISOLATE, DONE and CONTINUE.  An explicit BLOCK precedes ISOLATE; ISOLATE precedes DONE and CONTINUE.  A policy denial without an explicit BLOCK decision results in CONTINUE; a deployment policy MAY instead require the evaluator to select BLOCK.<a href="#section-4.2-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="transitions">
+<section id="section-4.3">
+        <h3 id="name-re-evaluation-and-state-tra">
+<a href="#section-4.3" class="section-number selfRef">4.3. </a><a href="#name-re-evaluation-and-state-tra" class="section-name selfRef">Re-evaluation and State Transitions</a>
+        </h3>
+<p id="section-4.3-1">A state is an outcome for one immutable record version, not mutable shared state.  New evidence, a new policy, a changed decision, a timeout result, or a revocation MUST create the next contiguous <code>protocol_version</code> and MUST link it to the predecessor.<a href="#section-4.3-1" class="pilcrow">¶</a></p>
+<span id="name-permitted-next-states"></span><div id="transition-table">
+<table class="center" id="table-1">
+          <caption>
+<a href="#table-1" class="selfRef">Table 1</a>:
+<a href="#name-permitted-next-states" class="selfRef">Permitted next states</a>
+          </caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Current</th>
+              <th class="text-left" rowspan="1" colspan="1">Permitted next state</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">EFFECT_NACK</td>
+              <td class="text-left" rowspan="1" colspan="1">NACK, CONTINUE, DONE, ISOLATE, BLOCK</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">EFFECT_ACK_CONTINUE</td>
+              <td class="text-left" rowspan="1" colspan="1">NACK, CONTINUE, DONE, ISOLATE, BLOCK</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">EFFECT_ACK_DONE</td>
+              <td class="text-left" rowspan="1" colspan="1">NACK, CONTINUE, DONE, ISOLATE, BLOCK</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">EFFECT_ACK_ISOLATE</td>
+              <td class="text-left" rowspan="1" colspan="1">NACK, CONTINUE, DONE, ISOLATE, BLOCK</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">EFFECT_ACK_BLOCK</td>
+              <td class="text-left" rowspan="1" colspan="1">NACK, CONTINUE, DONE, ISOLATE, BLOCK</td>
+            </tr>
+          </tbody>
+        </table>
+</div>
+<p id="section-4.3-3">Every state is a snapshot outcome, so every next state is permitted when the immutable input binding is preserved and the normative selection algorithm produces it.  This includes revocation from DONE to any non-releasing state and recovery from BLOCK or ISOLATE after the decision facts change.  An identical re-evaluation MAY return the existing record without incrementing the version.  A transition to a different state MUST change at least one deterministic decision field and SHOULD cite the new evidence, policy version or review reason.  A later non-DONE record revokes only future release; it cannot undo an effect already executed.  Consumers MUST define how they discover the freshest authenticated record and MUST reject a stale DONE record when a newer valid version is known or required by policy.<a href="#section-4.3-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="wire">
+<section id="section-5">
+      <h2 id="name-wire-representation">
+<a href="#section-5" class="section-number selfRef">5. </a><a href="#name-wire-representation" class="section-name selfRef">Wire Representation</a>
+      </h2>
+<p id="section-5-1">Version-1 messages are JSON objects as defined by <span>[<a href="#RFC8259" class="cite xref">RFC8259</a>]</span> and constrained to the I-JSON profile in <span>[<a href="#RFC7493" class="cite xref">RFC7493</a>]</span>.  Records MUST be encoded as UTF-8 without a byte-order mark.  A deployment MAY carry a record using <code>application/json</code>; this document does not allocate a new media type.<a href="#section-5-1" class="pilcrow">¶</a></p>
+<p id="section-5-2">The normative CDDL, using the notation from <span>[<a href="#RFC8610" class="cite xref">RFC8610</a>]</span>, appears in <a href="#complete-cddl" class="auto internal xref">Appendix A</a>.  A synchronized extraction may be maintained with the source of this draft as <code>external/ietf/qikvrt-effect-ack-v1.cddl</code>.  That extraction and the JSON Schema at <code>external/ietf/qikvrt-effect-ack-v1.schema.json</code> are non-normative conformance aids.  If either conflicts with this document, this document, including the CDDL in <a href="#complete-cddl" class="auto internal xref">Appendix A</a>, controls.<a href="#section-5-2" class="pilcrow">¶</a></p>
+<div id="record-fields">
+<section id="section-5.1">
+        <h3 id="name-responsibility-record">
+<a href="#section-5.1" class="section-number selfRef">5.1. </a><a href="#name-responsibility-record" class="section-name selfRef">Responsibility Record</a>
+        </h3>
+<p id="section-5.1-1">Every version-1 record MUST contain all fields in this section.  Unknown fields MUST be rejected because the version-1 record is closed.<a href="#section-5.1-1" class="pilcrow">¶</a></p>
+<span id="name-version-1-fields"></span><div id="field-table">
+<table class="center" id="table-2">
+          <caption>
+<a href="#table-2" class="selfRef">Table 2</a>:
+<a href="#name-version-1-fields" class="selfRef">Version-1 fields</a>
+          </caption>
+<thead>
+            <tr>
+              <th class="text-left" rowspan="1" colspan="1">Field</th>
+              <th class="text-left" rowspan="1" colspan="1">Type and purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">wire_version</td>
+              <td class="text-left" rowspan="1" colspan="1">Integer 1.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">message_type</td>
+              <td class="text-left" rowspan="1" colspan="1">String <code>effect-ack-record</code>.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">protocol_root_id</td>
+              <td class="text-left" rowspan="1" colspan="1">Stable chain identifier, 1 to 256 characters.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">protocol_version</td>
+              <td class="text-left" rowspan="1" colspan="1">Contiguous positive integer within a chain.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">protocol_id</td>
+              <td class="text-left" rowspan="1" colspan="1">
+                <code>protocol_root_id + ":v" + protocol_version</code>, at most 512 characters.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">previous_protocol_id</td>
+              <td class="text-left" rowspan="1" colspan="1">Previous protocol identifier of at most 512 characters, or null for version 1.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">previous_protocol_hash</td>
+              <td class="text-left" rowspan="1" colspan="1">Previous record digest, or null for version 1.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">protocol_hash</td>
+              <td class="text-left" rowspan="1" colspan="1">SHA-256 digest of the canonical hash projection.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">input_id</td>
+              <td class="text-left" rowspan="1" colspan="1">Input identifier, 1 to 256 characters.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">input_hash</td>
+              <td class="text-left" rowspan="1" colspan="1">SHA-256 digest, or <code>UNAVAILABLE</code> only for NACK.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">state</td>
+              <td class="text-left" rowspan="1" colspan="1">One of the five version-1 state strings.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">transport_ack</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean transport-receipt assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">origin_checked</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean origin-check assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">context_checked</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean context-check assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">semantics_reconstructed</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean semantics-check assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">effect_anticipated</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean effect-analysis assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">risk_classified</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean risk-classification assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">risk_level</td>
+              <td class="text-left" rowspan="1" colspan="1">UNKNOWN, LOW, MEDIUM, HIGH, or CRITICAL.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">responsibility_assigned</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean responsibility assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">responsibility_owner</td>
+              <td class="text-left" rowspan="1" colspan="1">Responsible principal identifier, at most 256 characters.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">connection_decided</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean decision-completion assertion.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">connection_decision</td>
+              <td class="text-left" rowspan="1" colspan="1">UNDECIDED, CONTINUE, RELEASE, ISOLATE, or BLOCK.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">policy_id</td>
+              <td class="text-left" rowspan="1" colspan="1">Policy identifier, 1 to 256 characters.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">policy_version</td>
+              <td class="text-left" rowspan="1" colspan="1">Positive policy version.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">policy_hash</td>
+              <td class="text-left" rowspan="1" colspan="1">SHA-256 digest of the exact policy descriptor.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">policy_allows_release</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean result of evaluating that policy.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">ordinary_release</td>
+              <td class="text-left" rowspan="1" colspan="1">True exactly for a valid DONE record.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">evaluation_timeout_ms</td>
+              <td class="text-left" rowspan="1" colspan="1">Configured positive evaluation budget in milliseconds.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">deadline_exceeded</td>
+              <td class="text-left" rowspan="1" colspan="1">Boolean timeout result.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">reasons</td>
+              <td class="text-left" rowspan="1" colspan="1">Set-like array of reason strings.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">evidence_refs</td>
+              <td class="text-left" rowspan="1" colspan="1">Set-like array of available evidence digests.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">required_evidence_refs</td>
+              <td class="text-left" rowspan="1" colspan="1">Set-like array of policy-required evidence digests.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">open_questions</td>
+              <td class="text-left" rowspan="1" colspan="1">Set-like array of unresolved questions.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">next_required_checks</td>
+              <td class="text-left" rowspan="1" colspan="1">Set-like array of checks required before release.</td>
+            </tr>
+            <tr>
+              <td class="text-left" rowspan="1" colspan="1">created_utc</td>
+              <td class="text-left" rowspan="1" colspan="1">UTC timestamp conforming to <span>[<a href="#RFC3339" class="cite xref">RFC3339</a>]</span> and ending in <code>Z</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+</div>
+<p id="section-5.1-3">A SHA-256 identifier has the exact form <code>sha256:</code> followed by 64 lowercase hexadecimal characters.  Every set-like array has at most 128 unique strings, each at most 1024 Unicode scalar values.  Producers MUST normalize and sort such arrays as described in <a href="#canonical" class="auto internal xref">Section 5.2</a>.<a href="#section-5.1-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="canonical">
+<section id="section-5.2">
+        <h3 id="name-canonical-json-and-protocol">
+<a href="#section-5.2" class="section-number selfRef">5.2. </a><a href="#name-canonical-json-and-protocol" class="section-name selfRef">Canonical JSON and Protocol Hash</a>
+        </h3>
+<p id="section-5.2-1">Producers and consumers MUST perform these steps in order:<a href="#section-5.2-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-5.2-2">
+          <li id="section-5.2-2.1">Parse an I-JSON object and reject duplicate member names.<a href="#section-5.2-2.1" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.2">Normalize every member name and string value to Unicode Normalization Form C (NFC) as specified by <span>[<a href="#UNICODE-NORM" class="cite xref">UNICODE-NORM</a>]</span>.  Reject a duplicate member name introduced by normalization.<a href="#section-5.2-2.2" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.3">Reject floating-point values and integers outside the I-JSON exact integer range.<a href="#section-5.2-2.3" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.4">For every set-like array, remove empty items and duplicate normalized strings, then sort ascending by Unicode scalar-value sequence.<a href="#section-5.2-2.4" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.5">Create the hash projection by removing exactly <code>protocol_hash</code> and <code>created_utc</code>.<a href="#section-5.2-2.5" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.6">Serialize the projection using the JSON Canonicalization Scheme (JCS) in <span>[<a href="#RFC8785" class="cite xref">RFC8785</a>]</span>.<a href="#section-5.2-2.6" class="pilcrow">¶</a>
+</li>
+          <li id="section-5.2-2.7">Compute SHA-256 as specified by <span>[<a href="#RFC6234" class="cite xref">RFC6234</a>]</span> over the resulting UTF-8 octets and prefix the lowercase hexadecimal digest with <code>sha256:</code>.<a href="#section-5.2-2.7" class="pilcrow">¶</a>
+</li>
+        </ol>
+<p id="section-5.2-3">The timestamp is excluded so that volatile audit metadata does not change the protocol decision identity.  Consequently, <code>created_utc</code> is not integrity-protected by <code>protocol_hash</code>.  A consumer MUST NOT use that timestamp as its sole freshness signal.  If timestamp integrity is required, the authenticated transport or signed outer envelope MUST bind the complete record including <code>created_utc</code>.<a href="#section-5.2-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="chain">
+<section id="section-5.3">
+        <h3 id="name-version-chain-validation">
+<a href="#section-5.3" class="section-number selfRef">5.3. </a><a href="#name-version-chain-validation" class="section-name selfRef">Version Chain Validation</a>
+        </h3>
+<p id="section-5.3-1">For the first record, <code>protocol_version</code> MUST be 1 and both predecessor fields MUST be null.  For each later record, the version MUST increment by exactly one; both predecessor fields MUST match the immediately preceding record; and <code>protocol_root_id</code>, <code>input_id</code>, and <code>input_hash</code> MUST remain unchanged.<a href="#section-5.3-1" class="pilcrow">¶</a></p>
+<p id="section-5.3-2">A producer MUST NOT attach a new record to an invalid predecessor.  When it can safely create an incident record, it MUST start a new version-1 incident chain, select BLOCK, use a collision-resistant incident root derived from bounded forensic material, and cite <code>PREVIOUS_PROTOCOL_INTEGRITY_FAILURE</code>.  The invalid predecessor itself MUST NOT be serialized into the trusted incident chain.<a href="#section-5.3-2" class="pilcrow">¶</a></p>
+<p id="section-5.3-3">A self-consistent hash chain does not detect an adversary that rewrites the complete chain and recomputes every digest.  A deployment requiring rewrite detection MUST retain at least one trusted digest outside the chain or authenticate each record with a key unavailable to the rewriter.<a href="#section-5.3-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="versioning">
+<section id="section-6">
+      <h2 id="name-version-negotiation-and-unk">
+<a href="#section-6" class="section-number selfRef">6. </a><a href="#name-version-negotiation-and-unk" class="section-name selfRef">Version Negotiation and Unknown Values</a>
+      </h2>
+<p id="section-6-1">A deployment MAY pin version 1 without negotiation.  A deployment that negotiates versions uses the following capability object before sending records:<a href="#section-6-1" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="section-6-2">
+<pre>
+{"message_type":"effect-ack-capabilities","supported_versions":[1]}
+</pre><a href="#section-6-2" class="pilcrow">¶</a>
+</div>
+<p id="section-6-3">The selected version is the highest mutually supported version permitted by local policy.  The capability exchange and selected version MUST be bound to the authenticated session transcript.  An unauthenticated retry with a lower version MUST NOT cause a downgrade.<a href="#section-6-3" class="pilcrow">¶</a></p>
+<p id="section-6-4">A consumer receiving an unknown <code>wire_version</code>, unknown <code>message_type</code>, unknown state string, or unknown decision string MUST NOT perform ordinary release.  It MAY return an authenticated error that lists supported versions.  It MUST NOT map an unknown state to DONE, CONTINUE, or any other version-1 state.<a href="#section-6-4" class="pilcrow">¶</a></p>
+<p id="section-6-5">New states or changed release semantics require a new wire version.  Adding an optional member to the closed version-1 record also requires a new wire version.<a href="#section-6-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="timeouts">
+<section id="section-7">
+      <h2 id="name-timeouts-and-bounded-evalua">
+<a href="#section-7" class="section-number selfRef">7. </a><a href="#name-timeouts-and-bounded-evalua" class="section-name selfRef">Timeouts and Bounded Evaluation</a>
+      </h2>
+<p id="section-7-1">The evaluator MUST use a monotonic clock for its local decision budget.  <code>evaluation_timeout_ms</code> records the configured positive budget, not a network-wide timing guarantee.  If the budget is exhausted before the record, policy, evidence, and chain have been validated, the producer MUST set <code>deadline_exceeded=true</code>, select EFFECT_ACK_BLOCK, set <code>ordinary_release=false</code>, and include a continuation or review action in <code>next_required_checks</code>.<a href="#section-7-1" class="pilcrow">¶</a></p>
+<p id="section-7-2">A cooperative in-process deadline does not guarantee preemption under CPU starvation, blocking system calls, or a compromised runtime.  Deployments requiring a hard wall-clock bound MUST enforce it with an independent supervisor.  Failure of the supervisor or clock MUST fail closed.<a href="#section-7-2" class="pilcrow">¶</a></p>
+<p id="section-7-3">Timeout is not evidence that the input is malicious.  It is evidence that release authorization was not completed within the configured budget.<a href="#section-7-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="policy-evidence">
+<section id="section-8">
+      <h2 id="name-policy-and-evidence-binding">
+<a href="#section-8" class="section-number selfRef">8. </a><a href="#name-policy-and-evidence-binding" class="section-name selfRef">Policy and Evidence Binding</a>
+      </h2>
+<p id="section-8-1">The producer MUST bind a decision to exactly one immutable policy descriptor using <code>policy_id</code>, <code>policy_version</code>, and <code>policy_hash</code>.  A consumer MUST obtain that descriptor from a trusted store or an authenticated evaluator and verify its digest before accepting DONE.<a href="#section-8-1" class="pilcrow">¶</a></p>
+<p id="section-8-2">The policy descriptor MUST determine the required evidence set or a deterministic rule for deriving it.  The record's <code>required_evidence_refs</code> MUST match that result.  DONE additionally requires every required digest to occur in <code>evidence_refs</code> and every referenced required item to pass the policy-defined validator.<a href="#section-8-2" class="pilcrow">¶</a></p>
+<p id="section-8-3">Evidence digests MUST identify exact octets or a separately specified canonical representation.  A deployment profile MUST define evidence retrieval, authorization, canonicalization, validation, and retention.  Absence, retrieval failure, digest mismatch, or validator failure MUST prevent DONE.<a href="#section-8-3" class="pilcrow">¶</a></p>
+<p id="section-8-4">The protocol deliberately separates policy binding from policy correctness.  Machine validation can prove that the specified policy and evidence gates were followed; it cannot prove that an externally chosen policy is morally, legally, or scientifically true.<a href="#section-8-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="conformance">
+<section id="section-9">
+      <h2 id="name-conformance-requirements">
+<a href="#section-9" class="section-number selfRef">9. </a><a href="#name-conformance-requirements" class="section-name selfRef">Conformance Requirements</a>
+      </h2>
+<div id="wire-conformance">
+<section id="section-9.1">
+        <h3 id="name-wire-conformance">
+<a href="#section-9.1" class="section-number selfRef">9.1. </a><a href="#name-wire-conformance" class="section-name selfRef">Wire Conformance</a>
+        </h3>
+<p id="section-9.1-1">A wire-conformant implementation MUST parse and emit the closed version-1 record, enforce all bounds and enums, implement the canonicalization and hash algorithm, validate chain linkage, and reject unknown versions and states without ordinary release.<a href="#section-9.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="gate-conformance">
+<section id="section-9.2">
+        <h3 id="name-gate-conformance">
+<a href="#section-9.2" class="section-number selfRef">9.2. </a><a href="#name-gate-conformance" class="section-name selfRef">Gate Conformance</a>
+        </h3>
+<p id="section-9.2-1">A gate-conformant implementation MUST independently rederive the state, MUST make DONE the only ordinary-release state, MUST prevent release on every individual failed DONE condition, and MUST apply the priority rules in <a href="#selection" class="auto internal xref">Section 4.2</a>.<a href="#section-9.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="deployment-conformance">
+<section id="section-9.3">
+        <h3 id="name-deployment-conformance">
+<a href="#section-9.3" class="section-number selfRef">9.3. </a><a href="#name-deployment-conformance" class="section-name selfRef">Deployment Conformance</a>
+        </h3>
+<p id="section-9.3-1">A deployment-conformant system MUST additionally authenticate authorized evaluators, protect every path to the executor, define policy and evidence validators, enforce freshness and replay policy, retain a trusted chain anchor when rewrite detection is required, and document its timeout supervisor and failure model.<a href="#section-9.3-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="test-vectors">
+<section id="section-9.4">
+        <h3 id="name-test-vectors">
+<a href="#section-9.4" class="section-number selfRef">9.4. </a><a href="#name-test-vectors" class="section-name selfRef">Test Vectors</a>
+        </h3>
+<p id="section-9.4-1">A conformance suite for this specification is expected to include machine-readable positive and negative vectors.  At minimum, a conformance suite MUST test all five states, each DONE conjunct independently, priority collisions, unknown versions and states, malformed and mismatched digests, policy mismatch, missing required evidence, canonicalization, chain rewriting, stale DONE replay, timeout, and an unauthenticated assertion.<a href="#section-9.4-1" class="pilcrow">¶</a></p>
+<p id="section-9.4-2">Passing repository tests is evidence about the tested implementation and revision.  It does not by itself establish deployment conformance or IETF consensus.<a href="#section-9.4-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="implementation-status">
+<section id="section-10">
+      <h2 id="name-implementation-status">
+<a href="#section-10" class="section-number selfRef">10. </a><a href="#name-implementation-status" class="section-name selfRef">Implementation Status</a>
+      </h2>
+<p id="section-10-1">This section is to be removed before publishing as an RFC.<a href="#section-10-1" class="pilcrow">¶</a></p>
+<p id="section-10-2">This section is non-normative.<a href="#section-10-2" class="pilcrow">¶</a></p>
+<p id="section-10-3">A Python reference state machine and focused conformance tests are available in the public <code>ingolf-lohmann/qik-vrt</code> repository.  The tests exercise the five-state closure, DONE-only release, individual gate failures, input binding, deterministic JSON, record and chain integrity, trusted anchors, cooperative deadlines, and deterministic reevaluation.<a href="#section-10-3" class="pilcrow">¶</a></p>
+<p id="section-10-4">The current development branch includes a QIKVRT-CJ-1 canonicalizer with NFC preprocessing, I-JSON safe-integer bounds, rejection of floating values, surrogates and non-string member names, and RFC 8785 UTF-16 code-unit member ordering, including a non-BMP ordering vector.  At the time this candidate was prepared, however, the Python responsibility record still represented the revision-00 flat wire model and did not emit every new revision-01 field, notably the explicit wire version, immutable policy triple, and recorded timeout fields.  It therefore must not be claimed as fully revision-01 wire conformant until that intentional gap is closed and the full suite passes.<a href="#section-10-4" class="pilcrow">¶</a></p>
+<p id="section-10-5">Interoperability between at least two independently developed implementations remains an open publication milestone.<a href="#section-10-5" class="pilcrow">¶</a></p>
+<div id="research-formalization-status">
+<section id="section-10.1">
+        <h3 id="name-research-and-formalization-">
+<a href="#section-10.1" class="section-number selfRef">10.1. </a><a href="#name-research-and-formalization-" class="section-name selfRef">Research and Formalization Status</a>
+        </h3>
+<p id="section-10.1-1">This subsection is non-normative.<a href="#section-10.1-1" class="pilcrow">¶</a></p>
+<p id="section-10.1-2">The versioned Zenodo record <span>[<a href="#QIKVRT-CTM-2026" class="cite xref">QIKVRT-CTM-2026</a>]</span> archives a research bundle concerning canonical temporal memory and EFFECT_ACK.  Its accompanying Lean kernel receipt reports nine theorems about a finite abstract model of past and future boundary records, reciprocal closure, and release dependence.<a href="#section-10.1-2" class="pilcrow">¶</a></p>
+<p id="section-10.1-3">Those theorem statements are conditional on the definitions and assumptions of that model.  They do not prove complete version-1 wire conformance; deployment authentication or complete mediation; physical or ontic retrocausality; backward signalling or modification of past events; semantic truth of arbitrary archived content or external evidence; authorship or identity; consciousness or panpsychism; deployment or physical safety; IETF consensus or standards status; independent interoperability; or system-wide completion.  SHA-256 digests bind exact octets under the stated cryptographic assumptions; they do not supply any of those conclusions.<a href="#section-10.1-3" class="pilcrow">¶</a></p>
+<p id="section-10.1-4">Zenodo preservation establishes identity, availability, metadata, and fixity for the deposited bytes.  It does not establish peer review, scientific validity, standards adoption, or field consensus.<a href="#section-10.1-4" class="pilcrow">¶</a></p>
+<p id="section-10.1-5">The author uses the term "operational protocol retrocausality" for the counterfactual relevance of a presently available, future-indexed effect condition to a present release decision.  This stipulated protocol term is not a claim of ontic backward signalling.<a href="#section-10.1-5" class="pilcrow">¶</a></p>
+<p id="section-10.1-6">Independent implementation and interoperability remain open, and <code>SYSTEM_WIDE_COMPLETION</code> remains <code>UNCLAIMED</code>.<a href="#section-10.1-6" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="security">
+<section id="section-11">
+      <h2 id="name-security-considerations">
+<a href="#section-11" class="section-number selfRef">11. </a><a href="#name-security-considerations" class="section-name selfRef">Security Considerations</a>
+      </h2>
+<p id="section-11-1">The principal threat is unauthorized effect caused by treating receipt or syntactic success as release permission.  Additional threats include forged DONE records, policy substitution, evidence omission, digest confusion, replay of stale DONE, downgrade to weaker semantics, chain rewrite, alternate-path bypass, denial of service, and compromise of the evaluator or executor.<a href="#section-11-1" class="pilcrow">¶</a></p>
+<p id="section-11-2">SHA-256 content digests provide collision-resistant content identifiers under current assumptions.  They do not authenticate a principal, establish freshness, prove evidence truth, or protect a fully rewritten unanchored chain.  Deployments MUST use an authenticated channel or signed envelope and MUST authorize the principal that can assert the policy result.<a href="#section-11-2" class="pilcrow">¶</a></p>
+<p id="section-11-3">Consumers MUST rederive the state instead of trusting the state string.  A candidate DONE with any failed predicate MUST be rejected and SHOULD generate a BLOCK incident record when that can be done safely.  A consumer MUST compare digests using a constant-time function when digest equality is exposed to a remote adversary.<a href="#section-11-3" class="pilcrow">¶</a></p>
+<p id="section-11-4">Replay controls MUST bind at least the protocol root, contiguous version, input digest, policy digest, authenticated session or deployment context, and a locally defined freshness rule.  Consumers MUST NOT accept a known older DONE after a newer BLOCK or ISOLATE.<a href="#section-11-4" class="pilcrow">¶</a></p>
+<p id="section-11-5">The gate itself can become a denial-of-service target.  Implementations MUST bound payload size, string length, array length, recursion depth, evaluation time, policy work, and evidence retrieval.  Expensive validation SHOULD occur in a contained asynchronous stage while ordinary release remains blocked.<a href="#section-11-5" class="pilcrow">¶</a></p>
+<p id="section-11-6">The protocol cannot protect an executor reachable around the gate, a compromised policy engine, dishonest evidence providers, stolen signing keys, or physical actuators that ignore the gate.  These are deployment assumptions, not conclusions of the state-machine proof.<a href="#section-11-6" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="privacy">
+<section id="section-12">
+      <h2 id="name-privacy-considerations">
+<a href="#section-12" class="section-number selfRef">12. </a><a href="#name-privacy-considerations" class="section-name selfRef">Privacy Considerations</a>
+      </h2>
+<p id="section-12-1">Responsibility owners, input identifiers, policy identifiers, reason strings, and evidence references can reveal identity, behavior, organizational structure, or sensitive decisions.  A digest is not anonymization: low-entropy material can be guessed and hashed.<a href="#section-12-1" class="pilcrow">¶</a></p>
+<p id="section-12-2">Producers SHOULD use pseudonymous scoped identifiers, data minimization, access-controlled evidence stores, and retention limits.  They SHOULD avoid embedding personal data in reasons or identifiers.  Evidence references SHOULD be opaque digests of high-entropy or access-controlled objects rather than hashes of guessable personal attributes.<a href="#section-12-2" class="pilcrow">¶</a></p>
+<p id="section-12-3">Append-only audit requirements can conflict with correction and erasure obligations.  Deployments MUST define a lawful retention and redaction strategy before recording personal data.  A redaction mechanism MUST preserve the fact that a prior item existed without falsely claiming that the redacted evidence remains independently verifiable.<a href="#section-12-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="iana">
+<section id="section-13">
+      <h2 id="name-iana-considerations">
+<a href="#section-13" class="section-number selfRef">13. </a><a href="#name-iana-considerations" class="section-name selfRef">IANA Considerations</a>
+      </h2>
+<p id="section-13-1">This document requests no IANA actions.  Version 1 is carried as <code>application/json</code>, and its state namespace is closed.  A future document that defines a dedicated media type, a new wire version, or an extensible registry will include the corresponding IANA registration policy.<a href="#section-13-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="limitations">
+<section id="section-14">
+      <h2 id="name-formal-and-empirical-bounda">
+<a href="#section-14" class="section-number selfRef">14. </a><a href="#name-formal-and-empirical-bounda" class="section-name selfRef">Formal and Empirical Boundary</a>
+      </h2>
+<p id="section-14-1">The closed enum, deterministic decision predicate, canonical encoding, and release invariant are suitable for machine proof.  Such a proof is conditional on the formal model and its assumptions.  It can show, for example, that a conforming executor never authorizes ordinary release from a non-DONE state.<a href="#section-14-1" class="pilcrow">¶</a></p>
+<p id="section-14-2">A proof of the software model is not, by itself, a proof that a physical effect is safe.  Physical assurance additionally requires a correct hardware and operating-system implementation, trusted sensors and actuators, calibrated measurements, a stated fault model, and empirical validation.  The protocol can carry and enforce the result of those checks; it does not replace them.<a href="#section-14-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="acknowledgements">
+<section id="section-15">
+      <h2 id="name-acknowledgements">
+<a href="#section-15" class="section-number selfRef">15. </a><a href="#name-acknowledgements" class="section-name selfRef">Acknowledgements</a>
+      </h2>
+<p id="section-15-1">Automated tooling was used to check repository consistency and to identify specification gaps.  All normative claims remain the responsibility of the author and require community review.<a href="#section-15-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<section id="section-16">
+      <h2 id="name-normative-references">
+<a href="#section-16" class="section-number selfRef">16. </a><a href="#name-normative-references" class="section-name selfRef">Normative References</a>
+      </h2>
+<dl class="references">
+<dt id="RFC2119">[RFC2119]</dt>
+      <dd>
+<span class="refAuthor">Bradner, S.</span>, <span class="refTitle">"Key words for use in RFCs to Indicate Requirement Levels"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 2119</span>, <span class="seriesInfo">DOI 10.17487/RFC2119</span>, <time datetime="1997-03" class="refDate">March 1997</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC3339">[RFC3339]</dt>
+      <dd>
+<span class="refAuthor">Klyne, G.</span> and <span class="refAuthor">C. Newman</span>, <span class="refTitle">"Date and Time on the Internet: Timestamps"</span>, <span class="seriesInfo">RFC 3339</span>, <span class="seriesInfo">DOI 10.17487/RFC3339</span>, <time datetime="2002-07" class="refDate">July 2002</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc3339">https://www.rfc-editor.org/info/rfc3339</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC6234">[RFC6234]</dt>
+      <dd>
+<span class="refAuthor">Eastlake 3rd, D. E.</span> and <span class="refAuthor">T. Hansen</span>, <span class="refTitle">"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"</span>, <span class="seriesInfo">RFC 6234</span>, <span class="seriesInfo">DOI 10.17487/RFC6234</span>, <time datetime="2011-05" class="refDate">May 2011</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc6234">https://www.rfc-editor.org/info/rfc6234</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7493">[RFC7493]</dt>
+      <dd>
+<span class="refAuthor">Bray, T., Ed.</span>, <span class="refTitle">"The I-JSON Message Format"</span>, <span class="seriesInfo">RFC 7493</span>, <span class="seriesInfo">DOI 10.17487/RFC7493</span>, <time datetime="2015-03" class="refDate">March 2015</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc7493">https://www.rfc-editor.org/info/rfc7493</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8174">[RFC8174]</dt>
+      <dd>
+<span class="refAuthor">Leiba, B.</span>, <span class="refTitle">"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 8174</span>, <span class="seriesInfo">DOI 10.17487/RFC8174</span>, <time datetime="2017-05" class="refDate">May 2017</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8259">[RFC8259]</dt>
+      <dd>
+<span class="refAuthor">Bray, T., Ed.</span>, <span class="refTitle">"The JavaScript Object Notation (JSON) Data Interchange Format"</span>, <span class="seriesInfo">STD 90</span>, <span class="seriesInfo">RFC 8259</span>, <span class="seriesInfo">DOI 10.17487/RFC8259</span>, <time datetime="2017-12" class="refDate">December 2017</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc8259">https://www.rfc-editor.org/info/rfc8259</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8610">[RFC8610]</dt>
+      <dd>
+<span class="refAuthor">Birkholz, H.</span>, <span class="refAuthor">Vigano, C.</span>, and <span class="refAuthor">C. Bormann</span>, <span class="refTitle">"Concise Data Definition Language (CDDL): A Notational Convention to Express Concise Binary Object Representation (CBOR) and JSON Data Structures"</span>, <span class="seriesInfo">RFC 8610</span>, <span class="seriesInfo">DOI 10.17487/RFC8610</span>, <time datetime="2019-06" class="refDate">June 2019</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc8610">https://www.rfc-editor.org/info/rfc8610</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8785">[RFC8785]</dt>
+      <dd>
+<span class="refAuthor">Rundgren, A.</span>, <span class="refAuthor">Jordan, B.</span>, and <span class="refAuthor">S. Erdtman</span>, <span class="refTitle">"JSON Canonicalization Scheme (JCS)"</span>, <span class="seriesInfo">RFC 8785</span>, <span class="seriesInfo">DOI 10.17487/RFC8785</span>, <time datetime="2020-06" class="refDate">June 2020</time>, <span>&lt;<a href="https://www.rfc-editor.org/info/rfc8785">https://www.rfc-editor.org/info/rfc8785</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="UNICODE-NORM">[UNICODE-NORM]</dt>
+    <dd>
+<span class="refAuthor">The Unicode Consortium</span>, <span class="refTitle">"Unicode Normalization Forms"</span>, <span class="seriesInfo">Unicode Standard Annex 15</span>, <time datetime="2025-08" class="refDate">August 2025</time>, <span>&lt;<a href="https://www.unicode.org/reports/tr15/">https://www.unicode.org/reports/tr15/</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+<section id="section-17">
+      <h2 id="name-informative-references">
+<a href="#section-17" class="section-number selfRef">17. </a><a href="#name-informative-references" class="section-name selfRef">Informative References</a>
+      </h2>
+<dl class="references">
+<dt id="QIKVRT-CTM-2026">[QIKVRT-CTM-2026]</dt>
+    <dd>
+<span class="refAuthor">Lohmann, I.</span>, <span class="refTitle">"QIK-VRT und das Effect-Acknowledgement-Protokoll: Kanonischer Speicher zwischen Vergangenheit und Zukunft"</span>, <span class="seriesInfo">DOI 10.5281/zenodo.21711193</span>, <time datetime="2026-07-31" class="refDate">31 July 2026</time>, <span>&lt;<a href="https://doi.org/10.5281/zenodo.21711193">https://doi.org/10.5281/zenodo.21711193</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+<div id="complete-cddl">
+<section id="appendix-A">
+      <h2 id="name-complete-version-1-cddl">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-complete-version-1-cddl" class="section-name selfRef">Complete Version-1 CDDL</a>
+      </h2>
+<p id="appendix-A-1">This appendix is normative.  Scalar-value length limits and semantic predicates that CDDL cannot express are specified in the main body.<a href="#appendix-A-1" class="pilcrow">¶</a></p>
+<div class="breakable lang-cddl sourcecode" id="appendix-A-2">
+<pre>
+effect-ack-record = {
+  wire_version: 1,
+  message_type: "effect-ack-record",
+  protocol_root_id: bounded-id,
+  protocol_version: positive-int,
+  protocol_id: bounded-protocol-id,
+  previous_protocol_id: bounded-protocol-id / null,
+  previous_protocol_hash: sha256-id / null,
+  protocol_hash: sha256-id,
+  input_id: bounded-id,
+  input_hash: sha256-id / "UNAVAILABLE",
+  state: effect-state,
+  transport_ack: bool,
+  origin_checked: bool,
+  context_checked: bool,
+  semantics_reconstructed: bool,
+  effect_anticipated: bool,
+  risk_classified: bool,
+  risk_level: risk-level,
+  responsibility_assigned: bool,
+  responsibility_owner: bounded-owner,
+  connection_decided: bool,
+  connection_decision: connection-decision,
+  policy_id: bounded-id,
+  policy_version: positive-int,
+  policy_hash: sha256-id,
+  policy_allows_release: bool,
+  ordinary_release: bool,
+  evaluation_timeout_ms: positive-timeout,
+  deadline_exceeded: bool,
+  reasons: text-set,
+  evidence_refs: digest-set,
+  required_evidence_refs: digest-set,
+  open_questions: text-set,
+  next_required_checks: text-set,
+  created_utc: utc-timestamp,
+}
+
+effect-state =
+    "EFFECT_NACK"
+  / "EFFECT_ACK_CONTINUE"
+  / "EFFECT_ACK_DONE"
+  / "EFFECT_ACK_ISOLATE"
+  / "EFFECT_ACK_BLOCK"
+
+risk-level = "UNKNOWN" / "LOW" / "MEDIUM" / "HIGH" / "CRITICAL"
+
+connection-decision =
+    "UNDECIDED" / "CONTINUE" / "RELEASE" / "ISOLATE" / "BLOCK"
+
+sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
+bounded-id = tstr
+bounded-protocol-id = tstr
+bounded-owner = tstr
+positive-int = 1..9007199254740991
+positive-timeout = 1..2147483647
+utc-timestamp = tstr
+text-set = [*128 bounded-text]
+digest-set = [*128 sha256-id]
+bounded-text = tstr
+
+effect-ack-capabilities = {
+  message_type: "effect-ack-capabilities",
+  supported_versions: [1* uint],
+}
+</pre><a href="#appendix-A-2" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="change-log">
+<section id="appendix-B">
+      <h2 id="name-changes-from-revision-00">
+<a href="#appendix-B" class="section-number selfRef">Appendix B. </a><a href="#name-changes-from-revision-00" class="section-name selfRef">Changes from Revision -00</a>
+      </h2>
+<ul class="normal">
+<li class="normal" id="appendix-B-1.1">Clarified that EFFECT_ACK is an application-layer control record and that "Layer 4.5" is informal.<a href="#appendix-B-1.1" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.2">Made decision, immutable policy identity, policy version and digest, and required evidence normative.<a href="#appendix-B-1.2" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.3">Specified complete state priority, re-evaluation, transition, freshness, and revocation rules.<a href="#appendix-B-1.3" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.4">Added a closed version-1 JSON record, CDDL and JSON Schema references, an NFC plus JCS canonicalization profile, and exact hash projection.<a href="#appendix-B-1.4" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.5">Added version negotiation, downgrade and unknown-value behavior.<a href="#appendix-B-1.5" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.6">Added bounded timeout and supervisor requirements.<a href="#appendix-B-1.6" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.7">Separated content integrity from authenticity and required a deployment authentication profile.<a href="#appendix-B-1.7" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-B-1.8">Expanded security, privacy, conformance, implementation-status, test-vector, IANA, and formal-boundary sections.<a href="#appendix-B-1.8" class="pilcrow">¶</a>
+</li>
+      </ul>
+</section>
+</div>
+<div id="change-log-02">
+<section id="appendix-C">
+      <h2 id="name-changes-from-revision-01">
+<a href="#appendix-C" class="section-number selfRef">Appendix C. </a><a href="#name-changes-from-revision-01" class="section-name selfRef">Changes from Revision -01</a>
+      </h2>
+<ul class="normal">
+<li class="normal" id="appendix-C-1.1">Updated the document revision and date metadata.<a href="#appendix-C-1.1" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-C-1.2">Corrected the repository-availability wording for machine-readable test vectors while preserving the conformance-test requirement.<a href="#appendix-C-1.2" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-C-1.3">Added a non-normative research and formalization status boundary and an informative reference to the exact archived research bundle.<a href="#appendix-C-1.3" class="pilcrow">¶</a>
+</li>
+        <li class="normal" id="appendix-C-1.4">No version-1 wire-format change is made: the closed 35-member record, five-state set, 17-conjunct CoreDone predicate, state-selection priority, DONE-only ordinary-release rule, canonicalization and hash projection, version-negotiation behavior, security requirements, and no-IANA-action status are unchanged.<a href="#appendix-C-1.4" class="pilcrow">¶</a>
+</li>
+      </ul>
+</section>
+</div>
+<div id="authors-addresses">
+<section id="appendix-D">
+      <h2 id="name-authors-address">
+<a href="#name-authors-address" class="section-name selfRef">Author's Address</a>
+      </h2>
+<address class="vcard">
+        <div dir="auto" class="left"><span class="fn nameRole">Ingolf Lohmann</span></div>
+<div dir="auto" class="left"><span class="org">Independent Researcher</span></div>
+<div class="email">
+<span>Email:</span>
+<a href="mailto:ingolf.lohmann@live.com" class="email">ingolf.lohmann@live.com</a>
+</div>
+</address>
+</section>
+</div>
+<script>const toc = document.getElementById("toc");
+toc.querySelector("h2").addEventListener("click", e => {
+  toc.classList.toggle("active");
+});
+toc.querySelector("nav").addEventListener("click", e => {
+  toc.classList.remove("active");
+});
+</script>
+</body>
+</html>

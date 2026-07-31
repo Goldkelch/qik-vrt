@@ -13,7 +13,9 @@ on:
       - "tools/bootstrap-runtime.sh"
       - "tools/bootstrap-runtime.ps1"
       - "tests/test_ietf_offline_render.py"
+      - "tests/test_ietf_revision_02.py"
       - "tests/test_runtime_bootstrap.sh"
+      - "external/ietf/draft-lohmann-qikvrt-effect-ack-02.*"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/IETF_RENDER_VALIDATION.json"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.xml"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.txt"
@@ -29,7 +31,9 @@ on:
       - "tools/bootstrap-runtime.sh"
       - "tools/bootstrap-runtime.ps1"
       - "tests/test_ietf_offline_render.py"
+      - "tests/test_ietf_revision_02.py"
       - "tests/test_runtime_bootstrap.sh"
+      - "external/ietf/draft-lohmann-qikvrt-effect-ack-02.*"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/IETF_RENDER_VALIDATION.json"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.xml"
       - "docs/publications/2026-07-22-effect-ack-universal-effect-control/inputs/draft-lohmann-qikvrt-effect-ack-01.txt"
@@ -162,6 +166,7 @@ jobs:
           esac
           renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/xml2rfc"
           "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_revision_02.py --xml2rfc "$renderer"
 
       - name: Exercise POSIX GH contract while exact renderer is unavailable
         if: matrix.family == 'posix' && steps.renderer-python.outcome == 'failure'
@@ -195,6 +200,8 @@ jobs:
           $renderer = Join-Path $contractCache 'xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\xml2rfc.exe'
           & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer
           if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer test failed: $LASTEXITCODE" }
+          & $env:QIKVRT_PYTHON -B tests/test_ietf_revision_02.py --xml2rfc $renderer
+          if ($LASTEXITCODE -ne 0) { throw "IETF revision-02 invariant test failed: $LASTEXITCODE" }
 
           $archive = Join-Path $contractCache 'gh\2.96.0\windows-amd64\archive\gh_2.96.0_windows_amd64.zip'
           if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Verified GH archive is absent' }
@@ -409,6 +416,7 @@ jobs:
           esac
           renderer=".qikvrt/toolchains/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/xml2rfc"
           "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_revision_02.py --xml2rfc "$renderer"
 
       - name: Revalidate exact Windows renderer before cache publication
         if: matrix.family == 'windows' && steps.renderer-python.outcome == 'success'
@@ -417,6 +425,8 @@ jobs:
           $renderer = Join-Path $PWD '.qikvrt\toolchains\xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\xml2rfc.exe'
           & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer
           if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer cache validation failed: $LASTEXITCODE" }
+          & $env:QIKVRT_PYTHON -B tests/test_ietf_revision_02.py --xml2rfc $renderer
+          if ($LASTEXITCODE -ne 0) { throw "IETF revision-02 invariant test failed: $LASTEXITCODE" }
 
       - name: Install or verify POSIX GH cache without exact renderer
         if: matrix.family == 'posix' && steps.renderer-python.outcome == 'failure'

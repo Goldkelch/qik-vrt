@@ -33,6 +33,7 @@ EXCLUDED_PARTS = {
 POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean",
     "formalization/QIKVRT_Formalization_v2.0/tests/test_quantum_classical_runtime_article.py",
 }
 # These live text files legitimately advanced after Alpha-2. The exact
@@ -42,6 +43,7 @@ POST_ALPHA2_EXCLUSIONS = {
 FROZEN_ALPHA2_INPUTS = {
     path: "release/formalization-v2/alpha2-frozen/" + path
     for path in (
+        ".github/workflows/qikvrt_manuscript_proof.yml",
         "formalization/QIKVRT_Formalization_v2.0/README.md",
         "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
         "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",

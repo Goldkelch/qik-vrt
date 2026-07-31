@@ -1,0 +1,172 @@
+{
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "_license": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {"const": "machine_readable_proof_bundle"},
+        "copyright": {"type": "string", "minLength": 1},
+        "license": {"const": "CC-BY-NC-ND-4.0"},
+        "license_text_ref": {"const": "LICENSES/CC-BY-NC-ND-4.0.txt"},
+        "rights_holder": {"const": "Ingolf Lohmann"}
+      },
+      "required": ["classification", "copyright", "license", "license_text_ref", "rights_holder"],
+      "type": "object"
+    },
+    "artifacts": {
+      "items": {"$ref": "#/$defs/boundArtifact"},
+      "minItems": 1,
+      "type": "array"
+    },
+    "candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {"$ref": "#/$defs/candidateFile"},
+          "minItems": 1,
+          "type": "array"
+        },
+        "primary_document_path": {"type": "string", "minLength": 1}
+      },
+      "required": ["files", "primary_document_path"],
+      "type": "object"
+    },
+    "claims": {
+      "items": {"$ref": "#/$defs/claim"},
+      "minItems": 1,
+      "type": "array"
+    },
+    "completion_claims": {
+      "additionalProperties": false,
+      "properties": {
+        "machine_proof_complete": {"const": true},
+        "zenodo_upload_authorized": {"const": true}
+      },
+      "required": ["machine_proof_complete", "zenodo_upload_authorized"],
+      "type": "object"
+    },
+    "gates": {
+      "additionalProperties": false,
+      "properties": {
+        "all_claims_dispositioned": {"const": true},
+        "all_references_resolve": {"const": true},
+        "candidate_frozen": {"const": true},
+        "formal_claims_have_kernel_receipts": {"const": true},
+        "open_claims_not_worded_as_facts": {"const": true},
+        "proof_bundle_in_upload_fileset": {"const": true},
+        "returned_bytes_equal_upload_bytes": {"const": true}
+      },
+      "required": [
+        "all_claims_dispositioned",
+        "all_references_resolve",
+        "candidate_frozen",
+        "formal_claims_have_kernel_receipts",
+        "open_claims_not_worded_as_facts",
+        "proof_bundle_in_upload_fileset",
+        "returned_bytes_equal_upload_bytes"
+      ],
+      "type": "object"
+    },
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "git_blob_sha1": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+        "id": {"const": "qikvrt-zenodo-machine-proof-before-publication-v2"},
+        "path": {"const": "policy/zenodo-machine-proof-policy-v2.json"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "version": {"const": "2.0.0"}
+      },
+      "required": ["id", "path", "version", "sha256", "git_blob_sha1"],
+      "type": "object"
+    },
+    "prepublication_return": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_returned_to_owner": {"const": true},
+        "change_notice_path": {"type": ["string", "null"]},
+        "content_changed": {"type": "boolean"},
+        "receipt_path": {"type": "string", "minLength": 1}
+      },
+      "required": ["candidate_returned_to_owner", "change_notice_path", "content_changed", "receipt_path"],
+      "type": "object"
+    },
+    "publication_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "schema": {"const": "qikvrt_zenodo_machine_proof_bundle_v2"}
+  },
+  "required": [
+    "_license",
+    "schema",
+    "policy",
+    "publication_id",
+    "candidate",
+    "claims",
+    "artifacts",
+    "prepublication_return",
+    "gates",
+    "completion_claims"
+  ],
+  "type": "object",
+  "$defs": {
+    "boundArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "git_blob_sha1": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+        "kind": {
+          "enum": ["CLAIM_MATRIX", "KERNEL_RECEIPT", "EVIDENCE", "SOURCE", "BOUNDARY_TEST", "CHANGE_NOTICE", "RETURN_RECEIPT", "OTHER"],
+          "type": "string"
+        },
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["path", "sha256", "git_blob_sha1", "kind"],
+      "type": "object"
+    },
+    "candidateFile": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {"minimum": 0, "type": "integer"},
+        "git_blob_sha1": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+        "name": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "role": {"enum": ["PRIMARY", "SUPPLEMENT", "PROOF_BUNDLE"], "type": "string"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["path", "name", "bytes", "sha256", "git_blob_sha1", "role"],
+      "type": "object"
+    },
+    "claim": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", "type": "string"},
+        "classification": {
+          "enum": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "NORMATIVE", "INTERPRETATIVE", "OPEN"],
+          "type": "string"
+        },
+        "evidence_refs": {"items": {"type": "string", "minLength": 1}, "type": "array"},
+        "proof_refs": {"items": {"type": "string", "minLength": 1}, "type": "array"},
+        "publication_wording": {
+          "enum": ["ESTABLISHED_WITHIN_SCOPE", "EMPIRICALLY_SUPPORTED", "SOURCE_ATTRIBUTED", "NORMATIVE_DECLARATION", "INTERPRETATIVE_DECLARATION", "EXPLICITLY_OPEN"],
+          "type": "string"
+        },
+        "scope": {"type": "string", "minLength": 1},
+        "source_refs": {"items": {"type": "string", "minLength": 1}, "type": "array"},
+        "statement": {"type": "string", "minLength": 1},
+        "status": {"enum": ["PROVED", "EVIDENCED", "BOUND", "DECLARED", "OPEN"], "type": "string"}
+      },
+      "required": [
+        "claim_id",
+        "statement",
+        "classification",
+        "status",
+        "publication_wording",
+        "scope",
+        "proof_refs",
+        "evidence_refs",
+        "source_refs"
+      ],
+      "type": "object"
+    }
+  }
+}

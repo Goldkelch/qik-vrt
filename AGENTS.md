@@ -94,7 +94,7 @@ such and MUST NOT be represented as mathematical theorems.
 Whenever claim review requires a change to the original content, the complete
 corrected candidate and a visible change notice MUST be returned to Ingolf
 Lohmann before upload. A candidate-specific
-`qikvrt_prepublication_return_receipt_v1` MUST bind the returned paths, byte
+`qikvrt_prepublication_return_receipt_v2` MUST bind the returned paths, byte
 sizes, SHA-256 digests and Git blob identities. The bytes later uploaded to
 Zenodo MUST be identical to the returned candidate bytes.
 
@@ -104,8 +104,22 @@ proof-bearing v2 manifest, include its `MACHINE_PROOF_BUNDLE.json` in the public
 Zenodo fileset, pass public byte-exact redownload verification, and persist the
 result on Authority and Mirror before pair equality can be claimed.
 
-The normative policy is `policy/zenodo-machine-proof-policy-v1.json`; its human
-contract is `policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md`.
+Every new upload MUST use the v2 proof bundle and return-receipt schemas. The
+published v1 policy and schemas remain byte-frozen and readable only for
+historical verification; they MUST NOT authorize a new production mutation.
+The exact upload authorization MUST use the canonical candidate-bound decision
+statement. Before any Zenodo effect, a cooperating publisher MUST acquire a
+create-only/non-force repository-wide remote Git ref; an existing ref blocks
+every later cooperating runner. Privileged deletion or force-update of that ref
+is an external repository-ruleset boundary and is not prevented by the client.
+Repository and platform bindings attest the recorded authorization event; they
+do not constitute biometric or cryptographic proof of the named natural
+person.
+
+The normative production policy is
+`policy/zenodo-machine-proof-policy-v2.json`; its human contract is
+`policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md`. The superseded v1 policy
+remains an immutable historical contract.
 
 ## Bounded collective adaptation
 

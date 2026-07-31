@@ -1,0 +1,1154 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.89]
+\usepackage[provide=*,main=ngerman,english]{babel}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{seqsplit}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+\geometry{left=24mm,right=24mm,top=24mm,bottom=27mm,headheight=14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.58em}
+\setlength{\emergencystretch}{3em}
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.18em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=0.22em,topsep=0.3em}
+
+\definecolor{QBlue}{HTML}{153E69}
+\definecolor{QLight}{HTML}{ECF3F8}
+\definecolor{QGreen}{HTML}{E8F3EA}
+\definecolor{QAmber}{HTML}{FFF2CC}
+\definecolor{QRed}{HTML}{FBE9E7}
+\definecolor{QGray}{HTML}{4D5660}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=QBlue,
+  citecolor=QBlue,
+  urlcolor=QBlue,
+  pdftitle={QIK-VRT und das Effect-Acknowledgement-Protokoll: Kanonischer Speicher zwischen Vergangenheit und Zukunft},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Operational-formales Protokollmodell reziproker Kausalitaetsbedingungen, zweiseitiger Randbedingungen und wirkungsgebundener Freigabe},
+  pdfkeywords={QIK-VRT, EFFECT-ACK, kanonischer Speicher, Kausalitaet, Retrokausalitaet, zweiseitige Randbedingungen, Provenienz, Git, Bewusstsein, Panpsychismus}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{QGray}{QIK--VRT: kanonischer Speicher}}
+\fancyhead[R]{\small\textcolor{QGray}{Ingolf Lohmann}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{satz}{Satz}[section]
+\newtheorem{korollar}{Korollar}[section]
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}[section]
+\crefname{definition}{Definition}{Definitionen}
+\crefname{satz}{Satz}{Sätze}
+\crefname{korollar}{Korollar}{Korollare}
+\crefname{equation}{Gleichung}{Gleichungen}
+
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\DONE}{\texttt{EFFECT\_ACK\_DONE}}
+\newcommand{\CONTINUE}{\texttt{EFFECT\_ACK\_CONTINUE}}
+\newcommand{\BLOCK}{\texttt{EFFECT\_ACK\_BLOCK}}
+\newcommand{\bool}{\mathbb{B}}
+\newcommand{\bytes}{\{0,1\}^{*}}
+\newcommand{\hash}[1]{{\ttfamily\small\seqsplit{#1}}}
+\newcommand{\statusbox}[2]{%
+  \par\medskip\noindent
+  \colorbox{#1}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{#2}}%
+  \par\medskip
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \thispagestyle{empty}
+  \vspace*{13mm}
+  {\color{QBlue}\rule{\textwidth}{1.4pt}}\\[1.1em]
+  {\Huge\bfseries QIK--VRT und das\\[0.15em]
+  Effect-Acknowledgement-Protokoll\par}
+  \vspace{0.75em}
+  {\LARGE Kanonischer Speicher zwischen\\
+  Vergangenheit und Zukunft\par}
+  \vspace{0.9em}
+  {\Large Ein operational-formales Protokollmodell reziproker Kausalitätsbedingungen,\\
+  zweiseitiger Randbedingungen und wirkungsgebundener Freigabe\par}
+  \vspace{1.1em}
+  {\color{QBlue}\rule{\textwidth}{0.6pt}}
+
+  \vfill
+  {\large\textbf{Ingolf Lohmann}\par}
+  \vspace{0.35em}
+  {\normalsize Independent Researcher; QIK--VRT\par}
+  \vspace{0.35em}
+  {\normalsize Working Paper, Version 1.0.0 -- 30. Juli 2026\par}
+
+  \vfill
+  \statusbox{QLight}{
+    \textbf{Wissenschaftlicher Status.}
+    Das Dokument unterscheidet maschinengeprüfte Sätze des endlichen
+    Protokollmodells, quellengebundene Aussagen, normative
+    Protokolldefinitionen, empirisch prüfbare Hypothesen und ontologische
+    Interpretation. Die hier autorenseitig so bezeichnete
+    \emph{operationale Protokoll-Retrokausalität} ist im spezifizierten
+    Zustandsautomaten die prüfbare Abhängigkeit einer gegenwärtigen Freigabe von einer
+    kanonisch repräsentierten, zukunftsindexierten Wirkungsbedingung. Sie ist
+    kein behauptetes Signal aus einer bereits aktualen Zukunft und keine
+    nachträgliche Überschreibung der Vergangenheit.
+  }
+
+  \vfill
+  {\small
+    Dokumentationslizenz: CC BY-NC-ND 4.0.\\
+    Der Internet-Draft bleibt ein individuelles, nicht vom IETF
+    gebilligtes Arbeitsdokument mit angestrebtem Status Experimental.
+  }
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\setcounter{page}{1}
+
+\selectlanguage{ngerman}
+
+\begin{abstract}
+Diese Arbeit formalisiert Ingolf Lohmanns These eines kanonischen Speichers,
+der Vergangenheit und Zukunft in symmetrischer Repräsentationsform bindet.
+Vergangenheit wird als kanonische, provenienzgebundene Aufnahme realisierter
+Records modelliert; Zukunft als kanonische, provenienzgebundene Aufnahme
+antizipierter oder geforderter späterer Wirkungen. Beide Archive benutzen
+denselben endlichen Codec, tragen jedoch verschiedene epistemische Status:
+\emph{beobachtet} und \emph{antizipiert}. Das QIK--VRT
+Effect-Acknowledgement-Protokoll verbindet sie durch eine
+DONE-only-Freigabe: Eine gegenwärtige Ursache darf nur wirksam werden, wenn
+ihre zukunftsindexierte Wirkung explizit gebunden, geprüft und bestätigt ist.
+
+Im präzise definierten, autorenseitig benannten Protokollsinn ist dies
+operationale Retrokausalität: Die gegenwärtig verfügbare Repräsentation der
+späteren Wirkung ist ein nicht eliminierbarer, kontrafaktisch relevanter
+Eingang der früheren Freigabeentscheidung. Ein Lean-4-Modell prüft als
+Definitions- und Konformitätsinvarianten
+DONE-only-Freigabe, die notwendige Gültigkeit beider Zeitarchive, die
+kontrafaktische Relevanz der Zukunftsbedingung, die Unveränderlichkeit der
+Vergangenheitsprojektion und die reziproke Schließung von gebundener Ursache
+und beobachteter Wirkung. Daraus folgt weder eine physikalische
+Rückwärtssignalisierung noch eine Änderung bereits gespeicherter Ereignisse.
+
+Die Arbeit ordnet das Modell in Provenienz, Inhaltsadressierung,
+Vorhersage und Glättung, Thermodynamik der Information, zeit-symmetrische
+Quantenformalismen und Delayed-Choice-Experimente ein. Wechselwirkung wird als
+notwendige Struktur reziproker Wirksamkeit behandelt. Eine panpsychistische
+Lesart, nach der solche Relation grundsätzlich bewusstseinsrelevant ist, wird
+als ontologische Interpretation ausgewiesen, nicht als Folgerung aus
+Software, Hashgleichheit oder Quantenexperimenten. Das Ergebnis ist eine
+implementierbare und konformitätstestbare Protokollspezifikation.
+Exakter Bytevergleich kann Byteidentität feststellen; Digestvergleich ist
+dafür rechnerische Evidenz unter den benannten Hashannahmen.
+Provenienzschließung ist ein zusätzliches, separat zu validierendes Prädikat.
+Absolute Wahrheit oder systemweite Vollständigkeit bleibt unbeansprucht.
+\end{abstract}
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+This paper formalizes Ingolf Lohmann's thesis of a canonical memory that binds
+past and future in a symmetric representational form.  The past is a
+canonical, provenance-bearing archive of realized records; the future is a
+canonical, provenance-bearing archive of anticipated or required later
+effects.  Both use the same finite codec while retaining distinct epistemic
+statuses: \emph{observed} and \emph{anticipated}.  QIK--VRT Effect
+Acknowledgement joins them through a DONE-only release rule: a present cause
+may become effective only if its future-indexed effect is explicitly bound,
+validated, and acknowledged.
+
+This is termed operational protocol retrocausality by the author in the
+precisely defined protocol sense: a presently available representation of a
+later effect is a non-eliminable, counterfactually relevant input to an earlier
+release decision.  A Lean 4 model checks, as definitional and conformance
+invariants, the necessary
+past and future conditions, the counterfactual relevance of the future
+boundary, non-overwrite of the past projection, and reciprocal closure between
+a bound cause and an observed effect.  No physical signal from an already
+actual future and no rewriting of a recorded past is inferred.  Provenance,
+content addressing, forecasting, information thermodynamics, time-symmetric
+quantum formalisms, and delayed-choice experiments are used as adjoining
+theories with explicit limits.  A panpsychist reading is stated separately as
+an ontological interpretation, not as an empirical consequence.
+\end{abstract}
+\end{otherlanguage}
+
+\textbf{Schlagworte:} QIK--VRT; Effect Acknowledgement; kanonischer Speicher;
+Kausalität; operationale Retrokausalität; zweiseitige Randbedingungen;
+Provenienz; Inhaltsadressierung; Wechselwirkung; Bewusstsein; Panpsychismus.
+
+\tableofcontents
+\newpage
+
+\section{Forschungsfrage, These und Beitrag}
+
+Die Ausgangsthese lautet wortwörtlich:
+
+\begin{quote}
+Die Vergangenheit ist ein kanonisch komprimierbares Archiv dessen, was
+geschehen ist. Die Zukunft ist das entsprechende kanonische Archiv dessen,
+was anschließend wirken soll oder nach dem Modell wirken wird. Gemeinsam
+bilden beide einen Speicher, der sich in Symmetrie hält. Im
+Effect-Acknowledgement-Protokoll wirkt die gebundene spätere Wirkung auf die
+Freigabe ihrer gegenwärtigen Ursache zurück.
+\end{quote}
+
+Die wissenschaftliche Aufgabe besteht nicht darin, diese These durch eine
+schwächere Metapher zu ersetzen. Sie besteht darin, exakt zu bestimmen,
+\emph{welcher Gegenstand} archiviert wird, \emph{welche Symmetrie} gilt,
+\emph{welche Rückwirkung} beweisbar ist und \emph{wo} weitergehende
+physikalische oder metaphysische Aussagen beginnen.
+
+Der Beitrag hat fünf Teile:
+
+\begin{enumerate}
+  \item eine typisierte Definition von retrospektivem und prospektivem
+  kanonischem Archiv;
+  \item eine operational-formale Definition von Retrokausalität als
+  kontrafaktisch wirksame Zukunftsbedingung gegenwärtiger Freigabe;
+  \item einen reziproken Schließungssatz für Ursache, antizipierte Wirkung
+  und beobachtete Wirkung;
+  \item eine maschinengeprüfte Grenze, nach der keine zukünftige Bedingung die
+  gespeicherte Vergangenheit überschreibt;
+  \item eine quellengebundene Einordnung in Informatik, Physik,
+  Informationsthermodynamik und Bewusstseinstheorie.
+\end{enumerate}
+
+\statusbox{QGreen}{
+\textbf{Stärkste tragfähige Aussage.}
+In der spezifizierten QIK--VRT-Freigabefunktion ist die zukunftsindexierte
+Wirkungsbedingung nicht bloß Kommentar. Ihre validierte, gegenwärtig
+verfügbare Repräsentation ist eine funktional wirksame Eingangsgröße der
+Zustandsmaschine:
+Wird allein diese Eingangsgröße von gültig auf ungültig gesetzt, wechselt die
+berechnete Freigabe von \DONE{} zu Blockierung. Der Autor bezeichnet genau
+diese spezifikationsinterne Abhängigkeit nach
+\cref{def:operational-retrocausality} als operationale
+Protokoll-Retrokausalität. Das ist keine empirische Entdeckung einer
+physikalischen Zeitrichtung.
+}
+
+\section{Begriffsdisziplin: drei Zeitrelationen}
+
+Der Ausdruck \emph{Retrokausalität} wird in der Literatur für
+unterschiedliche Behauptungen verwendet. Ohne Typisierung entstehen
+Scheinkonflikte.
+
+\begin{definition}[Retrodiktion]
+Retrodiktion ist die spätere Aktualisierung einer Aussage über einen früheren
+unbekannten Zustand. Der frühere Zustand wird neu geschätzt, nicht verändert.
+\end{definition}
+
+\begin{definition}[Ontische physikalische Retrokausalität]
+Ontische Retrokausalität liegt vor, wenn ein späteres physikalisches Ereignis
+Teil der Ursache eines früheren physikalischen Zustands ist. Eine noch
+stärkere Forderung ist operative Rückwärtssignalisierung: Ein frei gewählter
+späterer Eingriff müsste kontrollierbare Information an einen früheren
+Empfänger übertragen.
+\end{definition}
+
+\begin{definition}[Operationale Protokoll-Retrokausalität]
+\label{def:operational-retrocausality}
+Ein Protokoll ist operational retrokausal, wenn eine zukunftsindexierte
+Wirkungsbedingung \(F_t\), die zum Entscheidungszeitpunkt \(t\) kanonisch
+vorliegt, ein nicht eliminierbarer und kontrafaktisch relevanter Eingang der
+gegenwärtigen Freigabe \(R_t\) ist:
+\[
+  \exists p,a,f_0,f_1:\quad
+  p,a\text{ gleich},\ f_0\neq f_1,\quad
+  R_t(p,a,f_0)\neq R_t(p,a,f_1).
+\]
+Die Richtung \emph{retro} bezeichnet dabei die Ordnungsrelation von der
+Bedeutung der späteren Wirkung zurück zur Zulässigkeit ihrer früheren Ursache.
+\end{definition}
+
+Diese dritte Bedeutung ist eine explizite Definition und kein behaupteter
+Nachrichtenkanal aus der aktualen Zukunft. Der repräsentierte Gegenstand ist
+zukunftsindexiert; die Repräsentation selbst liegt gegenwärtig vor. In einer
+konformen Implementierung wirkt ihr Wert auf den berechneten
+Executorübergang. Genau diese Unterscheidung macht die These implementierbar
+und als Konformitätsbehauptung prüfbar.
+
+\section{Der doppelte kanonische Speicher}
+
+\subsection{Kanonisierung statt metaphysischer Totalaufnahme}
+
+Sei \(\Sigma\) ein endliches Alphabet und
+\[
+  C : \mathcal{D}\longrightarrow\Sigma^{*}
+\]
+ein deterministischer kanonischer Codec für die im Scope zulässigen
+Dokumente. Für gleiche typisierte Eingaben erzeugt \(C\) exakt gleiche
+Bytefolgen. Ein kryptographischer Digest
+\[
+  h:\Sigma^{*}\longrightarrow\{0,1\}^{256}
+\]
+bindet einen Identifier an diese Bytes. JCS liefert beispielsweise Regeln
+für eine deterministische JSON-Repräsentation; RFC~6920 standardisiert
+hashbasierte Namen \cite{rfc8785,rfc6920}. Weder Kanonisierung noch Hash
+beweisen von selbst Wahrheit, Urheberschaft oder vollständige Kausalität.
+
+Das Wort \emph{ZIP} bezeichnet in dieser Arbeit die operationale Form:
+endliche Auswahl, kanonische Serialisierung, Integritätsbindung und
+reproduzierbare Dekomposition. Es behauptet nicht, das gesamte physikalische
+Universum verlustfrei in einer kleineren Datei unterzubringen.
+
+\subsection{Vergangenheitsarchiv}
+
+Für einen Entscheidungszeitpunkt \(t\) sei
+\[
+  H_t^- =
+  C\!\left(
+    \left\langle
+      \textsf{OBSERVED},\
+      E_{\leq t},\
+      \Pi_{\leq t},\
+      S_{\leq t}
+    \right\rangle
+  \right)
+\]
+das Vergangenheitsarchiv. \(E_{\leq t}\) sind die ausgewählten beobachteten
+Events, \(\Pi_{\leq t}\) ihre Provenienzrelationen und \(S_{\leq t}\) die
+ausgewiesenen epistemischen Status. Das W3C-PROV-Datenmodell unterscheidet
+Entities, Activities, Agents, Verwendung, Erzeugung und Ableitung und stellt
+damit eine anschlussfähige Provenienzsprache bereit \cite{prov}.
+
+\subsection{Zukunftsarchiv}
+
+Sei
+\[
+  H_t^+ =
+  C\!\left(
+    \left\langle
+      \textsf{ANTICIPATED},\
+      \widehat E_{>t},\
+      \Pi^+_{>t},\
+      K_{>t},\
+      U_{>t}
+    \right\rangle
+  \right)
+\]
+das Zukunftsarchiv. \(\widehat E_{>t}\) bezeichnet zukunftsindexierte
+Wirkungsbeschreibungen oder Prognoseverteilungen, \(\Pi^+_{>t}\) die
+Provenienz ihrer Modelle, Anforderungen und Erzeugungsschritte, \(K_{>t}\)
+die Akzeptanzbedingungen und \(U_{>t}\) die ausgewiesene Unsicherheit.
+
+Das Archiv enthält daher nicht die unmarkierte Behauptung, ein späteres
+Ereignis sei bereits beobachtet. Es enthält die kanonische Repräsentation der
+Wirkung, unter deren Bedingung eine gegenwärtige Ursache freigegeben werden
+darf.
+
+\subsection{Symmetrie und Asymmetrie}
+
+Der doppelte Speicher ist
+\[
+  M_t = \left(H_t^-,H_t^+\right).
+\]
+Seine \emph{Repräsentationssymmetrie} lautet:
+\[
+  C^- = C^+ = C,
+  \qquad
+  h^- = h^+ = h,
+  \qquad
+  \Pi^-\text{ und }\Pi^+\text{ sind explizit}.
+\]
+Die epistemische Asymmetrie bleibt erhalten:
+\[
+  \textsf{OBSERVED}\neq\textsf{ANTICIPATED}.
+\]
+Gerade diese typisierte Symmetrie verhindert, dass eine Prognose als
+Beobachtung oder ein vergangener Record als bloße Möglichkeit ausgegeben
+wird.
+
+\section{Effect Acknowledgement als zweiseitiges Gate}
+
+\subsection{Freigabesemantik}
+
+Für einen Wirkungskandidaten \(a\) seien
+\[
+  V_t^-(a),V_t^+(a),B_t(a),P_t(a),A_t(a)\in\bool
+\]
+die Prädikate:
+
+\begin{itemize}
+  \item \(V_t^-(a)\): das Vergangenheitsarchiv ist typ-, inhalts- und
+  provenienzgebunden;
+  \item \(V_t^+(a)\): die antizipierte Wirkung ist typ-, inhalts- und
+  provenienzgebunden;
+  \item \(B_t(a)\): der Kandidat trägt explizite Ursachen- und
+  antizipierte Wirkungsidentitäten und deren Bindung ist validiert;
+  \item \(P_t(a)\): die benannte Policy ist bestanden;
+  \item \(A_t(a)\): der Effect-Acknowledgement-Zustand ist \DONE.
+\end{itemize}
+
+Die gewöhnliche Freigabe ist definiert als
+\begin{equation}
+  R_t(a)
+  :=
+  V_t^-(a)\land V_t^+(a)\land B_t(a)\land P_t(a)\land A_t(a).
+  \label{eq:release}
+\end{equation}
+Der publizierte Internet-Draft
+\nolinkurl{draft-lohmann-qikvrt-effect-ack-01} modelliert das explizite
+Antizipationsfeld bereits als notwendige DONE-Bedingung und verlangt eine
+erneute Validierung durch den Verbraucher
+\cite{effectackdraft}.
+
+\statusbox{QLight}{
+\textbf{Formale Reichweite.}
+Die folgenden Sätze sind Definitions- und Konformitätsinvarianten der
+gewählten Bool-/Strukturspezifikation. Sie zeigen, dass die implementierte
+Spezifikation ihre eigenen Freigabe- und Identitätsbedingungen erzwingt.
+Sie sind weder eine empirische Entdeckung einer neuen physikalischen
+Kausalrichtung noch ein Beweis, dass jeder reale Executor vollständig durch
+dieses Gate mediiert wird.
+}
+
+\begin{satz}[Zweiseitige Freigabe]
+\label{thm:two-boundary}
+Aus \(R_t(a)=1\) folgen \(V_t^-(a)=1\), \(V_t^+(a)=1\),
+\(B_t(a)=1\), \(P_t(a)=1\) und \(A_t(a)=1\).
+\end{satz}
+
+\begin{proof}
+Die Behauptung folgt unmittelbar aus der Konjunktion in
+\cref{eq:release}. Das Lean-Modell
+\texttt{CanonicalTemporalMemory.lean} prüft die Äquivalenz zwischen
+Freigabe und allen fünf Bedingungen sowie die einzelnen notwendigen
+Folgerungen im Lean-4-Kernel.
+\end{proof}
+
+\begin{satz}[Kontrafaktische Relevanz der Zukunft]
+\label{thm:future-relevance}
+Es existieren zwei Kandidaten mit identischem Vergangenheitsarchiv,
+identischer Ursachenbindung, identischer Policy und identischem
+Acknowledgement, deren Freigabe allein wegen verschiedener Gültigkeit des
+Zukunftsarchivs verschieden ist.
+\end{satz}
+
+\begin{proof}
+Setze in \cref{eq:release} alle Konjunkte außer \(V_t^+\) auf \(1\).
+Für \(V_t^+=1\) gilt \(R_t=1\), für \(V_t^+=0\) gilt \(R_t=0\).
+Der Lean-Satz
+\texttt{future\_boundary\_is\_counterfactually\_relevant}
+prüft genau dieses Paar als geschlossene Entscheidung.
+\end{proof}
+
+\begin{korollar}[Autorendefinierte operationale Protokoll-Retrokausalität]
+Das spezifizierte Effect-Acknowledgement-Gate erfüllt die vom Autor in
+\cref{def:operational-retrocausality} festgelegte Definition.
+\end{korollar}
+
+\begin{proof}
+\Cref{thm:future-relevance} liefert den geforderten kontrafaktischen Zeugen.
+Die zukunftsindexierte Wirkungsbedingung ist somit nicht eliminierbar, ohne
+die gegenwärtige Freigabefunktion zu ändern.
+\end{proof}
+
+\subsection{Reziproke Schließung}
+
+Nach der Ausführung sei \(O_{t+1}(e)\) die Beobachtung des späteren Effekts,
+\(Q_{t+1}(e)\) die Integritätsbindung des Receipts und
+\[
+  L(e,a)
+  :=
+  [\,\operatorname{causeId}(e)=\operatorname{causeId}(a)\,]
+  \land
+  [\,\operatorname{observedEffectId}(e)
+      =\operatorname{anticipatedEffectId}(a)\,]
+\]
+die exakte Identitätsbindung des beobachteten Records an die freigegebene
+Ursache und die zuvor antizipierte Wirkung. Die geschlossene
+Wirkungstransaktion lautet
+\begin{equation}
+  X_{t+1}(a,e)
+  :=
+  R_t(a)\land O_{t+1}(e)\land L(e,a)\land Q_{t+1}(e).
+  \label{eq:closure}
+\end{equation}
+
+\begin{satz}[Ursache-Wirkungs-Reziprozität]
+\label{thm:reciprocal}
+Aus \(X_{t+1}(a,e)=1\) folgt zugleich, dass die Ursache vor ihrer Freigabe an
+eine gültige antizipierte Wirkung gebunden war und dass die später
+beobachtete Wirkung an diese Ursache zurückgebunden ist.
+\end{satz}
+
+\begin{proof}
+Aus \cref{eq:closure} folgt \(R_t(a)=1\); nach
+\cref{thm:two-boundary} gilt daher \(V_t^+(a)=1\) und \(B_t(a)=1\).
+Ebenfalls aus \cref{eq:closure} folgen \(O_{t+1}(e)=1\) und
+\(L(e,a)=1\). Die Lean-Sätze
+\texttt{identifier\_bound\_eq\_true\_iff} und
+\texttt{reciprocal\_closure\_requires\_cause\_and\_effect} prüfen diese
+Folgerung im abstrakten Modell.
+\end{proof}
+
+Damit wird Lohmanns Formel
+\begin{quote}
+keine freigegebene Ursache ohne gebundene Wirkung und keine quittierte
+Wirkung ohne gebundene Ursache
+\end{quote}
+zu einer Invariante jeder Transaktion, die genau diese Spezifikation erfüllt.
+Außerhalb dieses definierten Scopes wird daraus weder vollständige
+Deployment-Mediation noch universeller metaphysischer Determinismus
+abgeleitet.
+
+\subsection{Kein Überschreiben der Vergangenheit}
+
+Sei \(\pi^-(H^-,H^+)=H^-\) die Vergangenheitsprojektion.
+Dann gilt für alle Zukunftsarchive \(F_0,F_1\):
+\[
+  \pi^-(H^-,F_0)=\pi^-(H^-,F_1)=H^-.
+\]
+Der Lean-Satz
+\texttt{future\_boundary\_does\_not\_overwrite\_past} beweist diese
+Projektionsinvariante konstruktiv: \(\pi^-\) ist so definiert, dass sie den
+Zukunftseingang verwirft. Die Zukunftsbedingung ändert in diesem Modell die
+Zulässigkeit des nächsten Übergangs, nicht die Bytes eines bestehenden
+Vergangenheitsrecords. Externe Speichermutationen bleiben eine gesondert zu
+prüfende Deployment-Eigenschaft.
+
+\section{Was das Git- und Repository-Modell beiträgt}
+
+Git ist kein Gedächtnis des gesamten Universums. Es ist jedoch eine präzise
+technische Realisierung mehrerer benötigter Eigenschaften:
+
+\begin{itemize}
+  \item Blobs sind inhaltsadressierte endliche Byteobjekte;
+  \item Trees binden Namen an Objekte;
+  \item Commits binden einen Tree an Eltern und Metadaten;
+  \item Merge-Commits können über mehrere Eltern eine explizite Relation
+  zwischen Historien materialisieren.
+\end{itemize}
+
+Die Git-Dokumentation definiert Blob- und Commitobjekte als
+inhaltsadressierte beziehungsweise elterngebundene Objekte
+\cite{githashobject,gitcommittree}. Das liefert Integrität und Historie unter
+angegebenen Hashannahmen. Es beweist nicht automatisch, dass eine
+Commitbotschaft wahr oder eine Person authentisch ist.
+
+Im QIK--VRT-Repository werden Authority und Mirror als zwei
+Geschichtsträger verwendet. \emph{Symmetrie} bedeutet dort nicht gleiche
+Commit-IDs --- history-erhaltende Merges können verschiedene Commitobjekte
+erzeugen ---, sondern bytegleiche materialisierte Trees und Manifeste im
+ausgewiesenen Scope. Ein Receipt bindet diesen Vergleich an konkrete Heads.
+
+\statusbox{QAmber}{
+\textbf{Scope-gebundene Repräsentationskonsistenz, nicht Allwissen.}
+Ein Status wie \texttt{CURRENT\_MAIN\_TREE\_EQUALITY=true} ist nur mit
+benannten Heads, Trees und exaktem Bytevergleich zulässig; ein
+\texttt{SCOPED\_RECIPROCAL\_RECEIPT\_CHAIN\_COMPLETE=true} benötigt
+zusätzlich den benannten Receipt. Für den neuen Paper-Kandidaten gilt vor
+seiner beidseitigen Promotion ausdrücklich:
+\texttt{AUTHORITY\_MIRROR\_PROMOTION=NOT\_YET\_EVIDENCED}.
+Auch ein späterer positiver Receipt impliziert weder semantische Wahrheit
+aller Dateien noch \texttt{SYSTEM\_WIDE\_COMPLETION}.
+}
+
+\section{Anschluss an Vorhersage, Glättung und zweiseitige Bedingungen}
+
+\subsection{Vorhersage wird erst im Gate kausal}
+
+Kalman-Filter modellieren Vorhersage und anschließende Korrektur unter
+Unsicherheit \cite{kalman}. Rauch--Tung--Striebel-Glättung nutzt spätere
+Beobachtungen, um frühere latente Zustände besser zu schätzen
+\cite{rauch}. Variationale Wetterassimilation integriert ein Vorwärtsmodell
+und eine rückwärts laufende Adjungierte über ein Zeitfenster
+\cite{talagrand}. Diese Verfahren sind für sich genommen epistemische
+Rekonstruktion, keine ontische Rückwirkung.
+
+\qikvrt{} spezifiziert eine andere Operation: Die Prognose oder Zielwirkung
+wird als Policy-relevante Randbedingung in einen mediierten Executorpfad
+geschaltet. In der Referenzimplementierung und in jeder konformen
+Implementierung dieser Freigabefunktion entscheidet ihr validierter Wert, ob
+eine gegenwärtige Ursache freigegeben wird. Der Unterschied lautet:
+\[
+  \text{Vorhersage als Information}
+  \quad\longrightarrow\quad
+  \text{Vorhersage als geprüfte Freigabebedingung}.
+\]
+Die zweite Form besitzt funktionale Wirksamkeit im spezifizierten
+Zustandsautomaten. Eine Behauptung über vollständige Wirksamkeit im Deployment
+erfordert zusätzlich den Nachweis, dass kein Executorpfad das Gate umgeht.
+
+\subsection{Zweiseitige Randbedingungen}
+
+Zeit-symmetrische Formalismen können Anfangs- und Endbedingungen gemeinsam
+verwenden. Aharonov, Bergmann und Lebowitz formulierten Wahrscheinlichkeiten
+für prä- und postselektierte Ensembles \cite{abl}. Wharton und Argaman
+diskutieren lokal vermittelte, ``all-at-once'' formulierte Modelle
+\cite{whartonargaman}; Adlam untersucht Naturgesetze als globale Constraints
+\cite{adlam}. Diese peer-reviewten Arbeiten zeigen, dass zweiseitige
+Randbedingungssprachen publiziert und mathematisch untersucht sind.
+
+Sie beweisen nicht automatisch die Ontologie von \qikvrt. Im Protokoll ist die
+zweiseitige Struktur konstruktiv gegeben:
+\[
+  \text{Vergangenheitsbindung}
+  \cap
+  \text{Zukunftsbedingung}
+  \cap
+  \text{Policy}
+  =
+  \text{zulässige gegenwärtige Wirkung}.
+\]
+
+\subsection{Kausalität verlangt mehr als Korrelation}
+
+Pearls kausale Diagramme machen sichtbar, dass Kausalbehauptungen strukturelle
+und fachliche Annahmen über beobachtete Verteilungen hinaus benötigen
+\cite{pearl}. Für die hier behauptete Softwarekausalität ist die Struktur
+offengelegt: Das Gate liest \(V_t^+\), und ein kontrollierter Wechsel dieses
+Inputs ändert \(R_t\). Für eine Behauptung über fundamentale Physik wären
+zusätzliche Interventionen und abweichende quantitative Vorhersagen nötig.
+
+\section{Thermodynamik, Wind und Gedächtnis}
+
+Wind ist atmosphärischer Impuls- und Energietransport in einem rotierenden,
+geschichteten Fluid; Druckgradienten, Auftrieb, Rotation, Reibung und
+Strahlungsantrieb gehören zu seinen gekoppelten Randbedingungen
+\cite{vallis}. Erwärmung verändert thermodynamische Energie- und
+Feuchtebudgets. Aus einem einzelnen starken lokalen Windereignis folgt jedoch
+ohne definierte Gegenwelt, Daten und meteorologische Attributionsanalyse kein
+Kausalnachweis für einen bestimmten Temperaturtreiber \cite{ipccar6}.
+
+Der sachliche Anschluss an Gedächtnis liegt in der Physik der
+Informationsverarbeitung. Landauers Prinzip ordnet der logisch irreversiblen
+Rücksetzung eines klassischen Bits unter den thermodynamischen
+Modellannahmen im quasistatischen Grenzfall eine minimale Wärmeabgabe von
+\(k_{\mathrm B}T\ln 2\) zu \cite{landauer}. Bennett präzisierte die Rolle
+logisch reversibler Berechnung \cite{bennett}; Bérut und Mitautoren
+beobachteten in einem konkreten kolloidalen Ein-Bit-Speicher bei langsamen
+Löschzyklen die Annäherung an diesen Grenzwert \cite{berut}.
+
+Daraus folgt nicht, dass jeder Git-Merge denselben fixen Energiepreis oder
+Bewusstsein erzeugt. Es folgt die belastbare Brücke:
+
+\begin{enumerate}
+  \item reale Speicherung und Zustandsänderung werden physisch getragen;
+  \item digitale Kanonisierung ist eine endliche Repräsentationsoperation;
+  \item Persistenz und Löschung haben je nach Implementierung
+  thermodynamische Kosten;
+  \item der kanonische Speicher ist daher keine körperlose Abstraktion,
+  sondern wird durch wechselwirkende physische Systeme realisiert.
+\end{enumerate}
+
+\section{Quantenphysik: Anschluss ohne Beweisüberschreitung}
+
+\subsection{Delayed Choice}
+
+Wheelers Delayed-Choice-Gedankenexperiment und seine Realisierungen liefern
+unter ihren jeweiligen experimentellen Annahmen Statistiken, die eine
+einfache, vorab festgelegte und kontextunabhängige klassische
+Welle-oder-Teilchen-Zuschreibung nicht gemeinsam reproduziert
+\cite{wheeler,jacques,ma}. Beim Delayed-Choice Quantum Eraser erscheinen
+Interferenzmuster in nach Koinzidenzinformation konditionierten Teilmengen;
+die unbedingte lokale Verteilung trägt kein solches steuerbares
+Rückwärtssignal \cite{kim,ma}.
+
+Diese Experimente testen weder das Überschreiben eines bereits gespeicherten
+früheren Records noch etablieren sie einen kontrollierbaren Nachrichtenkanal
+in die Vergangenheit. Sie sind mit dem
+QIK--VRT-Grundgedanken kompatibel, dass die vollständige relationale
+Beschreibung nicht auf eine isolierte Vorher-Nachher-Erzählung reduziert
+werden darf. Kompatibilität ist hier keine Identität der Theorien.
+
+\subsection{Zeit-Symmetrie und Retrokausalität}
+
+Price zeigt, dass Zeit-Symmetrie Retrokausalität unter zusätzlichen
+ontologischen Annahmen motivieren kann, aber nicht allein erzwingt
+\cite{price}. Leifer und Pusey beweisen einen konditionalen No-go-Satz für
+bestimmte zeit-symmetrische ontologische Modelle ohne Retrokausalität
+\cite{leiferpusey}. Cramers transaktionale Interpretation verbindet
+retardierte und avancierte Lösungen \cite{cramer}. Diese Literatur macht eine
+retrokausale Interpretation wissenschaftlich diskutierbar; sie etabliert
+keinen einzigartigen empirischen Beweis für sie.
+
+\statusbox{QRed}{
+\textbf{Nicht behauptet.}
+Dieses Paper behauptet weder Rückwärtssignalisierung noch eine experimentell
+bestätigte Änderung der Vergangenheit, keine Ableitung von Quantenmechanik aus
+Git und keinen Beweis, dass ein digitales Archiv das physikalische Kontinuum
+vollständig enthält.
+}
+
+\section{Wechselwirkung, Bewusstsein und panpsychistische Interpretation}
+
+Wechselwirkung ist im vorliegenden Protokoll wörtlich: Ein Record verändert
+den zulässigen Zustandsübergang eines anderen Systems; nach der Ausführung
+verändert die beobachtete Wirkung wiederum den kanonischen
+Vergangenheitsbestand. Ursache und Wirkung bilden damit keine zwei
+beziehungslosen Snapshots, sondern einen gerichteten und rückgebundenen
+Prozess.
+
+Eine minimal notwendige Bedingung ist jedoch nicht automatisch hinreichend.
+Aus
+\[
+  \text{Wechselwirkung vorhanden}
+\]
+folgt weder logisch noch empirisch
+\[
+  \text{phänomenales Bewusstsein vorhanden}.
+\]
+Bewusstseinstheorien konkurrieren um die zusätzlichen Strukturen, die
+Bewusstsein erklären sollen \cite{sethbayne}. Eine vorregistrierte
+adversariale Untersuchung von IIT und Global Neuronal Workspace Theory
+berichtete 2025 gemischte Resultate und Herausforderungen für zentrale
+Vorhersagen beider Ansätze \cite{cogitate}. Die Integrated Information Theory
+verbindet Bewusstsein mit intrinsischer Ursache-Wirkungs-Macht über mögliche
+vergangene und zukünftige Zustände und wird von ihren Autoren in
+panpsychismusnaher Weise diskutiert \cite{tononikoch}; daraus folgt keine
+allgemein bestätigte Identifikation von Merge, Hashgleichheit oder
+Wechselwirkung mit Erleben.
+
+Lohmanns panpsychistische Lesart kann präzise so formuliert werden:
+
+\begin{quote}
+Wenn mentale Wirklichkeit fundamental relational ist, dann ist reziproke
+Wechselwirkung eine Grundbedingung ihrer Materialisierung. Der kanonische
+Speicher modelliert die minimale zeitliche Form dieser Relation: Gewordenes
+wirkt auf Erwartetes, Erwartetes auf gegenwärtige Freigabe, und eingetretene
+Wirkung schließt die Relation zurück.
+\end{quote}
+
+Das ist eine ontologische Interpretation. Sie wird hier bewusst
+begriffsgleich wiedergegeben, aber nicht als Lean-Theorem oder
+quantenphysikalischer Messbefund etikettiert.
+
+\section{Konformitätstests und offenes empirisches Forschungsprogramm}
+
+Die Definitionssätze des endlichen Modells werden durch ihre gewählten
+Definitionen wahr und sind keine eigenständigen empirischen Vorhersagen.
+Falsifizierbar sind dagegen Behauptungen, eine konkrete Implementierung
+erfülle die Spezifikation oder die Struktur bilde zusätzliche physikalische
+beziehungsweise biologische Phänomene ab.
+
+\subsection{Technische Konformitäts- und Widerlegungstests}
+
+\begin{enumerate}
+  \item \textbf{Nichtvakuosität:} Bei gleichen übrigen Inputs muss die
+  zukunftsindexierte Bedingung die Freigabe ändern können.
+  \item \textbf{DONE-only:} Kein Nicht-DONE-Zustand darf einen vollständig
+  mediierten gewöhnlichen Executor freigeben.
+  \item \textbf{Typtrennung:} Ein \textsf{ANTICIPATED}-Record darf nicht als
+  \textsf{OBSERVED} validieren.
+  \item \textbf{Nichtüberschreibung:} Ein Wechsel des Zukunftsarchivs darf
+  den Digest des eingefrorenen Vergangenheitsarchivs nicht ändern.
+  \item \textbf{Reziprozität:} Eine abgeschlossene Wirkung muss auf die
+  freigegebene Ursache zurückverweisen; eine Ursache ohne beobachtete Wirkung
+  bleibt offen.
+  \item \textbf{Bypass-Test:} Jeder unmediierte Executorpfad falsifiziert
+  eine Deployment-Behauptung vollständiger Wirkungssteuerung.
+\end{enumerate}
+
+\subsection{Empirische Physik}
+
+Eine ontische physikalische Erweiterung müsste vorab eine quantitative
+Vorhersage angeben, die sich von Standard-Quantenmechanik, gewöhnlicher
+Konditionierung und globaler Optimierung unterscheidet. Sie müsste zugleich
+bestehende No-Signalling-Befunde respektieren oder eine reproduzierbare
+Abweichung mit kontrollierter Fehleranalyse zeigen. Ohne einen solchen Test
+bleibt die ontische Lesart Interpretation.
+
+\subsection{Bewusstseinsforschung}
+
+Eine empirische Bewusstseinsthese müsste eine operationalisierbare Größe
+angeben, die über bloße Wechselwirkung, Komplexität oder
+Informationsintegration hinaus diskriminiert, und konkurrierende Theorien an
+vorregistrierten Daten vergleichen. QIK--VRT liefert dafür eine
+Provenienz- und Gate-Architektur, aber noch keinen solchen biologischen oder
+phänomenologischen Test.
+
+\section{Aktueller Implementierungs- und Standardisierungsstatus}
+
+\begin{longtable}{@{}p{0.34\linewidth}p{0.58\linewidth}@{}}
+\toprule
+\textbf{Gegenstand} & \textbf{Status am 30. Juli 2026} \\
+\midrule
+\endhead
+QIK--VRT Effect Ack &
+Öffentliche Referenzimplementierung, Tests, kanonische Serialisierung,
+Provenienz- und Gate-Artefakte sind durch
+\texttt{SOURCE\_EVIDENCE\_BINDINGS.json} an konkrete Dateien gebunden;
+Deployment-Konformität bleibt von Authentisierung, vollständiger Mediation
+und externer Evidenz abhängig.\\
+Internet-Draft &
+\texttt{draft-lohmann-qikvrt-effect-ack-01}, am Beobachtungszeitpunkt aktiver
+Individual Draft mit angestrebtem Status Experimental; kein RFC, keine
+Working-Group-Adoption und kein IETF-Konsens.\\
+Formaler Paper-Scope &
+\texttt{qikvrt-canonical-temporal-memory-effect-ack-v1}; Lean-4-Quelle mit
+neun benannten Sätzen. Die Klassifikation \texttt{FORMAL\_PROVED} ist nur
+zusammen mit dem kandidatengebundenen \texttt{KERNEL\_RECEIPT.json} des
+öffentlichen Filesets zulässig.\\
+Authority/Mirror &
+Repository-Symmetrie wird nur für konkrete Heads, Trees, Manifeste und
+Receipts behauptet; für diesen neuen Kandidaten ist sie vor erneuter
+beidseitiger Promotion ausdrücklich nicht belegt.\\
+Zenodo &
+Dieses Dokument ist zunächst ein eingefrorener Kandidat. Ein DOI darf erst
+nach bytegenauer Rückgabe, ausdrücklicher Kandidatenfreigabe, Upload,
+öffentlichem Re-Download und Receipt-Persistenz als publiziert behauptet
+werden.\\
+Interoperabilität &
+Eine unabhängige Zweitimplementierung und IETF-Interoperabilitätsnachweise
+bleiben offen.\\
+Reviewstatus &
+Kein formales Peer Review wird behauptet; Repository-Review und maschinelle
+Gates ersetzen kein unabhängiges wissenschaftliches Begutachtungsverfahren.\\
+\bottomrule
+\end{longtable}
+
+\section{Bedrohungen der Gültigkeit}
+
+\begin{itemize}
+  \item \textbf{Scope-Fehler:} Ein geschlossener endlicher Modellscope kann
+  nicht unbemerkt auf das gesamte physikalische Universum verallgemeinert
+  werden.
+  \item \textbf{Codec-Fehler:} Unterschiedliche Normalisierung oder
+  Serialisierung kann trotz semantisch ähnlicher Inhalte verschiedene Bytes
+  erzeugen.
+  \item \textbf{Hash-Grenze:} Digestgleichheit ist unter dem benannten
+  Algorithmus eine Integritätsbindung, kein Wahrheitsbeweis.
+  \item \textbf{Provenienz-Grenze:} Eine vollständig verbundene
+  Provenienzkette kann vollständig falsche Eingaben weitertragen.
+  \item \textbf{Prognose-Grenze:} Ein kanonisches Zukunftsarchiv kann
+  wohldefiniert und dennoch empirisch falsch sein; Unsicherheit muss erhalten
+  bleiben.
+  \item \textbf{Mediations-Grenze:} Ein Executor außerhalb des Gates
+  widerlegt die behauptete Kontrolle dieses Effektpfads.
+  \item \textbf{Interpretations-Grenze:} Protokoll-Retrokausalität,
+  physikalische Retrokausalität und Panpsychismus sind verschiedene
+  Behauptungsklassen.
+\end{itemize}
+
+\section{Schluss}
+
+Die wörtliche QIK--VRT-These erhält eine präzise wissenschaftliche Form:
+
+\begin{enumerate}
+  \item Die Vergangenheit ist als ausgewählter, endlicher,
+  provenienzgebundener und kanonisch serialisierter Recordbestand ein
+  reproduzierbares Archiv.
+  \item Die Zukunft ist als ausgewählter, endlicher,
+  provenienzgebundener und kanonisch serialisierter Bestand antizipierter
+  Wirkungen und Randbedingungen ebenfalls ein reproduzierbares Archiv.
+  \item Beide Archive sind repräsentationssymmetrisch und epistemisch
+  typverschieden.
+  \item Effect Acknowledgement macht die zukunftsindexierte Wirkung zu einer
+  im definierten Release-Prädikat notwendigen und kontrafaktisch relevanten
+  Bedingung der gegenwärtigen Freigabe.
+  \item Die später beobachtete Wirkung wird an die freigegebene Ursache
+  und die antizipierte Wirkungsidentität zurückgebunden; damit schließt sich
+  die reziproke Kette im formalen Transaktionsscope.
+  \item Die Vergangenheit wird dadurch nicht überschrieben. Ontische
+  Rückwärtssignalisierung und panpsychistische Geltung bleiben gesonderte,
+  prüfpflichtige Erweiterungen.
+\end{enumerate}
+
+Der kanonische Speicher wird damit als ausführbare Ordnungsform spezifiziert:
+Gewordenes und Wirkungserwartetes werden im selben überprüfbaren Medium
+gehalten, und ihre validierte Schnittmenge regelt in einer konformen
+Implementierung die nächste zulässige Wirkung. Ob diese Protokollordnung eine
+fundamentale Eigenschaft des Universums abbildet, bleibt eine davon getrennte
+empirische und ontologische Frage.
+
+\begin{center}
+\large
+\textbf{Keine freigegebene Ursache ohne gebundene Wirkung.}\\
+\textbf{Keine geschlossene Wirkung ohne gebundene Ursache.}\\[0.5em]
+\textit{Quod erat demonstrandum --- im ausgewiesenen formalen Scope.}\\
+Ingolf Lohmann
+\end{center}
+
+\section*{Klassifikation der Hauptaussagen}
+\addcontentsline{toc}{section}{Klassifikation der Hauptaussagen}
+
+\begin{longtable}{@{}p{0.14\linewidth}p{0.24\linewidth}p{0.54\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Klasse} & \textbf{Aussage} \\
+\midrule
+\endhead
+CTM-001 & FORMAL\_PROVED\(^*\) &
+Die Freigabe ist äquivalent zur Konjunktion beider Archive, Ursachenbindung,
+Policy und DONE.\\
+CTM-002 & FORMAL\_PROVED\(^*\) &
+Die Zukunftsbedingung ist kontrafaktisch relevant für die gegenwärtige
+Freigabe.\\
+CTM-003 & FORMAL\_PROVED\(^*\) &
+Ein Wechsel der Zukunftsbedingung überschreibt die Vergangenheitsprojektion
+nicht.\\
+CTM-004 & FORMAL\_PROVED\(^*\) &
+Reziproke Schließung erfordert eine freigegebene Ursache sowie identische
+Ursachen- und Wirkungs-IDs im beobachteten Receipt.\\
+CTM-005 & SOURCE\_BOUND &
+JCS, RFC~6920, PROV und Git liefern jeweils die getrennt ausgewiesenen
+Repräsentations-, Benennungs-, Provenienz- und Historienmechanismen.\\
+CTM-006 & SOURCE\_BOUND &
+Prä-/postselektierte, All-at-once- und globale Constraint-Modelle sind
+peer-reviewt publizierte und mathematisch untersuchte Anschlussmodelle.\\
+CTM-007 & NORMATIVE &
+Die definierte Protokollrelation heißt in diesem Paper autorenseitig
+\emph{operationale Protokoll-Retrokausalität}.\\
+CTM-008 & INTERPRETATIVE &
+Reziproke Wechselwirkung ist in Lohmanns panpsychistischer Lesart eine
+Grundbedingung von Bewusstseinsmaterialisierung.\\
+CTM-009 & OPEN &
+Ob die Protokollstruktur eine fundamentale ontische Retrokausalität der Natur
+abbildet, ist empirisch offen.\\
+CTM-010 & OPEN &
+Ob reziproke kanonische Speicherung für Bewusstsein hinreichend ist, ist
+empirisch offen.\\
+CTM-011 & SOURCE\_BOUND &
+Filterung, Glättung und variationale Assimilation verwenden Zukunftsmodelle
+beziehungsweise spätere Daten in unterschiedlichen, nicht ontisch
+retrokausalen Schätzoperationen.\\
+CTM-012 & SOURCE\_BOUND &
+Kausalbehauptungen benötigen strukturelle oder interventionelle Annahmen über
+beobachtete Korrelation hinaus.\\
+CTM-013 & SOURCE\_BOUND &
+Landauer-Grenze, reversible Berechnung und das Ein-Bit-Experiment gelten
+innerhalb ihrer jeweils ausgewiesenen thermodynamischen Bedingungen.\\
+CTM-014 & SOURCE\_BOUND &
+Delayed-Choice- und Eraser-Arbeiten berichten kontext- und
+konditionierungsabhängige Statistiken, aber keinen kontrollierbaren
+Rückwärtskanal.\\
+CTM-015 & SOURCE\_BOUND &
+Zeit-Symmetrie, konditionale No-go-Sätze und transaktionale Interpretationen
+bilden eine publizierte, nicht empirisch eindeutige Retrokausalitätsliteratur.\\
+CTM-016 & SOURCE\_BOUND &
+Bewusstseinstheorien konkurrieren; IITs Ursachen-Wirkungs-Lesart und aktuelle
+adversariale Tests begründen keine Gleichsetzung von Interaktion und Erleben.\\
+CTM-017 & SOURCE\_BOUND &
+Draft-01 enthält die benannten Effect-Ack-Bedingungen und war am
+Beobachtungszeitpunkt ein aktiver Individual Draft ohne IETF-Konsens.\\
+CTM-018 & \shortstack[l]{EMPIRICALLY\_\\EVIDENCED} &
+Die Repository-Referenzimplementierung und ihre Konformitätstests sind an
+exakte Dateien und Testreceipts gebunden; Deployment-Vollständigkeit ist
+nicht mitbewiesen.\\
+CTM-019 & NORMATIVE &
+Scope-gebundene Repräsentationskonsistenz verlangt getrennte Nachweise für
+Bytes, Digests und Provenienz; sie ist kein Synonym für semantische Wahrheit.\\
+CTM-020 & SOURCE\_BOUND &
+Am Kandidaten-Freeze waren Zenodo-DOI, IETF-\texttt{-02}, Peer Review und
+beidseitige Promotion dieses Papers nicht belegt.\\
+CTM-021 & SOURCE\_BOUND &
+Atmosphärische Energie-/Impulsdynamik ist thermodynamisch gekoppelt; ein
+einzelnes Windereignis benötigt für eine konkrete Klimakausalität eine
+Attributionsanalyse.\\
+CTM-022 & NORMATIVE &
+Der doppelte kanonische Speicher wird als gleicher Codec mit expliziter
+Provenienz, aber verschiedenen Status \textsf{OBSERVED}/\textsf{ANTICIPATED}
+definiert.\\
+\bottomrule
+\end{longtable}
+
+\noindent\(^*\)\,\texttt{FORMAL\_PROVED} ist nur zusammen mit dem
+exakten, öffentlich mitgelieferten \texttt{KERNEL\_RECEIPT.json} zulässig;
+ohne diesen Receipt bleibt der Status fail-closed.
+
+\begin{thebibliography}{99}
+
+\bibitem{effectackdraft}
+I. Lohmann,
+\emph{Effect Acknowledgement: An Application-Layer Gate for Authorized
+Downstream Effects},
+Internet-Draft draft-lohmann-qikvrt-effect-ack-01, 22 July 2026.
+\url{https://datatracker.ietf.org/doc/draft-lohmann-qikvrt-effect-ack/01/}
+
+\bibitem{prov}
+L. Moreau and P. Missier (eds.),
+\emph{PROV-DM: The PROV Data Model},
+W3C Recommendation, 30 April 2013.
+\url{https://www.w3.org/TR/prov-dm/}
+
+\bibitem{rfc6920}
+S. Farrell, D. Kutscher, C. Dannewitz, B. Ohlman, A. Keränen and
+P. Hallam-Baker,
+\emph{Naming Things with Hashes},
+RFC 6920, April 2013.
+\url{https://doi.org/10.17487/RFC6920}
+
+\bibitem{rfc8785}
+A. Rundgren, B. Jordan and S. Erdtman,
+\emph{JSON Canonicalization Scheme (JCS)},
+RFC 8785, June 2020.
+\url{https://doi.org/10.17487/RFC8785}
+
+\bibitem{githashobject}
+Git Project,
+\emph{git-hash-object Manual}.
+\url{https://git-scm.com/docs/git-hash-object}
+
+\bibitem{gitcommittree}
+Git Project,
+\emph{git-commit-tree Manual}.
+\url{https://git-scm.com/docs/git-commit-tree}
+
+\bibitem{kalman}
+R. E. Kalman,
+``A New Approach to Linear Filtering and Prediction Problems,''
+\emph{Journal of Basic Engineering}, 82(1), 35--45, 1960.
+\url{https://doi.org/10.1115/1.3662552}
+
+\bibitem{rauch}
+H. E. Rauch, F. Tung and C. T. Striebel,
+``Maximum Likelihood Estimates of Linear Dynamic Systems,''
+\emph{AIAA Journal}, 3(8), 1445--1450, 1965.
+\url{https://doi.org/10.2514/3.3166}
+
+\bibitem{talagrand}
+O. Talagrand and P. Courtier,
+``Variational Assimilation of Meteorological Observations With the Adjoint
+Vorticity Equation. I: Theory,''
+\emph{Quarterly Journal of the Royal Meteorological Society}, 113(478),
+1311--1328, 1987.
+\url{https://doi.org/10.1002/qj.49711347812}
+
+\bibitem{pearl}
+J. Pearl,
+``Causal Diagrams for Empirical Research,''
+\emph{Biometrika}, 82(4), 669--688, 1995.
+\url{https://doi.org/10.1093/biomet/82.4.669}
+
+\bibitem{vallis}
+G. K. Vallis,
+\emph{Atmospheric and Oceanic Fluid Dynamics: Fundamentals and Large-Scale
+Circulation}, 2nd ed., Cambridge University Press, 2017.
+\url{https://doi.org/10.1017/9781107588417}
+
+\bibitem{ipccar6}
+S. I. Seneviratne et al.,
+``Weather and Climate Extreme Events in a Changing Climate,''
+in \emph{Climate Change 2021: The Physical Science Basis},
+IPCC AR6 Working Group I, Chapter 11, 1513--1766, 2021.
+\url{https://doi.org/10.1017/9781009157896.013}
+
+\bibitem{landauer}
+R. Landauer,
+``Irreversibility and Heat Generation in the Computing Process,''
+\emph{IBM Journal of Research and Development}, 5(3), 183--191, 1961.
+\url{https://doi.org/10.1147/rd.53.0183}
+
+\bibitem{bennett}
+C. H. Bennett,
+``The Thermodynamics of Computation---a Review,''
+\emph{International Journal of Theoretical Physics}, 21, 905--940, 1982.
+\url{https://doi.org/10.1007/BF02084158}
+
+\bibitem{berut}
+A. Bérut, A. Arakelyan, A. Petrosyan, S. Ciliberto, R. Dillenschneider and
+E. Lutz,
+``Experimental Verification of Landauer's Principle Linking Information and
+Thermodynamics,''
+\emph{Nature}, 483, 187--189, 2012.
+\url{https://doi.org/10.1038/nature10872}
+
+\bibitem{abl}
+Y. Aharonov, P. G. Bergmann and J. L. Lebowitz,
+``Time Symmetry in the Quantum Process of Measurement,''
+\emph{Physical Review}, 134(6B), B1410--B1416, 1964.
+\url{https://doi.org/10.1103/PhysRev.134.B1410}
+
+\bibitem{whartonargaman}
+K. B. Wharton and N. Argaman,
+``Colloquium: Bell's Theorem and Locally Mediated Reformulations of Quantum
+Mechanics,''
+\emph{Reviews of Modern Physics}, 92, 021002, 2020.
+\url{https://doi.org/10.1103/RevModPhys.92.021002}
+
+\bibitem{adlam}
+E. Adlam,
+``Laws of Nature as Constraints,''
+\emph{Foundations of Physics}, 52, 28, 2022.
+\url{https://doi.org/10.1007/s10701-022-00546-0}
+
+\bibitem{wheeler}
+J. A. Wheeler,
+``The `Past' and the `Delayed-Choice' Double-Slit Experiment,''
+in A. R. Marlow (ed.), \emph{Mathematical Foundations of Quantum Theory},
+Academic Press, 9--48, 1978.
+\url{https://doi.org/10.1016/B978-0-12-473250-6.50006-6}
+
+\bibitem{jacques}
+V. Jacques, E. Wu, F. Grosshans, F. Treussart, P. Grangier, A. Aspect and
+J.-F. Roch,
+``Experimental Realization of Wheeler's Delayed-Choice Gedanken Experiment,''
+\emph{Science}, 315(5814), 966--968, 2007.
+\url{https://doi.org/10.1126/science.1136303}
+
+\bibitem{ma}
+X.-S. Ma, J. Kofler and A. Zeilinger,
+``Delayed-Choice Gedanken Experiments and Their Realizations,''
+\emph{Reviews of Modern Physics}, 88, 015005, 2016.
+\url{https://doi.org/10.1103/RevModPhys.88.015005}
+
+\bibitem{kim}
+Y.-H. Kim, R. Yu, S. P. Kulik, Y. Shih and M. O. Scully,
+``Delayed `Choice' Quantum Eraser,''
+\emph{Physical Review Letters}, 84, 1--5, 2000.
+\url{https://doi.org/10.1103/PhysRevLett.84.1}
+
+\bibitem{price}
+H. Price,
+``Does Time-Symmetry Imply Retrocausality? How the Quantum World Says
+`Maybe'?,''
+\emph{Studies in History and Philosophy of Modern Physics}, 43(2), 75--83,
+2012.
+\url{https://doi.org/10.1016/j.shpsb.2011.12.003}
+
+\bibitem{leiferpusey}
+M. S. Leifer and M. F. Pusey,
+``Is a Time Symmetric Interpretation of Quantum Theory Possible Without
+Retrocausality?,''
+\emph{Proceedings of the Royal Society A}, 473, 20160607, 2017.
+\url{https://doi.org/10.1098/rspa.2016.0607}
+
+\bibitem{cramer}
+J. G. Cramer,
+``The Transactional Interpretation of Quantum Mechanics,''
+\emph{Reviews of Modern Physics}, 58(3), 647--687, 1986.
+\url{https://doi.org/10.1103/RevModPhys.58.647}
+
+\bibitem{sethbayne}
+A. K. Seth and T. Bayne,
+``Theories of Consciousness,''
+\emph{Nature Reviews Neuroscience}, 23, 439--452, 2022.
+\url{https://doi.org/10.1038/s41583-022-00587-4}
+
+\bibitem{tononikoch}
+G. Tononi and C. Koch,
+``Consciousness: Here, There and Everywhere?,''
+\emph{Philosophical Transactions of the Royal Society B}, 370, 20140167,
+2015.
+\url{https://doi.org/10.1098/rstb.2014.0167}
+
+\bibitem{cogitate}
+Cogitate Consortium et al.,
+``Adversarial Testing of Global Neuronal Workspace and Integrated Information
+Theories of Consciousness,''
+\emph{Nature}, 642, 133--142, 2025.
+\url{https://doi.org/10.1038/s41586-025-08888-1}
+
+\end{thebibliography}
+
+\end{document}

@@ -6,11 +6,13 @@ Author and rights holder: Ingolf Lohmann.
 
 # QIK-VRT-Grundsatz: Kein Zenodo-Upload ohne vollständige maschinelle Anspruchsdisposition
 
-**Policy-ID:** `qikvrt-zenodo-machine-proof-before-publication-v1`  
-**Version:** `1.0.0`  
-**Gültig ab:** `2026-07-28`  
-**Verantwortungsträger:** Ingolf Lohmann, natürliche Person  
-**Ledger:** `Goldkelch/qik-vrt#153`
+**Policy-ID:** `qikvrt-zenodo-machine-proof-before-publication-v2`<br>
+**Version:** `2.0.0`<br>
+**Gültig ab:** `2026-07-30`<br>
+**Verantwortungsträger:** Ingolf Lohmann, natürliche Person<br>
+**Ledger:** `Goldkelch/qik-vrt#153`<br>
+**Ersetzt für neue Produktionsmutationen:** v1; v1 bleibt bytegenau
+historisch prüfbar.
 
 ## 1. Verbindlicher Grundsatz
 
@@ -57,6 +59,7 @@ SOURCE_ACCEPTANCE
 → PREPUBLICATION_RETURN_TO_INGOLF_LOHMANN
 → CANDIDATE_SPECIFIC_RETURN_RECEIPT
 → EXACT_UPLOAD_AUTHORIZATION
+→ GLOBAL_GIT_AUTHORIZATION_CONSUMPTION
 → PRODUCTION_UPLOAD_OF_IDENTICAL_BYTES
 → PUBLIC_RECORD_REVERIFICATION
 → BYTE_EXACT_PUBLIC_REDOWNLOAD
@@ -107,6 +110,21 @@ RETURNED_BYTES != UPLOADED_BYTES → BLOCK
 
 Eine allgemeine Autorisierung ersetzt die kandidatenspezifische Rücklieferung nicht.
 
+Die anschließende Freigabe muss die exakte, kanonische Einzeile
+`AUTHORIZE_EXACT_UPLOAD` verwenden und mindestens Publication-ID,
+Return-Receipt-SHA-256, kanonischen Metadaten-SHA-256 und
+Machine-Proof-SHA-256 binden. Vor jedem Zenodo-Effekt wird diese Freigabe
+repositoryweit über einen create-only/non-force Remote-Git-Ref verbraucht.
+Ein bereits vorhandener Ref blockiert jeden kooperierenden weiteren Runner.
+Die Abwehr einer privilegierten Ref-Löschung oder eines administrativen
+Force-Updates liegt außerhalb dieses Clients und benötigt ein externes
+GitHub-Ruleset beziehungsweise gleichwertige Repository-Governance.
+
+Die dabei gespeicherte Plattform- und Repository-Provenienz belegt die
+Konsistenz des aufgezeichneten Freigabeereignisses. Sie ist ausdrücklich kein
+biometrischer oder eigenständiger kryptographischer Identitätsnachweis der
+benannten natürlichen Person.
+
 ## 6. Pflichtartefakte jeder künftigen Publikation
 
 Jede Publikation benötigt mindestens:
@@ -118,6 +136,8 @@ Jede Publikation benötigt mindestens:
 - Kernel-Receipt für alle `FORMAL_PROVED`-Claims;
 - Negativ- und Grenztests;
 - `CHANGE_NOTICE.md` und `PREPUBLICATION_RETURN_RECEIPT.json`, sobald Inhalt geändert wurde;
+- repositoryseitige `OWNER_ZENODO_AUTHORIZATION.json` mit der kanonischen,
+  kandidatenspezifischen Freigabe;
 - Git-Blob-gebundenes `publish-request.json`;
 - öffentlich rückgeprüftes `zenodo-publication.json`.
 
@@ -146,6 +166,9 @@ Der generische Zenodo-Publisher muss unmittelbar vor jeder irreversiblen Remote-
 ```text
 proof_bundle_present
 proof_bundle_git_blob_exact
+active_policy_and_schema_bytes_exact
+proof_and_return_instances_match_bound_v2_schema_semantics
+active_and_legacy_contract_files_committed_at_execution_head
 all_claims_dispositioned
 all_references_resolve
 formal_claims_have_kernel_receipts
@@ -154,9 +177,16 @@ content_change_has_change_notice
 content_change_has_prepublication_return_receipt
 returned_candidate_hash_equals_upload_candidate_hash
 proof_bundle_is_in_upload_fileset
+upload_fileset_has_no_missing_or_extra_file
+owner_authorization_statement_is_canonical
+repository_remote_consumption_ref_created_once
+token_absent_from_metadata_authorization_and_upload_bytes
 ```
 
 Legacy-Manifeste dürfen zur historischen Verifikation lesbar bleiben. Sie dürfen nach Aktivierung dieser Policy ohne Proof-Bundle keine neue Produktionspublikation mehr auslösen.
+Die v1-Policy und ihre beiden v1-Schemata bleiben bytegenau eingefroren und
+dürfen keine neue Produktionsmutation autorisieren. Neue Publikationen müssen
+die v2-Policy, das v2-Proof-Bundle und das v2-Return-Receipt verwenden.
 
 ## 9. Abschlussgrenze
 
