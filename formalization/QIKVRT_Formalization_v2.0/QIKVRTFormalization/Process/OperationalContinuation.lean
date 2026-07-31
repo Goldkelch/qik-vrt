@@ -130,7 +130,9 @@ theorem survival_horizon_drop_one
       exact survival_at_successor_requires_current_viability system 0 current
   | succ horizon inductionHypothesis =>
       rintro ⟨successor, hConnection, hTail⟩
-      exact ⟨successor, hConnection, inductionHypothesis hTail⟩
+      exact
+        ⟨successor, hConnection,
+          inductionHypothesis successor hTail⟩
 
 /--
 FIT-001C: survival is monotone under shortening a finite horizon.  `extra`
@@ -143,12 +145,15 @@ theorem survival_horizon_monotone
       Survives system base current := by
   induction extra with
   | zero =>
-      simpa
+      intro hSurvives
+      rw [Nat.add_zero] at hSurvives
+      exact hSurvives
   | succ extra inductionHypothesis =>
       intro hSurvives
-      apply inductionHypothesis
-      apply survival_horizon_drop_one system (base + extra) current
-      simpa [Nat.add_succ] using hSurvives
+      rw [Nat.add_succ] at hSurvives
+      exact inductionHypothesis
+        (survival_horizon_drop_one
+          system (base + extra) current hSurvives)
 
 /--
 The stable, proposition-indexed claim for the computer-age operational reading.
