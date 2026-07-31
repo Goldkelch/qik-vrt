@@ -50,13 +50,30 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertIn("keine empirische Überlebensprognose", boundary)
         self.assertIn("kein Zenodo-Upload wird behauptet", boundary)
 
-    def test_claim_matrix_transition_is_exact_and_completion_remains_fail_closed(self) -> None:
-        matrix = load_json("CLAIM_MATRIX.json")
+    def test_h0_to_h1_fit_transition_is_exact(self) -> None:
         pending = load_json("CLAIM_MATRIX_H0_PENDING.json")
-        self.assertEqual(matrix["claim_count"], len(matrix["claims"]))
-        self.assertEqual(matrix["proof_state"], "KERNEL_VERIFIED")
+        fit_verified = load_json("CLAIM_MATRIX_H1_FIT_VERIFIED.json")
+        self.assertEqual(fit_verified["proof_state"], "KERNEL_VERIFIED")
         self.assertEqual(
             pending["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        )
+        normalized = json.loads(json.dumps(fit_verified))
+        normalized["proof_state"] = "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        normalized_claims = {
+            item["claim_id"]: item for item in normalized["claims"]
+        }
+        for claim_id in ("FIT-001", "FIT-002", "FIT-003"):
+            normalized_claims[claim_id]["classification"] = "FORMAL_PENDING_KERNEL"
+            normalized_claims[claim_id]["status"] = (
+                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+            )
+        self.assertEqual(normalized, pending)
+
+    def test_active_full_scope_is_pending_and_policy_normalized(self) -> None:
+        matrix = load_json("CLAIM_MATRIX.json")
+        self.assertEqual(matrix["claim_count"], len(matrix["claims"]))
+        self.assertEqual(
+            matrix["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
         )
         self.assertEqual(
             matrix["completion_claims"],
@@ -69,24 +86,22 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         )
         claims = {item["claim_id"]: item for item in matrix["claims"]}
         self.assertEqual(len(claims), matrix["claim_count"])
-        for claim_id in ("FIT-001", "FIT-002", "FIT-003"):
-            self.assertEqual(claims[claim_id]["classification"], "FORMAL_PROVED")
-            self.assertEqual(claims[claim_id]["status"], "KERNEL_VERIFIED")
-        self.assertEqual(claims["EMP-001"]["status"], "OPEN_EMPIRICAL")
-        self.assertEqual(claims["LIM-001"]["status"], "NOT_CLAIMED_OUT_OF_SCOPE")
-        self.assertEqual(claims["NOR-001"]["status"], "DOES_NOT_FOLLOW")
-
-        normalized = json.loads(json.dumps(matrix))
-        normalized["proof_state"] = "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
-        normalized_claims = {
-            item["claim_id"]: item for item in normalized["claims"]
-        }
-        for claim_id in ("FIT-001", "FIT-002", "FIT-003"):
-            normalized_claims[claim_id]["classification"] = "FORMAL_PENDING_KERNEL"
-            normalized_claims[claim_id]["status"] = (
-                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        for claim_id in ("FIT-001", "FIT-002", "FIT-003", "MAT-001", "MAT-002"):
+            self.assertEqual(
+                claims[claim_id]["classification"], "FORMAL_PENDING_KERNEL"
             )
-        self.assertEqual(normalized, pending)
+            self.assertEqual(
+                claims[claim_id]["status"],
+                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+            )
+            self.assertTrue(claims[claim_id]["proof_refs"])
+        self.assertEqual(claims["TRN-001"]["status"], "DECLARED")
+        self.assertEqual(claims["EMP-001"]["status"], "OPEN")
+        self.assertEqual(claims["LIM-001"]["status"], "OPEN")
+        self.assertEqual(claims["NOR-001"]["status"], "DECLARED")
+        self.assertIn("open empirical hypothesis", claims["EMP-001"]["statement"])
+        self.assertIn("remains open", claims["LIM-001"]["statement"])
+        self.assertIn("shall not", claims["NOR-001"]["statement"])
 
     def test_h0_kernel_evidence_binds_pending_matrix_and_exact_successful_head(self) -> None:
         pending_path = PUBLICATION / "CLAIM_MATRIX_H0_PENDING.json"
@@ -114,8 +129,31 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertEqual(evidence["formal_claim_count"], 3)
         self.assertEqual(
             set(evidence["axioms_by_theorem"]),
-            set(load_json("KERNEL_PROOF_PLAN.json")["theorems"]),
+            {
+                "QIKVRT.V2.OperationalContinuation.FIT001_checked",
+                "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
+                "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
+            },
         )
+        self.assertTrue(
+            all(not axioms for axioms in evidence["axioms_by_theorem"].values())
+        )
+
+    def test_h1_kernel_evidence_binds_fit_verified_snapshot(self) -> None:
+        matrix_path = PUBLICATION / "CLAIM_MATRIX_H1_FIT_VERIFIED.json"
+        evidence = load_json("KERNEL_EVIDENCE_H1_TARGET.json")
+        self.assertEqual(evidence["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            evidence["exact_head"]["commit"],
+            "a3d9c2509182d8ac34b69d7dced0b652b6aecdba",
+        )
+        self.assertEqual(evidence["workflow"]["run_id"], "30625183041")
+        self.assertEqual(evidence["workflow"]["event"], "push")
+        self.assertEqual(evidence["workflow"]["sha"], evidence["exact_head"]["commit"])
+        self.assertEqual(evidence["claim_matrix"]["bytes"], matrix_path.stat().st_size)
+        self.assertEqual(evidence["claim_matrix"]["sha256"], sha256(matrix_path))
+        self.assertEqual(evidence["claim_matrix"]["git_blob_sha1"], git_blob(matrix_path))
+        self.assertEqual(evidence["theorem_count"], 3)
         self.assertTrue(
             all(not axioms for axioms in evidence["axioms_by_theorem"].values())
         )
@@ -199,6 +237,8 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
             "FIT-001",
             "FIT-002",
             "FIT-003",
+            "MAT-001",
+            "MAT-002",
             "empirisch zu prüfen",
             "tatsächliche Überlebenswahrscheinlichkeit",
             "International Journal of Plant Sciences",

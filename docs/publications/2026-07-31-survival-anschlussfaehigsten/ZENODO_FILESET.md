@@ -23,12 +23,16 @@ owner authorization.
 - `EVIDENCE_BOUNDARY.md`
 - `CLAIM_MATRIX.json`
 - `CLAIM_MATRIX_H0_PENDING.json`
+- `CLAIM_MATRIX_H1_FIT_VERIFIED.json`
 - `SOURCE_EVIDENCE_BINDINGS.json`
 - `KERNEL_PROOF_PLAN.json`
 - `KERNEL_EVIDENCE_H0_PENDING.json`
 - `KERNEL_EVIDENCE_H1_TARGET.json`
+- `KERNEL_EVIDENCE_H2_FULL_PENDING.json`
+- `KERNEL_EVIDENCE_H3_FULL_TARGET.json`
 - `FORMAL_OperationalContinuation.lean`
 - `FORMAL_ConnectabilitySimulation.lean`
+- `FORMAL_WeightedConnectability.lean`
 - `FORMAL_SOURCE_SNAPSHOT.json`
 - `BOUNDARY_TEST_REPORT.json`
 - `KERNEL_RECEIPT.json`

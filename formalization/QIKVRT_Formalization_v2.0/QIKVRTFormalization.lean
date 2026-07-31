@@ -5,6 +5,7 @@ import QIKVRTFormalization.Process.GateCompleteness
 import QIKVRTFormalization.Process.ShiftInvariance
 import QIKVRTFormalization.Process.OperationalContinuation
 import QIKVRTFormalization.Process.ConnectabilitySimulation
+import QIKVRTFormalization.Process.WeightedConnectability
 import QIKVRTFormalization.Escape.FiniteStages
 import QIKVRTFormalization.Retrocausality.ForwardProcess
 import QIKVRTFormalization.Retrocausality.Reclassification

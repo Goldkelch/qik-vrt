@@ -10,7 +10,7 @@ from tools import qikvrt_survival_connectability_kernel_evidence as evidence
 
 
 class SurvivalConnectabilityKernelEvidenceTests(unittest.TestCase):
-    def test_static_candidate_contract_binds_both_formal_modules(self) -> None:
+    def test_static_candidate_contract_binds_all_formal_modules(self) -> None:
         value = evidence.static_validation()
         imports = {item["plan"]["import"] for item in value["sources"]}
         self.assertEqual(
@@ -18,6 +18,7 @@ class SurvivalConnectabilityKernelEvidenceTests(unittest.TestCase):
             {
                 "QIKVRTFormalization.Process.ConnectabilitySimulation",
                 "QIKVRTFormalization.Process.OperationalContinuation",
+                "QIKVRTFormalization.Process.WeightedConnectability",
             },
         )
         self.assertTrue(
@@ -25,6 +26,8 @@ class SurvivalConnectabilityKernelEvidenceTests(unittest.TestCase):
                 "QIKVRT.V2.OperationalContinuation.FIT001_checked",
                 "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
                 "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
+                "QIKVRT.V2.WeightedConnectability.MAT001_checked",
+                "QIKVRT.V2.WeightedConnectability.MAT002_checked",
             }
             <= set(value["plan"]["theorems"])
         )

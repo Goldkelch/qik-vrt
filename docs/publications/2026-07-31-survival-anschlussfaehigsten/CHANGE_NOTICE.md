@@ -37,3 +37,11 @@ Der erste erfolgreiche Exact-Head-Lauf ist in
 biologische, empirische oder normative Aussage; er hebt ausschließlich die
 drei zuvor ausstehenden formalen Modellclaims in den Status
 `KERNEL_VERIFIED`.
+
+Die nachfolgende wissenschaftliche Erweiterung nimmt MAT-001 und MAT-002 in
+den Kernel-Scope auf. Sie beschränkt den maschinenprüfbaren gewichteten Satz
+explizit auf ein endliches, duplikatfreies Spurenuniversum, entscheidbare
+Prädikate, natürliche nichtnegative Gewichte und einen gemeinsamen positiven
+Normalisierer. Außerdem normalisiert sie die nichtformalen Statuswerte für den
+Zenodo-v2-Policyvertrag und formuliert offene beziehungsweise normative
+Grenzen als solche, ohne sie in Tatsachenbehauptungen umzudeuten.

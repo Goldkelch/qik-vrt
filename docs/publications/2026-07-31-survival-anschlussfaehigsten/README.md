@@ -36,11 +36,14 @@ Fortsetzungshorizonte, lebensfähige Anschlüsse, invariantenerhaltende
 | `EVIDENCE_BOUNDARY.md` | Beweis-, Anwendungs- und Publikationsgrenzen |
 | `CLAIM_MATRIX.json` | maschinenlesbare Klassifikation aller Hauptaussagen |
 | `CLAIM_MATRIX_H0_PENDING.json` | unveränderter Status-Snapshot vor der ersten Exact-Head-Prüfung |
+| `CLAIM_MATRIX_H1_FIT_VERIFIED.json` | bytegenauer FIT-Status-Snapshot des ersten Ziel-Heads |
 | `SOURCE_EVIDENCE_BINDINGS.json` | Quellen- und Versionsbindungen |
 | `KERNEL_PROOF_PLAN.json` | Exact-Head-, Toolchain- und Axiomvertrag |
 | `KERNEL_EVIDENCE_H0_PENDING.json` | originale CI-Evidenz des ersten erfolgreichen Exact-Head-Kernellaufs |
+| `KERNEL_EVIDENCE_H1_TARGET.json` | originale CI-Evidenz des FIT-statusmaterialisierten Ziel-Heads |
 | `FORMAL_OperationalContinuation.lean` | bytegleicher Zenodo-Snapshot des FIT-001-Moduls |
 | `FORMAL_ConnectabilitySimulation.lean` | bytegleicher Zenodo-Snapshot der FIT-002/3-Module |
+| `FORMAL_WeightedConnectability.lean` | bytegleicher Snapshot des MAT-001/2-Moduls |
 | `FORMAL_SOURCE_SNAPSHOT.json` | Identitätsbeleg zwischen Repository- und Archivquellen |
 | `BOUNDARY_TEST_REPORT.json` | lokale positive und negative Vorprüfungen; ausdrücklich kein Kernel-Receipt |
 | `PDF_RENDER_VALIDATION.json` | reproduzierbarer PDF- und Sichtprüfbeleg |
@@ -52,28 +55,32 @@ Der formale Kandidat liegt in:
 
 - `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/OperationalContinuation.lean`
 - `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/ConnectabilitySimulation.lean`
+- `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/WeightedConnectability.lean`
 
 ## Maschinenbeweisstatus
 
 ```text
 FORMAL_SOURCE          = PRESENT
 LEAN_TOOLCHAIN         = leanprover/lean4:v4.19.0
-LOCAL_KERNEL_RESULT    = PASS_UNRECEIPTED
-CI_KERNEL_RESULT       = KERNEL_VERIFIED
+LOCAL_KERNEL_RESULT    = UNAVAILABLE
+FIT_001_TO_003_RESULT  = KERNEL_VERIFIED
 CI_EXACT_HEAD_H0       = d9734302efaf3c79110ceb32f8987822b864a6dd
 CI_RUN_H0              = 30624247534
-AXIOM_AUDIT            = PASS_EMPTY_FOR_FIT001_FIT002_FIT003
+CI_EXACT_HEAD_H1       = a3d9c2509182d8ac34b69d7dced0b652b6aecdba
+CI_RUN_H1              = 30625183041
+FULL_5_CLAIM_SCOPE     = AWAITING_EXACT_HEAD_KERNEL_RECEIPT
+AXIOM_AUDIT            = PASS_EMPTY_FOR_FIT001_FIT002_FIT003; MAT_PENDING
 PUBLICATION_STATUS     = CANDIDATE_PREPUBLICATION
 ZENODO_MUTATION        = false
 ```
 
-Der erste grüne Exact-Head-Lauf ist als
-`KERNEL_EVIDENCE_H0_PENDING.json` bytegenau persistiert. Er bindet den
-Git-Head, die Lean-Quellen, die Proof-Konstanten, die Toolchain, die erzeugten
-Objekte und leere Axiomenlisten für FIT-001 bis FIT-003. Die nachfolgende
-Statusmaterialisierung und der Publikationskandidat bleiben ihrerseits bis zu
-ihrem eigenen Exact-Head-Receipt und zur hashgebundenen Autorisierung
-fail-closed.
+Die ersten beiden grünen Exact-Head-Läufe sind als H0- und H1-Evidenz
+bytegenau persistiert. Sie binden die FIT-Quellen, Proof-Konstanten, Toolchain,
+Objekte und leeren Axiomenlisten. Der Scope wird nun um MAT-001 und MAT-002
+erweitert. Bis der erweiterte Fünf-Claim-Head selbst geprüft und sein
+statusmaterialisierter Nachfolger bestätigt ist, bleibt die aktive Matrix
+`AWAITING_EXACT_HEAD_KERNEL_RECEIPT`. Zenodo bleibt zusätzlich hinter der
+hashgebundenen Autorisierung fail-closed.
 
 ## Reproduktion
 

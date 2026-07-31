@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Evidenz- und Geltungsgrenze
 
-## Was kernelgeprüft bewiesen ist
+## Bereits kernelgeprüfter FIT-Unterbau
 
 Die beiden Lean-Module definieren ein abstraktes Fortsetzungssystem sowie
 typisierte Übergangssysteme mit zulässigen Übergängen und lokalen
@@ -34,6 +34,23 @@ die Proof-Escape-Prüfung aus und meldete für `FIT001_checked`,
 originale maschinenlesbare Ausgabe ist als
 `KERNEL_EVIDENCE_H0_PENDING.json` erhalten. Der Status dieser drei
 modellinternen Aussagen ist daher `KERNEL_VERIFIED`.
+
+## Erweiterter gewichteter Beweiskandidat
+
+`WeightedConnectability.lean` ergänzt zwei diskrete Aussagen:
+
+1. In einem explizit endlichen, duplikatfreien Spurenuniversum ist die
+   akzeptierte natürliche Gewichtsmasse unter Sprachinklusion monoton.
+2. Ein konstruktiv lokalisierter, nur von der größeren Sprache akzeptierter
+   Trace mit positivem Gewicht macht die Gewichtsmasse strikt größer.
+
+Der normalisierte Score wird dabei exakt durch akzeptierte Masse und denselben
+strikt positiven Gesamtgewicht-Nenner repräsentiert. Natürliche Gewichte sind
+nichtnegativ; rationale Gewichte mit gemeinsamem Nenner können skaliert
+werden. Beliebige reelle Gewichte und empirische Persistenz sind nicht Teil
+dieses diskreten Kernel-Satzes. Bis zur erfolgreichen Exact-Head-Prüfung des
+erweiterten Fünf-Claim-Scopes bleiben MAT-001 und MAT-002 sowie der aktive
+Gesamtstatus fail-closed.
 
 ## Was dadurch nicht bewiesen wird
 

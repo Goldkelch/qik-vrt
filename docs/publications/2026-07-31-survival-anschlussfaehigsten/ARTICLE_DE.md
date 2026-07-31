@@ -13,7 +13,7 @@ lang: "de-DE"
 **Textlizenz:** Creative Commons Namensnennung – Nicht-kommerziell – Keine Bearbeitungen 4.0 International (CC BY-NC-ND 4.0)<br>
 **Formalisierungsquellen:** Apache License 2.0<br>
 **Publikationsstatus:** Nicht begutachteter Kandidat; kein DOI; noch nicht auf Zenodo veröffentlicht<br>
-**Wahrheitsgrenze:** Die drei ausgewiesenen Modellsätze FIT-001, FIT-002 und FIT-003 wurden am exakten Branch-Head `d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 kompiliert, dynamisch auf Axiome geprüft und mit leeren Axiomenlisten als `KERNEL_VERIFIED` gebunden. Bewiesen sind ausschließlich die ausdrücklich definierten abstrakten Modelleigenschaften; weder die biologische Interpretation noch eine empirische Überlebensprognose folgt daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo veröffentlicht.
+**Wahrheitsgrenze:** Die drei ausgewiesenen Modellsätze FIT-001, FIT-002 und FIT-003 wurden am exakten Branch-Head `d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 kompiliert, dynamisch auf Axiome geprüft und mit leeren Axiomenlisten als `KERNEL_VERIFIED` gebunden; der statusmaterialisierte Head `a3d9c2509182d8ac34b69d7dced0b652b6aecdba` wurde ebenso erfolgreich bestätigt. Die hinzugefügten diskreten Sätze MAT-001 und MAT-002 bilden zusammen mit FIT-001 bis FIT-003 einen erweiterten Fünf-Claim-Scope, der bis zu seinem eigenen Exact-Head-Receipt fail-closed bleibt. Bewiesen sind ausschließlich die ausdrücklich definierten abstrakten Modelleigenschaften; weder die biologische Interpretation noch eine empirische Überlebensprognose folgt daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo veröffentlicht.
 
 ---
 
@@ -678,12 +678,23 @@ anschlussfähig wie“ reflexiv und transitiv. Sie ist somit eine Präordnung au
 beobachtbarem endlichem Verhalten; unterschiedliche interne Implementierungen
 können dieselbe lebensfähige Sprache besitzen.
 
-Die elementare Monotonie des im Artikel definierten endlichen gewichteten
-Anschlusswertes folgt anschließend aus Mengeninklusion und nichtnegativen
-Gewichten. Der aktuelle Kernel-Scope bindet jedoch FIT-001, FIT-002 und
-FIT-003;
-maßtheoretische Grenzwerte und empirische Wahrscheinlichkeitsmodelle sind
-nicht Teil dieses ersten Lean-Satzes.
+`WeightedConnectability.lean` bildet die elementare Monotonie zusätzlich in
+einem diskreten Kernelmodell ab. Es verwendet ein explizit endliches,
+duplikatfreies und horizontbeschränktes Spurenuniversum, entscheidbare
+Akzeptanzprädikate sowie natürliche Gewichte. Der normalisierte Score wird als
+akzeptierte Gewichtsmasse zusammen mit demselben strikt positiven
+Gesamtgewicht repräsentiert. Für einen gemeinsamen Nenner ist der Vergleich
+der Quotienten exakt der Vergleich der Zähler; Division und Gleitkommaarithmetik
+sind daher nicht Bestandteil des Beweisterms.
+
+MAT-001 beweist die Monotonie der so repräsentierten Scores unter
+Sprachinklusion. MAT-002 beweist strikte Vergrößerung, wenn die größere Sprache
+einen konstruktiv im endlichen Universum lokalisierten Trace akzeptiert, den
+die kleinere Sprache nicht akzeptiert, und dessen Gewicht positiv ist.
+Natürliche Gewichte decken nach gemeinsamer Skalierung rationale Gewichte ab.
+Eine Instanziierung für beliebige reelle Gewichte, maßtheoretische Grenzwerte
+und empirische Wahrscheinlichkeitsmodelle ist nicht Teil dieses diskreten
+Lean-Scopes.
 
 ### 11.2.1 Proof-Konstanten
 
@@ -691,11 +702,13 @@ nicht Teil dieses ersten Lean-Satzes.
 FIT-001  QIKVRT.V2.OperationalContinuation.FIT001_checked
 FIT-002  QIKVRT.V2.ConnectabilitySimulation.FIT002_checked
 FIT-003  QIKVRT.V2.ConnectabilitySimulation.FIT003_checked
+MAT-001  QIKVRT.V2.WeightedConnectability.MAT001_checked
+MAT-002  QIKVRT.V2.WeightedConnectability.MAT002_checked
 ```
 
-### 11.3 Durchgeführte Kernelprüfung und verbleibende Publikationsgates
+### 11.3 Durchgeführte Prüfung und erweiterter Pending-Scope
 
-Für die Statussetzung `KERNEL_VERIFIED` wurden ausgeführt und gebunden:
+Für FIT-001 bis FIT-003 wurden ausgeführt und gebunden:
 
 1. vollständiger Lean-Build auf exakt gebundenem Commit;
 2. keine Platzhalter wie `sorry` oder `admit`;
@@ -708,12 +721,18 @@ Für die Statussetzung `KERNEL_VERIFIED` wurden ausgeführt und gebunden:
 9. Trennung zwischen kernel-bewiesenen, konditionalen, empirischen, interpretativen und normativen Aussagen;
 10. weiterhin getrennte, erst danach autorisierte Archivierung und DOI-Publikation.
 
-Die Punkte 1 bis 7 und 9 sind im H0-Evidenzartefakt erfüllt. Punkt 8 wird erst
-für den eingefrorenen Publikationskandidaten abgeschlossen; Punkt 10 bleibt
-offen. Vor einem Zenodo-Upload werden zusätzlich der statusmaterialisierte
-Nachfolge-Head, das SHA-256-Manifest, das kandidatengebundene
-Machine-Proof-Bundle und die exakten Kandidatenhashes zurückgegeben. Erst eine
-danach erteilte hashgebundene Autorisierung darf den Upload freischalten.
+Die Punkte 1 bis 7 und 9 sind für den dreiteiligen FIT-Unterbau durch H0 und H1
+erfüllt. Durch die wissenschaftliche Erweiterung um MAT-001 und MAT-002 wird
+derselbe Prüfvertrag nun auf alle fünf formalen Claims angewandt. Bis der
+erweiterte Quell- und Claim-Head kompiliert, mit leeren Axiomenlisten gebunden
+und anschließend statusmaterialisiert bestätigt wurde, lautet sein
+Gesamtstatus `AWAITING_EXACT_HEAD_KERNEL_RECEIPT`.
+
+Punkt 8 wird erst für den eingefrorenen Publikationskandidaten abgeschlossen;
+Punkt 10 bleibt offen. Vor einem Zenodo-Upload werden der Fünf-Claim-Receipt,
+das SHA-256-Manifest, das kandidatengebundene Machine-Proof-Bundle und die
+exakten Kandidatenhashes zurückgegeben. Erst eine danach erteilte
+hashgebundene Autorisierung darf den Upload freischalten.
 
 Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann nicht allein die empirische Angemessenheit der Umgebungsverteilung, die Vollständigkeit der Systemmodellierung oder eine biologische Identität beweisen.
 
@@ -729,11 +748,11 @@ Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann n
 | FIT-001 | Positive endliche Fortsetzung erfordert eine Kette lebensfähiger Anschlüsse; ohne lebensfähigen Nachfolger keine Fortsetzung. | `KERNEL_VERIFIED` im definierten Modell |
 | FIT-002 | Eine alle lebensfähigen Startzustände abdeckende viabilitätserhaltende Simulation impliziert globale Inklusion der endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
 | FIT-003 | Eine initialzustandsgebundene viabilitätserhaltende Simulation impliziert Inklusion der punktierten endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
-| MAT-001 | Sprachinklusion impliziert bei nichtnegativer endlicher Gewichtung Monotonie des Anschlusswertes. | im Manuskript bewiesen; nicht Teil des ersten Kernel-Scopes |
-| MAT-002 | Positiv gewichtete echte Spracherweiterung impliziert strikt größeren Anschlusswert. | im Manuskript bewiesen; nicht Teil des ersten Kernel-Scopes |
-| EMP-001 | Größere nachgewiesene Anschlussfähigkeit verbessert unter realen vergleichbaren Bedingungen die operative Fortbestehensrate. | empirisch zu prüfen |
-| LIM-001 | Technische Anschlussfähigkeit ist identisch mit biologischer Fitness oder Evolvierbarkeit. | nicht behauptet / außerhalb des Scopes |
-| NOR-001 | Das Anschlussfähigste ist moralisch vorzuziehen. | folgt nicht / normativ unzulässig |
+| MAT-001 | Im kodierten endlichen Naturgewicht-Modell impliziert Sprachinklusion Monotonie des gemeinsamen positiv normalisierten Anschlusswertes. | formale Quelle vorhanden; erweiterter Exact-Head-Receipt ausstehend |
+| MAT-002 | Im selben Modell impliziert ein konstruktiv lokalisierter positiver Gewichtsträger der strikten Differenz einen strikt größeren Anschlusswert. | formale Quelle vorhanden; erweiterter Exact-Head-Receipt ausstehend |
+| EMP-001 | Es bleibt eine offene empirische Hypothese, dass größere invariantenerhaltende Anschlussfähigkeit unter vorregistrierten vergleichbaren Bedingungen eine nicht geringere operative Fortbestehensrate erzeugt. | offen / empirisch zu prüfen |
+| LIM-001 | Ob ein festgelegtes technisches Anschlussmaß empirisch mit biologischer Fitness oder Evolvierbarkeit korrespondiert, bleibt offen und wird hier nicht nachgewiesen. | offen; keine Identität behauptet |
+| NOR-001 | Größere technische Anschlussfähigkeit oder biologische Fitness darf für sich allein nicht als moralische Vorzugswürdigkeit behandelt werden. | normative Schutzregel / deklariert |
 
 ---
 
