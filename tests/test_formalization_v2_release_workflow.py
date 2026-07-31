@@ -304,6 +304,8 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
                 "LEAN_CI_EVIDENCE.json",
                 "ZENODO_PUBLICATION_EVIDENCE.json",
                 "QIKVRT_Formalization_v2.0-alpha.1.zip",
+                "QIKVRTFormalization/Process/ConnectabilitySimulation.lean",
+                "QIKVRTFormalization/Process/OperationalContinuation.lean",
             )
             for name in names:
                 self.assertFalse(
