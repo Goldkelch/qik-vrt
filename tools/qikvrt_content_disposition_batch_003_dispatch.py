@@ -234,7 +234,7 @@ def verify() -> dict[str, Any]:
             else "BATCH_003_DISPATCH_PRESERVED_ADVANCED_PROJECTION_CURRENT"
         ),
         "batch_id": BATCH_ID,
-        "active_subject": advanced.NEXT_SUBJECT_ID,
+        "active_subject": "NONE" if final else advanced.NEXT_SUBJECT_ID,
         "active_subject_count": 0 if final else (4 if second else 5),
         "open_subject_count": 0 if final else (5 if second else 6),
         "next_deterministic_effect": advanced.NEXT_EFFECT,
