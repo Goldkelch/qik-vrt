@@ -68,19 +68,23 @@ CI_EXACT_HEAD_H0       = d9734302efaf3c79110ceb32f8987822b864a6dd
 CI_RUN_H0              = 30624247534
 CI_EXACT_HEAD_H1       = a3d9c2509182d8ac34b69d7dced0b652b6aecdba
 CI_RUN_H1              = 30625183041
-FULL_5_CLAIM_SCOPE     = AWAITING_EXACT_HEAD_KERNEL_RECEIPT
-AXIOM_AUDIT            = PASS_EMPTY_FOR_FIT001_FIT002_FIT003; MAT_PENDING
+CI_EXACT_HEAD_H2       = 37a946b9eefc21ab369ad56b5fbb1e9c436766e1
+CI_RUN_H2              = 30627411130
+FULL_5_CLAIM_SCOPE     = KERNEL_VERIFIED
+AXIOM_AUDIT            = PASS_EMPTY_FOR_FIT001_FIT002_FIT003_MAT001_MAT002
+STATUS_TARGET          = AWAITING_EXACT_HEAD_TARGET_CONFIRMATION
 PUBLICATION_STATUS     = CANDIDATE_PREPUBLICATION
 ZENODO_MUTATION        = false
 ```
 
 Die ersten beiden grünen Exact-Head-Läufe sind als H0- und H1-Evidenz
 bytegenau persistiert. Sie binden die FIT-Quellen, Proof-Konstanten, Toolchain,
-Objekte und leeren Axiomenlisten. Der Scope wird nun um MAT-001 und MAT-002
-erweitert. Bis der erweiterte Fünf-Claim-Head selbst geprüft und sein
-statusmaterialisierter Nachfolger bestätigt ist, bleibt die aktive Matrix
-`AWAITING_EXACT_HEAD_KERNEL_RECEIPT`. Zenodo bleibt zusätzlich hinter der
-hashgebundenen Autorisierung fail-closed.
+Objekte und leeren Axiomenlisten. H2 erweitert diese Bindung auf MAT-001 und
+MAT-002: Der gesamte Fünf-Claim-Scope ist kernelverifiziert. Der
+statusmaterialisierte Nachfolger wird dennoch separat bestätigt; bis dahin
+bleibt die Zielbindung fail-closed. Zenodo bleibt zusätzlich hinter dem
+Kandidatenmanifest und einer danach erteilten hashgebundenen Autorisierung
+gesperrt.
 
 ## Reproduktion
 
@@ -90,6 +94,7 @@ Der vorgesehene Kernelbefehl lautet:
 cd formalization/QIKVRT_Formalization_v2.0
 lake env lean QIKVRTFormalization/Process/OperationalContinuation.lean
 lake env lean QIKVRTFormalization/Process/ConnectabilitySimulation.lean
+lake env lean QIKVRTFormalization/Process/WeightedConnectability.lean
 python3 scripts/audit_lean_axioms.py
 python3 scripts/audit_proof_escapes.py
 ```

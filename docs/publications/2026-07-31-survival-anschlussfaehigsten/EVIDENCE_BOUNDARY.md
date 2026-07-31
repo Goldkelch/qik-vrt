@@ -35,7 +35,7 @@ originale maschinenlesbare Ausgabe ist als
 `KERNEL_EVIDENCE_H0_PENDING.json` erhalten. Der Status dieser drei
 modellinternen Aussagen ist daher `KERNEL_VERIFIED`.
 
-## Erweiterter gewichteter Beweiskandidat
+## Kernelgeprüfter gewichteter Beweiskern
 
 `WeightedConnectability.lean` ergänzt zwei diskrete Aussagen:
 
@@ -48,9 +48,13 @@ Der normalisierte Score wird dabei exakt durch akzeptierte Masse und denselben
 strikt positiven Gesamtgewicht-Nenner repräsentiert. Natürliche Gewichte sind
 nichtnegativ; rationale Gewichte mit gemeinsamem Nenner können skaliert
 werden. Beliebige reelle Gewichte und empirische Persistenz sind nicht Teil
-dieses diskreten Kernel-Satzes. Bis zur erfolgreichen Exact-Head-Prüfung des
-erweiterten Fünf-Claim-Scopes bleiben MAT-001 und MAT-002 sowie der aktive
-Gesamtstatus fail-closed.
+dieses diskreten Kernel-Satzes. Der Exact-Head-Lauf `30627411130` am Commit
+`37a946b9eefc21ab369ad56b5fbb1e9c436766e1` kompilierte alle drei Quellen,
+band fünf Proof-Konstanten und meldete für FIT-001 bis FIT-003 sowie MAT-001
+bis MAT-002 jeweils eine leere Axiomenliste. Das originale Artefakt ist als
+`KERNEL_EVIDENCE_H2_FULL_PENDING.json` erhalten. Damit sind alle fünf
+modellinternen Aussagen `KERNEL_VERIFIED`; die Statusmaterialisierung bleibt
+bis zu ihrem eigenen Exact-Head-Nachfolgelauf fail-closed.
 
 ## Was dadurch nicht bewiesen wird
 

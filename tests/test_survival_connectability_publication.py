@@ -69,12 +69,10 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
             )
         self.assertEqual(normalized, pending)
 
-    def test_active_full_scope_is_pending_and_policy_normalized(self) -> None:
+    def test_active_full_scope_is_kernel_verified_and_policy_normalized(self) -> None:
         matrix = load_json("CLAIM_MATRIX.json")
         self.assertEqual(matrix["claim_count"], len(matrix["claims"]))
-        self.assertEqual(
-            matrix["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
-        )
+        self.assertEqual(matrix["proof_state"], "KERNEL_VERIFIED")
         self.assertEqual(
             matrix["completion_claims"],
             {
@@ -87,13 +85,8 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         claims = {item["claim_id"]: item for item in matrix["claims"]}
         self.assertEqual(len(claims), matrix["claim_count"])
         for claim_id in ("FIT-001", "FIT-002", "FIT-003", "MAT-001", "MAT-002"):
-            self.assertEqual(
-                claims[claim_id]["classification"], "FORMAL_PENDING_KERNEL"
-            )
-            self.assertEqual(
-                claims[claim_id]["status"],
-                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
-            )
+            self.assertEqual(claims[claim_id]["classification"], "FORMAL_PROVED")
+            self.assertEqual(claims[claim_id]["status"], "KERNEL_VERIFIED")
             self.assertTrue(claims[claim_id]["proof_refs"])
         self.assertEqual(claims["TRN-001"]["status"], "DECLARED")
         self.assertEqual(claims["EMP-001"]["status"], "OPEN")
@@ -102,6 +95,24 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertIn("open empirical hypothesis", claims["EMP-001"]["statement"])
         self.assertIn("remains open", claims["LIM-001"]["statement"])
         self.assertIn("shall not", claims["NOR-001"]["statement"])
+
+    def test_h2_to_active_full_transition_is_exact(self) -> None:
+        pending = load_json("CLAIM_MATRIX_H2_FULL_PENDING.json")
+        active = load_json("CLAIM_MATRIX.json")
+        self.assertEqual(
+            pending["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        )
+        self.assertEqual(active["proof_state"], "KERNEL_VERIFIED")
+
+        promoted = json.loads(json.dumps(pending))
+        promoted["proof_state"] = "KERNEL_VERIFIED"
+        promoted_claims = {
+            item["claim_id"]: item for item in promoted["claims"]
+        }
+        for claim_id in ("FIT-001", "FIT-002", "FIT-003", "MAT-001", "MAT-002"):
+            promoted_claims[claim_id]["classification"] = "FORMAL_PROVED"
+            promoted_claims[claim_id]["status"] = "KERNEL_VERIFIED"
+        self.assertEqual(promoted, active)
 
     def test_h0_kernel_evidence_binds_pending_matrix_and_exact_successful_head(self) -> None:
         pending_path = PUBLICATION / "CLAIM_MATRIX_H0_PENDING.json"
@@ -154,6 +165,46 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertEqual(evidence["claim_matrix"]["sha256"], sha256(matrix_path))
         self.assertEqual(evidence["claim_matrix"]["git_blob_sha1"], git_blob(matrix_path))
         self.assertEqual(evidence["theorem_count"], 3)
+        self.assertTrue(
+            all(not axioms for axioms in evidence["axioms_by_theorem"].values())
+        )
+
+    def test_h2_kernel_evidence_binds_full_pending_snapshot(self) -> None:
+        pending_path = PUBLICATION / "CLAIM_MATRIX_H2_FULL_PENDING.json"
+        pending = load_json("CLAIM_MATRIX_H2_FULL_PENDING.json")
+        evidence_path = PUBLICATION / "KERNEL_EVIDENCE_H2_FULL_PENDING.json"
+        evidence = load_json("KERNEL_EVIDENCE_H2_FULL_PENDING.json")
+        expected_head = "37a946b9eefc21ab369ad56b5fbb1e9c436766e1"
+        expected_theorems = {
+            "QIKVRT.V2.OperationalContinuation.FIT001_checked",
+            "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
+            "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
+            "QIKVRT.V2.WeightedConnectability.MAT001_checked",
+            "QIKVRT.V2.WeightedConnectability.MAT002_checked",
+        }
+
+        self.assertEqual(evidence["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            evidence["publication_id"],
+            "qikvrt-survival-of-the-anschlussfaehigsten-v1",
+        )
+        self.assertEqual(evidence["exact_head"]["commit"], expected_head)
+        self.assertEqual(evidence["exact_head"]["github_sha"], expected_head)
+        self.assertEqual(evidence["workflow"]["event"], "push")
+        self.assertEqual(evidence["workflow"]["run_id"], "30627411130")
+        self.assertEqual(evidence["workflow"]["sha"], expected_head)
+        self.assertEqual(evidence["claim_matrix"]["bytes"], pending_path.stat().st_size)
+        self.assertEqual(evidence["claim_matrix"]["sha256"], sha256(pending_path))
+        self.assertEqual(
+            evidence["claim_matrix"]["git_blob_sha1"], git_blob(pending_path)
+        )
+        self.assertEqual(
+            pending["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        )
+        self.assertGreater(evidence_path.stat().st_size, 0)
+        self.assertEqual(evidence["theorem_count"], 5)
+        self.assertEqual(evidence["formal_claim_count"], 5)
+        self.assertEqual(set(evidence["axioms_by_theorem"]), expected_theorems)
         self.assertTrue(
             all(not axioms for axioms in evidence["axioms_by_theorem"].values())
         )

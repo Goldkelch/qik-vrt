@@ -13,7 +13,7 @@ lang: "de-DE"
 **Textlizenz:** Creative Commons Namensnennung – Nicht-kommerziell – Keine Bearbeitungen 4.0 International (CC BY-NC-ND 4.0)<br>
 **Formalisierungsquellen:** Apache License 2.0<br>
 **Publikationsstatus:** Nicht begutachteter Kandidat; kein DOI; noch nicht auf Zenodo veröffentlicht<br>
-**Wahrheitsgrenze:** Die drei ausgewiesenen Modellsätze FIT-001, FIT-002 und FIT-003 wurden am exakten Branch-Head `d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 kompiliert, dynamisch auf Axiome geprüft und mit leeren Axiomenlisten als `KERNEL_VERIFIED` gebunden; der statusmaterialisierte Head `a3d9c2509182d8ac34b69d7dced0b652b6aecdba` wurde ebenso erfolgreich bestätigt. Die hinzugefügten diskreten Sätze MAT-001 und MAT-002 bilden zusammen mit FIT-001 bis FIT-003 einen erweiterten Fünf-Claim-Scope, der bis zu seinem eigenen Exact-Head-Receipt fail-closed bleibt. Bewiesen sind ausschließlich die ausdrücklich definierten abstrakten Modelleigenschaften; weder die biologische Interpretation noch eine empirische Überlebensprognose folgt daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo veröffentlicht.
+**Wahrheitsgrenze:** Die fünf ausgewiesenen Modellsätze FIT-001, FIT-002, FIT-003, MAT-001 und MAT-002 wurden im Push-Lauf `30627411130` am exakten Branch-Head `37a946b9eefc21ab369ad56b5fbb1e9c436766e1` mit Lean 4.19.0 kompiliert, dynamisch auf Axiome geprüft und jeweils mit leerer Axiomenliste als `KERNEL_VERIFIED` gebunden. Dieser H2-Nachweis ist noch nicht in einem nachgelagerten kanonischen Status-Receipt materialisiert; die Repository-Promotion bleibt offen und `SYSTEM_WIDE_COMPLETION` bleibt `UNCLAIMED`. Bewiesen sind ausschließlich die ausdrücklich definierten abstrakten Modelleigenschaften; weder die biologische Interpretation noch eine empirische Überlebensprognose folgt daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo veröffentlicht.
 
 ---
 
@@ -623,12 +623,14 @@ Aus höherer biologischer oder technischer Fitness folgt kein höherer moralisch
 
 ## 11. Maschinenprüfbarer Kern
 
-Der formale Kern ist in zwei voneinander getrennten Lean-Modulen formuliert.
-Beide Module wurden im Push-Lauf `30624247534` am exakten Branch-Head
-`d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 erfolgreich
-kernelgeprüft. Die originale maschinenlesbare Evidenz ist als
-`KERNEL_EVIDENCE_H0_PENDING.json` erhalten; die drei gebundenen Aussagen haben
-den Status `KERNEL_VERIFIED`.
+Der formale Kern ist in drei voneinander getrennten Lean-Modulen formuliert.
+Alle drei Module wurden im Push-Lauf `30627411130` am exakten Branch-Head
+`37a946b9eefc21ab369ad56b5fbb1e9c436766e1` mit Lean 4.19.0 erfolgreich
+kernelgeprüft. Die maschinenlesbare H2-Evidenz liegt als
+`KERNEL_EVIDENCE_H2_FULL_PENDING.json` vor. Für sämtliche fünf gebundenen
+Proof-Konstanten sind die dynamisch ermittelten Axiomenlisten leer; FIT-001,
+FIT-002, FIT-003, MAT-001 und MAT-002 haben im definierten Modell den Status
+`KERNEL_VERIFIED`.
 
 ### 11.1 FIT-001: endliche operationale Fortsetzung
 
@@ -706,9 +708,9 @@ MAT-001  QIKVRT.V2.WeightedConnectability.MAT001_checked
 MAT-002  QIKVRT.V2.WeightedConnectability.MAT002_checked
 ```
 
-### 11.3 Durchgeführte Prüfung und erweiterter Pending-Scope
+### 11.3 Durchgeführte Exact-Head-Prüfung und offene Statusmaterialisierung
 
-Für FIT-001 bis FIT-003 wurden ausgeführt und gebunden:
+Für FIT-001 bis FIT-003 sowie MAT-001 und MAT-002 wurden ausgeführt und gebunden:
 
 1. vollständiger Lean-Build auf exakt gebundenem Commit;
 2. keine Platzhalter wie `sorry` oder `admit`;
@@ -721,18 +723,24 @@ Für FIT-001 bis FIT-003 wurden ausgeführt und gebunden:
 9. Trennung zwischen kernel-bewiesenen, konditionalen, empirischen, interpretativen und normativen Aussagen;
 10. weiterhin getrennte, erst danach autorisierte Archivierung und DOI-Publikation.
 
-Die Punkte 1 bis 7 und 9 sind für den dreiteiligen FIT-Unterbau durch H0 und H1
-erfüllt. Durch die wissenschaftliche Erweiterung um MAT-001 und MAT-002 wird
-derselbe Prüfvertrag nun auf alle fünf formalen Claims angewandt. Bis der
-erweiterte Quell- und Claim-Head kompiliert, mit leeren Axiomenlisten gebunden
-und anschließend statusmaterialisiert bestätigt wurde, lautet sein
-Gesamtstatus `AWAITING_EXACT_HEAD_KERNEL_RECEIPT`.
+Die Punkte 1 bis 7 und 9 sind für den gesamten Fünf-Claim-Scope im H2-Lauf
+`30627411130` am exakten Head
+`37a946b9eefc21ab369ad56b5fbb1e9c436766e1` erfüllt. Alle fünf Quellbindungen
+wurden kompiliert, alle fünf Proof-Konstanten dynamisch geprüft und alle fünf
+Axiomenlisten als leer ausgewiesen. Der formale Status jedes dieser Claims
+lautet daher `KERNEL_VERIFIED`. Diese Aussage betrifft ausschließlich die
+Lean-kernelgeprüften Implikationen in den angegebenen abstrakten Modellen.
+
+Die nachgelagerte kanonische Statusmaterialisierung ist weiterhin offen. Weder
+eine Repository-Promotion noch `SYSTEM_WIDE_COMPLETION` wird damit behauptet;
+der systemweite Abschlussstatus bleibt `UNCLAIMED`.
 
 Punkt 8 wird erst für den eingefrorenen Publikationskandidaten abgeschlossen;
-Punkt 10 bleibt offen. Vor einem Zenodo-Upload werden der Fünf-Claim-Receipt,
-das SHA-256-Manifest, das kandidatengebundene Machine-Proof-Bundle und die
-exakten Kandidatenhashes zurückgegeben. Erst eine danach erteilte
-hashgebundene Autorisierung darf den Upload freischalten.
+Punkt 10 bleibt offen. Vor einem Zenodo-Upload werden die kanonisch
+statusmaterialisierte Fünf-Claim-Evidenz, das SHA-256-Manifest, das
+kandidatengebundene Machine-Proof-Bundle und die exakten Kandidatenhashes
+zurückgegeben. Erst eine danach erteilte hashgebundene Autorisierung darf den
+Upload freischalten.
 
 Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann nicht allein die empirische Angemessenheit der Umgebungsverteilung, die Vollständigkeit der Systemmodellierung oder eine biologische Identität beweisen.
 
@@ -748,8 +756,8 @@ Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann n
 | FIT-001 | Positive endliche Fortsetzung erfordert eine Kette lebensfähiger Anschlüsse; ohne lebensfähigen Nachfolger keine Fortsetzung. | `KERNEL_VERIFIED` im definierten Modell |
 | FIT-002 | Eine alle lebensfähigen Startzustände abdeckende viabilitätserhaltende Simulation impliziert globale Inklusion der endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
 | FIT-003 | Eine initialzustandsgebundene viabilitätserhaltende Simulation impliziert Inklusion der punktierten endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
-| MAT-001 | Im kodierten endlichen Naturgewicht-Modell impliziert Sprachinklusion Monotonie des gemeinsamen positiv normalisierten Anschlusswertes. | formale Quelle vorhanden; erweiterter Exact-Head-Receipt ausstehend |
-| MAT-002 | Im selben Modell impliziert ein konstruktiv lokalisierter positiver Gewichtsträger der strikten Differenz einen strikt größeren Anschlusswert. | formale Quelle vorhanden; erweiterter Exact-Head-Receipt ausstehend |
+| MAT-001 | Im kodierten endlichen Naturgewicht-Modell impliziert Sprachinklusion Monotonie des gemeinsamen positiv normalisierten Anschlusswertes. | `KERNEL_VERIFIED` im definierten endlichen Modell |
+| MAT-002 | Im selben Modell impliziert ein konstruktiv lokalisierter positiver Gewichtsträger der strikten Differenz einen strikt größeren Anschlusswert. | `KERNEL_VERIFIED` im definierten endlichen Modell |
 | EMP-001 | Es bleibt eine offene empirische Hypothese, dass größere invariantenerhaltende Anschlussfähigkeit unter vorregistrierten vergleichbaren Bedingungen eine nicht geringere operative Fortbestehensrate erzeugt. | offen / empirisch zu prüfen |
 | LIM-001 | Ob ein festgelegtes technisches Anschlussmaß empirisch mit biologischer Fitness oder Evolvierbarkeit korrespondiert, bleibt offen und wird hier nicht nachgewiesen. | offen; keine Identität behauptet |
 | NOR-001 | Größere technische Anschlussfähigkeit oder biologische Fitness darf für sich allein nicht als moralische Vorzugswürdigkeit behandelt werden. | normative Schutzregel / deklariert |

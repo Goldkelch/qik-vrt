@@ -45,3 +45,11 @@ Prädikate, natürliche nichtnegative Gewichte und einen gemeinsamen positiven
 Normalisierer. Außerdem normalisiert sie die nichtformalen Statuswerte für den
 Zenodo-v2-Policyvertrag und formuliert offene beziehungsweise normative
 Grenzen als solche, ohne sie in Tatsachenbehauptungen umzudeuten.
+
+Der Exact-Head-Lauf `30627411130` am Commit
+`37a946b9eefc21ab369ad56b5fbb1e9c436766e1` bestätigt anschließend den
+erweiterten Fünf-Claim-Scope mit Lean 4.19.0 und leeren Axiomenlisten für alle
+fünf Proof-Konstanten. Die aktive Claim-Matrix wird ausschließlich in diesen
+fünf formalen Statusfeldern auf `FORMAL_PROVED / KERNEL_VERIFIED` gehoben;
+alle historischen, biologischen, interpretativen, empirischen und normativen
+Aussagen bleiben inhaltlich unverändert und getrennt.
