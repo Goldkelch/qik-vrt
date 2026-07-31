@@ -1,0 +1,104 @@
+{
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-zenodo-file-license-map-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "_license": {"$ref": "#/$defs/artifactLicense"},
+    "schema": {"const": "qikvrt_zenodo_file_license_map_v1"},
+    "publication_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "rights": {
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/standardRight"},
+          {"$ref": "#/$defs/customPolyFormRight"}
+        ]
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "assignments": {
+      "items": {"$ref": "#/$defs/assignment"},
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": ["_license", "schema", "publication_id", "rights", "assignments"],
+  "type": "object",
+  "$defs": {
+    "artifactLicense": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {"const": "machine_readable_license_policy"},
+        "copyright": {"minLength": 1, "type": "string"},
+        "license": {"const": "CC-BY-NC-ND-4.0"},
+        "license_text_ref": {"const": "LICENSES/CC-BY-NC-ND-4.0.txt"},
+        "rights_holder": {"const": "Ingolf Lohmann"}
+      },
+      "required": ["classification", "copyright", "license", "license_text_ref", "rights_holder"],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"minLength": 1, "type": "string"},
+        "name": {"minLength": 1, "type": "string"},
+        "bytes": {"minimum": 0, "type": "integer"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "git_blob_sha": {"pattern": "^[0-9a-f]{40}$", "type": "string"}
+      },
+      "required": ["path", "name", "bytes", "sha256", "git_blob_sha"],
+      "type": "object"
+    },
+    "standardRight": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {"const": "cc-by-nc-nd-4.0"},
+            "kind": {"const": "standard"},
+            "spdx_id": {"const": "CC-BY-NC-ND-4.0"}
+          },
+          "required": ["id", "kind", "spdx_id"]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {"const": "apache-2.0"},
+            "kind": {"const": "standard"},
+            "spdx_id": {"const": "Apache-2.0"}
+          },
+          "required": ["id", "kind", "spdx_id"]
+        }
+      ],
+      "type": "object"
+    },
+    "customPolyFormRight": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {"const": "LicenseRef-PolyForm-Noncommercial-1.0.0"},
+        "kind": {"const": "custom"},
+        "title": {"const": "PolyForm Noncommercial License 1.0.0"},
+        "description": {
+          "const": "Noncommercial software use under PolyForm Noncommercial 1.0.0; commercial use requires a separate written agreement with the rights holder."
+        },
+        "url": {"const": "https://polyformproject.org/licenses/noncommercial/1.0.0/"},
+        "license_text": {"$ref": "#/$defs/identity"}
+      },
+      "required": ["id", "kind", "title", "description", "url", "license_text"],
+      "type": "object"
+    },
+    "assignment": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"minLength": 1, "type": "string"},
+        "name": {"minLength": 1, "type": "string"},
+        "right_id": {"minLength": 1, "type": "string"}
+      },
+      "required": ["path", "name", "right_id"],
+      "type": "object"
+    }
+  }
+}

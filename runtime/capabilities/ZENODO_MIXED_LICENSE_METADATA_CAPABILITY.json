@@ -1,0 +1,58 @@
+{
+  "schema": "qikvrt_runtime_capability_v5",
+  "capability": "zenodo-mixed-license-metadata-validation",
+  "profile": "validate-only",
+  "implementation": "tools/qikvrt_zenodo_mixed_license_contract.py",
+  "policy": "policy/ZENODO_MIXED_LICENSE_METADATA_V1.md",
+  "manifest_schema": "policy/qikvrt-zenodo-publication-manifest-v3.schema.json",
+  "file_license_map_schema": "policy/qikvrt-zenodo-file-license-map-v1.schema.json",
+  "invocation": "python -B tools/qikvrt_zenodo_mixed_license_contract.py --manifest <repository-relative-v3-manifest.json>",
+  "state": "VALIDATE_ONLY",
+  "remote_effects": false,
+  "network": false,
+  "credentials": false,
+  "git_ref_mutation": false,
+  "output": "normalized validation receipt on stdout only",
+  "contract": {
+    "complete_file_assignment": true,
+    "assignment_cardinality": "exactly one right per exact upload file",
+    "artifact_identity": "repository path, upload name, bytes, SHA-256 and Git blob SHA-1",
+    "bound_control_files": [
+      "FILE_LICENSE_MAP.json",
+      "LICENSE_NOTICE.md"
+    ],
+    "control_file_right": "cc-by-nc-nd-4.0",
+    "metadata_projection": "metadata.rights must exactly equal the used map rights",
+    "mixed_cff_license_field": "forbidden",
+    "custom_polyform_right": "exact title, description, official URL and uploaded license-text identity"
+  },
+  "hard_gates": [
+    "NO_DEFAULT_OR_GLOB_LICENSE_ASSIGNMENT",
+    "NO_MISSING_DUPLICATE_OVERLAPPING_OR_EXTRA_ASSIGNMENT",
+    "NO_UNUSED_OR_UNDEFINED_RIGHT",
+    "NO_HASH_OR_GIT_BLOB_DRIFT",
+    "NO_SINGULAR_LEGACY_LICENSE_IN_V3_METADATA",
+    "NO_CFF_LICENSE_FIELD_FOR_HETEROGENEOUS_FILESET",
+    "NO_REMOTE_EFFECT_FROM_VALIDATE_ONLY_CONTRACT",
+    "NO_MIXED_LICENSE_PUBLICATION_WITHOUT_VERIFIED_NATIVE_TRANSPORT",
+    "NO_ZENODO_EFFECT_WITHOUT_FRESH_EXACT_OWNER_AUTHORIZATION"
+  ],
+  "legacy_boundary": {
+    "production_publisher": "tools/qikvrt_zenodo_publish.py",
+    "supported_schemas": [
+      "qikvrt_zenodo_publication_manifest_v1",
+      "qikvrt_zenodo_publication_manifest_v2"
+    ],
+    "v3_behavior": "UNSUPPORTED_SCHEMA_FAIL_CLOSED",
+    "v1_v2_bytes_or_behavior_changed": false
+  },
+  "activation_requirements": [
+    "separate native multi-rights transport",
+    "sandbox create/read/public roundtrip preserving every right",
+    "new exact proof bundle and prepublication return receipt",
+    "new candidate-bound written owner authorization"
+  ],
+  "rollback": "No destructive mutation exists. Remove the candidate-only files if the contract is rejected.",
+  "rights_holder": "Ingolf Lohmann",
+  "license": "Implementation files declare PolyForm-Noncommercial-1.0.0; policy, schema, evidence and test artifacts are CC-BY-NC-ND-4.0 or Apache-2.0 as declared per file"
+}
