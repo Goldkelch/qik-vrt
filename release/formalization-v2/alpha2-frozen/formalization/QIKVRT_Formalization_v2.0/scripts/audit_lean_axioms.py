@@ -28,11 +28,6 @@ MANUSCRIPT_EXPECTED = {
     "QIKVRT.V2.GAT002_checked",
     "QIKVRT.V2.DIM006A_additive_checked",
     "QIKVRT.V2.DIM007A_countermodel_checked",
-    "QIKVRT.V2.OperationalContinuation.FIT001_checked",
-    "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
-    "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
-    "QIKVRT.V2.WeightedConnectability.MAT001_checked",
-    "QIKVRT.V2.WeightedConnectability.MAT002_checked",
 }
 EFFECT_ACK_AUDIT_SOURCE = ROOT / "QIKVRTEffectAck" / "AxiomAudit.lean"
 EFFECT_ACK_MATRIX = ROOT / "effect_ack" / "DRAFT01_CLAIM_MATRIX.json"
