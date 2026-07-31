@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import re
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -442,7 +444,14 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
     def test_exact_owner_authorization_and_v2_manifest_are_valid(self) -> None:
         from tools import qikvrt_zenodo_publish as publish
 
-        manifest = publish.load_manifest(RELEASE / "publish-request.json", ROOT)
+        # The manifest is intentionally bound to the Authority repository.  A
+        # byte-identical Mirror checkout must be able to audit that binding
+        # without pretending that the Mirror is authorized to execute it.
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "Goldkelch/qik-vrt"},
+        ):
+            manifest = publish.load_manifest(RELEASE / "publish-request.json", ROOT)
         self.assertEqual(manifest["schema"], publish.SCHEMA_V2)
         self.assertEqual(manifest["repository"], "Goldkelch/qik-vrt")
         self.assertEqual(
@@ -466,7 +475,17 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
             manifest["owner_authorization"]["canonical_metadata_sha256"],
             "c6b12f13bbf44127186fe4d2a866a0c8e40729c1725961f78f44cf69148eedd0",
         )
-        self.assertFalse((RELEASE / "zenodo-publication.json").exists())
+        evidence_path = RELEASE / "zenodo-publication.json"
+        if evidence_path.exists():
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["state"], "published")
+            self.assertEqual(evidence["repository"], "Goldkelch/qik-vrt")
+            self.assertEqual(
+                evidence["repository_commit"],
+                "b5e590802a729ad3a15ce3cc1c1d3eb18adea854",
+            )
+            self.assertEqual(evidence["doi"], "10.5281/zenodo.21721918")
+            self.assertEqual(len(evidence["files"]), 31)
 
 
 if __name__ == "__main__":
