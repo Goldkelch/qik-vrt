@@ -40,33 +40,67 @@ jobs:
       - name: Verify one-shot bootstrap boundary
         shell: bash
         run: |
-          set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "Goldkelch/qik-vrt"
-          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
-          git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
-          test ! -e "$RECEIPT_PATH"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           python3 -B - <<'PY'
           import json
           import os
           from pathlib import Path
           import subprocess
 
-          raw = subprocess.check_output(
+          def output(*args: str) -> str:
+              return subprocess.check_output(
+                  list(args), text=True, encoding="utf-8"
+              ).strip()
+
+          observed_repository = os.environ["GITHUB_REPOSITORY"]
+          observed_ref = os.environ["GITHUB_REF"]
+          observed_sha = output("git", "rev-parse", "--verify", "HEAD^{commit}")
+          print("OBSERVED_REPOSITORY=" + observed_repository)
+          print("OBSERVED_REF=" + observed_ref)
+          print("OBSERVED_SHA=" + observed_sha)
+          if observed_repository != "Goldkelch/qik-vrt":
+              raise SystemExit("BLOCK: repository identity differs")
+          expected_ref = "refs/heads/" + os.environ["EXPECTED_BRANCH"]
+          if observed_ref != expected_ref:
+              raise SystemExit("BLOCK: branch ref differs")
+          if observed_sha != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: checked-out SHA differs")
+
+          ancestor = subprocess.run(
               [
                   "git",
-                  "diff",
-                  "--name-status",
-                  "--no-renames",
+                  "merge-base",
+                  "--is-ancestor",
                   os.environ["EXPECTED_PARENT"],
                   os.environ["GITHUB_SHA"],
-                  "--",
               ],
-              text=True,
-              encoding="utf-8",
+              check=False,
           )
-          observed = set(raw.splitlines())
+          print("EXPECTED_PARENT_IS_ANCESTOR=" + str(ancestor.returncode == 0).lower())
+          if ancestor.returncode != 0:
+              raise SystemExit("BLOCK: expected Authority parent is not an ancestor")
+
+          receipt_path = Path(os.environ["RECEIPT_PATH"])
+          print("RECEIPT_ALREADY_EXISTS=" + str(receipt_path.exists()).lower())
+          if receipt_path.exists():
+              raise SystemExit("BLOCK: publication receipt already exists")
+
+          status = output(
+              "git", "status", "--porcelain=v1", "--untracked-files=all"
+          )
+          print("WORKTREE_STATUS=" + repr(status))
+          if status:
+              raise SystemExit("BLOCK: bootstrap checkout is not clean")
+
+          raw = output(
+              "git",
+              "diff",
+              "--name-status",
+              "--no-renames",
+              os.environ["EXPECTED_PARENT"],
+              os.environ["GITHUB_SHA"],
+              "--",
+          )
+          observed = set(raw.splitlines()) if raw else set()
           expected = {
               "A\t" + os.environ["HELPER_PATH"],
               "A\t" + os.environ["WORKFLOW_PATH"],
@@ -81,6 +115,11 @@ jobs:
 
           candidate = json.loads(
               Path(os.environ["CANDIDATE_PATH"]).read_text(encoding="utf-8")
+          )
+          print("CANDIDATE_STATE=" + repr(candidate.get("state")))
+          print(
+              "CANDIDATE_SUBMISSION_FLAG="
+              + repr(candidate.get("datatracker_submission_performed"))
           )
           if candidate.get("state") != "CANDIDATE_NOT_SUBMITTED":
               raise SystemExit("BLOCK: candidate state advanced before bootstrap")
