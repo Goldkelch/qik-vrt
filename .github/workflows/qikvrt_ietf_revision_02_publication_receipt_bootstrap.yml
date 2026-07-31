@@ -47,17 +47,37 @@ jobs:
           git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
           test ! -e "$RECEIPT_PATH"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          expected_delta="$(
-            printf 'A\t%s\nA\t%s\n' "$HELPER_PATH" "$WORKFLOW_PATH"
-          )"
-          observed_delta="$(
-            git diff --name-status --no-renames "$EXPECTED_PARENT" "$GITHUB_SHA" --
-          )"
-          test "$observed_delta" = "$expected_delta"
           python3 -B - <<'PY'
           import json
           import os
           from pathlib import Path
+          import subprocess
+
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-status",
+                  "--no-renames",
+                  os.environ["EXPECTED_PARENT"],
+                  os.environ["GITHUB_SHA"],
+                  "--",
+              ],
+              text=True,
+              encoding="utf-8",
+          )
+          observed = set(raw.splitlines())
+          expected = {
+              "A\t" + os.environ["HELPER_PATH"],
+              "A\t" + os.environ["WORKFLOW_PATH"],
+          }
+          print("OBSERVED_BOOTSTRAP_DELTA=" + repr(sorted(observed)))
+          print("EXPECTED_BOOTSTRAP_DELTA=" + repr(sorted(expected)))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: bootstrap repository delta differs: "
+                  + repr(sorted(observed))
+              )
 
           candidate = json.loads(
               Path(os.environ["CANDIDATE_PATH"]).read_text(encoding="utf-8")
@@ -111,6 +131,8 @@ jobs:
               if not item:
                   continue
               observed.add(item[3:].decode("utf-8"))
+          print("OBSERVED_FINAL_DELTA=" + repr(sorted(observed)))
+          print("EXPECTED_FINAL_DELTA=" + repr(sorted(expected)))
           if observed != expected:
               raise SystemExit(
                   "BLOCK: final repository delta differs: "
