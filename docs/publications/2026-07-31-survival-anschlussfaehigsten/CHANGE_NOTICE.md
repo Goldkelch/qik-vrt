@@ -19,8 +19,9 @@ Publikationskandidat folgende explizite Grenzen:
    quantifiziert wird.
 3. „Anschlussfähig“ bedeutet im formalen Kern: Ein Zustand ist lebensfähig und
    besitzt einen zulässigen Übergang zu einem lebensfähigen Nachfolger.
-4. Der Lean-Beweis gilt ausschließlich für das definierte abstrakte
-   Fortsetzungsmodell.
+4. Die Lean-Beweise FIT-001, FIT-002 und FIT-003 sind kernelgeprüft und gelten
+   ausschließlich für die definierten abstrakten Fortsetzungs- und
+   Simulationsmodelle.
 5. Die Anwendung auf konkrete Software, Organisationen oder Populationen
    benötigt eine eigenständige Modellkorrespondenz und empirische Prüfung.
 6. Mehr Schnittstellen, grenzenlose Offenheit oder bloße Vernetzung sind nicht
@@ -30,3 +31,9 @@ Diese Ergänzungen ändern die autorenseitige Deutung nicht. Sie verhindern,
 dass eine interpretative Übersetzung fälschlich als neue biologische
 Definition, universelles Naturgesetz oder bereits bestätigte empirische
 Prognose publiziert wird.
+
+Der erste erfolgreiche Exact-Head-Lauf ist in
+`KERNEL_EVIDENCE_H0_PENDING.json` erhalten. Er ändert keine historische,
+biologische, empirische oder normative Aussage; er hebt ausschließlich die
+drei zuvor ausstehenden formalen Modellclaims in den Status
+`KERNEL_VERIFIED`.

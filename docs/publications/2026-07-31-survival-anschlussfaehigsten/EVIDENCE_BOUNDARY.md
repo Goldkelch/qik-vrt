@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Evidenz- und Geltungsgrenze
 
-## Was nach erfolgreicher Kernel-Prüfung bewiesen sein wird
+## Was kernelgeprüft bewiesen ist
 
 Die beiden Lean-Module definieren ein abstraktes Fortsetzungssystem sowie
 typisierte Übergangssysteme mit zulässigen Übergängen und lokalen
@@ -26,9 +26,14 @@ geprüft:
 6. Sind zusätzlich die ausgezeichneten Anfangszustände aufeinander bezogen,
    folgt dieselbe Inklusion für die punktierten endlichen Sprachen.
 
-Bis ein exakter Git-Head mit Lean 4.19.0 erfolgreich gebaut, auf Axiome geprüft
-und in einem persistierten Receipt gebunden wurde, ist der Status
-`FORMAL_CANDIDATE_AWAITING_KERNEL_CHECK`.
+Diese Aussagen wurden mit Lean 4.19.0 am exakten Branch-Head
+`d9734302efaf3c79110ceb32f8987822b864a6dd` geprüft. Der Push-Lauf
+`30624247534` kompilierte beide Quellen, führte den dynamischen Axiom-Audit und
+die Proof-Escape-Prüfung aus und meldete für `FIT001_checked`,
+`FIT002_checked` und `FIT003_checked` jeweils eine leere Axiomenliste. Die
+originale maschinenlesbare Ausgabe ist als
+`KERNEL_EVIDENCE_H0_PENDING.json` erhalten. Der Status dieser drei
+modellinternen Aussagen ist daher `KERNEL_VERIFIED`.
 
 ## Was dadurch nicht bewiesen wird
 
@@ -49,8 +54,8 @@ quellengebunden getrennt.
 
 ## Publikationsgrenze
 
-Dieses Verzeichnis ist bis zur exakten, kandidatengebundenen Autorisierung ein
-Vorveröffentlichungskandidat:
+Dieses Verzeichnis bleibt trotz abgeschlossener Kernelprüfung bis zur exakten,
+kandidatengebundenen Autorisierung ein Vorveröffentlichungskandidat:
 
 - kein Zenodo-Upload wird behauptet;
 - kein DOI wird vorweggenommen;

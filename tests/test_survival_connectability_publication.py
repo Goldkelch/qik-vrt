@@ -50,11 +50,13 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertIn("keine empirische Überlebensprognose", boundary)
         self.assertIn("kein Zenodo-Upload wird behauptet", boundary)
 
-    def test_claim_matrix_is_fail_closed_before_kernel_receipt(self) -> None:
+    def test_claim_matrix_transition_is_exact_and_completion_remains_fail_closed(self) -> None:
         matrix = load_json("CLAIM_MATRIX.json")
+        pending = load_json("CLAIM_MATRIX_H0_PENDING.json")
         self.assertEqual(matrix["claim_count"], len(matrix["claims"]))
+        self.assertEqual(matrix["proof_state"], "KERNEL_VERIFIED")
         self.assertEqual(
-            matrix["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+            pending["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
         )
         self.assertEqual(
             matrix["completion_claims"],
@@ -68,14 +70,55 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         claims = {item["claim_id"]: item for item in matrix["claims"]}
         self.assertEqual(len(claims), matrix["claim_count"])
         for claim_id in ("FIT-001", "FIT-002", "FIT-003"):
-            self.assertEqual(claims[claim_id]["classification"], "FORMAL_PENDING_KERNEL")
-            self.assertEqual(
-                claims[claim_id]["status"],
-                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
-            )
+            self.assertEqual(claims[claim_id]["classification"], "FORMAL_PROVED")
+            self.assertEqual(claims[claim_id]["status"], "KERNEL_VERIFIED")
         self.assertEqual(claims["EMP-001"]["status"], "OPEN_EMPIRICAL")
         self.assertEqual(claims["LIM-001"]["status"], "NOT_CLAIMED_OUT_OF_SCOPE")
         self.assertEqual(claims["NOR-001"]["status"], "DOES_NOT_FOLLOW")
+
+        normalized = json.loads(json.dumps(matrix))
+        normalized["proof_state"] = "AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+        normalized_claims = {
+            item["claim_id"]: item for item in normalized["claims"]
+        }
+        for claim_id in ("FIT-001", "FIT-002", "FIT-003"):
+            normalized_claims[claim_id]["classification"] = "FORMAL_PENDING_KERNEL"
+            normalized_claims[claim_id]["status"] = (
+                "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT"
+            )
+        self.assertEqual(normalized, pending)
+
+    def test_h0_kernel_evidence_binds_pending_matrix_and_exact_successful_head(self) -> None:
+        pending_path = PUBLICATION / "CLAIM_MATRIX_H0_PENDING.json"
+        evidence_path = PUBLICATION / "KERNEL_EVIDENCE_H0_PENDING.json"
+        pending = load_json("CLAIM_MATRIX_H0_PENDING.json")
+        evidence = load_json("KERNEL_EVIDENCE_H0_PENDING.json")
+        self.assertEqual(evidence["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            evidence["publication_id"],
+            "qikvrt-survival-of-the-anschlussfaehigsten-v1",
+        )
+        self.assertEqual(
+            evidence["exact_head"]["commit"],
+            "d9734302efaf3c79110ceb32f8987822b864a6dd",
+        )
+        self.assertEqual(evidence["workflow"]["event"], "push")
+        self.assertEqual(evidence["workflow"]["run_id"], "30624247534")
+        self.assertEqual(evidence["workflow"]["sha"], evidence["exact_head"]["commit"])
+        self.assertEqual(evidence["claim_matrix"]["bytes"], pending_path.stat().st_size)
+        self.assertEqual(evidence["claim_matrix"]["sha256"], sha256(pending_path))
+        self.assertEqual(evidence["claim_matrix"]["git_blob_sha1"], git_blob(pending_path))
+        self.assertEqual(pending["proof_state"], "AWAITING_EXACT_HEAD_KERNEL_RECEIPT")
+        self.assertGreater(evidence_path.stat().st_size, 0)
+        self.assertEqual(evidence["theorem_count"], 3)
+        self.assertEqual(evidence["formal_claim_count"], 3)
+        self.assertEqual(
+            set(evidence["axioms_by_theorem"]),
+            set(load_json("KERNEL_PROOF_PLAN.json")["theorems"]),
+        )
+        self.assertTrue(
+            all(not axioms for axioms in evidence["axioms_by_theorem"].values())
+        )
 
     def test_kernel_plan_binds_all_formal_claims_and_source_bytes(self) -> None:
         matrix = load_json("CLAIM_MATRIX.json")
@@ -83,7 +126,7 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         formal_refs = {
             ref
             for claim in matrix["claims"]
-            if claim["classification"] == "FORMAL_PENDING_KERNEL"
+            if claim["classification"] in {"FORMAL_PENDING_KERNEL", "FORMAL_PROVED"}
             for ref in claim["proof_refs"]
         }
         self.assertEqual(formal_refs, set(plan["theorems"]))
@@ -102,7 +145,7 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertEqual(receipt["state"], "PDF_VISUALLY_VERIFIED")
         self.assertEqual(receipt["build"]["state"], "PASS")
         self.assertEqual(receipt["visual_qa"]["state"], "PASS")
-        self.assertEqual(receipt["visual_qa"]["inspected_pages"], list(range(1, 15)))
+        self.assertEqual(receipt["visual_qa"]["inspected_pages"], list(range(1, 16)))
         self.assertEqual(
             receipt["completion_claims"],
             {"repository_promotion_complete": False, "zenodo_published": False},
@@ -152,7 +195,7 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
             "Herbert Spencer",
             "Alfred Russel Wallace",
             "reproduktiven Beitrag",
-            "FORMAL_CANDIDATE_AWAITING_KERNEL_CHECK",
+            "KERNEL_VERIFIED",
             "FIT-001",
             "FIT-002",
             "FIT-003",

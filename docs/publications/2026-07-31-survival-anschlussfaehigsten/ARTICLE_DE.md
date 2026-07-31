@@ -13,7 +13,7 @@ lang: "de-DE"
 **Textlizenz:** Creative Commons Namensnennung – Nicht-kommerziell – Keine Bearbeitungen 4.0 International (CC BY-NC-ND 4.0)<br>
 **Formalisierungsquellen:** Apache License 2.0<br>
 **Publikationsstatus:** Nicht begutachteter Kandidat; kein DOI; noch nicht auf Zenodo veröffentlicht<br>
-**Wahrheitsgrenze:** Die mathematischen Sätze dieses Kandidaten sind als Lean-Quellen formuliert. Vor einem erfolgreichen Exact-Head-Build mit Lean 4.19.0, dem Axiom-Audit und einer exakten Artefaktbindung bleibt ihr Status `FORMAL_CANDIDATE_AWAITING_KERNEL_CHECK`; `KERNEL_VERIFIED` wird nicht vorweggenommen.
+**Wahrheitsgrenze:** Die drei ausgewiesenen Modellsätze FIT-001, FIT-002 und FIT-003 wurden am exakten Branch-Head `d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 kompiliert, dynamisch auf Axiome geprüft und mit leeren Axiomenlisten als `KERNEL_VERIFIED` gebunden. Bewiesen sind ausschließlich die ausdrücklich definierten abstrakten Modelleigenschaften; weder die biologische Interpretation noch eine empirische Überlebensprognose folgt daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo veröffentlicht.
 
 ---
 
@@ -624,8 +624,11 @@ Aus höherer biologischer oder technischer Fitness folgt kein höherer moralisch
 ## 11. Maschinenprüfbarer Kern
 
 Der formale Kern ist in zwei voneinander getrennten Lean-Modulen formuliert.
-Bis zum erfolgreichen Exact-Head-CI-Lauf bleiben beide Module
-`FORMAL_CANDIDATE_AWAITING_KERNEL_CHECK`.
+Beide Module wurden im Push-Lauf `30624247534` am exakten Branch-Head
+`d9734302efaf3c79110ceb32f8987822b864a6dd` mit Lean 4.19.0 erfolgreich
+kernelgeprüft. Die originale maschinenlesbare Evidenz ist als
+`KERNEL_EVIDENCE_H0_PENDING.json` erhalten; die drei gebundenen Aussagen haben
+den Status `KERNEL_VERIFIED`.
 
 ### 11.1 FIT-001: endliche operationale Fortsetzung
 
@@ -649,8 +652,8 @@ Der propositionierte Hauptsatz `FIT001_checked` bündelt drei Aussagen:
 `ConnectabilitySimulation.lean` definiert ein typisiertes beschriftetes
 Übergangssystem, gültige Schritte, endliche lebensfähige Spuren und
 viabilitätserhaltende Simulationen. Die Lean-Quelle enthält für den
-vorgesehenen Hauptsatz `FIT002_checked` einen Beweisterm; seine nach
-erfolgreicher Exact-Head-Kernelprüfung belegte Aussage lautet:
+Hauptsatz `FIT002_checked` einen kernelgeprüften Beweisterm. Seine belegte
+Aussage lautet:
 
 > Simuliert ein Zielsystem jeden gültigen Schritt eines Quellsystems, erhält
 > dabei Viabilität und deckt alle lebensfähigen Quellzustände ab, dann enthält
@@ -690,9 +693,9 @@ FIT-002  QIKVRT.V2.ConnectabilitySimulation.FIT002_checked
 FIT-003  QIKVRT.V2.ConnectabilitySimulation.FIT003_checked
 ```
 
-### 11.3 Erforderliche Prüfung vor Publikation
+### 11.3 Durchgeführte Kernelprüfung und verbleibende Publikationsgates
 
-Vor der Statussetzung `KERNEL_VERIFIED` sind mindestens erforderlich:
+Für die Statussetzung `KERNEL_VERIFIED` wurden ausgeführt und gebunden:
 
 1. vollständiger Lean-Build auf exakt gebundenem Commit;
 2. keine Platzhalter wie `sorry` oder `admit`;
@@ -703,7 +706,14 @@ Vor der Statussetzung `KERNEL_VERIFIED` sind mindestens erforderlich:
 7. maschinenlesbare Claim-Matrix;
 8. SHA-256-Manifest der veröffentlichten Artefakte;
 9. Trennung zwischen kernel-bewiesenen, konditionalen, empirischen, interpretativen und normativen Aussagen;
-10. erst danach Archivierung und DOI-Publikation.
+10. weiterhin getrennte, erst danach autorisierte Archivierung und DOI-Publikation.
+
+Die Punkte 1 bis 7 und 9 sind im H0-Evidenzartefakt erfüllt. Punkt 8 wird erst
+für den eingefrorenen Publikationskandidaten abgeschlossen; Punkt 10 bleibt
+offen. Vor einem Zenodo-Upload werden zusätzlich der statusmaterialisierte
+Nachfolge-Head, das SHA-256-Manifest, das kandidatengebundene
+Machine-Proof-Bundle und die exakten Kandidatenhashes zurückgegeben. Erst eine
+danach erteilte hashgebundene Autorisierung darf den Upload freischalten.
 
 Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann nicht allein die empirische Angemessenheit der Umgebungsverteilung, die Vollständigkeit der Systemmodellierung oder eine biologische Identität beweisen.
 
@@ -716,9 +726,9 @@ Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er kann n
 | HIS-001 | Der Ausdruck „survival of the fittest“ wurde von Herbert Spencer geprägt und später von Darwin übernommen. | historisch quellengebunden |
 | BIO-001 | Biologische Fitness ist nicht mit Körperstärke oder bloßer Lebensdauer identisch. | wissenschaftliche Hintergrundannahme |
 | TRN-001 | „Survival of the Anschlussfähigsten“ ist die autorenseitig festgelegte Informatik-Interpretation, keine neue biologische Definition. | interpretativ / normativ definiert |
-| FIT-001 | Positive endliche Fortsetzung erfordert eine Kette lebensfähiger Anschlüsse; ohne lebensfähigen Nachfolger keine Fortsetzung. | formale Quelle vorhanden; Exact-Head-Kernelreceipt ausstehend |
-| FIT-002 | Eine alle lebensfähigen Startzustände abdeckende viabilitätserhaltende Simulation impliziert globale Inklusion der endlichen Viabilitätssprachen. | formale Quelle vorhanden; Exact-Head-Kernelreceipt ausstehend |
-| FIT-003 | Eine initialzustandsgebundene viabilitätserhaltende Simulation impliziert Inklusion der punktierten endlichen Viabilitätssprachen. | formale Quelle vorhanden; Exact-Head-Kernelreceipt ausstehend |
+| FIT-001 | Positive endliche Fortsetzung erfordert eine Kette lebensfähiger Anschlüsse; ohne lebensfähigen Nachfolger keine Fortsetzung. | `KERNEL_VERIFIED` im definierten Modell |
+| FIT-002 | Eine alle lebensfähigen Startzustände abdeckende viabilitätserhaltende Simulation impliziert globale Inklusion der endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
+| FIT-003 | Eine initialzustandsgebundene viabilitätserhaltende Simulation impliziert Inklusion der punktierten endlichen Viabilitätssprachen. | `KERNEL_VERIFIED` im definierten Modell |
 | MAT-001 | Sprachinklusion impliziert bei nichtnegativer endlicher Gewichtung Monotonie des Anschlusswertes. | im Manuskript bewiesen; nicht Teil des ersten Kernel-Scopes |
 | MAT-002 | Positiv gewichtete echte Spracherweiterung impliziert strikt größeren Anschlusswert. | im Manuskript bewiesen; nicht Teil des ersten Kernel-Scopes |
 | EMP-001 | Größere nachgewiesene Anschlussfähigkeit verbessert unter realen vergleichbaren Bedingungen die operative Fortbestehensrate. | empirisch zu prüfen |

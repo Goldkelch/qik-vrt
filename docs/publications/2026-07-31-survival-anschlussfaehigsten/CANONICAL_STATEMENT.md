@@ -7,7 +7,8 @@ Copyright 2026 Ingolf Lohmann.
 
 **Autor und Urheber der hier vorgelegten QIK-VRT-Operationalisierung:** Ingolf Lohmann<br>
 **Version:** 1.0-candidate<br>
-**Status:** `CANDIDATE_PREPUBLICATION`
+**Status:** `CANDIDATE_PREPUBLICATION`<br>
+**Formaler Kern:** `KERNEL_VERIFIED` für FIT-001, FIT-002 und FIT-003
 
 Die von Ingolf Lohmann festgelegte informatische Übertragung lautet:
 
@@ -35,7 +36,9 @@ Die maschinenprüfbare Kernaussage ist enger:
 > einen lebensfähigen Nachfolger ist keine Fortsetzung um einen weiteren
 > Schritt möglich.
 
-Diese formale Aussage ist eine konditionale Modelleigenschaft. Sie beweist
+Diese formale Aussage und die beiden präzisen Simulationssätze wurden am
+exakten Git-Head mit Lean 4.19.0 kernelgeprüft. Es handelt sich um
+konditionale Modelleigenschaften. Das beweist
 weder eine neue biologische Gesetzmäßigkeit noch die empirische Überlegenheit
 beliebiger Schnittstellen. Der Übergang von der Formalisierung zu einer
 konkreten Software, Organisation oder biologischen Population benötigt jeweils

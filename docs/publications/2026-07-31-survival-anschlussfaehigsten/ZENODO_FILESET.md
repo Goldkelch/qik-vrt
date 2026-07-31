@@ -22,8 +22,11 @@ owner authorization.
 - `README.md`
 - `EVIDENCE_BOUNDARY.md`
 - `CLAIM_MATRIX.json`
+- `CLAIM_MATRIX_H0_PENDING.json`
 - `SOURCE_EVIDENCE_BINDINGS.json`
 - `KERNEL_PROOF_PLAN.json`
+- `KERNEL_EVIDENCE_H0_PENDING.json`
+- `KERNEL_EVIDENCE_H1_TARGET.json`
 - `FORMAL_OperationalContinuation.lean`
 - `FORMAL_ConnectabilitySimulation.lean`
 - `FORMAL_SOURCE_SNAPSHOT.json`

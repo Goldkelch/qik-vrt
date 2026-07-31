@@ -35,8 +35,10 @@ Fortsetzungshorizonte, lebensfähige Anschlüsse, invariantenerhaltende
 | `CHANGE_NOTICE.md` | wissenschaftliche Präzisierungen gegenüber der Kurzform |
 | `EVIDENCE_BOUNDARY.md` | Beweis-, Anwendungs- und Publikationsgrenzen |
 | `CLAIM_MATRIX.json` | maschinenlesbare Klassifikation aller Hauptaussagen |
+| `CLAIM_MATRIX_H0_PENDING.json` | unveränderter Status-Snapshot vor der ersten Exact-Head-Prüfung |
 | `SOURCE_EVIDENCE_BINDINGS.json` | Quellen- und Versionsbindungen |
 | `KERNEL_PROOF_PLAN.json` | Exact-Head-, Toolchain- und Axiomvertrag |
+| `KERNEL_EVIDENCE_H0_PENDING.json` | originale CI-Evidenz des ersten erfolgreichen Exact-Head-Kernellaufs |
 | `FORMAL_OperationalContinuation.lean` | bytegleicher Zenodo-Snapshot des FIT-001-Moduls |
 | `FORMAL_ConnectabilitySimulation.lean` | bytegleicher Zenodo-Snapshot der FIT-002/3-Module |
 | `FORMAL_SOURCE_SNAPSHOT.json` | Identitätsbeleg zwischen Repository- und Archivquellen |
@@ -56,16 +58,22 @@ Der formale Kandidat liegt in:
 ```text
 FORMAL_SOURCE          = PRESENT
 LEAN_TOOLCHAIN         = leanprover/lean4:v4.19.0
-LOCAL_KERNEL_RESULT    = UNAVAILABLE
-CI_KERNEL_RESULT       = PENDING
-AXIOM_AUDIT            = PENDING
+LOCAL_KERNEL_RESULT    = PASS_UNRECEIPTED
+CI_KERNEL_RESULT       = KERNEL_VERIFIED
+CI_EXACT_HEAD_H0       = d9734302efaf3c79110ceb32f8987822b864a6dd
+CI_RUN_H0              = 30624247534
+AXIOM_AUDIT            = PASS_EMPTY_FOR_FIT001_FIT002_FIT003
 PUBLICATION_STATUS     = CANDIDATE_PREPUBLICATION
 ZENODO_MUTATION        = false
 ```
 
-Ein grüner CI-Build allein schaltet den Status nicht automatisch um. Ein
-persistierter Receipt muss den exakten Git-Head, die Lean-Quelle, die
-Proof-Konstanten, die Axiom-Ausgabe und den Kandidaten binden.
+Der erste grüne Exact-Head-Lauf ist als
+`KERNEL_EVIDENCE_H0_PENDING.json` bytegenau persistiert. Er bindet den
+Git-Head, die Lean-Quellen, die Proof-Konstanten, die Toolchain, die erzeugten
+Objekte und leere Axiomenlisten für FIT-001 bis FIT-003. Die nachfolgende
+Statusmaterialisierung und der Publikationskandidat bleiben ihrerseits bis zu
+ihrem eigenen Exact-Head-Receipt und zur hashgebundenen Autorisierung
+fail-closed.
 
 ## Reproduktion
 
@@ -89,7 +97,7 @@ Es wird derzeit weder ein DOI noch eine Zenodo-Publikation, ein Peer Review,
 biologischer Konsens oder repository-weite Vollständigkeit behauptet. Vor dem
 Upload sind erforderlich:
 
-1. erfolgreicher Exact-Head-Kernel- und Axiomlauf;
+1. Exact-Head-Receipt der statusmaterialisierten Nachfolgefassung;
 2. unveränderte Claim-Matrix und PDF-Kandidatenbytes;
 3. kandidatengebundenes Machine-Proof-Bundle;
 4. Rückgabe genau dieser Bytes an Ingolf Lohmann;

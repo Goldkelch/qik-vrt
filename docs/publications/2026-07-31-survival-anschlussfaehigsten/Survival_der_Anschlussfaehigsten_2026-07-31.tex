@@ -164,12 +164,15 @@ formalisierbare Theorie\\
 \textbf{Formalisierungsquellen:} Apache License 2.0\\
 \textbf{Publikationsstatus:} Nicht begutachteter Kandidat; kein DOI;
 noch nicht auf Zenodo veröffentlicht\\
-\textbf{Wahrheitsgrenze:} Die mathematischen Sätze dieses Kandidaten
-sind als Lean-Quellen formuliert. Vor einem erfolgreichen
-Exact-Head-Build mit Lean 4.19.0, dem Axiom-Audit und einer exakten
-Artefaktbindung bleibt ihr Status
-\texttt{FORMAL\_CANDIDATE\_AWAITING\_KERNEL\_CHECK};
-\texttt{KERNEL\_VERIFIED} wird nicht vorweggenommen.
+\textbf{Wahrheitsgrenze:} Die drei ausgewiesenen Modellsätze FIT-001,
+FIT-002 und FIT-003 wurden am exakten Branch-Head
+\texttt{d9734302efaf3c79110ceb32f8987822b864a6dd} mit Lean 4.19.0
+kompiliert, dynamisch auf Axiome geprüft und mit leeren Axiomenlisten als
+\texttt{KERNEL\_VERIFIED} gebunden. Bewiesen sind ausschließlich die
+ausdrücklich definierten abstrakten Modelleigenschaften; weder die
+biologische Interpretation noch eine empirische Überlebensprognose folgt
+daraus. Der Kandidat hat noch keinen DOI und ist noch nicht auf Zenodo
+veröffentlicht.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
@@ -1134,8 +1137,12 @@ sind logisch verschieden.
 Kern}\label{maschinenpruxfcfbarer-kern}}
 
 Der formale Kern ist in zwei voneinander getrennten Lean-Modulen
-formuliert. Bis zum erfolgreichen Exact-Head-CI-Lauf bleiben beide
-Module \texttt{FORMAL\_CANDIDATE\_AWAITING\_KERNEL\_CHECK}.
+formuliert. Beide Module wurden im Push-Lauf \texttt{30624247534} am
+exakten Branch-Head
+\texttt{d9734302efaf3c79110ceb32f8987822b864a6dd} mit Lean 4.19.0
+erfolgreich kernelgeprüft. Die originale maschinenlesbare Evidenz ist als
+\texttt{KERNEL\_EVIDENCE\_H0\_PENDING.json} erhalten; die drei
+gebundenen Aussagen haben den Status \texttt{KERNEL\_VERIFIED}.
 
 \hypertarget{fit-001-endliche-operationale-fortsetzung}{%
 \subsubsection{11.1 FIT-001: endliche operationale
@@ -1172,9 +1179,8 @@ Sprachinklusion}\label{fit-002-anschluss-simulation-und-sprachinklusion}}
 \texttt{ConnectabilitySimulation.lean} definiert ein typisiertes
 beschriftetes Übergangssystem, gültige Schritte, endliche lebensfähige
 Spuren und viabilitätserhaltende Simulationen. Die Lean-Quelle enthält
-für den vorgesehenen Hauptsatz \texttt{FIT002\_checked} einen
-Beweisterm; seine nach erfolgreicher Exact-Head-Kernelprüfung belegte
-Aussage lautet:
+für den Hauptsatz \texttt{FIT002\_checked} einen kernelgeprüften
+Beweisterm. Seine belegte Aussage lautet:
 
 \begin{quote}
 Simuliert ein Zielsystem jeden gültigen Schritt eines Quellsystems,
@@ -1219,12 +1225,12 @@ Wahrscheinlichkeitsmodelle sind nicht Teil dieses ersten Lean-Satzes.
 \end{Highlighting}
 \end{Shaded}
 
-\hypertarget{erforderliche-pruxfcfung-vor-publikation}{%
-\subsubsection{11.3 Erforderliche Prüfung vor
-Publikation}\label{erforderliche-pruxfcfung-vor-publikation}}
+\hypertarget{durchgefuxfchrte-kernelpruxfcfung-und-verbleibende-publikationsgates}{%
+\subsubsection{11.3 Durchgeführte Kernelprüfung und verbleibende
+Publikationsgates}\label{durchgefuxfchrte-kernelpruxfcfung-und-verbleibende-publikationsgates}}
 
-Vor der Statussetzung \texttt{KERNEL\_VERIFIED} sind mindestens
-erforderlich:
+Für die Statussetzung \texttt{KERNEL\_VERIFIED} wurden ausgeführt und
+gebunden:
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
@@ -1249,8 +1255,17 @@ erforderlich:
   Trennung zwischen kernel-bewiesenen, konditionalen, empirischen,
   interpretativen und normativen Aussagen;
 \item
-  erst danach Archivierung und DOI-Publikation.
+  weiterhin getrennte, erst danach autorisierte Archivierung und
+  DOI-Publikation.
 \end{enumerate}
+
+Die Punkte 1 bis 7 und 9 sind im H0-Evidenzartefakt erfüllt. Punkt 8 wird
+erst für den eingefrorenen Publikationskandidaten abgeschlossen; Punkt 10
+bleibt offen. Vor einem Zenodo-Upload werden zusätzlich der
+statusmaterialisierte Nachfolge-Head, das SHA-256-Manifest, das
+kandidatengebundene Machine-Proof-Bundle und die exakten Kandidatenhashes
+zurückgegeben. Erst eine danach erteilte hashgebundene Autorisierung darf
+den Upload freischalten.
 
 Der Lean-Beweis kann den mathematischen Implikationskern abschließen. Er
 kann nicht allein die empirische Angemessenheit der Umgebungsverteilung,
@@ -1288,15 +1303,14 @@ festgelegte Informatik-Interpretation, keine neue biologische
 Definition. & interpretativ / normativ definiert \\
 FIT-001 & Positive endliche Fortsetzung erfordert eine Kette
 lebensfähiger Anschlüsse; ohne lebensfähigen Nachfolger keine
-Fortsetzung. & formale Quelle vorhanden; Exact-Head-Kernelreceipt
-ausstehend \\
+Fortsetzung. & \texttt{KERNEL\_VERIFIED} im definierten Modell \\
 FIT-002 & Eine alle lebensfähigen Startzustände abdeckende
 viabilitätserhaltende Simulation impliziert globale Inklusion der
-endlichen Viabilitätssprachen. & formale Quelle vorhanden;
-Exact-Head-Kernelreceipt ausstehend \\
+endlichen Viabilitätssprachen. & \texttt{KERNEL\_VERIFIED} im
+definierten Modell \\
 FIT-003 & Eine initialzustandsgebundene viabilitätserhaltende Simulation
 impliziert Inklusion der punktierten endlichen Viabilitätssprachen. &
-formale Quelle vorhanden; Exact-Head-Kernelreceipt ausstehend \\
+\texttt{KERNEL\_VERIFIED} im definierten Modell \\
 MAT-001 & Sprachinklusion impliziert bei nichtnegativer endlicher
 Gewichtung Monotonie des Anschlusswertes. & im Manuskript bewiesen;
 nicht Teil des ersten Kernel-Scopes \\
