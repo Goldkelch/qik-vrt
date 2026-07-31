@@ -6,13 +6,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import re
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PUBLICATION = ROOT / "docs/publications/2026-07-31-survival-anschlussfaehigsten"
+RELEASE = ROOT / "release/survival-anschlussfaehigsten-2026-07-31"
 PROJECT = ROOT / "formalization/QIKVRT_Formalization_v2.0"
 FULL_KERNEL_THEOREMS = {
     "QIKVRT.V2.OperationalContinuation.FIT001_checked",
@@ -437,6 +440,52 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertFalse((PUBLICATION / "zenodo-publication.json").exists())
         citation = (PUBLICATION / "CITATION.cff").read_text(encoding="utf-8")
         self.assertNotRegex(citation, re.compile(r"(?m)^doi\s*:"))
+
+    def test_exact_owner_authorization_and_v2_manifest_are_valid(self) -> None:
+        from tools import qikvrt_zenodo_publish as publish
+
+        # The manifest is intentionally bound to the Authority repository.  A
+        # byte-identical Mirror checkout must be able to audit that binding
+        # without pretending that the Mirror is authorized to execute it.
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "Goldkelch/qik-vrt"},
+        ):
+            manifest = publish.load_manifest(RELEASE / "publish-request.json", ROOT)
+        self.assertEqual(manifest["schema"], publish.SCHEMA_V2)
+        self.assertEqual(manifest["repository"], "Goldkelch/qik-vrt")
+        self.assertEqual(
+            manifest["source_head"],
+            "488c1c0e0c3228f4c3bed47f04b1110906c59b2f",
+        )
+        self.assertEqual(len(manifest["files"]), 31)
+        self.assertEqual(
+            manifest["machine_proof"]["sha256"],
+            "77a25c1b40026726f25ef1562423b119be406e554c510d2339c3a5d353d49eb0",
+        )
+        self.assertEqual(
+            manifest["machine_proof"]["candidate_return_receipt"]["sha256"],
+            "45472d43d017d686b1b8b8d81d52c33568a9e171f05c4a2a7e60eda0f3c85267",
+        )
+        self.assertEqual(
+            manifest["owner_authorization"]["authorization_id"],
+            "qikvrt-survival-anschlussfaehig-zenodo-v1-77a25c1b",
+        )
+        self.assertEqual(
+            manifest["owner_authorization"]["canonical_metadata_sha256"],
+            "c6b12f13bbf44127186fe4d2a866a0c8e40729c1725961f78f44cf69148eedd0",
+        )
+        evidence_path = RELEASE / "zenodo-publication.json"
+        if evidence_path.exists():
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["state"], "published")
+            self.assertEqual(evidence["repository"], "Goldkelch/qik-vrt")
+            self.assertEqual(
+                evidence["repository_commit"],
+                "b5e590802a729ad3a15ce3cc1c1d3eb18adea854",
+            )
+            self.assertEqual(evidence["doi"], "10.5281/zenodo.21721918")
+            self.assertEqual(len(evidence["files"]), 31)
 
 
 if __name__ == "__main__":
