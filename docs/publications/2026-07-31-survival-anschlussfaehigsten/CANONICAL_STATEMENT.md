@@ -9,7 +9,7 @@ Copyright 2026 Ingolf Lohmann.
 **Version:** 1.0-candidate<br>
 **Status:** `CANDIDATE_PREPUBLICATION`<br>
 **Formaler Unterbau:** `KERNEL_VERIFIED` für FIT-001 bis FIT-003 und MAT-001 bis MAT-002<br>
-**Statusmaterialisierung:** `AWAITING_EXACT_HEAD_TARGET_CONFIRMATION`
+**Statusmaterialisierung:** `KERNEL_VERIFIED`
 
 Die von Ingolf Lohmann festgelegte informatische Übertragung lautet:
 
@@ -50,7 +50,11 @@ Vorteil endlicher natürlich gewichteter Anschluss-Sprachen bei gemeinsamem
 positivem Normalisierer. Dieser zusätzliche Scope wurde im Exact-Head-Lauf
 `30627411130` am Commit `37a946b9eefc21ab369ad56b5fbb1e9c436766e1`
 mit leeren Axiomenlisten bestätigt. Die darauf beruhende Statusmaterialisierung
-bleibt bis zu ihrem eigenen Nachfolgelauf fail-closed.
+wurde im eigenen Exact-Head-Nachfolgelauf `30628327497` am Commit
+`5196495f07c6f696faf6d23f9cfe353532ac042e` erneut mit fünf leeren
+Axiomenlisten bestätigt und in `KERNEL_RECEIPT.json` gebunden. Repository-
+Promotion, Zenodo-Publikation, DOI und systemweiter Abschluss bleiben davon
+getrennt und offen.
 
 Kurzform:
 

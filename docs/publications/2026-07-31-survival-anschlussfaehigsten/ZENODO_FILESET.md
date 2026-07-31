@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Proposed Zenodo fileset
 
-State: `CANDIDATE_PREPUBLICATION`
+State: `FROZEN_CANDIDATE_AWAITING_EXACT_OWNER_AUTHORIZATION`
 
 This file does not authorize an upload. The actual v2 publish request must bind
 every selected file to its exact Git blob, SHA-256 digest and candidate-bound
@@ -48,5 +48,7 @@ owner authorization.
 The authoritative Lean sources remain in the linked repositories and are
 bound by the kernel receipt and machine-proof bundle. Byte-identical source
 snapshots are included in this fileset so that the archive remains
-self-contained. Until the required receipt files exist, the upload gate is
-fail-closed.
+self-contained. The machine-proof bundle can establish upload eligibility;
+it is not the natural-person authorization required by policy. Until the exact
+return, metadata and bundle hashes are authorized after candidate return, the
+production upload gate remains fail-closed.

@@ -14,6 +14,13 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PUBLICATION = ROOT / "docs/publications/2026-07-31-survival-anschlussfaehigsten"
 PROJECT = ROOT / "formalization/QIKVRT_Formalization_v2.0"
+FULL_KERNEL_THEOREMS = {
+    "QIKVRT.V2.OperationalContinuation.FIT001_checked",
+    "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
+    "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
+    "QIKVRT.V2.WeightedConnectability.MAT001_checked",
+    "QIKVRT.V2.WeightedConnectability.MAT002_checked",
+}
 
 
 def load_json(name: str) -> dict:
@@ -175,13 +182,6 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         evidence_path = PUBLICATION / "KERNEL_EVIDENCE_H2_FULL_PENDING.json"
         evidence = load_json("KERNEL_EVIDENCE_H2_FULL_PENDING.json")
         expected_head = "37a946b9eefc21ab369ad56b5fbb1e9c436766e1"
-        expected_theorems = {
-            "QIKVRT.V2.OperationalContinuation.FIT001_checked",
-            "QIKVRT.V2.ConnectabilitySimulation.FIT002_checked",
-            "QIKVRT.V2.ConnectabilitySimulation.FIT003_checked",
-            "QIKVRT.V2.WeightedConnectability.MAT001_checked",
-            "QIKVRT.V2.WeightedConnectability.MAT002_checked",
-        }
 
         self.assertEqual(evidence["state"], "KERNEL_VERIFIED")
         self.assertEqual(
@@ -204,10 +204,125 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
         self.assertGreater(evidence_path.stat().st_size, 0)
         self.assertEqual(evidence["theorem_count"], 5)
         self.assertEqual(evidence["formal_claim_count"], 5)
-        self.assertEqual(set(evidence["axioms_by_theorem"]), expected_theorems)
+        self.assertEqual(set(evidence["axioms_by_theorem"]), FULL_KERNEL_THEOREMS)
         self.assertTrue(
             all(not axioms for axioms in evidence["axioms_by_theorem"].values())
         )
+
+    def test_h3_kernel_evidence_binds_active_matrix_and_exact_successful_head(self) -> None:
+        matrix_path = PUBLICATION / "CLAIM_MATRIX.json"
+        matrix = load_json("CLAIM_MATRIX.json")
+        evidence_path = PUBLICATION / "KERNEL_EVIDENCE_H3_FULL_TARGET.json"
+        evidence = load_json("KERNEL_EVIDENCE_H3_FULL_TARGET.json")
+        expected_head = "5196495f07c6f696faf6d23f9cfe353532ac042e"
+
+        self.assertEqual(evidence["state"], "KERNEL_VERIFIED")
+        self.assertEqual(
+            evidence["publication_id"],
+            "qikvrt-survival-of-the-anschlussfaehigsten-v1",
+        )
+        self.assertEqual(evidence["exact_head"]["commit"], expected_head)
+        self.assertEqual(evidence["exact_head"]["github_sha"], expected_head)
+        self.assertEqual(evidence["workflow"]["event"], "push")
+        self.assertEqual(evidence["workflow"]["run_id"], "30628327497")
+        self.assertEqual(evidence["workflow"]["sha"], expected_head)
+        self.assertEqual(evidence["claim_matrix"]["bytes"], matrix_path.stat().st_size)
+        self.assertEqual(evidence["claim_matrix"]["sha256"], sha256(matrix_path))
+        self.assertEqual(
+            evidence["claim_matrix"]["git_blob_sha1"], git_blob(matrix_path)
+        )
+        self.assertEqual(matrix["proof_state"], "KERNEL_VERIFIED")
+        self.assertGreater(evidence_path.stat().st_size, 0)
+        self.assertEqual(evidence["theorem_count"], 5)
+        self.assertEqual(evidence["formal_claim_count"], 5)
+        self.assertEqual(set(evidence["axioms_by_theorem"]), FULL_KERNEL_THEOREMS)
+        self.assertTrue(
+            all(not axioms for axioms in evidence["axioms_by_theorem"].values())
+        )
+
+    def test_kernel_receipt_binds_h2_to_h3_exact_transition(self) -> None:
+        pending_path = PUBLICATION / "CLAIM_MATRIX_H2_FULL_PENDING.json"
+        target_path = PUBLICATION / "CLAIM_MATRIX.json"
+        receipt = load_json("KERNEL_RECEIPT.json")
+        transition = receipt["claim_transition"]
+        expected_source_head = "37a946b9eefc21ab369ad56b5fbb1e9c436766e1"
+        expected_target_head = "5196495f07c6f696faf6d23f9cfe353532ac042e"
+
+        self.assertEqual(receipt["state"], "KERNEL_VERIFIED")
+        self.assertEqual(receipt["formal_claim_count"], 5)
+        self.assertEqual(receipt["theorem_count"], 5)
+        self.assertEqual(set(receipt["theorems"]), FULL_KERNEL_THEOREMS)
+        self.assertEqual(set(receipt["axioms_by_theorem"]), FULL_KERNEL_THEOREMS)
+        self.assertTrue(
+            all(not axioms for axioms in receipt["axioms_by_theorem"].values())
+        )
+
+        self.assertEqual(
+            transition["allowed_changes"],
+            {
+                "claim_ids": [
+                    "FIT-001",
+                    "FIT-002",
+                    "FIT-003",
+                    "MAT-001",
+                    "MAT-002",
+                ],
+                "classification": {
+                    "from": "FORMAL_PENDING_KERNEL",
+                    "to": "FORMAL_PROVED",
+                },
+                "matrix_proof_state": {
+                    "from": "AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+                    "to": "KERNEL_VERIFIED",
+                },
+                "status": {
+                    "from": "PROOF_SOURCE_PRESENT_AWAITING_EXACT_HEAD_KERNEL_RECEIPT",
+                    "to": "KERNEL_VERIFIED",
+                },
+            },
+        )
+        self.assertIs(transition["proof_refs_and_statements_unchanged"], True)
+        self.assertIs(
+            transition["target_exact_head_confirmation_required"], False
+        )
+        for identity, path in (
+            (transition["source_claim_matrix"], pending_path),
+            (transition["target_claim_matrix"], target_path),
+        ):
+            self.assertEqual(identity["bytes"], path.stat().st_size)
+            self.assertEqual(identity["sha256"], sha256(path))
+            self.assertEqual(identity["git_blob_sha1"], git_blob(path))
+
+        source = receipt["source_verification"]
+        target = receipt["target_verification"]
+        self.assertEqual(source["verified_candidate"]["head"], expected_source_head)
+        self.assertEqual(target["verified_candidate"]["head"], expected_target_head)
+        self.assertEqual(source["workflow"]["run_id"], 30627411130)
+        self.assertEqual(target["workflow"]["run_id"], 30628327497)
+        self.assertEqual(receipt["workflow"], target["workflow"])
+        for workflow, expected_head in (
+            (source["workflow"], expected_source_head),
+            (target["workflow"], expected_target_head),
+        ):
+            self.assertEqual(workflow["conclusion"], "success")
+            self.assertIs(workflow["exact_head_bound"], True)
+            self.assertEqual(workflow["sha"], expected_head)
+
+        for verification, evidence_name in (
+            (source, "KERNEL_EVIDENCE_H2_FULL_PENDING.json"),
+            (target, "KERNEL_EVIDENCE_H3_FULL_TARGET.json"),
+        ):
+            evidence_path = PUBLICATION / evidence_name
+            artifact_file = verification["artifact"]["file"]
+            self.assertEqual(
+                artifact_file["persisted_path"],
+                str(PUBLICATION.relative_to(ROOT) / evidence_name),
+            )
+            self.assertEqual(artifact_file["bytes"], evidence_path.stat().st_size)
+            self.assertEqual(artifact_file["sha256"], sha256(evidence_path))
+            self.assertEqual(
+                artifact_file["git_blob_sha1"], git_blob(evidence_path)
+            )
 
     def test_kernel_plan_binds_all_formal_claims_and_source_bytes(self) -> None:
         matrix = load_json("CLAIM_MATRIX.json")
@@ -299,13 +414,29 @@ class SurvivalConnectabilityPublicationTests(unittest.TestCase):
             self.assertIn(phrase, article)
         self.assertNotRegex(article, re.compile(r"ZENODO_(?:PUBLISHED|MUTATION)\s*=\s*true"))
 
-    def test_no_receipt_or_doi_is_fabricated_in_candidate(self) -> None:
-        self.assertFalse((PUBLICATION / "KERNEL_RECEIPT.json").exists())
-        self.assertFalse((PUBLICATION / "MACHINE_PROOF_BUNDLE.json").exists())
-        self.assertFalse((PUBLICATION / "PREPUBLICATION_RETURN_RECEIPT.json").exists())
+    def test_prepublication_bundle_is_exact_without_fabricated_effect(self) -> None:
+        from tools import qikvrt_zenodo_machine_proof as machine_proof
+
+        fileset = (PUBLICATION / "ZENODO_FILESET.md").read_text(encoding="utf-8")
+        names = re.findall(r"(?m)^- `([^`]+)`$", fileset)
+        upload_paths = [(PUBLICATION / name).relative_to(ROOT).as_posix() for name in names]
+        receipt = machine_proof.validate_bundle(
+            ROOT,
+            PUBLICATION / "MACHINE_PROOF_BUNDLE.json",
+            upload_paths=upload_paths,
+        )
+        self.assertEqual(receipt["publication_id"], "qikvrt-survival-of-the-anschlussfaehigsten-v1")
+        self.assertEqual(receipt["claim_count"], 11)
+        self.assertEqual(receipt["candidate_file_count"], 3)
+        self.assertEqual(receipt["artifact_count"], 27)
+        self.assertEqual(len(upload_paths), 31)
+        self.assertEqual(len(upload_paths), len(set(upload_paths)))
+
+        self.assertFalse((PUBLICATION / "OWNER_ZENODO_AUTHORIZATION.json").exists())
+        self.assertFalse((PUBLICATION / "publish-request.json").exists())
+        self.assertFalse((PUBLICATION / "zenodo-publication.json").exists())
         citation = (PUBLICATION / "CITATION.cff").read_text(encoding="utf-8")
         self.assertNotRegex(citation, re.compile(r"(?m)^doi\s*:"))
-        self.assertNotRegex(citation, re.compile(r"(?m)^date-released\s*:"))
 
 
 if __name__ == "__main__":

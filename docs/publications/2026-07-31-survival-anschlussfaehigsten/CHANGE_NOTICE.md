@@ -53,3 +53,29 @@ fünf Proof-Konstanten. Die aktive Claim-Matrix wird ausschließlich in diesen
 fünf formalen Statusfeldern auf `FORMAL_PROVED / KERNEL_VERIFIED` gehoben;
 alle historischen, biologischen, interpretativen, empirischen und normativen
 Aussagen bleiben inhaltlich unverändert und getrennt.
+
+Der nachgelagerte Exact-Head-Lauf `30628327497` am statusmaterialisierten
+Commit `5196495f07c6f696faf6d23f9cfe353532ac042e` bestätigt dieselben fünf
+Proof-Konstanten erneut mit leeren Axiomenlisten. `KERNEL_RECEIPT.json` bindet
+die H2-Quellmatrix, die unverändert inhaltliche H3-Zielmatrix und beide
+erfolgreichen Exact-Head-Workflows. Diese Schließung autorisiert weder eine
+Repository-Promotion noch einen Zenodo-Upload; beide bleiben eigenständige
+Gates.
+
+## Kandidatengebundene Änderungsgründe
+
+Gegenüber der unveränderten autorenseitigen Thesenbasis bindet der
+wissenschaftliche Kandidat die folgenden, im Rückgabebeleg wortgleich
+referenzierten Ergänzungen:
+
+- **HIS-001:** Historische Urheberschaft und Darwins spätere Übernahme wurden quellengebunden ergänzt.
+- **BIO-001:** Biologische Fitness wurde gegenüber der Kurzthese als kontextabhängiger reproduktiver Beitrag abgegrenzt.
+- **TRN-001:** Die autorenseitige Computerzeitalter-Deutung wurde ausdrücklich von Wortzitat und biologischer Identität getrennt.
+- **FIT-001:** Die Kurzthese wurde durch einen typisierten Satz über endliche lebensfähige Fortsetzung operationalisiert.
+- **FIT-002:** Die Kurzthese wurde durch einen kernelgeprüften Simulationssatz zur Inklusion endlicher Viabilitätssprachen operationalisiert.
+- **FIT-003:** Die Kurzthese wurde durch die initialzustandsgebundene Variante der Viabilitätssprachinklusion operationalisiert.
+- **MAT-001:** Die qualitative Anschlussrelation wurde um einen kernelgeprüften monotonen gewichteten Anschlusswert im endlichen Modell ergänzt.
+- **MAT-002:** Ein kernelgeprüftes Kriterium für strikt größere gewichtete Anschlussfähigkeit wurde ergänzt.
+- **EMP-001:** Die reale Fortbestehenswirkung wurde als offene, preregistrierungsbedürftige empirische Hypothese ausgewiesen.
+- **LIM-001:** Die Korrespondenz zu biologischer Fitness und Evolvierbarkeit wurde ausdrücklich offengelassen.
+- **NOR-001:** Eine normative Schutzregel trennt technische oder biologische Fitness von moralischer Vorzugswürdigkeit.

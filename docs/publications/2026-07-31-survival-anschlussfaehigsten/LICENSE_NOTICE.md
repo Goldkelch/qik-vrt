@@ -12,8 +12,10 @@ Zenodo fileset and this notice are licensed under
 
 The Lean formalization sources
 `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/OperationalContinuation.lean`
-and
+,
 `formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/ConnectabilitySimulation.lean`
+and
+`formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/WeightedConnectability.lean`
 and their byte-identical `FORMAL_*.lean` archival snapshots are licensed under
 `Apache-2.0`.
 

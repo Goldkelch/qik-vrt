@@ -53,8 +53,13 @@ dieses diskreten Kernel-Satzes. Der Exact-Head-Lauf `30627411130` am Commit
 band fünf Proof-Konstanten und meldete für FIT-001 bis FIT-003 sowie MAT-001
 bis MAT-002 jeweils eine leere Axiomenliste. Das originale Artefakt ist als
 `KERNEL_EVIDENCE_H2_FULL_PENDING.json` erhalten. Damit sind alle fünf
-modellinternen Aussagen `KERNEL_VERIFIED`; die Statusmaterialisierung bleibt
-bis zu ihrem eigenen Exact-Head-Nachfolgelauf fail-closed.
+modellinternen Aussagen `KERNEL_VERIFIED`. Der statusmaterialisierte Zielstand
+wurde anschließend im Exact-Head-Lauf `30628327497` am Commit
+`5196495f07c6f696faf6d23f9cfe353532ac042e` nochmals kompiliert und mit fünf
+leeren Axiomenlisten bestätigt. Die originale Zielevidenz ist als
+`KERNEL_EVIDENCE_H3_FULL_TARGET.json`, die geschlossene Transition als
+`KERNEL_RECEIPT.json` erhalten. Diese Schließung betrifft nur den formalen
+Fünf-Claim-Scope; Repository-Promotion und Zenodo-Publikation bleiben offen.
 
 ## Was dadurch nicht bewiesen wird
 
