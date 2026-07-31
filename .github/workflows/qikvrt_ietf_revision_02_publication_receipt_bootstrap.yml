@@ -48,9 +48,7 @@ jobs:
           test ! -e "$RECEIPT_PATH"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           expected_delta="$(
-            printf '%s\n' \
-              "A	$HELPER_PATH" \
-              "A	$WORKFLOW_PATH"
+            printf 'A\t%s\nA\t%s\n' "$HELPER_PATH" "$WORKFLOW_PATH"
           )"
           observed_delta="$(
             git diff --name-status --no-renames "$EXPECTED_PARENT" "$GITHUB_SHA" --
