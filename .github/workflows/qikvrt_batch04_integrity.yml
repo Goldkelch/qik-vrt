@@ -123,6 +123,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          handoff_receipt="receipts/anticipation/0003-post-promotion-current-main-handoff.json"
+          status_snapshot="$RUNNER_TEMP/qikvrt-ai-status-before-content-disposition.md"
+          if [ -f "$handoff_receipt" ]; then
+            cp AI_STATUS.md "$status_snapshot"
+          fi
           final_script="tools/qikvrt_content_disposition_batch_003_remaining_archives.py"
           final_receipt="release/zenodo-corpus-proof-2026-07-28/canonical-union/retrospective-proof-corpus/RETROSPECTIVE_PROOF_CORPUS_RECEIPT.json"
           second_script="tools/qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43.py"
@@ -156,9 +161,13 @@ jobs:
             python3 -B "$dispatch_script" --check-status-projection
           elif [ -f "$post_script" ] && [ -f "$post_receipt" ]; then
             python3 -B "$post_script" --materialize
-            python3 -B "$post_script" --check-status-projection
+            python3 -B "$post_receipt" --check-status-projection
           else
             echo "No current content-disposition status projector is present on this branch."
+          fi
+          if [ -f "$handoff_receipt" ]; then
+            cp "$status_snapshot" AI_STATUS.md
+            python3 -B tools/qikvrt_anticipation.py check
           fi
       - name: Regenerate and verify repository integrity
         shell: bash
@@ -181,7 +190,7 @@ jobs:
           git add \
             formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
             formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
-            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
+            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAP.json \
             formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
             formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
             formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
