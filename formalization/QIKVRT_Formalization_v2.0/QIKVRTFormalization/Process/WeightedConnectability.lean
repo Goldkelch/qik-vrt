@@ -106,13 +106,18 @@ theorem weightedMass_mono
       by_cases hSmall : small trace
       · have hLarge : large trace := hInclusion trace hSmall
         rw [if_pos hSmall, if_pos hLarge]
-        omega
+        exact Nat.add_le_add_left inductionHypothesis (weight trace)
       · rw [if_neg hSmall]
         by_cases hLarge : large trace
         · rw [if_pos hLarge]
-          omega
+          exact
+            Nat.le_trans
+              (Nat.add_le_add_left inductionHypothesis 0)
+              (Nat.add_le_add_right
+                (Nat.zero_le (weight trace))
+                (weightedMass weight large rest))
         · rw [if_neg hLarge]
-          omega
+          exact Nat.add_le_add_left inductionHypothesis 0
 
 /-- Weighted mass distributes over list concatenation. -/
 theorem weightedMass_append
@@ -126,7 +131,10 @@ theorem weightedMass_append
         weightedMass weight accepts right := by
   induction left with
   | nil =>
-      rfl
+      change
+        weightedMass weight accepts right =
+          0 + weightedMass weight accepts right
+      exact (Nat.zero_add _).symm
   | cons trace rest inductionHypothesis =>
       change
         (if accepts trace then weight trace else 0) +
@@ -135,7 +143,11 @@ theorem weightedMass_append
               weightedMass weight accepts rest) +
             weightedMass weight accepts right
       rw [inductionHypothesis]
-      omega
+      exact
+        (Nat.add_assoc
+          (if accepts trace then weight trace else 0)
+          (weightedMass weight accepts rest)
+          (weightedMass weight accepts right)).symm
 
 /-!
 A positive-weight witness accepted only by `large`, together with inclusion,
@@ -159,7 +171,17 @@ theorem weightedMass_strict_of_positive_witness
   simp only [weightedMass, if_neg hNotSmall, if_pos hLarge]
   have hLeft := weightedMass_mono weight small large left hInclusion
   have hRight := weightedMass_mono weight small large right hInclusion
-  omega
+  have hRightStrict :
+      weightedMass weight large right <
+        weight witness + weightedMass weight large right := by
+    simpa only [Nat.zero_add] using
+      Nat.add_lt_add_right hPositive
+        (weightedMass weight large right)
+  exact
+    Nat.lt_of_le_of_lt
+      (Nat.add_le_add hLeft hRight)
+      (Nat.add_lt_add_left hRightStrict
+        (weightedMass weight large left))
 
 /-!
 MAT-001: inclusion of finite viable languages implies monotonicity of their
