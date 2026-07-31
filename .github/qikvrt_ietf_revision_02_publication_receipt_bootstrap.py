@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+"""One-shot read-only IETF revision -02 publication reconciliation."""
+
+from __future__ import annotations
+
+import datetime
+import hashlib
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+from typing import Any
+import urllib.error
+import urllib.request
+
+
+ROOT = Path.cwd().resolve()
+CANDIDATE_PATH = ROOT / os.environ["CANDIDATE_PATH"]
+RECEIPT_PATH = ROOT / os.environ["RECEIPT_PATH"]
+TEST_PATH = ROOT / os.environ["TEST_PATH"]
+WORKFLOW_PATH = ROOT / os.environ["WORKFLOW_PATH"]
+HELPER_PATH = ROOT / os.environ["HELPER_PATH"]
+DOCUMENT = "draft-lohmann-qikvrt-effect-ack-02"
+DATATRACKER_URL = (
+    "https://datatracker.ietf.org/doc/"
+    "draft-lohmann-qikvrt-effect-ack/"
+)
+PUBLIC_URLS = {
+    kind: f"https://www.ietf.org/archive/id/{DOCUMENT}.{kind}"
+    for kind in ("xml", "txt", "html")
+}
+LOCAL_PATHS = {
+    kind: ROOT / "external/ietf" / f"{DOCUMENT}.{kind}"
+    for kind in ("xml", "txt", "html")
+}
+USER_AGENT = (
+    "qik-vrt-publication-receipt/1.0 "
+    "(+https://github.com/Goldkelch/qik-vrt)"
+)
+
+
+class TextHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def sha256(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def git_blob(path: Path) -> str:
+    relative = path.relative_to(ROOT).as_posix()
+    return subprocess.check_output(
+        ["git", "rev-parse", f"{os.environ['GITHUB_SHA']}:{relative}"],
+        text=True,
+        encoding="utf-8",
+    ).strip()
+
+
+def fetch(url: str) -> tuple[bytes, dict[str, Any]]:
+    last: Exception | None = None
+    for attempt in range(1, 6):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "*/*",
+                "Accept-Encoding": "identity",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = response.read()
+                status = getattr(response, "status", None)
+                if status != 200:
+                    raise RuntimeError(f"HTTP status differs for {url}: {status}")
+                content_encoding = response.headers.get("Content-Encoding")
+                if content_encoding not in (None, "", "identity"):
+                    raise RuntimeError(
+                        f"unexpected content encoding for {url}: {content_encoding}"
+                    )
+                headers = {
+                    "status": status,
+                    "final_url": response.geturl(),
+                    "content_type": response.headers.get("Content-Type"),
+                    "content_length": response.headers.get("Content-Length"),
+                    "content_encoding": content_encoding,
+                    "etag": response.headers.get("ETag"),
+                    "last_modified": response.headers.get("Last-Modified"),
+                }
+                return payload, headers
+        except (urllib.error.URLError, TimeoutError, RuntimeError) as error:
+            last = error
+            if attempt == 5:
+                break
+            time.sleep(2 ** (attempt - 1))
+    raise RuntimeError(f"public fetch failed after retries: {url}: {last}")
+
+
+def normalized_html(payload: bytes) -> str:
+    parser = TextHTMLParser()
+    parser.feed(payload.decode("utf-8", errors="replace"))
+    parser.close()
+    return " ".join(" ".join(parser.parts).split())
+
+
+def write_json(path: Path, value: Any) -> bytes:
+    payload = (
+        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return payload
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(
+            f"test patch boundary differs for {label}: occurrences={count}"
+        )
+    return text.replace(old, new, 1)
+
+
+def main() -> None:
+    observed_utc = (
+        datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+    datatracker_bytes, datatracker_http = fetch(DATATRACKER_URL)
+    datatracker_text = normalized_html(datatracker_bytes)
+    required_markers = (
+        DOCUMENT,
+        "Versions: 00 01 02",
+        "Active Internet-Draft (individual)",
+        "Last updated 2026-07-30",
+        "This I-D is not endorsed by the IETF",
+        "RFC stream (None)",
+    )
+    for marker in required_markers:
+        if marker not in datatracker_text:
+            raise RuntimeError(f"Datatracker marker is absent: {marker}")
+
+    candidate_before_bytes = CANDIDATE_PATH.read_bytes()
+    candidate = json.loads(candidate_before_bytes.decode("utf-8"))
+    if candidate.get("state") != "CANDIDATE_NOT_SUBMITTED":
+        raise RuntimeError("candidate state is not the expected pre-transition state")
+    if candidate.get("datatracker_submission_performed") is not False:
+        raise RuntimeError("candidate submission flag is not false before transition")
+
+    artifacts: dict[str, Any] = {}
+    candidate_public: dict[str, Any] = {}
+    exact_kinds: list[str] = []
+    divergent_kinds: list[str] = []
+    expected_title = (
+        "QIK-VRT Effect Acknowledgement: Separating Receipt from "
+        "Authorization for Downstream Effect"
+    )
+
+    for kind in ("xml", "txt", "html"):
+        public_bytes, public_http = fetch(PUBLIC_URLS[kind])
+        local_path = LOCAL_PATHS[kind]
+        local_bytes = local_path.read_bytes()
+
+        if kind == "xml":
+            public_text = public_bytes.decode("utf-8")
+            if f'docName="{DOCUMENT}"' not in public_text:
+                raise RuntimeError("public XML docName differs")
+            if expected_title not in " ".join(public_text.split()):
+                raise RuntimeError("public XML title differs")
+        elif kind == "txt":
+            public_text = " ".join(
+                public_bytes.decode("utf-8", errors="strict").split()
+            )
+            if DOCUMENT not in public_text or expected_title not in public_text:
+                raise RuntimeError("public TXT identity markers differ")
+        else:
+            public_text = normalized_html(public_bytes)
+            if DOCUMENT not in public_text or expected_title not in public_text:
+                raise RuntimeError("public HTML identity markers differ")
+
+        public_identity = {
+            "size_bytes": len(public_bytes),
+            "sha256": sha256(public_bytes),
+        }
+        local_identity = {
+            "path": local_path.relative_to(ROOT).as_posix(),
+            "size_bytes": len(local_bytes),
+            "sha256": sha256(local_bytes),
+            "git_blob": git_blob(local_path),
+        }
+        equal = public_bytes == local_bytes
+        (exact_kinds if equal else divergent_kinds).append(kind)
+        artifacts[kind] = {
+            "filename": local_path.name,
+            "url": PUBLIC_URLS[kind],
+            "http": public_http,
+            "public": public_identity,
+            "local": local_identity,
+            "byte_identical_to_local": equal,
+        }
+        candidate_public[kind] = {
+            "filename": local_path.name,
+            "url": PUBLIC_URLS[kind],
+            "size_bytes": public_identity["size_bytes"],
+            "sha256": public_identity["sha256"],
+            "local_size_bytes": local_identity["size_bytes"],
+            "local_sha256": local_identity["sha256"],
+            "byte_identical_to_local": equal,
+        }
+
+    all_equal = not divergent_kinds
+    public_state = "ACTIVE_INDIVIDUAL_INTERNET_DRAFT"
+    candidate_state = (
+        "DATATRACKER_PUBLICATION_EXACT_BYTES_VERIFIED"
+        if all_equal
+        else "DATATRACKER_PUBLICATION_VERIFIED_WITH_PUBLIC_BYTE_DRIFT"
+    )
+
+    receipt = {
+        "_license": {
+            "classification": "json_non_source",
+            "copyright": "Copyright 2026 Ingolf Lohmann",
+            "license": "CC-BY-NC-ND-4.0",
+            "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+            "rights_holder": "Ingolf Lohmann",
+        },
+        "schema": "qikvrt_ietf_datatracker_publication_receipt_v1",
+        "receipt_id": (
+            "qikvrt-ietf-draft-lohmann-qikvrt-effect-ack-02-"
+            "publication-receipt-v1"
+        ),
+        "observed_utc": observed_utc,
+        "internet_draft": DOCUMENT,
+        "revision": "02",
+        "public_state": public_state,
+        "observation": {
+            "transport": "HTTPS_GET",
+            "read_only": True,
+            "accept_encoding": "identity",
+            "remote_mutation_performed": False,
+            "datatracker_submission_performed_by_this_observation": False,
+            "zenodo_mutation_performed": False,
+            "github_release_created": False,
+        },
+        "datatracker": {
+            "url": DATATRACKER_URL,
+            "http": datatracker_http,
+            "page_size_bytes": len(datatracker_bytes),
+            "page_sha256": sha256(datatracker_bytes),
+            "validated_markers": list(required_markers),
+            "versions": ["00", "01", "02"],
+            "last_updated": "2026-07-30",
+            "document_type": "INTERNET_DRAFT",
+            "submission_scope": "INDIVIDUAL",
+            "rfc_stream": None,
+            "intended_rfc_status": None,
+        },
+        "artifacts": artifacts,
+        "comparison": {
+            "all_public_bytes_equal_local": all_equal,
+            "exact_kinds": sorted(exact_kinds),
+            "divergent_kinds": sorted(divergent_kinds),
+            "local_artifacts_mutated": False,
+        },
+        "candidate_before_transition": {
+            "path": CANDIDATE_PATH.relative_to(ROOT).as_posix(),
+            "size_bytes": len(candidate_before_bytes),
+            "sha256": sha256(candidate_before_bytes),
+            "git_blob": git_blob(CANDIDATE_PATH),
+            "state": candidate["state"],
+            "datatracker_submission_performed": candidate[
+                "datatracker_submission_performed"
+            ],
+        },
+        "repository_binding": {
+            "repository": os.environ["GITHUB_REPOSITORY"],
+            "authority_main_parent": os.environ["EXPECTED_PARENT"],
+            "bootstrap_head": os.environ["GITHUB_SHA"],
+            "branch": os.environ["EXPECTED_BRANCH"],
+            "receipt_path": RECEIPT_PATH.relative_to(ROOT).as_posix(),
+        },
+        "truth_boundaries": {
+            "internet_draft_publication_verified": True,
+            "ietf_endorsement_claimed": False,
+            "ietf_consensus_claimed": False,
+            "ietf_standard_claimed": False,
+            "rfc_claimed": False,
+            "working_group_adoption_claimed": False,
+            "independent_interoperability_complete": False,
+            "deployment_complete": False,
+            "system_wide_completion": "UNCLAIMED",
+        },
+    }
+    receipt_bytes = write_json(RECEIPT_PATH, receipt)
+    receipt_sha256 = sha256(receipt_bytes)
+
+    candidate["state"] = candidate_state
+    candidate["datatracker_submission_performed"] = True
+    candidate["status_updated_utc"] = observed_utc
+    candidate["public_artifacts"] = candidate_public
+    candidate["publication_receipt"] = {
+        "path": RECEIPT_PATH.relative_to(ROOT).as_posix(),
+        "schema": receipt["schema"],
+        "size_bytes": len(receipt_bytes),
+        "sha256": receipt_sha256,
+        "public_state": public_state,
+        "all_public_bytes_equal_local": all_equal,
+    }
+    if all_equal:
+        candidate["status_note"] = (
+            "IETF Datatracker revision -02 is publicly active as an "
+            "individual Internet-Draft and all public XML, TXT, and HTML "
+            "bytes are identical to the repository candidate; this is "
+            "not an RFC, IETF standard, working-group product, IETF "
+            "consensus, or interoperability completion."
+        )
+    else:
+        candidate["status_note"] = (
+            "IETF Datatracker revision -02 is publicly active as an "
+            "individual Internet-Draft; exact public byte differences "
+            "from the unchanged repository XML, TXT, or HTML artifacts "
+            "are bound by the publication receipt; this is not an RFC, "
+            "IETF standard, working-group product, IETF consensus, or "
+            "interoperability completion."
+        )
+    candidate_bytes = write_json(CANDIDATE_PATH, candidate)
+
+    test = TEST_PATH.read_text(encoding="utf-8")
+    test = replace_once(
+        test,
+        '"""Verify the unsubmitted Draft-02 candidate without inflating its status."""',
+        '"""Verify the published Draft-02 local/public boundary without inflating standards status."""',
+        "module docstring",
+    )
+    test = replace_once(
+        test,
+        '''CANDIDATE = (
+    REVISION_02_ROOT / "draft-lohmann-qikvrt-effect-ack-02.CANDIDATE.json"
+)
+RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"''',
+        '''CANDIDATE = (
+    REVISION_02_ROOT / "draft-lohmann-qikvrt-effect-ack-02.CANDIDATE.json"
+)
+PUBLICATION_RECEIPT = (
+    REVISION_02_ROOT
+    / "draft-lohmann-qikvrt-effect-ack-02.PUBLICATION_RECEIPT.json"
+)
+RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"''',
+        "publication receipt constant",
+    )
+    old_identity = '''    CANDIDATE: (
+        3752,
+        "fe3cbc105ae88e5771cfaa2d4d8049000f487cad6162e2a9346f13a253fc6cbc",
+    ),
+}'''
+    new_identity = f'''    CANDIDATE: (
+        {len(candidate_bytes)},
+        "{sha256(candidate_bytes)}",
+    ),
+    PUBLICATION_RECEIPT: (
+        {len(receipt_bytes)},
+        "{receipt_sha256}",
+    ),
+}}'''
+    test = replace_once(test, old_identity, new_identity, "candidate identities")
+    test = replace_once(
+        test,
+        '''            REVISION_02_HTML,
+            CANDIDATE,
+        ):''',
+        '''            REVISION_02_HTML,
+            CANDIDATE,
+            PUBLICATION_RECEIPT,
+        ):''',
+        "required publication receipt",
+    )
+    test = replace_once(
+        test,
+        '''        cls.candidate = json.loads(CANDIDATE.read_text(encoding="utf-8"))''',
+        '''        cls.candidate = json.loads(CANDIDATE.read_text(encoding="utf-8"))
+        cls.publication_receipt = json.loads(
+            PUBLICATION_RECEIPT.read_text(encoding="utf-8")
+        )''',
+        "receipt loading",
+    )
+    test = replace_once(
+        test,
+        '''                "created_utc",
+                "state",''',
+        '''                "created_utc",
+                "status_updated_utc",
+                "state",''',
+        "candidate updated timestamp key",
+    )
+    test = replace_once(
+        test,
+        '''                "change_scope",
+                "status_note",''',
+        '''                "change_scope",
+                "public_artifacts",
+                "publication_receipt",
+                "status_note",''',
+        "candidate publication keys",
+    )
+    test = replace_once(
+        test,
+        '''        self.assertEqual(value["state"], "CANDIDATE_NOT_SUBMITTED")
+        self.assertIs(value["datatracker_submission_performed"], False)''',
+        '''        self.assertIn(
+            value["state"],
+            {
+                "DATATRACKER_PUBLICATION_EXACT_BYTES_VERIFIED",
+                "DATATRACKER_PUBLICATION_VERIFIED_WITH_PUBLIC_BYTE_DRIFT",
+            },
+        )
+        self.assertIs(value["datatracker_submission_performed"], True)''',
+        "candidate public state",
+    )
+    test = replace_once(
+        test,
+        '''        self.assertEqual(parsed.utcoffset(), datetime.timedelta(0))''',
+        '''        self.assertEqual(parsed.utcoffset(), datetime.timedelta(0))
+        updated = value["status_updated_utc"]
+        self.assertIsInstance(updated, str)
+        self.assertRegex(updated, r"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$")
+        updated_parsed = datetime.datetime.fromisoformat(
+            updated.replace("Z", "+00:00")
+        )
+        self.assertEqual(updated_parsed.utcoffset(), datetime.timedelta(0))
+        self.assertGreaterEqual(updated_parsed, parsed)''',
+        "candidate status timestamp validation",
+    )
+    old_status = '''        self.assertEqual(
+            value["status_note"],
+            (
+                "Local RFCXML v3 candidate and deterministic offline render; "
+                "not submitted to the IETF Datatracker and not an RFC, IETF "
+                "standard, working-group product, or IETF consensus."
+            ),
+        )'''
+    new_status = '''        all_equal = value["publication_receipt"][
+            "all_public_bytes_equal_local"
+        ]
+        if all_equal:
+            expected_status_note = (
+                "IETF Datatracker revision -02 is publicly active as an "
+                "individual Internet-Draft and all public XML, TXT, and HTML "
+                "bytes are identical to the repository candidate; this is "
+                "not an RFC, IETF standard, working-group product, IETF "
+                "consensus, or interoperability completion."
+            )
+        else:
+            expected_status_note = (
+                "IETF Datatracker revision -02 is publicly active as an "
+                "individual Internet-Draft; exact public byte differences "
+                "from the unchanged repository XML, TXT, or HTML artifacts "
+                "are bound by the publication receipt; this is not an RFC, "
+                "IETF standard, working-group product, IETF consensus, or "
+                "interoperability completion."
+            )
+        self.assertEqual(value["status_note"], expected_status_note)'''
+    test = replace_once(test, old_status, new_status, "candidate status note")
+
+    receipt_test = '''    def test_datatracker_publication_receipt_binds_exact_public_bytes(self) -> None:
+        receipt = self.publication_receipt
+        self.assertEqual(
+            set(receipt),
+            {
+                "_license",
+                "schema",
+                "receipt_id",
+                "observed_utc",
+                "internet_draft",
+                "revision",
+                "public_state",
+                "observation",
+                "datatracker",
+                "artifacts",
+                "comparison",
+                "candidate_before_transition",
+                "repository_binding",
+                "truth_boundaries",
+            },
+        )
+        self.assertEqual(
+            receipt["_license"],
+            {
+                "classification": "json_non_source",
+                "copyright": "Copyright 2026 Ingolf Lohmann",
+                "license": "CC-BY-NC-ND-4.0",
+                "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+                "rights_holder": "Ingolf Lohmann",
+            },
+        )
+        self.assertEqual(
+            receipt["schema"],
+            "qikvrt_ietf_datatracker_publication_receipt_v1",
+        )
+        self.assertEqual(receipt["internet_draft"], "draft-lohmann-qikvrt-effect-ack-02")
+        self.assertEqual(receipt["revision"], "02")
+        self.assertEqual(
+            receipt["public_state"], "ACTIVE_INDIVIDUAL_INTERNET_DRAFT"
+        )
+        self.assertRegex(
+            receipt["observed_utc"],
+            r"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        )
+        self.assertIs(receipt["observation"]["read_only"], True)
+        self.assertIs(receipt["observation"]["remote_mutation_performed"], False)
+        self.assertIs(
+            receipt["observation"][
+                "datatracker_submission_performed_by_this_observation"
+            ],
+            False,
+        )
+        self.assertEqual(receipt["datatracker"]["versions"], ["00", "01", "02"])
+        self.assertEqual(receipt["datatracker"]["last_updated"], "2026-07-30")
+        self.assertEqual(receipt["datatracker"]["submission_scope"], "INDIVIDUAL")
+        self.assertIsNone(receipt["datatracker"]["rfc_stream"])
+        self.assertIsNone(receipt["datatracker"]["intended_rfc_status"])
+
+        receipt_size, receipt_sha256 = identity(PUBLICATION_RECEIPT)
+        self.assertEqual(
+            self.candidate["publication_receipt"],
+            {
+                "path": (
+                    "external/ietf/"
+                    "draft-lohmann-qikvrt-effect-ack-02.PUBLICATION_RECEIPT.json"
+                ),
+                "schema": "qikvrt_ietf_datatracker_publication_receipt_v1",
+                "size_bytes": receipt_size,
+                "sha256": receipt_sha256,
+                "public_state": "ACTIVE_INDIVIDUAL_INTERNET_DRAFT",
+                "all_public_bytes_equal_local": receipt["comparison"][
+                    "all_public_bytes_equal_local"
+                ],
+            },
+        )
+
+        expected_paths = {
+            "xml": REVISION_02_XML,
+            "txt": REVISION_02_TXT,
+            "html": REVISION_02_HTML,
+        }
+        exact: list[str] = []
+        divergent: list[str] = []
+        for kind, path in expected_paths.items():
+            record = receipt["artifacts"][kind]
+            local_size, local_sha256 = identity(path)
+            self.assertEqual(record["local"]["path"], path.relative_to(ROOT).as_posix())
+            self.assertEqual(record["local"]["size_bytes"], local_size)
+            self.assertEqual(record["local"]["sha256"], local_sha256)
+            self.assertEqual(record["public"]["size_bytes"], self.candidate["public_artifacts"][kind]["size_bytes"])
+            self.assertEqual(record["public"]["sha256"], self.candidate["public_artifacts"][kind]["sha256"])
+            equal = (
+                record["public"]["size_bytes"] == local_size
+                and record["public"]["sha256"] == local_sha256
+            )
+            self.assertIs(record["byte_identical_to_local"], equal)
+            self.assertIs(
+                self.candidate["public_artifacts"][kind][
+                    "byte_identical_to_local"
+                ],
+                equal,
+            )
+            (exact if equal else divergent).append(kind)
+
+        self.assertEqual(receipt["comparison"]["exact_kinds"], sorted(exact))
+        self.assertEqual(
+            receipt["comparison"]["divergent_kinds"], sorted(divergent)
+        )
+        self.assertIs(
+            receipt["comparison"]["all_public_bytes_equal_local"],
+            not divergent,
+        )
+        expected_state = (
+            "DATATRACKER_PUBLICATION_EXACT_BYTES_VERIFIED"
+            if not divergent
+            else "DATATRACKER_PUBLICATION_VERIFIED_WITH_PUBLIC_BYTE_DRIFT"
+        )
+        self.assertEqual(self.candidate["state"], expected_state)
+        self.assertIs(self.candidate["datatracker_submission_performed"], True)
+        self.assertIs(receipt["truth_boundaries"]["ietf_consensus_claimed"], False)
+        self.assertIs(receipt["truth_boundaries"]["ietf_standard_claimed"], False)
+        self.assertIs(receipt["truth_boundaries"]["rfc_claimed"], False)
+        self.assertIs(
+            receipt["truth_boundaries"]["independent_interoperability_complete"],
+            False,
+        )
+
+'''
+    test = replace_once(
+        test,
+        "    def test_xml_metadata_is_exactly_revision_02_experimental_candidate(self) -> None:\n",
+        receipt_test
+        + "    def test_xml_metadata_is_exactly_revision_02_experimental_candidate(self) -> None:\n",
+        "publication receipt test",
+    )
+    test = replace_once(
+        test,
+        '''            "Validate the unsubmitted Draft-02 candidate with the exact offline "
+            "xml2rfc renderer."''',
+        '''            "Validate the published Draft-02 local/public boundary with the "
+            "exact offline xml2rfc renderer."''',
+        "CLI description",
+    )
+    TEST_PATH.write_text(test, encoding="utf-8")
+
+    for temporary in (WORKFLOW_PATH, HELPER_PATH):
+        if not temporary.exists():
+            raise RuntimeError(f"temporary bootstrap path is absent: {temporary}")
+        temporary.unlink()
+
+
+if __name__ == "__main__":
+    main()
