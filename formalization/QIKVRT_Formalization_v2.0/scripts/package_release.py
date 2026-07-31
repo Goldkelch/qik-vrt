@@ -34,6 +34,8 @@ POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/GLOBAL_COMPLETION_STATUS.json",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/QuantumClassicalRuntime.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/CanonicalTemporalMemory.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/ConnectabilitySimulation.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/OperationalContinuation.lean",
     "formalization/QIKVRT_Formalization_v2.0/tests/test_quantum_classical_runtime_article.py",
 }
 # These live text files legitimately advanced after Alpha-2. The exact
@@ -47,6 +49,9 @@ FROZEN_ALPHA2_INPUTS = {
         "formalization/QIKVRT_Formalization_v2.0/README.md",
         "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
         "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+        "formalization/QIKVRT_Formalization_v2.0/scripts/audit_lean_axioms.py",
+        "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
+        "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Claims/AxiomAuditAll.lean",
         "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
     )
 }

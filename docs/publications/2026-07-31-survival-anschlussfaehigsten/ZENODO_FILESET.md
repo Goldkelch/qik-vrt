@@ -1,0 +1,44 @@
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright 2026 Ingolf Lohmann.
+-->
+
+# Proposed Zenodo fileset
+
+State: `CANDIDATE_PREPUBLICATION`
+
+This file does not authorize an upload. The actual v2 publish request must bind
+every selected file to its exact Git blob, SHA-256 digest and candidate-bound
+owner authorization.
+
+## Primary files
+
+- `Survival_der_Anschlussfaehigsten_2026-07-31.pdf`
+- `Survival_der_Anschlussfaehigsten_2026-07-31.tex`
+- `ARTICLE_DE.md`
+- `CANONICAL_STATEMENT.md`
+- `ORIGINAL_THESIS_TRANSCRIPT.md`
+- `CHANGE_NOTICE.md`
+- `README.md`
+- `EVIDENCE_BOUNDARY.md`
+- `CLAIM_MATRIX.json`
+- `SOURCE_EVIDENCE_BINDINGS.json`
+- `KERNEL_PROOF_PLAN.json`
+- `FORMAL_OperationalContinuation.lean`
+- `FORMAL_ConnectabilitySimulation.lean`
+- `FORMAL_SOURCE_SNAPSHOT.json`
+- `BOUNDARY_TEST_REPORT.json`
+- `KERNEL_RECEIPT.json`
+- `MACHINE_PROOF_BUNDLE.json`
+- `PREPUBLICATION_RETURN_RECEIPT.json`
+- `PDF_RENDER_VALIDATION.json`
+- `CITATION.cff`
+- `LICENSE_NOTICE.md`
+- `ZENODO_FILESET.md`
+- `ZENODO_SHA256SUMS`
+
+The authoritative Lean sources remain in the linked repositories and are
+bound by the kernel receipt and machine-proof bundle. Byte-identical source
+snapshots are included in this fileset so that the archive remains
+self-contained. Until the required receipt files exist, the upload gate is
+fail-closed.

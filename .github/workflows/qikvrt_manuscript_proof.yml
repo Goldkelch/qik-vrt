@@ -8,8 +8,12 @@ on:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
       - "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
+      - "tools/qikvrt_survival_connectability_kernel_evidence.py"
+      - "tests/test_survival_connectability_kernel_evidence_tool.py"
+      - "tests/test_survival_connectability_publication.py"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/CLAIM_MATRIX.json"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
+      - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -17,8 +21,12 @@ on:
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
       - "tools/qikvrt_canonical_temporal_memory_kernel_evidence.py"
+      - "tools/qikvrt_survival_connectability_kernel_evidence.py"
+      - "tests/test_survival_connectability_kernel_evidence_tool.py"
+      - "tests/test_survival_connectability_publication.py"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/CLAIM_MATRIX.json"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
+      - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -101,6 +109,12 @@ jobs:
         run: python3 scripts/validate_effect_ack_claims.py
       - name: Run positive and negative provenance tests
         run: python3 -m unittest discover -s tests -v
+      - name: Run survival/connectability publication boundary tests
+        env:
+          PYTHONPATH: ../..
+        run: |
+          python3 ../../tests/test_survival_connectability_kernel_evidence_tool.py
+          python3 ../../tests/test_survival_connectability_publication.py
       - name: Compile exact statement/proof bindings
         run: lake build
       - name: Audit legacy and EFFECT_ACK theorem dependencies
@@ -119,6 +133,21 @@ jobs:
           retention-days: 30
           path: >-
             formalization/QIKVRT_Formalization_v2.0/.lake/build/qikvrt-canonical-temporal-memory-kernel-evidence.json
+          if-no-files-found: error
+      - name: Verify survival/connectability publication kernel plan
+        run: |
+          set -euo pipefail
+          python3 ../../tools/qikvrt_survival_connectability_kernel_evidence.py \
+            --plan docs/publications/2026-07-31-survival-anschlussfaehigsten/KERNEL_PROOF_PLAN.json \
+            --claims docs/publications/2026-07-31-survival-anschlussfaehigsten/CLAIM_MATRIX.json \
+            | tee .lake/build/qikvrt-survival-connectability-kernel-evidence.json
+      - name: Upload survival/connectability kernel evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-survival-connectability-kernel-evidence
+          retention-days: 30
+          path: >-
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/qikvrt-survival-connectability-kernel-evidence.json
           if-no-files-found: error
       - name: Audit every completed manuscript proof constant
         run: python3 scripts/audit_completion_axioms.py
