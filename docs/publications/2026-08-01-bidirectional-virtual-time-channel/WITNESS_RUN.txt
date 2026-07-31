@@ -1,0 +1,41 @@
+QIK-VRT ISO C90 bidirectional virtual-channel witness
+
+HOST ORDER (all actual work is forward):
+  h=1  SOURCE_EVENT             virtual=10 -> 10
+  h=2  SOURCE_EVENT             virtual=20 -> 20
+  h=3  SOURCE_EVENT             virtual=30 -> 30
+  h=4  REQUEST_CREATE           virtual=30 -> 15
+  h=5  REQUEST_TRANSPORT_ACK    virtual=30 -> 15
+  h=6  DETERMINISTIC_REPLAY     virtual=15 -> 15
+  h=7  RESPONSE_CREATE          virtual=15 -> 30
+  h=8  RESPONSE_TRANSPORT_ACK   virtual=15 -> 30
+  h=9  DEMO_EFFECT_ACK_COMMIT   virtual=15 -> 30
+
+VIRTUAL CHANNEL:
+  request: v=30 -> v=15, bytes=257, chunks=16
+  response: v=15 -> v=30, bytes=258, chunks=16
+
+RUNTIME INVARIANTS:
+  [ok] host sequence is strict and contiguous
+  [ok] virtual request and response close both directions
+  [ok] request is reassembled byte-exactly at the past address
+  [ok] response is reassembled byte-exactly at the present address
+  [ok] two independent replays produce the same response
+  [ok] returned response is a total deterministic transform of request
+  [ok] the source snapshot remains unchanged
+  [ok] boundary-length sweep passes in both directions
+  [ok] a deliberately missing chunk is rejected
+
+EVIDENCE:
+  source digest before/after: 41545 / 41545
+  request digest sent/received: 53716 / 53716
+  response digest replay-A/replay-B/received: 23636 / 23636 / 23636
+  tested payload lengths: 0,1,16,17,18,31,255,256,257,4096
+
+LOCAL_WITNESS_RESULT: conditions satisfied
+BIDIRECTIONAL_VIRTUAL_CHANNEL: demonstrated
+FINITE_PAYLOAD_SEGMENTATION: demonstrated for bounded cases
+PHYSICAL_BACKWARD_SIGNALLING: not present in this model
+DEMO_LOCAL_EFFECT_ACK=COMMITTED
+GLOBAL_EFFECT_ACK_DONE=UNCLAIMED
+
