@@ -168,7 +168,7 @@ theorem weightedMass_strict_of_positive_witness
       weightedMass weight large (left ++ witness :: right) := by
   rw [weightedMass_append weight small left (witness :: right)]
   rw [weightedMass_append weight large left (witness :: right)]
-  simp only [weightedMass, if_neg hNotSmall, if_pos hLarge]
+  simp only [weightedMass, if_neg hNotSmall, if_pos hLarge, Nat.zero_add]
   have hLeft := weightedMass_mono weight small large left hInclusion
   have hRight := weightedMass_mono weight small large right hInclusion
   have hRightStrict :
