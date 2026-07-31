@@ -29,6 +29,9 @@ PATHS = (
     "formalization/QIKVRT_Formalization_v2.0/README.md",
     "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
     "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
+    "formalization/QIKVRT_Formalization_v2.0/scripts/audit_lean_axioms.py",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Claims/AxiomAuditAll.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
 )
 MANIFEST = FREEZE_ROOT / "FREEZE_MANIFEST.json"
@@ -85,8 +88,8 @@ def _load() -> tuple[dict[str, bytes], dict[str, object]]:
         ],
         "purpose": (
             "Preserve the tagged and published Alpha-2 archive bytes while live "
-            "workflow, entrypoint, README, completion-plan and package "
-            "implementation status advances."
+            "workflow, entrypoints, axiom-audit sources, README, completion-plan "
+            "and package implementation status advance."
         ),
     }
     return projected, manifest

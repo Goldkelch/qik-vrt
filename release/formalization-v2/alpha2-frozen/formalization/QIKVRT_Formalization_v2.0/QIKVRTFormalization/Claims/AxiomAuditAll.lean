@@ -3,9 +3,6 @@ import QIKVRTFormalization.Claims.Batch02
 import QIKVRTFormalization.Claims.Batch02Counterexamples
 import QIKVRTFormalization.Claims.Batch02Dimensions
 import QIKVRTFormalization.Claims.Batch02Factorization
-import QIKVRTFormalization.Process.OperationalContinuation
-import QIKVRTFormalization.Process.ConnectabilitySimulation
-import QIKVRTFormalization.Process.WeightedConnectability
 
 /-!
 # Unified kernel axiom inventory
@@ -27,8 +24,3 @@ rejects project axioms or `sorryAx`.
 #print axioms QIKVRT.V2.GAT002_checked
 #print axioms QIKVRT.V2.DIM006A_additive_checked
 #print axioms QIKVRT.V2.DIM007A_countermodel_checked
-#print axioms QIKVRT.V2.OperationalContinuation.FIT001_checked
-#print axioms QIKVRT.V2.ConnectabilitySimulation.FIT002_checked
-#print axioms QIKVRT.V2.ConnectabilitySimulation.FIT003_checked
-#print axioms QIKVRT.V2.WeightedConnectability.MAT001_checked
-#print axioms QIKVRT.V2.WeightedConnectability.MAT002_checked
