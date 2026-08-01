@@ -17,6 +17,7 @@ OUT = BASE / "content-disposition-batch-002/terminal-disposition"
 HANDOFF_RECEIPT = ROOT / "receipts/anticipation/0003-post-promotion-current-main-handoff.json"
 HANDOFF_WORK_UNIT = "CURRENT_MAIN_CHILD_PORT_OF_AUTHORITY_PR289"
 HANDOFF_NEXT_EFFECT = "MATERIALIZE_AND_VERIFY_CURRENT_MAIN_CHILD_PORT_OF_AUTHORITY_PR289_ON_EXACT_HEAD"
+HANDOFF_AUTHORITY_PARENT = "6836f28622173e45b1330f41a294bbd46f36fec2"
 
 spec = importlib.util.spec_from_file_location("b2", P)
 m = importlib.util.module_from_spec(spec)
@@ -40,6 +41,7 @@ class T(unittest.TestCase):
         cls.index = load(BASE / "CONTENT_CLAIM_DISPOSITION_INDEX.json")
         cls.union_receipt = load(BASE / "CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json")
         cls.progress = load(ROOT / "AI_PROGRESS.json")
+        cls.handoff = load(HANDOFF_RECEIPT) if HANDOFF_RECEIPT.is_file() else None
 
     @staticmethod
     def current_projection_contract():
@@ -185,8 +187,13 @@ class T(unittest.TestCase):
 
     def test_current_dispatch_supersedes_only_root_status(self):
         contract = self.current_projection_contract()
+        stage = current.projection_stage()
         result = current.verify()
-        self.assertEqual(result["next_deterministic_effect"], contract["next_effect"])
+        if self.handoff is not None and stage == current.STAGE_FINAL_CORPUS:
+            historical = current._advanced_module(stage)
+            self.assertEqual(result["next_deterministic_effect"], historical.NEXT_EFFECT)
+        else:
+            self.assertEqual(result["next_deterministic_effect"], contract["next_effect"])
         self.assertEqual(self.progress["projection_owner"]["tool"], contract["tool"])
         self.assertEqual(self.progress["next_action"], contract["next_effect"])
         corpus = self.progress["scopes"]["qikvrt-zenodo-canonical-union-2026-07-28-v1"]
@@ -215,10 +222,15 @@ class T(unittest.TestCase):
             self.assertIn(contract["bar"], status)
         self.assertIn(contract["status_marker"], status)
         self.assertIn(contract["next_effect"], status)
-        if HANDOFF_RECEIPT.is_file():
+        if self.handoff is not None:
             self.assertIn("VERIFIED POST-PROMOTION BINDING", status)
-            self.assertIn("6836f28622173e45b1330f41a294bbd46f36fec2", status)
-            self.assertIn("638717de71071f1fe420ce5ddfd8521638356672", status)
+            self.assertEqual(self.handoff["selected_next_work_unit"]["id"], HANDOFF_WORK_UNIT)
+            self.assertEqual(self.handoff["selected_next_work_unit"]["target_parent"], HANDOFF_AUTHORITY_PARENT)
+            self.assertEqual(self.handoff["authority"]["current_main"], HANDOFF_AUTHORITY_PARENT)
+            self.assertEqual(self.handoff["effect_boundary"]["external_effect"], "NONE")
+            self.assertIs(self.handoff["effect_boundary"]["repository_only"], True)
+            for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
+                self.assertIs(self.handoff["completion_claims"][key], False)
         for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
             self.assertIs(self.progress["claims"][key], False)
 
