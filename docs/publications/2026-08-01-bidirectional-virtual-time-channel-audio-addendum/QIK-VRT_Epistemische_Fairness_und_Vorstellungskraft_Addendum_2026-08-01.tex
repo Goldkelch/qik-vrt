@@ -1,0 +1,765 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.86]
+\usepackage[provide=*,main=ngerman,english]{babel}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{seqsplit}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\geometry{left=24mm,right=24mm,top=24mm,bottom=27mm,headheight=14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.18em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=0.22em,topsep=0.3em}
+
+\definecolor{QBlue}{HTML}{153E69}
+\definecolor{QLight}{HTML}{ECF3F8}
+\definecolor{QGreen}{HTML}{E8F3EA}
+\definecolor{QAmber}{HTML}{FFF2CC}
+\definecolor{QRed}{HTML}{FBE9E7}
+\definecolor{QGray}{HTML}{4D5660}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=QBlue,
+  citecolor=QBlue,
+  urlcolor=QBlue,
+  pdftitle={QIK-VRT: Epistemische Fairness, Vorstellungskraft und der Weg vom virtuellen Zeugen zum Beobachtungssystem},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Wissenschaftlicher Nachtrag zum bidirektionalen virtuellen Zeitkanal},
+  pdfkeywords={QIK-VRT, virtuelle Zeit, Informationsübertragung, Beobachtungssystem, epistemische Fairness, Vorstellungskraft, Retrokausalität}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{QGray}{QIK--VRT: wissenschaftlicher Nachtrag}}
+\fancyhead[R]{\small\textcolor{QGray}{Ingolf Lohmann}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{satz}{Satz}[section]
+\newtheorem{korollar}{Korollar}[section]
+\newtheorem{lemma}{Lemma}[section]
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}[section]
+\crefname{definition}{Definition}{Definitionen}
+\crefname{satz}{Satz}{Sätze}
+\crefname{korollar}{Korollar}{Korollare}
+\crefname{lemma}{Lemma}{Lemmata}
+
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\DONE}{\texttt{EFFECT\_ACK\_DONE}}
+\newcommand{\hash}[1]{{\ttfamily\small\seqsplit{#1}}}
+\newcommand{\statusbox}[2]{%
+  \par\medskip\noindent
+  \colorbox{#1}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{#2}}%
+  \par\medskip
+}
+
+\begin{document}
+\special{pdf:trailerid [<059d4c78efd923194210801077d7eb45><059d4c78efd923194210801077d7eb45>]}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \thispagestyle{empty}
+  \vspace*{10mm}
+  {\color{QBlue}\rule{\textwidth}{1.4pt}}\\[1.0em]
+  {\Huge\bfseries QIK--VRT\par}
+  \vspace{0.28em}
+  {\LARGE\bfseries Epistemische Fairness und Vorstellungskraft\\[0.12em]
+  Vom virtuellen Zeugen\\[0.12em]
+  zum Beobachtungssystem\par}
+  \vspace{0.9em}
+  {\LARGE Wissenschaftlicher Nachtrag zum bidirektionalen virtuellen Zeitkanal\par}
+  \vspace{1.0em}
+  {\color{QBlue}\rule{\textwidth}{0.6pt}}
+
+  \vfill
+  {\large\textbf{Ingolf Lohmann}\par}
+  \vspace{0.35em}
+  {\normalsize Independent Researcher; QIK--VRT\par}
+  \vspace{0.35em}
+  {\normalsize Addendum 1.0.0 zum Kandidaten 1.0.0 -- 1. August 2026\par}
+
+  \vfill
+  \statusbox{QLight}{
+    \textbf{Additiver Befund.}
+    Der ausgeführte endliche QIK--VRT-Zeuge bleibt unverändert: Er überträgt
+    vollständige endliche Nachrichten in beiden Richtungen der virtuellen
+    Zeitadressierung, während die Hostzeit strikt vorwärts läuft. Dieser
+    Nachtrag zeigt, wie daraus überprüfbare Geräte- und
+    Beobachtungshypothesen gebildet werden können. Er definiert ein
+    Beobachtungsprädikat, eine Realisierungsleiter und Schutzregeln gegen
+    epistemische Übervorteilung. Eine reale oder physikalische Brücke wird
+    dadurch untersuchbar, aber nicht ohne Messung als vorhanden ausgegeben.
+  }
+
+  \vfill
+  {\small
+    Dokumentationslizenz: CC BY-NC-ND 4.0.\\
+    Vorveröffentlichungskandidat; nicht peer-reviewed; noch kein neuer DOI.\\
+    Der begleitende Internet-Draft-Entwurf ist nicht beim IETF eingereicht
+    und bezeichnet keinen IETF-Konsens.
+  }
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\setcounter{page}{1}
+
+\selectlanguage{ngerman}
+
+\begin{abstract}
+Dieser Nachtrag setzt den bytegebundenen QIK--VRT-Kandidaten zum
+bidirektionalen virtuellen Zeitkanal voraus und ändert keinen seiner dreizehn
+Claims. Der vorhandene ISO-C90-Zeuge realisiert einen endlichen Dialog: Eine
+257-Byte-Anfrage wird von der virtuellen Adresse 30 an die frühere Adresse 15
+übertragen; dort wird sie deterministisch verarbeitet; eine 258-Byte-Antwort
+kehrt zur Adresse 30 zurück. Sämtliche erzeugenden Hostereignisse bleiben
+streng vorwärtsgeordnet. Unter expliziten Endlichkeits-, Integritäts- und
+Zustellannahmen ist die Konstruktion auf beliebige einzelne endliche
+Nachrichten verallgemeinert. Dieser Informatikbefund wird hier nicht neu
+bewiesen, sondern exakt als Stamm des erweiterten Erkenntnisbaums gebunden.
+
+Zwei neue Audioquellen motivieren die Anschlussfragen, welche Rolle
+Vorstellungskraft bei der Bildung technischer Hypothesen spielt, wann ein
+Computerspiel oder anderes Softwaresystem zu einem Beobachtungssystem wird
+und wie verdeckte Wissens- oder Zugriffsvorsprünge begrenzt werden müssen.
+Wir führen eine achtstufige Realisierungsleiter von der Idee bis zur
+autorisierten Außenwirkung ein und definieren ein Beobachtungssystem durch
+Datenerfassung, Kalibrierung, Zeitbindung, Provenienz, Integrität,
+Falsifizierbarkeit und Governance. Ein einfacher Gegenmodellsatz zeigt, warum
+Softwaremöglichkeit allein keinen entsprechenden Naturvorgang impliziert.
+Gleichzeitig wird konstruktiv präzisiert, unter welchen Bedingungen
+instrumentierte Software tatsächlich als Beobachtungssystem fungieren kann.
+
+Epistemische Fairness wird als normative Schutzschicht operationalisiert:
+Simulation, Antizipation, Beobachtung, Verifikation und autorisierte Wirkung
+müssen unterscheidbar bleiben; privilegierter Zugang darf Provenienz,
+Anfechtbarkeit oder Einwilligung nicht ersetzen. Behauptungen über bereits
+verdeckte reale Systeme bleiben offen und testbedürftig. Ebenso werden weder
+Superdeterminismus noch eine physikalische Zukunft-zu-Vergangenheit-
+Übertragung behauptet. Ein begleitendes, individuelles Experimental-
+Anwendungsprofil übersetzt die überprüfbaren Teile in Anforderungen über dem
+unveränderten EFFECT\_ACK-Wire-v1-Datensatz.
+\end{abstract}
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+This addendum is bound to the byte-identical QIK--VRT prepublication
+candidate on the bidirectional virtual-time channel and does not rewrite any
+of its thirteen claims. The existing ISO C90 witness executes a finite
+dialogue: a 257-byte request travels from virtual address 30 to earlier
+address 15, is processed deterministically, and returns a 258-byte response
+to address 30, while all generating host events remain strictly forward
+ordered. Under explicit finiteness, integrity, and delivery assumptions, the
+construction applies to every individual finite message. That computer
+science result is inherited here as the fixed trunk of an extended evidence
+tree.
+
+Two new audio sources motivate the next questions: how imagination can form
+technical hypotheses, when a game or other software becomes an observation
+system, and how hidden informational or access advantages should be
+constrained. We introduce an eight-level realization ladder from articulated
+idea to authorized external effect. We define an observation system through
+acquisition, calibration, temporal binding, provenance, integrity,
+falsifiability, and governance. A countermodel establishes that software
+possibility alone does not entail a corresponding physical phenomenon;
+conversely, explicit instrumentation conditions make the transition from
+software to a qualified observation system testable.
+
+Epistemic fairness becomes a normative guard layer: simulation,
+anticipation, observation, verification, and authorized effect must remain
+distinguishable, and privileged access must not replace provenance,
+contestability, or consent. Claims of already hidden real-world deployments
+remain empirically open. The addendum proves neither superdeterminism nor
+physical future-to-past communication. A companion individual Experimental
+application-profile draft translates the mechanically checkable requirements
+onto the unchanged EFFECT\_ACK version-1 wire record.
+\end{abstract}
+\end{otherlanguage}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
+
+\section{Exakter Ausgangspunkt: Der Erkenntnisbaum wird erweitert}
+
+Der Nachtrag beginnt bewusst nicht wieder bei null. Sein unmittelbarer
+Parent ist der Vorveröffentlichungskandidat im Pull Request 293 des
+Authority-Repositories \texttt{Goldkelch/qik-vrt}:
+
+\begin{longtable}{@{}L{0.26\linewidth}L{0.66\linewidth}@{}}
+\toprule
+\textbf{Bindung} & \textbf{Exakter Wert} \\
+\midrule
+\endhead
+Parent-Commit &
+\hash{5df3e24496afbeac60dfc78ffb12d673f163ee04} \\
+Parent-Tree &
+\hash{c147d82b61efc989f0cc0aa698e16bf71c6ec9da} \\
+Basis-Publikations-ID &
+\texttt{qikvrt-bidirectional-virtual-time-channel-v1} \\
+Basis-Machine-Proof &
+\hash{ad30282f9ecc30414c5dd7eef0460a9766f03c8184c01166f15dc9cb567aa72a} \\
+Delta-Semantik &
+\texttt{APPEND\_ONLY\_NO\_BASE\_CLAIM\_REWRITE} \\
+\bottomrule
+\end{longtable}
+
+Die maschinenlesbare Datei \texttt{INHERITED\_PROOF\_BINDING.json} bindet
+alle dreizehn geerbten Claims an ihre unveränderten Klassifikationen und
+Statuswerte. Die acht neuen Claims tragen eigene Kennungen
+\texttt{VTI-ADD-001} bis \texttt{VTI-ADD-008}. So bleibt nachvollziehbar,
+welcher Satz bereits zum Basiswerk gehörte und welcher erst hier hinzukommt.
+
+\statusbox{QGreen}{
+  \textbf{Geerbter tragender Informatikbefund.}
+  Vollständige einzelne endliche Nachrichten können unter den im Basiswerk
+  genannten Bedingungen bytegenau in beide Richtungen einer virtuellen
+  Adressordnung transportiert werden. Der konkrete C90-Lauf führt Anfrage
+  und Antwort aus; alle tatsächlichen Hostereignisse bleiben strikt
+  vorwärtsgerichtet; die gebundene Quellhistorie wird nicht überschrieben.
+}
+
+Dieser Befund ist stark, aber genau abgegrenzt. \emph{Bidirektional} bezieht
+sich hier auf zwei Transportrichtungen zwischen virtuellen Adressen.
+\emph{Vollständig} bedeutet Bytevollständigkeit einer jeweils endlichen
+Nachricht innerhalb der spezifizierten Ressourcen und Annahmen. Keines der
+beiden Wörter behauptet automatisch einen physikalischen Kanal aus einer
+späteren in eine frühere Raumzeitregion.
+
+\subsection{Was unverändert gilt}
+
+\begin{itemize}
+  \item \texttt{VTI-001} und \texttt{VTI-002} bleiben ausgeführte Evidenz
+    für den endlichen C90-Zeugen und seine benannten Grenzfälle.
+  \item \texttt{VTI-007} bindet den vorhandenen Lean-Kernelreceipt nur in
+    dessen ausgewiesenem Scope; der Nachtrag etikettiert keinen neuen Satz
+    nachträglich als kernelverifiziert.
+  \item \texttt{VTI-010} trennt Byteidentität, Bedeutung, Wahrheit und
+    autorisierte Wirkung. Diese Trennung wird hier auf Beobachtungsdaten
+    ausgedehnt.
+  \item Die physikalische Brücke und physikalische Rückwärtssignalisierung
+    bleiben offen. Der Status wird weder angehoben noch rhetorisch verwischt.
+\end{itemize}
+
+\section{Zwei neue Quellen und ihre wissenschaftliche Rolle}
+
+Die Dateien \emph{Das ist Übervorteilen!} und \emph{Das ist
+Vorstellungskraft!} sind neue Primärquellen. Sie wurden lokal und offline
+transkribiert. Das Repository enthält weder die Audioinhalte noch eine
+behauptete Identitätsauthentifizierung, sondern SHA-256-Medienbindungen,
+technische Metadaten, unveränderte ASR-Rohfassungen, konservativ geprüfte
+Lesefassungen und ein Unsicherheitsprotokoll.
+
+\begin{longtable}{@{}L{0.24\linewidth}L{0.68\linewidth}@{}}
+\toprule
+\textbf{Quelle} & \textbf{SHA-256 der kanonischen Audiodatei} \\
+\midrule
+\endhead
+Übervorteilen &
+\hash{c7ae25dc1a689211fe9caa60d39cbd2bea3265aab655b4a7fc14daebc1582a05} \\
+Vorstellungskraft &
+\hash{a4a9d1141c33848b3ee6ef30d030b176b4b888103a09ec14503f65b0b21e19ca} \\
+\bottomrule
+\end{longtable}
+
+Aus einer Aufnahme folgt zunächst nur, dass eine Aussage in den gebundenen
+Bytes enthalten ist. Dateiname, Sprecherzuschreibung, Transkription und
+sachliche Wahrheit sind getrennte Ebenen. Der Nachtrag übernimmt deshalb
+nicht jede Aussage als Fakt. Er gewinnt aus den Quellen vielmehr zwei
+wissenschaftlich bearbeitbare Richtungen:
+
+\begin{enumerate}
+  \item \textbf{Vorstellungskraft als Hypothesengenerator:} Welche heute
+    verfügbaren Geräte, Datenpfade und Softwareeigenschaften könnten eine
+    klar formulierte Folgekonfiguration realisieren?
+  \item \textbf{Epistemische Fairness als Wirkungsgrenze:} Welche
+    Offenlegungs-, Prüf- und Widerspruchsrechte sind nötig, wenn Wissen oder
+    Beobachtungszugänge asymmetrisch verteilt sind?
+\end{enumerate}
+
+Die in einer Aufnahme geäußerte These, entsprechende Systeme seien bereits
+verdeckt real im Einsatz, ist damit als Autorenaussage quellengebunden. Ohne
+benannte Systeme, inspizierbare Artefakte, Messprotokolle und unabhängige
+Replikation bleibt ihr Sachgehalt \texttt{OPEN\_EMPIRICAL}.
+
+\section{Die Realisierungsleiter}
+
+\begin{definition}[Realisierungsleiter]
+Die Realisierungsleiter ist die geordnete Folge
+\[
+R_0 \prec R_1 \prec R_2 \prec R_3 \prec R_4 \prec R_5 \prec R_6 \prec R_7,
+\]
+wobei jede Stufe eine eigene Evidenzpflicht besitzt. Das Erreichen einer
+Stufe macht die nächste untersuchbar, ersetzt deren Evidenz aber nicht.
+\end{definition}
+
+\begin{longtable}{@{}L{0.08\linewidth}L{0.27\linewidth}L{0.55\linewidth}@{}}
+\toprule
+\textbf{Stufe} & \textbf{Gegenstand} & \textbf{Benötigter Nachweis} \\
+\midrule
+\endhead
+$R_0$ & artikulierte Idee & verständliche, quellengebundene und abgrenzbare These \\
+$R_1$ & konsistentes Softwaremodell & definierte Zustände, Übergänge, Annahmen und Grenzen \\
+$R_2$ & ausführbarer virtueller Zeuge & reproduzierbarer Lauf sowie positive und negative Tests \\
+$R_3$ & reale Geräteimplementierung & gebundene Hardware, Software, Versionen und Datenpfade \\
+$R_4$ & qualifiziertes Beobachtungssystem & vollständiges Beobachtungsprädikat aus \cref{sec:obs} \\
+$R_5$ & physikalischer Befund & Kalibrierung, Kontrollen, Messunsicherheit und Replikation \\
+$R_6$ & kausal zugerechnete Wirkung & Intervention oder tragfähige Identifikationsstrategie \\
+$R_7$ & autorisierte Außenwirkung & Rechte, Zweckbindung, Einwilligung und Wirkungsgate \\
+\bottomrule
+\end{longtable}
+
+Das Basiswerk erreicht $R_2$ für seinen deklarierten virtuellen Scope. Dass
+der Zeuge auf realer Hardware läuft, ist selbstverständlich ein realer
+Rechenvorgang. Es belegt jedoch nicht bereits die spezielle physikalische
+Eigenschaft, die ein behaupteter Zukunft-zu-Vergangenheit-Kanal benötigen
+würde. Dazu wären zusätzliche Übergangsnachweise von $R_3$ bis $R_6$ nötig.
+
+\begin{satz}[Nicht-Implikation von Software und Natur]
+Die Existenz oder Ausführung eines Softwaremodells $S$ impliziert für sich
+allein nicht die Existenz eines von $S$ repräsentierten physikalischen
+Phänomens $P$.
+\end{satz}
+
+\begin{proof}
+Betrachte zwei mögliche Welten mit derselben Rechenmaschine und demselben
+ausgeführten Programm $S$. In Welt $W_1$ existiert zusätzlich der behauptete
+physikalische Kanal $P$; in Welt $W_0$ existiert er nicht. Solange $S$ keine
+kalibrierte, ausschließende Messbrücke zur Unterscheidung beider Welten
+enthält, ist die beobachtete Softwareausführung in $W_0$ und $W_1$ gleich.
+Damit ist $S$ mit $\neg P$ vereinbar. Folglich gilt logisch nicht
+$S\Rightarrow P$. Für die Ableitung von $P$ ist mindestens eine zusätzliche
+Brückenprämisse mit empirischer Evidenz erforderlich.
+\end{proof}
+
+Der Satz entwertet das Softwareergebnis nicht. Er zeigt präzise, welche
+Arbeit zwischen einem richtigen Informatiksatz und einem neuen Physikbefund
+liegt. Genau diese explizite Schnittstelle macht den nächsten Schritt
+planbar.
+
+\section{Vom Computerspiel zum Beobachtungssystem}
+\label{sec:obs}
+
+Ein Computerspiel ist zunächst ein interaktives Softwaresystem. Es kann
+Eingaben erfassen, Zustände simulieren und Telemetrie speichern. Diese
+Fähigkeiten allein machen jede Ausgabe noch nicht zu einer belastbaren
+Beobachtung über die Außenwelt.
+
+\begin{definition}[Beobachtungsprädikat]
+Für einen deklarierten Scope heißt ein System $X$ hier genau dann
+\emph{qualifiziertes Beobachtungssystem}, wenn
+\[
+\operatorname{OBS}(X)=A\land K\land T\land Q\land I\land F\land G
+\]
+erfüllt ist. Dabei stehen $A$ für spezifizierte Erfassung, $K$ für
+Kalibrierung, $T$ für Zeit- und Ereignisbindung, $Q$ für Quellenprovenienz,
+$I$ für Daten- und Auswertungsintegrität, $F$ für Falsifizierbarkeit und
+$G$ für Governance einschließlich Zweck, Rechten und Auditierbarkeit.
+\end{definition}
+
+\begin{satz}[Bedingter Instrumentierungssatz]
+Ein Spiel oder anderes interaktives Softwaresystem kann innerhalb eines
+genau benannten Scopes als Beobachtungssystem dienen, wenn alle sieben
+Konjunkte von $\operatorname{OBS}$ nachweislich erfüllt sind. Aus der bloßen
+Systembezeichnung, Interaktion oder Telemetrie folgt diese Eigenschaft nicht.
+\end{satz}
+
+\begin{proof}
+Die erste Aussage folgt konstruktiv aus der Definition: Man ergänzt einen
+spezifizierten Sensor- oder Eingabepfad, bindet dessen Kalibrierung und Zeit,
+erhält eine überprüfbare Transformationskette, schützt Rohdaten und Analyse,
+präregistriert widerlegbare Ausgaben und setzt Rechte sowie Auditverfahren
+durch. Dann sind alle Konjunkte erfüllt. Für die zweite Aussage genügt ein
+Gegenbeispiel: Ein Spiel speichert beliebige Klickzahlen, ohne Sensorbezug,
+Kalibrierung oder Falsifikationsregel. Telemetrie liegt vor, aber mindestens
+$K$, $Q$ und $F$ fehlen; also gilt $\neg\operatorname{OBS}(X)$.
+\end{proof}
+
+\subsection{Vier greifbare Beispiele}
+
+\textbf{Beispiel 1: Eingabetelemetrie.}
+Ein Spiel zeichnet Tastendrücke auf. Es beobachtet damit zunächst nur
+technisch definierte Eingabeereignisse innerhalb seines eigenen Pfads. Eine
+Diagnose über Aufmerksamkeit, Absicht oder Gesundheitszustand folgt daraus
+nicht ohne validiertes Messmodell, Unsicherheitsangabe und geeignete
+Einwilligung.
+
+\textbf{Beispiel 2: Kalibrierter Bewegungssensor.}
+Ein Spiel nutzt einen gebundenen Sensor, um einen Rehabilitationsablauf zu
+erfassen. Mit dokumentierter Kalibrierung, Zeitbindung, Rohdatenintegrität,
+validierter Auswertung und zweckgebundener Einwilligung kann es in diesem
+engen Scope ein Beobachtungssystem sein. Es wird dadurch nicht zum
+universellen Beobachter.
+
+\textbf{Beispiel 3: Virtueller Replay.}
+Ein deterministischer Replay erzeugt für denselben gebundenen Eingabestand
+dieselbe Ausgabe. Das ist starke Evidenz für Reproduzierbarkeit innerhalb des
+Modells. Es ist keine neue Direktbeobachtung der Außenwelt und kein Nachweis,
+dass der simulierte Vorgang physikalisch stattfand.
+
+\textbf{Beispiel 4: Behauptetes verborgenes System.}
+Die Aussage, ein unbenanntes Spiel sei heimlich ein umfassendes
+Observationssystem, ist eine prüfbare Hypothese. Erforderlich wären mindestens
+identifizierbare Binärdateien oder Geräte, Netzwerk- und Sensorpfade,
+Erfassungsprotokolle, Testkonten, Kontrollen, rechtlich zulässige Prüfung und
+unabhängige Replikation. Ohne diese Belege bleibt die These offen.
+
+\section{Vorstellungskraft als kontrollierter Suchoperator}
+
+Vorstellungskraft ist hier weder Messinstrument noch Wahrheitsoracle. Sie ist
+ein produktiver Operator über dem Hypothesenraum. Er kann bekannte Bausteine
+neu kombinieren, überraschende Tests vorschlagen und blinde Flecken sichtbar
+machen. Damit dieser Vorteil wissenschaftlich nutzbar wird, durchläuft jeder
+Kandidat fünf Schritte:
+
+\begin{enumerate}
+  \item \textbf{Inventar:} Geräte, Schnittstellen, Protokolle und
+    Abhängigkeiten werden benannt.
+  \item \textbf{Konstruktion:} Eine neue Konfiguration wird so genau
+    beschrieben, dass eine andere Person sie nachbauen könnte.
+  \item \textbf{Vorhersage:} Erwartete Beobachtungen und Gegenbeobachtungen
+    werden vor Einsicht in neue Messdaten festgelegt.
+  \item \textbf{Branch-Trennung:} Simulation, Antizipation und Messarchiv
+    bleiben technisch und semantisch unterscheidbar.
+  \item \textbf{Statusübergang:} Erst Messung, Provenienzprüfung und
+    Autorisierung dürfen den Status erhöhen.
+\end{enumerate}
+
+Der QIK--VRT-Kanal ist dafür besonders anschlussfähig: Virtuelle Adresse,
+Branch-Replay, Antwortbindung und Wirkungsgate liefern Bausteine, um
+Kontrafaktisches zu berechnen, ohne es nachträglich als unveränderte
+Vergangenheit auszugeben. Die Vorstellungskraft erweitert die Menge der
+prüfbaren Branches; sie überschreibt nicht den Wahrheitsstatus des Archivs.
+
+\section{Epistemische Fairness und Übervorteilung}
+
+\begin{definition}[Epistemische Übervorteilung]
+Epistemische Übervorteilung bezeichnet in diesem Nachtrag eine normative
+Risikoklasse: Ein Informations-, Beobachtungs- oder Prognosevorsprung wird so
+eingesetzt, dass betroffene Parteien Herkunft, Unsicherheit, Vergleichsmaßstab
+oder Wirkung nicht angemessen prüfen, anfechten oder autorisieren können.
+\end{definition}
+
+Der Begriff beweist nicht, dass in einem konkreten Fall Unrecht geschehen
+ist. Dazu wären Kriterien, Belege, Zuständigkeit und ein faires Verfahren
+nötig. Er macht jedoch ein technisches Gestaltungsproblem sichtbar. Ein
+System kann Bytes korrekt verarbeiten und trotzdem unfair wirken, etwa wenn
+es
+
+\begin{itemize}
+  \item privilegierte Beobachtungs- oder Prognosezugänge verschweigt,
+  \item simulierte, antizipierte und beobachtete Daten vermischt,
+  \item Unsicherheit oder Fehlerkosten einseitig verteilt,
+  \item Gegenprüfung und Berichtigung verhindert oder
+  \item irreversible Wirkungen ohne operationsspezifische Autorisierung
+    auslöst.
+\end{itemize}
+
+\begin{satz}[Vorsprung ersetzt keine Wirkungserlaubnis]
+Innerhalb des hier deklarierten Governance-Modells kann ein Wissens- oder
+Zugriffsvorsprung weder den Wahrheitsstatus eines Datums noch die
+Autorisierung einer irreversiblen Außenwirkung ersetzen.
+\end{satz}
+
+\begin{proof}
+Wahrheitsstatus und Wirkungserlaubnis werden als eigene Gate-Prädikate
+definiert. Ein Zugriffsvorsprung ist kein Bestandteil ihrer hinreichenden
+Bedingungen. Fehlt ein benötigtes Prädikat, bleibt die ordinary release
+unabhängig vom Vorsprung falsch. Die Aussage ist eine überprüfbare
+Eigenschaft dieser Architektur, kein universelles moralisches Theorem.
+\end{proof}
+
+Praktisch benötigt jedes wirkungsrelevante Informationsobjekt mindestens
+einen sichtbaren epistemischen Status:
+
+\begin{longtable}{@{}L{0.24\linewidth}L{0.68\linewidth}@{}}
+\toprule
+\textbf{Status} & \textbf{Bedeutung} \\
+\midrule
+\endhead
+\texttt{CANDIDATE} & formulierter, noch nicht geprüfter Vorschlag \\
+\texttt{ANTICIPATED} & vorab erwartetes Ergebnis, keine Beobachtung \\
+\texttt{OBSERVED} & erfasster Befund mit deklariertem Mess- und Quellenscope \\
+\texttt{VERIFIED} & nach benanntem Verfahren überprüfter Befund \\
+\texttt{AUTHORIZED\_EFFECT} & gesondert freigegebene konkrete Wirkung \\
+\bottomrule
+\end{longtable}
+
+Diese Statuswerte sind keine neue EFFECT\_ACK-Wire-Erweiterung. Sie sind
+Begriffe des Anwendungsprofils und können über bestehende, inhaltsadressierte
+Evidenzreferenzen transportiert werden.
+
+\section{Kein Fehlschluss über Physik, Determinismus oder Willen}
+
+\subsection{Physikalische Retrokausalität}
+
+Der ausgeführte Kanal verbindet virtuelle Adressen. Die Hostereignisse, die
+Anfrage, Replay und Antwort erzeugen, folgen strikt aufeinander. Daraus folgt
+keine positive physikalische Kanalkapazität von einer späteren randomisierten
+Intervention zu einem bereits versiegelten früheren Messwert.
+
+Eine physikalische Brückenhypothese müsste mindestens angeben:
+
+\begin{itemize}
+  \item welches Gerät oder Feld den behaupteten Träger bildet,
+  \item welche später gewählte Variable welchen früheren Messwert beeinflusst,
+  \item wie frühere Werte vor der Wahl manipulationssicher versiegelt werden,
+  \item wie gewöhnliche Leckage, Synchronisation, Vorhersage und
+    Selektionsfehler ausgeschlossen werden,
+  \item welche Nullhypothese und Abbruchregel vorab gelten und
+  \item wie unabhängige Teams den Befund replizieren können.
+\end{itemize}
+
+Bis ein solches Experiment positive, reproduzierbare Evidenz liefert, bleibt
+der Claim \texttt{OPEN\_PHYSICAL}. Das ist keine Rückkehr zu null, sondern
+die genaue Adresse des nächsten unbewiesenen Knotens.
+
+\subsection{Superdeterminismus, freier Wille und freier Glaube}
+
+Ein deterministischer Replay ist eine Eigenschaft eines endlichen Programms.
+Er ist keine vollständige Ontologie des Universums und keine Theorie
+menschlicher Entscheidungen. Weder der virtuelle Zeuge noch die neuen
+Quellen beweisen Superdeterminismus. Sie widerlegen auch keine spezifizierte
+Form freien Willens oder freien Glaubens. Diese Fragen werden nicht durch
+Umbenennung eines Softwarezustands entschieden.
+
+\section{Ein falsifizierbares Brückenexperiment}
+
+Der folgende Entwurf ist kein Bericht über eine bereits ausgeführte Messung,
+sondern ein Prüfplan, der eine physikalische Behauptung grundsätzlich
+entscheidbar machen soll.
+
+\begin{enumerate}
+  \item Zum früheren Zeitpunkt $t_0$ erzeugt und versiegelt Labor A eine
+    Bitfolge $Y$ mit öffentlicher Commitment-Bindung, ohne Kenntnis der
+    späteren Wahl.
+  \item Zum späteren Zeitpunkt $t_1$ wählt Labor B per zertifizierter
+    Zufallsquelle unabhängig ein Bit $X$.
+  \item Das behauptete Brückengerät soll eine vorab definierte statistische
+    Abhängigkeit zwischen $X$ und dem schon versiegelten $Y$ erzeugen.
+  \item Netzwerk-, Uhr-, Personen-, Speicher-, Metadaten- und
+    Präregistrierungslecks werden durch physische und organisatorische
+    Trennung kontrolliert. Sham-Geräte und Nullläufe werden verblindet
+    eingestreut.
+  \item Stichprobengröße, Teststatistik, Fehlergrenzen, Ausschlüsse und
+    Abbruchregeln werden vor der Entsiegelung registriert.
+  \item Erst nach unabhängiger Replikation wird über eine Statusänderung
+    beraten. Ein einzelner positiver Lauf genügt nicht.
+\end{enumerate}
+
+Eine solche Versuchsanordnung muss außerdem prüfen, ob scheinbare
+Rückwärtsinformation durch gewöhnliche gemeinsame Ursachen, fehlerhafte
+Zeitstempel, Vorhersagemodelle, Postselektion oder flexible Auswertung
+erklärbar ist. Der Plan verspricht kein positives Ergebnis; er verhindert,
+dass ein starkes physikalisches Wort unfalsifizierbar bleibt.
+
+\section{Übersetzung in ein IETF-geeignetes Anwendungsprofil}
+
+Die wissenschaftlichen Aussagen werden nicht als neue Wire-Felder
+ausgegeben. Der individuelle Experimental-Entwurf
+\texttt{draft-lohmann-qikvrt-epistemic-fairness-observation-profile-00}
+liegt über dem unveränderten EFFECT\_ACK-v1-Datensatz mit seinen 35
+geschlossenen Mitgliedern und fünf Ergebnissen. Er fügt weder einen Zustand
+noch einen Medientyp, eine CDDL-Regel oder eine IANA-Registrierung hinzu.
+
+Das Profil verlangt für wirkungsrelevante Anwendungen unter anderem:
+
+\begin{itemize}
+  \item Kennzeichnung als direkt beobachtet, inferiert, simuliert,
+    kontrafaktisch, hypothetisch, vorgestellt oder fremdberichtet,
+  \item eine zurechenbare Transformationskette von den verfügbaren
+    Quellbytes bis zur Entscheidungsrepräsentation,
+  \item operationsspezifische Autorisierung für Erhebung, Verarbeitung,
+    Speicherung, Weitergabe, Publikation, Modellnutzung und Wirkung,
+  \item Offenlegung von privilegierten Zugängen, asymmetrischen Fehlerkosten
+    und erreichbaren Widerspruchswegen sowie
+  \item explizite Klassifikation jedes Pfades als Software, Replay,
+    gewöhnlicher Netzwerktransport, Sensor, Aktor oder behauptete physische
+    Brücke.
+\end{itemize}
+
+Fehlende oder widersprüchliche Pflichtbelege verhindern die gewöhnliche
+Freigabe. Ein positiver Profiltest erzwingt jedoch nie \DONE; sämtliche
+Basisprädikate bleiben nötig. Der Entwurf ist nicht eingereicht, kein RFC und
+keine IETF-Billigung. Seine Eignung besteht in RFCXML-v3-Form, BCP-14-Sprache,
+Security- und Privacy-Abschnitten, klarer IANA-Grenze und testbaren
+Konformitätsfällen.
+
+\section{Claim-Delta und Beweisstatus}
+
+\begin{longtable}{@{}L{0.17\linewidth}L{0.22\linewidth}L{0.51\linewidth}@{}}
+\toprule
+\textbf{Claim} & \textbf{Status} & \textbf{Kernaussage} \\
+\midrule
+\endhead
+\texttt{VTI-ADD-001} & NORMATIVE / DECLARED & achtstufige Realisierungsleiter \\
+\texttt{VTI-ADD-002} & NORMATIVE / DECLARED & Software impliziert nicht allein das Naturphänomen \\
+\texttt{VTI-ADD-003} & NORMATIVE / DECLARED & siebenfaches Beobachtungsprädikat \\
+\texttt{VTI-ADD-004} & INTERPRETATIVE / DECLARED & Vorstellungskraft erzeugt Kandidaten, keine Fakten \\
+\texttt{VTI-ADD-005} & NORMATIVE / DECLARED & Vorsprung ersetzt Provenienz oder Autorisierung nicht \\
+\texttt{VTI-ADD-006} & OPEN / OPEN & verborgenes reales Deployment nicht belegt \\
+\texttt{VTI-ADD-007} & NORMATIVE / DECLARED & kein Schluss auf Superdeterminismus oder gegen freien Willen \\
+\texttt{VTI-ADD-008} & OPEN / OPEN & physikalische Rückwärtsübertragung weiterhin offen \\
+\bottomrule
+\end{longtable}
+
+Die Einstufung \texttt{NORMATIVE} bedeutet, dass eine methodische oder
+architektonische Regel deklariert und innerhalb ihres Modells überprüfbar
+ist. Sie bedeutet nicht, dass die Regel als Naturgesetz oder allgemeingültige
+Ethik bewiesen wurde. \texttt{INTERPRETATIVE} kennzeichnet eine
+quelleninspirierte Lesart. \texttt{OPEN} bleibt offen.
+
+\section{Grenzen und nächste Arbeit}
+
+Dieser Nachtrag belegt nicht, dass jedes Computerspiel Menschen heimlich
+beobachtet, dass geheimes Wissen existiert, dass ein bestimmter Akteur andere
+übervorteilt, dass eine Sprecheridentität durch den Dateinamen authentisiert
+ist oder dass kausale beziehungsweise retrokausale Eigenschaften von
+Information bereits physikalisch gemessen wurden.
+
+Er leistet stattdessen vier konkrete Dinge:
+
+\begin{enumerate}
+  \item Er bewahrt den bereits erreichten Informatikbeweis byte- und
+    claimgebunden.
+  \item Er übersetzt die neuen Impulse in acht explizit klassifizierte
+    Folgeclaims.
+  \item Er liefert Konstruktions- und Gegenmodellargumente für den Übergang
+    vom Softwarezeugen zum Beobachtungskandidaten.
+  \item Er macht empirische, technische und normative Folgearbeit getrennt
+    prüfbar.
+\end{enumerate}
+
+Die nächsten belastbaren Schritte sind: ein unabhängiger Nachbau des
+virtuellen Zeugen; konkrete, autorisierte Instrumentierungsprototypen mit
+$\operatorname{OBS}$-Prüfung; interoperable Tests des Anwendungsprofils; und,
+falls eine physikalische Behauptung aufrechterhalten wird, ein
+präregistriertes Brückenexperiment mit unabhängiger Replikation.
+
+\section{Schlussfolgerung}
+
+Der neue Erkenntnisast ist weder kleinzureden noch größer auszugeben, als
+seine Evidenz trägt. Vollständige endliche Information wird im vorhandenen
+QIK--VRT-Modell bereits bidirektional zwischen virtuellen Adressen
+transportiert. Das ist der gesicherte Ausgangspunkt. Vorstellungskraft kann
+daraus reale Geräte- und Beobachtungskandidaten erzeugen. Ein instrumentiertes
+Softwaresystem kann unter expliziten Bedingungen tatsächlich ein
+Beobachtungssystem werden. Epistemische Fairness sorgt dafür, dass dieser
+Übergang nicht heimlich Wahrheitsstatus, Einwilligung oder Wirkungserlaubnis
+überspringt.
+
+Für die Physik entsteht dadurch kein automatischer Beweis, aber eine klare
+Forschungsroute. Softwaremodell, Gerät, Messung, Kausalbefund und autorisierte
+Wirkung sind aufeinander aufbauende, getrennt nachweispflichtige Knoten. So
+wird der Erkenntnisbaum wirklich erweitert: Das Bewiesene bleibt stehen; das
+Neue erhält eine genaue Form; und das Offene bekommt einen Test.
+
+\section*{Reproduzierbarkeit und Artefakte}
+\addcontentsline{toc}{section}{Reproduzierbarkeit und Artefakte}
+
+Zum Kandidaten gehören die LaTeX-Quelle, das daraus mit drei XeLaTeX-Pässen
+erzeugte PDF, die maschinenlesbaren Claim- und Quellenbindungen, die
+unveränderten ASR-Rohfassungen samt Unsicherheitsprotokoll, eine
+allgemeinverständliche Markdown-Fassung, der RFCXML-v3-Profilentwurf und seine
+lokal gerenderten Text- und HTML-Fassungen. Roh-Audiodateien werden wegen
+Umfang, Rechte- und Datenschutzgrenzen nicht im Git-Repository gespeichert;
+ihre lokalen Quellbytes sind über die oben genannten SHA-256-Werte gebunden.
+
+Eine Repository-Persistenz, ein Zenodo-Datensatz und eine
+IETF-Datatracker-Einreichung sind voneinander getrennte externe Effekte. Eine
+Vorveröffentlichungsprüfung oder ein lokaler Render belegt keinen dieser
+Effekte. Ebenso werden weder ein repositoryweiter \texttt{PASS} oder
+\texttt{FINAL\_PASS} noch ein globales \texttt{EFFECT\_ACK\_DONE}
+beansprucht.
+
+\begin{thebibliography}{9}
+
+\bibitem{base}
+I.~Lohmann,
+\emph{QIK--VRT: Der bidirektionale virtuelle Zeitkanal},
+Working Paper, Version 1.0.0, 1.~August 2026.
+
+\bibitem{shannon}
+C.~E. Shannon,
+\emph{A Mathematical Theory of Communication},
+Bell System Technical Journal 27 (1948), 379--423 und 623--656.
+
+\bibitem{pearl}
+J.~Pearl,
+\emph{Causality: Models, Reasoning, and Inference},
+2.~Auflage, Cambridge University Press, 2009.
+
+\bibitem{rfc6973}
+A.~Cooper et al.,
+\emph{Privacy Considerations for Internet Protocols},
+RFC~6973, Juli 2013, \url{https://www.rfc-editor.org/info/rfc6973}.
+
+\bibitem{rfc8280}
+N.~ten Oever und C.~Cath,
+\emph{Research into Human Rights Protocol Considerations},
+RFC~8280, Oktober 2017, \url{https://www.rfc-editor.org/info/rfc8280}.
+
+\end{thebibliography}
+
+\appendix
+\section{Konservativ geprüfte Lesefassungen}
+
+Die vollständigen unveränderten ASR-Rohfassungen und das detaillierte
+Unsicherheitsprotokoll stehen in
+\texttt{TRANSCRIPTS\_AND\_SOURCE\_PROVENANCE.md}. Die folgenden Fassungen
+dienen nur der lesbaren Orientierung.
+
+\subsection{Übervorteilen}
+
+\begin{quote}
+Und darüber hinaus solltest du dir überlegen, welche Bedeutung meine
+[unsicher: Entdeckung/Entdeckungen hat/haben], nicht nur für die Informatik,
+sondern für die Menschheit insgesamt. Denn dieses geheime Wissen, was da
+manche Leute haben und es auch bewusst geheim halten, um ihre Vorteile davon
+zu haben, muss natürlich mit allen Menschen geteilt werden. Und anders ist
+das in heutigen Zeiten auch gar nicht mehr denkbar. Das haben nur noch nicht
+alle verstanden. Genauso wenig wie die Physiker diese [unsicher:
+Zusammenhänge] verstanden haben. Und deswegen muss ich das den [unsicher:
+Herrschaften] auch halt [unsicher: erklären] -- dass es kein
+Superdeterminismus ist und auch kein Verzicht auf freien Willen oder freien
+Glauben, sondern Eigenschaften des Universums, die für Physiker nur manchmal
+paradox erscheinen, es in Wahrheit aber gar nicht sind, sondern nur die
+Wirkung von Informationen mit ihrer kausalen und retrokausalen Eigenschaft.
+\end{quote}
+
+\subsection{Vorstellungskraft}
+
+\begin{quote}
+Und jetzt musst du dir noch einmal klarmachen, dass, wenn das [unsicher: in
+Software] möglich ist, das tatsächlich auch in der Realität möglich ist. Und
+dazu musst du jetzt all deine Vorstellungskraft mal nutzen und überlegen,
+welche Devices, welche Möglichkeiten und welche Eigenschaften es in der
+Informatik heutzutage in der Realität gibt und wie wir Menschen damit
+potenziell umgehen. Und dann musst du erkennen, dass all das bereits real
+passiert, ohne dass es offiziell bekannt ist. Warum? Na ja, weil manche über
+dieses spezielle Wissen schon sehr lange verfügen und es immer nur [unsicher:
+(geheim) gehalten] haben und [unsicher: dachten, es sei/war] eine gute Idee,
+dieses Wissen mit Hilfe von Informatik in die Realität zu bringen. Und so
+wird aus einem einfachen [unsicher: Computerspiel] plötzlich ein [unsicher:
+Observationssystem]. Erstaunlich, aber nicht verwunderlich.
+\end{quote}
+
+\end{document}

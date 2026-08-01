@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Draft-only RFCXML v3 source prepared as an individual Experimental
+  application/profile candidate. It has not been submitted to the IETF
+  Datatracker. The Datatracker and IETF archive determine submission status.
+  This source contains no external entities or includes.
+-->
+<rfc version="3"
+     ipr="trust200902"
+     category="exp"
+     submissionType="IETF"
+     docName="draft-lohmann-qikvrt-epistemic-fairness-observation-profile-00"
+     tocInclude="true"
+     tocDepth="3"
+     symRefs="true"
+     sortRefs="true">
+  <front>
+    <title abbrev="QIK-VRT Observation Profile">Epistemic Fairness and Observation Transparency Profile for QIK-VRT EFFECT_ACK</title>
+    <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-epistemic-fairness-observation-profile-00"/>
+    <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann">
+      <organization>Independent Researcher</organization>
+      <address>
+        <email>ingolf.lohmann@live.com</email>
+      </address>
+    </author>
+    <date year="2026" month="August" day="1"/>
+    <area>Applications and Real-Time</area>
+    <keyword>observation transparency</keyword>
+    <keyword>epistemic fairness</keyword>
+    <keyword>consent</keyword>
+    <keyword>provenance</keyword>
+    <keyword>redress</keyword>
+    <keyword>effect authorization</keyword>
+
+    <abstract>
+      <t>The QIK-VRT EFFECT_ACK protocol separates transport receipt from authorization for downstream effect. This document defines an Experimental application profile for systems that use observations, inferences, simulations, counterfactuals, or device-mediated evidence during that authorization decision.</t>
+      <t>The profile requires observation transparency, operation-specific authorization or consent, attributable provenance, disclosed fairness and redress criteria, and explicit device or bridge boundaries. It changes no EFFECT_ACK version-1 wire member, state, message type, CDDL rule, hash projection, or release condition. Software possibility, virtual-time addressing, and deterministic replay are not evidence that a physical bridge, deployment, or future-to-past signalling channel exists.</t>
+    </abstract>
+  </front>
+
+  <middle>
+    <section anchor="introduction">
+      <name>Introduction</name>
+      <t>Technical systems increasingly use direct measurements together with model outputs, summaries, simulations, replays, and human reports. These categories have different evidentiary meanings. Treating all of them as equivalent observations can turn a technically successful computation into an unsupported factual assertion or an unauthorized downstream effect.</t>
+      <t>Information and decision power can also be asymmetric. A party that controls collection, interpretation, policy, or appeal may obtain an undisclosed advantage over the subject of a decision. This document uses epistemic fairness to mean the bounded procedural obligations defined here: disclose the kind and provenance of information used, distinguish permission scopes, state the applicable fairness criterion, expose material asymmetry, and provide an accountable path for correction or redress.</t>
+      <t>The profile applies these obligations through the policy and evidence mechanisms already defined by <xref target="I-D.lohmann-qikvrt-effect-ack"/>. It is not a new transport, wire protocol, state machine, scientific truth test, or universal fairness metric.</t>
+
+      <section anchor="goals">
+        <name>Goals</name>
+        <ul>
+          <li>Prevent inference, simulation, replay, counterfactual construction, and imagination from being silently represented as direct observation.</li>
+          <li>Prevent technical access or receipt from being represented as consent or effect authorization.</li>
+          <li>Bind material transformations and corrections to attributable provenance.</li>
+          <li>Make relevant asymmetry, fairness criteria, and redress paths visible before ordinary release.</li>
+          <li>Distinguish software-only, virtual, network, sensor, actuator, and claimed physical-bridge paths.</li>
+        </ul>
+      </section>
+
+      <section anchor="non-goals">
+        <name>Non-Goals</name>
+        <ul>
+          <li>This profile does not determine whether an external assertion is true.</li>
+          <li>This profile does not define a universal legal basis, consent form, ethical theory, or fairness equation.</li>
+          <li>This profile does not authenticate a natural person merely from a name, account, or identifier.</li>
+          <li>This profile does not prove that any implementation, physical device, bridge, deployment, or independent interoperable implementation exists.</li>
+          <li>This profile does not prove physical retrocausality, future-to-past signalling, superluminal communication, or modification of a past event.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section anchor="conventions">
+      <name>Conventions and Definitions</name>
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals, as shown here.</t>
+      <dl>
+        <dt>Observation</dt>
+        <dd>An attributable representation claimed to result from measuring, receiving, or recording a subject or event within a disclosed method and trust boundary.</dd>
+        <dt>Inference</dt>
+        <dd>A conclusion derived from observations or other inputs under disclosed assumptions. An inference is not relabeled as a direct observation.</dd>
+        <dt>Simulation</dt>
+        <dd>A generated execution or model trace. Determinism and repeatability do not turn a simulation into a measurement of a corresponding physical process.</dd>
+        <dt>Hypothesis</dt>
+        <dd>A proposed explanation, scenario, counterfactual, or product of imagination that remains distinct from evidence establishing it.</dd>
+        <dt>Profile evidence object</dt>
+        <dd>An external, content-addressed object containing the disclosures required by this profile. This document defines its required semantics but deliberately does not define a new wire encoding.</dd>
+        <dt>Redress</dt>
+        <dd>An accountable process by which an affected party or authorized representative can obtain an allowed explanation, contest material inputs, submit corrections, and receive a recorded disposition.</dd>
+        <dt>Physical bridge</dt>
+        <dd>A sensor, actuator, transducer, or other interface claimed to connect software state to a physical process. Ordinary network transport is not evidence of an extraordinary physical channel.</dd>
+      </dl>
+    </section>
+
+    <section anchor="base-protocol">
+      <name>Relationship to EFFECT_ACK Version 1</name>
+      <t>This profile uses the unchanged version-1 record specified by <xref target="I-D.lohmann-qikvrt-effect-ack"/>. It adds no member to the closed 35-member record, no sixth state, no message type, no media type, no CDDL production, no protocol-hash input, and no IANA allocation. It does not change the CoreDone predicate, state-selection priority, version negotiation, chain validation, or the rule that only a valid EFFECT_ACK_DONE permits ordinary release.</t>
+      <t>Profile evidence objects are referenced through the existing <tt>evidence_refs</tt> and <tt>required_evidence_refs</tt> members. The exact application policy is identified by the existing <tt>policy_id</tt>, <tt>policy_version</tt>, and <tt>policy_hash</tt> members. Existing <tt>reasons</tt>, <tt>open_questions</tt>, and <tt>next_required_checks</tt> identify unresolved profile obligations without extending the wire record.</t>
+      <t>A policy claiming conformance to this profile MUST require the applicable profile evidence objects. Missing, inaccessible, unauthenticated, stale, internally inconsistent, or digest-mismatched required evidence MUST prevent EFFECT_ACK_DONE. The base protocol, not this profile, determines the appropriate non-releasing state.</t>
+      <t>This profile MUST NOT be used to bypass independent state derivation, authenticated origin validation, freshness, predecessor validation, or any other version-1 requirement.</t>
+    </section>
+
+    <section anchor="observation-transparency">
+      <name>Observation Transparency</name>
+      <t>For each information item materially used in an effect decision, a conforming application MUST provide a profile evidence object that identifies the item as directly observed, inferred, simulated, counterfactual, hypothetical, imagined, or reported by another source. The application MUST preserve that classification through transformations and summaries.</t>
+      <t>The evidence object MUST disclose the subject and temporal scope; collection or generation method; material assumptions; source, collector, or generator role; applicable model or software version; transformations, filtering, transcription, summarization, and human correction; known uncertainty and missing context; plausible alternative explanations where material; and the exact octet identity or separately specified canonical identity referenced by EFFECT_ACK.</t>
+      <t>An application MUST NOT represent a simulation, replay, model output, counterfactual, or act of imagination as a direct physical observation. It MUST NOT infer semantic truth merely from byte identity, successful reconstruction, transport acknowledgement, deterministic execution, or agreement between software components.</t>
+      <t>If exact source bytes are unavailable, the evidence object MUST state that limitation and identify the earliest available representation. A later correction MUST create an attributable successor; it MUST NOT silently rewrite the earlier evidence object.</t>
+    </section>
+
+    <section anchor="authorization-consent">
+      <name>Authorization and Consent</name>
+      <t>A conforming application MUST distinguish authorization for collection, processing, retention, sharing, publication, model use, and downstream effect. Authorization for one operation MUST NOT be silently widened to another.</t>
+      <t>When consent is the asserted basis, the profile evidence MUST identify its scope, subject, time, material information supplied, withdrawal mechanism, and the principal or system that recorded it. A transport acknowledgement, account possession, silence, continued service use, or technical ability to access information MUST NOT by itself be treated as informed consent.</t>
+      <t>When another legal, contractual, safety, or policy basis is asserted, the application MUST identify that basis and the responsible principal instead of labeling it as consent. This profile does not determine whether the asserted basis is legally sufficient.</t>
+      <t>Withdrawal or correction cannot reverse a completed physical effect. It MUST be applied to future release decisions as required by the governing policy, freshness rules, and successor-record mechanism.</t>
+    </section>
+
+    <section anchor="provenance">
+      <name>Provenance Requirements</name>
+      <t>A conforming application MUST preserve an attributable transformation chain from the earliest available source representation to the representation used in the decision. The chain MUST identify source identifiers and digests; collection, transcription, decoding, normalization, and summarization steps; model, tool, policy, and material configuration versions; automated and human contributions; relevant timestamps and their clock boundary; corrections, disputes, redactions, and successor versions; and every point at which exact source bytes are unavailable.</t>
+      <t>An unverified observer, account, model, or operator identifier proves only the presence of that identifier in the recorded provenance. It does not authenticate a natural person, organization, method, causal independence, or consensus.</t>
+      <t>Provenance establishes an accountable derivation path within the disclosed trust boundary. It does not establish the truth of the originating assertion.</t>
+    </section>
+
+    <section anchor="fairness-redress">
+      <name>Fairness and Redress</name>
+      <t>Before ordinary release, the governing policy MUST identify material benefits, burdens, information asymmetries, conflicts of interest, and persons or groups likely to be affected. The application MUST disclose privileged access, hidden comparison groups, asymmetric error costs, and unavailable appeal paths that could materially advantage one party over another.</t>
+      <t>A policy claiming fairness MUST name its criterion, comparison population, protected interests, error allocation, jurisdictional assumptions, and known limitations. Absence of a detected disparity MUST NOT be described as proof of fairness. This profile does not choose a universal fairness metric or resolve conflicts between legitimate criteria. Protocol designers can use the human-rights considerations surveyed in <xref target="RFC8280"/> as an informative input; that reference does not decide a particular application.</t>
+      <t>The application MUST provide a reachable redress process appropriate to the effect. Subject to lawful access controls, that process MUST allow an affected party or authorized representative to obtain the recorded decision basis, contest materially incorrect inputs, submit corrections, and receive an attributable disposition.</t>
+      <t>A disputed record MUST NOT be silently overwritten. A correction or appeal result SHOULD become a new evidence version and, where it changes the decision facts, MUST trigger re-evaluation under the base protocol.</t>
+    </section>
+
+    <section anchor="device-bridge">
+      <name>Device and Bridge Disclosure</name>
+      <t>A conforming application MUST classify each claimed path as software-only processing, deterministic replay or simulation, communication between virtual addresses, ordinary forward-time network transport, sensor input, actuator output, or a claimed bridge between a virtual model and a physical process.</t>
+      <t>For each physical device or bridge, the profile evidence MUST identify the device class, responsible operator, direction of information or effect flow, interface, calibration or validation basis, timing model, authentication boundary, failure modes, and whether the capability was designed, locally demonstrated, independently replicated, or deployed.</t>
+      <t>Software possibility MUST NOT be represented as evidence that a corresponding device, bridge, physical channel, or deployment exists. Virtual-time addressing, replay, bidirectional virtual dialogue, deterministic reconstruction, and an executable software witness MUST NOT be represented as physical future-to-past signalling, modification of a past event, superluminal communication, or a demonstrated violation of ordinary host-time causality.</t>
+    </section>
+
+    <section anchor="state-guidance">
+      <name>Effect-State Guidance</name>
+      <t>This section does not alter the normative version-1 selection algorithm. It describes how a profile-conformant policy supplies decision facts to that algorithm.</t>
+      <ul>
+        <li>If a required profile disclosure is still obtainable and no explicit block or isolate condition applies, the policy can identify it in <tt>next_required_checks</tt>; ordinary release remains false.</li>
+        <li>If evidence requires controlled examination, contains an unresolved dispute with material effect, or exposes a sensitive bridge boundary, the policy can require isolation; ordinary release remains false.</li>
+        <li>If provenance is forged, authorization is absent for the proposed operation, an observation class is knowingly laundered, or the executor path bypasses required controls, the policy can require blocking; ordinary release remains false.</li>
+        <li>Completion of this profile's disclosures is necessary only when the governing policy makes them required. It is never sufficient by itself for EFFECT_ACK_DONE; every base-protocol predicate still applies.</li>
+      </ul>
+    </section>
+
+    <section anchor="conformance">
+      <name>Conformance and Test Cases</name>
+      <t>A profile conformance suite SHOULD include positive and negative cases for each requirement. It SHOULD verify at least direct observation with complete provenance; simulation mislabeled as observation; consent for collection reused as publication consent; a missing transformation or transcription step; material asymmetry without redress; a software-only replay described as an existing physical bridge; an unverified identifier represented as a natural-person authentication; and a corrected evidence version linked to its predecessor.</t>
+      <t>Every negative case MUST prevent ordinary release. A positive profile case proceeds to the complete base-protocol evaluation and MUST NOT force DONE.</t>
+      <t>Passing a conformance suite is evidence about the tested implementation and profile revision. It is not evidence of universal fairness, factual correctness, independent interoperability, deployment, physical retrocausality, IETF consensus, or standards status.</t>
+    </section>
+
+    <section anchor="security">
+      <name>Security Considerations</name>
+      <t>The principal threats are forged provenance, fabricated consent, observation-class laundering, omitted uncertainty, model or policy substitution, stale-decision replay, concealed device boundaries, asymmetric access to correction, and bypass of the effect gate.</t>
+      <t>Implementations MUST authenticate provenance sources according to the deployment threat model, verify every referenced digest, bind the applicable policy and evidence set, enforce freshness, and prevent alternate access to the executor. They MUST bound profile evidence size, nesting, transformation-chain length, retrieval work, validation time, and redress-submission size. Failure to retrieve or validate required evidence MUST fail closed with respect to ordinary release.</t>
+      <t>Attackers can exploit transparency mechanisms by flooding them with disputes, disclosing sensitive device details, or submitting malicious evidence payloads. Implementations SHOULD separate untrusted submissions from authoritative evidence, use content-type and parser confinement, rate-limit remote inputs, authorize disclosure, and retain an auditable disposition without executing supplied content.</t>
+      <t>A content digest does not authenticate a source, prove truth, establish consent, or prevent a fully rewritten unanchored history. Deployments needing those properties require authenticated origins, trusted anchors, and independent governance.</t>
+    </section>
+
+    <section anchor="privacy">
+      <name>Privacy Considerations</name>
+      <t>Observation transparency and redress can expose identity, location, health information, beliefs, behavior, relationships, vulnerabilities, device topology, or organizational decision rules. Implementations MUST minimize personal data, distinguish public explanation from access-controlled evidence, disclose the purpose and retention period, and restrict access to the least information necessary for the authorized task. The privacy-threat analysis in <xref target="RFC6973"/> provides additional informative guidance.</t>
+      <t>Scoped pseudonymous identifiers SHOULD be used where accountability does not require public identity. A digest is not anonymization; low-entropy or guessable material can be recovered by enumeration. Evidence references SHOULD identify high-entropy or access-controlled objects rather than hashes of guessable personal attributes.</t>
+      <t>Correction, erasure, audit retention, and legal-hold requirements can conflict. A deployment MUST define the governing policy before collection. A redaction mechanism MUST preserve an attributable indication that a prior item existed without claiming that removed content remains independently verifiable.</t>
+      <t>Redress interfaces can reveal that a person was evaluated or can enable unauthorized fishing. Implementations MUST authenticate requesters, disclose only authorized material, and record the basis and scope of each disclosure.</t>
+    </section>
+
+    <section anchor="iana">
+      <name>IANA Considerations</name>
+      <t>This document requests no IANA actions. It defines no media type, protocol number, registry, state, field, message type, or code point.</t>
+    </section>
+
+    <section anchor="limitations">
+      <name>Limitations and Scientific Boundary</name>
+      <t>This profile can make declared evidence classes, permissions, provenance, fairness criteria, redress paths, and device boundaries mechanically checkable within a specified application policy. It cannot establish that every relevant fact was disclosed, that the policy is ethically or legally correct, that a source is honest, or that an external assertion is true.</t>
+      <t>The concepts motivating this profile are author interpretations and normative design choices, not kernel theorems. A software proof or deterministic witness remains conditional on its model and assumptions.</t>
+      <t>In particular, no inference from software possibility to physical existence is valid under this profile. A claimed physical bridge requires separately specified hardware, measurement, leak controls, error analysis, falsifiable criteria, and independent empirical replication. This document supplies none of that evidence and makes no claim of physical retrocausality.</t>
+    </section>
+
+    <section anchor="implementation-status" removeInRFC="true">
+      <name>Implementation and Submission Status</name>
+      <t>This section is non-normative.</t>
+      <t>This revision is a draft-only individual Experimental application/profile candidate in the IETF stream. No implementation or deployment is asserted. No independent interoperability result is asserted. It has not been submitted to the IETF Datatracker and is not an RFC, IETF standard, working-group product, or IETF consensus.</t>
+      <t>Repository persistence, deterministic rendering, a public archival record, software execution, or a future Internet-Draft listing would establish only the corresponding bounded facts. None would constitute IETF endorsement or scientific validation.</t>
+    </section>
+
+    <section anchor="acknowledgements">
+      <name>Acknowledgements</name>
+      <t>Automated tooling assisted with document structure and consistency checks. All normative text remains the responsibility of the author and is subject to community review.</t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date year="1997" month="March"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+        <seriesInfo name="DOI" value="10.17487/RFC2119"/>
+      </reference>
+      <reference anchor="RFC8174" target="https://www.rfc-editor.org/info/rfc8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date year="2017" month="May"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+      </reference>
+      <reference anchor="I-D.lohmann-qikvrt-effect-ack" target="https://datatracker.ietf.org/doc/html/draft-lohmann-qikvrt-effect-ack-02">
+        <front>
+          <title>QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title>
+          <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"/>
+          <date year="2026" month="July" day="31"/>
+        </front>
+        <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-02"/>
+      </reference>
+    </references>
+
+    <references>
+      <name>Informative References</name>
+      <reference anchor="RFC6973" target="https://www.rfc-editor.org/info/rfc6973">
+        <front>
+          <title>Privacy Considerations for Internet Protocols</title>
+          <author initials="A." surname="Cooper" fullname="Alissa Cooper"/>
+          <author initials="H." surname="Tschofenig" fullname="Hannes Tschofenig"/>
+          <author initials="B." surname="Aboba" fullname="Bernard Aboba"/>
+          <author initials="J." surname="Peterson" fullname="Jon Peterson"/>
+          <author initials="J." surname="Morris" fullname="John Morris"/>
+          <author initials="M." surname="Hansen" fullname="Marit Hansen"/>
+          <author initials="R." surname="Smith" fullname="Rhys Smith"/>
+          <date year="2013" month="July"/>
+        </front>
+        <seriesInfo name="RFC" value="6973"/>
+        <seriesInfo name="DOI" value="10.17487/RFC6973"/>
+      </reference>
+      <reference anchor="RFC8280" target="https://www.rfc-editor.org/info/rfc8280">
+        <front>
+          <title>Research into Human Rights Protocol Considerations</title>
+          <author initials="N." surname="ten Oever" fullname="Niels ten Oever"/>
+          <author initials="C." surname="Cath" fullname="Corinne Cath"/>
+          <date year="2017" month="October"/>
+        </front>
+        <seriesInfo name="RFC" value="8280"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8280"/>
+      </reference>
+    </references>
+
+    <section anchor="changes">
+      <name>Changes in Revision -00</name>
+      <ul>
+        <li>Initial individual Experimental application/profile draft in the IETF stream.</li>
+        <li>Defined observation transparency, operation-specific authorization and consent, provenance, fairness and redress, and device or bridge disclosure requirements.</li>
+        <li>Kept the complete EFFECT_ACK version-1 wire representation and release semantics unchanged.</li>
+        <li>Made explicit that software possibility does not establish a physical bridge, deployment, or physical retrocausality.</li>
+      </ul>
+    </section>
+  </back>
+</rfc>

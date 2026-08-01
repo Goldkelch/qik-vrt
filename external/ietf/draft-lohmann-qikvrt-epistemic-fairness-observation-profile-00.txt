@@ -1,0 +1,672 @@
+
+
+
+
+Network Working Group                                         I. Lohmann
+Internet-Draft                                    Independent Researcher
+Intended status: Experimental                              1 August 2026
+Expires: 2 February 2027
+
+
+  Epistemic Fairness and Observation Transparency Profile for QIK-VRT
+                               EFFECT_ACK
+     draft-lohmann-qikvrt-epistemic-fairness-observation-profile-00
+
+Abstract
+
+   The QIK-VRT EFFECT_ACK protocol separates transport receipt from
+   authorization for downstream effect.  This document defines an
+   Experimental application profile for systems that use observations,
+   inferences, simulations, counterfactuals, or device-mediated evidence
+   during that authorization decision.
+
+   The profile requires observation transparency, operation-specific
+   authorization or consent, attributable provenance, disclosed fairness
+   and redress criteria, and explicit device or bridge boundaries.  It
+   changes no EFFECT_ACK version-1 wire member, state, message type,
+   CDDL rule, hash projection, or release condition.  Software
+   possibility, virtual-time addressing, and deterministic replay are
+   not evidence that a physical bridge, deployment, or future-to-past
+   signalling channel exists.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 2 February 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 1]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+     1.1.  Goals . . . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.2.  Non-Goals . . . . . . . . . . . . . . . . . . . . . . . .   3
+   2.  Conventions and Definitions . . . . . . . . . . . . . . . . .   4
+   3.  Relationship to EFFECT_ACK Version 1  . . . . . . . . . . . .   4
+   4.  Observation Transparency  . . . . . . . . . . . . . . . . . .   5
+   5.  Authorization and Consent . . . . . . . . . . . . . . . . . .   6
+   6.  Provenance Requirements . . . . . . . . . . . . . . . . . . .   6
+   7.  Fairness and Redress  . . . . . . . . . . . . . . . . . . . .   7
+   8.  Device and Bridge Disclosure  . . . . . . . . . . . . . . . .   7
+   9.  Effect-State Guidance . . . . . . . . . . . . . . . . . . . .   8
+   10. Conformance and Test Cases  . . . . . . . . . . . . . . . . .   8
+   11. Security Considerations . . . . . . . . . . . . . . . . . . .   9
+   12. Privacy Considerations  . . . . . . . . . . . . . . . . . . .   9
+   13. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  10
+   14. Limitations and Scientific Boundary . . . . . . . . . . . . .  10
+   15. Implementation and Submission Status  . . . . . . . . . . . .  10
+   16. Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  11
+   17. Normative References  . . . . . . . . . . . . . . . . . . . .  11
+   18. Informative References  . . . . . . . . . . . . . . . . . . .  11
+   Appendix A.  Changes in Revision -00  . . . . . . . . . . . . . .  12
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  12
+
+1.  Introduction
+
+   Technical systems increasingly use direct measurements together with
+   model outputs, summaries, simulations, replays, and human reports.
+   These categories have different evidentiary meanings.  Treating all
+   of them as equivalent observations can turn a technically successful
+   computation into an unsupported factual assertion or an unauthorized
+   downstream effect.
+
+   Information and decision power can also be asymmetric.  A party that
+   controls collection, interpretation, policy, or appeal may obtain an
+   undisclosed advantage over the subject of a decision.  This document
+   uses epistemic fairness to mean the bounded procedural obligations
+   defined here: disclose the kind and provenance of information used,
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 2]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   distinguish permission scopes, state the applicable fairness
+   criterion, expose material asymmetry, and provide an accountable path
+   for correction or redress.
+
+   The profile applies these obligations through the policy and evidence
+   mechanisms already defined by [I-D.lohmann-qikvrt-effect-ack].  It is
+   not a new transport, wire protocol, state machine, scientific truth
+   test, or universal fairness metric.
+
+1.1.  Goals
+
+   *  Prevent inference, simulation, replay, counterfactual
+      construction, and imagination from being silently represented as
+      direct observation.
+
+   *  Prevent technical access or receipt from being represented as
+      consent or effect authorization.
+
+   *  Bind material transformations and corrections to attributable
+      provenance.
+
+   *  Make relevant asymmetry, fairness criteria, and redress paths
+      visible before ordinary release.
+
+   *  Distinguish software-only, virtual, network, sensor, actuator, and
+      claimed physical-bridge paths.
+
+1.2.  Non-Goals
+
+   *  This profile does not determine whether an external assertion is
+      true.
+
+   *  This profile does not define a universal legal basis, consent
+      form, ethical theory, or fairness equation.
+
+   *  This profile does not authenticate a natural person merely from a
+      name, account, or identifier.
+
+   *  This profile does not prove that any implementation, physical
+      device, bridge, deployment, or independent interoperable
+      implementation exists.
+
+   *  This profile does not prove physical retrocausality, future-to-
+      past signalling, superluminal communication, or modification of a
+      past event.
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 3]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Observation  An attributable representation claimed to result from
+      measuring, receiving, or recording a subject or event within a
+      disclosed method and trust boundary.
+
+   Inference  A conclusion derived from observations or other inputs
+      under disclosed assumptions.  An inference is not relabeled as a
+      direct observation.
+
+   Simulation  A generated execution or model trace.  Determinism and
+      repeatability do not turn a simulation into a measurement of a
+      corresponding physical process.
+
+   Hypothesis  A proposed explanation, scenario, counterfactual, or
+      product of imagination that remains distinct from evidence
+      establishing it.
+
+   Profile evidence object  An external, content-addressed object
+      containing the disclosures required by this profile.  This
+      document defines its required semantics but deliberately does not
+      define a new wire encoding.
+
+   Redress  An accountable process by which an affected party or
+      authorized representative can obtain an allowed explanation,
+      contest material inputs, submit corrections, and receive a
+      recorded disposition.
+
+   Physical bridge  A sensor, actuator, transducer, or other interface
+      claimed to connect software state to a physical process.  Ordinary
+      network transport is not evidence of an extraordinary physical
+      channel.
+
+3.  Relationship to EFFECT_ACK Version 1
+
+   This profile uses the unchanged version-1 record specified by
+   [I-D.lohmann-qikvrt-effect-ack].  It adds no member to the closed
+   35-member record, no sixth state, no message type, no media type, no
+   CDDL production, no protocol-hash input, and no IANA allocation.  It
+   does not change the CoreDone predicate, state-selection priority,
+   version negotiation, chain validation, or the rule that only a valid
+   EFFECT_ACK_DONE permits ordinary release.
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 4]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   Profile evidence objects are referenced through the existing
+   evidence_refs and required_evidence_refs members.  The exact
+   application policy is identified by the existing policy_id,
+   policy_version, and policy_hash members.  Existing reasons,
+   open_questions, and next_required_checks identify unresolved profile
+   obligations without extending the wire record.
+
+   A policy claiming conformance to this profile MUST require the
+   applicable profile evidence objects.  Missing, inaccessible,
+   unauthenticated, stale, internally inconsistent, or digest-mismatched
+   required evidence MUST prevent EFFECT_ACK_DONE.  The base protocol,
+   not this profile, determines the appropriate non-releasing state.
+
+   This profile MUST NOT be used to bypass independent state derivation,
+   authenticated origin validation, freshness, predecessor validation,
+   or any other version-1 requirement.
+
+4.  Observation Transparency
+
+   For each information item materially used in an effect decision, a
+   conforming application MUST provide a profile evidence object that
+   identifies the item as directly observed, inferred, simulated,
+   counterfactual, hypothetical, imagined, or reported by another
+   source.  The application MUST preserve that classification through
+   transformations and summaries.
+
+   The evidence object MUST disclose the subject and temporal scope;
+   collection or generation method; material assumptions; source,
+   collector, or generator role; applicable model or software version;
+   transformations, filtering, transcription, summarization, and human
+   correction; known uncertainty and missing context; plausible
+   alternative explanations where material; and the exact octet identity
+   or separately specified canonical identity referenced by EFFECT_ACK.
+
+   An application MUST NOT represent a simulation, replay, model output,
+   counterfactual, or act of imagination as a direct physical
+   observation.  It MUST NOT infer semantic truth merely from byte
+   identity, successful reconstruction, transport acknowledgement,
+   deterministic execution, or agreement between software components.
+
+   If exact source bytes are unavailable, the evidence object MUST state
+   that limitation and identify the earliest available representation.
+   A later correction MUST create an attributable successor; it MUST NOT
+   silently rewrite the earlier evidence object.
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 5]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+5.  Authorization and Consent
+
+   A conforming application MUST distinguish authorization for
+   collection, processing, retention, sharing, publication, model use,
+   and downstream effect.  Authorization for one operation MUST NOT be
+   silently widened to another.
+
+   When consent is the asserted basis, the profile evidence MUST
+   identify its scope, subject, time, material information supplied,
+   withdrawal mechanism, and the principal or system that recorded it.
+   A transport acknowledgement, account possession, silence, continued
+   service use, or technical ability to access information MUST NOT by
+   itself be treated as informed consent.
+
+   When another legal, contractual, safety, or policy basis is asserted,
+   the application MUST identify that basis and the responsible
+   principal instead of labeling it as consent.  This profile does not
+   determine whether the asserted basis is legally sufficient.
+
+   Withdrawal or correction cannot reverse a completed physical effect.
+   It MUST be applied to future release decisions as required by the
+   governing policy, freshness rules, and successor-record mechanism.
+
+6.  Provenance Requirements
+
+   A conforming application MUST preserve an attributable transformation
+   chain from the earliest available source representation to the
+   representation used in the decision.  The chain MUST identify source
+   identifiers and digests; collection, transcription, decoding,
+   normalization, and summarization steps; model, tool, policy, and
+   material configuration versions; automated and human contributions;
+   relevant timestamps and their clock boundary; corrections, disputes,
+   redactions, and successor versions; and every point at which exact
+   source bytes are unavailable.
+
+   An unverified observer, account, model, or operator identifier proves
+   only the presence of that identifier in the recorded provenance.  It
+   does not authenticate a natural person, organization, method, causal
+   independence, or consensus.
+
+   Provenance establishes an accountable derivation path within the
+   disclosed trust boundary.  It does not establish the truth of the
+   originating assertion.
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 6]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+7.  Fairness and Redress
+
+   Before ordinary release, the governing policy MUST identify material
+   benefits, burdens, information asymmetries, conflicts of interest,
+   and persons or groups likely to be affected.  The application MUST
+   disclose privileged access, hidden comparison groups, asymmetric
+   error costs, and unavailable appeal paths that could materially
+   advantage one party over another.
+
+   A policy claiming fairness MUST name its criterion, comparison
+   population, protected interests, error allocation, jurisdictional
+   assumptions, and known limitations.  Absence of a detected disparity
+   MUST NOT be described as proof of fairness.  This profile does not
+   choose a universal fairness metric or resolve conflicts between
+   legitimate criteria.  Protocol designers can use the human-rights
+   considerations surveyed in [RFC8280] as an informative input; that
+   reference does not decide a particular application.
+
+   The application MUST provide a reachable redress process appropriate
+   to the effect.  Subject to lawful access controls, that process MUST
+   allow an affected party or authorized representative to obtain the
+   recorded decision basis, contest materially incorrect inputs, submit
+   corrections, and receive an attributable disposition.
+
+   A disputed record MUST NOT be silently overwritten.  A correction or
+   appeal result SHOULD become a new evidence version and, where it
+   changes the decision facts, MUST trigger re-evaluation under the base
+   protocol.
+
+8.  Device and Bridge Disclosure
+
+   A conforming application MUST classify each claimed path as software-
+   only processing, deterministic replay or simulation, communication
+   between virtual addresses, ordinary forward-time network transport,
+   sensor input, actuator output, or a claimed bridge between a virtual
+   model and a physical process.
+
+   For each physical device or bridge, the profile evidence MUST
+   identify the device class, responsible operator, direction of
+   information or effect flow, interface, calibration or validation
+   basis, timing model, authentication boundary, failure modes, and
+   whether the capability was designed, locally demonstrated,
+   independently replicated, or deployed.
+
+   Software possibility MUST NOT be represented as evidence that a
+   corresponding device, bridge, physical channel, or deployment exists.
+   Virtual-time addressing, replay, bidirectional virtual dialogue,
+   deterministic reconstruction, and an executable software witness MUST
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 7]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   NOT be represented as physical future-to-past signalling,
+   modification of a past event, superluminal communication, or a
+   demonstrated violation of ordinary host-time causality.
+
+9.  Effect-State Guidance
+
+   This section does not alter the normative version-1 selection
+   algorithm.  It describes how a profile-conformant policy supplies
+   decision facts to that algorithm.
+
+   *  If a required profile disclosure is still obtainable and no
+      explicit block or isolate condition applies, the policy can
+      identify it in next_required_checks; ordinary release remains
+      false.
+
+   *  If evidence requires controlled examination, contains an
+      unresolved dispute with material effect, or exposes a sensitive
+      bridge boundary, the policy can require isolation; ordinary
+      release remains false.
+
+   *  If provenance is forged, authorization is absent for the proposed
+      operation, an observation class is knowingly laundered, or the
+      executor path bypasses required controls, the policy can require
+      blocking; ordinary release remains false.
+
+   *  Completion of this profile's disclosures is necessary only when
+      the governing policy makes them required.  It is never sufficient
+      by itself for EFFECT_ACK_DONE; every base-protocol predicate still
+      applies.
+
+10.  Conformance and Test Cases
+
+   A profile conformance suite SHOULD include positive and negative
+   cases for each requirement.  It SHOULD verify at least direct
+   observation with complete provenance; simulation mislabeled as
+   observation; consent for collection reused as publication consent; a
+   missing transformation or transcription step; material asymmetry
+   without redress; a software-only replay described as an existing
+   physical bridge; an unverified identifier represented as a natural-
+   person authentication; and a corrected evidence version linked to its
+   predecessor.
+
+   Every negative case MUST prevent ordinary release.  A positive
+   profile case proceeds to the complete base-protocol evaluation and
+   MUST NOT force DONE.
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 8]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   Passing a conformance suite is evidence about the tested
+   implementation and profile revision.  It is not evidence of universal
+   fairness, factual correctness, independent interoperability,
+   deployment, physical retrocausality, IETF consensus, or standards
+   status.
+
+11.  Security Considerations
+
+   The principal threats are forged provenance, fabricated consent,
+   observation-class laundering, omitted uncertainty, model or policy
+   substitution, stale-decision replay, concealed device boundaries,
+   asymmetric access to correction, and bypass of the effect gate.
+
+   Implementations MUST authenticate provenance sources according to the
+   deployment threat model, verify every referenced digest, bind the
+   applicable policy and evidence set, enforce freshness, and prevent
+   alternate access to the executor.  They MUST bound profile evidence
+   size, nesting, transformation-chain length, retrieval work,
+   validation time, and redress-submission size.  Failure to retrieve or
+   validate required evidence MUST fail closed with respect to ordinary
+   release.
+
+   Attackers can exploit transparency mechanisms by flooding them with
+   disputes, disclosing sensitive device details, or submitting
+   malicious evidence payloads.  Implementations SHOULD separate
+   untrusted submissions from authoritative evidence, use content-type
+   and parser confinement, rate-limit remote inputs, authorize
+   disclosure, and retain an auditable disposition without executing
+   supplied content.
+
+   A content digest does not authenticate a source, prove truth,
+   establish consent, or prevent a fully rewritten unanchored history.
+   Deployments needing those properties require authenticated origins,
+   trusted anchors, and independent governance.
+
+12.  Privacy Considerations
+
+   Observation transparency and redress can expose identity, location,
+   health information, beliefs, behavior, relationships,
+   vulnerabilities, device topology, or organizational decision rules.
+   Implementations MUST minimize personal data, distinguish public
+   explanation from access-controlled evidence, disclose the purpose and
+   retention period, and restrict access to the least information
+   necessary for the authorized task.  The privacy-threat analysis in
+   [RFC6973] provides additional informative guidance.
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 9]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   Scoped pseudonymous identifiers SHOULD be used where accountability
+   does not require public identity.  A digest is not anonymization;
+   low-entropy or guessable material can be recovered by enumeration.
+   Evidence references SHOULD identify high-entropy or access-controlled
+   objects rather than hashes of guessable personal attributes.
+
+   Correction, erasure, audit retention, and legal-hold requirements can
+   conflict.  A deployment MUST define the governing policy before
+   collection.  A redaction mechanism MUST preserve an attributable
+   indication that a prior item existed without claiming that removed
+   content remains independently verifiable.
+
+   Redress interfaces can reveal that a person was evaluated or can
+   enable unauthorized fishing.  Implementations MUST authenticate
+   requesters, disclose only authorized material, and record the basis
+   and scope of each disclosure.
+
+13.  IANA Considerations
+
+   This document requests no IANA actions.  It defines no media type,
+   protocol number, registry, state, field, message type, or code point.
+
+14.  Limitations and Scientific Boundary
+
+   This profile can make declared evidence classes, permissions,
+   provenance, fairness criteria, redress paths, and device boundaries
+   mechanically checkable within a specified application policy.  It
+   cannot establish that every relevant fact was disclosed, that the
+   policy is ethically or legally correct, that a source is honest, or
+   that an external assertion is true.
+
+   The concepts motivating this profile are author interpretations and
+   normative design choices, not kernel theorems.  A software proof or
+   deterministic witness remains conditional on its model and
+   assumptions.
+
+   In particular, no inference from software possibility to physical
+   existence is valid under this profile.  A claimed physical bridge
+   requires separately specified hardware, measurement, leak controls,
+   error analysis, falsifiable criteria, and independent empirical
+   replication.  This document supplies none of that evidence and makes
+   no claim of physical retrocausality.
+
+15.  Implementation and Submission Status
+
+   This section is to be removed before publishing as an RFC.
+
+   This section is non-normative.
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 10]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+   This revision is a draft-only individual Experimental application/
+   profile candidate in the IETF stream.  No implementation or
+   deployment is asserted.  No independent interoperability result is
+   asserted.  It has not been submitted to the IETF Datatracker and is
+   not an RFC, IETF standard, working-group product, or IETF consensus.
+
+   Repository persistence, deterministic rendering, a public archival
+   record, software execution, or a future Internet-Draft listing would
+   establish only the corresponding bounded facts.  None would
+   constitute IETF endorsement or scientific validation.
+
+16.  Acknowledgements
+
+   Automated tooling assisted with document structure and consistency
+   checks.  All normative text remains the responsibility of the author
+   and is subject to community review.
+
+17.  Normative References
+
+   [I-D.lohmann-qikvrt-effect-ack]
+              Lohmann, I., "QIK-VRT Effect Acknowledgement: Separating
+              Receipt from Authorization for Downstream Effect", Work in
+              Progress, Internet-Draft, draft-lohmann-qikvrt-effect-ack-
+              02, 31 July 2026, <https://datatracker.ietf.org/doc/html/
+              draft-lohmann-qikvrt-effect-ack-02>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+18.  Informative References
+
+   [RFC6973]  Cooper, A., Tschofenig, H., Aboba, B., Peterson, J.,
+              Morris, J., Hansen, M., and R. Smith, "Privacy
+              Considerations for Internet Protocols", RFC 6973,
+              DOI 10.17487/RFC6973, July 2013,
+              <https://www.rfc-editor.org/info/rfc6973>.
+
+   [RFC8280]  ten Oever, N. and C. Cath, "Research into Human Rights
+              Protocol Considerations", RFC 8280, DOI 10.17487/RFC8280,
+              October 2017, <https://www.rfc-editor.org/info/rfc8280>.
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 11]
+
+Internet-Draft         QIK-VRT Observation Profile           August 2026
+
+
+Appendix A.  Changes in Revision -00
+
+   *  Initial individual Experimental application/profile draft in the
+      IETF stream.
+
+   *  Defined observation transparency, operation-specific authorization
+      and consent, provenance, fairness and redress, and device or
+      bridge disclosure requirements.
+
+   *  Kept the complete EFFECT_ACK version-1 wire representation and
+      release semantics unchanged.
+
+   *  Made explicit that software possibility does not establish a
+      physical bridge, deployment, or physical retrocausality.
+
+Author's Address
+
+   Ingolf Lohmann
+   Independent Researcher
+   Email: ingolf.lohmann@live.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 12]
