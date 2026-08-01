@@ -49,6 +49,14 @@ jobs:
           grep -F '"effect_ack_done": false' /tmp/qikvrt-remaining-disposition.log
           grep -F '"zenodo_mutation_authorized": false' /tmp/qikvrt-remaining-disposition.log
           grep -F '"proof_corpus_published_on_zenodo": false' /tmp/qikvrt-remaining-disposition.log
+
+          # The historical corpus projector owns AI_PROGRESS.json and the corpus
+          # artifacts.  Once the post-promotion handoff receipt exists,
+          # AI_STATUS.md is instead the newer receipt-bound human projection.
+          # Restore only that tracked snapshot before Anticipation validation.
+          if [ -f receipts/anticipation/0003-post-promotion-current-main-handoff.json ]; then
+            git checkout -- AI_STATUS.md
+          fi
       - name: Verify deterministic materialization without network
         shell: bash
         run: |
