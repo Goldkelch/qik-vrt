@@ -1,0 +1,69 @@
+name: Temporary Anticipation Materializer PR307 PR179
+
+on:
+  push:
+    branches:
+      - evidence/reciprocal-equality-pr307-pr179-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-anticipation-materialize-pr307-pr179-authority
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: evidence/reciprocal-equality-pr307-pr179-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Materialize Anticipation projections
+        run: python3 -B tools/qikvrt_anticipation.py materialize
+      - name: Remove one-shot executor
+        run: rm .github/workflows/temporary-anticipation-materialize-pr307-pr179.yml
+      - name: Regenerate repository integrity
+        run: |
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Enforce exact changed-path whitelist
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/temporary-anticipation-materialize-pr307-pr179.yml',
+              'REPOSITORY_FILE_MANIFEST.json',
+              'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'SHA256SUMS.txt',
+              'anticipation/current.json',
+              'anticipation/derivatives.json',
+              'anticipation/history.jsonl',
+              'anticipation/next-effect.json',
+              'anticipation/trends.json',
+              'receipts/anticipation/0001-contract-bound.json',
+              'receipts/anticipation/0002-anticipation-materialized.json',
+          }
+          actual = set(subprocess.check_output(['git', 'status', '--porcelain=v1', '-z']).decode().split('\0'))
+          paths = {item[3:] for item in actual if item}
+          unexpected = paths - expected
+          missing = expected - paths
+          if unexpected or missing:
+              raise SystemExit(f'BLOCK unexpected={sorted(unexpected)} missing={sorted(missing)}')
+          print('PASS exact changed-path whitelist:', len(paths))
+          PY
+      - name: Run complete repository gates
+        run: |
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist projections and integrity
+        run: |
+          git config user.name qikvrt-machine-proof
+          git config user.email qikvrt-machine-proof@users.noreply.github.com
+          git add -A
+          git commit -m 'Materialize Anticipation and repository integrity for PR307 PR179 equality receipt'
+          git push origin HEAD:evidence/reciprocal-equality-pr307-pr179-v1
