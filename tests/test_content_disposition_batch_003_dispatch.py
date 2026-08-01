@@ -99,7 +99,7 @@ class T(unittest.TestCase):
             self.assertEqual(m.projection_stage(), m.STAGE_FINAL_CORPUS)
             advanced = m._advanced_module()
             self.assertTrue(advanced.__name__.endswith("qikvrt_content_disposition_batch_003_remaining_archives"))
-            self.assertFalse(hasattr(advanced, "NEXT_EFFECT"))
+            self.assertEqual(advanced.NEXT_EFFECT, self.progress["next_action"])
             workflow = (ROOT / ".github/workflows/qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
             final_guard = 'if [ -f "$final_script" ] && [ -f "$final_receipt" ]; then'
             second_guard = 'elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then'
@@ -113,7 +113,7 @@ class T(unittest.TestCase):
         advanced = m._advanced_module()
         verified = m._verify_final_receipt_bound(advanced)
         result = m.verify()
-        self.assertFalse(hasattr(advanced, "NEXT_EFFECT"))
+        self.assertEqual(advanced.NEXT_EFFECT, verified["next_deterministic_effect"])
         self.assertEqual(
             result["next_deterministic_effect"],
             verified["next_deterministic_effect"],
