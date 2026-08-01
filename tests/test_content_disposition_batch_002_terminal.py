@@ -192,10 +192,11 @@ class T(unittest.TestCase):
         if self.handoff is not None and stage == current.STAGE_FINAL_CORPUS:
             historical = current._advanced_module(stage)
             self.assertEqual(result["next_deterministic_effect"], historical.NEXT_EFFECT)
+            self.assertEqual(self.progress["next_action"], historical.NEXT_EFFECT)
         else:
             self.assertEqual(result["next_deterministic_effect"], contract["next_effect"])
+            self.assertEqual(self.progress["next_action"], contract["next_effect"])
         self.assertEqual(self.progress["projection_owner"]["tool"], contract["tool"])
-        self.assertEqual(self.progress["next_action"], contract["next_effect"])
         corpus = self.progress["scopes"]["qikvrt-zenodo-canonical-union-2026-07-28-v1"]
         self.assertEqual(corpus["counts"]["open_subjects"], contract["open_subjects"])
         self.assertEqual(corpus["batch_002"]["state"], "TERMINALLY_DISPOSITIONED")
