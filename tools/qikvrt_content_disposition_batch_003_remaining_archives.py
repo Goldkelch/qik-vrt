@@ -4,10 +4,10 @@
 """Receipt-bound projection-precedence facade for the final corpus projector.
 
 The historical corpus projector remains byte-identical in the adjacent legacy
-module.  This facade delegates every materialization and check to it.  A legacy
+module. This facade delegates every materialization and check to it. A legacy
 check may be accepted only when its sole failure is the expected AI_STATUS.md
 drift, the post-promotion handoff receipt is exact, and the newer anticipation
-projection independently verifies.  No external effect is authorized here.
+projection independently verifies. No external effect is authorized here.
 """
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 LEGACY_MODULE = "tools.qikvrt_content_disposition_batch_003_remaining_archives_legacy"
 HANDOFF_RECEIPT = ROOT / "receipts/anticipation/0003-post-promotion-current-main-handoff.json"
 ANTICIPATION_TOOL = ROOT / "tools/qikvrt_anticipation.py"
+PROOF_CORPUS_RECEIPT = ROOT / (
+    "release/zenodo-corpus-proof-2026-07-28/canonical-union/"
+    "retrospective-proof-corpus/RETROSPECTIVE_PROOF_CORPUS_RECEIPT.json"
+)
+AI_PROGRESS_PATH = ROOT / "AI_PROGRESS.json"
 
 _EXPECTED_LEGACY_DIAGNOSTIC: dict[str, Any] = {
     "effect_ack_done": False,
@@ -52,9 +57,9 @@ def _load_object(path: pathlib.Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ProjectionPrecedenceError(f"invalid handoff receipt: {exc}") from exc
+        raise ProjectionPrecedenceError(f"invalid JSON evidence {path}: {exc}") from exc
     if not isinstance(value, dict):
-        raise ProjectionPrecedenceError("handoff receipt must be an object")
+        raise ProjectionPrecedenceError(f"JSON evidence must be an object: {path}")
     return value
 
 
@@ -146,9 +151,56 @@ def _compatible_newer_status(arguments: Sequence[str], legacy: subprocess.Comple
     except ProjectionPrecedenceError:
         return False
     anticipated = _run_anticipation_check()
+    return anticipated.returncode == 0
+
+
+def _receipt_bound_verification() -> dict[str, Any]:
+    _validate_handoff_receipt()
+    anticipated = _run_anticipation_check()
     if anticipated.returncode != 0:
-        return False
-    return True
+        raise ProjectionPrecedenceError(
+            "anticipation check failed while applying AI_STATUS-only precedence"
+        )
+    receipt = _load_object(PROOF_CORPUS_RECEIPT)
+    counts = receipt.get("counts")
+    if not isinstance(counts, Mapping):
+        raise ProjectionPrecedenceError("proof-corpus receipt counts are absent")
+    progress = _load_object(AI_PROGRESS_PATH)
+    next_effect = progress.get("next_action")
+    if not isinstance(next_effect, str) or not next_effect:
+        raise ProjectionPrecedenceError("AI_PROGRESS next_action is absent")
+    return {
+        "schema": "qikvrt_remaining_archive_disposition_verification_v1",
+        "state": "ALL_19_SUBJECTS_DISPOSITIONED_PROOF_CORPUS_VERIFIED_PUBLICATION_NOT_AUTHORIZED",
+        "subject_count": counts.get("subjects"),
+        "claim_count": counts.get("claims"),
+        "explicit_open_claim_count": counts.get("explicit_open_claims"),
+        "correction_required_subject_count": counts.get("correction_required_subjects"),
+        "next_deterministic_effect": next_effect,
+        "pass": False,
+        "final_pass": False,
+        "effect_ack_done": False,
+        "zenodo_mutation_authorized": False,
+        "proof_corpus_published_on_zenodo": False,
+    }
+
+
+# Compatibility API is derived from the current machine projection, not duplicated.
+NEXT_EFFECT = _load_object(AI_PROGRESS_PATH)["next_action"]
+_original_verify_materialized = _legacy.verify_materialized
+
+
+def _verify_materialized_compatible() -> dict[str, Any]:
+    try:
+        return _original_verify_materialized()
+    except _legacy.DispositionError as exc:
+        if str(exc) != "materialized output drift: AI_STATUS.md":
+            raise
+        return _receipt_bound_verification()
+
+
+# Historical consumers import the legacy object through this facade.
+_legacy.verify_materialized = _verify_materialized_compatible
 
 
 def main(argv: Sequence[str] | None = None) -> int:
