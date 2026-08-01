@@ -792,6 +792,8 @@ def materialize_git_history(
     manifest_path: pathlib.Path,
 ) -> tuple[str, str]:
     run_git(root, "init", "--quiet")
+    run_git(root, "config", "gc.auto", "0")
+    run_git(root, "config", "gc.autoDetach", "false")
     run_git(root, "config", "user.name", "Fixture Owner")
     run_git(root, "config", "user.email", "fixture@example.invalid")
     run_git(root, "commit", "--quiet", "--allow-empty", "-m", "fixture root")
@@ -812,6 +814,9 @@ def materialize_git_history(
     remote = root / TEST_REMOTE_RELATIVE
     remote.parent.mkdir(parents=True, exist_ok=True)
     run_git(root, "init", "--quiet", "--bare", str(remote))
+    run_git(remote, "config", "gc.auto", "0")
+    run_git(remote, "config", "gc.autoDetach", "false")
+    run_git(remote, "config", "receive.autogc", "false")
     run_git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
     run_git(root, "remote", "add", "origin", str(remote))
     run_git(
