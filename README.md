@@ -62,6 +62,8 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 - [Evidence matrix](docs/competition/EVIDENCE.md)
 - [Current authority map](docs/CURRENT_AUTHORITY.md)
 - [Project site](https://goldkelch.github.io/qik-vrt/)
+- [Canonical publication and reference overview](https://goldkelch.github.io/qik-vrt/publications/)
+- [Machine-readable publication index](docs/publications/index.json)
 
 ### Current release and synchronized snapshot evidence
 
