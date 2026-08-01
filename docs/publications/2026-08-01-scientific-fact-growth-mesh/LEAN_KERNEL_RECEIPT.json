@@ -6,66 +6,31 @@
     "license_text_ref": "LICENSES/Apache-2.0.txt",
     "rights_holder": "Ingolf Lohmann"
   },
-  "schema": "qikvrt_scientific_fact_growth_lean_kernel_receipt_v1",
-  "generated_at": "2026-08-01T17:30:22Z",
-  "repository": "Goldkelch/qik-vrt",
-  "base_commit": "b5d9eb4d1cb1e380d754524b70673cd91a47a35b",
-  "candidate_state": "UNCOMMITTED_WORKTREE_CANDIDATE",
-  "compiler": {
-    "name": "Lean",
-    "version": "4.19.0",
-    "target": "x86_64-unknown-linux-gnu",
-    "commit": "6caaee842e94",
-    "build": "Release",
-    "lake_version": "5.0.0-6caaee8",
-    "official_archive_url": "https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst",
-    "official_archive_sha256_observed": "6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe"
-  },
-  "sandbox_compatibility": {
-    "required": true,
-    "reason": "Lean 4.19.0 resolves /proc/<own-pid>/exe while this sandbox exposes only the equivalent /proc/self/exe spelling.",
-    "scope": "The preload shim rewrites only numeric /proc/.../exe readlink requests to /proc/self/exe and grants no additional filesystem or process access.",
-    "shim_source_sha256": "283e1d6dec5e24339ec6bc356773a8d99318f0e65fd111fb2e2b6711577ec569",
-    "shim_binary_sha256": "c61150cb3d9eb5efb822bef1f3d48f79dbb86630b1a2efd12c1c8902a5016d0f"
-  },
-  "formal_source": {
-    "repository_path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Knowledge/ScientificFactGrowth.lean",
-    "publication_snapshot_path": "docs/publications/2026-08-01-scientific-fact-growth-mesh/FORMAL_ScientificFactGrowth.lean",
-    "sha256": "e7538876d7c70b5c54885855a852e72f83ae0f9b49a2adb02d0ccb3f075b7307",
-    "byte_identical_snapshot": true
-  },
-  "command": "LD_PRELOAD=<attested-shim> PATH=<lean-4.19.0>/bin:$PATH lake build QIKVRTFormalization.Knowledge.ScientificFactGrowth",
-  "exit_code": 0,
-  "kernel_status": "VERIFIED",
-  "theorem_count": 21,
-  "sorry_ax_observed": false,
-  "project_specific_axiom_observed": false,
-  "allowed_foundational_axioms": ["propext", "Quot.sound"],
-  "theorems": [
-    {"theorem": "QIKVRT.V2.Knowledge.formalProved_requires_proved", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.openClass_requires_openStatus", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.append_extends", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.merge_commutative_by_membership", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.merge_associative", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.merge_idempotent_by_membership", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.replicas_converge_after_same_updates", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.evidenceClosed_mono", "axioms": []},
-    {"theorem": "QIKVRT.V2.Knowledge.answerability_mono", "axioms": []},
-    {"theorem": "QIKVRT.V2.Knowledge.empty_corpus_answers_no_query", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.corpus_relative_novelty_is_not_global", "axioms": ["propext", "Quot.sound"]},
-    {"theorem": "QIKVRT.V2.Knowledge.conflicts_are_preserved_by_extension", "axioms": []},
-    {"theorem": "QIKVRT.V2.Knowledge.qualifiedObservation_eq_true_iff", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.causallyAttributable_requires_identification", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.identical_trace_does_not_determine_physical_causation", "axioms": []},
-    {"theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_qualifiedObservation", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_effectAck", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.flatten_singletonSegments", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.append_preserves_prefix", "axioms": []},
-    {"theorem": "QIKVRT.V2.Knowledge.prefix_trans", "axioms": ["propext"]},
-    {"theorem": "QIKVRT.V2.Knowledge.proposalOnly_never_authorizes_effect", "axioms": []}
+  "allowed_foundational_axioms": [
+    "propext",
+    "Quot.sound"
   ],
+  "base_commit": "8441daccfea2cd132048a08ee16e40595db0cf7e",
+  "candidate_state": "EXACT_HEAD_WORKFLOW_VERIFIED_PREDECESSOR_RECEIPT",
+  "command": "LD_PRELOAD=<attested-shim> PATH=<lean-4.19.0>/bin:$PATH lake build QIKVRTFormalization.Knowledge.ScientificFactGrowth",
+  "compiler": {
+    "build": "Release",
+    "commit": "6caaee842e94",
+    "lake_version": "5.0.0-6caaee8",
+    "name": "Lean",
+    "official_archive_sha256_observed": "6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe",
+    "official_archive_url": "https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst",
+    "target": "x86_64-unknown-linux-gnu",
+    "version": "4.19.0"
+  },
+  "completion_claims": {
+    "effect_ack": "EFFECT_ACK_CONTINUE",
+    "ietf_submitted": false,
+    "repository_promotion_complete": false,
+    "system_wide_completion": "UNCLAIMED",
+    "zenodo_published": false
+  },
   "epistemic_boundary": {
-    "proved": "Only the explicitly encoded finite corpus, merge, classification, observation, causality-record, digital-twin, message and proposal-only model properties.",
     "not_proved": [
       "truth of arbitrary natural-language statements",
       "global scientific novelty",
@@ -75,6 +40,218 @@
       "quantum-to-classical emergence",
       "empirical cognitive improvement",
       "answers to every possible question"
-    ]
+    ],
+    "proved": "Only the explicitly encoded finite corpus, merge, classification, observation, causality-record, digital-twin, message and proposal-only model properties."
+  },
+  "exit_code": 0,
+  "formal_source": {
+    "byte_identical_snapshot": true,
+    "publication_snapshot_path": "docs/publications/2026-08-01-scientific-fact-growth-mesh/FORMAL_ScientificFactGrowth.lean",
+    "repository_path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Knowledge/ScientificFactGrowth.lean",
+    "sha256": "e7538876d7c70b5c54885855a852e72f83ae0f9b49a2adb02d0ccb3f075b7307"
+  },
+  "generated_at": "2026-08-01T18:45:53Z",
+  "kernel_status": "VERIFIED",
+  "project_specific_axiom_observed": false,
+  "publication_id": "qikvrt-scientific-fact-growth-mesh-v1",
+  "repository": "Goldkelch/qik-vrt",
+  "sandbox_compatibility": {
+    "reason": "Lean 4.19.0 resolves /proc/<own-pid>/exe while this sandbox exposes only the equivalent /proc/self/exe spelling.",
+    "required": true,
+    "scope": "The preload shim rewrites only numeric /proc/.../exe readlink requests to /proc/self/exe and grants no additional filesystem or process access.",
+    "shim_binary_sha256": "c61150cb3d9eb5efb822bef1f3d48f79dbb86630b1a2efd12c1c8902a5016d0f",
+    "shim_source_sha256": "283e1d6dec5e24339ec6bc356773a8d99318f0e65fd111fb2e2b6711577ec569"
+  },
+  "schema": "qikvrt_scientific_fact_growth_lean_kernel_receipt_v2",
+  "scientific_receipt_stage": "H2_SUCCESSOR_MATERIALIZATION",
+  "scientific_verification_stage": "H1_TARGET_EXACT_HEAD",
+  "scope_id": "qikvrt-scientific-fact-growth-mesh-v1",
+  "sorry_ax_observed": false,
+  "state": "KERNEL_VERIFIED",
+  "supporting_workflows": [
+    {
+      "conclusion": "success",
+      "name": "QIK-VRT manuscript proof coverage",
+      "run_id": "30712975193",
+      "run_number": 324
+    },
+    {
+      "conclusion": "success",
+      "fixpoint": "Repository evidence is already current.",
+      "name": "QIKVRT repository evidence materialization",
+      "run_id": "30712975184",
+      "run_number": 756
+    },
+    {
+      "conclusion": "success",
+      "name": "QIK-VRT global claim completion",
+      "run_id": "30712975214",
+      "run_number": 343
+    },
+    {
+      "conclusion": "success",
+      "name": "QIKVRT Collective Proposal Review",
+      "run_id": "30712975186",
+      "run_number": 870
+    },
+    {
+      "conclusion": "success",
+      "name": "QIKVRT live status watch",
+      "run_id": "30712975187",
+      "run_number": 1127
+    }
+  ],
+  "theorem_axioms": [
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.formalProved_requires_proved"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.openClass_requires_openStatus"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.append_extends"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.merge_commutative_by_membership"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.merge_associative"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.merge_idempotent_by_membership"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.replicas_converge_after_same_updates"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.evidenceClosed_mono"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.answerability_mono"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.empty_corpus_answers_no_query"
+    },
+    {
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.corpus_relative_novelty_is_not_global"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.conflicts_are_preserved_by_extension"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.qualifiedObservation_eq_true_iff"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.causallyAttributable_requires_identification"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.identical_trace_does_not_determine_physical_causation"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_qualifiedObservation"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_effectAck"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.flatten_singletonSegments"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.append_preserves_prefix"
+    },
+    {
+      "axioms": [
+        "propext"
+      ],
+      "theorem": "QIKVRT.V2.Knowledge.prefix_trans"
+    },
+    {
+      "axioms": [],
+      "theorem": "QIKVRT.V2.Knowledge.proposalOnly_never_authorizes_effect"
+    }
+  ],
+  "theorem_count": 21,
+  "theorems": [
+    "QIKVRT.V2.Knowledge.formalProved_requires_proved",
+    "QIKVRT.V2.Knowledge.openClass_requires_openStatus",
+    "QIKVRT.V2.Knowledge.append_extends",
+    "QIKVRT.V2.Knowledge.merge_commutative_by_membership",
+    "QIKVRT.V2.Knowledge.merge_associative",
+    "QIKVRT.V2.Knowledge.merge_idempotent_by_membership",
+    "QIKVRT.V2.Knowledge.replicas_converge_after_same_updates",
+    "QIKVRT.V2.Knowledge.evidenceClosed_mono",
+    "QIKVRT.V2.Knowledge.answerability_mono",
+    "QIKVRT.V2.Knowledge.empty_corpus_answers_no_query",
+    "QIKVRT.V2.Knowledge.corpus_relative_novelty_is_not_global",
+    "QIKVRT.V2.Knowledge.conflicts_are_preserved_by_extension",
+    "QIKVRT.V2.Knowledge.qualifiedObservation_eq_true_iff",
+    "QIKVRT.V2.Knowledge.causallyAttributable_requires_identification",
+    "QIKVRT.V2.Knowledge.identical_trace_does_not_determine_physical_causation",
+    "QIKVRT.V2.Knowledge.twinActuation_requires_qualifiedObservation",
+    "QIKVRT.V2.Knowledge.twinActuation_requires_effectAck",
+    "QIKVRT.V2.Knowledge.flatten_singletonSegments",
+    "QIKVRT.V2.Knowledge.append_preserves_prefix",
+    "QIKVRT.V2.Knowledge.prefix_trans",
+    "QIKVRT.V2.Knowledge.proposalOnly_never_authorizes_effect"
+  ],
+  "workflow": {
+    "conclusion": "success",
+    "event": "pull_request",
+    "exact_head_bound": true,
+    "ref": "refs/heads/candidate/scientific-fact-growth-mesh-v1",
+    "repository": "Goldkelch/qik-vrt",
+    "run_attempt": "1",
+    "run_id": "30712975179",
+    "run_number": 2798,
+    "sha": "c5135ec43ea81945cb9840c9a0eb795fb6dcde96",
+    "workflow_name": "QIKVRT CI"
   }
 }
