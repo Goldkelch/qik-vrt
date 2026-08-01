@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Verify the unsubmitted Draft-02 candidate without inflating its status."""
+"""Verify the published Draft-02 local/public boundary without inflating standards status."""
 
 from __future__ import annotations
 
@@ -34,6 +34,10 @@ REVISION_02_HTML = REVISION_02_ROOT / "draft-lohmann-qikvrt-effect-ack-02.html"
 CANDIDATE = (
     REVISION_02_ROOT / "draft-lohmann-qikvrt-effect-ack-02.CANDIDATE.json"
 )
+PUBLICATION_RECEIPT = (
+    REVISION_02_ROOT
+    / "draft-lohmann-qikvrt-effect-ack-02.PUBLICATION_RECEIPT.json"
+)
 RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"
 OLD_VECTOR_PATH = REVISION_02_ROOT / "test-vectors/effect-ack-v1"
 
@@ -51,8 +55,12 @@ REVISION_02_IDENTITIES = {
         "856befa13157a0f9efdd997c27d3173c1e43c2b302cf7d2f9435a5e200fba767",
     ),
     CANDIDATE: (
-        3752,
-        "fe3cbc105ae88e5771cfaa2d4d8049000f487cad6162e2a9346f13a253fc6cbc",
+        5714,
+        "f49b66c20756f24aa4606b871386e01732ac835fbb65453ae95390e78ca5baeb",
+    ),
+    PUBLICATION_RECEIPT: (
+        6139,
+        "3e85b2362521bdded8c48f96a60b54b1e3f4635748655a35254e733fb8489900",
     ),
 }
 
@@ -412,12 +420,16 @@ class IETFRevision02CandidateTests(unittest.TestCase):
             REVISION_02_TXT,
             REVISION_02_HTML,
             CANDIDATE,
+            PUBLICATION_RECEIPT,
         ):
             if not path.is_file():
                 raise AssertionError(f"required revision artifact is absent: {path}")
         cls.revision_01 = ET.parse(REVISION_01_XML).getroot()
         cls.revision_02 = ET.parse(REVISION_02_XML).getroot()
         cls.candidate = json.loads(CANDIDATE.read_text(encoding="utf-8"))
+        cls.publication_receipt = json.loads(
+            PUBLICATION_RECEIPT.read_text(encoding="utf-8")
+        )
 
     def test_frozen_revision_01_identities_are_unchanged(self) -> None:
         for path, expected in REVISION_01_IDENTITIES.items():
@@ -434,6 +446,7 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 "_license",
                 "schema",
                 "created_utc",
+                "status_updated_utc",
                 "state",
                 "datatracker_submission_performed",
                 "internet_draft",
@@ -451,6 +464,8 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 "toolchain",
                 "truth_boundaries",
                 "change_scope",
+                "public_artifacts",
+                "publication_receipt",
                 "status_note",
             },
         )
@@ -466,8 +481,14 @@ class IETFRevision02CandidateTests(unittest.TestCase):
         )
         self.assertEqual(value["schema"], "qikvrt_ietf_draft_candidate_v1")
         self.assertEqual(value["created_utc"], "2026-07-30T23:14:46Z")
-        self.assertEqual(value["state"], "CANDIDATE_NOT_SUBMITTED")
-        self.assertIs(value["datatracker_submission_performed"], False)
+        self.assertIn(
+            value["state"],
+            {
+                "DATATRACKER_PUBLICATION_EXACT_BYTES_VERIFIED",
+                "DATATRACKER_PUBLICATION_VERIFIED_WITH_PUBLIC_BYTE_DRIFT",
+            },
+        )
+        self.assertIs(value["datatracker_submission_performed"], True)
         self.assertEqual(
             value["internet_draft"], "draft-lohmann-qikvrt-effect-ack-02"
         )
@@ -493,6 +514,14 @@ class IETFRevision02CandidateTests(unittest.TestCase):
         self.assertRegex(created, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         parsed = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
         self.assertEqual(parsed.utcoffset(), datetime.timedelta(0))
+        updated = value["status_updated_utc"]
+        self.assertIsInstance(updated, str)
+        self.assertRegex(updated, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        updated_parsed = datetime.datetime.fromisoformat(
+            updated.replace("Z", "+00:00")
+        )
+        self.assertEqual(updated_parsed.utcoffset(), datetime.timedelta(0))
+        self.assertGreaterEqual(updated_parsed, parsed)
 
         self.assertEqual(
             value["source_basis"],
@@ -587,13 +616,153 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 "revision_01_change_log",
             ],
         )
+        all_equal = value["publication_receipt"][
+            "all_public_bytes_equal_local"
+        ]
+        if all_equal:
+            expected_status_note = (
+                "IETF Datatracker revision -02 is publicly active as an "
+                "individual Internet-Draft and all public XML, TXT, and HTML "
+                "bytes are identical to the repository candidate; this is "
+                "not an RFC, IETF standard, working-group product, IETF "
+                "consensus, or interoperability completion."
+            )
+        else:
+            expected_status_note = (
+                "IETF Datatracker revision -02 is publicly active as an "
+                "individual Internet-Draft; exact public byte differences "
+                "from the unchanged repository XML, TXT, or HTML artifacts "
+                "are bound by the publication receipt; this is not an RFC, "
+                "IETF standard, working-group product, IETF consensus, or "
+                "interoperability completion."
+            )
+        self.assertEqual(value["status_note"], expected_status_note)
+
+    def test_datatracker_publication_receipt_binds_exact_public_bytes(self) -> None:
+        receipt = self.publication_receipt
         self.assertEqual(
-            value["status_note"],
-            (
-                "Local RFCXML v3 candidate and deterministic offline render; "
-                "not submitted to the IETF Datatracker and not an RFC, IETF "
-                "standard, working-group product, or IETF consensus."
-            ),
+            set(receipt),
+            {
+                "_license",
+                "schema",
+                "receipt_id",
+                "observed_utc",
+                "internet_draft",
+                "revision",
+                "public_state",
+                "observation",
+                "datatracker",
+                "artifacts",
+                "comparison",
+                "candidate_before_transition",
+                "repository_binding",
+                "truth_boundaries",
+            },
+        )
+        self.assertEqual(
+            receipt["_license"],
+            {
+                "classification": "json_non_source",
+                "copyright": "Copyright 2026 Ingolf Lohmann",
+                "license": "CC-BY-NC-ND-4.0",
+                "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+                "rights_holder": "Ingolf Lohmann",
+            },
+        )
+        self.assertEqual(
+            receipt["schema"],
+            "qikvrt_ietf_datatracker_publication_receipt_v1",
+        )
+        self.assertEqual(receipt["internet_draft"], "draft-lohmann-qikvrt-effect-ack-02")
+        self.assertEqual(receipt["revision"], "02")
+        self.assertEqual(
+            receipt["public_state"], "ACTIVE_INDIVIDUAL_INTERNET_DRAFT"
+        )
+        self.assertRegex(
+            receipt["observed_utc"],
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+        )
+        self.assertIs(receipt["observation"]["read_only"], True)
+        self.assertIs(receipt["observation"]["remote_mutation_performed"], False)
+        self.assertIs(
+            receipt["observation"][
+                "datatracker_submission_performed_by_this_observation"
+            ],
+            False,
+        )
+        self.assertEqual(receipt["datatracker"]["versions"], ["00", "01", "02"])
+        self.assertEqual(receipt["datatracker"]["last_updated"], "2026-07-30")
+        self.assertEqual(receipt["datatracker"]["submission_scope"], "INDIVIDUAL")
+        self.assertIsNone(receipt["datatracker"]["rfc_stream"])
+        self.assertIsNone(receipt["datatracker"]["intended_rfc_status"])
+
+        receipt_size, receipt_sha256 = identity(PUBLICATION_RECEIPT)
+        self.assertEqual(
+            self.candidate["publication_receipt"],
+            {
+                "path": (
+                    "external/ietf/"
+                    "draft-lohmann-qikvrt-effect-ack-02.PUBLICATION_RECEIPT.json"
+                ),
+                "schema": "qikvrt_ietf_datatracker_publication_receipt_v1",
+                "size_bytes": receipt_size,
+                "sha256": receipt_sha256,
+                "public_state": "ACTIVE_INDIVIDUAL_INTERNET_DRAFT",
+                "all_public_bytes_equal_local": receipt["comparison"][
+                    "all_public_bytes_equal_local"
+                ],
+            },
+        )
+
+        expected_paths = {
+            "xml": REVISION_02_XML,
+            "txt": REVISION_02_TXT,
+            "html": REVISION_02_HTML,
+        }
+        exact: list[str] = []
+        divergent: list[str] = []
+        for kind, path in expected_paths.items():
+            record = receipt["artifacts"][kind]
+            local_size, local_sha256 = identity(path)
+            self.assertEqual(record["local"]["path"], path.relative_to(ROOT).as_posix())
+            self.assertEqual(record["local"]["size_bytes"], local_size)
+            self.assertEqual(record["local"]["sha256"], local_sha256)
+            self.assertEqual(record["public"]["size_bytes"], self.candidate["public_artifacts"][kind]["size_bytes"])
+            self.assertEqual(record["public"]["sha256"], self.candidate["public_artifacts"][kind]["sha256"])
+            equal = (
+                record["public"]["size_bytes"] == local_size
+                and record["public"]["sha256"] == local_sha256
+            )
+            self.assertIs(record["byte_identical_to_local"], equal)
+            self.assertIs(
+                self.candidate["public_artifacts"][kind][
+                    "byte_identical_to_local"
+                ],
+                equal,
+            )
+            (exact if equal else divergent).append(kind)
+
+        self.assertEqual(receipt["comparison"]["exact_kinds"], sorted(exact))
+        self.assertEqual(
+            receipt["comparison"]["divergent_kinds"], sorted(divergent)
+        )
+        self.assertIs(
+            receipt["comparison"]["all_public_bytes_equal_local"],
+            not divergent,
+        )
+        expected_state = (
+            "DATATRACKER_PUBLICATION_EXACT_BYTES_VERIFIED"
+            if not divergent
+            else "DATATRACKER_PUBLICATION_VERIFIED_WITH_PUBLIC_BYTE_DRIFT"
+        )
+        self.assertEqual(self.candidate["state"], expected_state)
+        self.assertIs(self.candidate["datatracker_submission_performed"], True)
+        self.assertIs(receipt["truth_boundaries"]["ietf_consensus_claimed"], False)
+        self.assertIs(receipt["truth_boundaries"]["ietf_standard_claimed"], False)
+        self.assertIs(receipt["truth_boundaries"]["rfc_claimed"], False)
+        self.assertIs(
+            receipt["truth_boundaries"]["independent_interoperability_complete"],
+            False,
         )
 
     def test_xml_metadata_is_exactly_revision_02_experimental_candidate(self) -> None:
@@ -903,8 +1072,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Validate the unsubmitted Draft-02 candidate with the exact offline "
-            "xml2rfc renderer."
+            "Validate the published Draft-02 local/public boundary with the "
+            "exact offline xml2rfc renderer."
         ),
     )
     parser.add_argument("--xml2rfc", type=Path, required=True)
