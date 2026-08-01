@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Draft-only RFCXML v3 source prepared as an individual Experimental
+  application-profile candidate. It has not been submitted to the IETF
+  Datatracker. The Datatracker and IETF archive determine submission status.
+  This source contains no external entities or includes.
+-->
+<rfc version="3"
+     ipr="trust200902"
+     category="exp"
+     submissionType="IETF"
+     docName="draft-lohmann-qikvrt-scientific-claim-assurance-00"
+     tocInclude="true"
+     tocDepth="3"
+     symRefs="true"
+     sortRefs="true">
+  <front>
+    <title abbrev="QIK-VRT Claim Assurance">Scientific Claim Assurance Profile for QIK-VRT EFFECT_ACK</title>
+    <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-scientific-claim-assurance-00"/>
+    <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann">
+      <organization>Independent Researcher</organization>
+      <address>
+        <email>ingolf.lohmann@live.com</email>
+      </address>
+    </author>
+    <date year="2026" month="August" day="1"/>
+    <area>Applications and Real-Time</area>
+    <keyword>scientific claims</keyword>
+    <keyword>provenance</keyword>
+    <keyword>formal verification</keyword>
+    <keyword>evidence classification</keyword>
+    <keyword>conflict preservation</keyword>
+    <keyword>digital twins</keyword>
+    <keyword>effect authorization</keyword>
+
+    <abstract>
+      <t>This document defines an Experimental application profile for carrying bounded scientific-claim assurance evidence through the unchanged QIK-VRT EFFECT_ACK version-1 mechanism. The profile separates formal proof, empirical evidence, source attribution, normative declarations, interpretations, and open questions. It requires content identity, provenance, explicit scope, evidence-type compatibility, dependency closure, conflict preservation, corpus-relative novelty labels, and separate effect authorization.</t>
+      <t>The profile is fail-closed and proposal-only. It does not define a universal truth or novelty oracle, does not make arbitrary natural language automatically formal, and does not establish physical causation from an event trace. It changes no EFFECT_ACK wire member, state, message type, CDDL rule, protocol-hash projection, release predicate, or IANA registry.</t>
+    </abstract>
+  </front>
+
+  <middle>
+    <section anchor="introduction">
+      <name>Introduction</name>
+      <t>Systems that retrieve, summarize, generate, measure, simulate, or prove information can produce outputs with materially different epistemic meanings. A kernel-checked derivation, a calibrated measurement, a quotation, a policy requirement, an interpretation, and an unresolved hypothesis are not interchangeable. Treating them as one undifferentiated fact class creates unsupported claims and can turn a successful computation into an unauthorized external effect.</t>
+      <t>This profile supplies a bounded evidence contract for applications of <xref target="I-D.lohmann-qikvrt-effect-ack"/>. A claim remains linked to the exact representation, scope, provenance, dependencies, evidence type, conflicts, and governing policy used in its evaluation. Claim evaluation is separate from repository promotion, archival deposit, protocol submission, and physical actuation.</t>
+      <t>The profile supports distributed, append-only knowledge meshes. It specifies safety properties for content-object merge and classification but does not guarantee eventual delivery, global repository agreement, complete coverage of human knowledge, answers to all questions, or factual correctness of every admitted object.</t>
+
+      <section anchor="goals">
+        <name>Goals</name>
+        <ul>
+          <li>Prevent an assertion from receiving a stronger epistemic status than its disclosed evidence type supports.</li>
+          <li>Bind every evaluated claim to content identity, scope, provenance, dependencies, conflicts, and policy.</li>
+          <li>Preserve prior objects and explicit contradictions through additive extension and deterministic merge.</li>
+          <li>Distinguish exact corpus-relative novelty from semantic or global scientific novelty.</li>
+          <li>Keep automated segmentation, translation, proof search, and classification proposal-only until the required review and authorization occur.</li>
+          <li>Provide a common evidence boundary for software traces, measurements, control systems, digital twins, and quantum-experiment metadata.</li>
+        </ul>
+      </section>
+
+      <section anchor="non-goals">
+        <name>Non-Goals</name>
+        <ul>
+          <li>This profile does not decide the truth of arbitrary natural-language statements.</li>
+          <li>This profile does not establish global scientific novelty, priority, peer review, or consensus.</li>
+          <li>This profile does not guarantee complete or semantically faithful natural-language-to-formal translation.</li>
+          <li>This profile does not infer physical causation from chronology or trace equality.</li>
+          <li>This profile does not prove a physical quantum-to-classical bridge, retrocausal channel, or real QPU deployment.</li>
+          <li>This profile does not define an AI conformity assessment, legal basis, scientific publishing policy, or actuator safety case.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section anchor="conventions">
+      <name>Conventions and Definitions</name>
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals, as shown here.</t>
+      <dl>
+        <dt>Claim envelope</dt>
+        <dd>A content-addressed external evidence object containing one atomic statement, its epistemic class and status, declared scope and boundary, sources, evidence, proofs, dependencies, explicit negations, and novelty method.</dd>
+        <dt>Claim corpus</dt>
+        <dd>A finite declared set of claim envelopes used for one evaluation. It is not an assertion of complete world knowledge.</dd>
+        <dt>Formal proof receipt</dt>
+        <dd>A content-addressed record binding a formal source, compiler or kernel identity, theorem name, result, and observed axiom inventory.</dd>
+        <dt>Observation envelope</dt>
+        <dd>A content-addressed record binding source identity, acquisition method, calibration, provenance, timing, uncertainty, and applicable falsification boundary.</dd>
+        <dt>Corpus-relative exact novelty</dt>
+        <dd>The property that an exact canonical statement identity is absent from one explicitly identified finite corpus.</dd>
+        <dt>Conflict</dt>
+        <dd>An explicit relation asserting that two claim objects cannot both be used as stated within an overlapping declared scope. Mere difference is not automatically a conflict.</dd>
+        <dt>Disposition</dt>
+        <dd>A successor evidence object that records the governed treatment of a claim or conflict without deleting the historical objects.</dd>
+        <dt>Causality mirror</dt>
+        <dd>An application view that links observations, transformations, hypotheses, decisions, intended effects, effect acknowledgements, and observed effects while keeping physical causal attribution separately evidenced.</dd>
+      </dl>
+    </section>
+
+    <section anchor="base-protocol">
+      <name>Relationship to EFFECT_ACK Version 1</name>
+      <t>This profile uses the unchanged version-1 record specified by <xref target="I-D.lohmann-qikvrt-effect-ack"/>. It adds no member to the closed 35-member record, no sixth state, no message type, no media type, no CDDL production, no protocol-hash input, no state-selection priority, and no IANA allocation. Only a valid EFFECT_ACK_DONE under the complete base protocol permits ordinary release.</t>
+      <t>Claim envelopes, corpora, receipts, observation envelopes, conflict objects, and dispositions are external content-addressed evidence. They are referenced through the existing <tt>evidence_refs</tt> and <tt>required_evidence_refs</tt> members. The profile policy is identified through the existing <tt>policy_id</tt>, <tt>policy_version</tt>, and <tt>policy_hash</tt> members.</t>
+      <t>Missing, inaccessible, unauthenticated, stale, ambiguous, internally inconsistent, or digest-mismatched required evidence MUST prevent EFFECT_ACK_DONE. This profile does not select the resulting non-releasing state; the base protocol and bound policy do.</t>
+      <t>Successful claim classification, formal proof, deterministic merge, or archive preparation MUST NOT bypass origin authentication, freshness, predecessor validation, policy evaluation, owner authorization, or any other base-protocol requirement.</t>
+    </section>
+
+    <section anchor="classification">
+      <name>Epistemic Classification</name>
+      <t>Each claim envelope MUST contain exactly one class and the compatible status defined below. A profile validator MUST reject or hold open a mismatched pair.</t>
+      <dl>
+        <dt>FORMAL_PROVED / PROVED</dt>
+        <dd>The named theorem was accepted by the bound formal kernel under the disclosed formal source and assumptions. This class does not establish that every premise describes the physical world.</dd>
+        <dt>EMPIRICALLY_EVIDENCED / EVIDENCED</dt>
+        <dd>The bounded observation is supported by one or more valid observation envelopes. This class does not establish context-free or permanent truth.</dd>
+        <dt>SOURCE_BOUND / BOUND</dt>
+        <dd>The claim records what an identified source contains. Source attribution does not promote the originating statement to truth.</dd>
+        <dt>NORMATIVE / DECLARED</dt>
+        <dd>The claim is a requirement, definition, objective, or value decision under the identified authority or policy.</dd>
+        <dt>INTERPRETATIVE / DECLARED</dt>
+        <dd>The claim is an accountable interpretation within its declared scope and boundary.</dd>
+        <dt>OPEN / OPEN</dt>
+        <dd>A required proof, observation, source, definition, or bridge is missing. Applications MUST NOT render OPEN as established fact.</dd>
+      </dl>
+      <t>A claim in FORMAL_PROVED MUST reference at least one valid formal proof receipt. A claim in EMPIRICALLY_EVIDENCED MUST reference at least one valid observation envelope. A claim in SOURCE_BOUND MUST reference at least one attributable source. A validator MUST NOT use a formal proof receipt to promote a non-formal claim's physical truth.</t>
+    </section>
+
+    <section anchor="claim-envelope">
+      <name>Claim Envelope Requirements</name>
+      <t>A claim envelope conforming to this profile MUST provide all of the following:</t>
+      <ul>
+        <li>a versioned schema identifier and an application-unique claim identifier;</li>
+        <li>one atomic canonical statement representation and its exact content identity;</li>
+        <li>one class and compatible status from <xref target="classification"/>;</li>
+        <li>the scope in which the claim is evaluated and a plain-language boundary stating what does not follow;</li>
+        <li>attributable source references, applicable evidence objects, and applicable formal proof receipts;</li>
+        <li>all material claim dependencies and explicit negation or conflict relations;</li>
+        <li>the novelty method and the exact finite comparison corpus identity;</li>
+        <li>the governing profile policy identity and evaluation-tool identity; and</li>
+        <li>an effect state that remains non-releasing until the separate base-protocol evaluation succeeds.</li>
+      </ul>
+      <t>An application MAY maintain multiple canonical statement representations for different languages or formal systems, but it MUST NOT infer semantic equivalence merely from translation, embedding proximity, model output, or shared identifiers. Each asserted equivalence requires a separately reviewable relation object.</t>
+      <t>Automated speech recognition, optical character recognition, translation, summarization, claim segmentation, premise selection, and proof synthesis MUST be recorded as transformations. Their outputs remain candidates until the governing policy's review requirements are satisfied.</t>
+    </section>
+
+    <section anchor="evaluation">
+      <name>Deterministic Evaluation</name>
+      <t>Given a claim envelope, finite corpus, and profile policy, a deterministic validator MUST perform at least the following checks:</t>
+      <ol>
+        <li>validate schema closure and canonical encoding;</li>
+        <li>verify the class and status mapping;</li>
+        <li>verify required receipt types, source bindings, observation fields, and every referenced digest;</li>
+        <li>resolve every dependency to exactly one admitted object in the declared corpus or hold the claim open;</li>
+        <li>compare the canonical statement identity with the exact declared corpus and label only corpus-relative exact novelty;</li>
+        <li>detect an identifier reused for different content and preserve the competing objects as a conflict;</li>
+        <li>preserve explicit negation edges and retain both sides of a contested claim; and</li>
+        <li>produce a content-addressed evaluation report whose effect state is non-releasing.</li>
+      </ol>
+      <t>A conforming validator MAY return an application-specific equivalent of ADMIT_AS_CLASSIFIED, HOLD_OPEN, or CONTESTED_PRESERVE_BOTH. An admission indicates only that the envelope met the declared profile checks for its retained class. It MUST NOT be represented as universal truth, global novelty, peer review, or effect authorization.</t>
+    </section>
+
+    <section anchor="novelty">
+      <name>Novelty and Literature Boundaries</name>
+      <t>Exact content or statement absence from a declared finite corpus is mechanically testable. Semantic equivalence, independent prior publication, and global scientific priority are different questions. A conforming application MUST label the first as corpus-relative exact novelty and MUST NOT label it global scientific novelty.</t>
+      <t>A global novelty review requires a disclosed search strategy, databases and versions, query terms, languages, dates, inclusion and exclusion criteria, deduplication method, semantic review method, inaccessible-source record, reviewer identity, and residual uncertainty. Even a thorough review establishes bounded search coverage, not logical proof that no prior work exists.</t>
+      <t>Literature retrieval tools and language models MAY propose references or equivalence candidates. A profile policy SHOULD require direct source verification for material novelty claims and MUST retain unavailable or unverified references as OPEN or SOURCE_BOUND rather than proven.</t>
+    </section>
+
+    <section anchor="mesh">
+      <name>Append-Only Mesh and Conflict Preservation</name>
+      <t>An application claiming append-only conformance MUST represent corrections, retractions, supersession, and dispositions as new objects with attributable predecessor relations. It MUST NOT silently replace an admitted historical object.</t>
+      <t>Content-object mesh merge MUST be set union over verified object identities. At that layer the merge is commutative, associative, and idempotent. Applications MUST preserve two objects that reuse one logical identifier with different content and MUST expose that condition for disposition.</t>
+      <t>Replica convergence is conditional. An application claiming convergence MUST disclose the considered replicas, equal validation and merge policy, admissible-update rules, and eventual-delivery assumption. Network availability, censorship resistance, global discovery, complete human knowledge, and policy agreement do not follow from the merge algebra.</t>
+      <t>An answer derived from the mesh SHOULD identify the minimal evidence-closed subgraph used, unresolved conflicts, excluded alternatives, applicable scope, and every OPEN dependency. Historical derivability can remain visible after new evidence arrives even when a successor disposition changes current recommended use.</t>
+    </section>
+
+    <section anchor="causality">
+      <name>Causality-Mirror Requirements</name>
+      <t>An application presenting a causality-mirror view MUST distinguish direct observation, transformation, model state, hypothesis, decision, intended effect, authorized effect, actuator acknowledgement, and observed feedback. Each edge MUST identify its method, responsible component or principal, time boundary, content identity, and known uncertainty.</t>
+      <t>Temporal succession, trace identity, deterministic replay, correlation, or software agreement MUST NOT be represented as sufficient physical causal identification. A physical causal claim MUST disclose the intervention or identification strategy, applicable causal assumptions, plausible alternatives, falsification criterion, and empirical evidence.</t>
+      <t>An application MAY use causal-model output as INTERPRETATIVE or EMPIRICALLY_EVIDENCED according to its observation support. It MUST NOT promote the output to a context-free physical law merely because the computation is formally verified.</t>
+    </section>
+
+    <section anchor="measurement-control">
+      <name>Measurement, Communications, and Control</name>
+      <t>For a claim derived from an analogue or physical measurement chain, the required observation evidence SHOULD identify the measurand, sensor or transducer, transfer function, units, calibration state, sampling and quantization, clock and synchronization boundary, uncertainty model, missing-data treatment, transformations, and raw-data identity.</t>
+      <t>For a communications claim, the evidence SHOULD identify framing, ordering, integrity and error detection, loss and duplication behavior, latency model, capacity assumptions, endpoints, and authentication boundary. A formal reconstruction theorem for a finite message MUST NOT be represented as a measurement of a real channel.</t>
+      <t>For control and digital-twin applications, the evidence SHOULD distinguish plant observation, model version, state estimate, setpoint, controller output, recommendation, authorization, actuator command, actuator acknowledgement, and feedback measurement. Real actuation MUST remain subject to the complete effect policy and independent system-safety validation.</t>
+    </section>
+
+    <section anchor="quantum">
+      <name>Quantum and Classical Evidence Boundary</name>
+      <t>A quantum-computing or quantum-causality claim SHOULD bind circuit or process representation, compiler and transformation chain, backend identity, calibration, shot or event data, classical preprocessing and postprocessing, statistical method, uncertainty, null model, and claim interpretation.</t>
+      <t>A mathematical model with indefinite or nonclassical causal order MUST NOT by itself be represented as physical future-to-past signalling, a controllable retrocausal channel, or modification of a past event. A physical bridge claim requires a separately reviewable apparatus, timing and leak model, controls, falsifiable predictions, error analysis, and independent replication.</t>
+      <t>This profile provides a common provenance and classification layer for classical and quantum components. It does not define quantum semantics, prove a quantum-to-classical limit, establish VRT emergence, or certify a QPU implementation.</t>
+    </section>
+
+    <section anchor="conformance">
+      <name>Conformance and Test Cases</name>
+      <t>A profile conformance suite SHOULD include positive and negative cases for all classification and dependency rules. At minimum it SHOULD test a valid bound Lean receipt; a claimed proof with a missing or mismatched receipt; a calibrated observation envelope; an empirical claim without uncertainty; a source quotation represented as verified truth; an OPEN claim rendered as fact; an unresolved dependency; exact corpus-relative novelty; a global-novelty overclaim; an identifier collision; an explicit contradiction; deterministic merge under reversed input order; and an attempted automatic effect promotion.</t>
+      <t>Every malformed or evidentially incomplete required object MUST prevent ordinary release. A profile-valid object proceeds to the complete base-protocol evaluation and MUST NOT force EFFECT_ACK_DONE.</t>
+      <t>Passing a conformance suite establishes only the tested implementation, revision, fixtures, and execution environment. It is not proof of scientific truth, complete discovery, legal compliance, physical safety, interoperability with an independent implementation, or IETF consensus.</t>
+    </section>
+
+    <section anchor="security">
+      <name>Security Considerations</name>
+      <t>Principal threats include forged proof or observation receipts, digest substitution, dependency confusion, identifier collision, evidence omission, source laundering, status inflation, conflict suppression, policy downgrade, stale evaluation replay, adversarial claim segmentation, malicious formal input, resource exhaustion, selective mesh delivery, unauthorized archive publication, and bypass of the effect gate. The robustness guidance in <xref target="RFC9413"/> is an informative input to protocol and parser design.</t>
+      <t>Implementations MUST authenticate authoritative evidence origins according to the deployment threat model, verify referenced digests and canonical encodings, bind policy and corpus identities, enforce freshness, preserve conflicts, and keep proposal execution isolated from effect executors. They MUST bound claim size, dependency depth, graph traversal, proof-check time, archive retrieval, language-model work, and merge input.</t>
+      <t>Formal proof checking SHOULD use a small independently reviewable kernel and SHOULD record compiler, source, theorem, and axiom inventory. Formal inputs, generated code, source documents, and remote evidence MUST be treated as untrusted content and MUST NOT be executed merely because they are referenced by a claim.</t>
+      <t>A content digest proves equality to supplied bytes under the named hash computation. It does not authenticate origin, establish truth, prove semantic equivalence, guarantee future availability, or prevent a wholly rewritten unanchored history. Deployments needing those properties require authenticated origins, independent anchors, retention policy, and governance.</t>
+    </section>
+
+    <section anchor="privacy">
+      <name>Privacy Considerations</name>
+      <t>Scientific claim provenance can expose personal identity, health, behavior, location, beliefs, relationships, intellectual contribution, unpublished research, device topology, or confidential plant data. Applications MUST minimize personal data, disclose purpose and retention, distinguish public metadata from access-controlled evidence, and authorize retrieval separately from the existence of a digest. The privacy-threat analysis in <xref target="RFC6973"/> provides additional informative guidance.</t>
+      <t>A digest is not anonymization. Guessable or low-entropy material can be recovered by enumeration. Applications SHOULD use scoped identifiers, high-entropy object addressing, encryption and access control where accountability does not require public disclosure.</t>
+      <t>Append-only history can conflict with correction, erasure, confidentiality, embargo, legal hold, and research-integrity duties. A deployment MUST define its governing policy before collection. A redaction or tombstone MUST remain attributable and MUST NOT claim that removed content is still independently verifiable.</t>
+      <t>Automated knowledge meshes can amplify sensitive errors and inferred attributes. Disputes and corrections MUST propagate as governed successor objects, and answer generation SHOULD avoid disclosing evidence beyond the requester's authorization.</t>
+    </section>
+
+    <section anchor="iana">
+      <name>IANA Considerations</name>
+      <t>This document requests no IANA actions. It defines no media type, protocol number, registry, state, field, message type, or code point.</t>
+    </section>
+
+    <section anchor="scientific-boundary">
+      <name>Scientific and Governance Boundary</name>
+      <t>This profile makes declared evidence classes, exact identities, dependencies, conflicts, finite-corpus novelty, and effect separation mechanically inspectable under a named policy. It cannot establish that all relevant evidence was disclosed, that a source is honest, that a model corresponds to nature, that a policy is ethically or legally sufficient, or that arbitrary external statements are true.</t>
+      <t>Repository persistence can establish commit and tree identity. An archival deposit can establish the identity and availability of deposited bytes. A formal kernel can establish derivability in its encoded model. An Internet-Draft can expose a protocol proposal for review. None of these facts alone establishes peer review, IETF consensus, scientific novelty, physical causation, deployment safety, or legal conformity.</t>
+      <t>Applications MUST retain these boundaries in human-readable output. A concise answer MUST NOT remove a material uncertainty, OPEN dependency, conflict, or effect boundary merely for fluency.</t>
+    </section>
+
+    <section anchor="implementation-status" removeInRFC="true">
+      <name>Implementation and Submission Status</name>
+      <t>This section is non-normative.</t>
+      <t>This revision is a draft-only individual Experimental application-profile candidate in the IETF stream. A local deterministic claim validator, JSON schema, ten unit tests, and a finite Lean 4.19.0 formalization with 21 checked theorems exist as repository candidates. This statement does not assert independent interoperability, production deployment, physical validation, or standards status.</t>
+      <t>This candidate has not been submitted to the IETF Datatracker and is not an RFC, IETF standard, working-group product, or IETF consensus. Repository persistence, deterministic rendering, or a future archival record would establish only the corresponding bounded facts.</t>
+    </section>
+
+    <section anchor="acknowledgements">
+      <name>Acknowledgements</name>
+      <t>Automated tooling assisted with transcription, formal checking, document structure, translation, rendering, and consistency checks. All normative text remains the responsibility of the author and is subject to community review.</t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date year="1997" month="March"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+        <seriesInfo name="DOI" value="10.17487/RFC2119"/>
+      </reference>
+      <reference anchor="RFC8174" target="https://www.rfc-editor.org/info/rfc8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date year="2017" month="May"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+      </reference>
+      <reference anchor="I-D.lohmann-qikvrt-effect-ack" target="https://datatracker.ietf.org/doc/html/draft-lohmann-qikvrt-effect-ack-02">
+        <front>
+          <title>QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title>
+          <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"/>
+          <date year="2026" month="July" day="31"/>
+        </front>
+        <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-02"/>
+      </reference>
+    </references>
+
+    <references>
+      <name>Informative References</name>
+      <reference anchor="RFC6973" target="https://www.rfc-editor.org/info/rfc6973">
+        <front>
+          <title>Privacy Considerations for Internet Protocols</title>
+          <author initials="A." surname="Cooper" fullname="Alissa Cooper"/>
+          <author initials="H." surname="Tschofenig" fullname="Hannes Tschofenig"/>
+          <author initials="B." surname="Aboba" fullname="Bernard Aboba"/>
+          <author initials="J." surname="Peterson" fullname="Jon Peterson"/>
+          <author initials="J." surname="Morris" fullname="John Morris"/>
+          <author initials="M." surname="Hansen" fullname="Marit Hansen"/>
+          <author initials="R." surname="Smith" fullname="Rhys Smith"/>
+          <date year="2013" month="July"/>
+        </front>
+        <seriesInfo name="RFC" value="6973"/>
+        <seriesInfo name="DOI" value="10.17487/RFC6973"/>
+      </reference>
+      <reference anchor="RFC9413" target="https://www.rfc-editor.org/info/rfc9413">
+        <front>
+          <title>Maintaining Robust Protocols</title>
+          <author initials="M." surname="Thomson" fullname="Martin Thomson"/>
+          <author initials="D." surname="Schinazi" fullname="David Schinazi"/>
+          <date year="2023" month="June"/>
+        </front>
+        <seriesInfo name="RFC" value="9413"/>
+        <seriesInfo name="DOI" value="10.17487/RFC9413"/>
+      </reference>
+    </references>
+
+    <section anchor="changes">
+      <name>Changes in Revision -00</name>
+      <ul>
+        <li>Initial individual Experimental application-profile candidate.</li>
+        <li>Defined six bounded epistemic classes and strict evidence-type compatibility.</li>
+        <li>Defined deterministic claim evaluation, corpus-relative novelty, append-only merge, and conflict preservation requirements.</li>
+        <li>Defined causality-mirror, measurement, control, digital-twin, and quantum evidence boundaries.</li>
+        <li>Kept the complete EFFECT_ACK version-1 wire representation and release semantics unchanged.</li>
+      </ul>
+    </section>
+  </back>
+</rfc>

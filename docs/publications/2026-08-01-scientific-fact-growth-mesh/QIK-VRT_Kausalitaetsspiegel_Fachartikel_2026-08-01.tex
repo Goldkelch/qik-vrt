@@ -1,0 +1,198 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[10pt,a4paper]{article}
+\usepackage[a4paper,top=16mm,bottom=17mm,left=18mm,right=18mm,headheight=13pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{P052-Roman.otf}[
+  Path=/usr/share/fonts/opentype/urw-base35/,
+  BoldFont=P052-Bold.otf,
+  ItalicFont=P052-Italic.otf,
+  BoldItalicFont=P052-BoldItalic.otf]
+\setsansfont{DejaVu Sans}
+\usepackage[provide=*,ngerman]{babel}
+\usepackage{microtype,xcolor,graphicx,booktabs,tabularx,enumitem,tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,hyperref,multicol}
+\definecolor{Ink}{HTML}{152B38}
+\definecolor{Ocean}{HTML}{147D92}
+\definecolor{Mint}{HTML}{27A58B}
+\definecolor{Sun}{HTML}{E0A32B}
+\definecolor{Mist}{HTML}{ECF6F7}
+\hypersetup{colorlinks=true,urlcolor=Ocean,linkcolor=Ocean,
+ pdftitle={Ein Spiegel für Ursachen: QIK-VRT},pdfauthor={Ingolf Lohmann}}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\sffamily\small Ein Spiegel für Ursachen}
+\fancyhead[R]{\sffamily\small QIK-VRT · 2026}
+\fancyfoot[C]{\sffamily\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\setlist[itemize]{leftmargin=1.3em,itemsep=2pt}
+\setlength{\emergencystretch}{2em}
+\newtcolorbox{keybox}{enhanced,breakable,colback=Mist,colframe=Mint,boxrule=.8pt,
+ arc=2mm,left=4mm,right=4mm,top=3mm,bottom=3mm}
+\newtcolorbox{limitbox}{enhanced,breakable,colback=yellow!6,colframe=Sun,boxrule=.8pt,
+ arc=2mm,left=4mm,right=4mm,top=3mm,bottom=3mm}
+\newcommand{\head}[1]{\vspace{4mm}{\sffamily\Large\bfseries\color{Ink}#1}\par\vspace{1.5mm}}
+\begin{document}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+\fill[Ink] (current page.north west) rectangle ([yshift=-82mm]current page.north east);
+\fill[Ocean] ([xshift=132mm]current page.north west) -- (current page.north east) --
+ ([yshift=-82mm]current page.north east) -- ([xshift=92mm,yshift=-82mm]current page.north west) -- cycle;
+\end{tikzpicture}
+\vspace*{9mm}\color{white}
+{\sffamily\small\bfseries\color{Sun} WISSENSCHAFT · INFORMATIK · PHYSIK\par}
+\vspace{8mm}
+{\sffamily\fontsize{29}{34}\selectfont\bfseries Ein Spiegel\\für Ursachen\par}
+\vspace{5mm}
+{\Large Wie QIK-VRT aus Daten einen\\überprüfbaren Erkenntnisweg macht\par}
+\vspace{8mm}{\sffamily Ingolf Lohmann\par}
+\vspace{19mm}\color{black}
+
+\begin{keybox}
+Computer finden Informationen rasend schnell. Die schwierigere Frage lautet:
+Warum ist eine konkrete Aussage belastbar? QIK-VRT bindet Quelle, Messung,
+Transformation, Hypothese, Beweis, Widerspruch und Wirkung zu einem
+überprüfbaren Graphen. 21 Lean-Sätze sichern den endlichen Strukturkern ab.
+Ein universeller Wahrheitsautomat entsteht ausdrücklich nicht.
+\end{keybox}
+
+\begin{multicols}{2}
+Ein Suchtreffer kann eine Behauptung wiederholen. Ein Sprachmodell kann sie
+flüssig erklären. Ein Sensor liefert Zahlen, ein Beweisassistent akzeptiert
+Formeln. Aber keiner dieser Vorgänge enthält automatisch den ganzen
+wissenschaftlichen Weg. Oft fehlen Kalibrierung, Prämissen, Unsicherheit,
+Gegenbelege oder die Rückmeldung, welche Wirkung tatsächlich eintrat.
+
+QIK-VRT lässt sich als \textbf{Kausalitätsspiegel} lesen. Gespeichert wird nicht
+nur das Ergebnis, sondern der nachvollziehbare Weg von Beobachtung über Modell
+und Entscheidung bis zur beabsichtigten und beobachteten Wirkung. Der Spiegel
+ist nicht die Wirklichkeit. Er zeigt, welche Brücke belegt, angenommen oder
+noch offen ist.
+
+\head{Sechs Erkenntnisarten}
+
+Statt eines einzigen Wahrheitsbits unterscheidet das Protokoll: formal
+bewiesen, empirisch gestützt, quellengebunden, normativ, interpretativ und
+offen. Ein Kernelbeweis gilt im genannten Modell. Eine Messung gilt in ihrem
+Mess- und Unsicherheitsrahmen. Eine Quelle belegt, wer etwas sagte, nicht dass
+es stimmt. Eine offene Aussage darf nicht durch sprachliche Sicherheit zum
+Fakt werden.
+
+Diese Typisierung verhindert Kategoriefehler. Lean prüft keine Sensoren. Ein
+Messwert beweist keinen Allgemeinsatz. Eine DOI garantiert eine fixierte
+Ablage, nicht wissenschaftliche Wahrheit. Und eine technisch berechnete
+Empfehlung ist keine Erlaubnis, eine Maschine zu bewegen.
+
+\head{Was Lean geprüft hat}
+
+Lean 4.19.0 kompilierte 21 Sätze ohne ausgelassene Beweise und ohne
+projektspezifische Axiome. Bewiesen sind unter anderem:
+
+\begin{itemize}
+\item Additive Erweiterung erhält vorhandene Objekte.
+\item Mesh-Vereinigung ist kommutativ, assoziativ und idempotent.
+\item Replikate konvergieren nach denselben Updates unter gleicher Policy.
+\item Vorhandene Begründungspfade und Konflikte bleiben sichtbar.
+\item Exakte Neuheit ist nur relativ zum untersuchten Korpus.
+\item Derselbe Trace kann verschiedene physische Ursachenzuschreibungen tragen.
+\item Digital-Twin-Aktorwirkung braucht qualifizierte Beobachtung und Effect-Ack.
+\item Proposal-only Analyse autorisiert keine Außenwirkung.
+\end{itemize}
+
+Das Gegenbeispiel ist ebenso wichtig: Ein leerer Korpus beantwortet keine
+Frage. Die Struktur garantiert also nicht, jede Frage beantworten zu können.
+
+\head{Von 94 Grad zur Ursache}
+
+Ein Sensor meldet 94 Grad, ein Modell prognostiziert einen Ausfall, ein Mensch
+bestätigt die Abschaltung, der Aktor reagiert, die Temperatur sinkt. Eine
+Logdatei zeigt Zeitstempel. Der Kausalitätsspiegel fragt zusätzlich: Welcher
+Sensor? Welche Kalibrierung und Unsicherheit? Welche Modellversion? Welche
+Prämissen? Empfehlung oder ausgeführte Aktion? Welche Rückmessung? Welche
+alternative Ursache?
+
+So wird aus einer Geschichte ein prüfbarer Graph. Physische Ursache folgt
+dennoch nicht aus Chronologie. Je nach Frage braucht man Intervention,
+Kontrollgruppe, Identifikationsannahme oder validiertes Domänenmodell. QIK-VRT
+macht den fehlenden Brückenschritt sichtbar.
+
+\head{Analoge Welt und Digital Twin}
+
+Ein analoges Signal wird durch Sensor, Übertragungsfunktion, Abtastung,
+Quantisierung und Zeitstempel zu digitalen Daten. QIK-VRT kann Messwert,
+Geräteidentität, Kalibrierparameter, Unsicherheitsmodell und Auswertecode
+zusammenbinden. Korrekturen werden neue, rückverweisende Knoten.
+
+Beim Digital Twin werden physisches Objekt und laufendes Modell gekoppelt.
+Gerade Übergänge sind fehleranfällig: falsche Einheit, veraltete Modellfassung,
+fehlende Kalibrierung, Datenlücke oder eine Empfehlung, die wie eine
+ausgeführte Handlung behandelt wird. Explizite Kanten unterstützen
+Root-Cause-Analyse, Wartung, Validierung und Audit. Sie ersetzen keine
+anlagenspezifische Sicherheitsprüfung.
+
+\head{Quantenebene ohne Magie}
+
+Ein Quantenexperiment besitzt eine lange klassische Kette: Schaltkreis,
+Compiler, Backend-Kalibrierung, Shots, Statistik und Interpretation. QIK-VRT
+kann jeden Schritt content-addressiert binden. Auch Modelle ohne fest
+vorgegebene globale Kausalordnung lassen sich dokumentieren, ohne daraus
+voreilig einen Nachrichtenkanal in die Vergangenheit zu machen.
+
+Der Wert der Quantenkausalebene ist die genaue Trennung von mathematischem
+Modell, Versuchsaufbau, Statistik und physikalischer Deutung. Nicht bewiesen
+sind VRT-Emergenz, Quanten-zu-Klassik-Limes, physische Retrokausalität oder ein
+realer QPU-End-to-End-Kanal.
+
+\head{Ein wachsender Erkenntnisgraph}
+
+Inhaltsadressierte Repositories können Objektmengen stabil vereinigen. Ein
+Widerspruch wird nicht überschrieben, sondern samt Quelle und Methode
+erhalten. Dadurch kann Suche nicht nur nach ähnlichen Wörtern fragen, sondern
+nach Abhängigkeiten, Widerlegungen, Kernelversionen und vollständigen
+Evidenzpfaden.
+
+Eine Antwort kann als kleiner Begründungsgraph ausgegeben werden. Das kann
+Menschen und künstlich-kognitiven Systemen helfen, weil nicht nur das Ergebnis,
+sondern sein Weg überprüfbar ist. Ob dadurch alle Nutzenden kognitiv besser
+werden, bleibt eine empirische Forschungsfrage mit Messgrößen,
+Vergleichsgruppen und Replikation.
+
+\head{Wert für die Fachwelt}
+
+Mathematiker erhalten einen versionierten Beweisgraphen: Definition,
+Prämissen, exakte Satzfassung und Kernel-Receipt bleiben verbunden. Physiker
+können Rohdaten, Kalibrierung, Code, Unsicherheit und konkurrierende Modelle
+trennen. Informatik und Nachrichtentechnik gewinnen ein deterministisches
+Evidenz- und Merge-Protokoll. Mess- und Regeltechnik erhalten eine
+auditierbare Schleife von Sensor bis Wirkung.
+
+\head{Verantwortung im Protokoll}
+
+Klassifikation, Review, Repository-Merge, Zenodo-Ablage, IETF-Einreichung und
+reale Aktorwirkung sind getrennte Effekte. Diese Trennung unterstützt auch
+AI-Audits: Welche Daten und Modellfassung erzeugten eine Ausgabe? Welche
+Unsicherheit war bekannt? Wer gab frei? Welche Wirkung wurde beobachtet?
+QIK-VRT schafft Evidenzbereitschaft, aber keine automatische Zertifizierung
+oder Rechtsberatung.
+
+\end{multicols}
+
+\begin{limitbox}
+\textbf{Die präzise Aussage:} Im angegebenen endlichen Modell können
+Erkenntnisobjekte statusgebunden wachsen, Konflikte erhalten bleiben,
+Mesh-Replikate deterministisch vereinigen und Außenwirkungen getrennt
+autorisiert werden. Universelle Wahrheit, globale Neuheit, Antworten auf jede
+Frage und eine physische Quanten- oder Retrokausalitätsbrücke werden nicht
+beansprucht.
+\end{limitbox}
+
+\vfill
+{\sffamily\small\color{Ink}
+\textbf{Quelle und Reproduzierbarkeit:} Goldkelch/qik-vrt.\\
+Publikationspaket \texttt{2026-08-01-scientific-fact-growth-mesh}.\\
+Additiv zum Zenodo-Addendum
+\href{https://doi.org/10.5281/zenodo.21731492}{doi:10.5281/zenodo.21731492}.
+Autor: Ingolf Lohmann. Geltungsgrenzen und Kernel-Receipt sind Bestandteil des
+Pakets.}
+\end{document}

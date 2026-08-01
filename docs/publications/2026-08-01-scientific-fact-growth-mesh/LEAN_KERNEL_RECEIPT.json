@@ -1,0 +1,80 @@
+{
+  "_license": {
+    "classification": "machine_readable_kernel_receipt",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "Apache-2.0",
+    "license_text_ref": "LICENSES/Apache-2.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_scientific_fact_growth_lean_kernel_receipt_v1",
+  "generated_at": "2026-08-01T17:30:22Z",
+  "repository": "Goldkelch/qik-vrt",
+  "base_commit": "b5d9eb4d1cb1e380d754524b70673cd91a47a35b",
+  "candidate_state": "UNCOMMITTED_WORKTREE_CANDIDATE",
+  "compiler": {
+    "name": "Lean",
+    "version": "4.19.0",
+    "target": "x86_64-unknown-linux-gnu",
+    "commit": "6caaee842e94",
+    "build": "Release",
+    "lake_version": "5.0.0-6caaee8",
+    "official_archive_url": "https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst",
+    "official_archive_sha256_observed": "6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe"
+  },
+  "sandbox_compatibility": {
+    "required": true,
+    "reason": "Lean 4.19.0 resolves /proc/<own-pid>/exe while this sandbox exposes only the equivalent /proc/self/exe spelling.",
+    "scope": "The preload shim rewrites only numeric /proc/.../exe readlink requests to /proc/self/exe and grants no additional filesystem or process access.",
+    "shim_source_sha256": "283e1d6dec5e24339ec6bc356773a8d99318f0e65fd111fb2e2b6711577ec569",
+    "shim_binary_sha256": "c61150cb3d9eb5efb822bef1f3d48f79dbb86630b1a2efd12c1c8902a5016d0f"
+  },
+  "formal_source": {
+    "repository_path": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Knowledge/ScientificFactGrowth.lean",
+    "publication_snapshot_path": "docs/publications/2026-08-01-scientific-fact-growth-mesh/FORMAL_ScientificFactGrowth.lean",
+    "sha256": "e7538876d7c70b5c54885855a852e72f83ae0f9b49a2adb02d0ccb3f075b7307",
+    "byte_identical_snapshot": true
+  },
+  "command": "LD_PRELOAD=<attested-shim> PATH=<lean-4.19.0>/bin:$PATH lake build QIKVRTFormalization.Knowledge.ScientificFactGrowth",
+  "exit_code": 0,
+  "kernel_status": "VERIFIED",
+  "theorem_count": 21,
+  "sorry_ax_observed": false,
+  "project_specific_axiom_observed": false,
+  "allowed_foundational_axioms": ["propext", "Quot.sound"],
+  "theorems": [
+    {"theorem": "QIKVRT.V2.Knowledge.formalProved_requires_proved", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.openClass_requires_openStatus", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.append_extends", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.merge_commutative_by_membership", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.merge_associative", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.merge_idempotent_by_membership", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.replicas_converge_after_same_updates", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.evidenceClosed_mono", "axioms": []},
+    {"theorem": "QIKVRT.V2.Knowledge.answerability_mono", "axioms": []},
+    {"theorem": "QIKVRT.V2.Knowledge.empty_corpus_answers_no_query", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.corpus_relative_novelty_is_not_global", "axioms": ["propext", "Quot.sound"]},
+    {"theorem": "QIKVRT.V2.Knowledge.conflicts_are_preserved_by_extension", "axioms": []},
+    {"theorem": "QIKVRT.V2.Knowledge.qualifiedObservation_eq_true_iff", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.causallyAttributable_requires_identification", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.identical_trace_does_not_determine_physical_causation", "axioms": []},
+    {"theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_qualifiedObservation", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.twinActuation_requires_effectAck", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.flatten_singletonSegments", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.append_preserves_prefix", "axioms": []},
+    {"theorem": "QIKVRT.V2.Knowledge.prefix_trans", "axioms": ["propext"]},
+    {"theorem": "QIKVRT.V2.Knowledge.proposalOnly_never_authorizes_effect", "axioms": []}
+  ],
+  "epistemic_boundary": {
+    "proved": "Only the explicitly encoded finite corpus, merge, classification, observation, causality-record, digital-twin, message and proposal-only model properties.",
+    "not_proved": [
+      "truth of arbitrary natural-language statements",
+      "global scientific novelty",
+      "automatic proof synthesis completeness",
+      "physical causation from a trace",
+      "physical retrocausality",
+      "quantum-to-classical emergence",
+      "empirical cognitive improvement",
+      "answers to every possible question"
+    ]
+  }
+}

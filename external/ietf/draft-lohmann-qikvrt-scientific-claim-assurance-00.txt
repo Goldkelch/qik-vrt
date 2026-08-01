@@ -1,0 +1,784 @@
+
+
+
+
+Network Working Group                                         I. Lohmann
+Internet-Draft                                    Independent Researcher
+Intended status: Experimental                              1 August 2026
+Expires: 2 February 2027
+
+
+       Scientific Claim Assurance Profile for QIK-VRT EFFECT_ACK
+           draft-lohmann-qikvrt-scientific-claim-assurance-00
+
+Abstract
+
+   This document defines an Experimental application profile for
+   carrying bounded scientific-claim assurance evidence through the
+   unchanged QIK-VRT EFFECT_ACK version-1 mechanism.  The profile
+   separates formal proof, empirical evidence, source attribution,
+   normative declarations, interpretations, and open questions.  It
+   requires content identity, provenance, explicit scope, evidence-type
+   compatibility, dependency closure, conflict preservation, corpus-
+   relative novelty labels, and separate effect authorization.
+
+   The profile is fail-closed and proposal-only.  It does not define a
+   universal truth or novelty oracle, does not make arbitrary natural
+   language automatically formal, and does not establish physical
+   causation from an event trace.  It changes no EFFECT_ACK wire member,
+   state, message type, CDDL rule, protocol-hash projection, release
+   predicate, or IANA registry.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 2 February 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 1]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+     1.1.  Goals . . . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.2.  Non-Goals . . . . . . . . . . . . . . . . . . . . . . . .   3
+   2.  Conventions and Definitions . . . . . . . . . . . . . . . . .   4
+   3.  Relationship to EFFECT_ACK Version 1  . . . . . . . . . . . .   5
+   4.  Epistemic Classification  . . . . . . . . . . . . . . . . . .   5
+   5.  Claim Envelope Requirements . . . . . . . . . . . . . . . . .   6
+   6.  Deterministic Evaluation  . . . . . . . . . . . . . . . . . .   7
+   7.  Novelty and Literature Boundaries . . . . . . . . . . . . . .   8
+   8.  Append-Only Mesh and Conflict Preservation  . . . . . . . . .   8
+   9.  Causality-Mirror Requirements . . . . . . . . . . . . . . . .   9
+   10. Measurement, Communications, and Control  . . . . . . . . . .   9
+   11. Quantum and Classical Evidence Boundary . . . . . . . . . . .  10
+   12. Conformance and Test Cases  . . . . . . . . . . . . . . . . .  10
+   13. Security Considerations . . . . . . . . . . . . . . . . . . .  11
+   14. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  11
+   15. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  12
+   16. Scientific and Governance Boundary  . . . . . . . . . . . . .  12
+   17. Implementation and Submission Status  . . . . . . . . . . . .  12
+   18. Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  13
+   19. Normative References  . . . . . . . . . . . . . . . . . . . .  13
+   20. Informative References  . . . . . . . . . . . . . . . . . . .  13
+   Appendix A.  Changes in Revision -00  . . . . . . . . . . . . . .  14
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  14
+
+1.  Introduction
+
+   Systems that retrieve, summarize, generate, measure, simulate, or
+   prove information can produce outputs with materially different
+   epistemic meanings.  A kernel-checked derivation, a calibrated
+   measurement, a quotation, a policy requirement, an interpretation,
+   and an unresolved hypothesis are not interchangeable.  Treating them
+   as one undifferentiated fact class creates unsupported claims and can
+   turn a successful computation into an unauthorized external effect.
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 2]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   This profile supplies a bounded evidence contract for applications of
+   [I-D.lohmann-qikvrt-effect-ack].  A claim remains linked to the exact
+   representation, scope, provenance, dependencies, evidence type,
+   conflicts, and governing policy used in its evaluation.  Claim
+   evaluation is separate from repository promotion, archival deposit,
+   protocol submission, and physical actuation.
+
+   The profile supports distributed, append-only knowledge meshes.  It
+   specifies safety properties for content-object merge and
+   classification but does not guarantee eventual delivery, global
+   repository agreement, complete coverage of human knowledge, answers
+   to all questions, or factual correctness of every admitted object.
+
+1.1.  Goals
+
+   *  Prevent an assertion from receiving a stronger epistemic status
+      than its disclosed evidence type supports.
+
+   *  Bind every evaluated claim to content identity, scope, provenance,
+      dependencies, conflicts, and policy.
+
+   *  Preserve prior objects and explicit contradictions through
+      additive extension and deterministic merge.
+
+   *  Distinguish exact corpus-relative novelty from semantic or global
+      scientific novelty.
+
+   *  Keep automated segmentation, translation, proof search, and
+      classification proposal-only until the required review and
+      authorization occur.
+
+   *  Provide a common evidence boundary for software traces,
+      measurements, control systems, digital twins, and quantum-
+      experiment metadata.
+
+1.2.  Non-Goals
+
+   *  This profile does not decide the truth of arbitrary natural-
+      language statements.
+
+   *  This profile does not establish global scientific novelty,
+      priority, peer review, or consensus.
+
+   *  This profile does not guarantee complete or semantically faithful
+      natural-language-to-formal translation.
+
+   *  This profile does not infer physical causation from chronology or
+      trace equality.
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 3]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   *  This profile does not prove a physical quantum-to-classical
+      bridge, retrocausal channel, or real QPU deployment.
+
+   *  This profile does not define an AI conformity assessment, legal
+      basis, scientific publishing policy, or actuator safety case.
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Claim envelope  A content-addressed external evidence object
+      containing one atomic statement, its epistemic class and status,
+      declared scope and boundary, sources, evidence, proofs,
+      dependencies, explicit negations, and novelty method.
+
+   Claim corpus  A finite declared set of claim envelopes used for one
+      evaluation.  It is not an assertion of complete world knowledge.
+
+   Formal proof receipt  A content-addressed record binding a formal
+      source, compiler or kernel identity, theorem name, result, and
+      observed axiom inventory.
+
+   Observation envelope  A content-addressed record binding source
+      identity, acquisition method, calibration, provenance, timing,
+      uncertainty, and applicable falsification boundary.
+
+   Corpus-relative exact novelty  The property that an exact canonical
+      statement identity is absent from one explicitly identified finite
+      corpus.
+
+   Conflict  An explicit relation asserting that two claim objects
+      cannot both be used as stated within an overlapping declared
+      scope.  Mere difference is not automatically a conflict.
+
+   Disposition  A successor evidence object that records the governed
+      treatment of a claim or conflict without deleting the historical
+      objects.
+
+   Causality mirror  An application view that links observations,
+      transformations, hypotheses, decisions, intended effects, effect
+      acknowledgements, and observed effects while keeping physical
+      causal attribution separately evidenced.
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 4]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+3.  Relationship to EFFECT_ACK Version 1
+
+   This profile uses the unchanged version-1 record specified by
+   [I-D.lohmann-qikvrt-effect-ack].  It adds no member to the closed
+   35-member record, no sixth state, no message type, no media type, no
+   CDDL production, no protocol-hash input, no state-selection priority,
+   and no IANA allocation.  Only a valid EFFECT_ACK_DONE under the
+   complete base protocol permits ordinary release.
+
+   Claim envelopes, corpora, receipts, observation envelopes, conflict
+   objects, and dispositions are external content-addressed evidence.
+   They are referenced through the existing evidence_refs and
+   required_evidence_refs members.  The profile policy is identified
+   through the existing policy_id, policy_version, and policy_hash
+   members.
+
+   Missing, inaccessible, unauthenticated, stale, ambiguous, internally
+   inconsistent, or digest-mismatched required evidence MUST prevent
+   EFFECT_ACK_DONE.  This profile does not select the resulting non-
+   releasing state; the base protocol and bound policy do.
+
+   Successful claim classification, formal proof, deterministic merge,
+   or archive preparation MUST NOT bypass origin authentication,
+   freshness, predecessor validation, policy evaluation, owner
+   authorization, or any other base-protocol requirement.
+
+4.  Epistemic Classification
+
+   Each claim envelope MUST contain exactly one class and the compatible
+   status defined below.  A profile validator MUST reject or hold open a
+   mismatched pair.
+
+   FORMAL_PROVED / PROVED  The named theorem was accepted by the bound
+      formal kernel under the disclosed formal source and assumptions.
+      This class does not establish that every premise describes the
+      physical world.
+
+   EMPIRICALLY_EVIDENCED / EVIDENCED  The bounded observation is
+      supported by one or more valid observation envelopes.  This class
+      does not establish context-free or permanent truth.
+
+   SOURCE_BOUND / BOUND  The claim records what an identified source
+      contains.  Source attribution does not promote the originating
+      statement to truth.
+
+   NORMATIVE / DECLARED  The claim is a requirement, definition,
+      objective, or value decision under the identified authority or
+      policy.
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 5]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   INTERPRETATIVE / DECLARED  The claim is an accountable interpretation
+      within its declared scope and boundary.
+
+   OPEN / OPEN  A required proof, observation, source, definition, or
+      bridge is missing.  Applications MUST NOT render OPEN as
+      established fact.
+
+   A claim in FORMAL_PROVED MUST reference at least one valid formal
+   proof receipt.  A claim in EMPIRICALLY_EVIDENCED MUST reference at
+   least one valid observation envelope.  A claim in SOURCE_BOUND MUST
+   reference at least one attributable source.  A validator MUST NOT use
+   a formal proof receipt to promote a non-formal claim's physical
+   truth.
+
+5.  Claim Envelope Requirements
+
+   A claim envelope conforming to this profile MUST provide all of the
+   following:
+
+   *  a versioned schema identifier and an application-unique claim
+      identifier;
+
+   *  one atomic canonical statement representation and its exact
+      content identity;
+
+   *  one class and compatible status from Section 4;
+
+   *  the scope in which the claim is evaluated and a plain-language
+      boundary stating what does not follow;
+
+   *  attributable source references, applicable evidence objects, and
+      applicable formal proof receipts;
+
+   *  all material claim dependencies and explicit negation or conflict
+      relations;
+
+   *  the novelty method and the exact finite comparison corpus
+      identity;
+
+   *  the governing profile policy identity and evaluation-tool
+      identity; and
+
+   *  an effect state that remains non-releasing until the separate
+      base-protocol evaluation succeeds.
+
+   An application MAY maintain multiple canonical statement
+   representations for different languages or formal systems, but it
+   MUST NOT infer semantic equivalence merely from translation,
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 6]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   embedding proximity, model output, or shared identifiers.  Each
+   asserted equivalence requires a separately reviewable relation
+   object.
+
+   Automated speech recognition, optical character recognition,
+   translation, summarization, claim segmentation, premise selection,
+   and proof synthesis MUST be recorded as transformations.  Their
+   outputs remain candidates until the governing policy's review
+   requirements are satisfied.
+
+6.  Deterministic Evaluation
+
+   Given a claim envelope, finite corpus, and profile policy, a
+   deterministic validator MUST perform at least the following checks:
+
+   1.  validate schema closure and canonical encoding;
+
+   2.  verify the class and status mapping;
+
+   3.  verify required receipt types, source bindings, observation
+       fields, and every referenced digest;
+
+   4.  resolve every dependency to exactly one admitted object in the
+       declared corpus or hold the claim open;
+
+   5.  compare the canonical statement identity with the exact declared
+       corpus and label only corpus-relative exact novelty;
+
+   6.  detect an identifier reused for different content and preserve
+       the competing objects as a conflict;
+
+   7.  preserve explicit negation edges and retain both sides of a
+       contested claim; and
+
+   8.  produce a content-addressed evaluation report whose effect state
+       is non-releasing.
+
+   A conforming validator MAY return an application-specific equivalent
+   of ADMIT_AS_CLASSIFIED, HOLD_OPEN, or CONTESTED_PRESERVE_BOTH.  An
+   admission indicates only that the envelope met the declared profile
+   checks for its retained class.  It MUST NOT be represented as
+   universal truth, global novelty, peer review, or effect
+   authorization.
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 7]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+7.  Novelty and Literature Boundaries
+
+   Exact content or statement absence from a declared finite corpus is
+   mechanically testable.  Semantic equivalence, independent prior
+   publication, and global scientific priority are different questions.
+   A conforming application MUST label the first as corpus-relative
+   exact novelty and MUST NOT label it global scientific novelty.
+
+   A global novelty review requires a disclosed search strategy,
+   databases and versions, query terms, languages, dates, inclusion and
+   exclusion criteria, deduplication method, semantic review method,
+   inaccessible-source record, reviewer identity, and residual
+   uncertainty.  Even a thorough review establishes bounded search
+   coverage, not logical proof that no prior work exists.
+
+   Literature retrieval tools and language models MAY propose references
+   or equivalence candidates.  A profile policy SHOULD require direct
+   source verification for material novelty claims and MUST retain
+   unavailable or unverified references as OPEN or SOURCE_BOUND rather
+   than proven.
+
+8.  Append-Only Mesh and Conflict Preservation
+
+   An application claiming append-only conformance MUST represent
+   corrections, retractions, supersession, and dispositions as new
+   objects with attributable predecessor relations.  It MUST NOT
+   silently replace an admitted historical object.
+
+   Content-object mesh merge MUST be set union over verified object
+   identities.  At that layer the merge is commutative, associative, and
+   idempotent.  Applications MUST preserve two objects that reuse one
+   logical identifier with different content and MUST expose that
+   condition for disposition.
+
+   Replica convergence is conditional.  An application claiming
+   convergence MUST disclose the considered replicas, equal validation
+   and merge policy, admissible-update rules, and eventual-delivery
+   assumption.  Network availability, censorship resistance, global
+   discovery, complete human knowledge, and policy agreement do not
+   follow from the merge algebra.
+
+   An answer derived from the mesh SHOULD identify the minimal evidence-
+   closed subgraph used, unresolved conflicts, excluded alternatives,
+   applicable scope, and every OPEN dependency.  Historical derivability
+   can remain visible after new evidence arrives even when a successor
+   disposition changes current recommended use.
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 8]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+9.  Causality-Mirror Requirements
+
+   An application presenting a causality-mirror view MUST distinguish
+   direct observation, transformation, model state, hypothesis,
+   decision, intended effect, authorized effect, actuator
+   acknowledgement, and observed feedback.  Each edge MUST identify its
+   method, responsible component or principal, time boundary, content
+   identity, and known uncertainty.
+
+   Temporal succession, trace identity, deterministic replay,
+   correlation, or software agreement MUST NOT be represented as
+   sufficient physical causal identification.  A physical causal claim
+   MUST disclose the intervention or identification strategy, applicable
+   causal assumptions, plausible alternatives, falsification criterion,
+   and empirical evidence.
+
+   An application MAY use causal-model output as INTERPRETATIVE or
+   EMPIRICALLY_EVIDENCED according to its observation support.  It MUST
+   NOT promote the output to a context-free physical law merely because
+   the computation is formally verified.
+
+10.  Measurement, Communications, and Control
+
+   For a claim derived from an analogue or physical measurement chain,
+   the required observation evidence SHOULD identify the measurand,
+   sensor or transducer, transfer function, units, calibration state,
+   sampling and quantization, clock and synchronization boundary,
+   uncertainty model, missing-data treatment, transformations, and raw-
+   data identity.
+
+   For a communications claim, the evidence SHOULD identify framing,
+   ordering, integrity and error detection, loss and duplication
+   behavior, latency model, capacity assumptions, endpoints, and
+   authentication boundary.  A formal reconstruction theorem for a
+   finite message MUST NOT be represented as a measurement of a real
+   channel.
+
+   For control and digital-twin applications, the evidence SHOULD
+   distinguish plant observation, model version, state estimate,
+   setpoint, controller output, recommendation, authorization, actuator
+   command, actuator acknowledgement, and feedback measurement.  Real
+   actuation MUST remain subject to the complete effect policy and
+   independent system-safety validation.
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027                [Page 9]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+11.  Quantum and Classical Evidence Boundary
+
+   A quantum-computing or quantum-causality claim SHOULD bind circuit or
+   process representation, compiler and transformation chain, backend
+   identity, calibration, shot or event data, classical preprocessing
+   and postprocessing, statistical method, uncertainty, null model, and
+   claim interpretation.
+
+   A mathematical model with indefinite or nonclassical causal order
+   MUST NOT by itself be represented as physical future-to-past
+   signalling, a controllable retrocausal channel, or modification of a
+   past event.  A physical bridge claim requires a separately reviewable
+   apparatus, timing and leak model, controls, falsifiable predictions,
+   error analysis, and independent replication.
+
+   This profile provides a common provenance and classification layer
+   for classical and quantum components.  It does not define quantum
+   semantics, prove a quantum-to-classical limit, establish VRT
+   emergence, or certify a QPU implementation.
+
+12.  Conformance and Test Cases
+
+   A profile conformance suite SHOULD include positive and negative
+   cases for all classification and dependency rules.  At minimum it
+   SHOULD test a valid bound Lean receipt; a claimed proof with a
+   missing or mismatched receipt; a calibrated observation envelope; an
+   empirical claim without uncertainty; a source quotation represented
+   as verified truth; an OPEN claim rendered as fact; an unresolved
+   dependency; exact corpus-relative novelty; a global-novelty
+   overclaim; an identifier collision; an explicit contradiction;
+   deterministic merge under reversed input order; and an attempted
+   automatic effect promotion.
+
+   Every malformed or evidentially incomplete required object MUST
+   prevent ordinary release.  A profile-valid object proceeds to the
+   complete base-protocol evaluation and MUST NOT force EFFECT_ACK_DONE.
+
+   Passing a conformance suite establishes only the tested
+   implementation, revision, fixtures, and execution environment.  It is
+   not proof of scientific truth, complete discovery, legal compliance,
+   physical safety, interoperability with an independent implementation,
+   or IETF consensus.
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 10]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+13.  Security Considerations
+
+   Principal threats include forged proof or observation receipts,
+   digest substitution, dependency confusion, identifier collision,
+   evidence omission, source laundering, status inflation, conflict
+   suppression, policy downgrade, stale evaluation replay, adversarial
+   claim segmentation, malicious formal input, resource exhaustion,
+   selective mesh delivery, unauthorized archive publication, and bypass
+   of the effect gate.  The robustness guidance in [RFC9413] is an
+   informative input to protocol and parser design.
+
+   Implementations MUST authenticate authoritative evidence origins
+   according to the deployment threat model, verify referenced digests
+   and canonical encodings, bind policy and corpus identities, enforce
+   freshness, preserve conflicts, and keep proposal execution isolated
+   from effect executors.  They MUST bound claim size, dependency depth,
+   graph traversal, proof-check time, archive retrieval, language-model
+   work, and merge input.
+
+   Formal proof checking SHOULD use a small independently reviewable
+   kernel and SHOULD record compiler, source, theorem, and axiom
+   inventory.  Formal inputs, generated code, source documents, and
+   remote evidence MUST be treated as untrusted content and MUST NOT be
+   executed merely because they are referenced by a claim.
+
+   A content digest proves equality to supplied bytes under the named
+   hash computation.  It does not authenticate origin, establish truth,
+   prove semantic equivalence, guarantee future availability, or prevent
+   a wholly rewritten unanchored history.  Deployments needing those
+   properties require authenticated origins, independent anchors,
+   retention policy, and governance.
+
+14.  Privacy Considerations
+
+   Scientific claim provenance can expose personal identity, health,
+   behavior, location, beliefs, relationships, intellectual
+   contribution, unpublished research, device topology, or confidential
+   plant data.  Applications MUST minimize personal data, disclose
+   purpose and retention, distinguish public metadata from access-
+   controlled evidence, and authorize retrieval separately from the
+   existence of a digest.  The privacy-threat analysis in [RFC6973]
+   provides additional informative guidance.
+
+   A digest is not anonymization.  Guessable or low-entropy material can
+   be recovered by enumeration.  Applications SHOULD use scoped
+   identifiers, high-entropy object addressing, encryption and access
+   control where accountability does not require public disclosure.
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 11]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   Append-only history can conflict with correction, erasure,
+   confidentiality, embargo, legal hold, and research-integrity duties.
+   A deployment MUST define its governing policy before collection.  A
+   redaction or tombstone MUST remain attributable and MUST NOT claim
+   that removed content is still independently verifiable.
+
+   Automated knowledge meshes can amplify sensitive errors and inferred
+   attributes.  Disputes and corrections MUST propagate as governed
+   successor objects, and answer generation SHOULD avoid disclosing
+   evidence beyond the requester's authorization.
+
+15.  IANA Considerations
+
+   This document requests no IANA actions.  It defines no media type,
+   protocol number, registry, state, field, message type, or code point.
+
+16.  Scientific and Governance Boundary
+
+   This profile makes declared evidence classes, exact identities,
+   dependencies, conflicts, finite-corpus novelty, and effect separation
+   mechanically inspectable under a named policy.  It cannot establish
+   that all relevant evidence was disclosed, that a source is honest,
+   that a model corresponds to nature, that a policy is ethically or
+   legally sufficient, or that arbitrary external statements are true.
+
+   Repository persistence can establish commit and tree identity.  An
+   archival deposit can establish the identity and availability of
+   deposited bytes.  A formal kernel can establish derivability in its
+   encoded model.  An Internet-Draft can expose a protocol proposal for
+   review.  None of these facts alone establishes peer review, IETF
+   consensus, scientific novelty, physical causation, deployment safety,
+   or legal conformity.
+
+   Applications MUST retain these boundaries in human-readable output.
+   A concise answer MUST NOT remove a material uncertainty, OPEN
+   dependency, conflict, or effect boundary merely for fluency.
+
+17.  Implementation and Submission Status
+
+   This section is to be removed before publishing as an RFC.
+
+   This section is non-normative.
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 12]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   This revision is a draft-only individual Experimental application-
+   profile candidate in the IETF stream.  A local deterministic claim
+   validator, JSON schema, ten unit tests, and a finite Lean 4.19.0
+   formalization with 21 checked theorems exist as repository
+   candidates.  This statement does not assert independent
+   interoperability, production deployment, physical validation, or
+   standards status.
+
+   This candidate has not been submitted to the IETF Datatracker and is
+   not an RFC, IETF standard, working-group product, or IETF consensus.
+   Repository persistence, deterministic rendering, or a future archival
+   record would establish only the corresponding bounded facts.
+
+18.  Acknowledgements
+
+   Automated tooling assisted with transcription, formal checking,
+   document structure, translation, rendering, and consistency checks.
+   All normative text remains the responsibility of the author and is
+   subject to community review.
+
+19.  Normative References
+
+   [I-D.lohmann-qikvrt-effect-ack]
+              Lohmann, I., "QIK-VRT Effect Acknowledgement: Separating
+              Receipt from Authorization for Downstream Effect", Work in
+              Progress, Internet-Draft, draft-lohmann-qikvrt-effect-ack-
+              02, 31 July 2026, <https://datatracker.ietf.org/doc/html/
+              draft-lohmann-qikvrt-effect-ack-02>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+20.  Informative References
+
+   [RFC6973]  Cooper, A., Tschofenig, H., Aboba, B., Peterson, J.,
+              Morris, J., Hansen, M., and R. Smith, "Privacy
+              Considerations for Internet Protocols", RFC 6973,
+              DOI 10.17487/RFC6973, July 2013,
+              <https://www.rfc-editor.org/info/rfc6973>.
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 13]
+
+Internet-Draft           QIK-VRT Claim Assurance             August 2026
+
+
+   [RFC9413]  Thomson, M. and D. Schinazi, "Maintaining Robust
+              Protocols", RFC 9413, DOI 10.17487/RFC9413, June 2023,
+              <https://www.rfc-editor.org/info/rfc9413>.
+
+Appendix A.  Changes in Revision -00
+
+   *  Initial individual Experimental application-profile candidate.
+
+   *  Defined six bounded epistemic classes and strict evidence-type
+      compatibility.
+
+   *  Defined deterministic claim evaluation, corpus-relative novelty,
+      append-only merge, and conflict preservation requirements.
+
+   *  Defined causality-mirror, measurement, control, digital-twin, and
+      quantum evidence boundaries.
+
+   *  Kept the complete EFFECT_ACK version-1 wire representation and
+      release semantics unchanged.
+
+Author's Address
+
+   Ingolf Lohmann
+   Independent Researcher
+   Email: ingolf.lohmann@live.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lohmann                  Expires 2 February 2027               [Page 14]

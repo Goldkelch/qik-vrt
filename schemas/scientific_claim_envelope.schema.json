@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qikvrt.example/schemas/scientific_claim_envelope.schema.json",
+  "title": "QIK-VRT Scientific Claim Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "claim_id",
+    "statement",
+    "classification",
+    "status",
+    "scope",
+    "boundary",
+    "sources",
+    "evidence",
+    "proofs",
+    "dependencies",
+    "negates",
+    "novelty"
+  ],
+  "properties": {
+    "schema": {"const": "qikvrt_scientific_claim_envelope_v1"},
+    "claim_id": {"type": "string", "pattern": "^[A-Z][A-Z0-9-]{2,63}$"},
+    "statement": {"type": "string", "minLength": 1, "maxLength": 16384},
+    "classification": {
+      "enum": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "NORMATIVE", "INTERPRETATIVE", "OPEN"]
+    },
+    "status": {"enum": ["PROVED", "EVIDENCED", "BOUND", "DECLARED", "OPEN"]},
+    "scope": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "boundary": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "sources": {"type": "array", "items": {"type": "object"}, "maxItems": 256},
+    "evidence": {"type": "array", "items": {"type": "object"}, "maxItems": 256},
+    "proofs": {"type": "array", "items": {"type": "object"}, "maxItems": 256},
+    "dependencies": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "maxItems": 256},
+    "negates": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "maxItems": 256},
+    "novelty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "claimed"],
+      "properties": {
+        "method": {"const": "CORPUS_RELATIVE_EXACT_CANONICAL_STATEMENT"},
+        "claimed": {"type": "boolean"}
+      }
+    }
+  }
+}
