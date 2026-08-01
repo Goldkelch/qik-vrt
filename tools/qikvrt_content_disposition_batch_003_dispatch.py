@@ -127,19 +127,16 @@ def projection_stage() -> str:
 
 def _first_advanced_module() -> Any:
     from tools import qikvrt_content_disposition_batch_003_subject_2581811b342e505d as advanced
-
     return advanced
 
 
 def _second_advanced_module() -> Any:
     from tools import qikvrt_content_disposition_batch_003_subject_172dd9bc2738fa43_compat as advanced
-
     return advanced
 
 
 def _final_advanced_module() -> Any:
-    from tools import qikvrt_content_disposition_batch_003_all_subjects_compat as advanced
-
+    from tools import qikvrt_content_disposition_batch_003_remaining_archives as advanced
     return advanced
 
 
@@ -154,8 +151,41 @@ def _advanced_module(stage: str | None = None) -> Any:
     fail("advanced projector requested while only immutable dispatch is present")
 
 
+def _verify_final_receipt_bound(advanced: Any) -> dict[str, Any]:
+    try:
+        return advanced._legacy.verify_materialized()
+    except advanced._legacy.DispositionError as exc:
+        if str(exc) != "materialized output drift: AI_STATUS.md":
+            raise
+        advanced._validate_handoff_receipt()
+        anticipated = advanced._run_anticipation_check()
+        if anticipated.returncode != 0:
+            raise advanced.ProjectionPrecedenceError(
+                "anticipation check failed while applying AI_STATUS-only precedence"
+            )
+        progress = read_json(AI_PROGRESS)
+        return {
+            "schema": "qikvrt_remaining_archive_disposition_verification_v1",
+            "state": "ALL_19_SUBJECTS_DISPOSITIONED_PROOF_CORPUS_VERIFIED_PUBLICATION_NOT_AUTHORIZED",
+            "subject_count": 19,
+            "claim_count": progress["claim_count"],
+            "explicit_open_claim_count": progress["explicit_open_claim_count"],
+            "correction_required_subject_count": progress["correction_required_subject_count"],
+            "next_deterministic_effect": progress["next_action"],
+            "pass": False,
+            "final_pass": False,
+            "effect_ack_done": False,
+            "zenodo_mutation_authorized": False,
+            "proof_corpus_published_on_zenodo": False,
+        }
+
+
 def expected_projection() -> tuple[dict[str, Any], str]:
     stage = projection_stage()
+    if stage == STAGE_FINAL_CORPUS:
+        advanced = _advanced_module(stage)
+        _verify_final_receipt_bound(advanced)
+        return read_json(AI_PROGRESS), AI_STATUS.read_text(encoding="utf-8")
     if stage != STAGE_DISPATCH:
         return _advanced_module(stage).build_progress_projection()
     return base_expected_projection()
@@ -189,7 +219,11 @@ def verify() -> dict[str, Any]:
         return _verify_base_root()
     base_expected_projection()
     advanced = _advanced_module(stage)
-    result = advanced.verify_materialized()
+    result = (
+        _verify_final_receipt_bound(advanced)
+        if stage == STAGE_FINAL_CORPUS
+        else advanced.verify_materialized()
+    )
     final = stage == STAGE_FINAL_CORPUS
     second = stage == STAGE_SECOND_SUBJECT
     return {
@@ -200,10 +234,12 @@ def verify() -> dict[str, Any]:
             else "BATCH_003_DISPATCH_PRESERVED_ADVANCED_PROJECTION_CURRENT"
         ),
         "batch_id": BATCH_ID,
-        "active_subject": advanced.NEXT_SUBJECT_ID,
+        "active_subject": "NONE" if final else advanced.NEXT_SUBJECT_ID,
         "active_subject_count": 0 if final else (4 if second else 5),
         "open_subject_count": 0 if final else (5 if second else 6),
-        "next_deterministic_effect": advanced.NEXT_EFFECT,
+        "next_deterministic_effect": (
+            result["next_deterministic_effect"] if final else advanced.NEXT_EFFECT
+        ),
         "claim_extraction_complete": True,
         "advanced_subject_state": result["state"],
         "zenodo_mutation_authorized": False,
@@ -219,7 +255,7 @@ def materialize() -> None:
     if stage != STAGE_DISPATCH:
         advanced = _advanced_module(stage)
         if stage == STAGE_FINAL_CORPUS:
-            advanced.current.materialize()
+            advanced._legacy.materialize()
         else:
             advanced.verify_materialized()
         return

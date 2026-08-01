@@ -14,6 +14,10 @@ P = ROOT / "tools/qikvrt_content_disposition_batch_002_terminal.py"
 CURRENT_P = ROOT / "tools/qikvrt_content_disposition_batch_003_dispatch.py"
 BASE = ROOT / "release/zenodo-corpus-proof-2026-07-28/canonical-union"
 OUT = BASE / "content-disposition-batch-002/terminal-disposition"
+HANDOFF_RECEIPT = ROOT / "receipts/anticipation/0003-post-promotion-current-main-handoff.json"
+HANDOFF_WORK_UNIT = "CURRENT_MAIN_CHILD_PORT_OF_AUTHORITY_PR289"
+HANDOFF_NEXT_EFFECT = "MATERIALIZE_AND_VERIFY_CURRENT_MAIN_CHILD_PORT_OF_AUTHORITY_PR289_ON_EXACT_HEAD"
+HANDOFF_AUTHORITY_PARENT = "6836f28622173e45b1330f41a294bbd46f36fec2"
 
 spec = importlib.util.spec_from_file_location("b2", P)
 m = importlib.util.module_from_spec(spec)
@@ -37,12 +41,22 @@ class T(unittest.TestCase):
         cls.index = load(BASE / "CONTENT_CLAIM_DISPOSITION_INDEX.json")
         cls.union_receipt = load(BASE / "CANONICAL_UNION_AND_DISPOSITION_RECEIPT.json")
         cls.progress = load(ROOT / "AI_PROGRESS.json")
+        cls.handoff = load(HANDOFF_RECEIPT) if HANDOFF_RECEIPT.is_file() else None
 
     @staticmethod
     def current_projection_contract():
         stage = current.projection_stage()
         if stage == current.STAGE_FINAL_CORPUS:
             advanced = current._advanced_module(stage)
+            if HANDOFF_RECEIPT.is_file():
+                return {
+                    "next_effect": HANDOFF_NEXT_EFFECT,
+                    "tool": advanced.TOOL_REL,
+                    "open_subjects": 0,
+                    "batch_state": "TERMINALLY_DISPOSITIONED",
+                    "bar": None,
+                    "status_marker": HANDOFF_WORK_UNIT,
+                }
             return {
                 "next_effect": advanced.NEXT_EFFECT,
                 "tool": advanced.TOOL_REL,
@@ -169,14 +183,20 @@ class T(unittest.TestCase):
     def test_final_corpus_precedence_is_explicit(self):
         if current.FINAL_CORPUS_RECEIPT.is_file():
             self.assertEqual(current.projection_stage(), current.STAGE_FINAL_CORPUS)
-            self.assertTrue(current._advanced_module().__name__.endswith("qikvrt_content_disposition_batch_003_all_subjects_compat"))
+            self.assertTrue(current._advanced_module().__name__.endswith("qikvrt_content_disposition_batch_003_remaining_archives"))
 
     def test_current_dispatch_supersedes_only_root_status(self):
         contract = self.current_projection_contract()
+        stage = current.projection_stage()
         result = current.verify()
-        self.assertEqual(result["next_deterministic_effect"], contract["next_effect"])
+        if self.handoff is not None and stage == current.STAGE_FINAL_CORPUS:
+            historical = current._advanced_module(stage)
+            self.assertEqual(result["next_deterministic_effect"], historical.NEXT_EFFECT)
+            self.assertEqual(self.progress["next_action"], historical.NEXT_EFFECT)
+        else:
+            self.assertEqual(result["next_deterministic_effect"], contract["next_effect"])
+            self.assertEqual(self.progress["next_action"], contract["next_effect"])
         self.assertEqual(self.progress["projection_owner"]["tool"], contract["tool"])
-        self.assertEqual(self.progress["next_action"], contract["next_effect"])
         corpus = self.progress["scopes"]["qikvrt-zenodo-canonical-union-2026-07-28-v1"]
         self.assertEqual(corpus["counts"]["open_subjects"], contract["open_subjects"])
         self.assertEqual(corpus["batch_002"]["state"], "TERMINALLY_DISPOSITIONED")
@@ -199,9 +219,19 @@ class T(unittest.TestCase):
         expected, rendered = current.expected_projection()
         self.assertEqual(self.progress, expected)
         self.assertEqual(status, rendered)
-        self.assertIn(contract["bar"], status)
+        if contract["bar"] is not None:
+            self.assertIn(contract["bar"], status)
         self.assertIn(contract["status_marker"], status)
         self.assertIn(contract["next_effect"], status)
+        if self.handoff is not None:
+            self.assertIn("VERIFIED POST-PROMOTION BINDING", status)
+            self.assertEqual(self.handoff["selected_next_work_unit"]["id"], HANDOFF_WORK_UNIT)
+            self.assertEqual(self.handoff["selected_next_work_unit"]["target_parent"], HANDOFF_AUTHORITY_PARENT)
+            self.assertEqual(self.handoff["authority"]["current_main"], HANDOFF_AUTHORITY_PARENT)
+            self.assertEqual(self.handoff["effect_boundary"]["external_effect"], "NONE")
+            self.assertIs(self.handoff["effect_boundary"]["repository_only"], True)
+            for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
+                self.assertIs(self.handoff["completion_claims"][key], False)
         for key in ("PASS", "FINAL_PASS", "EFFECT_ACK_DONE"):
             self.assertIs(self.progress["claims"][key], False)
 
