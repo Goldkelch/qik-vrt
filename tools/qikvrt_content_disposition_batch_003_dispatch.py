@@ -237,7 +237,9 @@ def verify() -> dict[str, Any]:
         "active_subject": "NONE" if final else advanced.NEXT_SUBJECT_ID,
         "active_subject_count": 0 if final else (4 if second else 5),
         "open_subject_count": 0 if final else (5 if second else 6),
-        "next_deterministic_effect": advanced.NEXT_EFFECT,
+        "next_deterministic_effect": (
+            result["next_deterministic_effect"] if final else advanced.NEXT_EFFECT
+        ),
         "claim_extraction_complete": True,
         "advanced_subject_state": result["state"],
         "zenodo_mutation_authorized": False,
