@@ -97,13 +97,27 @@ class T(unittest.TestCase):
     def test_final_corpus_precedes_historical_projectors_and_workflow(self):
         if m.FINAL_CORPUS_RECEIPT.is_file():
             self.assertEqual(m.projection_stage(), m.STAGE_FINAL_CORPUS)
-            self.assertTrue(m._advanced_module().__name__.endswith("qikvrt_content_disposition_batch_003_all_subjects_compat"))
+            advanced = m._advanced_module()
+            self.assertTrue(advanced.__name__.endswith("qikvrt_content_disposition_batch_003_remaining_archives"))
+            self.assertFalse(hasattr(advanced, "NEXT_EFFECT"))
             workflow = (ROOT / ".github/workflows/qikvrt_batch04_integrity.yml").read_text(encoding="utf-8")
             final_guard = 'if [ -f "$final_script" ] && [ -f "$final_receipt" ]; then'
             second_guard = 'elif [ -f "$second_script" ] && [ -f "$recursive_probe" ]; then'
             self.assertIn(final_guard, workflow)
             self.assertIn(second_guard, workflow)
             self.assertLess(workflow.index(final_guard), workflow.index(second_guard))
+
+    def test_final_corpus_next_effect_comes_from_verified_result(self):
+        if m.projection_stage() != m.STAGE_FINAL_CORPUS:
+            self.skipTest("final corpus receipt is not present")
+        advanced = m._advanced_module()
+        verified = m._verify_final_receipt_bound(advanced)
+        result = m.verify()
+        self.assertFalse(hasattr(advanced, "NEXT_EFFECT"))
+        self.assertEqual(
+            result["next_deterministic_effect"],
+            verified["next_deterministic_effect"],
+        )
 
     def test_root_projection_is_owned_by_most_advanced_projector(self):
         expected, status = m.expected_projection()
