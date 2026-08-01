@@ -1,0 +1,234 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish scientific fact-growth mesh to Zenodo
+
+on:
+  push:
+    branches:
+      - publication/scientific-fact-growth-mesh-v1
+    paths:
+      - .github/workflows/qikvrt_scientific_fact_growth_zenodo_publish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-scientific-fact-growth-zenodo-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_BRANCH: publication/scientific-fact-growth-mesh-v1
+      EXPECTED_PARENT: 12b343afa1a1df9c1ea510721c2ed4c26398963f
+      MANIFEST_PATH: release/scientific-fact-growth-mesh-2026-08-01/publish-request.json
+      EVIDENCE_PATH: release/scientific-fact-growth-mesh-2026-08-01/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+    steps:
+      - name: Check out exact execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact one-shot execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          expected_delta="$(
+            printf '%s\n' \
+              'A	.github/workflows/qikvrt_scientific_fact_growth_zenodo_publish.yml' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'A	release/scientific-fact-growth-mesh-2026-08-01/OWNER_ZENODO_AUTHORIZATION.json' \
+              'A	release/scientific-fact-growth-mesh-2026-08-01/publish-request.json'
+          )"
+          observed_delta="$(
+            git diff \
+              --name-status \
+              --no-renames \
+              "$EXPECTED_PARENT" \
+              "$GITHUB_SHA" \
+              --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / (
+              "release/scientific-fact-growth-mesh-2026-08-01/"
+              "publish-request.json"
+          )
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root,
+              manifest_path,
+              manifest,
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if len(manifest["files"]) != 39:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          print("ZENODO_EXECUTION_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gates before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recheck remote exact head immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+
+      - name: Consume authorization and publish exact files
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py \
+            --manifest "$MANIFEST_PATH"
+          status=$?
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist published or recovery receipt
+        id: persist
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state="$(
+            python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "release/scientific-fact-growth-mesh-2026-08-01/"
+              "zenodo-publication.json"
+          )
+          value = json.loads(path.read_text(encoding="utf-8"))
+          state = value.get("state")
+          if state not in {
+              "published",
+              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
+          }:
+              raise SystemExit("BLOCK: publication evidence state differs")
+          print(state)
+          PY
+          )"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B - <<'PY'
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              (
+                  "release/scientific-fact-growth-mesh-2026-08-01/"
+                  "zenodo-publication.json"
+              ),
+          }
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+              ]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if not item:
+                  continue
+              observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: post-publication repository delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email \
+            'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EVIDENCE_PATH"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if test "$state" = "published"; then
+            message='zenodo: persist scientific fact-growth publication'
+          else
+            message='zenodo: persist scientific fact-growth recovery receipt'
+          fi
+          git commit -m "$message"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$EXPECTED_BRANCH"
+          printf '%s\n' 'persisted=true' >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+      - name: Upload publication recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scientific-fact-growth-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            release/scientific-fact-growth-mesh-2026-08-01/zenodo-publication.json
+
+      - name: Enforce publication and persistence result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+          test "${{ steps.persist.outputs.persisted }}" = "true"
+          test "${{ steps.persist.outputs.state }}" = "published"
