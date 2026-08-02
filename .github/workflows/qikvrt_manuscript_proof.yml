@@ -15,6 +15,8 @@ on:
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
       - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
       - "docs/publications/2026-08-02-causality-is-relation-vrtcore/**"
+      - "docs/publications/2026-08-02-vrtcore-smg-h5/**"
+      - "docs/publications/2026-08-02-vrtcore-virtual-sphere-h6/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -29,6 +31,8 @@ on:
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
       - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
       - "docs/publications/2026-08-02-causality-is-relation-vrtcore/**"
+      - "docs/publications/2026-08-02-vrtcore-smg-h5/**"
+      - "docs/publications/2026-08-02-vrtcore-virtual-sphere-h6/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -51,6 +55,27 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: Provision and verify declared Poppler runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pdfinfo >/dev/null 2>&1 || \
+             ! command -v pdftotext >/dev/null 2>&1 || \
+             ! command -v pdftoppm >/dev/null 2>&1; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              apt-get install --yes --no-install-recommends poppler-utils
+          fi
+          command -v pdfinfo
+          command -v pdftotext
+          command -v pdftoppm
+          pdfinfo -v 2>&1 | sed -n '1p'
+          pdftotext -v 2>&1 | sed -n '1p'
+          pdftoppm -v 2>&1 | sed -n '1p'
+          if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query --show --showformat='poppler-utils-package=${Version}\n' \
+              poppler-utils
+          fi
       - name: Restore cumulative Lean runtime cache
         id: lean_cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -121,6 +146,20 @@ jobs:
         env:
           PYTHONPATH: ../..
         run: python3 ../../tests/test_vrtcore_relational_causality_publication.py
+      - name: Verify VRTCore SMG H5 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          lean_bin="$(lake env which lean)"
+          python3 ../../docs/publications/2026-08-02-vrtcore-smg-h5/verify_h5_package.py \
+            --lean "$lean_bin"
+      - name: Verify VRTCore Virtual Sphere H6 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          lean_bin="$(lake env which lean)"
+          python3 ../../docs/publications/2026-08-02-vrtcore-virtual-sphere-h6/verify_h6_package.py \
+            --lean "$lean_bin"
       - name: Compile exact statement/proof bindings
         run: lake build
       - name: Kernel-check the VRTCore relational-causality candidate

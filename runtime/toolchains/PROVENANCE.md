@@ -96,8 +96,8 @@ manager, or an independently managed formal toolchain:
 | `ietf` | CPython 3.12.13 x64, `xml2rfc==3.34.0`, and pypdf 6.14.2 from hash-locked wheels | fresh locked environment, with consent |
 | `formal` | Python 3.12.x, pytest 9.1.1, Node 24.x, Zod 4.4.3, Lean 4.19.0 and Lake | no |
 | `audio` | Node 24.x, sherpa-onnx-node 1.13.4, FFmpeg and matching FFprobe | no |
-| `publication` | XeLaTeX, `pdftotext`, and `pdftoppm` with reported versions | no |
-| `all` | every preceding contract | xml2rfc only, with consent |
+| `publication` | XeLaTeX and Poppler (`pdfinfo`, `pdftotext`, and `pdftoppm`) with reported versions | Poppler only in the guarded Ubuntu 24.04 manuscript workflow; XeLaTeX remains operator-managed |
+| `all` | every preceding contract | xml2rfc generally; Poppler only in the guarded Ubuntu 24.04 manuscript workflow |
 
 Zod and sherpa-onnx-node versions are already fixed by their respective npm
 lockfiles. Pytest is fixed by the formalization requirements file. `Lean
@@ -108,4 +108,8 @@ FFmpeg, XeLaTeX, Poppler and C compilers are commonly distribution builds with
 feature- and license-dependent packaging. The repository therefore records no
 false universal binary hash or license simplification for them. Check-only
 mode reports `CONTINUE` until the named commands and behavioral contracts are
-present. Their installation remains an operator/platform responsibility.
+present. The Ubuntu 24.04 manuscript workflow has one bounded exception: when
+any declared Poppler command is absent, it installs the distribution
+`poppler-utils` package without recommended packages, records the reported
+package and command versions, and then executes the unchanged PDF verification
+gate. Other installation remains an operator/platform responsibility.

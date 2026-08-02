@@ -874,8 +874,16 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 + "\n"
             ).encode(),
         )
-        evidence = write(root, "proof/EVIDENCE.json", b'{"state":"EVIDENCED"}\n')
-        source = write(root, "proof/SOURCE.txt", b"Primary source fixture.\n")
+        evidence = write(
+            root,
+            "proof/EVIDENCE.json",
+            b'{"id":"observation","state":"EVIDENCED"}\n',
+        )
+        source = write(
+            root,
+            "proof/SOURCE.txt",
+            b"Primary source fixture identifiers:\nlean-source\nline-1\n",
+        )
 
         candidate_identity = bound(
             root,
@@ -1389,6 +1397,28 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         proof.ProofGateError,
                         "exact byte identity differs",
+                    ):
+                        proof.validate_bundle(root, bundle_path)
+
+    def test_reference_fragments_must_exist_in_bound_artifacts(self) -> None:
+        cases = (
+            (1, "evidence_refs", "proof/EVIDENCE.json#missing-observation"),
+            (2, "source_refs", "proof/SOURCE.txt#missing-line"),
+        )
+        for claim_index, key, replacement in cases:
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = pathlib.Path(temporary)
+                    bundle_path, _ = self.fixture(root)
+                    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+                    bundle["claims"][claim_index][key] = [replacement]
+                    bundle_path.write_text(
+                        json.dumps(bundle, sort_keys=True, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        proof.ProofGateError,
+                        "unresolved exact identifier fragment",
                     ):
                         proof.validate_bundle(root, bundle_path)
 
@@ -2641,7 +2671,7 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 "proof/EVIDENCE.json",
                 (
                     json.dumps(
-                        {"state": "EVIDENCED", "secret": token},
+                        {"id": "observation", "state": "EVIDENCED", "secret": token},
                         sort_keys=True,
                     )
                     + "\n"

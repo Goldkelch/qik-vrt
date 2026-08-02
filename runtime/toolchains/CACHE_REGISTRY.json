@@ -157,21 +157,25 @@
     "poppler": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
-        "tools/bootstrap-runtime.sh"
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_manuscript_proof.yml",
+        "tests/test_ai_runtime_bootloader.py"
       ],
       "cache_class": "runner-image-layer",
       "cache_locations": [
-        "github-hosted-runner-image:ubuntu-24.04"
+        "github-hosted-runner-image:ubuntu-24.04",
+        "ubuntu-24.04-archive-package:poppler-utils"
       ],
       "profiles": [
         "publication",
         "all"
       ],
-      "provider": "pinned GitHub-hosted runner image",
+      "provider": "ubuntu-24.04 runner image with guarded apt poppler-utils fallback",
       "trusted_save": false,
       "verification": [
-        "pdfinfo/pdftoppm version",
-        "PDF visual verification"
+        "pdfinfo/pdftotext/pdftoppm version",
+        "reported poppler-utils package version on Ubuntu",
+        "H5 exact PDF content and metadata verification"
       ],
       "version": "reported-version"
     },

@@ -1,0 +1,726 @@
+% !TEX program = xelatex
+% Copyright (c) 2026 Ingolf Lohmann.
+% External publication or relicensing requires a separate decision.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=23mm,headheight=15pt]{geometry}
+\usepackage[provide=*,ngerman]{babel}
+\usepackage{fontspec}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{seqsplit}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\setmonofont{DejaVu Sans Mono}
+
+\definecolor{qikblue}{HTML}{123A63}
+\definecolor{qikgold}{HTML}{A26A00}
+\definecolor{qikgreen}{HTML}{176B3A}
+\definecolor{qikred}{HTML}{9D2929}
+\definecolor{qikgray}{HTML}{F2F4F7}
+\definecolor{qikdarkgray}{HTML}{4A5561}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=qikblue,
+  urlcolor=qikblue,
+  citecolor=qikgreen,
+  pdftitle={Von der Planck-Bruecke zur massiven Kugel -- QIK-VRT SMG H5},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Kernelgepruefter Modellkern, offene Physikbruecken und virtuelle Kosmogenese},
+  pdfkeywords={QIK-VRT, Planck, Standardmodell, Gravitation, Lean, Kausalitaet, virtuelle Kosmogenese}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{QIK--VRT · SMG H5}
+\rhead{Ingolf Lohmann · 2. August 2026}
+\cfoot{\thepage}
+
+\setlist[itemize,enumerate]{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.54em}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\QIKVRT}{QIK--VRT}
+\newcommand{\SMGVRT}{\ensuremath{\mathrm{SMG}_{\mathrm{VRT}}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\openstatus}{\textcolor{qikred}{\textbf{OPEN}}}
+\newcommand{\kernelstatus}{\textcolor{qikgreen}{\textbf{KERNEL-GEPRÜFT}}}
+\newcommand{\conditionalstatus}{\textcolor{qikgold}{\textbf{BEDINGT}}}
+\newcommand{\leanname}[1]{{\ttfamily\footnotesize\seqsplit{#1}}}
+
+\newenvironment{statusbox}{%
+  \begin{center}\begin{minipage}{0.94\textwidth}\small
+  \color{qikdarkgray}\hrule\vspace{0.7em}
+}{%
+  \vspace{0.7em}\hrule\end{minipage}\end{center}
+}
+
+\newenvironment{claimbox}{%
+  \begin{center}\begin{minipage}{0.92\textwidth}
+  \color{qikblue}\hrule\vspace{0.7em}\color{black}
+}{%
+  \vspace{0.7em}\color{qikblue}\hrule\end{minipage}\end{center}
+}
+
+\lstdefinelanguage{Lean}{
+  morekeywords={import,namespace,end,inductive,structure,where,def,theorem,by,
+    cases,decide,rfl,simp,simpa,using,exact,fun,Type,Prop,Bool,Nat,Int,
+    true,false,none,some,deriving,if,then,else},
+  sensitive=true,
+  morecomment=[l]{--},
+  morecomment=[s]{/-}{-/},
+  morestring=[b]"
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{qikblue}\bfseries,
+  commentstyle=\color{qikdarkgray}\itshape,
+  stringstyle=\color{qikgreen},
+  backgroundcolor=\color{qikgray},
+  frame=single,
+  rulecolor=\color{qikdarkgray},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2
+}
+
+\title{\textbf{Von der Planck-Brücke zur massiven Kugel}\\[0.4em]
+\large \QIKVRT{} SMG H5: kernelgeprüfter Modellkern,\\
+\large offene Physikbrücken und virtuelle Kosmogenese}
+\author{Ingolf Lohmann}
+\date{2. August 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{statusbox}
+\textbf{Dokumentstatus:} Fachartikel- und Peer-Review-Kandidat; nicht extern publiziert.\\
+\textbf{Formaler Status:} 32 von 32 H5-Theoremen mit Lean 4.19.0 kernelakzeptiert;
+keine projektspezifischen Axiome, kein \code{sorry}, \code{admit} oder
+\code{unsafe}.\\
+\textbf{Axiom-Audit:} 17 Theoreme ohne Axiome; 13 nur mit \code{propext};
+2 arithmetische Wachstumssätze mit \code{propext} und \code{Quot.sound}.\\
+\textbf{Physikalischer Status:} \code{PHYSICAL\_UNIFICATION = OPEN\_CANDIDATE};
+keine Behauptung eines beobachteten Gravitons, einer fertigen Quantengravitation
+oder eines physisch erzeugten Urknalls.\\
+\textbf{Wirkungsstatus:} \code{EFFECT\_ACK\_CONTINUE}; kein repositoryweites
+\code{PASS}, \code{FINAL\_PASS} oder \code{EFFECT\_ACK\_DONE}.
+\end{statusbox}
+
+\begin{abstract}
+\QIKVRT{} SMG H5 formuliert einen additiven, fail-closed Prüfrahmen für den
+Versuch, relationale Kausalität an Standardmodell, Allgemeine
+Relativitätstheorie, Planck-Skala und Quantenfeldsprache anzuschließen. Der
+Lean-Kern prüft die symbolische Planck-Normalform, die gemeinsame
+Ereignisidentität von Wave- und Record-Projektionen, getrennte Evidenzgates,
+eine zwölfteilige Schließungsbedingung sowie monotone und bedingt
+unbeschränkte Expansion eines virtuellen Übergangssystems. Derselbe Kern weist
+den aktuellen physikalischen Kandidaten als nicht massiv geschlossen aus.
+Standardmodell- und Einstein-Grenzfall, universelle Kopplung einschließlich
+Higgs-Sektor, Quantengravitationskorrespondenz, Stabilität, Unitarität,
+Nichtzirkularität, unterscheidende Vorhersage, empirische Korrespondenz und
+unabhängige Reproduktion bleiben offen. H5 ist damit ein substantieller
+maschinenprüfbarer Brücken- und Falsifikationskandidat, keine abgeschlossene
+Entdeckung einer neuen Naturtheorie.
+\end{abstract}
+
+\tableofcontents
+
+\section{Leitthese und Kreisstruktur}
+
+\begin{claimbox}
+\begin{center}
+\Large\textbf{Kausalität ist Relation, nicht Sequenz.}
+\end{center}
+\end{claimbox}
+
+Eine zeitliche Reihenfolge kann Teil einer Kausalbeschreibung sein, ist aber
+kein hinreichender Kausalbeweis. Erst eine nachprüfbare Abhängigkeit zwischen
+Quelle, Transformation, Kontext, Entscheidung, Autorisierung und Wirkung macht
+aus einem bloßen ``danach'' ein begründetes ``deshalb''.
+
+Die QIK-VRT-Kette lautet:
+
+\[
+\begin{aligned}
+\text{Unterscheidung}
+&\to\text{Information}
+\to\text{Messung}
+\to\text{Wirkung}
+\to\text{Relation}\\
+&\to\text{Kausalordnung}
+\to\text{rekonstruierbare Raumzeit}
+\to\text{klassischer Grenzfall}.
+\end{aligned}
+\]
+
+Der Kreis schließt sich, weil in der emergierten Welt Menschen und Maschinen
+wieder Unterschiede erzeugen, messen, speichern und in Wirkung überführen.
+Damit kehrt die physikalische Frage zur Verantwortungsfrage zurück: Welche
+Relationen rechtfertigen eine Wirkung, und welche halten sie an?
+
+\subsection{Epistemische Trennung}
+
+\begin{longtable}{>{\bfseries}p{0.22\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+\toprule
+Klasse & Zulässige Aussage & Unzulässige Aufwertung \\
+\midrule
+\endhead
+formal bewiesen & Ein Kernel prüft Folgen expliziter Definitionen. & Die Natur erfüllt deshalb das Modell. \\
+empirisch gestützt & Ein Messbefund trägt im publizierten Scope. & Er beweist jede weitergehende Ontologie. \\
+quellengebunden & Eine Quelle stützt eine begrenzte Aussage. & Autorität ersetzt Herleitung oder Messung. \\
+normativ & Eine Regel bindet Verantwortung und Wirkung. & Die Regel folgt zwingend aus Physik. \\
+interpretativ & Ein Rahmen ordnet Befunde und Begriffe. & Die Deutung ist ein Naturtheorem. \\
+offen & Eine Brücke besitzt Frage und Schließungsbedingung. & Offenheit wird als stiller PASS behandelt. \\
+\bottomrule
+\end{longtable}
+
+\section{Relation, Kausalstruktur und Raumzeit}
+
+Die relationale Ausgangsthese ist physikalisch anschlussfähig, ohne durch
+bestehende Arbeiten bereits bewiesen zu sein. Hawking, King und McCarthy sowie
+Malament zeigten unter ausdrücklichen Raumzeitvoraussetzungen, wie viel
+topologische und konforme Struktur aus Kausal- beziehungsweise zeitartigen
+Relationen rekonstruierbar ist \cite{hkm1976,malament1977}. Causal-Set-Modelle
+untersuchen lokal endliche partielle Ordnungen als mögliche Fundamentalstruktur
+\cite{bombelli1987}.
+
+Der Prozessmatrix-Formalismus erlaubt lokale Quantenoperationen ohne eine
+vorausgesetzte einzige globale Kausalordnung \cite{oreshkov2012}. Kohärent
+kontrollierte Gate-Reihenfolgen wurden experimentell demonstriert
+\cite{procopio2015}. Daraus folgt keine frei wählbare Nachricht in einen bereits
+persistierten früheren Record. Es folgt die methodische Vorsicht, globale
+klassische Sequenz nicht unnötig früh als Fundamentalstruktur zu setzen.
+
+\section{Wave und Record}
+
+H5 liest die Wave-Seite als Möglichkeits-, Ausbreitungs- und
+Amplitudenstruktur und die Record-Seite als lokalisierten Wechselwirkungsausgang.
+Ein typisiertes Objekt
+
+\[
+D=(\operatorname{id},W,R)
+\]
+
+besitzt die Projektionen
+
+\[
+\pi_W(D)=(\operatorname{id},W),
+\qquad
+\pi_R(D)=(\operatorname{id},R).
+\]
+
+Der Kernel beweist:
+
+\[
+\operatorname{id}(\pi_W(D))
+=\operatorname{id}(D)
+=\operatorname{id}(\pi_R(D)).
+\]
+
+Dies ist eine Repräsentationsinvariante, keine Festlegung der einzig möglichen
+Quantenontologie.
+
+\subsection{Higgs als empirischer Anker}
+
+In der Quantenfeldsprache ist das Higgs-Boson eine Anregung des Higgs-Feldes
+\cite{cernhiggs}. ATLAS und CMS beobachteten 2012 unabhängig einen neuen
+Boson-Zustand um 125 GeV \cite{atlas2012,cms2012}. Dies stützt das allgemeine
+Muster Feld--Anregung--lokalisierter Detektorrecord. Es beobachtet weder ein
+Graviton noch leitet es eine konkrete Gravitationstheorie her.
+
+\section{Gravitation: gemessene Welle, offenes Quant}
+
+Mit GW150914 wurde eine Gravitationswelle direkt beobachtet; die gemessene
+Wellenform stimmte im geprüften Bereich mit der Allgemeinen Relativitätstheorie
+überein \cite{ligo2016}. Ein einzelnes Graviton ist nicht direkt beobachtet.
+Das Standardmodell enthält die Gravitation nicht \cite{cernsm}.
+
+H5 bindet den Ausgangsstand:
+
+\begin{lstlisting}
+higgsFieldExcitationObserved = true
+gravitationalWaveObserved = true
+gravitonObserved = false
+quantumGravityPredictionConfirmed = false
+\end{lstlisting}
+
+Die Theoreme H5-T12 bis H5-T14 verhindern die automatische Evidenzhochsetzung.
+Sie beweisen nicht, dass Gravitonen unmöglich sind.
+
+\section{Planck-Normalform}
+
+Für reduzierte Compton-Wellenlänge und Gravitationsradius gilt bei der
+Planck-Masse:
+
+\[
+\bar\lambda_C(m_P)
+=\frac{\hbar}{m_Pc}
+=\ell_P
+=\frac{Gm_P}{c^2}
+=r_g(m_P).
+\]
+
+Der Schwarzschild-Radius ist davon durch den Faktor zwei zu unterscheiden:
+
+\[
+r_S(m_P)=\frac{2Gm_P}{c^2}=2\ell_P.
+\]
+
+Weiter gelten symbolisch
+
+\[
+\ell_Pp_P=t_PE_P=\hbar,
+\qquad
+\frac{\ell_P}{t_P}=\frac{E_P}{p_P}=c.
+\]
+
+\subsection{Exakte Kernelrepräsentation}
+
+H5 repräsentiert Monome in \((\hbar,G,c)\) durch verdoppelte ganzzahlige
+Exponenten. Das Tripel \((1,1,-3)\) steht für
+
+\[
+\hbar^{1/2}G^{1/2}c^{-3/2}=\ell_P.
+\]
+
+Die Basismonome lauten:
+
+\[
+\ell_P=(1,1,-3),\quad
+t_P=(1,1,-5),\quad
+m_P=(1,-1,1).
+\]
+
+Multiplikation addiert, Division subtrahiert die Tripel. So prüft Lean die
+Normalform exakt, ohne Gleitkommarundung.
+
+\begin{longtable}{p{0.13\textwidth}p{0.57\textwidth}p{0.2\textwidth}}
+\toprule
+Satz & Kernelgeprüfte Aussage & Axiome \\
+\midrule
+\endhead
+H5-T01 & \(\hbar/(m_Pc)=\ell_P\) als Monomidentität & keine \\
+H5-T02 & \(Gm_P/c^2=\ell_P\) als Monomidentität & keine \\
+H5-T03 & \(\ell_Pp_P=\hbar\) als Monomidentität & keine \\
+H5-T04 & \(t_PE_P=\hbar\) als Monomidentität & keine \\
+H5-T05 & \(\ell_P/t_P=c\) als Monomidentität & keine \\
+H5-T06 & \(E_P/p_P=c\) als Monomidentität & keine \\
+H5-T07 & gemeinsame sechsteilige Normalform & keine \\
+\bottomrule
+\end{longtable}
+
+Die Identitäten markieren eine natürliche Skalenbeziehung. Sie liefern noch
+keine mikroskopische Dynamik, keinen physikalischen Zustandsraum und keine
+bestätigte UV-Vervollständigung.
+
+\section{SMG-VRT: Erweiterung des Standardmodells}
+
+Weil Gravitation nicht Teil des Standardmodells ist, bezeichnet H5 den
+Arbeitsrahmen als Erweiterung \SMGVRT. Ein schematischer Anschluss lautet:
+
+\[
+S_{\SMGVRT}
+=S_{\mathrm{SM}}[g,\Phi]
++\frac{c^3}{16\pi G}\int d^4x\sqrt{-g}\,R
++S_{\mathrm{bridge}}[g,\Phi,\chi].
+\]
+
+Hier sind \(\Phi\) die Standardmodellfelder einschließlich Higgs-Feld,
+\(g\) die gravitative oder rekonstruierte geometrische Struktur und \(\chi\)
+zusätzliche relationale Freiheitsgrade. Der bekannte Standardmodell- plus
+Einstein-Hilbert-Anteil ist noch keine neue Vereinheitlichung. Allgemeine
+Relativität besitzt eine konsistente Niederenergie-Effektivfeldtheorie
+\cite{donoghue1994}; die Hochenergievervollständigung bleibt davon
+unterbestimmt. Die Konsistenzroute von einem linearen masselosen
+Spin-2-Gaugefeld zur Einstein-Selbstkopplung ist ebenfalls bekannt
+\cite{deser1970}.
+
+Der neue physikalische Gehalt müsste in einem expliziten
+\(S_{\mathrm{bridge}}\), seinen Symmetrien, Observablen und unterscheidenden
+Vorhersagen liegen.
+
+\subsection{Erforderliche Grenzsätze}
+
+Ein geschlossener Kandidat muss mindestens zeigen:
+
+\[
+\SMGVRT
+\xrightarrow[\text{niedrige gravitative Kopplung}]{}
+\mathrm{SM}
+\]
+
+im geprüften Teilchen-, Symmetrie- und Amplitudenscope sowie
+
+\[
+\SMGVRT
+\xrightarrow[\text{klassisch / grobgekörnt}]{}
+G_{\mu\nu}+\Lambda g_{\mu\nu}
+=\frac{8\pi G}{c^4}T_{\mu\nu}.
+\]
+
+Die universelle Kopplung muss den Energie-Impuls-Beitrag des Higgs-Sektors
+einschließen. Semantische Information darf nicht ohne physischen Träger als
+zusätzliche Energiequelle eingesetzt werden.
+
+\section{Zwölfteilige massive Schließung}
+
+H5 definiert:
+
+\[
+\begin{aligned}
+\operatorname{MassiveClosure}(M):={}&P\land D\land S\land E\land U\land Q\\
+&\land V\land C\land N\land F\land X\land R.
+\end{aligned}
+\]
+
+\begin{longtable}{>{\bfseries}p{0.08\textwidth}p{0.58\textwidth}p{0.23\textwidth}}
+\toprule
+Code & Zeuge & aktueller H5-Stand \\
+\midrule
+\endhead
+P & Planck-Normalform & \kernelstatus{} im Symbolmodell \\
+D & Wave/Record-Identität & \kernelstatus{} im Typmodell \\
+S & Standardmodell-Grenzfall & \openstatus \\
+E & klassischer Einstein-Grenzfall & \openstatus \\
+U & universelle Stress-Energie-Kopplung inkl. Higgs & \openstatus \\
+Q & Quantengravitationskorrespondenz & \openstatus \\
+V & Stabilität und Unitarität & \openstatus \\
+C & kausale Konsistenz & \kernelstatus{} im H5-Scope \\
+N & Nichtzirkularität & \openstatus \\
+F & falsifizierbare unterscheidende Vorhersage & \openstatus \\
+X & empirische Korrespondenz & \openstatus \\
+R & unabhängige Reproduktion & \openstatus \\
+\bottomrule
+\end{longtable}
+
+Die Theoreme H5-T15 bis H5-T24 zeigen, dass Schließung die kritischen Zeugen
+voraussetzt. H5-T25 bestätigt:
+
+\begin{lstlisting}
+massiveClosure currentH5Candidate = false
+\end{lstlisting}
+
+H5-T26 zeigt lediglich die konstruktive Erfüllbarkeit der Booleschen
+Schließungsfunktion durch vollständig gelieferte Daten. Er liefert diese
+physischen Daten nicht.
+
+\section{Kernel-Receipt ist keine Naturentdeckung}
+
+Der technische Receipt besitzt vier Felder: Quellbindung, Elaboration,
+Kernelannahme und Axiom-Audit. Selbst wenn alle vier wahr sind, bleibt der
+Status ohne physikalische Schließung auf \code{formalModelChecked}.
+
+H5-T27 beweist diesen konkreten Status. H5-T28 beweist umgekehrt, dass die im
+Modell so bezeichnete empirische Korroboration sowohl vollständigen
+Kernel-Receipt als auch massive Schließung voraussetzt.
+
+\begin{claimbox}
+\textbf{Grenze:} Ein formaler Kernel prüft Mathematik relativ zu Definitionen.
+Er ist kein Detektor und kann die Instanziierung seiner Variablen durch die
+Natur nicht selbst feststellen.
+\end{claimbox}
+
+\section{Virtuelle Kosmogenese}
+
+``Urknall in einer virtuellen Maschine'' wird operational als Seed plus
+typisierte Übergangsrelation definiert. Für Seed \(S_0\) und
+\(T\subseteq S\times S\) gilt:
+
+\[
+\begin{aligned}
+R_0(x)&:\Leftrightarrow x=S_0,\\
+R_{n+1}(x)&:\Leftrightarrow R_n(x)
+\lor\exists y\,[R_n(y)\land T(y,x)].
+\end{aligned}
+\]
+
+Lean beweist die Monotonie
+
+\[
+R_n(x)\Rightarrow R_{n+1}(x)
+\]
+
+und die Erreichbarkeit des Seeds in jeder endlichen Stufe. Für eine
+Populationsfunktion \(P:\mathbb N\to\mathbb N\) und einen gelieferten
+strikten Wachstumszeugen gilt außerdem:
+
+\[
+\Bigl[\exists n_0\;\forall n\ge n_0:\;P(n)<P(n+1)\Bigr]
+\Rightarrow
+\Bigl[\forall B\;\exists n:\;B<P(n)\Bigr].
+\]
+
+Dies ist ein Theorem über ein virtuelles Modell. Es beweist weder die Identität
+mit dem physischen frühen Universum noch reale Materie-, Raumzeit- oder
+Energieerzeugung durch einen Computer.
+
+\section{Syntax, Semantik und Prüfkette}
+
+Die EBNF-Oberfläche enthält Pflichtblöcke für Planck-Brücke, Dualität,
+empirische Anker, Grenzfälle, Kopplung, Konsistenz, Vorhersage, Schließung,
+virtuelle Kosmogenese, Effektgrenze und offene Obligationen.
+
+Der Referenzvalidator prüft zwanzig statische Regeln. Elf positive und negative
+Tests blockieren unter anderem:
+
+\begin{itemize}
+  \item fehlende oder doppelte Pflichtblöcke;
+  \item die Verwechslung von Gravitations- und Schwarzschild-Radius;
+  \item Wave/Record-Identität als vermeintliche physische Vollständigkeit;
+  \item Gravitationswelle als vermeintlichen Gravitonnachweis;
+  \item massive Schließung bei mindestens einem falschen Zeugen;
+  \item Kernelannahme als physikalische Entdeckung;
+  \item virtuelle Kosmogenese als physischer Urknall;
+  \item \code{EFFECT\_ACK\_DONE} aus dem wissenschaftlichen Kandidaten.
+\end{itemize}
+
+\begin{lstlisting}
+EBNF source
+-> parsed typed blocks
+-> static obligations S01-S20
+-> Lean model semantics
+-> kernel receipt and axiom audit
+-> claim/source matrix
+-> EFFECT_ACK_CONTINUE
+\end{lstlisting}
+
+Die separate Vektorgrafik
+\code{VRTCore\_SMG\_EBNF\_Map\_DE.svg} bildet diese Kreisstruktur ab.
+
+\section{Offenes Dynamik- und Falsifikationsprogramm}
+
+Die physikalische Lücke wird durch folgende Arbeitskette geschlossen oder
+widerlegt:
+
+\begin{enumerate}
+  \item vollständige Feld-, Zustands- und Observabledefinition;
+  \item lokale Wirkung \(S_{\mathrm{bridge}}\);
+  \item Symmetrie-, Zwangs- und Anomalieanalyse;
+  \item Standardmodell-Decoupling-Theorem;
+  \item Einstein-/Newton-Grenztheorem;
+  \item Higgs-inclusive universelle Kopplung;
+  \item linearisierter Wellensektor und definierter Quantenzustand;
+  \item Ghost-, Stabilitäts-, Unitaritäts- und Kausalitätsanalyse;
+  \item nichtzirkuläre Abbildung auf Messoperationen;
+  \item eingefrorene numerische Vorhersage;
+  \item unabhängiger Rechen- und Datenbenchmark;
+  \item erst danach physikalischer Discovery-Review.
+\end{enumerate}
+
+Eine unterscheidende Vorhersage muss mindestens die Form
+
+\[
+\Delta O
+=O_{\SMGVRT}-O_{\mathrm{SM+GR/EFT}}
+\neq0
+\]
+
+für ein zugängliches Observable \(O\) besitzen. Vor Messung werden Parameter,
+Unsicherheit, Datenpipeline und Widerlegungskriterium eingefroren.
+
+\section{Wissenschaftliche und technologische Tragweite}
+
+\subsection{Erreichte Leistung}
+
+Es ist eine große formale und konzeptionelle Leistung, einen über mehr als ein
+Jahr entwickelten Gedanken von der Alltagssprache über Repository-Provenienz,
+Kausalitäts- und Wirkungsgates bis zu EBNF, statischer Semantik und einem
+tatsächlich ausgeführten Lean-Kern zu führen. Darauf darf der Autor stolz sein.
+Die Leistung wird durch die offenen Brücken nicht entwertet; ihre klare
+Kennzeichnung macht sie wissenschaftlich belastbarer.
+
+\subsection{Bedingte Größenordnung}
+
+Falls ein explizites \(S_{\mathrm{bridge}}\) alle zwölf Schließungszeugen
+liefert, getestete Grenzfälle reproduziert und eine neue Vorhersage unabhängig
+bestätigt wird, wäre die Größenordnung außerordentlich: Dann läge ein Kandidat
+für eine gemeinsame Beschreibung von Quantenfeldstruktur, Gravitation,
+Kausalordnung und Raumzeitrekonstruktion vor. Dies ist heute eine begründete
+Möglichkeit, keine bestätigte Feldbewertung.
+
+\subsection{Technologische Horizonte}
+
+Unabhängig von einer späteren physikalischen Bestätigung sind anschlussfähig:
+
+\begin{itemize}
+  \item beweisstatusbewusste wissenschaftliche Repositories;
+  \item KI-Systeme mit Trennung von Berechnung und Wirkung;
+  \item auditierbare Quanten-klassische Kontrollschleifen;
+  \item kausal adressierte digitale Zwillinge;
+  \item formal gebundene Softwarelieferketten;
+  \item reproduzierbare Modell- und Messkorrespondenz;
+  \item Simulationen mit expliziten Emergenz- und Falsifikationsbedingungen.
+\end{itemize}
+
+\section{Mensch, Weltanschauung und Spiritualität}
+
+\subsection{Freiheit als Anschlussfähigkeit}
+
+Der Mensch steht nicht außerhalb der Kausalität. Freiheit muss dennoch nicht
+zur Illusion werden. Sie kann als reale, verkörperte Anschlussfähigkeit
+verstanden werden: unterscheiden, erinnern, bewerten, lernen, widersprechen,
+korrigieren und verantwortlich handeln.
+
+\begin{claimbox}
+\textbf{Normative QIK-VRT-Linie:} Technische Möglichkeit ist noch keine
+verantwortete Wirkung.
+\end{claimbox}
+
+Mit der möglichen Bedeutung einer Arbeit wächst die Verantwortung gegenüber
+dem eigenen Wohlergehen, dem persönlichen Umfeld, Fachleuten, Öffentlichkeit
+und Wahrheit. Unabhängige Kritik ist kein Angriff auf die Idee, sondern Teil
+ihrer Wirkungsfähigkeit.
+
+\subsection{Weltanschauliche Lesart}
+
+QIK-VRT legt eine relationale Sicht nahe: Identität umfasst auch die
+Kontinuität eines rekonstruierbaren Zusammenhangs; Wissen umfasst Quelle,
+Messung, Modell, Status, Grenze und Korrekturmöglichkeit. Diese Folgerung ist
+interpretativ, nicht durch Lean als Metaphysik erzwungen.
+
+\subsection{Spirituelle Möglichkeit}
+
+H5 beweist keine Religion, keinen Gott und keinen letzten Sinn. Eine
+spirituelle Lesart kann dennoch in Verbundenheit, Staunen und Verantwortung
+liegen:
+
+\begin{quote}
+Unterschiede ermöglichen Beziehung; Beziehung trägt Wirkung; Wirkung begründet
+Verantwortung.
+\end{quote}
+
+Die Aussage darf existenziell bedeutsam sein, bleibt aber eine Deutung und kein
+Messbefund.
+
+\section{Ergebnis und Rückkehr zum Anfang}
+
+H5 schließt nicht die gesamte Physik. Es schließt eine entscheidende
+Vorstufe: Formalität, Empirie, physikalische Brücke, Interpretation, Norm und
+Wirkung können nicht mehr still ineinander geschoben werden.
+
+\begin{itemize}
+  \item Die Planck-Normalform ist symbolisch kernelgeprüft.
+  \item Wave und Record bewahren eine gemeinsame Ereignisidentität.
+  \item Higgs- und Gravitationswellenbefunde sind starke Anker, aber kein
+        Gravitonnachweis.
+  \item Gravitation verlangt eine explizite Erweiterung des Standardmodells.
+  \item Massive Schließung verlangt zwölf getrennte Zeugen.
+  \item Der aktuelle physikalische Kandidat bleibt offen.
+  \item Virtuelle Kosmogenese besitzt einen beweisbaren monotonen Kern, ist
+        aber nicht mit dem physischen Urknall identifiziert.
+\end{itemize}
+
+Der Kreis führt vom ersten Unterschied über Universum, Physik, Mathematik,
+Informatik, Mensch und Verantwortung zurück zum Unterschied zwischen möglicher
+und verantworteter Wirkung.
+
+\begin{claimbox}
+Jede Behauptung und jede Wirkung soll ihre unterscheidbaren Voraussetzungen,
+ihre Relationen, ihre Grenzen und ihre Verantwortung mitführen.
+\end{claimbox}
+
+\begin{center}
+\Large\textbf{Kausalität ist Relation, nicht Sequenz.}
+\end{center}
+
+\section*{Maschinenlesbarer Status}
+
+\begin{lstlisting}
+FORMAL_MODEL_CORE = KERNEL_ACCEPTED_32_OF_32
+PROJECT_AXIOMS = NONE
+SMG_VRT_DYNAMICS = OPEN
+PHYSICAL_UNIFICATION = OPEN_CANDIDATE
+GRAVITON_OBSERVATION = NOT_CLAIMED
+VIRTUAL_COSMOGENESIS = CONDITIONAL_MODEL
+PHYSICAL_BIG_BANG_IDENTITY = NOT_CLAIMED
+INDEPENDENT_REPRODUCTION = OPEN
+GLOBAL_PASS = NOT_CLAIMED
+FINAL_PASS = NOT_CLAIMED
+EFFECT_ACK_DONE = NOT_CLAIMED
+EFFECT_STATE = EFFECT_ACK_CONTINUE
+\end{lstlisting}
+
+\begin{thebibliography}{99}
+
+\bibitem{cernsm}
+CERN, \emph{The Standard Model}.\newline
+\url{https://home.cern/science/physics/standard-model/}
+
+\bibitem{cernhiggs}
+CERN, \emph{The Higgs boson}.\newline
+\url{https://home.cern/science/physics/higgs-boson/}
+
+\bibitem{atlas2012}
+ATLAS Collaboration, \emph{Observation of a new particle in the search for the
+Standard Model Higgs boson with the ATLAS detector at the LHC}, Physics Letters
+B 716 (2012). DOI: \href{https://doi.org/10.1016/j.physletb.2012.08.020}{10.1016/j.physletb.2012.08.020}.
+
+\bibitem{cms2012}
+CMS Collaboration, \emph{Observation of a new boson at a mass of 125 GeV with
+the CMS experiment at the LHC}, Physics Letters B 716 (2012). DOI:
+\href{https://doi.org/10.1016/j.physletb.2012.08.021}{10.1016/j.physletb.2012.08.021}.
+
+\bibitem{ligo2016}
+B. P. Abbott et al., \emph{Observation of Gravitational Waves from a Binary
+Black Hole Merger}, Physical Review Letters 116, 061102 (2016). DOI:
+\href{https://doi.org/10.1103/PhysRevLett.116.061102}{10.1103/PhysRevLett.116.061102}.
+
+\bibitem{deser1970}
+S. Deser, \emph{Self-Interaction and Gauge Invariance}, General Relativity and
+Gravitation 1, 9--18 (1970). DOI:
+\href{https://doi.org/10.1007/BF00759198}{10.1007/BF00759198}.
+
+\bibitem{donoghue1994}
+J. F. Donoghue, \emph{General relativity as an effective field theory: The
+leading quantum corrections} (1994).\newline
+\url{https://arxiv.org/abs/gr-qc/9405057}
+
+\bibitem{hkm1976}
+S. W. Hawking, A. R. King and P. J. McCarthy, \emph{A new topology for curved
+space-time which incorporates the causal, differential, and conformal
+structures}, Journal of Mathematical Physics 17 (1976). DOI:
+\href{https://doi.org/10.1063/1.522874}{10.1063/1.522874}.
+
+\bibitem{malament1977}
+D. B. Malament, \emph{The class of continuous timelike curves determines the
+topology of spacetime}, Journal of Mathematical Physics 18 (1977). DOI:
+\href{https://doi.org/10.1063/1.523436}{10.1063/1.523436}.
+
+\bibitem{bombelli1987}
+L. Bombelli, J. Lee, D. Meyer and R. D. Sorkin, \emph{Space-time as a causal
+set}, Physical Review Letters 59 (1987). DOI:
+\href{https://doi.org/10.1103/PhysRevLett.59.521}{10.1103/PhysRevLett.59.521}.
+
+\bibitem{oreshkov2012}
+O. Oreshkov, F. Costa and C. Brukner, \emph{Quantum correlations with no causal
+order}, Nature Communications 3, 1092 (2012). DOI:
+\href{https://doi.org/10.1038/ncomms2076}{10.1038/ncomms2076}.
+
+\bibitem{procopio2015}
+L. M. Procopio et al., \emph{Experimental superposition of orders of quantum
+gates}, Nature Communications 6, 7913 (2015). DOI:
+\href{https://doi.org/10.1038/ncomms8913}{10.1038/ncomms8913}.
+
+\end{thebibliography}
+
+\vfill
+\begin{center}
+\small
+Autor: Ingolf Lohmann · \QIKVRT{} VRTCore SMG H5 · 2. August 2026\\
+\code{q.e.d.} gilt ausschließlich für die benannten formalen Modellsätze.
+\end{center}
+
+\end{document}
