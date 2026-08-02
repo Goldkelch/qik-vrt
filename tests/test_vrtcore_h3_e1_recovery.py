@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import inspect
 import json
 import pathlib
@@ -200,14 +201,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
-    def test_r6_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+    def test_r7_push_and_run_attempt_are_exactly_one_shot(self) -> None:
         for gate in (
             "github.run_attempt == 1",
             "github.event.created == false",
             "github.event.deleted == false",
             "github.event.forced == false",
             "github.event.before == "
-            "'8db28488afa35549eea640f40f98321c1e56a4e0'",
+            "'eec6f14ad937e15764d28ccf4fc5afef0c198236'",
             "github.event.after == github.sha",
             'test "$GITHUB_RUN_ATTEMPT" = "1"',
             'test "${{ github.event.before }}" = '
@@ -221,8 +222,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("store.arm_exact_record_created_reconciliation()", source)
         self.assertNotIn("store.arm_exact_unsent_create_replay()", source)
         self.assertIn("reconcile_record=(", source)
-        self.assertIn('R5_RECORD_CREATED_TIMEOUT_INCIDENT["record_id"]', source)
-        self.assertIn('R5_RECORD_CREATED_TIMEOUT_INCIDENT["doi"]', source)
+        self.assertIn('R6_DRAFT_METADATA_INCIDENT["record_id"]', source)
+        self.assertIn('R6_DRAFT_METADATA_INCIDENT["doi"]', source)
 
     def test_marker_is_create_only_and_cannot_trigger_any_zenodo_workflow(self) -> None:
         source = inspect.getsource(recovery.persist_create_post_once_marker)
@@ -359,7 +360,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r6_is_exact_direct_child_of_r5_with_full_r4_to_r0_lineage(self) -> None:
+    def test_r7_is_exact_direct_child_of_r6_with_full_r5_to_r0_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -373,18 +374,21 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "8db28488afa35549eea640f40f98321c1e56a4e0"
+                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
+                    "8db28488afa35549eea640f40f98321c1e56a4e0"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -423,6 +427,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             'git -C controller show -s --format=%P \\\n'
             '              '
             '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT"\n'
+            '          )" = '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
@@ -1623,14 +1635,14 @@ class VRTCoreH3E1R5OneShotExecutionTests(unittest.TestCase):
             store.arm_exact_unsent_create_replay()
 
 
-class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
+class VRTCoreH3E1R7OneShotExecutionTests(unittest.TestCase):
     CONTROLLER = "e" * 40
 
     @classmethod
     def event(cls) -> dict[str, Any]:
         return {
             "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
-            "before": recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"],
+            "before": recovery.R6_DRAFT_METADATA_INCIDENT["controller"],
             "after": cls.CONTROLLER,
             "created": False,
             "deleted": False,
@@ -1659,7 +1671,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
     ) -> str:
         path = pathlib.Path(environment["GITHUB_EVENT_PATH"])
         path.write_text(json.dumps(event) + "\n", encoding="utf-8")
-        parent = str(recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"])
+        parent = str(recovery.R6_DRAFT_METADATA_INCIDENT["controller"])
         with mock.patch.dict(recovery.os.environ, environment, clear=True), mock.patch.object(
             recovery,
             "_fetch_credential_free",
@@ -1668,7 +1680,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
             "_git",
             return_value=(0, (parent + "\n").encode("ascii")),
         ):
-            result = recovery._validate_r6_one_shot_execution(root)
+            result = recovery._validate_r7_one_shot_execution(root)
         fetch.assert_called_once_with(
             root,
             "refs/heads/" + recovery.EXPECTED["trigger_branch"],
@@ -1676,7 +1688,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
         )
         return result
 
-    def test_exact_first_nonforced_r5_to_r6_push_is_accepted(self) -> None:
+    def test_exact_first_nonforced_r6_to_r7_push_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             event_path = root / "event.json"
@@ -1726,10 +1738,10 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
                     "_fetch_credential_free",
                 ) as fetch:
                     with self.assertRaisesRegex(SystemExit, "BLOCK:"):
-                        recovery._validate_r6_one_shot_execution(root)
+                        recovery._validate_r7_one_shot_execution(root)
                 fetch.assert_not_called()
 
-    def test_local_controller_parent_must_be_exact_r5(self) -> None:
+    def test_local_controller_parent_must_be_exact_r6(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             event_path = root / "event.json"
@@ -1746,11 +1758,11 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
                 "_git",
                 return_value=(0, ("d" * 40 + "\n").encode("ascii")),
             ):
-                with self.assertRaisesRegex(SystemExit, "single successor of R5"):
-                    recovery._validate_r6_one_shot_execution(root)
+                with self.assertRaisesRegex(SystemExit, "single successor of R6"):
+                    recovery._validate_r7_one_shot_execution(root)
 
-    def test_arm_binds_exact_c2_marker_publication_and_r5_incident(self) -> None:
-        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    def test_arm_binds_exact_c2_marker_publication_and_r6_incident(self) -> None:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
         store = object.__new__(recovery.RecoveryReceiptStore)
         store.root = ROOT
         store.api = object()
@@ -1760,7 +1772,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
         store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
         store._initial_create_replay_pending = False
         store._record_created_reconciliation_armed = False
-        store._r6_controller = None
+        store._r7_controller = None
         chain = [
             {"phase": "authorization_consumed"},
             {"phase": "create_requested"},
@@ -1773,17 +1785,20 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
         ]
         with mock.patch.object(
             recovery,
-            "_validate_r6_one_shot_execution",
+            "_validate_r7_one_shot_execution",
             return_value=self.CONTROLLER,
         ) as execution, mock.patch.object(
             recovery,
             "verify_historical_r5_record_created_timeout",
-        ) as historical, mock.patch.object(
+        ) as historical_r5, mock.patch.object(
+            recovery,
+            "verify_historical_r6_draft_metadata_incident",
+        ) as historical_r6, mock.patch.object(
             recovery,
             "_fetch_credential_free",
         ) as fetch, mock.patch.object(
             recovery,
-            "_verify_r5_local_object_chain",
+            "_verify_r6_local_object_chain",
         ) as objects, mock.patch.object(
             store,
             "validate_recovery_chain",
@@ -1791,9 +1806,10 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
         ):
             store.arm_exact_record_created_reconciliation()
         self.assertTrue(store._record_created_reconciliation_armed)
-        self.assertEqual(store._r6_controller, self.CONTROLLER)
+        self.assertEqual(store._r7_controller, self.CONTROLLER)
         execution.assert_called_once_with(ROOT)
-        historical.assert_called_once_with(store.api, ROOT)
+        historical_r5.assert_called_once_with(store.api, ROOT)
+        historical_r6.assert_called_once_with(store.api, ROOT)
         objects.assert_called_once_with(ROOT)
         self.assertEqual(
             fetch.call_args_list,
@@ -1813,7 +1829,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
         )
 
     def test_arm_rejects_malformed_c2_chain_or_identity(self) -> None:
-        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
         exact = [
             {"phase": "authorization_consumed"},
             {"phase": "create_requested"},
@@ -1847,20 +1863,23 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
                 store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
                 store._initial_create_replay_pending = False
                 store._record_created_reconciliation_armed = False
-                store._r6_controller = None
+                store._r7_controller = None
                 with mock.patch.object(
                     recovery,
-                    "_validate_r6_one_shot_execution",
+                    "_validate_r7_one_shot_execution",
                     return_value=self.CONTROLLER,
                 ), mock.patch.object(
                     recovery,
                     "verify_historical_r5_record_created_timeout",
                 ), mock.patch.object(
                     recovery,
+                    "verify_historical_r6_draft_metadata_incident",
+                ), mock.patch.object(
+                    recovery,
                     "_fetch_credential_free",
                 ), mock.patch.object(
                     recovery,
-                    "_verify_r5_local_object_chain",
+                    "_verify_r6_local_object_chain",
                 ), mock.patch.object(
                     store,
                     "validate_recovery_chain",
@@ -1871,7 +1890,7 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
                 self.assertFalse(store._record_created_reconciliation_armed)
 
     def test_arm_rejects_every_nonexact_start_identity(self) -> None:
-        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
         cases = (
             ("publication_head", "d" * 40),
             ("current_tip", recovery.R4_UNSENT_CREATE_INCIDENT["c1"]),
@@ -1889,14 +1908,14 @@ class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
                 store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
                 store._initial_create_replay_pending = False
                 store._record_created_reconciliation_armed = False
-                store._r6_controller = None
+                store._r7_controller = None
                 setattr(store, attribute, value)
                 with self.assertRaisesRegex(SystemExit, "BLOCK:"):
                     store.arm_exact_record_created_reconciliation()
                 self.assertFalse(store._record_created_reconciliation_armed)
 
 
-class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
+class VRTCoreH3E1R7InventoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         manifest_path = (
@@ -1917,7 +1936,7 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             "doi": doi or "10.5281/zenodo.21763614",
             "metadata": metadata,
             "links": {"bucket": "https://zenodo.org/api/files/exact-c2-bucket"},
-            "files": [{"filename": "one-partial-file-only"}],
+            "files": [],
         }
 
     class Client:
@@ -1936,7 +1955,12 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             assert isinstance(initial, dict)
             return initial
 
-    def test_exact_single_partial_draft_is_identity_gated_without_file_gate(self) -> None:
+        @staticmethod
+        def _server_files(value: Mapping[str, Any]) -> list[dict[str, Any]]:
+            files = value.get("files")
+            return list(files) if isinstance(files, list) else []
+
+    def test_exact_single_empty_draft_is_identity_gated(self) -> None:
         draft = self.draft()
         client = self.Client({21763614: ("draft", draft)})
         with mock.patch.object(
@@ -1944,7 +1968,7 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             "_list_all_owned_depositions",
             return_value=[draft],
         ) as inventory:
-            state, current = recovery._gate_r6_owned_inventory_identity(
+            state, current = recovery._gate_r7_owned_inventory_identity(
                 publish,
                 self.manifest,
                 client,
@@ -1955,6 +1979,23 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
         self.assertEqual(client.wait_calls, [])
         inventory.assert_called_once_with(client, "z" * 32)
 
+    def test_preexisting_draft_file_blocks_before_mutation(self) -> None:
+        draft = self.draft()
+        draft["files"] = [{"filename": "unexpected"}]
+        client = self.Client({21763614: ("draft", draft)})
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            return_value=[draft],
+        ):
+            with self.assertRaisesRegex(SystemExit, "preexisting files"):
+                recovery._gate_r7_owned_inventory_identity(
+                    publish,
+                    self.manifest,
+                    client,
+                    "z" * 32,
+                )
+
     def test_zero_duplicate_and_unstable_inventory_block(self) -> None:
         draft = self.draft()
         client = self.Client({21763614: ("draft", draft)})
@@ -1964,7 +2005,7 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             return_value=[],
         ):
             with self.assertRaisesRegex(SystemExit, "observed 0"):
-                recovery._gate_r6_owned_inventory_identity(
+                recovery._gate_r7_owned_inventory_identity(
                     publish,
                     self.manifest,
                     client,
@@ -1985,10 +2026,10 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             return_value=[draft, duplicate],
         ), mock.patch.object(
             recovery,
-            "_validate_r6_record_identity",
+            "_validate_r7_record_identity",
         ):
             with self.assertRaisesRegex(SystemExit, "observed 2"):
-                recovery._gate_r6_owned_inventory_identity(
+                recovery._gate_r7_owned_inventory_identity(
                     publish,
                     self.manifest,
                     client,
@@ -2001,7 +2042,7 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             side_effect=SystemExit("BLOCK: inventory changed between complete passes"),
         ):
             with self.assertRaisesRegex(SystemExit, "inventory changed"):
-                recovery._gate_r6_owned_inventory_identity(
+                recovery._gate_r7_owned_inventory_identity(
                     publish,
                     self.manifest,
                     client,
@@ -2023,7 +2064,7 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
                     return_value=[candidate],
                 ):
                     with self.assertRaisesRegex(SystemExit, "exact C2"):
-                        recovery._gate_r6_owned_inventory_identity(
+                        recovery._gate_r7_owned_inventory_identity(
                             publish,
                             self.manifest,
                             client,
@@ -2039,9 +2080,9 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
             return_value=[published],
         ), mock.patch.object(
             recovery,
-            "_validate_r6_record_identity",
+            "_validate_r7_record_identity",
         ) as identity:
-            state, current = recovery._gate_r6_owned_inventory_identity(
+            state, current = recovery._gate_r7_owned_inventory_identity(
                 publish,
                 self.manifest,
                 client,
@@ -2053,10 +2094,269 @@ class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
         self.assertTrue(client.wait_calls[0][-1]["published"])
 
 
-class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
+class VRTCoreH3E1R7MetadataSemanticsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        manifest_path = (
+            ROOT
+            / "release/vrtcore-relational-h3-publication-2026-08-02"
+            / "publish-request.json"
+        )
+        cls.manifest = publish.load_manifest(manifest_path, ROOT)
+
+    def draft(self) -> dict[str, Any]:
+        metadata = copy.deepcopy(self.manifest["metadata"])
+        metadata["prereserve_doi"] = {
+            "doi": recovery.R6_DRAFT_METADATA_INCIDENT["doi"],
+        }
+        return {
+            "id": recovery.R6_DRAFT_METADATA_INCIDENT["record_id"],
+            "metadata": metadata,
+            "links": {
+                "bucket": (
+                    "https://zenodo.org/api/files/"
+                    "12345678-1234-1234-1234-123456789abc"
+                )
+            },
+            "files": [],
+        }
+
+    def test_every_nonidentity_field_is_correctable_but_not_strictly_accepted(self) -> None:
+        mutable = sorted(
+            set(self.manifest["metadata"])
+            - {"title", "version", "creators", "prereserve_doi"}
+        )
+        self.assertTrue(mutable)
+        for key in mutable:
+            with self.subTest(key=key):
+                current = self.draft()
+                current["metadata"].pop(key)
+                recovery._validate_r7_record_identity(
+                    publish,
+                    self.manifest,
+                    "draft",
+                    current,
+                    require_exact_draft_metadata=False,
+                )
+                with self.assertRaisesRegex(SystemExit, key):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=True,
+                    )
+
+    def test_identity_fields_never_enter_correctable_mode(self) -> None:
+        for key in ("title", "version", "creators"):
+            with self.subTest(key=key):
+                current = self.draft()
+                current["metadata"].pop(key)
+                with self.assertRaisesRegex(SystemExit, "title, version, or creators"):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=False,
+                    )
+
+    def test_creator_object_extras_never_enter_correctable_mode(self) -> None:
+        current = self.draft()
+        current["metadata"]["creators"][0]["affiliation"] = "Foreign Institution"
+        with self.assertRaisesRegex(SystemExit, "creators differ"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=False,
+            )
+
+    def test_known_zenodo_normalizations_preserve_exact_semantics(self) -> None:
+        current = self.draft()
+        metadata = current["metadata"]
+        metadata["license"] = {"id": self.manifest["metadata"]["license"]}
+        metadata["resource_type"] = {
+            "type": metadata.pop("upload_type"),
+            "subtype": metadata.pop("publication_type"),
+        }
+        self.assertEqual(
+            recovery._r7_draft_metadata_mismatch_keys(
+                publish,
+                metadata,
+                self.manifest["metadata"],
+            ),
+            (),
+        )
+        recovery._validate_r7_record_identity(
+            publish,
+            self.manifest,
+            "draft",
+            current,
+            require_exact_draft_metadata=True,
+        )
+
+    def test_conflicting_or_malformed_dual_resource_type_blocks(self) -> None:
+        for key, normalized_key in (
+            ("upload_type", "type"),
+            ("publication_type", "subtype"),
+        ):
+            with self.subTest(key=key):
+                current = self.draft()
+                current["metadata"]["resource_type"] = {
+                    "type": self.manifest["metadata"]["upload_type"],
+                    "subtype": self.manifest["metadata"]["publication_type"],
+                }
+                current["metadata"]["resource_type"][normalized_key] = "wrong"
+                with self.assertRaisesRegex(SystemExit, key):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=True,
+                    )
+        for malformed in ("malformed", None):
+            with self.subTest(malformed_resource_type=malformed):
+                current = self.draft()
+                current["metadata"]["resource_type"] = malformed
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "publication_type|upload_type",
+                ):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=True,
+                    )
+
+    def test_unrequested_client_metadata_field_blocks_strict_gate(self) -> None:
+        current = self.draft()
+        current["metadata"]["communities"] = [{"identifier": "foreign"}]
+        recovery._validate_r7_record_identity(
+            publish,
+            self.manifest,
+            "draft",
+            current,
+            require_exact_draft_metadata=False,
+        )
+        with self.assertRaisesRegex(SystemExit, "unexpected:communities"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=True,
+            )
+
+    def test_conflicting_public_legacy_alias_blocks(self) -> None:
+        current = self.draft()
+        metadata = current["metadata"]
+        metadata["license"] = {"id": self.manifest["metadata"]["license"]}
+        metadata["resource_type"] = {
+            "type": metadata.pop("upload_type"),
+            "subtype": metadata.pop("publication_type"),
+        }
+        metadata.pop("prereserve_doi", None)
+        metadata["doi"] = recovery.R6_DRAFT_METADATA_INCIDENT["doi"]
+        metadata["upload_type"] = "conflicting-public-alias"
+        with self.assertRaisesRegex(SystemExit, "conflicting metadata aliases"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "published",
+                current,
+                require_exact_draft_metadata=True,
+            )
+
+    def test_conflicting_alternate_record_or_doi_identity_blocks(self) -> None:
+        current = self.draft()
+        current["record_id"] = int(current["id"]) + 1
+        with self.assertRaisesRegex(SystemExit, "conflicting record"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=False,
+            )
+        current = self.draft()
+        current["metadata"]["doi"] = "10.5281/zenodo.21763615"
+        with self.assertRaisesRegex(SystemExit, "conflicting DOI"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=False,
+            )
+        current = self.draft()
+        current["doi"] = "10.5281/zenodo.21763615"
+        with self.assertRaisesRegex(SystemExit, "conflicting DOI"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=False,
+            )
+        for location in ("top", "metadata", "reserved"):
+            with self.subTest(malformed_doi=location):
+                current = self.draft()
+                if location == "top":
+                    current["doi"] = 21763614
+                elif location == "metadata":
+                    current["metadata"]["doi"] = 21763614
+                else:
+                    current["metadata"]["prereserve_doi"] = 21763614
+                    current["doi"] = self.manifest["metadata"].get(
+                        "doi",
+                        recovery.R6_DRAFT_METADATA_INCIDENT["doi"],
+                    )
+                with self.assertRaisesRegex(SystemExit, "conflicting DOI"):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=False,
+                    )
+        for key, value in (
+            ("record_id", float(recovery.R6_DRAFT_METADATA_INCIDENT["record_id"])),
+            ("recid", True),
+        ):
+            with self.subTest(malformed_record_alias=key):
+                current = self.draft()
+                current[key] = value
+                with self.assertRaisesRegex(SystemExit, "record identity"):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=False,
+                    )
+        current = self.draft()
+        current["metadata"]["prereserve_doi"]["recid"] = (
+            recovery.R6_DRAFT_METADATA_INCIDENT["record_id"] + 1
+        )
+        with self.assertRaisesRegex(SystemExit, "reserved record identity"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=False,
+            )
+
+
+class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
     RECORD_ID = 21763614
     DOI = "10.5281/zenodo.21763614"
-    BUCKET = "https://zenodo.org/api/files/exact-c2-bucket"
+    BUCKET = "https://zenodo.org/api/files/12345678-1234-1234-1234-123456789abc"
 
     @classmethod
     def draft(cls) -> dict[str, Any]:
@@ -2078,9 +2378,17 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
         operation: tuple[str, str] | str,
         *,
         fail_boundary_at: int | None = None,
+        fail_phase: str | None = None,
     ) -> tuple[Any, Any, list[str], Any]:
         events: list[str] = []
         current = self.draft()
+        upload_body = b"exact-r7-bucket-drift-test\n"
+        upload_entry = {
+            "name": "paper.pdf",
+            "size": len(upload_body),
+            "md5": hashlib.md5(upload_body).hexdigest(),  # noqa: S324
+            "sha256": hashlib.sha256(upload_body).hexdigest(),
+        }
 
         class PinnedZenodoError(RuntimeError):
             pass
@@ -2096,18 +2404,34 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                 poll_interval: float = 2.0,
                 sleeper: Any = None,
             ) -> None:
-                del sleeper
                 instance.base_url = base_url
+                instance.poll_attempts = poll_attempts
+                instance.poll_interval = poll_interval
+                instance.sleeper = sleeper or (lambda _seconds: None)
                 events.append(f"init:{poll_attempts}:{poll_interval}")
 
             def request(
                 instance: Any,
                 method: str,
                 url: str,
-                **_kwargs: Any,
+                **request_kwargs: Any,
             ) -> tuple[object, dict[str, Any]]:
                 del instance
                 events.append("transport:" + method + ":" + urllib.parse.urlsplit(url).path)
+                if (
+                    method == "PUT"
+                    and urllib.parse.urlsplit(url).path
+                    == f"/api/deposit/depositions/{self.RECORD_ID}"
+                    and isinstance(request_kwargs.get("payload"), dict)
+                    and isinstance(request_kwargs["payload"].get("metadata"), dict)
+                ):
+                    updated_metadata = copy.deepcopy(
+                        request_kwargs["payload"]["metadata"]
+                    )
+                    updated_metadata["prereserve_doi"] = {"doi": self.DOI}
+                    current["metadata"] = updated_metadata
+                if operation == "metadata_put_ambiguous_retry":
+                    raise RuntimeError("simulated ambiguous transport")
                 return object(), {}
 
             def create_paper(instance: Any, _metadata: Mapping[str, Any]) -> dict[str, Any]:
@@ -2124,6 +2448,43 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                 events.append("record-get")
                 return "draft", current
 
+            def get(
+                instance: Any,
+                path: str,
+                accept: tuple[int, ...] = (200,),
+            ) -> tuple[int, dict[str, Any]]:
+                del instance
+                self.assertEqual(
+                    path,
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                )
+                self.assertEqual(accept, (200, 202))
+                events.append("metadata-get")
+                return 200, current
+
+            @staticmethod
+            def _server_files(value: Mapping[str, Any]) -> list[dict[str, Any]]:
+                files = value.get("files")
+                return list(files) if isinstance(files, list) else []
+
+            @staticmethod
+            def _server_file_name(value: Mapping[str, Any]) -> str:
+                return str(value["filename"])
+
+            def wait_for_editable_metadata(
+                instance: Any,
+                _record_id: int,
+                _metadata: Mapping[str, Any],
+            ) -> dict[str, Any]:
+                del instance
+                return current
+
+            def gate_record(instance: Any, *_args: Any, **_kwargs: Any) -> None:
+                del instance
+
+            def gate_files(instance: Any, *_args: Any, **_kwargs: Any) -> None:
+                del instance
+
         zenodo_module = types.SimpleNamespace(
             ZenodoClient=Client,
             ZenodoError=PinnedZenodoError,
@@ -2139,7 +2500,10 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
         module._create_consumption_receipt = lambda *_args, **_kwargs: None
         module._atomic_recovery_evidence = lambda *_args, **_kwargs: None
         module._acquire_remote_consumption_lock = lambda *_args, **_kwargs: None
-        module._shared_entries = lambda _files: []
+        module._shared_entries = lambda files: [dict(item) for item in files]
+        module._inventory_publication_identity_candidate = (
+            lambda _value, _metadata: True
+        )
 
         def original_resume(
             _evidence: Mapping[str, Any],
@@ -2155,6 +2519,112 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             events.append("resume")
             if operation == "create_paper":
                 client.create_paper({})
+            elif operation == "metadata_put":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": _manifest["metadata"]},
+                    accept=(200, 202),
+                )
+            elif operation == "metadata_put_twice":
+                for _index in range(2):
+                    client.request(
+                        "PUT",
+                        f"/api/deposit/depositions/{self.RECORD_ID}",
+                        payload={"metadata": _manifest["metadata"]},
+                        accept=(200, 202),
+                    )
+            elif operation == "metadata_put_wrong_payload":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": {"title": "wrong"}},
+                    accept=(200, 202),
+                )
+            elif operation == "metadata_put_wrong_accept":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": _manifest["metadata"]},
+                    accept=(200,),
+                )
+            elif operation == "metadata_put_ambiguous_retry":
+                try:
+                    client.request(
+                        "PUT",
+                        f"/api/deposit/depositions/{self.RECORD_ID}",
+                        payload={"metadata": _manifest["metadata"]},
+                        accept=(200, 202),
+                    )
+                except RuntimeError:
+                    client.request(
+                        "PUT",
+                        f"/api/deposit/depositions/{self.RECORD_ID}",
+                        payload={"metadata": _manifest["metadata"]},
+                        accept=(200, 202),
+                    )
+            elif operation == "publish_after_failed_intent":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": _manifest["metadata"]},
+                    accept=(200, 202),
+                )
+                client.wait_for_editable_metadata(
+                    self.RECORD_ID,
+                    _manifest["metadata"],
+                )
+                for phase in ("prepared", "publish_requested"):
+                    module._atomic_recovery_evidence(
+                        _evidence_path,
+                        {"phase": phase},
+                        {},
+                    )
+                client.request(
+                    "POST",
+                    f"/api/deposit/depositions/{self.RECORD_ID}/actions/publish",
+                    accept=(200, 201, 202, 409),
+                )
+            elif operation == "upload_after_bucket_drift":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": _manifest["metadata"]},
+                    accept=(200, 202),
+                )
+                client.wait_for_editable_metadata(
+                    self.RECORD_ID,
+                    _manifest["metadata"],
+                )
+                current["links"]["bucket"] = (
+                    "https://zenodo.org/api/files/"
+                    "87654321-4321-4321-4321-cba987654321"
+                )
+                client.request(
+                    "PUT",
+                    self.BUCKET + "/paper.pdf",
+                    data=upload_body,
+                    content_type="application/octet-stream",
+                    accept=(200, 201, 202),
+                )
+            elif operation == "post_put_file_appears":
+                client.request(
+                    "PUT",
+                    f"/api/deposit/depositions/{self.RECORD_ID}",
+                    payload={"metadata": _manifest["metadata"]},
+                    accept=(200, 202),
+                )
+                current["files"] = [
+                    {
+                        "filename": "unexpected.txt",
+                        "filesize": 1,
+                        "checksum": "md5:c4ca4238a0b923820dcc509a6f75849b",
+                    }
+                ]
+                client.wait_for_editable_metadata(
+                    self.RECORD_ID,
+                    _manifest["metadata"],
+                )
             else:
                 assert isinstance(operation, tuple)
                 client.request(operation[0], operation[1])
@@ -2162,6 +2632,9 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
 
         module._resume_publication = original_resume
 
+        manifest_files = (
+            [upload_entry] if operation == "upload_after_bucket_drift" else []
+        )
         manifest = {
             "metadata": {
                 "title": "Exact C2",
@@ -2169,7 +2642,7 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                 "creators": [{"name": "Ingolf Lohmann"}],
                 "prereserve_doi": True,
             },
-            "files": [],
+            "files": manifest_files,
         }
         evidence = {
             "phase": "record_created",
@@ -2187,7 +2660,11 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                 root,
                 manifest,
                 E1,
-                {},
+                (
+                    {("publication", "paper.pdf"): upload_body}
+                    if operation == "upload_after_bucket_drift"
+                    else {}
+                ),
                 client,
                 {publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE: "z" * 32},
             )
@@ -2203,9 +2680,12 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             def persist_and_readback(
                 instance: Any,
                 _path: pathlib.Path,
-                _phase: str,
+                phase: str,
             ) -> None:
                 del instance
+                events.append("durable:" + phase)
+                if phase == fail_phase:
+                    raise SystemExit("BLOCK: simulated remote checkpoint failure")
 
             def _recheck_remote_boundary(instance: Any) -> None:
                 instance.boundaries += 1
@@ -2233,6 +2713,8 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             client_type.__init__,
             client_type.request,
             client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
         )
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
             recovery,
@@ -2240,7 +2722,7 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             return_value=module,
         ), mock.patch.object(
             recovery,
-            "_gate_r6_owned_inventory_identity",
+            "_gate_r7_owned_inventory_identity",
             side_effect=lambda *_args: (events.append("inventory") or ("draft", self.draft())),
         ):
             root = pathlib.Path(directory)
@@ -2263,14 +2745,16 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             client_type.__init__,
             client_type.request,
             client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
         )
         for observed, expected in zip(current, originals):
             if observed is not expected:
-                raise AssertionError("R6 wrapper hook was not restored")
+                raise AssertionError("R7 wrapper hook was not restored")
 
     def test_allowed_metadata_put_is_bracketed_and_restored(self) -> None:
         events, module, client_type, originals = self.run_fixture(
-            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+            "metadata_put",
         )
         self.assertEqual(events[0], "init:120:2.0")
         self.assertLess(events.index("inventory"), events.index("resume"))
@@ -2278,9 +2762,179 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
         self.assertEqual(events[-4:], ["boundary", "record-get", "boundary", mutation])
         self.assert_restored(module, client_type, originals)
 
-    def test_every_exact_c2_effect_path_is_reachable_after_all_gates(self) -> None:
-        allowed = (
-            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+    def test_wrong_or_second_metadata_put_blocks_before_extra_transport(self) -> None:
+        cases = (
+            ("metadata_put_wrong_payload", 0),
+            ("metadata_put_wrong_accept", 0),
+            ("metadata_put_twice", 1),
+            ("metadata_put_ambiguous_retry", 1),
+        )
+        for operation, expected_transports in cases:
+            with self.subTest(operation=operation):
+                module, client_type, events, store = self.fixture(operation)
+                originals = (
+                    module._create_consumption_receipt,
+                    module._atomic_recovery_evidence,
+                    module._acquire_remote_consumption_lock,
+                    module._resume_publication,
+                    client_type.__init__,
+                    client_type.request,
+                    client_type.create_paper,
+                    client_type.wait_for_editable_metadata,
+                    client_type.gate_record,
+                )
+                with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+                    recovery,
+                    "_load_e1_publisher",
+                    return_value=module,
+                ), mock.patch.object(
+                    recovery,
+                    "_gate_r7_owned_inventory_identity",
+                    return_value=("draft", self.draft()),
+                ):
+                    root = pathlib.Path(directory)
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery.run_publisher_with_checkpoints(
+                            root / "publish-request.json",
+                            root,
+                            store,
+                            reconcile_record=(self.RECORD_ID, self.DOI),
+                        )
+                transports = [
+                    item for item in events if item.startswith("transport:")
+                ]
+                self.assertEqual(len(transports), expected_transports)
+                self.assert_restored(module, client_type, originals)
+
+    def test_failed_publish_intent_checkpoint_blocks_publish_transport(self) -> None:
+        module, client_type, events, store = self.fixture(
+            "publish_after_failed_intent",
+            fail_phase="publish_requested",
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r7_owned_inventory_identity",
+            return_value=("draft", self.draft()),
+        ):
+            root = pathlib.Path(directory)
+            with self.assertRaisesRegex(SystemExit, "checkpoint failure"):
+                recovery.run_publisher_with_checkpoints(
+                    root / "publish-request.json",
+                    root,
+                    store,
+                    reconcile_record=(self.RECORD_ID, self.DOI),
+                )
+        self.assertIn("durable:prepared", events)
+        self.assertIn("durable:publish_requested", events)
+        self.assertFalse(
+            any(
+                item
+                == "transport:POST:/api/deposit/depositions/21763614/actions/publish"
+                for item in events
+            )
+        )
+        self.assert_restored(module, client_type, originals)
+
+    def test_bucket_drift_blocks_upload_before_file_transport(self) -> None:
+        module, client_type, events, store = self.fixture(
+            "upload_after_bucket_drift",
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r7_owned_inventory_identity",
+            return_value=("draft", self.draft()),
+        ):
+            root = pathlib.Path(directory)
+            with self.assertRaisesRegex(SystemExit, "upload bucket changed"):
+                recovery.run_publisher_with_checkpoints(
+                    root / "publish-request.json",
+                    root,
+                    store,
+                    reconcile_record=(self.RECORD_ID, self.DOI),
+                )
+        self.assertEqual(
+            events.count(
+                "transport:PUT:/api/deposit/depositions/21763614"
+            ),
+            1,
+        )
+        self.assertNotIn(
+            "transport:PUT:/api/files/"
+            "12345678-1234-1234-1234-123456789abc/paper.pdf",
+            events,
+        )
+        self.assert_restored(module, client_type, originals)
+
+    def test_any_post_put_file_observation_blocks_immediately(self) -> None:
+        module, client_type, events, store = self.fixture(
+            "post_put_file_appears",
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r7_owned_inventory_identity",
+            return_value=("draft", self.draft()),
+        ):
+            root = pathlib.Path(directory)
+            with self.assertRaisesRegex(SystemExit, "gained files"):
+                recovery.run_publisher_with_checkpoints(
+                    root / "publish-request.json",
+                    root,
+                    store,
+                    reconcile_record=(self.RECORD_ID, self.DOI),
+                )
+        self.assertEqual(
+            [item for item in events if item.startswith("transport:")],
+            ["transport:PUT:/api/deposit/depositions/21763614"],
+        )
+        self.assert_restored(module, client_type, originals)
+
+    def test_file_delete_upload_and_publish_block_before_metadata_convergence(self) -> None:
+        forbidden = (
             ("PUT", self.BUCKET + "/paper.pdf"),
             ("DELETE", self.BUCKET + "/old-paper.pdf"),
             (
@@ -2292,16 +2946,38 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                 f"/api/deposit/depositions/{self.RECORD_ID}/actions/publish",
             ),
         )
-        for method, url in allowed:
-            with self.subTest(method=method, url=url):
-                events, module, client_type, originals = self.run_fixture(
-                    (method, url),
+        for operation in forbidden:
+            with self.subTest(operation=operation):
+                module, client_type, events, store = self.fixture(operation)
+                originals = (
+                    module._create_consumption_receipt,
+                    module._atomic_recovery_evidence,
+                    module._acquire_remote_consumption_lock,
+                    module._resume_publication,
+                    client_type.__init__,
+                    client_type.request,
+                    client_type.create_paper,
+                    client_type.wait_for_editable_metadata,
+                    client_type.gate_record,
                 )
-                path = urllib.parse.urlsplit(url).path
-                self.assertEqual(
-                    events[-4:],
-                    ["boundary", "record-get", "boundary", f"transport:{method}:{path}"],
-                )
+                with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+                    recovery,
+                    "_load_e1_publisher",
+                    return_value=module,
+                ), mock.patch.object(
+                    recovery,
+                    "_gate_r7_owned_inventory_identity",
+                    return_value=("draft", self.draft()),
+                ):
+                    root = pathlib.Path(directory)
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery.run_publisher_with_checkpoints(
+                            root / "publish-request.json",
+                            root,
+                            store,
+                            reconcile_record=(self.RECORD_ID, self.DOI),
+                        )
+                self.assertFalse(any(item.startswith("transport:") for item in events))
                 self.assert_restored(module, client_type, originals)
 
     def test_create_and_nonallowlisted_mutations_fail_before_transport(self) -> None:
@@ -2326,6 +3002,8 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                     client_type.__init__,
                     client_type.request,
                     client_type.create_paper,
+                    client_type.wait_for_editable_metadata,
+                    client_type.gate_record,
                 )
                 with tempfile.TemporaryDirectory() as directory, mock.patch.object(
                     recovery,
@@ -2333,7 +3011,7 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                     return_value=module,
                 ), mock.patch.object(
                     recovery,
-                    "_gate_r6_owned_inventory_identity",
+                    "_gate_r7_owned_inventory_identity",
                     return_value=("draft", self.draft()),
                 ):
                     root = pathlib.Path(directory)
@@ -2350,7 +3028,7 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
 
     def test_second_boundary_drift_blocks_the_original_transport(self) -> None:
         module, client_type, events, store = self.fixture(
-            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+            "metadata_put",
             fail_boundary_at=3,
         )
         originals = (
@@ -2361,6 +3039,8 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             client_type.__init__,
             client_type.request,
             client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
         )
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
             recovery,
@@ -2368,7 +3048,7 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
             return_value=module,
         ), mock.patch.object(
             recovery,
-            "_gate_r6_owned_inventory_identity",
+            "_gate_r7_owned_inventory_identity",
             return_value=("draft", self.draft()),
         ):
             root = pathlib.Path(directory)
@@ -2394,6 +3074,276 @@ class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
                     reconcile_record=(self.RECORD_ID + 1, self.DOI),
                 )
         loader.assert_not_called()
+
+
+class VRTCoreH3E1R7PinnedE1IntegrationTests(unittest.TestCase):
+    RECORD_ID = 21763614
+    DOI = "10.5281/zenodo.21763614"
+    BUCKET_ID = "12345678-1234-1234-1234-123456789abc"
+
+    def test_real_e1_prepare_upload_checkpoint_publish_order_and_restoration(self) -> None:
+        module = recovery._load_e1_publisher(ROOT)
+        manifest_path = (
+            ROOT
+            / "release/vrtcore-relational-h3-publication-2026-08-02"
+            / "publish-request.json"
+        )
+        loaded = module.load_manifest(manifest_path, ROOT)
+        metadata = copy.deepcopy(loaded["metadata"])
+        body = b"exact-r7-pinned-e1-integration\n"
+        entry = {
+            "path": "integration.txt",
+            "name": "integration.txt",
+            "size": len(body),
+            "md5": hashlib.md5(body).hexdigest(),  # noqa: S324
+            "sha256": hashlib.sha256(body).hexdigest(),
+        }
+        manifest = copy.deepcopy(loaded)
+        manifest["files"] = [entry]
+        entries = [dict(entry)]
+        verified = {("publication", entry["name"]): body}
+        events: list[str] = []
+
+        def normalized_metadata() -> dict[str, Any]:
+            value = copy.deepcopy(metadata)
+            value["prereserve_doi"] = {"doi": self.DOI}
+            value["license"] = {"id": value["license"]}
+            value["resource_type"] = {
+                "type": value.pop("upload_type"),
+                "subtype": value.pop("publication_type"),
+            }
+            return value
+
+        state: dict[str, Any] = {
+            "published": False,
+            "metadata": {
+                "title": metadata["title"],
+                "version": metadata["version"],
+                "creators": copy.deepcopy(metadata["creators"]),
+                "notes": "stale pre-R7 metadata",
+                "prereserve_doi": {"doi": self.DOI},
+            },
+            "files": {},
+        }
+
+        class Transport:
+            @staticmethod
+            def response(status: int, value: Any) -> Any:
+                raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
+                return module.zenodo.HttpResponse(
+                    status=status,
+                    headers={"Content-Type": "application/json"},
+                    body=raw,
+                )
+
+            @staticmethod
+            def file_items() -> list[dict[str, Any]]:
+                return [
+                    {
+                        "filename": name,
+                        "filesize": len(raw),
+                        "checksum": "md5:" + hashlib.md5(raw).hexdigest(),  # noqa: S324
+                        "links": {
+                            "download": (
+                                "https://zenodo.org/api/files/"
+                                + self.BUCKET_ID
+                                + "/"
+                                + urllib.parse.quote(name, safe="")
+                            )
+                        },
+                    }
+                    for name, raw in state["files"].items()
+                ]
+
+            @classmethod
+            def draft(cls) -> dict[str, Any]:
+                return {
+                    "id": self.RECORD_ID,
+                    "metadata": copy.deepcopy(state["metadata"]),
+                    "links": {
+                        "bucket": (
+                            "https://zenodo.org/api/files/" + self.BUCKET_ID
+                        )
+                    },
+                    "files": cls.file_items(),
+                    "submitted": bool(state["published"]),
+                    "state": "done" if state["published"] else "unsubmitted",
+                }
+
+            @classmethod
+            def public(cls) -> dict[str, Any]:
+                public_metadata = normalized_metadata()
+                public_metadata.pop("prereserve_doi", None)
+                public_metadata["doi"] = self.DOI
+                return {
+                    "id": self.RECORD_ID,
+                    "conceptdoi": "10.5281/zenodo.21763613",
+                    "metadata": public_metadata,
+                    "files": cls.file_items(),
+                    "links": {
+                        "html": f"https://zenodo.org/records/{self.RECORD_ID}",
+                    },
+                }
+
+            def request(
+                instance: Any,
+                method: str,
+                url: str,
+                *,
+                body: bytes | None = None,
+                content_type: str | None = None,
+                max_response_bytes: int,
+            ) -> Any:
+                del instance, max_response_bytes
+                path = urllib.parse.urlsplit(url).path
+                events.append("http:" + method + ":" + path)
+                deposition = f"/api/deposit/depositions/{self.RECORD_ID}"
+                bucket = "/api/files/" + self.BUCKET_ID
+                if method == "GET" and path == deposition:
+                    return Transport.response(200, Transport.draft())
+                if method == "GET" and path == f"/api/records/{self.RECORD_ID}":
+                    return Transport.response(
+                        200 if state["published"] else 404,
+                        Transport.public() if state["published"] else {},
+                    )
+                if method == "PUT" and path == deposition:
+                    self.assertEqual(content_type, "application/json")
+                    assert body is not None
+                    payload = json.loads(body.decode("utf-8"))
+                    self.assertEqual(payload, {"metadata": metadata})
+                    state["metadata"] = normalized_metadata()
+                    return Transport.response(200, Transport.draft())
+                if method == "PUT" and path == bucket + "/integration.txt":
+                    self.assertEqual(content_type, "application/octet-stream")
+                    self.assertEqual(body, b"exact-r7-pinned-e1-integration\n")
+                    assert body is not None
+                    state["files"]["integration.txt"] = body
+                    return Transport.response(200, {"key": "integration.txt"})
+                if method == "GET" and path == bucket + "/integration.txt":
+                    return module.zenodo.HttpResponse(
+                        status=200,
+                        headers={"Content-Type": "application/octet-stream"},
+                        body=state["files"]["integration.txt"],
+                    )
+                if method == "POST" and path == deposition + "/actions/publish":
+                    self.assertIsNone(body)
+                    state["published"] = True
+                    return Transport.response(202, Transport.public())
+                raise AssertionError(f"unexpected E1 transport request: {method} {path}")
+
+        transport = Transport()
+
+        class Store:
+            _record_created_reconciliation_armed = True
+
+            def _recheck_remote_boundary(instance: Any) -> None:
+                del instance
+                events.append("boundary")
+
+            def persist_and_readback(
+                instance: Any,
+                _path: pathlib.Path,
+                phase: str,
+            ) -> None:
+                del instance
+                events.append("durable:" + phase)
+
+        store = Store()
+        def execute(manifest_arg: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
+            remote_consumption = {
+                "ref": "refs/tags/qikvrt-r7-integration",
+                "tag_object": "a" * 40,
+            }
+            evidence = module._phase_evidence(
+                manifest_arg,
+                root,
+                manifest,
+                E1,
+                remote_consumption,
+                "record_created",
+                record_id=self.RECORD_ID,
+                doi=self.DOI,
+            )
+            client = module.zenodo.ZenodoClient(
+                "z" * 32,
+                "https://zenodo.org/api",
+                transport,
+                sleeper=lambda _seconds: None,
+            )
+            return module._resume_publication(
+                evidence,
+                root / "zenodo-publication.json",
+                manifest_arg,
+                root,
+                manifest,
+                E1,
+                verified,
+                client,
+                {
+                    module.zenodo.TOKEN_ENVIRONMENT_VARIABLE: "z" * 32,
+                    module.GITHUB_TOKEN_ENVIRONMENT_VARIABLE: "g" * 32,
+                },
+            )
+
+        client_type = module.zenodo.ZenodoClient
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        initial = Transport.draft()
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r7_owned_inventory_identity",
+            return_value=("draft", initial),
+        ), mock.patch.object(
+            module,
+            "_verify_remote_consumption_lock",
+            return_value=None,
+        ), mock.patch.object(
+            module,
+            "publish",
+            new=execute,
+        ):
+            root = pathlib.Path(directory)
+            result = recovery.run_publisher_with_checkpoints(
+                root / "publish-request.json",
+                root,
+                store,
+                reconcile_record=(self.RECORD_ID, self.DOI),
+            )
+        self.assertEqual(
+            (result.get("record_id"), result.get("doi"), result.get("phase")),
+            (self.RECORD_ID, self.DOI, "public_verified"),
+        )
+        self.assertTrue(state["published"])
+        self.assertEqual(state["files"], {"integration.txt": body})
+        self.assertFalse(any(event.startswith("http:DELETE:") for event in events))
+        self.assertLess(events.index("durable:prepared"), events.index("durable:publish_requested"))
+        publish_event = "http:POST:/api/deposit/depositions/21763614/actions/publish"
+        self.assertLess(events.index("durable:publish_requested"), events.index(publish_event))
+        restored = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        self.assertEqual(restored, originals)
 
 
 class FakeRecoveryReceiptStore:
@@ -2787,12 +3737,13 @@ class VRTCoreH3E1RecoveryRemoteBoundaryTests(unittest.TestCase):
         store.create_post_once_head = None
         store._prepared_replay_pending = False
         store._initial_create_replay_pending = False
+        store._r7_controller = None
         return store
 
-    def test_r6_trigger_branch_drift_blocks_the_remote_boundary(self) -> None:
+    def test_r7_trigger_branch_drift_blocks_the_remote_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = self.store(pathlib.Path(directory))
-            store._r6_controller = "e" * 40
+            store._r7_controller = "e" * 40
 
             def read_ref(
                 _api: Any,
@@ -4071,6 +5022,130 @@ class VRTCoreH3E1R5RecordCreatedIncidentTests(unittest.TestCase):
                         self.verify(
                             FakeR4IncidentAPI(log, artifact, incident),
                             digest_for=log,
+                        )
+
+
+class VRTCoreH3E1R6DraftMetadataIncidentTests(unittest.TestCase):
+    @staticmethod
+    def evidence() -> bytes:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        return subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(incident["c2"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+
+    @classmethod
+    def artifact_fixture(cls) -> tuple[bytes, dict[str, Any]]:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        buffer = recovery.io.BytesIO()
+        with recovery.zipfile.ZipFile(
+            buffer,
+            mode="w",
+            compression=recovery.zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as archive:
+            entry = recovery.zipfile.ZipInfo(
+                str(incident["artifact_entry"]),
+                (2026, 8, 2, 21, 52, 8),
+            )
+            entry.create_system = 3
+            entry.external_attr = 0o100600 << 16
+            entry.compress_type = recovery.zipfile.ZIP_DEFLATED
+            archive.writestr(entry, cls.evidence(), compresslevel=6)
+        raw = buffer.getvalue()
+        with recovery.zipfile.ZipFile(recovery.io.BytesIO(raw), mode="r") as archive:
+            parsed = archive.infolist()[0]
+        return raw, {
+            "artifact_size": len(raw),
+            "artifact_digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+            "artifact_entry_compressed_bytes": parsed.compress_size,
+            "artifact_entry_crc32": parsed.CRC,
+            "artifact_entry_unix_mode": parsed.external_attr >> 16,
+        }
+
+    @staticmethod
+    def log_bytes() -> bytes:
+        lines: list[str] = []
+        for marker, count in recovery.R6_METADATA_LOG_REQUIRED_COUNTS.items():
+            lines.extend(marker for _index in range(count))
+        prefix = b"\xef\xbb\xbf" + ("\n".join(lines) + "\n").encode("utf-8")
+        size = int(recovery.R6_DRAFT_METADATA_INCIDENT["log_bytes"])
+        if len(prefix) > size:
+            raise AssertionError("R6 incident fixture exceeds exact size")
+        return prefix + b"x" * (size - len(prefix))
+
+    @staticmethod
+    def verify(api: FakeR4IncidentAPI, *, digest_for: bytes) -> None:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        real_sha256 = recovery.hashlib.sha256
+
+        class FixedDigest:
+            def hexdigest(self) -> str:
+                return str(incident["log_sha256"])
+
+        def sha256(raw: bytes = b"") -> Any:
+            if raw == digest_for:
+                return FixedDigest()
+            return real_sha256(raw)
+
+        with mock.patch.object(recovery.hashlib, "sha256", side_effect=sha256):
+            recovery.verify_historical_r6_draft_metadata_incident(api, ROOT)
+
+    def test_exact_r6_run_job_artifact_and_log_are_read_only(self) -> None:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        log = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            api = FakeR4IncidentAPI(log, artifact, incident)
+            self.verify(api, digest_for=log)
+        self.assertEqual(
+            [method for method, _path in api.calls],
+            ["GET", "GET", "GET", "GET_BYTES", "GET_BYTES"],
+        )
+
+    def test_r6_controller_parent_tree_and_c2_pins_are_real(self) -> None:
+        recovery._verify_r6_local_object_chain(ROOT)
+
+    def test_r6_log_and_artifact_tampering_block(self) -> None:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        raw = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        marker = next(iter(recovery.R6_METADATA_LOG_REQUIRED_COUNTS))
+        changed_log = raw.replace(
+            marker.encode("utf-8"),
+            ("_" * len(marker)).encode("utf-8"),
+            1,
+        )
+        with mock.patch.dict(incident, overrides):
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(
+                    FakeR4IncidentAPI(changed_log, artifact, incident),
+                    digest_for=changed_log,
+                )
+            api = FakeR4IncidentAPI(raw, artifact, incident)
+            api.artifacts["artifacts"][0]["digest"] = "sha256:" + "0" * 64
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(api, digest_for=raw)
+
+    def test_r6_public_or_effect_function_markers_are_forbidden(self) -> None:
+        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        raw = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            for marker in recovery.R6_METADATA_LOG_FORBIDDEN_MARKERS:
+                with self.subTest(marker=marker):
+                    encoded = marker.encode("utf-8")
+                    changed = raw[: -len(encoded)] + encoded
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(
+                            FakeR4IncidentAPI(changed, artifact, incident),
+                            digest_for=changed,
                         )
 
 

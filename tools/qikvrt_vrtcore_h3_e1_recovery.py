@@ -217,6 +217,57 @@ R5_TIMEOUT_LOG_FORBIDDEN_MARKERS = (
     "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
     "ZENODO_PUBLICATION_STATE=published",
 )
+
+R6_DRAFT_METADATA_INCIDENT: dict[str, Any] = {
+    "controller": "eec6f14ad937e15764d28ccf4fc5afef0c198236",
+    "controller_parent": "8db28488afa35549eea640f40f98321c1e56a4e0",
+    "controller_tree": "020f983f6fa1498f4a9b03dc50c30f2f70d4c72e",
+    "run_id": 30768765296,
+    "job_id": 91552099457,
+    "run_attempt": 1,
+    "log_bytes": 420440,
+    "log_sha256": (
+        "3722516092e0d69bbbae63897fa589c903b0710e9fcd4ceb645e4a0ce8cf05b3"
+    ),
+    "artifact_id": 8839839720,
+    "artifact_name": "vrtcore-h3-e1-recovery-30768765296-1",
+    "artifact_size": 6688,
+    "artifact_digest": (
+        "sha256:b01f4a5ce3b55d2a5f60bf16ed37f200c65e79bc32c43f25a739a702e3b2f184"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 6528,
+    "artifact_entry_crc32": 0xF3A6D7EB,
+    "artifact_entry_unix_mode": 0o100600,
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+}
+
+R6_METADATA_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "BLOCK: R6 draft metadata differs from exact C2 manifest": 1,
+    "Process completed with exit code 2.": 1,
+    "Process completed with exit code 1.": 1,
+}
+R6_METADATA_LOG_FORBIDDEN_MARKERS = (
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=ALREADY_FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+    "ZENODO_PUBLICATION_STATE=published",
+    "create_paper",
+    "publish_and_poll",
+)
 R5_GOVERNANCE_BOUNDARIES = (
     "PRIVILEGED_REPLAY_MARKER_REF_DELETION_NOT_PREVENTED",
     "AMBIGUOUS_MARKER_MUTATION_BLOCKS_WITHOUT_REARM",
@@ -226,6 +277,12 @@ R6_GOVERNANCE_BOUNDARIES = (
     "R5_RUN_MUST_NOT_BE_RERUN",
     "R6_RUN_ATTEMPT_ONE_ONLY",
     "R6_RECONCILES_RECORD_21763614_WITHOUT_CREATE",
+)
+R7_GOVERNANCE_BOUNDARIES = (
+    "R6_RUN_MUST_NOT_BE_RERUN",
+    "R7_RUN_ATTEMPT_ONE_ONLY",
+    "R7_CORRECTS_ONLY_MUTABLE_METADATA_ON_RECORD_21763614",
+    "R7_REQUIRES_POST_PUT_METADATA_CONVERGENCE_BEFORE_FILES",
 )
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
@@ -870,6 +927,16 @@ class GitHubAPI:
                 + str(R5_RECORD_CREATED_TIMEOUT_INCIDENT["artifact_id"])
                 + "/zip"
             ): R5_RECORD_CREATED_TIMEOUT_INCIDENT["artifact_size"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R6_DRAFT_METADATA_INCIDENT["job_id"])
+                + "/logs"
+            ): R6_DRAFT_METADATA_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R6_DRAFT_METADATA_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R6_DRAFT_METADATA_INCIDENT["artifact_size"],
         }
         if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
@@ -1168,6 +1235,18 @@ def _verify_r5_artifact_evidence(api: Any, root: pathlib.Path) -> None:
     )
 
 
+def _verify_r6_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Prove that R6 uploaded only the unchanged record-created C2 receipt."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R6_DRAFT_METADATA_INCIDENT,
+        evidence_prefix="c2",
+        expected_phase="record_created",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
+
+
 def verify_historical_r4_unsent_create_incident(
     api: Any,
     root: pathlib.Path,
@@ -1361,6 +1440,100 @@ def verify_historical_r5_record_created_timeout(
     _verify_r5_artifact_evidence(api, root)
 
 
+def verify_historical_r6_draft_metadata_incident(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind the exact R6 identity-only block and unchanged C2 artifact."""
+    incident = R6_DRAFT_METADATA_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R6 workflow run differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R6 workflow job differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R6 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(
+        api,
+        job_path + "/logs",
+        int(incident["log_bytes"]),
+    )
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R6 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R6 job log is not exact UTF-8 with BOM")
+    for marker, count in R6_METADATA_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R6 job log required marker count differs")
+    if any(marker in decoded for marker in R6_METADATA_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R6 job log crossed the public effect boundary")
+    _verify_r6_artifact_evidence(api, root)
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -1439,6 +1612,27 @@ def _verify_r5_local_object_chain(root: pathlib.Path) -> None:
         != incident["c2_evidence_sha256"]
     ):
         _fail("R5 record-created evidence object differs")
+
+
+def _verify_r6_local_object_chain(root: pathlib.Path) -> None:
+    """Bind R6 as the exact no-receipt successor of R5 and unchanged C2."""
+    _verify_r5_local_object_chain(root)
+    incident = R6_DRAFT_METADATA_INCIDENT
+    commit = str(incident["controller"])
+    _status, resolved = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{commit}^{{commit}}",
+    )
+    _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+    _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+    if (
+        resolved.decode("ascii").strip() != commit
+        or parents.decode("ascii").strip() != incident["controller_parent"]
+        or tree.decode("ascii").strip() != incident["controller_tree"]
+    ):
+        _fail("R6 draft-metadata local object chain differs")
 
 
 def _head_ref_path(ref: str, *, plural: bool) -> str:
@@ -2061,8 +2255,8 @@ def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
     return controller
 
 
-def _validate_r6_one_shot_execution(root: pathlib.Path) -> str:
-    """Bind reconciliation to the first non-forced R5 -> R6 push attempt."""
+def _validate_r7_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind correction to the first non-forced R6 -> R7 push attempt."""
     controller = os.environ.get("GITHUB_SHA", "")
     event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
     if (
@@ -2074,13 +2268,13 @@ def _validate_r6_one_shot_execution(root: pathlib.Path) -> str:
         or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
         or not event_path_raw
     ):
-        _fail("R6 reconciliation execution environment differs")
+        _fail("R7 reconciliation execution environment differs")
     event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
     repository = event.get("repository")
     head_commit = event.get("head_commit")
     if (
         event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
-        or event.get("before") != R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"]
+        or event.get("before") != R6_DRAFT_METADATA_INCIDENT["controller"]
         or event.get("after") != controller
         or event.get("created") is not False
         or event.get("deleted") is not False
@@ -2090,7 +2284,7 @@ def _validate_r6_one_shot_execution(root: pathlib.Path) -> str:
         or not isinstance(head_commit, dict)
         or head_commit.get("id") != controller
     ):
-        _fail("R6 reconciliation push event differs")
+        _fail("R7 reconciliation push event differs")
     _fetch_credential_free(
         root,
         "refs/heads/" + EXPECTED["trigger_branch"],
@@ -2099,9 +2293,9 @@ def _validate_r6_one_shot_execution(root: pathlib.Path) -> str:
     _status, parent = _git(root, "show", "-s", "--format=%P", controller)
     if (
         parent.decode("ascii").strip()
-        != R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"]
+        != R6_DRAFT_METADATA_INCIDENT["controller"]
     ):
-        _fail("R6 controller is not the exact single successor of R5")
+        _fail("R7 controller is not the exact single successor of R6")
     return controller
 
 
@@ -2184,21 +2378,21 @@ class RecoveryReceiptStore:
         self._prepared_replay_pending = False
         self._initial_create_replay_pending = False
         self._record_created_reconciliation_armed = False
-        self._r6_controller: str | None = None
+        self._r7_controller: str | None = None
 
     def _recheck_remote_boundary(self) -> None:
         if _read_head_ref(self.api, "refs/heads/main") != self.controller_parent:
             _fail("main moved across the exact recovery boundary")
-        r6_controller = getattr(self, "_r6_controller", None)
+        r7_controller = getattr(self, "_r7_controller", None)
         if (
-            r6_controller is not None
+            r7_controller is not None
             and _read_head_ref(
                 self.api,
                 "refs/heads/" + EXPECTED["trigger_branch"],
             )
-            != r6_controller
+            != r7_controller
         ):
-            _fail("R6 trigger branch moved across the reconciliation boundary")
+            _fail("R7 trigger branch moved across the reconciliation boundary")
         if _read_head_ref(self.api, EXPECTED["publication_ref"]) != EXPECTED["e1"]:
             _fail("publication branch moved across the recovery boundary")
         if (
@@ -2266,16 +2460,16 @@ class RecoveryReceiptStore:
         return True
 
     def arm_exact_record_created_reconciliation(self) -> None:
-        """Arm only exact C2 from the first R5 timeout, never a create replay."""
-        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        """Arm exact C2 after the pinned R6 metadata-only failure."""
+        incident = R6_DRAFT_METADATA_INCIDENT
         if (
             self.publication_head != EXPECTED["e1"]
             or self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]
             or self.current_tip != incident["c2"]
             or self._initial_create_replay_pending
         ):
-            _fail("R6 record-created reconciliation state differs")
-        self._r6_controller = _validate_r6_one_shot_execution(self.root)
+            _fail("R7 record-created reconciliation state differs")
+        self._r7_controller = _validate_r7_one_shot_execution(self.root)
         _fetch_credential_free(
             self.root,
             EXPECTED["publication_ref"],
@@ -2291,22 +2485,23 @@ class RecoveryReceiptStore:
             EXPECTED["recovery_ref"],
             incident["c2"],
         )
-        _verify_r5_local_object_chain(self.root)
+        _verify_r6_local_object_chain(self.root)
         verify_historical_r5_record_created_timeout(self.api, self.root)
+        verify_historical_r6_draft_metadata_incident(self.api, self.root)
         chain = self.validate_recovery_chain(incident["c2"])
         if [item["phase"] for item in chain] != [
             "authorization_consumed",
             "create_requested",
             "record_created",
         ]:
-            _fail("R5 record-created recovery chain differs")
+            _fail("R7 record-created recovery chain differs")
         last = chain[-1]
         if (
             last.get("record_id") != incident["record_id"]
             or last.get("doi") != incident["doi"]
             or last.get("state") != incident["state"]
         ):
-            _fail("R5 record-created recovery identity differs")
+            _fail("R7 record-created recovery identity differs")
         self._record_created_reconciliation_armed = True
 
     def _prepare_integrity(self) -> None:
@@ -2810,51 +3005,184 @@ class RecoveryReceiptStore:
         return evidence
 
 
-def _validate_r6_record_identity(
+def _r7_draft_metadata_mismatch_keys(
+    publisher_module: Any,
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Compare every authorized field across legacy/normalized draft shapes."""
+    if not isinstance(actual, dict):
+        return tuple(sorted(key for key in expected if key != "prereserve_doi"))
+    allowed_keys = set(expected) | {"doi", "resource_type"}
+    mismatches: list[str] = [
+        "unexpected:" + key for key in sorted(set(actual) - allowed_keys)
+    ]
+    resource_type = actual.get("resource_type")
+    for key, expected_value in expected.items():
+        if key == "prereserve_doi":
+            continue
+        if key == "license":
+            license_value = actual.get("license")
+            actual_value = (
+                license_value.get("id")
+                if isinstance(license_value, dict)
+                else license_value
+            )
+        elif key == "upload_type":
+            candidates = []
+            if "upload_type" in actual:
+                candidates.append(actual.get("upload_type"))
+            if "resource_type" in actual:
+                candidates.append(
+                    resource_type.get("type")
+                    if isinstance(resource_type, dict)
+                    else resource_type
+                )
+            if not candidates or any(
+                not publisher_module.zenodo._metadata_matches(
+                    candidate,
+                    expected_value,
+                )
+                for candidate in candidates
+            ):
+                mismatches.append(key)
+            continue
+        elif key == "publication_type":
+            candidates = []
+            if "publication_type" in actual:
+                candidates.append(actual.get("publication_type"))
+            if "resource_type" in actual:
+                candidates.append(
+                    resource_type.get("subtype")
+                    if isinstance(resource_type, dict)
+                    else resource_type
+                )
+            if not candidates or any(
+                not publisher_module.zenodo._metadata_matches(
+                    candidate,
+                    expected_value,
+                )
+                for candidate in candidates
+            ):
+                mismatches.append(key)
+            continue
+        else:
+            actual_value = actual.get(key)
+        if not publisher_module.zenodo._metadata_matches(
+            actual_value,
+            expected_value,
+        ):
+            mismatches.append(key)
+    return tuple(sorted(mismatches))
+
+
+def _validate_r7_record_identity(
     publisher_module: Any,
     manifest: Mapping[str, Any],
     state: str,
     current: Mapping[str, Any],
+    *,
+    require_exact_draft_metadata: bool,
 ) -> None:
-    """Validate C2 identity without requiring draft file completeness."""
-    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    """Bind immutable C2 identity; relax only mutable draft fields pre-PUT."""
+    incident = R6_DRAFT_METADATA_INCIDENT
     record_id = publisher_module.zenodo._record_id(
         current,
-        "R6 record-created reconciliation record",
+        "R7 record-created reconciliation record",
     )
     doi = publisher_module.zenodo._doi_from_deposition(
         current,
-        "R6 record-created reconciliation record",
+        "R7 record-created reconciliation record",
     )
     if record_id != incident["record_id"] or doi != incident["doi"]:
-        _fail("R6 owned record identity differs from exact C2")
+        _fail("R7 owned record identity differs from exact C2")
+
+    def require_exact_optional_record_id(value: Any, where: str) -> None:
+        if value is None:
+            return
+        normalized = int(value) if isinstance(value, str) and value.isdecimal() else value
+        if (
+            isinstance(normalized, bool)
+            or not isinstance(normalized, int)
+            or normalized != incident["record_id"]
+        ):
+            _fail("R7 owned record exposes a conflicting " + where)
+
+    for key in ("record_id", "recid"):
+        require_exact_optional_record_id(current.get(key), "record identity")
     actual_metadata = current.get("metadata")
     metadata = manifest["metadata"]
+    doi_candidates: list[Any] = [current.get("doi")]
+    if isinstance(actual_metadata, dict):
+        reserved = actual_metadata.get("prereserve_doi")
+        doi_candidates.append(actual_metadata.get("doi"))
+        if isinstance(reserved, dict):
+            if reserved.get("doi") != incident["doi"]:
+                _fail("R7 owned record exposes a conflicting DOI identity")
+            doi_candidates.append(reserved.get("doi"))
+            require_exact_optional_record_id(
+                reserved.get("recid"),
+                "reserved record identity",
+            )
+        elif reserved is not None:
+            doi_candidates.append(reserved)
+    if any(
+        candidate is not None and candidate != incident["doi"]
+        for candidate in doi_candidates
+    ):
+        _fail("R7 owned record exposes a conflicting DOI identity")
+    if (
+        not isinstance(actual_metadata, dict)
+        or actual_metadata.get("creators") != metadata["creators"]
+    ):
+        _fail("R7 title, version, or creators differ from exact C2 identity")
     if state == "published":
         if not publisher_module.zenodo._published_metadata_matches(
             actual_metadata,
             metadata,
         ):
-            _fail("R6 published record metadata differs from exact C2 manifest")
+            _fail("R7 published record metadata differs from exact C2 manifest")
+        conflicting_aliases = tuple(
+            key
+            for key in _r7_draft_metadata_mismatch_keys(
+                publisher_module,
+                actual_metadata,
+                metadata,
+            )
+            if not key.startswith("unexpected:")
+        )
+        if conflicting_aliases:
+            _fail(
+                "R7 published record exposes conflicting metadata aliases: "
+                + ",".join(conflicting_aliases)
+            )
         return
     if state != "draft":
-        _fail("R6 owned record state is unsupported")
-    expected_metadata = dict(metadata)
-    expected_metadata.pop("prereserve_doi", None)
-    if not publisher_module.zenodo._metadata_matches(
-        actual_metadata,
-        expected_metadata,
+        _fail("R7 owned record state is unsupported")
+    if not publisher_module._inventory_publication_identity_candidate(
+        current,
+        metadata,
     ):
-        _fail("R6 draft metadata differs from exact C2 manifest")
+        _fail("R7 draft title, version, or creators differ from exact C2 identity")
+    mismatches = _r7_draft_metadata_mismatch_keys(
+        publisher_module,
+        actual_metadata,
+        metadata,
+    )
+    if require_exact_draft_metadata and mismatches:
+        _fail(
+            "R7 draft metadata differs after exact correction: "
+            + ",".join(mismatches)
+        )
 
 
-def _gate_r6_owned_inventory_identity(
+def _gate_r7_owned_inventory_identity(
     publisher_module: Any,
     manifest: Mapping[str, Any],
     client: Any,
     zenodo_token: str,
 ) -> tuple[str, Mapping[str, Any]]:
-    """Require one stable owned C2 identity before any R6 Zenodo mutation."""
+    """Require one stable, empty, owned C2 draft before R7 correction."""
     metadata = manifest["metadata"]
     entries = publisher_module._shared_entries(manifest["files"])
     inventory = publisher_module._list_all_owned_depositions(client, zenodo_token)
@@ -2867,29 +3195,32 @@ def _gate_r6_owned_inventory_identity(
             continue
         record_id = publisher_module.zenodo._record_id(
             item,
-            "R6 owned inventory candidate",
+            "R7 owned inventory candidate",
         )
         state, current = client.get_deposition_or_record(record_id)
-        _validate_r6_record_identity(
+        _validate_r7_record_identity(
             publisher_module,
             manifest,
             state,
             current,
+            require_exact_draft_metadata=False,
         )
         doi = publisher_module.zenodo._doi_from_deposition(
             current,
-            "R6 owned inventory candidate",
+            "R7 owned inventory candidate",
         )
+        if state == "draft" and client._server_files(current):
+            _fail("R7 exact C2 draft contains unexpected preexisting files")
         matches.append((record_id, doi, state, current))
     if len(matches) != 1:
         _fail(
-            "R6 reconciliation requires exactly one canonically matching "
+            "R7 reconciliation requires exactly one canonically matching "
             f"owned deposition; observed {len(matches)}"
         )
     record_id, doi, state, current = matches[0]
-    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    incident = R6_DRAFT_METADATA_INCIDENT
     if record_id != incident["record_id"] or doi != incident["doi"]:
-        _fail("R6 sole owned candidate differs from exact C2 identity")
+        _fail("R7 sole owned candidate differs from exact C2 identity")
     if state == "published":
         current = client.wait_for_gated_record(
             record_id,
@@ -2918,14 +3249,14 @@ def run_publisher_with_checkpoints(
     ``create_paper`` and ``publish_requested`` before ``publish_and_poll``.
     """
     if reconcile_record is not None and publish_callable is not None:
-        _fail("R6 reconciliation may only run the freshly loaded E1 publisher")
+        _fail("R7 reconciliation may only run the freshly loaded E1 publisher")
     if reconcile_record is not None:
-        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        incident = R6_DRAFT_METADATA_INCIDENT
         if reconcile_record != (
             int(incident["record_id"]),
             str(incident["doi"]),
         ):
-            _fail("R6 reconciliation target differs from exact C2")
+            _fail("R7 reconciliation target differs from exact C2")
     publisher_module = (
         publish if publish_callable is not None else _load_e1_publisher(root)
     )
@@ -2937,17 +3268,31 @@ def run_publisher_with_checkpoints(
     original_client_init: Any | None = None
     original_request: Any | None = None
     original_create_paper: Any | None = None
+    original_wait_for_editable_metadata: Any | None = None
+    original_gate_record: Any | None = None
     original_resume: Any | None = None
     if reconcile_record is not None:
         client_type = publisher_module.zenodo.ZenodoClient
         original_client_init = client_type.__init__
         original_request = client_type.request
         original_create_paper = client_type.create_paper
+        original_wait_for_editable_metadata = client_type.wait_for_editable_metadata
+        original_gate_record = client_type.gate_record
         original_resume = publisher_module._resume_publication
     reconciliation: dict[str, Any] = {
         "inventory_complete": False,
         "manifest": None,
+        "entries": None,
+        "verified": None,
         "bucket_path": None,
+        "metadata_put_attempted": False,
+        "metadata_put_succeeded": False,
+        "metadata_confirmed": False,
+        "upload_index": 0,
+        "upload_in_flight": False,
+        "prepared_durable": False,
+        "publish_intent_durable": False,
+        "publish_post_attempted": False,
     }
 
     def reject_new_consumption_lock(*_args: Any, **_kwargs: Any) -> Any:
@@ -2957,6 +3302,19 @@ def run_publisher_with_checkpoints(
         phase = value.get("phase")
         if phase in CHECKPOINT_PHASES:
             store.persist_and_readback(path, str(phase))
+            if reconcile_record is not None and phase == "prepared":
+                if (
+                    reconciliation["metadata_confirmed"] is not True
+                    or not isinstance(reconciliation["entries"], list)
+                    or reconciliation["upload_index"]
+                    != len(reconciliation["entries"])
+                ):
+                    _fail("R7 prepared checkpoint preceded exact upload completion")
+                reconciliation["prepared_durable"] = True
+            elif reconcile_record is not None and phase == "publish_requested":
+                if reconciliation["prepared_durable"] is not True:
+                    _fail("R7 publish intent preceded durable preparation")
+                reconciliation["publish_intent_durable"] = True
 
     def checkpointing_exclusive_writer(
         path: pathlib.Path,
@@ -2985,9 +3343,9 @@ def run_publisher_with_checkpoints(
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         if poll_attempts != 30 or poll_interval != 2.0:
-            _fail("R6 reconciliation client polling inputs differ")
+            _fail("R7 reconciliation client polling inputs differ")
         if original_client_init is None:
-            _fail("R6 reconciliation client initializer is unavailable")
+            _fail("R7 reconciliation client initializer is unavailable")
         original_client_init(
             instance,
             token,
@@ -2999,7 +3357,168 @@ def run_publisher_with_checkpoints(
         )
 
     def reject_create_paper(*_args: Any, **_kwargs: Any) -> Any:
-        _fail("R6 reconciliation forbids creation of a Zenodo deposition")
+        _fail("R7 reconciliation forbids creation of a Zenodo deposition")
+
+    def exact_bucket_path(instance: Any, current: Mapping[str, Any]) -> str:
+        links = current.get("links")
+        bucket = links.get("bucket") if isinstance(links, dict) else None
+        if not isinstance(bucket, str):
+            _fail("R7 exact C2 draft lacks its bounded upload bucket")
+        safe_bucket = publisher_module.zenodo.validate_response_url(
+            bucket,
+            instance.base_url,
+        )
+        parts = urllib.parse.urlsplit(safe_bucket)
+        path = parts.path.rstrip("/")
+        if (
+            parts.query
+            or parts.fragment
+            or re.fullmatch(
+                r"/api/files/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                path,
+            )
+            is None
+        ):
+            _fail("R7 exact C2 upload bucket escaped its canonical API shape")
+        return path
+
+    def wait_for_semantically_exact_metadata(
+        instance: Any,
+        record_id: int,
+        metadata: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        incident = R6_DRAFT_METADATA_INCIDENT
+        if (
+            record_id != incident["record_id"]
+            or reconciliation["metadata_put_attempted"] is not True
+            or reconciliation["metadata_put_succeeded"] is not True
+            or not isinstance(reconciliation["manifest"], Mapping)
+            or metadata != reconciliation["manifest"]["metadata"]
+        ):
+            _fail("R7 metadata confirmation preceded its exact PUT")
+        last_mismatches: tuple[str, ...] = ()
+        for attempt in range(instance.poll_attempts):
+            status, value = instance.get(
+                f"/api/deposit/depositions/{record_id}",
+                accept=(200, 202),
+            )
+            _validate_r7_record_identity(
+                publisher_module,
+                reconciliation["manifest"],
+                "draft",
+                value,
+                require_exact_draft_metadata=False,
+            )
+            if instance._server_files(value):
+                _fail("R7 exact C2 draft gained files after metadata correction")
+            last_mismatches = _r7_draft_metadata_mismatch_keys(
+                publisher_module,
+                value.get("metadata"),
+                metadata,
+            )
+            links = value.get("links")
+            candidate_bucket = (
+                links.get("bucket") if isinstance(links, dict) else None
+            )
+            if status == 200 and not last_mismatches and isinstance(
+                candidate_bucket,
+                str,
+            ):
+                store._recheck_remote_boundary()  # type: ignore[attr-defined]
+                second_status, confirmed = instance.get(
+                    f"/api/deposit/depositions/{record_id}",
+                    accept=(200, 202),
+                )
+                if second_status != 200:
+                    _fail("R7 exact metadata changed during confirmation")
+                _validate_r7_record_identity(
+                    publisher_module,
+                    reconciliation["manifest"],
+                    "draft",
+                    confirmed,
+                    require_exact_draft_metadata=True,
+                )
+                if instance._server_files(confirmed):
+                    _fail("R7 exact C2 draft gained files before bounded upload")
+                bucket_path = exact_bucket_path(instance, confirmed)
+                store._recheck_remote_boundary()  # type: ignore[attr-defined]
+                reconciliation["bucket_path"] = bucket_path
+                reconciliation["metadata_confirmed"] = True
+                return dict(confirmed)
+            if attempt + 1 < instance.poll_attempts:
+                instance.sleeper(instance.poll_interval)
+        suffix = ",".join(last_mismatches) if last_mismatches else "response"
+        _fail("R7 timed out waiting for exact corrected metadata: " + suffix)
+
+    def gate_semantically_exact_record(
+        instance: Any,
+        value: Mapping[str, Any],
+        record_id: int,
+        metadata: Mapping[str, Any],
+        entries: Any,
+        expected_doi: str,
+        *,
+        published: bool,
+    ) -> None:
+        if published:
+            if original_gate_record is None:
+                _fail("R7 published-record gate is unavailable")
+            original_gate_record(
+                instance,
+                value,
+                record_id,
+                metadata,
+                entries,
+                expected_doi,
+                published=True,
+            )
+            return
+        incident = R6_DRAFT_METADATA_INCIDENT
+        if (
+            record_id != incident["record_id"]
+            or expected_doi != incident["doi"]
+            or reconciliation["metadata_confirmed"] is not True
+            or metadata
+            != reconciliation.get("manifest", {}).get("metadata")
+            or entries != reconciliation["entries"]
+        ):
+            _fail("R7 draft gate inputs differ from exact C2")
+        _validate_r7_record_identity(
+            publisher_module,
+            reconciliation["manifest"],
+            "draft",
+            value,
+            require_exact_draft_metadata=True,
+        )
+        instance.gate_files(value, entries)
+
+    def gate_uploaded_prefix(instance: Any, current: Mapping[str, Any]) -> None:
+        entries = reconciliation["entries"]
+        index = reconciliation["upload_index"]
+        if not isinstance(entries, list) or not isinstance(index, int):
+            _fail("R7 upload prefix state differs")
+        expected = entries[:index]
+        server_files = instance._server_files(current)
+        by_name: dict[str, Mapping[str, Any]] = {}
+        for item in server_files:
+            name = instance._server_file_name(item)
+            if name in by_name:
+                _fail("R7 upload prefix contains a duplicate file")
+            by_name[name] = item
+        if set(by_name) != {entry["name"] for entry in expected}:
+            _fail("R7 upload prefix differs from completed manifest entries")
+        for entry in expected:
+            item = by_name[entry["name"]]
+            size = item.get("filesize", item.get("size"))
+            if isinstance(size, str) and size.isdecimal():
+                size = int(size)
+            checksum = item.get("checksum")
+            if size != entry["size"] or checksum not in (
+                entry["md5"],
+                "md5:" + entry["md5"],
+            ):
+                _fail("R7 upload prefix file identity differs")
 
     def guarded_request(
         instance: Any,
@@ -3012,57 +3531,148 @@ def run_publisher_with_checkpoints(
             url,
             instance.base_url,
         )
-        path = urllib.parse.urlsplit(safe_url).path
-        if normalized_method == "POST" and path == "/api/deposit/depositions":
-            _fail("R6 reconciliation blocked the exact Zenodo create endpoint")
-        if normalized_method != "GET":
-            incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
-            if (
-                reconcile_record
-                != (int(incident["record_id"]), str(incident["doi"]))
-                or getattr(store, "_record_created_reconciliation_armed", False)
-                is not True
-                or reconciliation["inventory_complete"] is not True
-                or not isinstance(reconciliation["manifest"], Mapping)
-            ):
-                _fail("R6 Zenodo mutation preceded its exact reconciliation gate")
-            record_id = int(incident["record_id"])
-            deposition_prefix = f"/api/deposit/depositions/{record_id}"
-            bucket_path = reconciliation["bucket_path"]
-            legacy_file = path.startswith(deposition_prefix + "/files/")
-            bucket_child = (
-                isinstance(bucket_path, str)
-                and path.startswith(bucket_path + "/")
-            )
-            publish_action = deposition_prefix + "/actions/publish"
-            permitted = (
-                (normalized_method == "PUT" and path == deposition_prefix)
-                or (normalized_method == "PUT" and bucket_child)
-                or (
-                    normalized_method == "DELETE"
-                    and (legacy_file or bucket_child)
-                )
-                or (
-                    normalized_method == "POST"
-                    and path == publish_action
-                )
-            )
-            if not permitted:
-                _fail("R6 Zenodo mutation escaped the exact C2 record boundary")
-            store._recheck_remote_boundary()  # type: ignore[attr-defined]
-            state, current = instance.get_deposition_or_record(record_id)
-            if state != "draft":
-                _fail("R6 forbids mutation after the exact C2 record is public")
-            _validate_r6_record_identity(
-                publisher_module,
-                reconciliation["manifest"],
-                state,
-                current,
-            )
-            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+        parts = urllib.parse.urlsplit(safe_url)
+        path = parts.path
         if original_request is None:
-            _fail("R6 reconciliation request transport is unavailable")
-        return original_request(instance, normalized_method, safe_url, **kwargs)
+            _fail("R7 reconciliation request transport is unavailable")
+        if normalized_method == "GET":
+            return original_request(instance, normalized_method, safe_url, **kwargs)
+        if normalized_method == "POST" and path == "/api/deposit/depositions":
+            _fail("R7 reconciliation blocked the exact Zenodo create endpoint")
+        incident = R6_DRAFT_METADATA_INCIDENT
+        if (
+            parts.query
+            or parts.fragment
+            or reconcile_record
+            != (int(incident["record_id"]), str(incident["doi"]))
+            or getattr(store, "_record_created_reconciliation_armed", False)
+            is not True
+            or reconciliation["inventory_complete"] is not True
+            or not isinstance(reconciliation["manifest"], Mapping)
+        ):
+            _fail("R7 Zenodo mutation preceded its exact reconciliation gate")
+        record_id = int(incident["record_id"])
+        deposition_path = f"/api/deposit/depositions/{record_id}"
+        publish_path = deposition_path + "/actions/publish"
+        metadata_put = normalized_method == "PUT" and path == deposition_path
+
+        store._recheck_remote_boundary()  # type: ignore[attr-defined]
+        state, current = instance.get_deposition_or_record(record_id)
+        if state != "draft":
+            _fail("R7 forbids mutation after the exact C2 record is public")
+        _validate_r7_record_identity(
+            publisher_module,
+            reconciliation["manifest"],
+            state,
+            current,
+            require_exact_draft_metadata=not metadata_put,
+        )
+
+        if metadata_put:
+            if (
+                reconciliation["metadata_put_attempted"] is True
+                or set(kwargs) != {"payload", "accept"}
+                or kwargs.get("payload")
+                != {"metadata": reconciliation["manifest"]["metadata"]}
+                or kwargs.get("accept") != (200, 202)
+                or instance._server_files(current)
+            ):
+                _fail("R7 exact metadata PUT contract differs")
+            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+            reconciliation["metadata_put_attempted"] = True
+            result = original_request(
+                instance,
+                normalized_method,
+                safe_url,
+                **kwargs,
+            )
+            reconciliation["metadata_put_succeeded"] = True
+            return result
+
+        if (
+            reconciliation["metadata_put_succeeded"] is not True
+            or reconciliation["metadata_confirmed"] is not True
+        ):
+            _fail("R7 file or publish effect preceded metadata convergence")
+        gate_uploaded_prefix(instance, current)
+        bucket_path = reconciliation["bucket_path"]
+        if (
+            not isinstance(bucket_path, str)
+            or exact_bucket_path(instance, current) != bucket_path
+        ):
+            _fail("R7 exact C2 upload bucket changed after metadata confirmation")
+        entries = reconciliation["entries"]
+        verified = reconciliation["verified"]
+        upload_index = reconciliation["upload_index"]
+        if (
+            normalized_method == "PUT"
+            and isinstance(bucket_path, str)
+            and isinstance(entries, list)
+            and isinstance(verified, Mapping)
+            and isinstance(upload_index, int)
+            and upload_index < len(entries)
+        ):
+            entry = entries[upload_index]
+            expected_path = bucket_path + "/" + urllib.parse.quote(
+                entry["name"],
+                safe="",
+            )
+            data = verified.get(("publication", entry["name"]))
+            if (
+                path != expected_path
+                or reconciliation["upload_in_flight"] is True
+                or set(kwargs) != {"data", "content_type", "accept"}
+                or not isinstance(data, bytes)
+                or kwargs.get("data") != data
+                or len(data) != entry["size"]
+                or hashlib.md5(data).hexdigest() != entry["md5"]  # noqa: S324
+                or hashlib.sha256(data).hexdigest() != entry["sha256"]
+                or kwargs.get("content_type") != "application/octet-stream"
+                or kwargs.get("accept") != (200, 201, 202)
+            ):
+                _fail("R7 bounded upload request differs")
+            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+            reconciliation["upload_in_flight"] = True
+            result = original_request(
+                instance,
+                normalized_method,
+                safe_url,
+                **kwargs,
+            )
+            reconciliation["upload_in_flight"] = False
+            reconciliation["upload_index"] = upload_index + 1
+            return result
+
+        if normalized_method == "POST" and path == publish_path:
+            if (
+                not isinstance(entries, list)
+                or reconciliation["upload_index"] != len(entries)
+                or reconciliation["upload_in_flight"] is True
+                or reconciliation["prepared_durable"] is not True
+                or reconciliation["publish_intent_durable"] is not True
+                or reconciliation["publish_post_attempted"] is True
+                or set(kwargs) != {"accept"}
+                or kwargs.get("accept") != (200, 201, 202, 409)
+            ):
+                _fail("R7 publish request preceded its exact durable gates")
+            instance.gate_record(
+                current,
+                record_id,
+                reconciliation["manifest"]["metadata"],
+                entries,
+                str(incident["doi"]),
+                published=False,
+            )
+            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+            reconciliation["publish_post_attempted"] = True
+            return original_request(
+                instance,
+                normalized_method,
+                safe_url,
+                **kwargs,
+            )
+
+        _fail("R7 Zenodo mutation escaped the exact C2 state machine")
 
     def reconcile_exact_record(
         evidence: Mapping[str, Any],
@@ -3075,7 +3685,7 @@ def run_publisher_with_checkpoints(
         client: Any,
         secrets_by_name: Mapping[str, str],
     ) -> dict[str, Any]:
-        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        incident = R6_DRAFT_METADATA_INCIDENT
         if (
             reconcile_record
             != (int(incident["record_id"]), str(incident["doi"]))
@@ -3086,43 +3696,38 @@ def run_publisher_with_checkpoints(
             or evidence.get("record_id") != incident["record_id"]
             or evidence.get("doi") != incident["doi"]
         ):
-            _fail("R6 resume input differs from the exact durable C2 checkpoint")
+            _fail("R7 resume input differs from the exact durable C2 checkpoint")
         zenodo_token = secrets_by_name.get(
             publisher_module.zenodo.TOKEN_ENVIRONMENT_VARIABLE,
             "",
         )
         if not isinstance(zenodo_token, str) or not zenodo_token:
-            _fail("R6 reconciliation lacks its validated Zenodo credential")
-        state, current = _gate_r6_owned_inventory_identity(
+            _fail("R7 reconciliation lacks its validated Zenodo credential")
+        state, current = _gate_r7_owned_inventory_identity(
             publisher_module,
             manifest,
             client,
             zenodo_token,
         )
         store._recheck_remote_boundary()  # type: ignore[attr-defined]
-        _validate_r6_record_identity(publisher_module, manifest, state, current)
-        bucket_path: str | None = None
-        if state == "draft":
-            links = current.get("links")
-            bucket = links.get("bucket") if isinstance(links, dict) else None
-            if not isinstance(bucket, str):
-                _fail("R6 exact C2 draft lacks its bounded upload bucket")
-            safe_bucket = publisher_module.zenodo.validate_response_url(
-                bucket,
-                client.base_url,
-            )
-            bucket_path = urllib.parse.urlsplit(safe_bucket).path.rstrip("/")
-            if not bucket_path.startswith("/api/"):
-                _fail("R6 exact C2 upload bucket escaped the Zenodo API")
+        _validate_r7_record_identity(
+            publisher_module,
+            manifest,
+            state,
+            current,
+            require_exact_draft_metadata=False,
+        )
+        entries = publisher_module._shared_entries(manifest["files"])
         reconciliation.update(
             {
                 "inventory_complete": True,
                 "manifest": manifest,
-                "bucket_path": bucket_path,
+                "entries": entries,
+                "verified": verified,
             }
         )
         if original_resume is None:
-            _fail("R6 reconciliation resume function is unavailable")
+            _fail("R7 reconciliation resume function is unavailable")
         result = original_resume(
             evidence,
             evidence_path,
@@ -3138,7 +3743,7 @@ def run_publisher_with_checkpoints(
             result.get("record_id") != incident["record_id"]
             or result.get("doi") != incident["doi"]
         ):
-            _fail("R6 publisher result changed the exact C2 record identity")
+            _fail("R7 publisher result changed the exact C2 record identity")
         return result
 
     publisher_module._create_consumption_receipt = checkpointing_exclusive_writer
@@ -3146,10 +3751,12 @@ def run_publisher_with_checkpoints(
     publisher_module._acquire_remote_consumption_lock = reject_new_consumption_lock
     if reconcile_record is not None:
         if client_type is None:
-            _fail("R6 reconciliation client type is unavailable")
+            _fail("R7 reconciliation client type is unavailable")
         client_type.__init__ = extended_client_init
         client_type.request = guarded_request
         client_type.create_paper = reject_create_paper
+        client_type.wait_for_editable_metadata = wait_for_semantically_exact_metadata
+        client_type.gate_record = gate_semantically_exact_record
         publisher_module._resume_publication = reconcile_exact_record
     try:
         try:
@@ -3163,6 +3770,8 @@ def run_publisher_with_checkpoints(
             client_type.__init__ = original_client_init
             client_type.request = original_request
             client_type.create_paper = original_create_paper
+            client_type.wait_for_editable_metadata = original_wait_for_editable_metadata
+            client_type.gate_record = original_gate_record
             publisher_module._resume_publication = original_resume
         publisher_module._create_consumption_receipt = original_exclusive
         publisher_module._atomic_recovery_evidence = original_atomic
@@ -3269,8 +3878,8 @@ def main(argv: list[str] | None = None) -> int:
             store.root,
             store,
             reconcile_record=(
-                int(R5_RECORD_CREATED_TIMEOUT_INCIDENT["record_id"]),
-                str(R5_RECORD_CREATED_TIMEOUT_INCIDENT["doi"]),
+                int(R6_DRAFT_METADATA_INCIDENT["record_id"]),
+                str(R6_DRAFT_METADATA_INCIDENT["doi"]),
             ),
         )
         if (
