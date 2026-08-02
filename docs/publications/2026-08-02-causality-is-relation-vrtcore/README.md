@@ -42,8 +42,8 @@ Minkowski emergence or a general Lorentzian reconstruction.
 | Human-readable | `QIK-VRT_Kausalitaet_ist_Relation_Fachartikel_DE_2026-08-02.md`, `QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_DE_2026-08-02.md`, `VERIFICATION_ADDENDUM_DE.md`, `QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_Verifikationsnachtrag_DE_2026-08-02.md` |
 | Typeset | `QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.tex`, `QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf` |
 | Formal syntax | `VRTCore_Syntax.ebnf`, `VRTCore_RelationalCausality_Candidate.lean` |
-| Kernel policy and CI evidence | `KERNEL_PROOF_PLAN.json`, `VRTCore_RelationalCausality_AxiomAudit.lean`, `CI_KERNEL_EVIDENCE_H0_PR_MERGE.json`, `KERNEL_RECEIPT_H0_CI.json` |
-| Claim and source state | `VRTCore_CLAIM_MATRIX_H0_RETURNED.json`, `VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json`, `SOURCE_EVIDENCE_BINDINGS.json`, `EVIDENCE_BOUNDARY.md` |
+| Kernel policy and CI evidence | `KERNEL_PROOF_PLAN.json`, `VRTCore_RelationalCausality_AxiomAudit.lean`, `CI_KERNEL_EVIDENCE_H0_PR_MERGE.json`, `KERNEL_RECEIPT_H0_CI.json`, `CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json`, `KERNEL_RECEIPT.json` |
+| Claim and source state | `VRTCore_CLAIM_MATRIX_H0_RETURNED.json`, `VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json`, `CLAIM_MATRIX.json`, `SOURCE_EVIDENCE_BINDINGS.json`, `EVIDENCE_BOUNDARY.md`, `BOUNDARY_TEST_REPORT.json` |
 | Local evidence | `LOCAL_KERNEL_EVIDENCE.json`, `LOCAL_VALIDATION_REPORT.json`, `LOCAL_KERNEL_EXECUTION_BOUNDARY.md` |
 | Identity and reuse | `ORIGINAL_PACKAGE_MANIFEST.json`, `ARTIFACT_PATH_MAP.json`, `CITATION.cff`, `LICENSE_NOTICE.md` |
 | Publication scope | `ZENODO_FILESET.md` |
@@ -76,6 +76,28 @@ pull-request merge checkout
 not asserted here as an exact current branch head or repository head.  The
 artifact's internal `exact_head_bound=true` is therefore limited to its
 recorded PR-merge `GITHUB_SHA`.
+
+## H1 → H2 exact-head receipt state
+
+The later push run `30733039956`, job `91456613018`, checked the exact branch
+head `7de3bd9e5fff9b8aedf0d6385c0904646d99b2ac` and tree
+`513c33f91d4226bfd3f735994bf15cb143d46ff4`.  Its artifact `8828591925`
+has archive SHA-256
+`5f1bf2d0b1cc9547d64487e05aa50d4eba872442a7a297cf247bc4560661d3c4`.
+The unchanged JSON member is preserved as
+`CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json` with SHA-256
+`ea25ab8ddcbe34b33d14309d25a944e05bfd6899cb832cb1280c2aa7e121f0f1`.
+It records `checkout.mode=exact_ref_head`, `source_bytes_exact=true` and
+`exact_head_bound=true` for that push.
+
+`CLAIM_MATRIX.json` is the full 36-claim projection required by the active
+Zenodo-v2 proof policy: 21 formal, 1 empirically evidenced, 7 source-bound,
+2 normative, 3 interpretative and 2 explicitly open claims.  The final
+`KERNEL_RECEIPT.json` promotes only the 21 formal claims.  It describes itself
+as an H2 single-parent successor materialization of the verified H1 predecessor
+and explicitly sets `self_inclusion_claimed=false`; this avoids pretending that
+a receipt can bind the commit which first contains itself.  The deterministic
+materializer is `tools/qikvrt_vrtcore_zenodo_candidate.py`.
 
 ## Reproduction
 
@@ -110,6 +132,12 @@ Git repository persistence, CI execution, Zenodo publication and IETF
 submission are separate effects.  Their current state is authoritative only in
 the corresponding exact-head and public-publication receipts.  Zenodo fixity
 does not establish peer review, empirical confirmation or IETF consensus.
+
+IETF Datatracker submission `167201` passed submission checks and is awaiting
+previous-version author approval.  It is therefore neither an IETF-published
+revision nor IETF consensus.  Zenodo has not yet been mutated for this bundle;
+the candidate-specific prepublication return and subsequent exact hash-bound
+owner decision remain distinct gates.
 
 For this transition only: `KERNEL_SCOPE=PASS`, while `GLOBAL_PASS`,
 `FINAL_PASS` and `EFFECT_ACK_DONE` are all `NOT_CLAIMED`.  The kernel transition

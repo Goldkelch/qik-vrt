@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import re
+import subprocess
 import unittest
 
 
@@ -26,6 +28,11 @@ PATH_MAP = PUBLICATION / "ARTIFACT_PATH_MAP.json"
 CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H0_PR_MERGE.json"
 KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT_H0_CI.json"
 H1_MATRIX = PUBLICATION / "VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json"
+EXACT_CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json"
+FINAL_CLAIM_MATRIX = PUBLICATION / "CLAIM_MATRIX.json"
+FINAL_KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT.json"
+BOUNDARY_TEST_REPORT = PUBLICATION / "BOUNDARY_TEST_REPORT.json"
+H2_GENERATOR = ROOT / "tools/qikvrt_vrtcore_zenodo_candidate.py"
 
 NAMESPACE = "QIKVRT.VRTCore"
 THEOREMS = (
@@ -456,6 +463,94 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
         self.assertEqual(h1["claim_state"]["global_pass"], "NOT_CLAIMED")
         self.assertEqual(h1["claim_state"]["final_pass"], "NOT_CLAIMED")
         self.assertEqual(h1["claim_state"]["effect_ack_done"], "NOT_CLAIMED")
+
+    def test_exact_head_h2_materialization_is_complete_and_reproducible(self) -> None:
+        self.assertEqual(
+            sha256(EXACT_CI_KERNEL_EVIDENCE),
+            "ea25ab8ddcbe34b33d14309d25a944e05bfd6899cb832cb1280c2aa7e121f0f1",
+        )
+        evidence = load_json(EXACT_CI_KERNEL_EVIDENCE)
+        self.assertIs(evidence["source_bytes_exact"], True)
+        self.assertIs(evidence["exact_head_bound"], True)
+        self.assertEqual(evidence["checkout"]["event_name"], "push")
+        self.assertEqual(evidence["checkout"]["mode"], "exact_ref_head")
+        self.assertEqual(
+            evidence["checkout"]["tested_commit_sha"],
+            "7de3bd9e5fff9b8aedf0d6385c0904646d99b2ac",
+        )
+        self.assertEqual(evidence["github_sha"], evidence["checkout"]["tested_commit_sha"])
+        self.assertEqual(evidence["github_run_id"], "30733039956")
+
+        matrix = load_json(FINAL_CLAIM_MATRIX)
+        self.assertEqual(matrix["publication_id"], "qikvrt-causality-is-relation-vrtcore-v1")
+        self.assertEqual(matrix["claim_count"], 36)
+        self.assertEqual(matrix["claim_count"], len(matrix["claims"]))
+        self.assertEqual(
+            matrix["epistemic_counts"],
+            {
+                "FORMAL_PROVED": 21,
+                "EMPIRICALLY_EVIDENCED": 1,
+                "SOURCE_BOUND": 7,
+                "NORMATIVE": 2,
+                "INTERPRETATIVE": 3,
+                "OPEN": 2,
+            },
+        )
+        formal = [
+            claim for claim in matrix["claims"]
+            if claim["classification"] == "FORMAL_PROVED"
+        ]
+        self.assertEqual([claim["proof_refs"][0] for claim in formal], list(THEOREMS))
+        self.assertTrue(all(claim["status"] == "PROVED" for claim in formal))
+        self.assertTrue(all(claim["boundary"].strip() for claim in matrix["claims"]))
+
+        receipt = load_json(FINAL_KERNEL_RECEIPT)
+        self.assertEqual(receipt["state"], "KERNEL_VERIFIED")
+        self.assertEqual(receipt["theorems"], list(THEOREMS))
+        self.assertEqual(receipt["axiom_summary"]["no_axiom_dependencies"], 15)
+        self.assertEqual(receipt["axiom_summary"]["propext_only"], 6)
+        self.assertEqual(receipt["axiom_summary"]["project_axioms"], 0)
+        self.assertIs(receipt["workflow"]["exact_head_bound"], True)
+        self.assertEqual(receipt["workflow"]["conclusion"], "success")
+        self.assertEqual(receipt["workflow"]["sha"], evidence["github_sha"])
+        stage = receipt["receipt_stage"]
+        self.assertEqual(stage["required_relation"], "SINGLE_PARENT_SUCCESSOR")
+        self.assertIs(stage["self_inclusion_claimed"], False)
+        target = receipt["claim_transition"]["target_claim_matrix"]
+        self.assertEqual(target["bytes"], FINAL_CLAIM_MATRIX.stat().st_size)
+        self.assertEqual(target["sha256"], sha256(FINAL_CLAIM_MATRIX))
+        self.assertEqual(target["git_blob_sha1"], git_blob_sha1(FINAL_CLAIM_MATRIX))
+        self.assertIs(
+            receipt["claim_transition"]["target_exact_head_confirmation_required"],
+            False,
+        )
+
+        report = load_json(BOUNDARY_TEST_REPORT)
+        self.assertEqual(report["result"], "PASS")
+        self.assertIs(report["model_boundaries"]["physical_causality_derived"], False)
+        self.assertIs(report["external_effects"]["zenodo_mutation"], False)
+        self.assertIs(report["external_effects"]["ietf_published"], False)
+
+        environment = dict(os.environ)
+        environment.update(PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1")
+        completed = subprocess.run(
+            [
+                "python3",
+                "-B",
+                str(H2_GENERATOR.relative_to(ROOT)),
+                "kernel",
+                "--check",
+            ],
+            cwd=ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("PASS verified VRTCore H2", completed.stdout)
 
 
 if __name__ == "__main__":
