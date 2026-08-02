@@ -23,15 +23,16 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
+import json
 import os
 import pathlib
 import re
-import secrets
 import subprocess
 import sys
-import time
 import unicodedata
+import urllib.error
 import urllib.parse
+import urllib.request
 from collections.abc import Mapping
 from typing import Any, NoReturn
 
@@ -45,9 +46,11 @@ except ModuleNotFoundError:
 SCHEMA = "qikvrt_zenodo_publication_manifest_v1"
 SCHEMA_V2 = "qikvrt_zenodo_publication_manifest_v2"
 EVIDENCE_SCHEMA = "qikvrt_zenodo_publication_evidence_v1"
+EVIDENCE_SCHEMA_V2 = "qikvrt_zenodo_publication_evidence_v2"
 OWNER_AUTHORIZATION_SCHEMA = "qikvrt_zenodo_owner_authorization_v1"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+ZENODO_DOI = re.compile(r"^10\.5281/zenodo\.[1-9][0-9]*$")
 SAFE_AUTHORIZATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$")
 RFC3339 = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
@@ -56,6 +59,27 @@ RFC3339 = re.compile(
 CONSUMPTION_STATE = "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION"
 SINGLE_USE_SCOPE = "AUTHORITY_REPOSITORY_GLOBAL_FAIL_CLOSED"
 CONSUMPTION_REF_PREFIX = "refs/tags/qikvrt-zenodo-auth/"
+CONSUMPTION_KEY_SCHEMA = "qikvrt_zenodo_authorization_consumption_key_v2"
+PRODUCTION_REPOSITORY = "Goldkelch/qik-vrt"
+PRODUCTION_GITHUB_HOST = "github.com"
+GITHUB_API_BASE = "https://api.github.com"
+GITHUB_TOKEN_ENVIRONMENT_VARIABLE = "GITHUB_TOKEN"
+MAX_GITHUB_RESPONSE_BYTES = 1024 * 1024
+MAX_INVENTORY_PAGES = 100
+INVENTORY_PAGE_SIZE = 100
+RECOVERY_PHASES = (
+    "authorization_consumed",
+    "create_requested",
+    "record_created",
+    "prepared",
+    "publish_requested",
+    "public_verified",
+)
+GOVERNANCE_BOUNDARIES = (
+    "ADMIN_GOVERNANCE_NOT_ESTABLISHED",
+    "REPOSITORY_SECRET_TRUSTS_PRIVILEGED_WRITE_ACTORS",
+    "PRIVILEGED_TAG_DELETION_NOT_PREVENTED",
+)
 OWNER_AUTHORIZED_EFFECTS = (
     "ACQUIRE_REPOSITORY_REMOTE_CONSUMPTION_LOCK",
     "CREATE_PRODUCTION_ZENODO_RECORD",
@@ -78,6 +102,14 @@ REQUIRED_METADATA = frozenset(
 
 def _fail(message: str) -> NoReturn:
     raise zenodo.ZenodoError(message)
+
+
+def _secret_label(name: str) -> str:
+    return (
+        "Zenodo access token"
+        if name == zenodo.TOKEN_ENVIRONMENT_VARIABLE
+        else "GitHub access token"
+    )
 
 
 def _safe_relative(
@@ -127,10 +159,44 @@ def _canonical_authorization_statement(
     )
 
 
-def _remote_consumption_ref(nonce_digest: str) -> str:
-    if HEX64.fullmatch(nonce_digest) is None:
-        _fail("owner authorization nonce digest cannot form a safe Git lock ref")
-    return CONSUMPTION_REF_PREFIX + nonce_digest
+def _authorization_consumption_key(
+    repository: str,
+    authorization_id: str,
+    publication_id: str,
+    statement_sha256: str,
+) -> dict[str, str]:
+    """Bind single-use consumption to the immutable authorization decision.
+
+    The random authorization nonce remains evidence, but deliberately does not
+    select the repository-global lock. Replacing only that nonce therefore
+    cannot mint a second effect-bearing identity for the same decision.
+    """
+    if repository != PRODUCTION_REPOSITORY:
+        _fail("authorization consumption key repository is not the pinned authority")
+    if SAFE_AUTHORIZATION_ID.fullmatch(authorization_id) is None:
+        _fail("authorization consumption key authorization_id is unsafe")
+    if not isinstance(publication_id, str) or not publication_id:
+        _fail("authorization consumption key publication_id is invalid")
+    if HEX64.fullmatch(statement_sha256) is None:
+        _fail("authorization consumption key statement digest is invalid")
+    material = {
+        "schema": CONSUMPTION_KEY_SCHEMA,
+        "repository": repository,
+        "authorization_id": authorization_id,
+        "publication_id": publication_id,
+        "statement_sha256": statement_sha256,
+    }
+    return {
+        "algorithm": "SHA-256",
+        "schema": CONSUMPTION_KEY_SCHEMA,
+        "value": hashlib.sha256(zenodo._json_bytes(material)).hexdigest(),
+    }
+
+
+def _remote_consumption_ref(consumption_key: str) -> str:
+    if HEX64.fullmatch(consumption_key) is None:
+        _fail("authorization consumption key cannot form a safe GitHub lock ref")
+    return CONSUMPTION_REF_PREFIX + consumption_key
 
 
 def _validate_metadata(value: Any) -> dict[str, Any]:
@@ -463,7 +529,6 @@ def _validate_owner_authorization(
             "fail-closed"
         )
     nonce_digest_value = hashlib.sha256(nonce.encode("ascii")).hexdigest()
-    consumption_ref = _remote_consumption_ref(nonce_digest_value)
 
     principal = authorization["principal"]
     if not isinstance(principal, dict):
@@ -599,6 +664,13 @@ def _validate_owner_authorization(
     ).hexdigest()
     if event["statement_sha256"] != statement_sha256:
         _fail("owner authorization authorization_event statement digest differs")
+    consumption_key = _authorization_consumption_key(
+        repository,
+        authorization_id,
+        authorization["publication_id"],
+        statement_sha256,
+    )
+    consumption_ref = _remote_consumption_ref(consumption_key["value"])
     event_principal = event["principal"]
     if not isinstance(event_principal, dict):
         _fail("owner authorization authorization_event.principal must be an object")
@@ -658,6 +730,7 @@ def _validate_owner_authorization(
             "algorithm": "SHA-256",
             "value": nonce_digest_value,
         },
+        "consumption_key": consumption_key,
         "single_use": True,
         "single_use_scope": SINGLE_USE_SCOPE,
         "remote_consumption_ref": consumption_ref,
@@ -798,10 +871,24 @@ def _git(
     accepted: frozenset[int] = frozenset({0}),
     input_text: str | None = None,
 ) -> tuple[int, str]:
+    # Do not inherit the workflow environment: both publication credentials
+    # are network-only capabilities and must never enter a child process.
+    subprocess_environment = {
+        key: value
+        for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "SYSTEMROOT")
+        if (value := os.environ.get(key)) is not None
+    }
+    subprocess_environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
     try:
         completed = subprocess.run(
             ["git", *arguments],
             cwd=root,
+            env=subprocess_environment,
             input=input_text,
             stdin=subprocess.DEVNULL if input_text is None else None,
             stdout=subprocess.PIPE,
@@ -984,15 +1071,14 @@ def _validate_repository_source_head(
     return current_head
 
 
-def _reject_token_in_publication_bytes(
+def _reject_tokens_in_publication_bytes(
     manifest_path: pathlib.Path,
     root: pathlib.Path,
     manifest: Mapping[str, Any],
     verified: Mapping[tuple[str, str], bytes],
-    token: str,
+    secrets_by_name: Mapping[str, str],
 ) -> None:
-    """Reject the exact access-token bytes throughout every outbound/control byte set."""
-    token_bytes = token.encode("utf-8")
+    """Reject both network capabilities throughout outbound/control bytes."""
     control_paths = (
         ("publication manifest", manifest_path, zenodo.MAX_JSON_BYTES),
         (
@@ -1041,12 +1127,30 @@ def _reject_token_in_publication_bytes(
         for (_kind, name), data in verified.items()
     )
     for where, data in byte_sets:
-        if token_bytes in data:
-            _fail(f"{where} contains the Zenodo access token")
+        for name, secret in secrets_by_name.items():
+            if secret and secret.encode("utf-8") in data:
+                _fail(f"{where} contains the {_secret_label(name)}")
+
+
+def _validated_network_secrets() -> dict[str, str]:
+    zenodo_token = os.environ.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, "")
+    github_token = os.environ.get(GITHUB_TOKEN_ENVIRONMENT_VARIABLE, "")
+    for name, token in (
+        (zenodo.TOKEN_ENVIRONMENT_VARIABLE, zenodo_token),
+        (GITHUB_TOKEN_ENVIRONMENT_VARIABLE, github_token),
+    ):
+        if len(token) < 20 or any(character.isspace() for character in token):
+            _fail(f"{name} is missing or structurally invalid")
+    if zenodo_token == github_token:
+        _fail("GitHub and Zenodo credentials must be distinct capabilities")
+    return {
+        zenodo.TOKEN_ENVIRONMENT_VARIABLE: zenodo_token,
+        GITHUB_TOKEN_ENVIRONMENT_VARIABLE: github_token,
+    }
 
 
 def _origin_repository_identity(raw: str) -> str:
-    """Extract an owner/repository identity without reflecting remote credentials."""
+    """Accept only the pinned GitHub HTTPS/SSH authority origin."""
     if (
         not isinstance(raw, str)
         or not raw
@@ -1054,32 +1158,46 @@ def _origin_repository_identity(raw: str) -> str:
         or any(character in raw for character in ("\x00", "\r", "\n"))
     ):
         _fail("origin push URL is structurally invalid")
+    expected_path = "/Goldkelch/qik-vrt"
+    if raw in {
+        "git@github.com:Goldkelch/qik-vrt",
+        "git@github.com:Goldkelch/qik-vrt.git",
+    }:
+        return PRODUCTION_REPOSITORY
     if "://" in raw:
         parsed = urllib.parse.urlsplit(raw)
-        if parsed.query or parsed.fragment:
-            _fail("origin push URL may not contain a query or fragment")
-        path = parsed.path
-    elif ":" in raw and not raw.startswith(("/", "./", "../")):
-        _prefix, path = raw.split(":", 1)
-    else:
-        path = raw
-    parts = [
-        part
-        for part in path.replace("\\", "/").split("/")
-        if part not in {"", "."}
-    ]
-    if len(parts) < 2:
-        _fail("origin push URL does not identify an owner/repository")
-    repository_name = parts[-1]
-    if repository_name.endswith(".git"):
-        repository_name = repository_name[:-4]
-    identity = f"{parts[-2]}/{repository_name}"
-    if zenodo.SAFE_REPOSITORY.fullmatch(identity) is None:
-        _fail("origin push URL has an unsafe repository identity")
-    return identity
+        try:
+            port = parsed.port
+        except ValueError:
+            _fail("origin URL has an invalid port")
+        if (
+            parsed.query
+            or parsed.fragment
+            or parsed.path not in {expected_path, expected_path + ".git"}
+        ):
+            _fail("origin URL differs from the pinned GitHub repository path")
+        if (
+            parsed.scheme == "https"
+            and parsed.netloc == PRODUCTION_GITHUB_HOST
+            and parsed.username is None
+            and parsed.password is None
+            and port is None
+        ):
+            return PRODUCTION_REPOSITORY
+        if (
+            parsed.scheme == "ssh"
+            and parsed.netloc == "git@" + PRODUCTION_GITHUB_HOST
+            and parsed.username == "git"
+            and parsed.password is None
+            and port is None
+        ):
+            return PRODUCTION_REPOSITORY
+    _fail("origin must be exact GitHub HTTPS or SSH for Goldkelch/qik-vrt")
 
 
 def _validate_origin_repository(root: pathlib.Path, repository: str) -> None:
+    if repository != PRODUCTION_REPOSITORY:
+        _fail("manifest repository is not the pinned production authority")
     _status, raw_urls = _git(
         root,
         "remote",
@@ -1091,112 +1209,322 @@ def _validate_origin_repository(root: pathlib.Path, repository: str) -> None:
     urls = raw_urls.splitlines()
     if len(urls) != 1:
         _fail("origin must have exactly one repository-bound push URL")
-    if _origin_repository_identity(urls[0]) != repository:
-        _fail("origin push repository identity differs from the manifest repository")
+    if _origin_repository_identity(urls[0]) != PRODUCTION_REPOSITORY:
+        _fail("origin differs from the pinned production authority")
+
+
+class _NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
+    """Never relay a bearer credential through an HTTP redirect."""
+
+    def redirect_request(  # type: ignore[override]
+        self,
+        request: urllib.request.Request,
+        file_pointer: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
+        return None
+
+
+def _github_api_request(
+    method: str,
+    path: str,
+    token: str,
+    *,
+    payload: Mapping[str, Any] | None = None,
+    accept: tuple[int, ...] = (200,),
+) -> tuple[int, dict[str, Any]]:
+    """Use only the pinned GitHub Git-Data REST origin, with redacted errors."""
+    repository_prefix = "/repos/Goldkelch/qik-vrt/"
+    if not path.startswith(repository_prefix) or any(
+        character in path for character in ("\x00", "\r", "\n", "?", "#")
+    ):
+        _fail("GitHub API path escaped the pinned production repository")
+    if len(token) < 20 or any(character.isspace() for character in token):
+        _fail(f"{GITHUB_TOKEN_ENVIRONMENT_VARIABLE} is missing or structurally invalid")
+    if method not in {"GET", "POST"}:
+        _fail("unsupported GitHub Git-Data API method")
+    url = GITHUB_API_BASE + path
+    body = None if payload is None else zenodo._json_bytes(payload)
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer " + token,
+            "User-Agent": "qik-vrt-zenodo-publisher",
+            "X-GitHub-Api-Version": "2022-11-28",
+            **({"Content-Type": "application/json"} if body is not None else {}),
+        },
+    )
+    opener = urllib.request.build_opener(_NoCredentialRedirect())
+    response: Any
+    try:
+        response = opener.open(request, timeout=30)
+    except urllib.error.HTTPError as exc:
+        response = exc
+    except (OSError, urllib.error.URLError) as exc:
+        _fail(f"GitHub Git-Data API transport failed: {type(exc).__name__}")
+    try:
+        status = int(response.status)
+        if response.geturl() != url:
+            _fail("GitHub Git-Data API response origin changed")
+        raw = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
+    finally:
+        response.close()
+    if len(raw) > MAX_GITHUB_RESPONSE_BYTES:
+        _fail("GitHub Git-Data API response exceeded its byte limit")
+    if status not in accept:
+        # Response bodies are intentionally not reflected: they are untrusted
+        # and can contain credential-shaped input echoed by an upstream proxy.
+        _fail(f"GitHub Git-Data API rejected {method} (HTTP {status})")
+    if not raw:
+        return status, {}
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("GitHub Git-Data API returned invalid JSON")
+    if not isinstance(value, dict):
+        _fail("GitHub Git-Data API returned a non-object response")
+    serialized = zenodo._json_bytes(value)
+    if token.encode("utf-8") in serialized:
+        _fail("GitHub Git-Data API response contained its bearer credential")
+    return status, value
+
+
+def _github_ref_path(ref: str) -> str:
+    if not ref.startswith("refs/tags/"):
+        _fail("remote authorization consumption ref is not a tag ref")
+    suffix = ref.removeprefix("refs/")
+    return "/repos/Goldkelch/qik-vrt/git/ref/" + urllib.parse.quote(
+        suffix,
+        safe="/",
+    )
+
+
+def _validate_github_ref_response(
+    value: Mapping[str, Any],
+    ref: str,
+    tag_object: str,
+) -> None:
+    target = value.get("object")
+    if (
+        value.get("ref") != ref
+        or not isinstance(target, dict)
+        or target.get("sha") != tag_object
+        or target.get("type") != "tag"
+    ):
+        _fail("GitHub consumption ref differs from its exact annotated tag")
+
+
+def _canonical_github_tagger_date(raw: str) -> str:
+    parsed = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    normalized = parsed.astimezone(datetime.timezone.utc).isoformat()
+    return normalized.replace("+00:00", "Z")
+
+
+def _expected_consumption_tag(
+    manifest: Mapping[str, Any],
+    execution_head: str,
+) -> dict[str, Any]:
+    authorization = manifest["owner_authorization"]
+    ref = authorization["remote_consumption_ref"]
+    consumption_key = authorization["consumption_key"]
+    message = (
+        "schema=qikvrt_zenodo_remote_consumption_tag_v1\n"
+        f"repository={manifest['repository']}\n"
+        f"authorization_id={authorization['authorization_id']}\n"
+        f"publication_id={authorization['publication_id']}\n"
+        f"authorization_statement_sha256="
+        f"{authorization['authorization_event']['statement_sha256']}\n"
+        f"authorization_consumption_key={consumption_key['value']}\n"
+        f"authorization_nonce_sha256={authorization['nonce_digest']['value']}\n"
+        f"manifest_sha256={manifest['manifest_sha256']}\n"
+        f"source_head={manifest['source_head']}\n"
+        f"execution_head={execution_head}\n"
+    )
+    return {
+        "tag": ref.removeprefix("refs/tags/"),
+        "message": message,
+        "object": execution_head,
+        "type": "commit",
+        "tagger": {
+            "name": "QIK-VRT Zenodo Publisher",
+            "email": "qik-vrt-zenodo@users.noreply.github.com",
+            "date": _canonical_github_tagger_date(
+                authorization["authorization_event"]["authorized_at"]
+            ),
+        },
+    }
+
+
+def _validate_github_tag_response(
+    value: Mapping[str, Any],
+    expected: Mapping[str, Any],
+    tag_object: str,
+) -> None:
+    target = value.get("object")
+    tagger = value.get("tagger")
+    if (
+        value.get("sha") != tag_object
+        or value.get("tag") != expected["tag"]
+        or value.get("message") != expected["message"]
+        or not isinstance(target, dict)
+        or target.get("sha") != expected["object"]
+        or target.get("type") != "commit"
+        or not isinstance(tagger, dict)
+        or {key: tagger.get(key) for key in ("name", "email", "date")}
+        != expected["tagger"]
+    ):
+        _fail("GitHub annotated consumption tag differs from the exact decision")
+
+
+def _read_exact_existing_consumption_lock(
+    manifest: Mapping[str, Any],
+    execution_head: str,
+    github_token: str,
+    ref_value: Mapping[str, Any],
+) -> dict[str, str]:
+    ref = manifest["owner_authorization"]["remote_consumption_ref"]
+    target = ref_value.get("object")
+    tag_object = target.get("sha") if isinstance(target, dict) else None
+    if not isinstance(tag_object, str) or HEX40.fullmatch(tag_object) is None:
+        _fail("existing GitHub consumption ref has an invalid tag identity")
+    _validate_github_ref_response(ref_value, ref, tag_object)
+    status, tag_value = _github_api_request(
+        "GET",
+        "/repos/Goldkelch/qik-vrt/git/tags/" + tag_object,
+        github_token,
+        accept=(200, 404),
+    )
+    if status != 200:
+        _fail("existing GitHub consumption ref lacks its annotated tag object")
+    _validate_github_tag_response(
+        tag_value,
+        _expected_consumption_tag(manifest, execution_head),
+        tag_object,
+    )
+    return {
+        "remote": "github_git_data_api",
+        "api_origin": GITHUB_API_BASE,
+        "repository": manifest["repository"],
+        "ref": ref,
+        "tag_object": tag_object,
+        "object_type": "tag",
+        "execution_head": execution_head,
+        "acquisition": "GITHUB_GIT_DATA_REST_CREATE_ONLY",
+        "recovery_mode": "EXISTING_EXACT_REF_NO_CREATE",
+    }
 
 
 def _acquire_remote_consumption_lock(
     root: pathlib.Path,
     manifest: Mapping[str, Any],
     execution_head: str,
+    github_token: str,
 ) -> dict[str, str]:
-    """Atomically consume the authorization through one create-only remote tag ref."""
+    """Consume one decision through GitHub's atomic create-only Ref API."""
     authorization = manifest["owner_authorization"]
     repository = manifest["repository"]
     ref = authorization["remote_consumption_ref"]
-    if ref != _remote_consumption_ref(authorization["nonce_digest"]["value"]):
+    consumption_key = authorization["consumption_key"]
+    if ref != _remote_consumption_ref(consumption_key["value"]):
         _fail("normalized owner authorization remote consumption ref differs")
     _validate_origin_repository(root, repository)
-
-    run_nonce = secrets.token_hex(32)
-    tag_name = (
-        "qikvrt-zenodo-auth-"
-        + authorization["nonce_digest"]["value"]
-        + "-"
-        + run_nonce
+    ref_path = _github_ref_path(ref)
+    existing_status, existing = _github_api_request(
+        "GET",
+        ref_path,
+        github_token,
+        accept=(200, 404),
     )
-    tag_message = (
-        f"object {execution_head}\n"
-        "type commit\n"
-        f"tag {tag_name}\n"
-        "tagger QIK-VRT Zenodo Publisher "
-        f"<qikvrt-zenodo@invalid.example> {int(time.time())} +0000\n"
-        "\n"
-        "schema=qikvrt_zenodo_remote_consumption_tag_v1\n"
-        f"repository={repository}\n"
-        f"authorization_id={authorization['authorization_id']}\n"
-        f"authorization_nonce_sha256={authorization['nonce_digest']['value']}\n"
-        f"manifest_sha256={manifest['manifest_sha256']}\n"
-        f"source_head={manifest['source_head']}\n"
-        f"execution_head={execution_head}\n"
-        f"run_nonce={run_nonce}\n"
-    )
-    _status, tag_object = _git(root, "mktag", input_text=tag_message)
-    if HEX40.fullmatch(tag_object) is None:
-        _fail("Git did not create a valid annotated consumption tag object")
-    _status, object_type = _git(root, "cat-file", "-t", tag_object)
-    if object_type != "tag":
-        _fail("remote authorization consumption object is not an annotated tag")
-
-    existing_status, existing = _git(
-        root,
-        "ls-remote",
-        "--exit-code",
-        "--refs",
-        "origin",
-        ref,
-        accepted=frozenset({0, 2}),
-    )
-    if existing_status == 0 or existing:
-        _fail("remote authorization consumption ref already exists")
-
-    push_status, _output = _git(
-        root,
-        "push",
-        "--porcelain",
-        "--no-force",
-        "origin",
-        f"{tag_object}:{ref}",
-        accepted=frozenset(range(256)),
-    )
-    if push_status != 0:
-        _fail(
-            "remote authorization consumption lock was rejected or raced; "
-            "reconcile the remote ref before retry"
+    if existing_status == 200:
+        return _read_exact_existing_consumption_lock(
+            manifest,
+            execution_head,
+            github_token,
+            existing,
         )
-    _status, observed = _git(
-        root,
-        "ls-remote",
-        "--exit-code",
-        "--refs",
-        "origin",
-        ref,
+
+    expected_tag = _expected_consumption_tag(manifest, execution_head)
+    tag_status, tag_value = _github_api_request(
+        "POST",
+        "/repos/Goldkelch/qik-vrt/git/tags",
+        github_token,
+        payload=expected_tag,
+        accept=(201,),
     )
-    fields = observed.split()
-    if len(fields) != 2 or fields[0] != tag_object or fields[1] != ref:
-        _fail(
-            "remote authorization consumption ref differs after the create-only push"
+    if tag_status != 201:
+        _fail("GitHub did not create the annotated consumption tag object")
+    tag_object = tag_value.get("sha")
+    if not isinstance(tag_object, str) or HEX40.fullmatch(tag_object) is None:
+        _fail("GitHub returned an invalid annotated consumption tag identity")
+    _validate_github_tag_response(tag_value, expected_tag, tag_object)
+
+    create_status, created = _github_api_request(
+        "POST",
+        "/repos/Goldkelch/qik-vrt/git/refs",
+        github_token,
+        payload={"ref": ref, "sha": tag_object},
+        accept=(201, 422),
+    )
+    if create_status != 201:
+        raced_status, raced = _github_api_request(
+            "GET",
+            ref_path,
+            github_token,
+            accept=(200, 404),
         )
+        if raced_status != 200:
+            _fail(
+                "remote authorization consumption lock was rejected without an "
+                "exact recoverable ref"
+            )
+        return _read_exact_existing_consumption_lock(
+            manifest,
+            execution_head,
+            github_token,
+            raced,
+        )
+    _validate_github_ref_response(created, ref, tag_object)
+    observed_status, observed = _github_api_request(
+        "GET",
+        ref_path,
+        github_token,
+        accept=(200,),
+    )
+    if observed_status != 200:
+        _fail("GitHub consumption ref disappeared after create-only acquisition")
+    _validate_github_ref_response(observed, ref, tag_object)
     return {
-        "remote": "origin",
+        "remote": "github_git_data_api",
+        "api_origin": GITHUB_API_BASE,
         "repository": repository,
         "ref": ref,
         "tag_object": tag_object,
         "object_type": "tag",
         "execution_head": execution_head,
-        "acquisition": "NON_FORCE_CREATE_ONLY",
+        "acquisition": "GITHUB_GIT_DATA_REST_CREATE_ONLY",
+        "recovery_mode": "NEWLY_CREATED_REF",
     }
 
 
 def _create_consumption_receipt(
     path: pathlib.Path,
     value: Mapping[str, Any],
-    token: str,
+    secrets_by_name: Mapping[str, str],
 ) -> None:
     """Persist a local recovery marker after the remote ref consumed authorization."""
     serialized = zenodo._json_bytes(value) + b"\n"
-    if token and token.encode("utf-8") in serialized:
-        _fail("refusing to write a consumption receipt containing the access token")
+    for name, secret in secrets_by_name.items():
+        if secret and secret.encode("utf-8") in serialized:
+            _fail(
+                "refusing to write recovery evidence containing the "
+                + _secret_label(name)
+            )
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_CLOEXEC"):
@@ -1230,13 +1558,51 @@ def _create_consumption_receipt(
         os.close(descriptor)
 
 
+def _atomic_recovery_evidence(
+    path: pathlib.Path,
+    value: Mapping[str, Any],
+    secrets_by_name: Mapping[str, str],
+) -> None:
+    serialized = zenodo._json_bytes(value) + b"\n"
+    for name, secret in secrets_by_name.items():
+        if secret and secret.encode("utf-8") in serialized:
+            _fail(
+                "refusing to write recovery evidence containing the "
+                + _secret_label(name)
+            )
+    # The shared helper uses create-fsync-replace and rejects result symlinks.
+    zenodo._atomic_json(
+        path,
+        value,
+        secrets_by_name.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, ""),
+    )
+
+
+def _load_evidence_without_secrets(
+    path: pathlib.Path,
+    secrets_by_name: Mapping[str, str],
+) -> tuple[dict[str, Any], bytes]:
+    value, raw = zenodo._load_json_file(
+        path,
+        secrets_by_name.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, ""),
+    )
+    for name, secret in secrets_by_name.items():
+        if secret and secret.encode("utf-8") in raw:
+            _fail(f"publication evidence contains the {_secret_label(name)}")
+    return value, raw
+
+
 def _reject_owner_authorization_replay(
     root: pathlib.Path,
     authorization: Mapping[str, Any],
+    secrets_by_name: Mapping[str, str],
+    *,
+    current_evidence_path: pathlib.Path | None = None,
 ) -> None:
-    """Reject an authorization ID or nonce already consumed by publication evidence."""
+    """Reject a decision key, ID or nonce consumed by any other evidence."""
     authorization_id = authorization["authorization_id"]
     nonce_digest = authorization["nonce_digest"]
+    consumption_key = authorization["consumption_key"]
     inspected = 0
 
     def walk_error(exc: OSError) -> NoReturn:
@@ -1260,11 +1626,16 @@ def _reject_owner_authorization_replay(
         if inspected > 4096:
             _fail("publication evidence replay scan exceeds the bounded file count")
         evidence_path = base / "zenodo-publication.json"
-        evidence, _raw = zenodo._load_json_file(
+        if (
+            current_evidence_path is not None
+            and evidence_path.resolve() == current_evidence_path.resolve()
+        ):
+            continue
+        evidence, _raw = _load_evidence_without_secrets(
             evidence_path,
-            os.environ.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, ""),
+            secrets_by_name,
         )
-        if evidence.get("schema") != EVIDENCE_SCHEMA:
+        if evidence.get("schema") not in {EVIDENCE_SCHEMA, EVIDENCE_SCHEMA_V2}:
             continue
         consumed = evidence.get("owner_authorization")
         if not isinstance(consumed, dict):
@@ -1272,11 +1643,766 @@ def _reject_owner_authorization_replay(
         if (
             consumed.get("authorization_id") == authorization_id
             or consumed.get("nonce_digest") == nonce_digest
+            or consumed.get("consumption_key") == consumption_key
         ):
             _fail(
-                "owner authorization authorization_id or nonce has already been "
-                "consumed by publication evidence"
+                "owner authorization decision key, authorization_id or nonce has "
+                "already been consumed by publication evidence"
             )
+
+
+def _recovery_binding(
+    manifest: Mapping[str, Any],
+    execution_head: str,
+) -> dict[str, Any]:
+    authorization = manifest["owner_authorization"]
+    return {
+        "schema": CONSUMPTION_KEY_SCHEMA,
+        "repository": manifest["repository"],
+        "authorization_id": authorization["authorization_id"],
+        "publication_id": authorization["publication_id"],
+        "statement_sha256": authorization["authorization_event"][
+            "statement_sha256"
+        ],
+        "consumption_key": authorization["consumption_key"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "source_head": manifest["source_head"],
+        "execution_head": execution_head,
+    }
+
+
+def _recovery_flags(phase: str) -> dict[str, bool | str]:
+    try:
+        position = RECOVERY_PHASES.index(phase)
+    except ValueError:
+        _fail("publication recovery phase is unsupported")
+    return {
+        "phase": phase,
+        "authorization_consumed": position >= RECOVERY_PHASES.index(
+            "authorization_consumed"
+        ),
+        "create_requested": position >= RECOVERY_PHASES.index("create_requested"),
+        "record_created": position >= RECOVERY_PHASES.index("record_created"),
+        "prepared": position >= RECOVERY_PHASES.index("prepared"),
+        "publish_requested": position >= RECOVERY_PHASES.index(
+            "publish_requested"
+        ),
+        "public_verified": position >= RECOVERY_PHASES.index("public_verified"),
+        "duplicate_remote_mutation_forbidden": True,
+        "remote_state_requires_reconciliation": phase != "public_verified",
+    }
+
+
+def _public_record_identity(
+    published: Mapping[str, Any],
+    record_id: int,
+    doi: str,
+) -> tuple[str, str]:
+    if zenodo._record_id(published, "gated public evidence") != record_id:
+        _fail("gated public record ID differs from recovery evidence")
+    if zenodo._doi_from_deposition(published, "gated public evidence") != doi:
+        _fail("gated public DOI differs from recovery evidence")
+    metadata = published.get("metadata")
+    conceptdoi = published.get("conceptdoi") or (
+        metadata.get("conceptdoi") if isinstance(metadata, dict) else None
+    )
+    if not isinstance(conceptdoi, str) or ZENODO_DOI.fullmatch(conceptdoi) is None:
+        _fail("gated public record lacks a valid Zenodo concept DOI")
+    links = published.get("links")
+    candidate = links.get("html") if isinstance(links, dict) else None
+    record_url = (
+        candidate
+        if isinstance(candidate, str)
+        else f"https://zenodo.org/records/{record_id}"
+    )
+    parts = urllib.parse.urlsplit(record_url)
+    try:
+        port = parts.port
+    except ValueError:
+        _fail("gated public record URL has an invalid port")
+    origin = f"{parts.scheme}://{parts.hostname or ''}"
+    if (
+        parts.scheme != "https"
+        or origin not in zenodo.ALLOWED_ORIGINS
+        or parts.username is not None
+        or parts.password is not None
+        or port not in (None, 443)
+        or parts.query
+        or parts.fragment
+        or parts.path != f"/records/{record_id}"
+    ):
+        _fail("gated public record URL is not the exact allowlisted Zenodo record")
+    return conceptdoi, record_url
+
+
+def _phase_evidence(
+    manifest_path: pathlib.Path,
+    root: pathlib.Path,
+    manifest: Mapping[str, Any],
+    execution_head: str,
+    remote_consumption: Mapping[str, Any],
+    phase: str,
+    *,
+    record_id: int | None = None,
+    doi: str | None = None,
+    published: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    flags = _recovery_flags(phase)
+    evidence: dict[str, Any] = {
+        "schema": EVIDENCE_SCHEMA_V2,
+        "state": "published" if phase == "public_verified" else CONSUMPTION_STATE,
+        "phase": phase,
+        "manifest_path": manifest_path.relative_to(root).as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "machine_proof": manifest["machine_proof"],
+        "owner_authorization": manifest["owner_authorization"],
+        "remote_consumption": dict(remote_consumption),
+        "repository": manifest["repository"],
+        "repository_commit": execution_head,
+        "source_head": manifest["source_head"],
+        "binding": _recovery_binding(manifest, execution_head),
+        "governance_boundaries": list(GOVERNANCE_BOUNDARIES),
+        "recovery": flags,
+    }
+    has_record = RECOVERY_PHASES.index(phase) >= RECOVERY_PHASES.index(
+        "record_created"
+    )
+    if has_record:
+        if (
+            isinstance(record_id, bool)
+            or not isinstance(record_id, int)
+            or record_id <= 0
+            or not isinstance(doi, str)
+            or zenodo.DOI.fullmatch(doi) is None
+        ):
+            _fail("record-bearing recovery evidence lacks an exact record ID or DOI")
+        evidence.update(
+            {
+                "record_id": record_id,
+                "doi": doi,
+                "title": manifest["metadata"]["title"],
+                "version": manifest["metadata"]["version"],
+                "files": manifest["files"],
+            }
+        )
+    if phase == "public_verified":
+        if not isinstance(published, Mapping):
+            _fail("public_verified recovery evidence lacks the gated public record")
+        conceptdoi, record_url = _public_record_identity(
+            published,
+            record_id,
+            doi,
+        )
+        evidence.update(
+            {
+                "conceptdoi": conceptdoi,
+                "record_url": record_url,
+            }
+        )
+    return evidence
+
+
+def _validate_recovery_evidence(
+    value: Mapping[str, Any],
+    manifest_path: pathlib.Path,
+    root: pathlib.Path,
+    manifest: Mapping[str, Any],
+    execution_head: str,
+) -> dict[str, Any]:
+    if value.get("schema") == EVIDENCE_SCHEMA:
+        _fail(
+            "legacy v1 publication evidence is immutable and requires manual "
+            "reconciliation"
+        )
+    if value.get("schema") != EVIDENCE_SCHEMA_V2:
+        _fail("publication recovery evidence schema is unsupported")
+    phase = value.get("phase")
+    if not isinstance(phase, str) or phase not in RECOVERY_PHASES:
+        _fail("publication recovery evidence phase is unsupported")
+    expected_state = "published" if phase == "public_verified" else CONSUMPTION_STATE
+    if value.get("state") != expected_state:
+        _fail("publication recovery evidence state differs from its phase")
+    expected_keys = {
+        "schema",
+        "state",
+        "phase",
+        "manifest_path",
+        "manifest_sha256",
+        "machine_proof",
+        "owner_authorization",
+        "remote_consumption",
+        "repository",
+        "repository_commit",
+        "source_head",
+        "binding",
+        "governance_boundaries",
+        "recovery",
+    }
+    if RECOVERY_PHASES.index(phase) >= RECOVERY_PHASES.index("record_created"):
+        expected_keys |= {"record_id", "doi", "title", "version", "files"}
+    if phase == "public_verified":
+        expected_keys |= {"conceptdoi", "record_url"}
+    zenodo._check_exact_keys(value, expected_keys, "publication recovery evidence")
+    expected_binding = _recovery_binding(manifest, execution_head)
+    if value.get("binding") != expected_binding:
+        _fail("publication recovery evidence differs from the exact authorization")
+    if value.get("governance_boundaries") != list(GOVERNANCE_BOUNDARIES):
+        _fail("publication recovery governance boundaries differ")
+    expected_manifest_path = manifest_path.relative_to(root).as_posix()
+    exact_common = {
+        "manifest_path": expected_manifest_path,
+        "manifest_sha256": manifest["manifest_sha256"],
+        "machine_proof": manifest["machine_proof"],
+        "owner_authorization": manifest["owner_authorization"],
+        "repository": manifest["repository"],
+        "repository_commit": execution_head,
+        "source_head": manifest["source_head"],
+        "recovery": _recovery_flags(phase),
+    }
+    for key, expected in exact_common.items():
+        if value.get(key) != expected:
+            _fail(f"publication recovery evidence {key} binding differs")
+    remote = value.get("remote_consumption")
+    authorization = manifest["owner_authorization"]
+    if not isinstance(remote, dict):
+        _fail("publication recovery evidence lacks remote consumption identity")
+    zenodo._check_exact_keys(
+        remote,
+        {
+            "remote",
+            "api_origin",
+            "repository",
+            "ref",
+            "tag_object",
+            "object_type",
+            "execution_head",
+            "acquisition",
+            "recovery_mode",
+        },
+        "publication recovery remote_consumption",
+    )
+    if (
+        remote["remote"] != "github_git_data_api"
+        or remote["api_origin"] != GITHUB_API_BASE
+        or remote["repository"] != PRODUCTION_REPOSITORY
+        or remote["ref"] != authorization["remote_consumption_ref"]
+        or not isinstance(remote["tag_object"], str)
+        or HEX40.fullmatch(remote["tag_object"]) is None
+        or remote["object_type"] != "tag"
+        or remote["execution_head"] != execution_head
+        or remote["acquisition"] != "GITHUB_GIT_DATA_REST_CREATE_ONLY"
+        or remote["recovery_mode"]
+        not in {"NEWLY_CREATED_REF", "EXISTING_EXACT_REF_NO_CREATE"}
+    ):
+        _fail("publication recovery remote consumption binding differs")
+    has_record = RECOVERY_PHASES.index(phase) >= RECOVERY_PHASES.index(
+        "record_created"
+    )
+    if has_record:
+        record_id = value.get("record_id")
+        doi = value.get("doi")
+        if (
+            isinstance(record_id, bool)
+            or not isinstance(record_id, int)
+            or record_id <= 0
+            or not isinstance(doi, str)
+            or zenodo.DOI.fullmatch(doi) is None
+            or value.get("title") != manifest["metadata"]["title"]
+            or value.get("version") != manifest["metadata"]["version"]
+            or value.get("files") != manifest["files"]
+        ):
+            _fail("publication recovery record binding differs")
+    elif "record_id" in value or "doi" in value:
+        _fail("pre-record recovery evidence may not claim a Zenodo record")
+    if phase == "public_verified":
+        conceptdoi, record_url = _public_record_identity(
+            {
+                "id": value["record_id"],
+                "doi": value["doi"],
+                "conceptdoi": value.get("conceptdoi"),
+                "links": {"html": value.get("record_url")},
+            },
+            value["record_id"],
+            value["doi"],
+        )
+        if (
+            value.get("conceptdoi") != conceptdoi
+            or value.get("record_url") != record_url
+        ):
+            _fail("public_verified public identity differs")
+    return dict(value)
+
+
+def _verify_remote_consumption_lock(
+    remote: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    execution_head: str,
+    github_token: str,
+) -> None:
+    status, observed = _github_api_request(
+        "GET",
+        _github_ref_path(remote["ref"]),
+        github_token,
+        accept=(200, 404),
+    )
+    if status != 200:
+        _fail("persisted GitHub consumption ref is absent during reconciliation")
+    exact = _read_exact_existing_consumption_lock(
+        manifest,
+        execution_head,
+        github_token,
+        observed,
+    )
+    if exact["tag_object"] != remote["tag_object"]:
+        _fail("persisted GitHub consumption tag identity changed")
+
+
+def _owned_deposition_inventory_pass(
+    client: zenodo.ZenodoClient,
+    token: str,
+) -> list[dict[str, Any]]:
+    """Read every bounded legacy-deposition page from the pinned Zenodo origin."""
+    base_url = zenodo.validate_base_url(client.base_url)
+    opener = urllib.request.build_opener(_NoCredentialRedirect())
+    observed: dict[int, dict[str, Any]] = {}
+    for page in range(1, MAX_INVENTORY_PAGES + 1):
+        query = urllib.parse.urlencode(
+            {"page": page, "size": INVENTORY_PAGE_SIZE}
+        )
+        url = base_url + "/deposit/depositions?" + query
+        request = urllib.request.Request(
+            url,
+            method="GET",
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer " + token,
+                "User-Agent": "qik-vrt-zenodo-publisher",
+            },
+        )
+        response: Any
+        try:
+            response = opener.open(request, timeout=60)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        except (OSError, urllib.error.URLError) as exc:
+            _fail(f"Zenodo inventory transport failed: {type(exc).__name__}")
+        try:
+            status = int(response.status)
+            if response.geturl() != url:
+                _fail("Zenodo inventory response URL changed")
+            raw = response.read(zenodo.MAX_JSON_BYTES + 1)
+        finally:
+            response.close()
+        if status != 200:
+            _fail(f"Zenodo inventory request was rejected (HTTP {status})")
+        if len(raw) > zenodo.MAX_JSON_BYTES:
+            _fail("Zenodo inventory page exceeded its byte limit")
+        if token.encode("utf-8") in raw:
+            _fail("Zenodo inventory response contained its bearer credential")
+        try:
+            page_value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            _fail("Zenodo inventory returned invalid JSON")
+        if not isinstance(page_value, list) or not all(
+            isinstance(item, dict) for item in page_value
+        ):
+            _fail("Zenodo inventory page must be an array of objects")
+        if len(page_value) > INVENTORY_PAGE_SIZE:
+            _fail("Zenodo inventory exceeded the requested page-size bound")
+        if not page_value:
+            return [observed[key] for key in sorted(observed)]
+        for item in page_value:
+            record_id = zenodo._record_id(item, "owned deposition inventory")
+            if record_id in observed:
+                _fail("Zenodo paginated inventory repeated a record ID")
+            observed[record_id] = item
+        if len(page_value) < INVENTORY_PAGE_SIZE:
+            return [observed[key] for key in sorted(observed)]
+    _fail("Zenodo owned-deposition inventory exceeded its bounded page count")
+
+
+def _list_all_owned_depositions(
+    client: zenodo.ZenodoClient,
+    token: str,
+) -> list[dict[str, Any]]:
+    """Require two identical complete passes before making uniqueness claims."""
+    first = _owned_deposition_inventory_pass(client, token)
+    second = _owned_deposition_inventory_pass(client, token)
+    if zenodo._json_bytes(first) != zenodo._json_bytes(second):
+        _fail("Zenodo owned-deposition inventory changed between complete passes")
+    return first
+
+
+def _inventory_publication_identity_candidate(
+    value: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+) -> bool:
+    actual = value.get("metadata")
+    return (
+        isinstance(actual, dict)
+        and actual.get("title") == metadata["title"]
+        and actual.get("version") == metadata["version"]
+        and zenodo._metadata_matches(
+            actual.get("creators"),
+            metadata["creators"],
+        )
+    )
+
+
+def _canonical_inventory_candidates(
+    client: zenodo.ZenodoClient,
+    zenodo_token: str,
+    metadata: Mapping[str, Any],
+    entries: list[dict[str, Any]],
+) -> list[tuple[int, str, dict[str, Any] | None]]:
+    inventory = _list_all_owned_depositions(client, zenodo_token)
+    matches: list[tuple[int, str, dict[str, Any] | None]] = []
+    for item in inventory:
+        if not _inventory_publication_identity_candidate(item, metadata):
+            continue
+        record_id = zenodo._record_id(item, "create-request recovery inventory")
+        state, current = client.get_deposition_or_record(record_id)
+        doi = zenodo._doi_from_deposition(current, "create-request recovery record")
+        if state == "published":
+            if not zenodo._published_metadata_matches(
+                current.get("metadata"),
+                metadata,
+            ):
+                _fail(
+                    "publication-identity candidate has divergent public metadata"
+                )
+            public = client.wait_for_gated_record(
+                record_id,
+                metadata,
+                entries,
+                doi,
+                published=True,
+                initial=current,
+            )
+            matches.append((record_id, doi, public))
+            continue
+        expected_metadata = dict(metadata)
+        expected_metadata.pop("prereserve_doi", None)
+        if not zenodo._metadata_matches(current.get("metadata"), expected_metadata):
+            _fail(
+                "publication-identity candidate has divergent draft metadata"
+            )
+        server_files = client._server_files(current)
+        if server_files:
+            client.gate_record(
+                current,
+                record_id,
+                metadata,
+                entries,
+                doi,
+                published=False,
+            )
+        matches.append((record_id, doi, None))
+    return matches
+
+
+def _recover_create_requested_record(
+    client: zenodo.ZenodoClient,
+    zenodo_token: str,
+    metadata: Mapping[str, Any],
+    entries: list[dict[str, Any]],
+) -> tuple[int, str, dict[str, Any] | None]:
+    """Resolve exactly one prior create POST; never issue another create."""
+    matches = _canonical_inventory_candidates(
+        client,
+        zenodo_token,
+        metadata,
+        entries,
+    )
+    if len(matches) != 1:
+        _fail(
+            "create-request recovery requires exactly one canonically matching "
+            f"owned deposition; observed {len(matches)}"
+        )
+    return matches[0]
+
+
+def _gate_precreate_inventory(
+    client: zenodo.ZenodoClient,
+    zenodo_token: str,
+    metadata: Mapping[str, Any],
+    entries: list[dict[str, Any]],
+) -> None:
+    """Prove absence before the first create intent; never silently adopt a record."""
+    matches = _canonical_inventory_candidates(
+        client,
+        zenodo_token,
+        metadata,
+        entries,
+    )
+    if matches:
+        _fail(
+            "pre-create inventory contains an exact existing draft/public record; "
+            "durable recovery evidence does not authorize rebinding"
+        )
+
+
+def _complete_exact_record(
+    evidence_path: pathlib.Path,
+    manifest_path: pathlib.Path,
+    root: pathlib.Path,
+    manifest: Mapping[str, Any],
+    execution_head: str,
+    remote_consumption: Mapping[str, Any],
+    record_id: int,
+    doi: str,
+    client: zenodo.ZenodoClient,
+    verified: Mapping[tuple[str, str], bytes],
+    secrets_by_name: Mapping[str, str],
+    *,
+    already_public: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = manifest["metadata"]
+    entries = _shared_entries(manifest["files"])
+    if already_public is None:
+        preparation = client.prepare_draft(
+            "publication",
+            record_id,
+            metadata,
+            entries,
+            verified,
+            doi,
+        )
+        if preparation == "published":
+            published = client.wait_for_gated_record(
+                record_id,
+                metadata,
+                entries,
+                doi,
+                published=True,
+            )
+        elif preparation == "draft":
+            prepared = _phase_evidence(
+                manifest_path,
+                root,
+                manifest,
+                execution_head,
+                remote_consumption,
+                "prepared",
+                record_id=record_id,
+                doi=doi,
+            )
+            _atomic_recovery_evidence(evidence_path, prepared, secrets_by_name)
+            publish_requested = _phase_evidence(
+                manifest_path,
+                root,
+                manifest,
+                execution_head,
+                remote_consumption,
+                "publish_requested",
+                record_id=record_id,
+                doi=doi,
+            )
+            # The intent is durable before the request. On a crash, the rerun
+            # reconciles this exact record and never creates a replacement.
+            _atomic_recovery_evidence(
+                evidence_path,
+                publish_requested,
+                secrets_by_name,
+            )
+            published = client.publish_and_poll(
+                record_id,
+                metadata,
+                entries,
+                doi,
+                False,
+            )
+        else:
+            _fail("Zenodo draft preparation returned an unsupported state")
+    else:
+        published = already_public
+    final = _phase_evidence(
+        manifest_path,
+        root,
+        manifest,
+        execution_head,
+        remote_consumption,
+        "public_verified",
+        record_id=record_id,
+        doi=doi,
+        published=published,
+    )
+    _atomic_recovery_evidence(evidence_path, final, secrets_by_name)
+    return final
+
+
+def _resume_publication(
+    evidence: Mapping[str, Any],
+    evidence_path: pathlib.Path,
+    manifest_path: pathlib.Path,
+    root: pathlib.Path,
+    manifest: Mapping[str, Any],
+    execution_head: str,
+    verified: Mapping[tuple[str, str], bytes],
+    client: zenodo.ZenodoClient,
+    secrets_by_name: Mapping[str, str],
+) -> dict[str, Any]:
+    phase = evidence["phase"]
+    remote_consumption = evidence["remote_consumption"]
+    _verify_remote_consumption_lock(
+        remote_consumption,
+        manifest,
+        execution_head,
+        secrets_by_name[GITHUB_TOKEN_ENVIRONMENT_VARIABLE],
+    )
+    metadata = manifest["metadata"]
+    entries = _shared_entries(manifest["files"])
+
+    if phase == "authorization_consumed":
+        _gate_precreate_inventory(
+            client,
+            secrets_by_name[zenodo.TOKEN_ENVIRONMENT_VARIABLE],
+            metadata,
+            entries,
+        )
+        create_requested = _phase_evidence(
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            "create_requested",
+        )
+        _atomic_recovery_evidence(
+            evidence_path,
+            create_requested,
+            secrets_by_name,
+        )
+        draft = client.create_paper(metadata)
+        record_id = zenodo._record_id(draft, "generic publication deposition")
+        doi = zenodo._doi_from_deposition(draft, "generic publication deposition")
+        record_created = _phase_evidence(
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            "record_created",
+            record_id=record_id,
+            doi=doi,
+        )
+        _atomic_recovery_evidence(
+            evidence_path,
+            record_created,
+            secrets_by_name,
+        )
+        return _complete_exact_record(
+            evidence_path,
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            record_id,
+            doi,
+            client,
+            verified,
+            secrets_by_name,
+        )
+
+    if phase == "create_requested":
+        record_id, doi, already_public = _recover_create_requested_record(
+            client,
+            secrets_by_name[zenodo.TOKEN_ENVIRONMENT_VARIABLE],
+            metadata,
+            entries,
+        )
+        record_created = _phase_evidence(
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            "record_created",
+            record_id=record_id,
+            doi=doi,
+        )
+        _atomic_recovery_evidence(
+            evidence_path,
+            record_created,
+            secrets_by_name,
+        )
+        return _complete_exact_record(
+            evidence_path,
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            record_id,
+            doi,
+            client,
+            verified,
+            secrets_by_name,
+            already_public=already_public,
+        )
+
+    record_id = evidence["record_id"]
+    doi = evidence["doi"]
+    if phase == "public_verified":
+        public = client.wait_for_gated_record(
+            record_id,
+            metadata,
+            entries,
+            doi,
+            published=True,
+        )
+        expected_final = _phase_evidence(
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            "public_verified",
+            record_id=record_id,
+            doi=doi,
+            published=public,
+        )
+        if evidence != expected_final:
+            _fail("public_verified evidence differs from the gated public record")
+        return dict(evidence)
+    state, current = client.get_deposition_or_record(record_id)
+    if state == "published":
+        public = client.wait_for_gated_record(
+            record_id,
+            metadata,
+            entries,
+            doi,
+            published=True,
+            initial=current,
+        )
+        return _complete_exact_record(
+            evidence_path,
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            remote_consumption,
+            record_id,
+            doi,
+            client,
+            verified,
+            secrets_by_name,
+            already_public=public,
+        )
+    return _complete_exact_record(
+        evidence_path,
+        manifest_path,
+        root,
+        manifest,
+        execution_head,
+        remote_consumption,
+        record_id,
+        doi,
+        client,
+        verified,
+        secrets_by_name,
+    )
 
 
 def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
@@ -1291,84 +2417,97 @@ def publish(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
             "NO_MACHINE_PROOF_NO_ZENODO_UPLOAD: legacy v1 manifests are read-only "
             "and may not start a new production mutation"
         )
-    if os.environ.get("GITHUB_REPOSITORY") != manifest["repository"]:
+    if (
+        manifest["repository"] != PRODUCTION_REPOSITORY
+        or os.environ.get("GITHUB_REPOSITORY") != PRODUCTION_REPOSITORY
+    ):
         _fail("production publisher repository identity is missing or mismatched")
-    token = os.environ.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, "")
-    if len(token) < 20 or any(character.isspace() for character in token):
-        _fail(
-            f"{zenodo.TOKEN_ENVIRONMENT_VARIABLE} is missing or structurally invalid"
-        )
+    secrets_by_name = _validated_network_secrets()
+    zenodo_token = secrets_by_name[zenodo.TOKEN_ENVIRONMENT_VARIABLE]
+    github_token = secrets_by_name[GITHUB_TOKEN_ENVIRONMENT_VARIABLE]
     base_url = zenodo.validate_base_url(
         os.environ.get("ZENODO_API_BASE", zenodo.DEFAULT_BASE_URL)
     )
-    _reject_owner_authorization_replay(root, manifest["owner_authorization"])
     evidence_path = manifest["evidence_path"]
-    if evidence_path.exists():
-        _fail("publication evidence already exists; refusing duplicate remote mutation")
+    if not evidence_path.exists():
+        _reject_owner_authorization_replay(
+            root,
+            manifest["owner_authorization"],
+            secrets_by_name,
+        )
     execution_head = _validate_repository_source_head(root, manifest_path, manifest)
-    verified = verify_files(manifest, root, token)
-    _reject_token_in_publication_bytes(
+    _validate_origin_repository(root, manifest["repository"])
+    verified = verify_files(manifest, root, zenodo_token)
+    _reject_tokens_in_publication_bytes(
         manifest_path,
         root,
         manifest,
         verified,
-        token,
+        secrets_by_name,
     )
-    metadata = manifest["metadata"]
-    entries = _shared_entries(manifest["files"])
+    if evidence_path.exists():
+        evidence_value, _raw = _load_evidence_without_secrets(
+            evidence_path,
+            secrets_by_name,
+        )
+        evidence = _validate_recovery_evidence(
+            evidence_value,
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+        )
+        _reject_owner_authorization_replay(
+            root,
+            manifest["owner_authorization"],
+            secrets_by_name,
+            current_evidence_path=evidence_path,
+        )
+        client = zenodo.ZenodoClient(zenodo_token, base_url)
+        return _resume_publication(
+            evidence,
+            evidence_path,
+            manifest_path,
+            root,
+            manifest,
+            execution_head,
+            verified,
+            client,
+            secrets_by_name,
+        )
+
     remote_consumption = _acquire_remote_consumption_lock(
         root,
         manifest,
         execution_head,
+        github_token,
     )
-    consumption = {
-        "schema": EVIDENCE_SCHEMA,
-        "state": CONSUMPTION_STATE,
-        "manifest_path": manifest_path.relative_to(root).as_posix(),
-        "manifest_sha256": manifest["manifest_sha256"],
-        "owner_authorization": manifest["owner_authorization"],
-        "repository": manifest["repository"],
-        "source_head": manifest["source_head"],
-        "remote_consumption": remote_consumption,
-        "recovery": {
-            "authorization_consumed": True,
-            "authorization_consumed_by_remote_ref": True,
-            "duplicate_remote_mutation_forbidden": True,
-            "remote_state_requires_reconciliation": True,
-        },
-    }
-    _create_consumption_receipt(evidence_path, consumption, token)
-    client = zenodo.ZenodoClient(
-        token,
-        base_url,
+    initial_phase = (
+        "create_requested"
+        if remote_consumption["recovery_mode"] == "EXISTING_EXACT_REF_NO_CREATE"
+        else "authorization_consumed"
     )
-    draft = client.create_paper(metadata)
-    record_id = zenodo._record_id(draft, "generic publication deposition")
-    doi = zenodo._doi_from_deposition(draft, "generic publication deposition")
-    client.prepare_draft("publication", record_id, metadata, entries, verified, doi)
-    published = client.publish_and_poll(record_id, metadata, entries, doi, False)
-    links = published.get("links") if isinstance(published.get("links"), dict) else {}
-    evidence = {
-        "schema": EVIDENCE_SCHEMA,
-        "state": "published",
-        "record_id": record_id,
-        "doi": doi,
-        "conceptdoi": published.get("conceptdoi")
-        or published.get("metadata", {}).get("conceptdoi"),
-        "title": metadata["title"],
-        "version": metadata["version"],
-        "manifest_path": manifest_path.relative_to(root).as_posix(),
-        "manifest_sha256": manifest["manifest_sha256"],
-        "machine_proof": manifest["machine_proof"],
-        "owner_authorization": manifest["owner_authorization"],
-        "remote_consumption": remote_consumption,
-        "files": manifest["files"],
-        "record_url": links.get("html") or f"https://zenodo.org/records/{record_id}",
-        "repository": manifest["repository"],
-        "repository_commit": os.environ.get("GITHUB_SHA", "unavailable"),
-    }
-    zenodo._atomic_json(evidence_path, evidence, token)
-    return evidence
+    consumption = _phase_evidence(
+        manifest_path,
+        root,
+        manifest,
+        execution_head,
+        remote_consumption,
+        initial_phase,
+    )
+    _create_consumption_receipt(evidence_path, consumption, secrets_by_name)
+    client = zenodo.ZenodoClient(zenodo_token, base_url)
+    return _resume_publication(
+        consumption,
+        evidence_path,
+        manifest_path,
+        root,
+        manifest,
+        execution_head,
+        verified,
+        client,
+        secrets_by_name,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
