@@ -290,7 +290,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r3_is_exact_direct_child_of_r2_with_r1_and_r0_lineage(self) -> None:
+    def test_r4_is_exact_direct_child_of_r3_with_r2_r1_r0_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -304,9 +304,12 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -325,9 +328,54 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn(
             'git -C controller show -s --format=%P \\\n'
             '              "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
+
+    def test_prepare_step_reads_its_output_file_not_self_step_context(self) -> None:
+        step_start = self.workflow.index(
+            "      - name: Persist and read back authorization_consumed before Zenodo"
+        )
+        step_end = self.workflow.index("\n      - name:", step_start + 1)
+        prepare_step = self.workflow[step_start:step_end]
+        self.assertNotIn("${{ steps.prepare.outputs.", prepare_step)
+        self.assertIn("grep -Fx 'prepared=true' \"$GITHUB_OUTPUT\"", prepare_step)
+        self.assertIn(
+            "grep -Eq '^finalized=(true|false)$' \"$GITHUB_OUTPUT\"",
+            prepare_step,
+        )
+        self.assertIn(
+            "grep -Eq '^receipt_commit=[0-9a-f]{40}$' \"$GITHUB_OUTPUT\"",
+            prepare_step,
+        )
+        later_workflow = self.workflow[step_end:]
+        self.assertIn("steps.prepare.outputs.prepared", later_workflow)
+        self.assertIn("steps.prepare.outputs.receipt_commit", later_workflow)
+
+    def test_no_step_reads_its_own_outputs_during_that_step(self) -> None:
+        step_blocks = re.split(r"(?m)(?=^      - name: )", self.workflow)
+        checked_ids: list[str] = []
+        for step_block in step_blocks:
+            binding = re.search(
+                r"(?m)^        id:\s*([A-Za-z_][A-Za-z0-9_-]*)\s*$",
+                step_block,
+            )
+            if binding is None:
+                continue
+            step_id = binding.group(1)
+            checked_ids.append(step_id)
+            self.assertNotIn(
+                "${{ steps." + step_id + ".outputs.",
+                step_block,
+                msg=f"step {step_id!r} reads its own unavailable outputs",
+            )
+        self.assertEqual(checked_ids, ["prepare", "publish"])
 
     def test_workflow_serializes_with_the_original_publisher(self) -> None:
         self.assertIn(
