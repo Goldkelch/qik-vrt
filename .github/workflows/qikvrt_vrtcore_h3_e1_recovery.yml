@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 60
     env:
       EXPECTED_CONTROLLER_PARENT: bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62
+      EXPECTED_CONTROLLER_PREDECESSOR: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
       E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
       E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
       E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
@@ -55,11 +56,25 @@ jobs:
             printf '%s\n' 'BLOCK: controller parent is not an exact commit' >&2
             exit 2
           fi
+          if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' \
+              'BLOCK: controller predecessor is not an exact commit' >&2
+            exit 2
+          fi
           test "$GITHUB_REF" = "refs/heads/$CONTROLLER_BRANCH"
           test "$GITHUB_REF_NAME" = "$CONTROLLER_BRANCH"
           test "$GITHUB_SHA" = "$(git -C controller rev-parse --verify HEAD^{commit})"
           test "$(git -C controller show -s --format=%P HEAD)" = \
-            "$EXPECTED_CONTROLLER_PARENT"
+            "$EXPECTED_CONTROLLER_PREDECESSOR"
+          test "$(
+            git -C controller show -s --format=%P \
+              "$EXPECTED_CONTROLLER_PREDECESSOR"
+          )" = "$EXPECTED_CONTROLLER_PARENT"
+          test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
+            "$(
+              git -C controller rev-parse --verify \
+                "$EXPECTED_CONTROLLER_PREDECESSOR^{tree}"
+            )"
           test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
             "$(git -C controller rev-parse --verify "$EXPECTED_CONTROLLER_PARENT^{tree}")"
           expected_delta="$(
@@ -97,7 +112,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B -m unittest -v \
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" \
+            python3 -B -m unittest -v \
             controller/tests/test_vrtcore_h3_e1_recovery.py
           make -C controller test
           test -z "$(git -C controller status --porcelain=v1 --untracked-files=all)"
