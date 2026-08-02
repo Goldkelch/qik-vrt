@@ -112,6 +112,23 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         )
         self.assertIn(checkout, workflow)
 
+    def test_manuscript_workflow_provisions_declared_poppler_before_h5(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "qikvrt_manuscript_proof.yml"
+        ).read_text(encoding="utf-8")
+        provision = workflow.index("Provision and verify declared Poppler runtime")
+        verify_h5 = workflow.index("Verify VRTCore SMG H5 package")
+        self.assertLess(provision, verify_h5)
+        for command in ("pdfinfo", "pdftotext", "pdftoppm"):
+            self.assertIn(f"command -v {command}", workflow)
+            self.assertIn(f"{command} -v", workflow)
+        self.assertIn("apt-get update -o Acquire::Retries=3", workflow)
+        self.assertIn(
+            "apt-get install --yes --no-install-recommends poppler-utils",
+            workflow,
+        )
+        self.assertIn("poppler-utils-package=${Version}", workflow)
+
     def test_handoff_is_portable_when_source_commit_is_not_in_local_git(self) -> None:
         with tempfile.TemporaryDirectory() as empty_objects:
             environment = dict(os.environ)
