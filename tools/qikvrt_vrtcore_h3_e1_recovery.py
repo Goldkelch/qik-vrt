@@ -253,6 +253,59 @@ R6_DRAFT_METADATA_INCIDENT: dict[str, Any] = {
     "doi": "10.5281/zenodo.21763614",
 }
 
+R7_CREATOR_NORMALIZATION_INCIDENT: dict[str, Any] = {
+    "controller": "d941ca6b792d569b2c37c571123c7524a53c33fd",
+    "controller_parent": "eec6f14ad937e15764d28ccf4fc5afef0c198236",
+    "controller_tree": "d1ac4b047b86a3fc8e8fa5f6263899aca45dc6cf",
+    "run_id": 30771162129,
+    "job_id": 91558446178,
+    "run_attempt": 1,
+    "log_bytes": 425694,
+    "log_sha256": (
+        "dc77e61deab0202064f0eaa50ddea6cb6c4c1d37735cae7764a054e9bb9c09d9"
+    ),
+    "artifact_id": 8840586492,
+    "artifact_name": "vrtcore-h3-e1-recovery-30771162129-1",
+    "artifact_size": 6688,
+    "artifact_digest": (
+        "sha256:f326e544d255d1de56eab22ff577fb6aa7530e666e35abaebcb83f6547af131d"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 6528,
+    "artifact_entry_crc32": 0xF3A6D7EB,
+    "artifact_entry_unix_mode": 0o100600,
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+}
+
+R8_NULL_AFFILIATION_EVIDENCE: dict[str, Any] = {
+    "path": (
+        "release/zenodo-corpus-proof-2026-07-28/"
+        "ZENODO_CORPUS_INVENTORY.json"
+    ),
+    "git_blob_sha": "167373aa1760cad084f674271682dec94742d8bf",
+    "bytes": 6348,
+    "sha256": "4c5b1511f1d357798b1e42fd28466bd4438da5d3eca41832fc389ac61ec7d137",
+    "record_ids": (
+        21515074,
+        21582781,
+        21633411,
+        21636774,
+        21640160,
+        21640173,
+    ),
+}
+
 R6_METADATA_LOG_REQUIRED_COUNTS = {
     "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
     "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
@@ -266,6 +319,22 @@ R6_METADATA_LOG_FORBIDDEN_MARKERS = (
     "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
     "ZENODO_PUBLICATION_STATE=published",
     "create_paper",
+    "publish_and_poll",
+)
+R7_CREATOR_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "BLOCK: R7 title, version, or creators differ from exact C2 identity": 1,
+    "Process completed with exit code 2.": 1,
+    "Process completed with exit code 1.": 1,
+}
+R7_CREATOR_LOG_FORBIDDEN_MARKERS = (
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=ALREADY_FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+    "ZENODO_PUBLICATION_STATE=published",
+    "prepared_durable=true",
+    "publish_requested",
     "publish_and_poll",
 )
 R5_GOVERNANCE_BOUNDARIES = (
@@ -283,6 +352,13 @@ R7_GOVERNANCE_BOUNDARIES = (
     "R7_RUN_ATTEMPT_ONE_ONLY",
     "R7_CORRECTS_ONLY_MUTABLE_METADATA_ON_RECORD_21763614",
     "R7_REQUIRES_POST_PUT_METADATA_CONVERGENCE_BEFORE_FILES",
+)
+R8_GOVERNANCE_BOUNDARIES = (
+    *R7_GOVERNANCE_BOUNDARIES,
+    "R8_RUN_ATTEMPT_ONE_ONLY",
+    "R8_ACCEPTS_ONLY_EXACT_CREATOR_NAME_PLUS_NULL_AFFILIATION_NORMALIZATION",
+    "R8_TREATS_R7_METADATA_PUT_OUTCOME_AS_POTENTIALLY_AMBIGUOUS",
+    "R8_SKIPS_DUPLICATE_METADATA_PUT_AFTER_DOUBLE_READ_CONVERGENCE",
 )
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
@@ -937,6 +1013,16 @@ class GitHubAPI:
                 + str(R6_DRAFT_METADATA_INCIDENT["artifact_id"])
                 + "/zip"
             ): R6_DRAFT_METADATA_INCIDENT["artifact_size"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R7_CREATOR_NORMALIZATION_INCIDENT["job_id"])
+                + "/logs"
+            ): R7_CREATOR_NORMALIZATION_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R7_CREATOR_NORMALIZATION_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R7_CREATOR_NORMALIZATION_INCIDENT["artifact_size"],
         }
         if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
@@ -1247,6 +1333,18 @@ def _verify_r6_artifact_evidence(api: Any, root: pathlib.Path) -> None:
     )
 
 
+def _verify_r7_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Prove that R7 also uploaded only the unchanged C2 checkpoint."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R7_CREATOR_NORMALIZATION_INCIDENT,
+        evidence_prefix="c2",
+        expected_phase="record_created",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
+
+
 def verify_historical_r4_unsent_create_incident(
     api: Any,
     root: pathlib.Path,
@@ -1534,6 +1632,100 @@ def verify_historical_r6_draft_metadata_incident(
     _verify_r6_artifact_evidence(api, root)
 
 
+def verify_historical_r7_creator_normalization_incident(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind R7's creator-normalization block and unchanged C2 artifact."""
+    incident = R7_CREATOR_NORMALIZATION_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R7 workflow run differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R7 workflow job differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R7 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(
+        api,
+        job_path + "/logs",
+        int(incident["log_bytes"]),
+    )
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R7 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R7 job log is not exact UTF-8 with BOM")
+    for marker, count in R7_CREATOR_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R7 job log required marker count differs")
+    if any(marker in decoded for marker in R7_CREATOR_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R7 job log crossed the public effect boundary")
+    _verify_r7_artifact_evidence(api, root)
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -1633,6 +1825,65 @@ def _verify_r6_local_object_chain(root: pathlib.Path) -> None:
         or tree.decode("ascii").strip() != incident["controller_tree"]
     ):
         _fail("R6 draft-metadata local object chain differs")
+
+
+def _verify_r7_local_object_chain(root: pathlib.Path) -> None:
+    """Bind R7 as the exact no-receipt successor of R6 and unchanged C2."""
+    _verify_r6_local_object_chain(root)
+    incident = R7_CREATOR_NORMALIZATION_INCIDENT
+    commit = str(incident["controller"])
+    _status, resolved = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{commit}^{{commit}}",
+    )
+    _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+    _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+    if (
+        resolved.decode("ascii").strip() != commit
+        or parents.decode("ascii").strip() != incident["controller_parent"]
+        or tree.decode("ascii").strip() != incident["controller_tree"]
+    ):
+        _fail("R7 creator-normalization local object chain differs")
+
+
+def _verify_r8_null_affiliation_evidence(root: pathlib.Path) -> None:
+    """Pin the sole accepted server creator normalization to E1 evidence."""
+    expected = R8_NULL_AFFILIATION_EVIDENCE
+    relative = pathlib.PurePosixPath(str(expected["path"]))
+    path = root.joinpath(*relative.parts)
+    if not path.is_file() or path.is_symlink():
+        _fail("R8 null-affiliation evidence path differs")
+    raw = path.read_bytes()
+    _status, blob = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{EXPECTED['e1']}:{relative.as_posix()}",
+    )
+    if (
+        len(raw) != expected["bytes"]
+        or hashlib.sha256(raw).hexdigest() != expected["sha256"]
+        or blob.decode("ascii").strip() != expected["git_blob_sha"]
+    ):
+        _fail("R8 null-affiliation evidence bytes differ")
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        _fail("R8 null-affiliation evidence is invalid JSON")
+    records = value.get("records") if isinstance(value, dict) else None
+    if not isinstance(records, list):
+        _fail("R8 null-affiliation evidence records are absent")
+    observed = tuple(
+        item.get("record_id")
+        for item in records
+        if isinstance(item, dict)
+        and item.get("creators")
+        == [{"affiliation": None, "name": "Lohmann, Ingolf"}]
+    )
+    if observed != expected["record_ids"]:
+        _fail("R8 null-affiliation evidence inventory differs")
 
 
 def _head_ref_path(ref: str, *, plural: bool) -> str:
@@ -2255,8 +2506,8 @@ def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
     return controller
 
 
-def _validate_r7_one_shot_execution(root: pathlib.Path) -> str:
-    """Bind correction to the first non-forced R6 -> R7 push attempt."""
+def _validate_r8_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind correction to the first non-forced R7 -> R8 push attempt."""
     controller = os.environ.get("GITHUB_SHA", "")
     event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
     if (
@@ -2268,13 +2519,14 @@ def _validate_r7_one_shot_execution(root: pathlib.Path) -> str:
         or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
         or not event_path_raw
     ):
-        _fail("R7 reconciliation execution environment differs")
+        _fail("R8 reconciliation execution environment differs")
     event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
     repository = event.get("repository")
     head_commit = event.get("head_commit")
     if (
         event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
-        or event.get("before") != R6_DRAFT_METADATA_INCIDENT["controller"]
+        or event.get("before")
+        != R7_CREATOR_NORMALIZATION_INCIDENT["controller"]
         or event.get("after") != controller
         or event.get("created") is not False
         or event.get("deleted") is not False
@@ -2284,7 +2536,7 @@ def _validate_r7_one_shot_execution(root: pathlib.Path) -> str:
         or not isinstance(head_commit, dict)
         or head_commit.get("id") != controller
     ):
-        _fail("R7 reconciliation push event differs")
+        _fail("R8 reconciliation push event differs")
     _fetch_credential_free(
         root,
         "refs/heads/" + EXPECTED["trigger_branch"],
@@ -2293,9 +2545,9 @@ def _validate_r7_one_shot_execution(root: pathlib.Path) -> str:
     _status, parent = _git(root, "show", "-s", "--format=%P", controller)
     if (
         parent.decode("ascii").strip()
-        != R6_DRAFT_METADATA_INCIDENT["controller"]
+        != R7_CREATOR_NORMALIZATION_INCIDENT["controller"]
     ):
-        _fail("R7 controller is not the exact single successor of R6")
+        _fail("R8 controller is not the exact single successor of R7")
     return controller
 
 
@@ -2378,21 +2630,21 @@ class RecoveryReceiptStore:
         self._prepared_replay_pending = False
         self._initial_create_replay_pending = False
         self._record_created_reconciliation_armed = False
-        self._r7_controller: str | None = None
+        self._r8_controller: str | None = None
 
     def _recheck_remote_boundary(self) -> None:
         if _read_head_ref(self.api, "refs/heads/main") != self.controller_parent:
             _fail("main moved across the exact recovery boundary")
-        r7_controller = getattr(self, "_r7_controller", None)
+        r8_controller = getattr(self, "_r8_controller", None)
         if (
-            r7_controller is not None
+            r8_controller is not None
             and _read_head_ref(
                 self.api,
                 "refs/heads/" + EXPECTED["trigger_branch"],
             )
-            != r7_controller
+            != r8_controller
         ):
-            _fail("R7 trigger branch moved across the reconciliation boundary")
+            _fail("R8 trigger branch moved across the reconciliation boundary")
         if _read_head_ref(self.api, EXPECTED["publication_ref"]) != EXPECTED["e1"]:
             _fail("publication branch moved across the recovery boundary")
         if (
@@ -2460,7 +2712,7 @@ class RecoveryReceiptStore:
         return True
 
     def arm_exact_record_created_reconciliation(self) -> None:
-        """Arm exact C2 after the pinned R6 metadata-only failure."""
+        """Arm exact C2 after the pinned R7 creator-normalization failure."""
         incident = R6_DRAFT_METADATA_INCIDENT
         if (
             self.publication_head != EXPECTED["e1"]
@@ -2468,8 +2720,8 @@ class RecoveryReceiptStore:
             or self.current_tip != incident["c2"]
             or self._initial_create_replay_pending
         ):
-            _fail("R7 record-created reconciliation state differs")
-        self._r7_controller = _validate_r7_one_shot_execution(self.root)
+            _fail("R8 record-created reconciliation state differs")
+        self._r8_controller = _validate_r8_one_shot_execution(self.root)
         _fetch_credential_free(
             self.root,
             EXPECTED["publication_ref"],
@@ -2485,23 +2737,25 @@ class RecoveryReceiptStore:
             EXPECTED["recovery_ref"],
             incident["c2"],
         )
-        _verify_r6_local_object_chain(self.root)
+        _verify_r7_local_object_chain(self.root)
+        _verify_r8_null_affiliation_evidence(self.root)
         verify_historical_r5_record_created_timeout(self.api, self.root)
         verify_historical_r6_draft_metadata_incident(self.api, self.root)
+        verify_historical_r7_creator_normalization_incident(self.api, self.root)
         chain = self.validate_recovery_chain(incident["c2"])
         if [item["phase"] for item in chain] != [
             "authorization_consumed",
             "create_requested",
             "record_created",
         ]:
-            _fail("R7 record-created recovery chain differs")
+            _fail("R8 record-created recovery chain differs")
         last = chain[-1]
         if (
             last.get("record_id") != incident["record_id"]
             or last.get("doi") != incident["doi"]
             or last.get("state") != incident["state"]
         ):
-            _fail("R7 record-created recovery identity differs")
+            _fail("R8 record-created recovery identity differs")
         self._record_created_reconciliation_armed = True
 
     def _prepare_integrity(self) -> None:
@@ -3005,6 +3259,62 @@ class RecoveryReceiptStore:
         return evidence
 
 
+def _creators_match_r8_null_affiliation_normalization(
+    actual: Any,
+    expected: Any,
+) -> bool:
+    """Accept exact creator objects plus Zenodo's evidenced null affiliation."""
+
+    def exact_json_value(observed: Any, authorized: Any) -> bool:
+        """Compare nested JSON without Python's bool/int equality aliasing."""
+        try:
+            observed_bytes = json.dumps(
+                observed,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            authorized_bytes = json.dumps(
+                authorized,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError):
+            return False
+        return observed_bytes == authorized_bytes
+
+    if (
+        not isinstance(actual, list)
+        or not isinstance(expected, list)
+        or not expected
+        or len(actual) != len(expected)
+    ):
+        return False
+    for observed, authorized in zip(actual, expected):
+        if not isinstance(observed, dict) or not isinstance(authorized, dict):
+            return False
+        name = authorized.get("name")
+        if not isinstance(name, str) or not name or name != name.strip():
+            return False
+        if not set(authorized).issubset(observed):
+            return False
+        if any(
+            not exact_json_value(observed[key], value)
+            for key, value in authorized.items()
+        ):
+            return False
+        extras = set(observed) - set(authorized)
+        if extras and (
+            extras != {"affiliation"}
+            or observed.get("affiliation") is not None
+        ):
+            return False
+    return True
+
+
 def _r7_draft_metadata_mismatch_keys(
     publisher_module: Any,
     actual: Any,
@@ -3020,6 +3330,13 @@ def _r7_draft_metadata_mismatch_keys(
     resource_type = actual.get("resource_type")
     for key, expected_value in expected.items():
         if key == "prereserve_doi":
+            continue
+        if key == "creators":
+            if not _creators_match_r8_null_affiliation_normalization(
+                actual.get("creators"),
+                expected_value,
+            ):
+                mismatches.append(key)
             continue
         if key == "license":
             license_value = actual.get("license")
@@ -3133,9 +3450,12 @@ def _validate_r7_record_identity(
         _fail("R7 owned record exposes a conflicting DOI identity")
     if (
         not isinstance(actual_metadata, dict)
-        or actual_metadata.get("creators") != metadata["creators"]
+        or not _creators_match_r8_null_affiliation_normalization(
+            actual_metadata.get("creators"),
+            metadata["creators"],
+        )
     ):
-        _fail("R7 title, version, or creators differ from exact C2 identity")
+        _fail("R8 title, version, or creators differ from exact C2 identity")
     if state == "published":
         if not publisher_module.zenodo._published_metadata_matches(
             actual_metadata,
@@ -3163,7 +3483,7 @@ def _validate_r7_record_identity(
         current,
         metadata,
     ):
-        _fail("R7 draft title, version, or creators differ from exact C2 identity")
+        _fail("R8 draft title, version, or creators differ from exact C2 identity")
     mismatches = _r7_draft_metadata_mismatch_keys(
         publisher_module,
         actual_metadata,
@@ -3285,8 +3605,11 @@ def run_publisher_with_checkpoints(
         "entries": None,
         "verified": None,
         "bucket_path": None,
+        "metadata_preconverged": False,
+        "metadata_preflight_mismatches": None,
         "metadata_put_attempted": False,
         "metadata_put_succeeded": False,
+        "metadata_put_skipped": False,
         "metadata_confirmed": False,
         "upload_index": 0,
         "upload_in_flight": False,
@@ -3389,14 +3712,24 @@ def run_publisher_with_checkpoints(
         metadata: Mapping[str, Any],
     ) -> dict[str, Any]:
         incident = R6_DRAFT_METADATA_INCIDENT
+        mutated = (
+            reconciliation["metadata_put_attempted"] is True
+            and reconciliation["metadata_put_succeeded"] is True
+            and reconciliation["metadata_put_skipped"] is False
+        )
+        skipped = (
+            reconciliation["metadata_preconverged"] is True
+            and reconciliation["metadata_put_attempted"] is False
+            and reconciliation["metadata_put_succeeded"] is False
+            and reconciliation["metadata_put_skipped"] is True
+        )
         if (
             record_id != incident["record_id"]
-            or reconciliation["metadata_put_attempted"] is not True
-            or reconciliation["metadata_put_succeeded"] is not True
+            or not (mutated or skipped)
             or not isinstance(reconciliation["manifest"], Mapping)
             or metadata != reconciliation["manifest"]["metadata"]
         ):
-            _fail("R7 metadata confirmation preceded its exact PUT")
+            _fail("R8 metadata confirmation lacks an exact PUT or no-op proof")
         last_mismatches: tuple[str, ...] = ()
         for attempt in range(instance.poll_attempts):
             status, value = instance.get(
@@ -3571,13 +3904,55 @@ def run_publisher_with_checkpoints(
         if metadata_put:
             if (
                 reconciliation["metadata_put_attempted"] is True
+                or reconciliation["metadata_put_skipped"] is True
                 or set(kwargs) != {"payload", "accept"}
                 or kwargs.get("payload")
                 != {"metadata": reconciliation["manifest"]["metadata"]}
                 or kwargs.get("accept") != (200, 202)
                 or instance._server_files(current)
             ):
-                _fail("R7 exact metadata PUT contract differs")
+                _fail("R8 exact metadata PUT contract differs")
+            current_mismatches = _r7_draft_metadata_mismatch_keys(
+                publisher_module,
+                current.get("metadata"),
+                reconciliation["manifest"]["metadata"],
+            )
+            if (
+                reconciliation["metadata_preconverged"] is True
+                or not current_mismatches
+            ):
+                if current_mismatches:
+                    _fail("R8 metadata changed after its no-op preflight")
+                reconciliation["metadata_preconverged"] = True
+                reconciliation["metadata_preflight_mismatches"] = ()
+                first_bucket = exact_bucket_path(instance, current)
+                store._recheck_remote_boundary()  # type: ignore[attr-defined]
+                result = original_request(
+                    instance,
+                    "GET",
+                    safe_url,
+                    accept=(200,),
+                )
+                response, confirmed = result
+                if getattr(response, "status", None) != 200:
+                    _fail("R8 metadata no-op GET status differs")
+                _validate_r7_record_identity(
+                    publisher_module,
+                    reconciliation["manifest"],
+                    "draft",
+                    confirmed,
+                    require_exact_draft_metadata=True,
+                )
+                if (
+                    instance._server_files(confirmed)
+                    or exact_bucket_path(instance, confirmed) != first_bucket
+                ):
+                    _fail("R8 metadata no-op readback changed the exact draft")
+                store._recheck_remote_boundary()  # type: ignore[attr-defined]
+                reconciliation["metadata_put_skipped"] = True
+                return result
+            if current_mismatches != reconciliation["metadata_preflight_mismatches"]:
+                _fail("R8 metadata changed before its exact idempotent PUT")
             store._recheck_remote_boundary()  # type: ignore[attr-defined]
             reconciliation["metadata_put_attempted"] = True
             result = original_request(
@@ -3590,10 +3965,13 @@ def run_publisher_with_checkpoints(
             return result
 
         if (
-            reconciliation["metadata_put_succeeded"] is not True
+            not (
+                reconciliation["metadata_put_succeeded"] is True
+                or reconciliation["metadata_put_skipped"] is True
+            )
             or reconciliation["metadata_confirmed"] is not True
         ):
-            _fail("R7 file or publish effect preceded metadata convergence")
+            _fail("R8 file or publish effect preceded metadata convergence")
         gate_uploaded_prefix(instance, current)
         bucket_path = reconciliation["bucket_path"]
         if (
@@ -3717,6 +4095,26 @@ def run_publisher_with_checkpoints(
             current,
             require_exact_draft_metadata=False,
         )
+        preflight_mismatches: tuple[str, ...] | None = None
+        if state == "draft":
+            preflight_mismatches = _r7_draft_metadata_mismatch_keys(
+                publisher_module,
+                current.get("metadata"),
+                manifest["metadata"],
+            )
+            print(
+                "VRTCORE_H3_R8_CREATOR_NORMALIZATION="
+                + (
+                    "NULL_AFFILIATION_ACCEPTED"
+                    if current.get("metadata", {}).get("creators")
+                    != manifest["metadata"]["creators"]
+                    else "EXACT"
+                )
+            )
+            print(
+                "VRTCORE_H3_R8_METADATA_PRECONVERGED="
+                + ("true" if not preflight_mismatches else "false")
+            )
         entries = publisher_module._shared_entries(manifest["files"])
         reconciliation.update(
             {
@@ -3724,6 +4122,8 @@ def run_publisher_with_checkpoints(
                 "manifest": manifest,
                 "entries": entries,
                 "verified": verified,
+                "metadata_preconverged": preflight_mismatches == (),
+                "metadata_preflight_mismatches": preflight_mismatches,
             }
         )
         if original_resume is None:
