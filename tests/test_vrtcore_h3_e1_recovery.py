@@ -59,6 +59,8 @@ class FakeGitData:
         self.calls: list[dict[str, Any]] = []
         self.mutation_result = "success"
         self.wrong_readback_sha: str | None = None
+        self.transient_post_mutation_404s = 0
+        self.mutation_observed = False
 
     def __call__(
         self,
@@ -89,6 +91,9 @@ class FakeGitData:
 
         if method == "GET" and "/git/ref/" in path:
             ref = "refs/" + urllib.parse.unquote(path.split("/git/ref/", 1)[1])
+            if self.mutation_observed and self.transient_post_mutation_404s:
+                self.transient_post_mutation_404s -= 1
+                return 404, {}
             sha = self.refs.get(ref)
             if sha is None:
                 return 404, {}
@@ -101,6 +106,7 @@ class FakeGitData:
                 raise AssertionError("missing create payload")
             ref = str(normalized_payload["ref"])
             sha = str(normalized_payload["sha"])
+            self.mutation_observed = True
             if self.mutation_result == "conflict":
                 return 422, {"message": "Reference already exists"}
             if self.mutation_result == "conflict_after_effect":
@@ -124,6 +130,7 @@ class FakeGitData:
                 raise AssertionError("missing update payload")
             ref = "refs/" + urllib.parse.unquote(path.split("/git/refs/", 1)[1])
             sha = str(normalized_payload["sha"])
+            self.mutation_observed = True
             if self.mutation_result == "conflict":
                 return 409, {"message": "Update is not a fast forward"}
             if self.mutation_result == "conflict_after_effect":
@@ -213,7 +220,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("EXPECTED_CONTROLLER_PARENT", self.workflow)
         self.assertIn("BLOCK: unresolved controller parent placeholder", self.workflow)
 
-    def test_r0_and_materialized_r1_keep_one_sentinel_and_exact_gates(self) -> None:
+    def test_materialized_controller_keeps_one_sentinel_and_exact_gates(self) -> None:
         placeholder = recovery.EXPECTED["controller_parent_placeholder"]
         binding = re.search(
             r"(?m)^(\s*EXPECTED_CONTROLLER_PARENT:\s*)(\S+)(\s*)$",
@@ -261,6 +268,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         for gate in (
             'show -s --format=%P HEAD)',
             '"$EXPECTED_CONTROLLER_PARENT"',
+            '"$EXPECTED_CONTROLLER_PREDECESSOR"',
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"',
             "expected_delta=\"$(",
             "observed_delta=\"$(",
             "--name-status",
@@ -276,7 +285,48 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                 "REPOSITORY_FILE_MANIFEST.json",
                 "REPOSITORY_FILE_MANIFEST.json.sha256",
                 "SHA256SUMS.txt",
+                "tests/test_vrtcore_h3_e1_recovery.py",
+                "tools/qikvrt_vrtcore_h3_e1_recovery.py",
             ],
+        )
+
+    def test_r3_is_exact_direct_child_of_r2_with_r1_and_r0_lineage(self) -> None:
+        bindings = dict(
+            re.findall(
+                r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
+                self.workflow,
+            )
+        )
+        self.assertEqual(
+            bindings,
+            {
+                "EXPECTED_CONTROLLER_PARENT": (
+                    "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
+                    "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
+                ),
+            },
+        )
+        self.assertIn(
+            'test "$(git -C controller show -s --format=%P HEAD)" = \\\n'
+            '            "$EXPECTED_CONTROLLER_PREDECESSOR"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PARENT"',
+            self.workflow,
         )
 
     def test_workflow_serializes_with_the_original_publisher(self) -> None:
@@ -749,6 +799,11 @@ class VRTCoreH3E1RecoveryLoaderTests(unittest.TestCase):
 
 
 class VRTCoreH3E1RecoveryGitDataTests(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = mock.patch.object(recovery.time, "sleep")
+        self.addCleanup(patcher.stop)
+        self.sleep = patcher.start()
+
     def call(
         self,
         api: FakeGitData,
@@ -801,6 +856,62 @@ class VRTCoreH3E1RecoveryGitDataTests(unittest.TestCase):
         self.assertEqual(
             [call["method"] for call in api.calls],
             ["GET", "PATCH", "GET"],
+        )
+
+    def test_exact_existing_target_is_idempotent_without_mutation(self) -> None:
+        target = "a" * 40
+        for expected_old in (None, "b" * 40):
+            with self.subTest(expected_old=expected_old):
+                api = FakeGitData({RECOVERY_REF: target})
+                self.assertEqual(
+                    self.call(
+                        api,
+                        expected_old_sha=expected_old,
+                        commit_sha=target,
+                    ),
+                    target,
+                )
+                self.assertEqual(api.mutations, [])
+                self.assertEqual([call["method"] for call in api.calls], ["GET"])
+
+    def test_transient_post_mutation_404_reconciles_read_only(self) -> None:
+        target = "a" * 40
+        api = FakeGitData()
+        api.transient_post_mutation_404s = 2
+        self.assertEqual(
+            self.call(api, expected_old_sha=None, commit_sha=target),
+            target,
+        )
+        self.assertEqual(len(api.mutations), 1)
+        self.assertEqual(
+            [call["method"] for call in api.calls],
+            ["GET", "POST", "GET", "GET", "GET"],
+        )
+        self.assertEqual(
+            [call.args[0] for call in self.sleep.call_args_list],
+            list(recovery.REF_RECONCILIATION_DELAYS_SECONDS[:2]),
+        )
+
+    def test_persistent_post_mutation_404_blocks_without_mutation_retry(self) -> None:
+        target = "a" * 40
+        api = FakeGitData()
+        api.transient_post_mutation_404s = (
+            len(recovery.REF_RECONCILIATION_DELAYS_SECONDS) + 1
+        )
+        with self.assertRaisesRegex(
+            SystemExit,
+            "BLOCK: receipt ref mutation has no exact readback",
+        ):
+            self.call(api, expected_old_sha=None, commit_sha=target)
+        self.assertEqual(len(api.mutations), 1)
+        self.assertEqual(
+            [call["method"] for call in api.calls],
+            ["GET", "POST"]
+            + ["GET"] * (len(recovery.REF_RECONCILIATION_DELAYS_SECONDS) + 1),
+        )
+        self.assertEqual(
+            [call.args[0] for call in self.sleep.call_args_list],
+            list(recovery.REF_RECONCILIATION_DELAYS_SECONDS),
         )
 
     def test_conflict_is_accepted_only_after_exact_effect_readback(self) -> None:

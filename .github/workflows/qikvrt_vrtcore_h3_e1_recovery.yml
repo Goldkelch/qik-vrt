@@ -28,7 +28,8 @@ jobs:
     timeout-minutes: 60
     env:
       EXPECTED_CONTROLLER_PARENT: bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62
-      EXPECTED_CONTROLLER_PREDECESSOR: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
+      EXPECTED_CONTROLLER_PREDECESSOR: 0d104a2692be53f47f2f200d710d2190dfa2f46d
+      EXPECTED_CONTROLLER_PREDECESSOR_PARENT: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
       E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
       E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
       E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
@@ -61,6 +62,11 @@ jobs:
               'BLOCK: controller predecessor is not an exact commit' >&2
             exit 2
           fi
+          if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' \
+              'BLOCK: controller predecessor parent is not an exact commit' >&2
+            exit 2
+          fi
           test "$GITHUB_REF" = "refs/heads/$CONTROLLER_BRANCH"
           test "$GITHUB_REF_NAME" = "$CONTROLLER_BRANCH"
           test "$GITHUB_SHA" = "$(git -C controller rev-parse --verify HEAD^{commit})"
@@ -69,6 +75,10 @@ jobs:
           test "$(
             git -C controller show -s --format=%P \
               "$EXPECTED_CONTROLLER_PREDECESSOR"
+          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"
+          test "$(
+            git -C controller show -s --format=%P \
+              "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"
           )" = "$EXPECTED_CONTROLLER_PARENT"
           test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
             "$(
@@ -82,7 +92,9 @@ jobs:
               'M	.github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml' \
               'M	REPOSITORY_FILE_MANIFEST.json' \
               'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
-              'M	SHA256SUMS.txt'
+              'M	SHA256SUMS.txt' \
+              'M	tests/test_vrtcore_h3_e1_recovery.py' \
+              'M	tools/qikvrt_vrtcore_h3_e1_recovery.py'
           )"
           observed_delta="$(
             git -C controller diff \
