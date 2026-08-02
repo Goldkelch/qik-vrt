@@ -1,0 +1,2148 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish one causally ordered VRTCore stage to Zenodo
+
+on:
+  push:
+    branches:
+      - publication/vrtcore-relational-h3-v1
+      - publication/vrtcore-smg-h5-v1
+      - publication/vrtcore-virtual-sphere-h6-v1
+    paths:
+      - .github/workflows/qikvrt_vrtcore_zenodo_publish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-vrtcore-causal-zenodo-publication-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_PARENT: cdb0e9fe8444565df665affa64463295648b1368
+      ZENODO_API_BASE: https://zenodo.org/api
+    steps:
+      - name: Check out exact execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve immutable branch profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          from tools import qikvrt_vrtcore_zenodo_publication_controls as controls
+
+          branch_to_profile = {
+              "publication/vrtcore-relational-h3-v1": "h3",
+              "publication/vrtcore-smg-h5-v1": "h5",
+              "publication/vrtcore-virtual-sphere-h6-v1": "h6",
+          }
+          branch = os.environ.get("GITHUB_REF_NAME")
+          profile_name = branch_to_profile.get(branch)
+          if profile_name is None:
+              raise SystemExit("BLOCK: executing branch has no immutable profile")
+          profile = controls.PROFILES[profile_name]
+          control = str(profile["control"])
+          execution_head = os.environ.get("GITHUB_SHA", "")
+          if re.fullmatch(r"[0-9a-f]{40}", execution_head) is None:
+              raise SystemExit("BLOCK: execution head is not an exact commit")
+          recovery_branch = (
+              "qikvrt-recovery/vrtcore-zenodo/"
+              + profile_name
+              + "/"
+              + execution_head
+          )
+          values = {
+              "PROFILE": profile_name,
+              "MANIFEST_PATH": control + "/publish-request.json",
+              "EVIDENCE_PATH": control + "/zenodo-publication.json",
+              "RECOVERY_BRANCH": recovery_branch,
+              "RECOVERY_REF": "refs/heads/" + recovery_branch,
+          }
+          destination = Path(os.environ["GITHUB_ENV"])
+          with destination.open("a", encoding="utf-8", newline="\n") as handle:
+              for key, value in values.items():
+                  if not value or "\n" in value or "\r" in value:
+                      raise SystemExit("BLOCK: unsafe immutable profile value")
+                  handle.write(f"{key}={value}\n")
+          print("VRTCORE_BRANCH_PROFILE=VALID")
+          PY
+
+      - name: Detect and verify an already finalized publication
+        id: finalized
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          python3 -B tools/qikvrt_integrity.py verify
+          publication_ref="refs/heads/$GITHUB_REF_NAME"
+          publication_listing="$(git ls-remote --heads origin "$publication_ref")"
+          read -r publication_head observed_publication_ref trailing \
+            <<< "$publication_listing"
+          test -z "${trailing:-}"
+          [[ "$publication_head" =~ ^[0-9a-f]{40}$ ]]
+          test "$observed_publication_ref" = "$publication_ref"
+          if test "$publication_head" = "$GITHUB_SHA"; then
+            printf '%s\n' 'ALREADY_FINALIZED=false' >> "$GITHUB_ENV"
+            printf '%s\n' 'finalized=false' >> "$GITHUB_OUTPUT"
+            printf 'receipt_commit=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags origin "$publication_ref"
+          test "$(git rev-parse --verify FETCH_HEAD^{commit})" = \
+            "$publication_head"
+          recovery_listing="$(git ls-remote --heads origin "$RECOVERY_REF")"
+          recovery_head=
+          if test -n "$recovery_listing"; then
+            read -r recovery_head observed_recovery_ref trailing \
+              <<< "$recovery_listing"
+            test -z "${trailing:-}"
+            [[ "$recovery_head" =~ ^[0-9a-f]{40}$ ]]
+            test "$observed_recovery_ref" = "$RECOVERY_REF"
+            git fetch --no-tags origin "$RECOVERY_REF"
+            test "$(git rev-parse --verify FETCH_HEAD^{commit})" = \
+              "$recovery_head"
+          fi
+          MANIFEST_PATH="$MANIFEST_PATH" \
+          EVIDENCE_PATH="$EVIDENCE_PATH" \
+          EXECUTION_HEAD="$GITHUB_SHA" \
+          FINAL_HEAD="$publication_head" \
+          RECOVERY_HEAD="$recovery_head" \
+          python3 -B - <<'PY'
+          import copy
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import urllib.parse
+          import urllib.request
+
+          from tools import qikvrt_integrity as integrity
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_relative = os.environ["EVIDENCE_PATH"]
+          execution_head = os.environ["EXECUTION_HEAD"]
+          final_head = os.environ["FINAL_HEAD"]
+          recovery_head = os.environ["RECOVERY_HEAD"]
+          manifest = publish.load_manifest(manifest_path, root)
+          base_integrity = json.loads(
+              (root / "REPOSITORY_FILE_MANIFEST.json").read_text(encoding="utf-8")
+          )
+          receipt_paths = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              evidence_relative,
+          }
+
+          def git(*arguments: str, accepted: set[int] | None = None) -> bytes:
+              result = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+              )
+              allowed = {0} if accepted is None else accepted
+              if result.returncode not in allowed:
+                  raise SystemExit("BLOCK: finalized-state Git validation failed")
+              return result.stdout
+
+          def validate_modes_and_integrity(
+              commit: str,
+              evidence_raw: bytes,
+          ) -> None:
+              observed_modes: dict[str, tuple[str, str]] = {}
+              for entry in git(
+                  "ls-tree", "-z", commit, "--", *sorted(receipt_paths)
+              ).split(b"\0"):
+                  if not entry:
+                      continue
+                  metadata, raw_path = entry.split(b"\t", 1)
+                  mode, object_type, _object_id = metadata.decode("ascii").split()
+                  observed_modes[raw_path.decode("utf-8")] = (mode, object_type)
+              if observed_modes != {
+                  path: ("100644", "blob") for path in receipt_paths
+              }:
+                  raise SystemExit("BLOCK: finalized receipt path mode differs")
+
+              evidence_entry = {
+                  "path": evidence_relative,
+                  "classification": "repository_content",
+                  "immutable": True,
+                  "excluded_from_sha256_index": False,
+                  "bytes": len(evidence_raw),
+                  "sha256": hashlib.sha256(evidence_raw).hexdigest(),
+                  "file_type": "regular",
+              }
+              base_entries = base_integrity.get("files")
+              if not isinstance(base_entries, list) or any(
+                  entry.get("path") == evidence_relative for entry in base_entries
+              ):
+                  raise SystemExit("BLOCK: finalized integrity base differs")
+              expected_manifest = copy.deepcopy(base_integrity)
+              entries = sorted(
+                  [*base_entries, evidence_entry],
+                  key=lambda entry: entry["path"],
+              )
+              expected_manifest["files"] = entries
+              expected_manifest["file_count"] = len(entries)
+              expected_manifest["immutable_file_count"] = sum(
+                  entry.get("immutable") is True for entry in entries
+              )
+              expected_manifest["excluded_file_count"] = (
+                  len(entries) - expected_manifest["immutable_file_count"]
+              )
+              expected_manifest["repository_content_tree_sha256"] = (
+                  integrity._content_tree_sha256(entries)
+              )
+              expected_manifest_raw = (
+                  json.dumps(
+                      expected_manifest,
+                      ensure_ascii=False,
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n"
+              ).encode("utf-8")
+              if (
+                  git("show", f"{commit}:REPOSITORY_FILE_MANIFEST.json")
+                  != expected_manifest_raw
+              ):
+                  raise SystemExit("BLOCK: finalized integrity manifest differs")
+              expected_index = "".join(
+                  f"{entry['sha256']}  {entry['path']}\n"
+                  for entry in entries
+                  if entry.get("immutable") is True
+              ).encode("utf-8")
+              if git("show", f"{commit}:SHA256SUMS.txt") != expected_index:
+                  raise SystemExit("BLOCK: finalized SHA256 index differs")
+              expected_detached = (
+                  hashlib.sha256(expected_manifest_raw).hexdigest()
+                  + "  REPOSITORY_FILE_MANIFEST.json\n"
+              ).encode("ascii")
+              if (
+                  git(
+                      "show",
+                      f"{commit}:REPOSITORY_FILE_MANIFEST.json.sha256",
+                  )
+                  != expected_detached
+              ):
+                  raise SystemExit("BLOCK: finalized detached digest differs")
+
+          def receipt_at(commit: str, *, public: bool) -> dict[str, object]:
+              try:
+                  evidence_raw = git("show", f"{commit}:{evidence_relative}")
+                  evidence = json.loads(evidence_raw.decode("utf-8"))
+              except (UnicodeError, json.JSONDecodeError) as exc:
+                  raise SystemExit("BLOCK: finalized receipt JSON differs") from exc
+              evidence = publish._validate_recovery_evidence(
+                  evidence,
+                  manifest_path,
+                  root,
+                  manifest,
+                  execution_head,
+              )
+              if public:
+                  if (
+                      evidence["phase"] != "public_verified"
+                      or evidence["state"] != "published"
+                      or evidence["recovery"]["public_verified"] is not True
+                  ):
+                      raise SystemExit("BLOCK: final receipt is not public_verified")
+              elif (
+                  evidence["state"] != publish.CONSUMPTION_STATE
+                  or evidence["phase"] == "public_verified"
+                  or evidence["recovery"]["remote_state_requires_reconciliation"]
+                  is not True
+              ):
+                  raise SystemExit("BLOCK: recovery ref contains public evidence")
+              validate_modes_and_integrity(commit, evidence_raw)
+              return evidence
+
+          recovery_chain: list[dict[str, object]] = []
+          if recovery_head:
+              cursor = recovery_head
+              reverse_chain: list[dict[str, object]] = []
+              visited: set[str] = set()
+              while cursor != execution_head:
+                  if (
+                      cursor in visited
+                      or len(visited) >= len(publish.RECOVERY_PHASES) - 1
+                  ):
+                      raise SystemExit("BLOCK: finalized recovery chain is unbounded")
+                  visited.add(cursor)
+                  parents = git("show", "-s", "--format=%P", cursor).decode().split()
+                  if len(parents) != 1:
+                      raise SystemExit("BLOCK: finalized recovery commit has wrong parent")
+                  parent = parents[0]
+                  observed = {}
+                  for line in git(
+                      "diff",
+                      "--name-status",
+                      "--no-renames",
+                      parent,
+                      cursor,
+                      "--",
+                  ).decode().splitlines():
+                      status, path = line.split("\t", 1)
+                      observed[path] = status
+                  expected = {
+                      "REPOSITORY_FILE_MANIFEST.json": "M",
+                      "REPOSITORY_FILE_MANIFEST.json.sha256": "M",
+                      "SHA256SUMS.txt": "M",
+                      evidence_relative: "A" if parent == execution_head else "M",
+                  }
+                  if observed != expected:
+                      raise SystemExit("BLOCK: finalized recovery delta differs")
+                  reverse_chain.append(receipt_at(cursor, public=False))
+                  cursor = parent
+              if not visited:
+                  raise SystemExit("BLOCK: finalized recovery ref is empty")
+              recovery_chain = list(reversed(reverse_chain))
+              positions = [
+                  publish.RECOVERY_PHASES.index(str(item["phase"]))
+                  for item in recovery_chain
+              ]
+              if any(
+                  left >= right for left, right in zip(positions, positions[1:])
+              ):
+                  raise SystemExit("BLOCK: finalized recovery phases regress")
+              remote_consumption = recovery_chain[0]["remote_consumption"]
+              record_identity: tuple[object, object] | None = None
+              for item in recovery_chain:
+                  if item["remote_consumption"] != remote_consumption:
+                      raise SystemExit("BLOCK: finalized consumption identity changes")
+                  if "record_id" in item or "doi" in item:
+                      current = (item.get("record_id"), item.get("doi"))
+                      if record_identity is None:
+                          record_identity = current
+                      elif current != record_identity:
+                          raise SystemExit("BLOCK: finalized record identity changes")
+
+          parents = git("show", "-s", "--format=%P", final_head).decode().split()
+          expected_parent = recovery_head or execution_head
+          if parents != [expected_parent]:
+              raise SystemExit("BLOCK: final receipt parent differs")
+          observed_final = {}
+          for line in git(
+              "diff",
+              "--name-status",
+              "--no-renames",
+              expected_parent,
+              final_head,
+              "--",
+          ).decode().splitlines():
+              status, path = line.split("\t", 1)
+              observed_final[path] = status
+          expected_final = {
+              "REPOSITORY_FILE_MANIFEST.json": "M",
+              "REPOSITORY_FILE_MANIFEST.json.sha256": "M",
+              "SHA256SUMS.txt": "M",
+              evidence_relative: "A" if expected_parent == execution_head else "M",
+          }
+          if observed_final != expected_final:
+              raise SystemExit("BLOCK: final receipt delta differs")
+          final_evidence = receipt_at(final_head, public=True)
+          if recovery_chain:
+              previous = recovery_chain[-1]
+              if (
+                  final_evidence["remote_consumption"]
+                  != previous["remote_consumption"]
+                  or publish.RECOVERY_PHASES.index(str(final_evidence["phase"]))
+                  <= publish.RECOVERY_PHASES.index(str(previous["phase"]))
+                  or (
+                      "record_id" in previous
+                      and (
+                          final_evidence.get("record_id") != previous.get("record_id")
+                          or final_evidence.get("doi") != previous.get("doi")
+                      )
+                  )
+              ):
+                  raise SystemExit("BLOCK: final receipt diverges from recovery tip")
+
+          consumption = final_evidence["remote_consumption"]
+          consumption_ref = str(consumption["ref"])
+          remote_consumption = git(
+              "ls-remote",
+              "--exit-code",
+              "--refs",
+              "origin",
+              consumption_ref,
+          ).decode("utf-8").split()
+          if remote_consumption != [consumption["tag_object"], consumption_ref]:
+              raise SystemExit("BLOCK: final remote consumption ref differs")
+
+          record_id = final_evidence["record_id"]
+          api_url = f"https://zenodo.org/api/records/{record_id}"
+          request = urllib.request.Request(
+              api_url,
+              method="GET",
+              headers={
+                  "Accept": "application/json",
+                  "User-Agent": "qikvrt-finalized-verifier/1",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              final_url = urllib.parse.urlsplit(response.geturl())
+              public_raw = response.read(16 * 1024 * 1024 + 1)
+          if (
+              final_url.scheme != "https"
+              or final_url.hostname != "zenodo.org"
+              or final_url.path != f"/api/records/{record_id}"
+              or final_url.query
+              or final_url.fragment
+              or len(public_raw) > 16 * 1024 * 1024
+          ):
+              raise SystemExit("BLOCK: final public record response differs")
+          public_record = json.loads(public_raw.decode("utf-8"))
+          metadata = public_record.get("metadata")
+          if (
+              publish.zenodo._record_id(public_record, "final public record")
+              != record_id
+              or publish.zenodo._doi_from_deposition(
+                  public_record, "final public record"
+              )
+              != final_evidence["doi"]
+              or not publish.zenodo._published_metadata_matches(
+                  metadata,
+                  manifest["metadata"],
+              )
+          ):
+              raise SystemExit("BLOCK: final public record identity differs")
+          conceptdoi = public_record.get("conceptdoi") or (
+              metadata.get("conceptdoi") if isinstance(metadata, dict) else None
+          )
+          if conceptdoi != final_evidence["conceptdoi"]:
+              raise SystemExit("BLOCK: final public concept DOI differs")
+          public_files = public_record.get("files")
+          if not isinstance(public_files, list):
+              raise SystemExit("BLOCK: final public file inventory is absent")
+          by_name = {}
+          for item in public_files:
+              if not isinstance(item, dict):
+                  raise SystemExit("BLOCK: final public file entry differs")
+              name = item.get("key", item.get("filename"))
+              if not isinstance(name, str) or not name or name in by_name:
+                  raise SystemExit("BLOCK: final public file name differs")
+              by_name[name] = item
+          expected_by_name = {entry["name"]: entry for entry in manifest["files"]}
+          if set(by_name) != set(expected_by_name):
+              raise SystemExit("BLOCK: final public file set differs")
+          for name, expected in expected_by_name.items():
+              observed = by_name[name]
+              size = observed.get("filesize", observed.get("size"))
+              if isinstance(size, str) and size.isdecimal():
+                  size = int(size)
+              if (
+                  size != expected["size"]
+                  or observed.get("checksum")
+                  not in {expected["md5"], "md5:" + expected["md5"]}
+              ):
+                  raise SystemExit("BLOCK: final public file identity differs")
+          print("VRTCORE_ALREADY_FINALIZED=VALID")
+          PY
+          test "$(
+            git ls-remote --heads origin "$publication_ref" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$publication_head"
+          if test -n "$recovery_head"; then
+            test "$(
+              git ls-remote --heads origin "$RECOVERY_REF" |
+                awk 'NR == 1 { print $1 }'
+            )" = "$recovery_head"
+          else
+            test -z "$(git ls-remote --heads origin "$RECOVERY_REF")"
+          fi
+          git show "$publication_head:$EVIDENCE_PATH" > "$EVIDENCE_PATH"
+          test "$(git hash-object "$EVIDENCE_PATH")" = \
+            "$(git rev-parse --verify "$publication_head:$EVIDENCE_PATH")"
+          test "$(git status --porcelain=v1 --untracked-files=all)" = \
+            "?? $EVIDENCE_PATH"
+          printf '%s\n' 'ALREADY_FINALIZED=true' >> "$GITHUB_ENV"
+          printf '%s\n' 'finalized=true' >> "$GITHUB_OUTPUT"
+          printf '%s\n' 'phase=public_verified' >> "$GITHUB_OUTPUT"
+          printf '%s\n' 'state=published' >> "$GITHUB_OUTPUT"
+          printf 'receipt_commit=%s\n' "$publication_head" >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact causal one-shot boundary
+        if: env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$EXPECTED_PARENT" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' 'BLOCK: EXPECTED_PARENT placeholder is unresolved' >&2
+            exit 2
+          fi
+          test "$GITHUB_REF" = "refs/heads/$GITHUB_REF_NAME"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse --verify "$EXPECTED_PARENT^{commit}")" = "$EXPECTED_PARENT"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          case "$PROFILE" in
+            h3)
+              expected_delta="$(
+                printf '%s\n' \
+                  'A	.github/workflows/qikvrt_vrtcore_zenodo_publish.yml' \
+                  'M	REPOSITORY_FILE_MANIFEST.json' \
+                  'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                  'M	SHA256SUMS.txt' \
+                  'M	tests/test_vrtcore_zenodo_publication_controls.py'
+              )"
+              ;;
+            h5|h6)
+              expected_delta="$(
+                printf '%s\n' \
+                  'M	.github/workflows/qikvrt_vrtcore_zenodo_publish.yml' \
+                  'M	REPOSITORY_FILE_MANIFEST.json' \
+                  'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                  'M	SHA256SUMS.txt'
+              )"
+              ;;
+            *)
+              printf '%s\n' 'BLOCK: unresolved VRTCore profile' >&2
+              exit 2
+              ;;
+          esac
+          observed_delta="$(
+            git diff \
+              --name-status \
+              --no-renames \
+              "$EXPECTED_PARENT" \
+              "$GITHUB_SHA" \
+              --
+          )"
+          test "$observed_delta" = "$expected_delta"
+
+          main_head="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$main_head" = "$EXPECTED_PARENT"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+
+          python3 -B tools/qikvrt_vrtcore_zenodo_publication_controls.py --check
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          PROFILE="$PROFILE" \
+          MANIFEST_PATH="$MANIFEST_PATH" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_vrtcore_zenodo_publication_controls as controls
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          profile = controls.PROFILES[os.environ["PROFILE"]]
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root,
+              manifest_path,
+              manifest,
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if len(manifest["files"]) != profile["upload_count"]:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          authorization = manifest["owner_authorization"]
+          if authorization["authorization_id"] != profile["authorization_id"]:
+              raise SystemExit("BLOCK: exact authorization ID differs")
+          if authorization["publication_id"] != profile["publication_id"]:
+              raise SystemExit("BLOCK: exact publication ID differs")
+          print("VRTCORE_ZENODO_EXECUTION_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Verify causally prior receipts in merged main parent
+        if: env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE="$PROFILE" EXPECTED_PARENT="$EXPECTED_PARENT" python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          from tools import qikvrt_vrtcore_zenodo_publication_controls as controls
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          required = {
+              "h3": (),
+              "h5": ("h3",),
+              "h6": ("h3", "h5"),
+          }[os.environ["PROFILE"]]
+          parent = os.environ["EXPECTED_PARENT"]
+
+          def git(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+              result = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+              )
+              if check and result.returncode != 0:
+                  raise SystemExit("BLOCK: predecessor Git gate failed")
+              return result
+
+          for predecessor in required:
+              profile = controls.PROFILES[predecessor]
+              control = str(profile["control"])
+              manifest_relative = control + "/publish-request.json"
+              evidence_relative = control + "/zenodo-publication.json"
+              evidence_path = root / evidence_relative
+              if (
+                  not evidence_path.is_file()
+                  or evidence_path.is_symlink()
+                  or git("cat-file", "-e", f"{parent}:{evidence_relative}", check=False).returncode != 0
+              ):
+                  raise SystemExit(
+                      "BLOCK: causally prior published receipt is absent from main parent"
+                  )
+              parent_bytes = git("show", f"{parent}:{evidence_relative}").stdout
+              current_bytes = evidence_path.read_bytes()
+              if parent_bytes != current_bytes:
+                  raise SystemExit("BLOCK: predecessor receipt differs from main parent")
+              try:
+                  evidence = json.loads(current_bytes.decode("utf-8"))
+              except (UnicodeError, json.JSONDecodeError) as exc:
+                  raise SystemExit("BLOCK: predecessor receipt is invalid JSON") from exc
+              manifest_path = root / manifest_relative
+              manifest = publish.load_manifest(manifest_path, root)
+              manifest_raw = manifest_path.read_bytes()
+              execution_head = evidence.get("repository_commit")
+              if evidence.get("schema") == publish.EVIDENCE_SCHEMA:
+                  raise SystemExit(
+                      "BLOCK: causally prior receipt uses immutable legacy v1 evidence"
+                  )
+              if (
+                  evidence.get("schema") != publish.EVIDENCE_SCHEMA_V2
+                  or evidence.get("phase") != "public_verified"
+                  or evidence.get("state") != "published"
+                  or evidence.get("repository") != controls.REPOSITORY
+                  or evidence.get("manifest_path") != manifest_relative
+                  or evidence.get("manifest_sha256")
+                  != hashlib.sha256(manifest_raw).hexdigest()
+                  or evidence.get("owner_authorization")
+                  != manifest["owner_authorization"]
+                  or evidence.get("machine_proof") != manifest["machine_proof"]
+                  or evidence.get("files") != manifest["files"]
+                  or evidence.get("title") != manifest["metadata"]["title"]
+                  or evidence.get("version") != manifest["metadata"]["version"]
+                  or not isinstance(execution_head, str)
+                  or re.fullmatch(r"[0-9a-f]{40}", execution_head) is None
+                  or not isinstance(evidence.get("record_id"), int)
+                  or evidence["record_id"] <= 0
+                  or not isinstance(evidence.get("doi"), str)
+                  or not evidence["doi"].startswith("10.5281/zenodo.")
+              ):
+                  raise SystemExit("BLOCK: predecessor publication receipt differs")
+              evidence = publish._validate_recovery_evidence(
+                  evidence,
+                  manifest_path,
+                  root,
+                  manifest,
+                  execution_head,
+              )
+              if (
+                  evidence["phase"] != "public_verified"
+                  or evidence["recovery"]["public_verified"] is not True
+                  or evidence["binding"]["consumption_key"]
+                  != manifest["owner_authorization"]["consumption_key"]
+                  or evidence["governance_boundaries"]
+                  != list(publish.GOVERNANCE_BOUNDARIES)
+              ):
+                  raise SystemExit("BLOCK: predecessor V2 recovery boundary differs")
+              if git(
+                  "merge-base",
+                  "--is-ancestor",
+                  execution_head,
+                  parent,
+                  check=False,
+              ).returncode != 0:
+                  raise SystemExit(
+                      "BLOCK: predecessor execution is not an ancestor of main parent"
+                  )
+              consumption = evidence.get("remote_consumption")
+              expected_ref = manifest["owner_authorization"]["remote_consumption_ref"]
+              if (
+                  not isinstance(consumption, dict)
+                  or consumption.get("repository") != controls.REPOSITORY
+                  or consumption.get("execution_head") != execution_head
+                  or consumption.get("ref") != expected_ref
+                  or re.fullmatch(
+                      r"[0-9a-f]{40}",
+                      str(consumption.get("tag_object", "")),
+                  )
+                  is None
+              ):
+                  raise SystemExit("BLOCK: predecessor consumption receipt differs")
+              remote = git(
+                  "ls-remote",
+                  "--exit-code",
+                  "--refs",
+                  "origin",
+                  expected_ref,
+              ).stdout.decode("utf-8").split()
+              if remote != [consumption["tag_object"], expected_ref]:
+                  raise SystemExit("BLOCK: predecessor remote consumption ref differs")
+          print("VRTCORE_CAUSAL_PREDECESSORS=VALID")
+          PY
+
+      - name: Run complete repository gates before effect
+        if: env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_vrtcore_zenodo_publication_controls
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Restore validated recovery receipt without moving execution head
+        id: recovery
+        if: env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          publication_head="$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$publication_head" = "$GITHUB_SHA"
+          recovery_listing="$(git ls-remote --heads origin "$RECOVERY_REF")"
+          if test -z "$recovery_listing"; then
+            test ! -e "$EVIDENCE_PATH"
+            test -z "$(git status --porcelain=v1 --untracked-files=all)"
+            printf '%s\n' 'RECOVERY_PRESENT=false' >> "$GITHUB_ENV"
+            printf 'RECOVERY_BASE=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
+            printf '%s\n' 'present=false' >> "$GITHUB_OUTPUT"
+            printf 'head=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          read -r recovery_head observed_ref trailing <<< "$recovery_listing"
+          test -z "${trailing:-}"
+          [[ "$recovery_head" =~ ^[0-9a-f]{40}$ ]]
+          test "$observed_ref" = "$RECOVERY_REF"
+          git fetch --no-tags origin "$RECOVERY_REF"
+          test "$(git rev-parse --verify FETCH_HEAD^{commit})" = "$recovery_head"
+          MANIFEST_PATH="$MANIFEST_PATH" \
+          EVIDENCE_PATH="$EVIDENCE_PATH" \
+          EXECUTION_HEAD="$GITHUB_SHA" \
+          RECOVERY_HEAD="$recovery_head" \
+          python3 -B - <<'PY'
+          import copy
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          from tools import qikvrt_integrity as integrity
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_relative = os.environ["EVIDENCE_PATH"]
+          execution_head = os.environ["EXECUTION_HEAD"]
+          recovery_head = os.environ["RECOVERY_HEAD"]
+          manifest = publish.load_manifest(manifest_path, root)
+          base_integrity = json.loads(
+              (root / "REPOSITORY_FILE_MANIFEST.json").read_text(encoding="utf-8")
+          )
+          expected_paths = {
+              "REPOSITORY_FILE_MANIFEST.json": "M",
+              "REPOSITORY_FILE_MANIFEST.json.sha256": "M",
+              "SHA256SUMS.txt": "M",
+              evidence_relative: "",
+          }
+
+          def git(*arguments: str) -> bytes:
+              result = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  raise SystemExit("BLOCK: recovery-chain Git validation failed")
+              return result.stdout
+
+          def validate_modes_and_integrity(
+              commit: str,
+              evidence_raw: bytes,
+          ) -> None:
+              paths = tuple(expected_paths)
+              observed_modes: dict[str, tuple[str, str]] = {}
+              for entry in git("ls-tree", "-z", commit, "--", *paths).split(b"\0"):
+                  if not entry:
+                      continue
+                  metadata, raw_path = entry.split(b"\t", 1)
+                  mode, object_type, _object_id = metadata.decode("ascii").split()
+                  observed_modes[raw_path.decode("utf-8")] = (mode, object_type)
+              if observed_modes != {
+                  path: ("100644", "blob") for path in paths
+              }:
+                  raise SystemExit("BLOCK: recovery receipt path mode differs")
+
+              evidence_entry = {
+                  "path": evidence_relative,
+                  "classification": "repository_content",
+                  "immutable": True,
+                  "excluded_from_sha256_index": False,
+                  "bytes": len(evidence_raw),
+                  "sha256": hashlib.sha256(evidence_raw).hexdigest(),
+                  "file_type": "regular",
+              }
+              base_entries = base_integrity.get("files")
+              if not isinstance(base_entries, list) or any(
+                  entry.get("path") == evidence_relative for entry in base_entries
+              ):
+                  raise SystemExit("BLOCK: execution-head integrity base differs")
+              expected_manifest = copy.deepcopy(base_integrity)
+              entries = sorted(
+                  [*base_entries, evidence_entry],
+                  key=lambda entry: entry["path"],
+              )
+              expected_manifest["files"] = entries
+              expected_manifest["file_count"] = len(entries)
+              expected_manifest["immutable_file_count"] = sum(
+                  entry.get("immutable") is True for entry in entries
+              )
+              expected_manifest["excluded_file_count"] = (
+                  len(entries) - expected_manifest["immutable_file_count"]
+              )
+              expected_manifest["repository_content_tree_sha256"] = (
+                  integrity._content_tree_sha256(entries)
+              )
+              expected_manifest_raw = (
+                  json.dumps(
+                      expected_manifest,
+                      ensure_ascii=False,
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n"
+              ).encode("utf-8")
+              observed_manifest_raw = git(
+                  "show", f"{commit}:REPOSITORY_FILE_MANIFEST.json"
+              )
+              if observed_manifest_raw != expected_manifest_raw:
+                  raise SystemExit("BLOCK: recovery integrity manifest differs")
+              expected_index = "".join(
+                  f"{entry['sha256']}  {entry['path']}\n"
+                  for entry in entries
+                  if entry.get("immutable") is True
+              ).encode("utf-8")
+              if git("show", f"{commit}:SHA256SUMS.txt") != expected_index:
+                  raise SystemExit("BLOCK: recovery SHA256 index differs")
+              expected_detached = (
+                  hashlib.sha256(expected_manifest_raw).hexdigest()
+                  + "  REPOSITORY_FILE_MANIFEST.json\n"
+              ).encode("ascii")
+              if (
+                  git(
+                      "show",
+                      f"{commit}:REPOSITORY_FILE_MANIFEST.json.sha256",
+                  )
+                  != expected_detached
+              ):
+                  raise SystemExit("BLOCK: recovery detached digest differs")
+
+          cursor = recovery_head
+          reverse_evidence: list[dict[str, object]] = []
+          visited: set[str] = set()
+          while cursor != execution_head:
+              if (
+                  cursor in visited
+                  or len(visited) >= len(publish.RECOVERY_PHASES) - 1
+              ):
+                  raise SystemExit("BLOCK: recovery chain is cyclic or unbounded")
+              visited.add(cursor)
+              parents = git("show", "-s", "--format=%P", cursor).decode().split()
+              if len(parents) != 1:
+                  raise SystemExit("BLOCK: recovery receipt is not single-parent")
+              parent = parents[0]
+              observed: dict[str, str] = {}
+              for line in git(
+                  "diff",
+                  "--name-status",
+                  "--no-renames",
+                  parent,
+                  cursor,
+                  "--",
+              ).decode().splitlines():
+                  status, path = line.split("\t", 1)
+                  if path in observed:
+                      raise SystemExit("BLOCK: duplicate recovery delta path")
+                  observed[path] = status
+              expected = dict(expected_paths)
+              expected[evidence_relative] = (
+                  "A" if parent == execution_head else "M"
+              )
+              if observed != expected:
+                  raise SystemExit("BLOCK: recovery commit delta differs")
+              try:
+                  evidence_raw = git("show", f"{cursor}:{evidence_relative}")
+                  evidence = json.loads(evidence_raw.decode("utf-8"))
+              except (UnicodeError, json.JSONDecodeError) as exc:
+                  raise SystemExit("BLOCK: recovery receipt JSON differs") from exc
+              evidence = publish._validate_recovery_evidence(
+                  evidence,
+                  manifest_path,
+                  root,
+                  manifest,
+                  execution_head,
+              )
+              if (
+                  evidence["state"] != publish.CONSUMPTION_STATE
+                  or evidence["phase"] == "public_verified"
+                  or evidence["recovery"]["public_verified"] is not False
+                  or evidence["recovery"]["remote_state_requires_reconciliation"]
+                  is not True
+              ):
+                  raise SystemExit("BLOCK: recovery branch contains public evidence")
+              validate_modes_and_integrity(cursor, evidence_raw)
+              reverse_evidence.append(evidence)
+              cursor = parent
+          if not visited:
+              raise SystemExit("BLOCK: recovery ref does not contain a receipt")
+          chain = list(reversed(reverse_evidence))
+          phases = [str(evidence["phase"]) for evidence in chain]
+          positions = [publish.RECOVERY_PHASES.index(phase) for phase in phases]
+          if any(left >= right for left, right in zip(positions, positions[1:])):
+              raise SystemExit("BLOCK: recovery phases regress")
+          first_consumption = chain[0]["remote_consumption"]
+          record_identity: tuple[object, object] | None = None
+          for evidence in chain:
+              if evidence["remote_consumption"] != first_consumption:
+                  raise SystemExit("BLOCK: recovery consumption identity changes")
+              if "record_id" in evidence or "doi" in evidence:
+                  current_identity = (evidence.get("record_id"), evidence.get("doi"))
+                  if record_identity is None:
+                      record_identity = current_identity
+                  elif current_identity != record_identity:
+                      raise SystemExit("BLOCK: recovery record identity changes")
+          print("VRTCORE_RECOVERY_CHAIN=VALID")
+          PY
+          test "$(
+            git ls-remote --heads origin "$RECOVERY_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$recovery_head"
+          test "$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$GITHUB_SHA"
+          git show "$recovery_head:$EVIDENCE_PATH" > "$EVIDENCE_PATH"
+          test "$(git hash-object "$EVIDENCE_PATH")" = \
+            "$(git rev-parse --verify "$recovery_head:$EVIDENCE_PATH")"
+          test "$(git status --porcelain=v1 --untracked-files=all)" = \
+            "?? $EVIDENCE_PATH"
+          printf '%s\n' 'RECOVERY_PRESENT=true' >> "$GITHUB_ENV"
+          printf 'RECOVERY_BASE=%s\n' "$recovery_head" >> "$GITHUB_ENV"
+          printf '%s\n' 'present=true' >> "$GITHUB_OUTPUT"
+          printf 'head=%s\n' "$recovery_head" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck exact main parent and effect head
+        if: env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          case "$RECOVERY_PRESENT" in
+            false)
+              test "$RECOVERY_BASE" = "$GITHUB_SHA"
+              test ! -e "$EVIDENCE_PATH"
+              test -z "$(git status --porcelain=v1 --untracked-files=all)"
+              test -z "$(git ls-remote --heads origin "$RECOVERY_REF")"
+              ;;
+            true)
+              [[ "$RECOVERY_BASE" =~ ^[0-9a-f]{40}$ ]]
+              test -f "$EVIDENCE_PATH"
+              test "$(git hash-object "$EVIDENCE_PATH")" = \
+                "$(git rev-parse --verify "$RECOVERY_BASE:$EVIDENCE_PATH")"
+              test "$(git status --porcelain=v1 --untracked-files=all)" = \
+                "?? $EVIDENCE_PATH"
+              test "$(
+                git ls-remote --heads origin "$RECOVERY_REF" |
+                  awk 'NR == 1 { print $1 }'
+              )" = "$RECOVERY_BASE"
+              ;;
+            *)
+              printf '%s\n' 'BLOCK: recovery presence state differs' >&2
+              exit 2
+              ;;
+          esac
+          main_head="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$main_head" = "$EXPECTED_PARENT"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$GITHUB_SHA"
+
+      - name: Consume authorization and publish exact files
+        id: publish
+        if: env.ALREADY_FINALIZED != 'true'
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -uo pipefail
+          status=2
+          attempt=0
+          for attempt in 1 2 3; do
+            set +e
+            python3 -B tools/qikvrt_zenodo_publish.py \
+              --manifest "$MANIFEST_PATH"
+            status=$?
+            set -e
+            if test "$status" = "0"; then
+              break
+            fi
+            if test ! -f "$EVIDENCE_PATH"; then
+              printf '%s\n' \
+                'BLOCK: publisher failed before durable V2 recovery evidence; no retry' \
+                >&2
+              break
+            fi
+            if ! MANIFEST_PATH="$MANIFEST_PATH" \
+              EVIDENCE_PATH="$EVIDENCE_PATH" \
+              GITHUB_SHA="$GITHUB_SHA" \
+              python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_path = root / os.environ["EVIDENCE_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+          if evidence.get("schema") == publish.EVIDENCE_SCHEMA:
+              raise SystemExit("BLOCK: retry refuses immutable legacy v1 evidence")
+          if evidence.get("schema") != publish.EVIDENCE_SCHEMA_V2:
+              raise SystemExit("BLOCK: retry requires V2 recovery evidence")
+          validated = publish._validate_recovery_evidence(
+              evidence,
+              manifest_path,
+              root,
+              manifest,
+              os.environ["GITHUB_SHA"],
+          )
+          print("VRTCORE_RETRY_RECOVERY_PHASE=" + validated["phase"])
+          PY
+            then
+              status=2
+              printf '%s\n' \
+                'BLOCK: publisher recovery evidence failed validation; no retry' \
+                >&2
+              break
+            fi
+            if test "$attempt" = "3"; then
+              break
+            fi
+            sleep 5
+          done
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          printf 'attempts=%s\n' "$attempt" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Prepare exact published or recovery receipt tree
+        id: persist
+        if: always() && env.ALREADY_FINALIZED != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf '%s\n' 'prepared=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          phase_state="$(
+            MANIFEST_PATH="$MANIFEST_PATH" \
+            EVIDENCE_PATH="$EVIDENCE_PATH" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_path = root / os.environ["EVIDENCE_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+          if evidence.get("schema") == publish.EVIDENCE_SCHEMA:
+              raise SystemExit(
+                  "BLOCK: graceful recovery receipt must not use immutable v1 evidence"
+              )
+          if evidence.get("schema") != publish.EVIDENCE_SCHEMA_V2:
+              raise SystemExit("BLOCK: publication evidence is not V2")
+          execution_head = os.environ["GITHUB_SHA"]
+          evidence = publish._validate_recovery_evidence(
+              evidence,
+              manifest_path,
+              root,
+              manifest,
+              execution_head,
+          )
+          phase = evidence["phase"]
+          state = evidence["state"]
+          consumption = evidence.get("remote_consumption")
+          expected_ref = manifest["owner_authorization"]["remote_consumption_ref"]
+          if (
+              evidence.get("manifest_path")
+              != manifest_path.relative_to(root).as_posix()
+              or evidence.get("manifest_sha256") != manifest["manifest_sha256"]
+              or evidence.get("owner_authorization")
+              != manifest["owner_authorization"]
+              or evidence.get("repository") != manifest["repository"]
+              or not isinstance(consumption, dict)
+              or consumption.get("repository") != manifest["repository"]
+              or consumption.get("ref") != expected_ref
+              or consumption.get("execution_head") != execution_head
+              or consumption.get("recovery_mode")
+              not in {"NEWLY_CREATED_REF", "EXISTING_EXACT_REF_NO_CREATE"}
+              or re.fullmatch(
+                  r"[0-9a-f]{40}", str(consumption.get("tag_object", ""))
+              )
+              is None
+          ):
+              raise SystemExit("BLOCK: publication evidence binding differs")
+          remote = subprocess.run(
+              [
+                  "git",
+                  "ls-remote",
+                  "--exit-code",
+                  "--refs",
+                  "origin",
+                  expected_ref,
+              ],
+              cwd=root,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              check=False,
+          )
+          if remote.returncode != 0 or remote.stdout.decode("utf-8").split() != [
+              consumption["tag_object"],
+              expected_ref,
+          ]:
+              raise SystemExit("BLOCK: persisted remote consumption ref differs")
+          if state == "published":
+              if (
+                  phase != "public_verified"
+                  or evidence.get("repository_commit") != execution_head
+                  or evidence.get("machine_proof") != manifest["machine_proof"]
+                  or evidence.get("files") != manifest["files"]
+                  or evidence.get("title") != manifest["metadata"]["title"]
+                  or evidence.get("version") != manifest["metadata"]["version"]
+                  or not isinstance(evidence.get("record_id"), int)
+                  or evidence["record_id"] <= 0
+                  or not isinstance(evidence.get("doi"), str)
+                  or not evidence["doi"].startswith("10.5281/zenodo.")
+              ):
+                  raise SystemExit("BLOCK: published receipt differs")
+          else:
+              if (
+                  state != publish.CONSUMPTION_STATE
+                  or phase == "public_verified"
+                  or evidence["recovery"]["public_verified"] is not False
+                  or evidence["recovery"]["remote_state_requires_reconciliation"]
+                  is not True
+              ):
+                  raise SystemExit("BLOCK: recovery receipt differs")
+          if (
+              evidence["binding"]["consumption_key"]
+              != manifest["owner_authorization"]["consumption_key"]
+              or evidence["governance_boundaries"]
+              != list(publish.GOVERNANCE_BOUNDARIES)
+          ):
+              raise SystemExit("BLOCK: V2 governance or consumption key differs")
+          print(f"{phase}\t{state}")
+          PY
+          )"
+          IFS=$'\t' read -r phase state <<< "$phase_state"
+          test -n "$phase"
+          test -n "$state"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          publication_head="$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$publication_head" = "$GITHUB_SHA"
+          recovery_head="$(
+            git ls-remote --heads origin "$RECOVERY_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          case "$RECOVERY_PRESENT" in
+            false)
+              test "$RECOVERY_BASE" = "$GITHUB_SHA"
+              test -z "$recovery_head"
+              ;;
+            true)
+              test "$recovery_head" = "$RECOVERY_BASE"
+              ;;
+            *)
+              printf '%s\n' 'BLOCK: recovery state is unavailable at persistence' >&2
+              exit 2
+              ;;
+          esac
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import os
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              os.environ["EVIDENCE_PATH"],
+          }
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+              ]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if item:
+                  observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: post-publication repository delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EVIDENCE_PATH"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          case "$PROFILE:$state" in
+            h3:published)
+              message='zenodo: persist VRTCore H3 publication'
+              ;;
+            h5:published)
+              message='zenodo: persist VRTCore H5 publication'
+              ;;
+            h6:published)
+              message='zenodo: persist VRTCore H6 publication'
+              ;;
+            h3:*|h5:*|h6:*)
+              message="zenodo: persist VRTCore $PROFILE recovery receipt"
+              ;;
+            *)
+              printf '%s\n' 'BLOCK: unsupported receipt commit profile' >&2
+              exit 2
+              ;;
+          esac
+          receipt_tree="$(git write-tree)"
+          recovery_tree="$(git rev-parse --verify "$RECOVERY_BASE^{tree}")"
+          receipt_date="$(git show -s --format=%cI "$GITHUB_SHA")"
+          test -n "$receipt_date"
+          test "${receipt_date//$'\n'/}" = "$receipt_date"
+          test "${receipt_date//$'\r'/}" = "$receipt_date"
+          requires_push=true
+          if test "$state" != "published" && \
+            test "$receipt_tree" = "$recovery_tree"; then
+            requires_push=false
+          fi
+          RECEIPT_TREE="$receipt_tree" \
+          RECEIPT_PARENT="$RECOVERY_BASE" \
+          REQUIRES_PUSH="$requires_push" \
+          EXPECTED_PHASE="$phase" \
+          EXPECTED_STATE="$state" \
+          MANIFEST_PATH="$MANIFEST_PATH" \
+          EVIDENCE_PATH="$EVIDENCE_PATH" \
+          EXECUTION_HEAD="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          tree = os.environ["RECEIPT_TREE"]
+          parent = os.environ["RECEIPT_PARENT"]
+          requires_push = os.environ["REQUIRES_PUSH"] == "true"
+          execution_head = os.environ["EXECUTION_HEAD"]
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_relative = os.environ["EVIDENCE_PATH"]
+          evidence_path = root / evidence_relative
+          manifest = publish.load_manifest(manifest_path, root)
+
+          def git(*arguments: str) -> bytes:
+              result = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  raise SystemExit("BLOCK: receipt-commit Git validation failed")
+              return result.stdout
+
+          if requires_push:
+              observed: dict[str, str] = {}
+              for line in git(
+                  "diff",
+                  "--name-status",
+                  "--no-renames",
+                  parent,
+                  tree,
+                  "--",
+              ).decode().splitlines():
+                  status, path = line.split("\t", 1)
+                  if path in observed:
+                      raise SystemExit("BLOCK: duplicate receipt delta path")
+                  observed[path] = status
+              expected = {
+                  "REPOSITORY_FILE_MANIFEST.json": "M",
+                  "REPOSITORY_FILE_MANIFEST.json.sha256": "M",
+                  "SHA256SUMS.txt": "M",
+                  evidence_relative: "A" if parent == execution_head else "M",
+              }
+              if observed != expected:
+                  raise SystemExit("BLOCK: receipt commit delta differs")
+              observed_modes: dict[str, tuple[str, str]] = {}
+              for entry in git(
+                  "ls-tree", "-z", tree, "--", *expected
+              ).split(b"\0"):
+                  if not entry:
+                      continue
+                  metadata, raw_path = entry.split(b"\t", 1)
+                  mode, object_type, _object_id = metadata.decode("ascii").split()
+                  observed_modes[raw_path.decode("utf-8")] = (mode, object_type)
+              if observed_modes != {
+                  path: ("100644", "blob") for path in expected
+              }:
+                  raise SystemExit("BLOCK: receipt tree path mode differs")
+          elif tree != git("rev-parse", "--verify", f"{parent}^{{tree}}").decode().strip() \
+              or os.environ["EXPECTED_STATE"] == "published":
+              raise SystemExit("BLOCK: only identical recovery may reuse its head")
+
+          commit_evidence = git("show", f"{tree}:{evidence_relative}")
+          if commit_evidence != evidence_path.read_bytes():
+              raise SystemExit("BLOCK: prepared evidence bytes differ")
+          for relative in (
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              evidence_relative,
+          ):
+              commit_blob = git("rev-parse", "--verify", f"{tree}:{relative}")
+              worktree_blob = git("hash-object", str(root / relative))
+              if commit_blob != worktree_blob:
+                  raise SystemExit("BLOCK: receipt tree blob differs for " + relative)
+          try:
+              evidence = json.loads(commit_evidence.decode("utf-8"))
+          except (UnicodeError, json.JSONDecodeError) as exc:
+              raise SystemExit("BLOCK: committed evidence JSON differs") from exc
+          evidence = publish._validate_recovery_evidence(
+              evidence,
+              manifest_path,
+              root,
+              manifest,
+              execution_head,
+          )
+          if (
+              evidence["phase"] != os.environ["EXPECTED_PHASE"]
+              or evidence["state"] != os.environ["EXPECTED_STATE"]
+          ):
+              raise SystemExit("BLOCK: committed evidence phase or state differs")
+          if parent != execution_head:
+              try:
+                  parent_evidence = json.loads(
+                      git("show", f"{parent}:{evidence_relative}").decode("utf-8")
+                  )
+              except (UnicodeError, json.JSONDecodeError) as exc:
+                  raise SystemExit("BLOCK: parent recovery evidence differs") from exc
+              parent_evidence = publish._validate_recovery_evidence(
+                  parent_evidence,
+                  manifest_path,
+                  root,
+                  manifest,
+                  execution_head,
+              )
+              if (
+                  parent_evidence["state"] != publish.CONSUMPTION_STATE
+                  or parent_evidence["phase"] == "public_verified"
+                  or parent_evidence["remote_consumption"]
+                  != evidence["remote_consumption"]
+                  or (
+                      "record_id" in parent_evidence
+                      and (
+                          parent_evidence["record_id"] != evidence.get("record_id")
+                          or parent_evidence["doi"] != evidence.get("doi")
+                      )
+                  )
+                  or (
+                      requires_push
+                      and publish.RECOVERY_PHASES.index(evidence["phase"])
+                      <= publish.RECOVERY_PHASES.index(parent_evidence["phase"])
+                  )
+              ):
+                  raise SystemExit("BLOCK: receipt phase regresses from recovery parent")
+          print("VRTCORE_RECEIPT_TREE=VALID")
+          PY
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(
+            git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$GITHUB_SHA"
+          current_recovery_head="$(
+            git ls-remote --heads origin "$RECOVERY_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if test "$RECOVERY_PRESENT" = "true"; then
+            test "$current_recovery_head" = "$RECOVERY_BASE"
+          else
+            test -z "$current_recovery_head"
+          fi
+          if test "$state" = "published"; then
+            test "$requires_push" = "true"
+            target_ref="refs/heads/$GITHUB_REF_NAME"
+            target_operation=update
+            receipt_storage=publication
+          else
+            target_ref="$RECOVERY_REF"
+            if test "$RECOVERY_PRESENT" = "true"; then
+              target_operation=update
+            else
+              target_operation=create
+            fi
+            receipt_storage=recovery
+          fi
+          printf '%s\n' 'prepared=true' >> "$GITHUB_OUTPUT"
+          printf 'requires_push=%s\n' "$requires_push" >> "$GITHUB_OUTPUT"
+          printf 'phase=%s\n' "$phase" >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+          printf 'receipt_tree=%s\n' "$receipt_tree" >> "$GITHUB_OUTPUT"
+          printf 'receipt_base_tree=%s\n' "$recovery_tree" >> "$GITHUB_OUTPUT"
+          printf 'receipt_parent=%s\n' "$RECOVERY_BASE" >> "$GITHUB_OUTPUT"
+          printf 'receipt_date=%s\n' "$receipt_date" >> "$GITHUB_OUTPUT"
+          printf 'target_ref=%s\n' "$target_ref" >> "$GITHUB_OUTPUT"
+          printf 'target_operation=%s\n' "$target_operation" >> "$GITHUB_OUTPUT"
+          printf 'commit_message=%s\n' "$message" >> "$GITHUB_OUTPUT"
+          printf 'receipt_storage=%s\n' "$receipt_storage" >> "$GITHUB_OUTPUT"
+
+      - name: Persist exact receipt through GitHub Git Data REST
+        id: push
+        if: >-
+          always() &&
+          env.ALREADY_FINALIZED != 'true' &&
+          steps.persist.outputs.prepared == 'true' &&
+          steps.persist.outputs.requires_push == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RECEIPT_TREE: ${{ steps.persist.outputs.receipt_tree }}
+          RECEIPT_BASE_TREE: ${{ steps.persist.outputs.receipt_base_tree }}
+          RECEIPT_PARENT: ${{ steps.persist.outputs.receipt_parent }}
+          RECEIPT_DATE: ${{ steps.persist.outputs.receipt_date }}
+          RECEIPT_PHASE: ${{ steps.persist.outputs.phase }}
+          RECEIPT_STATE: ${{ steps.persist.outputs.state }}
+          RECEIPT_TARGET_REF: ${{ steps.persist.outputs.target_ref }}
+          RECEIPT_TARGET_OPERATION: ${{ steps.persist.outputs.target_operation }}
+          RECEIPT_MESSAGE: ${{ steps.persist.outputs.commit_message }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          root = Path.cwd().resolve()
+          consumption_state = "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION"
+          token = os.environ["GITHUB_TOKEN"]
+          execution_head = os.environ["GITHUB_SHA"]
+          tree = os.environ["RECEIPT_TREE"]
+          base_tree = os.environ["RECEIPT_BASE_TREE"]
+          parent = os.environ["RECEIPT_PARENT"]
+          effect_date = os.environ["RECEIPT_DATE"]
+          phase = os.environ["RECEIPT_PHASE"]
+          state = os.environ["RECEIPT_STATE"]
+          target_ref = os.environ["RECEIPT_TARGET_REF"]
+          operation = os.environ["RECEIPT_TARGET_OPERATION"]
+          message = os.environ["RECEIPT_MESSAGE"]
+          evidence_relative = os.environ["EVIDENCE_PATH"]
+          publication_ref = "refs/heads/" + os.environ["GITHUB_REF_NAME"]
+          recovery_ref = os.environ["RECOVERY_REF"]
+          if (
+              re.fullmatch(r"[0-9a-f]{40}", execution_head) is None
+              or re.fullmatch(r"[0-9a-f]{40}", tree) is None
+              or re.fullmatch(r"[0-9a-f]{40}", base_tree) is None
+              or re.fullmatch(r"[0-9a-f]{40}", parent) is None
+              or len(token) < 20
+              or any(character.isspace() for character in token)
+              or not message
+              or "\n" in message
+              or "\r" in message
+          ):
+              raise SystemExit("BLOCK: GitHub receipt effect inputs differ")
+          if not effect_date or "\n" in effect_date or "\r" in effect_date:
+              raise SystemExit("BLOCK: deterministic receipt date differs")
+          if state == "published":
+              if (
+                  phase != "public_verified"
+                  or target_ref != publication_ref
+                  or operation != "update"
+              ):
+                  raise SystemExit("BLOCK: final receipt target differs")
+              expected_old_target = execution_head
+          else:
+              if (
+                  state != consumption_state
+                  or phase == "public_verified"
+                  or target_ref != recovery_ref
+                  or operation not in {"create", "update"}
+              ):
+                  raise SystemExit("BLOCK: recovery receipt target differs")
+              expected_old_target = parent
+
+          class NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(
+                  self,
+                  request: urllib.request.Request,
+                  file_pointer: object,
+                  code: int,
+                  response_message: str,
+                  headers: object,
+                  new_url: str,
+              ) -> None:
+                  return None
+
+          class AmbiguousRefMutation(RuntimeError):
+              pass
+
+          api_origin = "https://api.github.com"
+          repository_prefix = "/repos/Goldkelch/qik-vrt/"
+          opener = urllib.request.build_opener(NoCredentialRedirect())
+
+          def api(
+              method: str,
+              path: str,
+              *,
+              payload: dict[str, object] | None = None,
+              accept: tuple[int, ...] = (200,),
+              allow_ambiguous_transport: bool = False,
+          ) -> tuple[int, dict[str, object]]:
+              if (
+                  method not in {"GET", "POST", "PATCH"}
+                  or not path.startswith(repository_prefix)
+                  or any(character in path for character in "\x00\r\n?#")
+              ):
+                  raise SystemExit("BLOCK: GitHub receipt API boundary differs")
+              url = api_origin + path
+              body = None
+              if payload is not None:
+                  body = json.dumps(
+                      payload,
+                      ensure_ascii=False,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                  ).encode("utf-8")
+              request = urllib.request.Request(
+                  url,
+                  data=body,
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": "Bearer " + token,
+                      "User-Agent": "qik-vrt-zenodo-receipt/1",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      **(
+                          {"Content-Type": "application/json"}
+                          if body is not None
+                          else {}
+                      ),
+                  },
+              )
+              try:
+                  response = opener.open(request, timeout=30)
+              except urllib.error.HTTPError as exc:
+                  response = exc
+              except (OSError, urllib.error.URLError) as exc:
+                  if allow_ambiguous_transport:
+                      raise AmbiguousRefMutation from exc
+                  raise SystemExit(
+                      "BLOCK: GitHub receipt API transport failed: "
+                      + type(exc).__name__
+                  ) from exc
+              try:
+                  try:
+                      status = int(response.status)
+                      if response.geturl() != url:
+                          raise SystemExit("BLOCK: GitHub receipt API origin changed")
+                      raw = response.read(16 * 1024 * 1024 + 1)
+                  except (OSError, urllib.error.URLError) as exc:
+                      if allow_ambiguous_transport:
+                          raise AmbiguousRefMutation from exc
+                      raise SystemExit(
+                          "BLOCK: GitHub receipt API response failed: "
+                          + type(exc).__name__
+                      ) from exc
+              finally:
+                  response.close()
+              if allow_ambiguous_transport and 500 <= status <= 599:
+                  raise AmbiguousRefMutation
+              if len(raw) > 16 * 1024 * 1024 or status not in accept:
+                  raise SystemExit(
+                      f"BLOCK: GitHub receipt API rejected {method} ({status})"
+                  )
+              if status in {409, 422}:
+                  return status, {}
+              if not raw:
+                  return status, {}
+              try:
+                  value = json.loads(raw.decode("utf-8"))
+              except (UnicodeError, json.JSONDecodeError) as exc:
+                  raise SystemExit("BLOCK: GitHub receipt API JSON differs") from exc
+              if not isinstance(value, dict):
+                  raise SystemExit("BLOCK: GitHub receipt API object differs")
+              if token.encode("utf-8") in raw:
+                  raise SystemExit("BLOCK: GitHub receipt API reflected its token")
+              return status, value
+
+          def ref_path(ref: str, *, plural: bool) -> str:
+              if not ref.startswith("refs/heads/"):
+                  raise SystemExit("BLOCK: receipt target is not a branch ref")
+              suffix = urllib.parse.quote(ref.removeprefix("refs/"), safe="/")
+              noun = "refs" if plural else "ref"
+              return f"/repos/Goldkelch/qik-vrt/git/{noun}/{suffix}"
+
+          def validate_ref(
+              value: dict[str, object],
+              ref: str,
+              commit: str,
+          ) -> None:
+              target = value.get("object")
+              if (
+                  value.get("ref") != ref
+                  or not isinstance(target, dict)
+                  or target.get("sha") != commit
+                  or target.get("type") != "commit"
+              ):
+                  raise SystemExit("BLOCK: GitHub receipt ref response differs")
+
+          def validate_commit(
+              value: dict[str, object],
+              commit: str,
+              expected_tree: str,
+              expected_parent: str,
+              expected_message: str,
+          ) -> None:
+              response_tree = value.get("tree")
+              response_parents = value.get("parents")
+              if (
+                  value.get("sha") != commit
+                  or value.get("message") != expected_message
+                  or not isinstance(response_tree, dict)
+                  or response_tree.get("sha") != expected_tree
+                  or not isinstance(response_parents, list)
+                  or [
+                      item.get("sha") if isinstance(item, dict) else None
+                      for item in response_parents
+                  ]
+                  != [expected_parent]
+              ):
+                  raise SystemExit("BLOCK: GitHub receipt commit readback differs")
+
+          before_status, before_ref = api(
+              "GET",
+              ref_path(target_ref, plural=False),
+              accept=(200, 404),
+          )
+          if operation == "create":
+              if before_status != 404:
+                  raise SystemExit("BLOCK: recovery ref already exists before create")
+          elif before_status != 200:
+              raise SystemExit("BLOCK: receipt target disappeared before update")
+          else:
+              validate_ref(before_ref, target_ref, expected_old_target)
+
+          publication_status, publication_before = api(
+              "GET",
+              ref_path(publication_ref, plural=False),
+              accept=(200, 404),
+          )
+          if publication_status != 200:
+              raise SystemExit("BLOCK: publication ref moved before receipt effect")
+          validate_ref(publication_before, publication_ref, execution_head)
+          recovery_status, recovery_before = api(
+              "GET",
+              ref_path(recovery_ref, plural=False),
+              accept=(200, 404),
+          )
+          if os.environ["RECOVERY_PRESENT"] == "true":
+              if recovery_status != 200:
+                  raise SystemExit("BLOCK: recovery ref moved before receipt effect")
+              validate_ref(recovery_before, recovery_ref, parent)
+          elif recovery_status != 404:
+              raise SystemExit("BLOCK: recovery ref appeared before receipt effect")
+
+          receipt_paths = (
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              evidence_relative,
+          )
+          blobs: dict[str, str] = {}
+          for relative in receipt_paths:
+              path = root / relative
+              if not path.is_file() or path.is_symlink():
+                  raise SystemExit("BLOCK: receipt API input is not a regular file")
+              raw = path.read_bytes()
+              local_blob = hashlib.sha1(
+                  f"blob {len(raw)}\0".encode("ascii") + raw
+              ).hexdigest()
+              _status, created_blob = api(
+                  "POST",
+                  "/repos/Goldkelch/qik-vrt/git/blobs",
+                  payload={
+                      "content": base64.b64encode(raw).decode("ascii"),
+                      "encoding": "base64",
+                  },
+                  accept=(201,),
+              )
+              if created_blob.get("sha") != local_blob:
+                  raise SystemExit("BLOCK: GitHub receipt blob identity differs")
+              blobs[relative] = local_blob
+
+          _status, parent_commit = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/commits/" + parent,
+          )
+          parent_tree = parent_commit.get("tree")
+          if (
+              parent_commit.get("sha") != parent
+              or not isinstance(parent_tree, dict)
+              or parent_tree.get("sha") != base_tree
+          ):
+              raise SystemExit("BLOCK: GitHub receipt parent binding differs")
+          _status, parent_tree_readback = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/trees/" + base_tree,
+          )
+          if parent_tree_readback.get("sha") != base_tree:
+              raise SystemExit("BLOCK: GitHub receipt parent tree differs")
+          _status, created_tree = api(
+              "POST",
+              "/repos/Goldkelch/qik-vrt/git/trees",
+              payload={
+                  "base_tree": base_tree,
+                  "tree": [
+                      {
+                          "path": relative,
+                          "mode": "100644",
+                          "type": "blob",
+                          "sha": blobs[relative],
+                      }
+                      for relative in receipt_paths
+                  ],
+              },
+              accept=(201,),
+          )
+          if created_tree.get("sha") != tree:
+              raise SystemExit("BLOCK: GitHub receipt tree identity differs")
+          _status, created_tree_readback = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/trees/" + tree,
+          )
+          if created_tree_readback.get("sha") != tree:
+              raise SystemExit("BLOCK: GitHub receipt tree readback differs")
+
+          identity = {
+              "name": "qik-vrt-zenodo-publication[bot]",
+              "email": (
+                  "qik-vrt-zenodo-publication[bot]@users.noreply.github.com"
+              ),
+              "date": effect_date,
+          }
+          commit_payload = {
+              "message": message,
+              "tree": tree,
+              "parents": [parent],
+              "author": identity,
+              "committer": identity,
+          }
+          _status, created_commit = api(
+              "POST",
+              "/repos/Goldkelch/qik-vrt/git/commits",
+              payload=commit_payload,
+              accept=(201,),
+          )
+          receipt_commit = created_commit.get("sha")
+          if (
+              not isinstance(receipt_commit, str)
+              or re.fullmatch(r"[0-9a-f]{40}", receipt_commit) is None
+          ):
+              raise SystemExit("BLOCK: GitHub receipt commit identity differs")
+          _status, readback_commit = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/commits/" + receipt_commit,
+          )
+          validate_commit(readback_commit, receipt_commit, tree, parent, message)
+
+          # REST PATCH force=false guarantees fast-forward, but GitHub's API has
+          # no expected-old compare-and-swap parameter.  Therefore the workflow
+          # performs an immediate exact pre-read, one mutation request only, and
+          # fail-closed reconciliation by exact new-SHA readback.
+          print("REST_PATCH_FORCE_FALSE_IS_FF_NOT_EXPECTED_OLD_CAS")
+          pre_mutation_status, pre_mutation_ref = api(
+              "GET",
+              ref_path(target_ref, plural=False),
+              accept=(200, 404),
+          )
+          if operation == "create":
+              if pre_mutation_status != 404:
+                  raise SystemExit("BLOCK: recovery ref raced before create")
+          elif pre_mutation_status != 200:
+              raise SystemExit("BLOCK: receipt target raced before update")
+          else:
+              validate_ref(
+                  pre_mutation_ref,
+                  target_ref,
+                  expected_old_target,
+              )
+
+          mutation_status: int | None = None
+          changed_ref: dict[str, object] = {}
+          try:
+              if operation == "create":
+                  mutation_status, changed_ref = api(
+                      "POST",
+                      "/repos/Goldkelch/qik-vrt/git/refs",
+                      payload={"ref": target_ref, "sha": receipt_commit},
+                      accept=(201, 409, 422),
+                      allow_ambiguous_transport=True,
+                  )
+              else:
+                  mutation_status, changed_ref = api(
+                      "PATCH",
+                      ref_path(target_ref, plural=True),
+                      payload={"sha": receipt_commit, "force": False},
+                      accept=(200, 409, 422),
+                      allow_ambiguous_transport=True,
+                  )
+          except AmbiguousRefMutation:
+              mutation_status = None
+          expected_success = 201 if operation == "create" else 200
+          if mutation_status == expected_success:
+              validate_ref(changed_ref, target_ref, receipt_commit)
+          elif mutation_status not in {None, 409, 422}:
+              raise SystemExit("BLOCK: receipt mutation status differs")
+
+          # Exactly one reconciliation GET follows success, conflict, or an
+          # ambiguous transport.  The mutation request is never retried.
+          reconciliation_status, reconciled_ref = api(
+              "GET",
+              ref_path(target_ref, plural=False),
+              accept=(200, 404),
+          )
+          if reconciliation_status != 200:
+              raise SystemExit("BLOCK: receipt mutation has no exact ref")
+          validate_ref(reconciled_ref, target_ref, receipt_commit)
+
+          _status, post_ref_commit = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/commits/" + receipt_commit,
+          )
+          validate_commit(post_ref_commit, receipt_commit, tree, parent, message)
+          _status, post_ref_tree = api(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/trees/" + tree,
+          )
+          if post_ref_tree.get("sha") != tree:
+              raise SystemExit("BLOCK: post-ref receipt tree differs")
+          _status, final_ref_readback = api(
+              "GET",
+              ref_path(target_ref, plural=False),
+          )
+          validate_ref(final_ref_readback, target_ref, receipt_commit)
+
+          if target_ref == publication_ref:
+              recovery_after_status, recovery_after = api(
+                  "GET",
+                  ref_path(recovery_ref, plural=False),
+                  accept=(200, 404),
+              )
+              if os.environ["RECOVERY_PRESENT"] == "true":
+                  if recovery_after_status != 200:
+                      raise SystemExit("BLOCK: final effect changed recovery ref")
+                  validate_ref(recovery_after, recovery_ref, parent)
+              elif recovery_after_status != 404:
+                  raise SystemExit("BLOCK: final effect changed recovery ref")
+          else:
+              publication_after_status, publication_after = api(
+                  "GET",
+                  ref_path(publication_ref, plural=False),
+                  accept=(200, 404),
+              )
+              if publication_after_status != 200:
+                  raise SystemExit("BLOCK: recovery effect changed publication ref")
+              validate_ref(publication_after, publication_ref, execution_head)
+          print("VRTCORE_GITHUB_RECEIPT_EFFECT=VALID")
+          destination = Path(os.environ["GITHUB_OUTPUT"])
+          with destination.open("a", encoding="utf-8", newline="\n") as handle:
+              handle.write("persisted=true\n")
+              handle.write("receipt_commit=" + receipt_commit + "\n")
+          PY
+
+      - name: Verify persisted receipt without credentials
+        id: verify_receipt
+        if: >-
+          always() &&
+          env.ALREADY_FINALIZED != 'true' &&
+          steps.push.outputs.persisted == 'true'
+        shell: bash
+        env:
+          RECEIPT_COMMIT: ${{ steps.push.outputs.receipt_commit }}
+          RECEIPT_TREE: ${{ steps.persist.outputs.receipt_tree }}
+          RECEIPT_PARENT: ${{ steps.persist.outputs.receipt_parent }}
+          RECEIPT_PHASE: ${{ steps.persist.outputs.phase }}
+          RECEIPT_STATE: ${{ steps.persist.outputs.state }}
+          RECEIPT_TARGET_REF: ${{ steps.persist.outputs.target_ref }}
+        run: |
+          set -euo pipefail
+          test -z "${GITHUB_TOKEN:-}"
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          commit = os.environ["RECEIPT_COMMIT"]
+          tree = os.environ["RECEIPT_TREE"]
+          parent = os.environ["RECEIPT_PARENT"]
+          phase = os.environ["RECEIPT_PHASE"]
+          state = os.environ["RECEIPT_STATE"]
+          target_ref = os.environ["RECEIPT_TARGET_REF"]
+          execution_head = os.environ["GITHUB_SHA"]
+          evidence_relative = os.environ["EVIDENCE_PATH"]
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          publication_ref = "refs/heads/" + os.environ["GITHUB_REF_NAME"]
+          recovery_ref = os.environ["RECOVERY_REF"]
+          if any(
+              re.fullmatch(r"[0-9a-f]{40}", value) is None
+              for value in (commit, tree, parent, execution_head)
+          ):
+              raise SystemExit("BLOCK: credential-free receipt identity differs")
+
+          def git(*arguments: str) -> bytes:
+              environment = {
+                  key: value
+                  for key, value in os.environ.items()
+                  if key != "GITHUB_TOKEN"
+              }
+              environment["GIT_TERMINAL_PROMPT"] = "0"
+              result = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  env=environment,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  raise SystemExit("BLOCK: credential-free receipt Git gate failed")
+              return result.stdout
+
+          git("fetch", "--no-tags", "origin", target_ref)
+          if (
+              git("rev-parse", "--verify", "FETCH_HEAD^{commit}")
+              .decode("ascii")
+              .strip()
+              != commit
+              or git("show", "-s", "--format=%P", commit)
+              .decode("ascii")
+              .strip()
+              != parent
+              or git("rev-parse", "--verify", f"{commit}^{{tree}}")
+              .decode("ascii")
+              .strip()
+              != tree
+          ):
+              raise SystemExit("BLOCK: credential-free receipt binding differs")
+          git("diff-tree", "--check", parent, commit)
+          observed: dict[str, str] = {}
+          for line in git(
+              "diff",
+              "--name-status",
+              "--no-renames",
+              parent,
+              commit,
+              "--",
+          ).decode("utf-8").splitlines():
+              status, relative = line.split("\t", 1)
+              observed[relative] = status
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json": "M",
+              "REPOSITORY_FILE_MANIFEST.json.sha256": "M",
+              "SHA256SUMS.txt": "M",
+              evidence_relative: "A" if parent == execution_head else "M",
+          }
+          if observed != expected:
+              raise SystemExit("BLOCK: credential-free receipt delta differs")
+          observed_modes = {}
+          for entry in git("ls-tree", "-z", commit, "--", *expected).split(b"\0"):
+              if not entry:
+                  continue
+              metadata, raw_path = entry.split(b"\t", 1)
+              mode, object_type, _object_id = metadata.decode("ascii").split()
+              observed_modes[raw_path.decode("utf-8")] = (mode, object_type)
+          if observed_modes != {
+              path: ("100644", "blob") for path in expected
+          }:
+              raise SystemExit("BLOCK: credential-free receipt mode differs")
+          for relative in expected:
+              remote_blob = git("rev-parse", "--verify", f"{commit}:{relative}")
+              local_blob = git("hash-object", str(root / relative))
+              if remote_blob != local_blob:
+                  raise SystemExit("BLOCK: credential-free receipt blob differs")
+          evidence_raw = git("show", f"{commit}:{evidence_relative}")
+          evidence = json.loads(evidence_raw.decode("utf-8"))
+          manifest = publish.load_manifest(manifest_path, root)
+          evidence = publish._validate_recovery_evidence(
+              evidence,
+              manifest_path,
+              root,
+              manifest,
+              execution_head,
+          )
+          if evidence["phase"] != phase or evidence["state"] != state:
+              raise SystemExit("BLOCK: credential-free evidence state differs")
+          target = git("ls-remote", "--heads", "origin", target_ref).decode().split()
+          if target != [commit, target_ref]:
+              raise SystemExit("BLOCK: credential-free target ref differs")
+          if state == "published":
+              if target_ref != publication_ref or phase != "public_verified":
+                  raise SystemExit("BLOCK: credential-free final target differs")
+              recovery = git(
+                  "ls-remote", "--heads", "origin", recovery_ref
+              ).decode().split()
+              expected_recovery = (
+                  [parent, recovery_ref]
+                  if os.environ["RECOVERY_PRESENT"] == "true"
+                  else []
+              )
+              if recovery != expected_recovery:
+                  raise SystemExit("BLOCK: credential-free recovery ref differs")
+          else:
+              if target_ref != recovery_ref or phase == "public_verified":
+                  raise SystemExit("BLOCK: credential-free recovery target differs")
+              publication = git(
+                  "ls-remote", "--heads", "origin", publication_ref
+              ).decode().split()
+              if publication != [execution_head, publication_ref]:
+                  raise SystemExit("BLOCK: credential-free publication ref differs")
+          destination = Path(os.environ["GITHUB_OUTPUT"])
+          with destination.open("a", encoding="utf-8", newline="\n") as handle:
+              handle.write("verified=true\n")
+              handle.write("receipt_commit=" + commit + "\n")
+          print("VRTCORE_CREDENTIAL_FREE_RECEIPT=VALID")
+          PY
+
+      - name: Upload publication recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vrtcore-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+            release/vrtcore-smg-h5-publication-2026-08-02/zenodo-publication.json
+            release/vrtcore-virtual-sphere-h6-publication-2026-08-02/zenodo-publication.json
+
+      - name: Enforce publication and persistence result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "$ALREADY_FINALIZED" = "true"; then
+            test "${{ steps.finalized.outputs.finalized }}" = "true"
+            test "${{ steps.finalized.outputs.phase }}" = "public_verified"
+            test "${{ steps.finalized.outputs.state }}" = "published"
+            [[ "${{ steps.finalized.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
+            test -z "${{ steps.publish.outputs.status }}"
+            test -z "${{ steps.push.outputs.receipt_commit }}"
+          else
+            test "$ALREADY_FINALIZED" = "false"
+            test "${{ steps.publish.outputs.status }}" = "0"
+            test "${{ steps.persist.outputs.prepared }}" = "true"
+            test "${{ steps.persist.outputs.requires_push }}" = "true"
+            test "${{ steps.persist.outputs.phase }}" = "public_verified"
+            test "${{ steps.persist.outputs.state }}" = "published"
+            test "${{ steps.push.outputs.persisted }}" = "true"
+            test "${{ steps.verify_receipt.outputs.verified }}" = "true"
+            test "${{ steps.verify_receipt.outputs.receipt_commit }}" = \
+              "${{ steps.push.outputs.receipt_commit }}"
+            [[ "${{ steps.push.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
+          fi
