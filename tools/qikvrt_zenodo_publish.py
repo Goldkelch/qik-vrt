@@ -907,6 +907,61 @@ def _git(
     return completed.returncode, completed.stdout.strip()
 
 
+def _execution_scope_blobs(
+    manifest_relative: str,
+    manifest_raw: bytes,
+    manifest: Mapping[str, Any],
+    control_blobs: Mapping[str, str],
+) -> dict[str, str]:
+    """Compose the committed execution scope without role-confusion.
+
+    Active machine-proof policy/schema bytes are intentionally publishable
+    evidence in the VRTCore bundles.  Such an upload/control dual role is safe
+    only when both roles name the same path and exact Git blob.  The manifest
+    and owner authorization remain control-only and may never be uploads.
+    """
+    upload_blobs: dict[str, str] = {}
+    for entry in manifest["files"]:
+        path = entry["path"]
+        blob = entry["git_blob_sha"]
+        if path in upload_blobs:
+            _fail("publication upload paths are not unique in the execution scope")
+        upload_blobs[path] = blob
+
+    authorization_path = manifest["owner_authorization"]["path"]
+    if (
+        manifest_relative == authorization_path
+        or manifest_relative in upload_blobs
+        or authorization_path in upload_blobs
+    ):
+        _fail(
+            "publication manifest and owner authorization must remain "
+            "control-only execution paths"
+        )
+
+    execution_blobs = dict(upload_blobs)
+    execution_blobs[manifest_relative] = _git_blob_sha(manifest_raw)
+    execution_blobs[authorization_path] = manifest["owner_authorization"][
+        "git_blob_sha"
+    ]
+    for path, control_blob in control_blobs.items():
+        existing_blob = execution_blobs.get(path)
+        if existing_blob is not None:
+            if path not in upload_blobs:
+                _fail(
+                    "machine-proof execution control overlaps a non-upload "
+                    "control path"
+                )
+            if existing_blob != control_blob:
+                _fail(
+                    "upload and machine-proof control roles disagree on the "
+                    "exact Git blob for "
+                    + path
+                )
+        execution_blobs[path] = control_blob
+    return execution_blobs
+
+
 def _validate_repository_source_head(
     root: pathlib.Path,
     manifest_path: pathlib.Path,
@@ -1034,16 +1089,12 @@ def _validate_repository_source_head(
     if len(control_blobs) != 6:
         _fail("machine-proof execution controls must contain six distinct paths")
 
-    execution_blobs = {
-        entry["path"]: entry["git_blob_sha"] for entry in manifest["files"]
-    }
-    execution_blobs[manifest_relative] = _git_blob_sha(manifest_raw)
-    execution_blobs[manifest["owner_authorization"]["path"]] = manifest[
-        "owner_authorization"
-    ]["git_blob_sha"]
-    execution_blobs.update(control_blobs)
-    if len(execution_blobs) != len(manifest["files"]) + 2 + len(control_blobs):
-        _fail("upload and control paths overlap in the v2 execution scope")
+    execution_blobs = _execution_scope_blobs(
+        manifest_relative,
+        manifest_raw,
+        manifest,
+        control_blobs,
+    )
 
     for raw_path, expected_blob in execution_blobs.items():
         execution_status, execution_blob = _git(

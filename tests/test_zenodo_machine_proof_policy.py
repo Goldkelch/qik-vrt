@@ -2368,6 +2368,78 @@ class MachineProofBeforeZenodoTests(unittest.TestCase):
                 "candidate-return Git blob differs",
             )
 
+    def test_execution_scope_allows_only_identical_upload_control_dual_role(
+        self,
+    ) -> None:
+        upload_blob = "a" * 40
+        legacy_control_blob = "b" * 40
+        authorization_blob = "c" * 40
+        manifest = {
+            "files": [
+                {
+                    "path": publish.machine_proof.POLICY_PATH,
+                    "git_blob_sha": upload_blob,
+                }
+            ],
+            "owner_authorization": {
+                "path": "release/fixture/OWNER_ZENODO_AUTHORIZATION.json",
+                "git_blob_sha": authorization_blob,
+            },
+        }
+        controls = {
+            publish.machine_proof.POLICY_PATH: upload_blob,
+            publish.machine_proof.LEGACY_POLICY_PATH: legacy_control_blob,
+        }
+        scope = publish._execution_scope_blobs(
+            "release/fixture/publish-request.json",
+            b"{}\n",
+            manifest,
+            controls,
+        )
+        self.assertEqual(
+            scope[publish.machine_proof.POLICY_PATH],
+            upload_blob,
+        )
+        self.assertEqual(
+            scope[publish.machine_proof.LEGACY_POLICY_PATH],
+            legacy_control_blob,
+        )
+        self.assertEqual(
+            scope[manifest["owner_authorization"]["path"]],
+            authorization_blob,
+        )
+
+        differing = dict(controls)
+        differing[publish.machine_proof.POLICY_PATH] = "d" * 40
+        with self.assertRaisesRegex(
+            zenodo.ZenodoError,
+            "roles disagree on the exact Git blob",
+        ):
+            publish._execution_scope_blobs(
+                "release/fixture/publish-request.json",
+                b"{}\n",
+                manifest,
+                differing,
+            )
+
+        owner_uploaded = copy.deepcopy(manifest)
+        owner_uploaded["files"].append(
+            {
+                "path": manifest["owner_authorization"]["path"],
+                "git_blob_sha": authorization_blob,
+            }
+        )
+        with self.assertRaisesRegex(
+            zenodo.ZenodoError,
+            "must remain control-only",
+        ):
+            publish._execution_scope_blobs(
+                "release/fixture/publish-request.json",
+                b"{}\n",
+                owner_uploaded,
+                controls,
+            )
+
     def test_dirty_control_mode_is_blocked_before_remote_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
