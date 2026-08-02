@@ -1,0 +1,31 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "id": "REPOSITORY_OPERATED_OWNER_DELIVERY_AND_EFFECT_ACK_V1",
+  "state": "AUTHORIZED_IN_PROGRESS",
+  "owner_intent": "The repository, not chat, is the canonical operator and memory of work state, deliveries, progress, blockers and next effects.",
+  "input_binding": {
+    "authority_parent": "82907d0c2e48340fb2befcfccf77ba5bcbf90583",
+    "mirror_parent": "f1891cabc9d678daed4ba9c1602a93a06d66a2c3"
+  },
+  "required_outputs": [
+    "DELIVERY/CURRENT/OWNER_STATUS.md",
+    "DELIVERY/CURRENT/DELIVERIES.json",
+    "receipts/effects/repository-operated-owner-delivery-v1.json",
+    "repository-native integrity outputs"
+  ],
+  "transition": {
+    "requested": "MAKE_REPOSITORY_CANONICAL_OPERATOR_OF_OWNER_DELIVERY_AND_PROGRESS",
+    "acknowledged": false,
+    "ack_condition": "A repository-generated receipt binds exact predecessor, successor, output bytes, terminal applicable gates and the next work unit."
+  },
+  "execution_policy": {
+    "use_connected_official_api_when_capable": true,
+    "do_not_substitute_chat_status_for_repository_effect": true,
+    "do_not_report_missing_local_cli_as_blocker_when_api_can_execute": true,
+    "history_preserving_only": true,
+    "fail_closed": true
+  },
+  "next_effect": "MATERIALIZE_OWNER_DELIVERY_PROJECTIONS_AND_BIND_EFFECT_ACK_RECEIPT",
+  "forbidden_claims": ["PASS", "FINAL_PASS", "EFFECT_ACK_DONE", "ZENODO_PUBLISHED", "IETF_SUBMITTED"],
+  "external_effects_authorized": false
+}
