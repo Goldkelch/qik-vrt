@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT audited H3 Zenodo recovery successor
+
+on:
+  push:
+    branches:
+      - trusted/vrtcore-h3-audited-recovery-run30753751400-v1
+    paths:
+      - .github/workflows/qikvrt_vrtcore_h3_audited_recovery.yml
+      - tools/qikvrt_vrtcore_h3_audited_recovery.py
+      - tests/test_vrtcore_h3_audited_recovery.py
+      - REPOSITORY_FILE_MANIFEST.json
+      - REPOSITORY_FILE_MANIFEST.json.sha256
+      - SHA256SUMS.txt
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-vrtcore-h3-audited-recovery-run30753751400-v1
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/trusted/vrtcore-h3-audited-recovery-run30753751400-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact proxy head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable recovery executor and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/qikvrt-h3-recovery.sha256" <<'EOF'
+          65f5827ced4f9ec89cac5df368371e9a51b9570403df4671d41ecdf5f0b18ba2  tools/qikvrt_vrtcore_h3_audited_recovery.py
+          6b94bd1797d9b5621a7ffbbbce440eefc1c714128940efd8891e3622d33104de  tests/test_vrtcore_h3_audited_recovery.py
+          EOF
+          sha256sum --check "$RUNNER_TEMP/qikvrt-h3-recovery.sha256"
+          python3 -B -m py_compile tools/qikvrt_vrtcore_h3_audited_recovery.py
+          python3 -B -m unittest -v tests.test_vrtcore_h3_audited_recovery
+
+      - name: Reconcile exact existing lock and materialize audited successor
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_vrtcore_h3_audited_recovery.py --execute
