@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -138,6 +139,7 @@ CHECKPOINT_PHASES = (
     "prepared",
     "publish_requested",
 )
+REF_RECONCILIATION_DELAYS_SECONDS = (0.25, 1.0, 2.0, 4.0, 8.0)
 
 
 class AmbiguousRefMutation(RuntimeError):
@@ -941,7 +943,7 @@ def persist_receipt_create_only_or_ff(
     expected_old_sha: str | None,
     commit_sha: str,
 ) -> str:
-    """Perform one create/FF request and one exact reconciliation readback."""
+    """Perform at most one create/FF request and bounded exact readback."""
     if repository != EXPECTED["repository"]:
         _fail("receipt repository differs")
     if HEX40.fullmatch(commit_sha) is None:
@@ -950,6 +952,14 @@ def persist_receipt_create_only_or_ff(
         _fail("receipt expected-old identity is invalid")
     singular = _head_ref_path(ref, plural=False)
     status, before = _call_api(api, "GET", singular, accept=(200, 404))
+    if status == 200:
+        # A prior invocation may have reached GitHub and then lost only its
+        # readback.  Exact-target replay is already complete and must not emit
+        # a second mutation; any different target remains a hard boundary.
+        target = before.get("object")
+        if isinstance(target, dict) and target.get("sha") == commit_sha:
+            _validate_ref(before, ref, commit_sha)
+            return commit_sha
     if expected_old_sha is None:
         if status != 404:
             _fail("create-only receipt ref already exists")
@@ -989,11 +999,16 @@ def persist_receipt_create_only_or_ff(
         _validate_ref(changed, ref, commit_sha)
     elif mutation_status not in {None, 409, 422}:
         _fail("receipt ref mutation status differs")
-    status, after = _call_api(api, "GET", singular, accept=(200, 404))
-    if status != 200:
-        _fail("receipt ref mutation has no exact readback")
-    _validate_ref(after, ref, commit_sha)
-    return commit_sha
+    for attempt in range(len(REF_RECONCILIATION_DELAYS_SECONDS) + 1):
+        status, after = _call_api(api, "GET", singular, accept=(200, 404))
+        if status == 200:
+            # A visible but different ref is not eventual consistency and is
+            # rejected immediately without another write.
+            _validate_ref(after, ref, commit_sha)
+            return commit_sha
+        if attempt < len(REF_RECONCILIATION_DELAYS_SECONDS):
+            time.sleep(REF_RECONCILIATION_DELAYS_SECONDS[attempt])
+    _fail("receipt ref mutation has no exact readback")
 
 
 def _read_head_ref(
