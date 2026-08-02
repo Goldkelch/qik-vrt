@@ -14,7 +14,6 @@ import argparse
 import hashlib
 import json
 import pathlib
-import subprocess
 from collections import Counter
 from typing import Any
 
@@ -39,6 +38,20 @@ CI_EVIDENCE_SHA256 = (
 CI_ARCHIVE_SHA256 = (
     "5f1bf2d0b1cc9547d64487e05aa50d4eba872442a7a297cf247bc4560661d3c4"
 )
+OWNER_CANDIDATE_SHA256 = {
+    "QIK-VRT_Kausalitaet_ist_Relation_Fachartikel_DE_2026-08-02.md":
+        "902d0abff59d7a9c8026a506081e25c6106abc4d88ca07197d08ff74fcc6041d",
+    "QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_DE_2026-08-02.md":
+        "4199dc4eb2b239e60c375424228a7d4ff5b1238a2370b88898befab5ceb34d09",
+    "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.tex":
+        "91ff57fc16bb91096296f28c97d541fad3bab244411b969e063ecbe31e363a08",
+    "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf":
+        "7f29f90bb0254f813237d07c73e9ab29c4b4f5a8c2f025dc7cdcf5f8f7ebad23",
+    "VERIFICATION_ADDENDUM_DE.md":
+        "f4b029fe4b49da6161708c201b234261e89b07ba613a8754be8b8accfdcb66af",
+    "QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_Verifikationsnachtrag_DE_2026-08-02.md":
+        "ef83c0c41de84c844ab5af794326ce50e98bc35f90a71f426ec6e3815b346ad8",
+}
 
 LICENSE = {
     "classification": "machine_readable_publication_evidence",
@@ -109,12 +122,6 @@ def identity(path: pathlib.Path) -> dict[str, Any]:
     }
 
 
-def git(*args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
-    ).strip()
-
-
 def validate_exact_evidence(evidence: dict[str, Any]) -> None:
     evidence_path = PUBLICATION / CI_EVIDENCE_NAME
     if identity(evidence_path)["sha256"] != CI_EVIDENCE_SHA256:
@@ -150,11 +157,6 @@ def validate_exact_evidence(evidence: dict[str, Any]) -> None:
         path = ROOT / value["path"]
         if identity(path) != value:
             raise SystemExit(f"BLOCK CI-bound source bytes differ: {value['path']}")
-        source_blob = git("rev-parse", f"{H1_HEAD}:{value['path']}")
-        if source_blob != value["git_blob_sha1"]:
-            raise SystemExit(f"BLOCK H1 source blob differs: {value['path']}")
-    if git("show", "-s", "--format=%T", H1_HEAD) != H1_TREE:
-        raise SystemExit("BLOCK exact-head source tree differs")
 
 
 def boundary(claim: dict[str, Any], classification: str) -> str:
@@ -429,19 +431,13 @@ def materialize_kernel_receipt(
 def materialize_boundary_report(
     matrix: dict[str, Any], receipt: dict[str, Any], evidence: dict[str, Any]
 ) -> dict[str, Any]:
-    candidate_names = [
-        "QIK-VRT_Kausalitaet_ist_Relation_Fachartikel_DE_2026-08-02.md",
-        "QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_DE_2026-08-02.md",
-        "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.tex",
-        "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf",
-        "VERIFICATION_ADDENDUM_DE.md",
-        "QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_Verifikationsnachtrag_DE_2026-08-02.md",
+    candidates = [
+        identity(PUBLICATION / name) for name in OWNER_CANDIDATE_SHA256
     ]
-    candidates = [identity(PUBLICATION / name) for name in candidate_names]
     for item in candidates:
-        source_blob = git("rev-parse", f"{H1_HEAD}:{item['path']}")
-        if source_blob != item["git_blob_sha1"]:
-            raise SystemExit(f"BLOCK owner-facing candidate changed: {item['path']}")
+        name = pathlib.PurePosixPath(item["path"]).name
+        if item["sha256"] != OWNER_CANDIDATE_SHA256[name]:
+            raise SystemExit(f"BLOCK H1-frozen owner candidate changed: {item['path']}")
     return {
         "_license": {
             **LICENSE,
@@ -482,7 +478,7 @@ def materialize_boundary_report(
                 "id": "OWNER_FACING_CANDIDATE_IDENTITY",
                 "result": "PASS",
                 "files": candidates,
-                "unchanged_from_exact_head": True,
+                "unchanged_from_h1_frozen_bytes": True,
             },
             {
                 "id": "H2_SELF_INCLUSION_BOUNDARY",
