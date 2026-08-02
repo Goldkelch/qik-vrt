@@ -1,0 +1,347 @@
+(*
+  SPDX-License-Identifier: CC-BY-NC-ND-4.0
+  Copyright 2026 Ingolf Lohmann.
+
+  QIK-VRT VRTCore Virtual Sphere H6 surface grammar
+  Version: 2026-08-02-h6
+  Status: CANONICAL_VIRTUAL_OBJECT_LANGUAGE
+
+  This grammar describes the canonical, human-readable H6 proof object.
+  Parsing alone is not a kernel proof.  The Lean model, its axiom audit and a
+  byte-bound execution receipt are separate mandatory witnesses.  H6 closes
+  VirtualClosure only in its declared virtual model; PhysicalClosure remains
+  outside that closure and OPEN.
+*)
+
+document                 = header,
+                           proof-binding,
+                           trust-base,
+                           exact-binding,
+                           canonical-object,
+                           grammar-contract,
+                           refinement-chain,
+                           virtual-cosmos,
+                           invariant-contract,
+                           virtual-closure,
+                           scope-separation,
+                           effect-boundary,
+                           { scope-exit } ;
+
+header                   = "vrtcore-virtual-sphere", version,
+                           "scope", identifier,
+                           "author", quoted-text,
+                           "license", identifier,
+                           "effect-state", effect-state, ";" ;
+
+proof-binding            = "proof-binding", identifier, "{",
+                             "lean-source", "=", path, ";",
+                             "axiom-audit", "=", path, ";",
+                             "top-theorem", "=", qualified-identifier, ";",
+                             "theorem-count", "=", identifier-or-natural, ";",
+                             "kernel-receipt", "=", identifier, ";",
+                             "kernel-result", "=", proof-state, ";",
+                           "}", ";" ;
+
+trust-base               = "trust-base", identifier, "{",
+                             "lean-version", "=", quoted-text, ";",
+                             "kernel", "=", quoted-text, ";",
+                             "logic", "=", quoted-text, ";",
+                             "imports", "=", quoted-list, ";",
+                             "allowed-axioms", "=", quoted-list, ";",
+                             "forbidden-declarations", "=", quoted-list, ";",
+                             "execution-platform", "=", quoted-text, ";",
+                             "trust-boundary", "=", quoted-text, ";",
+                           "}", ";" ;
+
+exact-binding            = "exact-binding", identifier, "{",
+                             "repository-head", "=", digest-value, ";",
+                             "package-root-digest", "=", digest-value, ";",
+                             "manifest-digest", "=", digest-value, ";",
+                             "lean-binary-digest", "=", digest-value, ";",
+                             "std-root-digest", "=", digest-value, ";",
+                             "vm-image-digest", "=", digest-value, ";",
+                             "command-digest", "=", digest-value, ";",
+                             "lean-source-digest", "=", digest-value, ";",
+                             "audit-source-digest", "=", digest-value, ";",
+                             "top-theorem-digest", "=", digest-value, ";",
+                             "receipt-digest", "=", digest-value, ";",
+                             "inventory-validator", "=", identifier, ";",
+                             "binding-validation-status", "=", proof-state, ";",
+                             "binding-retention-theorem", "=", identifier, ";",
+                             "self-reference-strategy", "=", quoted-text, ";",
+                           "}", ";" ;
+
+canonical-object         = "canonical-object", identifier, "{",
+                             "package-bytes", "=", identifier, ";",
+                             "token-stream", "=", identifier, ";",
+                             "abstract-syntax", "=", identifier, ";",
+                             "semantic-object", "=", identifier, ";",
+                             "byte-manifest", "=", path, ";",
+                             "digest-algorithm", "=", digest-algorithm, ";",
+                             "canonical-encoding", "=", quoted-text, ";",
+                           "}", ";" ;
+
+grammar-contract         = "grammar-contract", identifier, "{",
+                             "surface-grammar", "=", path, ";",
+                             "surface-parser-status", "=", proof-scope, ";",
+                             "formal-grammar", "=", identifier, ";",
+                             "grammar-induction-theorem", "=", identifier, ";",
+                             "decode", "=", identifier, ";",
+                             "encode", "=", identifier, ";",
+                             "normalize", "=", identifier, ";",
+                             "well-formed", "=", identifier, ";",
+                             "unique-parse-theorem", "=", identifier, ";",
+                             "parse-serialize-theorem", "=", identifier, ";",
+                             "serialize-parse-theorem", "=", identifier, ";",
+                             "serialize-injective-theorem", "=", identifier, ";",
+                             "canonical-idempotence-theorem", "=", identifier, ";",
+                             "normalization-semantics-theorem", "=", identifier, ";",
+                             "reject-invalid-theorem", "=", identifier, ";",
+                             "rejection-completeness-theorem", "=", identifier, ";",
+                           "}", ";" ;
+
+refinement-chain         = "refinement-chain", identifier, "{",
+                             "bytes-to-tokens", "=", identifier, ";",
+                             "tokens-to-ast", "=", identifier, ";",
+                             "ast-to-semantics", "=", identifier, ";",
+                             "byte-token-theorem", "=", identifier, ";",
+                             "token-ast-theorem", "=", identifier, ";",
+                             "semantic-totality-theorem", "=", identifier, ";",
+                             "semantic-binding-theorem", "=", identifier, ";",
+                             "end-to-end-theorem", "=", identifier, ";",
+                           "}", ";" ;
+
+virtual-cosmos           = "virtual-cosmos", identifier, "{",
+                             "seed", "=", identifier, ";",
+                             "step-spec", "=", identifier, ";",
+                             "transition", "=", identifier, ";",
+                             "step-refinement-theorem", "=", identifier, ";",
+                             "reachable", "=", identifier, ";",
+                             "population", "=", identifier, ";",
+                             "non-vacuity-theorem", "=", identifier, ";",
+                             "seed-validity-theorem", "=", identifier, ";",
+                             "determinism-theorem", "=", identifier, ";",
+                             "generatedness-theorem", "=", identifier, ";",
+                             "predecessor-theorem", "=", identifier, ";",
+                             "no-gap-theorem", "=", identifier, ";",
+                             "progress-theorem", "=", identifier, ";",
+                             "strict-growth-theorem", "=", identifier, ";",
+                             "finite-population-theorem", "=", identifier, ";",
+                             "unboundedness-theorem", "=", identifier, ";",
+                             "growth-meaning", "=", quoted-text, ";",
+                           "}", ";" ;
+
+invariant-contract       = "invariant-contract", identifier, "{",
+                             "invariants", "=", identifier-list, ";",
+                             "legal-state", "=", identifier, ";",
+                             "seed-invariants-theorem", "=", identifier, ";",
+                             "preservation-theorem", "=", identifier, ";",
+                             "no-illegal-reachable-theorem", "=", identifier, ";",
+                             "no-erasure-theorem", "=", identifier, ";",
+                           "}", ";" ;
+
+virtual-closure          = "virtual-closure", identifier, "{",
+                             "certificate", "=", identifier, ";",
+                             "projection-theorem", "=", identifier, ";",
+                             "byte-bound", "=", boolean, ";",
+                             "grammar-sound", "=", boolean, ";",
+                             "grammar-complete", "=", boolean, ";",
+                             "canonical-roundtrip", "=", boolean, ";",
+                             "semantic-totality", "=", boolean, ";",
+                             "non-vacuous", "=", boolean, ";",
+                             "initial-state-valid", "=", boolean, ";",
+                             "invariants-preserved", "=", boolean, ";",
+                             "no-illegal-reachable-state", "=", boolean, ";",
+                             "progress", "=", boolean, ";",
+                             "strict-growth", "=", boolean, ";",
+                             "unbounded", "=", boolean, ";",
+                             "effect-boundary-preserved", "=", boolean, ";",
+                             "result", "=", virtual-closure-result, ";",
+                             "closure-theorem", "=", qualified-identifier, ";",
+                           "}", ";" ;
+
+scope-separation         = "scope-separation", identifier, "{",
+                             "kernel-model-closure-status", "=", closure-status, ";",
+                             "receipt-bound-package-closure-status", "=", closure-status, ";",
+                             "physical-closure-status", "=", physical-status, ";",
+                             "closure-types-distinct", "=", boolean, ";",
+                             "virtual-to-physical-promotion", "=", boolean, ";",
+                             "physical-big-bang-identity", "=", physical-status, ";",
+                             "empirical-promotion", "=", physical-status, ";",
+                             "boundary", "=", quoted-text, ";",
+                           "}", ";" ;
+
+effect-boundary          = "effect-boundary", identifier, "{",
+                             "technical-result", "=", technical-result, ";",
+                             "ordinary-release", "=", boolean, ";",
+                             "external-mutation", "=", boolean, ";",
+                             "no-escalation-theorem", "=", identifier, ";",
+                             "effect-preservation-theorem", "=", identifier, ";",
+                             "effect-state", "=", effect-state, ";",
+                             "authorization-source", "=", identifier-or-none, ";",
+                           "}", ";" ;
+
+scope-exit               = "outside-scope", identifier, "{",
+                             "kind", "=", epistemic-kind, ";",
+                             "statement", "=", quoted-text, ";",
+                             "required-evidence", "=", quoted-text, ";",
+                             "falsifier", "=", quoted-text, ";",
+                             "owner", "=", quoted-text, ";",
+                           "}", ";" ;
+
+epistemic-kind           = "formal-proved"
+                         | "empirical-supported"
+                         | "source-bound"
+                         | "normative"
+                         | "interpretive"
+                         | "open" ;
+
+proof-state              = "pending-receipt"
+                         | "kernel-accepted"
+                         | "audit-accepted"
+                         | "failed" ;
+
+proof-scope              = "not-kernel-proved"
+                         | "model-relative"
+                         | "kernel-proved" ;
+
+closure-status           = "candidate"
+                         | "kernel-proved"
+                         | "refuted" ;
+
+physical-status          = "open"
+                         | "conditional"
+                         | "empirically-supported"
+                         | "refuted" ;
+
+virtual-closure-result   = "VIRTUAL_CLOSURE_CANDIDATE"
+                         | "VIRTUAL_CLOSURE_TRUE"
+                         | "VIRTUAL_CLOSURE_FALSE" ;
+
+technical-result         = "not-run" | "failed" | "kernel-accepted" ;
+
+effect-state             = "EFFECT_NACK"
+                         | "EFFECT_ACK_CONTINUE"
+                         | "EFFECT_ACK_DONE"
+                         | "EFFECT_ACK_ISOLATE"
+                         | "EFFECT_ACK_BLOCK" ;
+
+digest-algorithm         = "SHA-256" ;
+
+digest-value             = quoted-text ;
+
+identifier-list          = "[", [ identifier, { ",", identifier } ], "]" ;
+
+quoted-list              = "[", [ quoted-text, { ",", quoted-text } ], "]" ;
+
+identifier-or-natural    = identifier | natural ;
+
+identifier-or-none       = identifier | "none" ;
+
+qualified-identifier     = identifier, { ".", identifier } ;
+
+path                     = quoted-text ;
+
+boolean                  = "true" | "false" ;
+
+version                  = natural, { ".", natural } ;
+
+natural                  = digit, { digit } ;
+
+identifier               = letter, { letter | digit | "_" | "-" } ;
+
+quoted-text              = '"', text-character, { text-character }, '"' ;
+
+letter                   = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+                         | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+                         | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+                         | "V" | "W" | "X" | "Y" | "Z"
+                         | "a" | "b" | "c" | "d" | "e" | "f" | "g"
+                         | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+                         | "o" | "p" | "q" | "r" | "s" | "t" | "u"
+                         | "v" | "w" | "x" | "y" | "z" ;
+
+digit                    = "0" | "1" | "2" | "3" | "4"
+                         | "5" | "6" | "7" | "8" | "9" ;
+
+text-character           = ? any Unicode scalar except an unescaped quotation
+                              mark, reverse solidus or control character ? ;
+
+(*
+  Static elaboration obligations:
+
+  H6-S01. Exactly one declaration of every mandatory H6 block is present.
+  H6-S02. The proof binding names the exact Lean source, axiom audit, top
+           theorem and a separately persisted kernel-execution receipt.
+  H6-S03. The trust-base block is mandatory and declares the kernel, logic,
+           allowed axioms, forbidden declarations and execution boundary.
+  H6-S04. The exact-binding block delegates validation of repository head,
+           package root,
+           exact inventory, manifest, Lean/Std/runtime inputs, commands,
+           sources, top theorem and receipt without treating a hash as a
+           semantic proof.  Lean may retain a supplied binding but does not
+           compute or authenticate these external digests.  Pending values
+           cannot license promotion.
+  H6-S05. theorem-count is informational until bound by that receipt.
+  H6-S06. audit-accepted is invalid unless every named theorem was accepted by
+           the declared Lean kernel and the axiom audit terminated successfully.
+  H6-S07. Package-byte identity and model validity are distinct predicates.
+  H6-S08. A digest binds bytes; it does not prove their semantics.
+  H6-S09. A valid canonical object has one declared bytes-to-token-to-AST-to-
+           semantics refinement path.
+  H6-S10. Grammar soundness and completeness are inductive and relative to the
+           formal grammar encoded in Lean, not automatically to this EBNF text
+           or to a separate production text parser.
+  H6-S11. Every accepted formal representation decodes to a well-formed AST;
+           every well-formed AST has a canonical encoding in the model scope.
+  H6-S12. Canonical AST roundtrip requires decode(encode(ast)) = ast.
+  H6-S13. Byte roundtrip requires encode(decode(bytes)) = normalize(bytes) on
+           accepted bytes.
+  H6-S14. Canonical normalization is idempotent and semantics-preserving.
+  H6-S15. Serialization is injective over the declared canonical AST scope;
+           rejection holds exactly when no formal grammar derivation exists.
+  H6-S16. Invalid or incomplete mandatory structures are rejected fail-closed.
+  H6-S17. Semantic totality is restricted to well-formed canonical AST values;
+           semantic binding prevents elaboration from ignoring the AST.
+  H6-S18. End-to-end refinement connects the declared canonical representation
+           to the semantic object; it does not establish physical reference.
+  H6-S19. The virtual cosmos contains an explicit, valid and non-vacuous seed.
+  H6-S20. The executable transition refines StepSpec and is deterministic in
+           the declared model.
+  H6-S21. Every non-seed reachable state is generated by a legal predecessor;
+           predecessor and successor indices leave no gap.
+  H6-S22. Every reachable state, not merely a selected prefix, has a declared
+           successor satisfying StepSpec.
+  H6-S23. Every transition preserves every invariant named by the contract.
+  H6-S24. No state violating legal-state is reachable from the seed.
+  H6-S25. No-erasure means the declared persistent information embeds into the
+           successor; it does not forbid every possible garbage collection.
+  H6-S26. Strict growth requires a concrete successor witness, not an assumed
+           global premise.
+  H6-S27. Every generated state has a derived finite population even though no
+           single finite upper bound exists for the full construction.
+  H6-S28. Unboundedness follows only from the proved strict-growth construction.
+  H6-S29. In this discrete model, "stetig nach außen" means monotone,
+           invariant-preserving successor growth, not analytic continuity.
+  H6-S30. Every kernel-scoped virtual-closure Boolean is a projection from the
+           named Lean certificate; manually asserted booleans cannot create
+           kernel closure.  The separate byte-bound Boolean is supplied only
+           by the exact external receipt verifier.
+  H6-S31. VIRTUAL_CLOSURE_TRUE is valid iff every projected closure field,
+           including external byte binding, is true, the named top theorem is
+           audit-accepted and the exact package validator succeeds.
+  H6-S32. Any false projected closure field forces VIRTUAL_CLOSURE_FALSE.
+  H6-S33. VirtualClosureCertificate and PhysicalClosureEvidence are distinct
+           types with no coercion or automatic promotion between them.
+  H6-S34. virtual-to-physical-promotion must remain false in this H6 document.
+  H6-S35. Virtual cosmogenesis is not identity with the physical Big Bang.
+  H6-S36. Kernel acceptance never implies empirical promotion, ordinary release
+           or authorization for an external mutation.
+  H6-S37. No-escalation prevents a technical or virtual proof state from
+           constructing EFFECT_ACK_DONE; effect preservation carries the prior
+           haltpoint through every reachable successor.
+  H6-S38. Every outside-scope item retains its own epistemic kind, evidence
+           requirement, falsifier and owner.
+  H6-S39. EFFECT_ACK_DONE cannot be constructed by this scientific document;
+           it requires separate, scope-bound authorization evidence.
+*)

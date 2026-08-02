@@ -1,0 +1,173 @@
+vrtcore-virtual-sphere 6.0 scope qik-vrt-virtual-sphere-h6 author "Ingolf Lohmann" license CC-BY-NC-ND-4-0 effect-state EFFECT_ACK_CONTINUE;
+
+proof-binding H6Proof {
+  lean-source = "VRTCore_VirtualSphere.lean";
+  axiom-audit = "VRTCore_VirtualSphere_AxiomAudit.lean";
+  top-theorem = QIKVRT.VRTCore.VirtualSphereH6.h6_virtualSphere_noHole_complete;
+  theorem-count = 55;
+  kernel-receipt = H6_LOCAL_KERNEL_RECEIPT;
+  kernel-result = audit-accepted;
+};
+
+trust-base H6Trust {
+  lean-version = "4.19.0";
+  kernel = "Lean 4 kernel";
+  logic = "dependent type theory as implemented by the declared Lean kernel";
+  imports = ["Std"];
+  allowed-axioms = ["propext","Quot.sound","Classical.choice"];
+  forbidden-declarations = ["sorry","admit","unsafe","project-local axiom"];
+  execution-platform = "Ubuntu 24.04.3 LTS; Linux 6.12.13; x86_64; KVM; runtime details bound by TRUST_BASE.json and receipt";
+  trust-boundary = "The result is relative to the bound Lean kernel, its declared logical axioms, source bytes and the hardware/software execution chain.";
+};
+
+exact-binding H6Binding {
+  repository-head = "8b3f8cdc3ac5fc381b0796d5f7503f3a0e9689ba";
+  package-root-digest = "BOUND_BY_PACKAGE_ROOT.sha256";
+  manifest-digest = "BOUND_BY_H6_LOCAL_KERNEL_RECEIPT_AND_SHA256SUMS";
+  lean-binary-digest = "92c3d35b5bfaa5e0fea413a775d504cf46cd95e1345df61c2274f76779e7e023";
+  std-root-digest = "7d3771da25b893da62564bf8198487ff28f01af5cbd410be88d493a4921b2bb1";
+  vm-image-digest = "NOT_AVAILABLE_NOT_CLAIMED";
+  command-digest = "431b74f39e7b8454278dd6a682923cc631a7929af022d23585e07a0c406eab4f";
+  lean-source-digest = "2bfc26a7728b7a63cc9ecfb11981ff54d69b710b229259ec035f51acf8b7a1c3";
+  audit-source-digest = "01c969946c02e655960e996f55f27bc302b09ca9bea969dae414a28c04e7439e";
+  top-theorem-digest = "c2ede4d4af3c702a4a75b677e3f907372b88e045c2041b1f38fa22cb7eb477db";
+  receipt-digest = "BOUND_EXTERNALLY_BY_SHA256SUMS";
+  inventory-validator = verify_h6_package;
+  binding-validation-status = audit-accepted;
+  binding-retention-theorem = h6_virtualSphere_noHole_complete;
+  self-reference-strategy = "The receipt excludes its own digest internally and is bound externally by SHA256SUMS and the package root construction.";
+};
+
+canonical-object H6Object {
+  package-bytes = ExternalReceiptBoundPackageBytes;
+  token-stream = ListBoolBitstream;
+  abstract-syntax = VirtualSphereDocument;
+  semantic-object = VirtualSphereSemanticModel;
+  byte-manifest = "MANIFEST.json";
+  digest-algorithm = SHA-256;
+  canonical-encoding = "UTF-8 source bytes with LF line endings and receipt-bound digests";
+};
+
+grammar-contract H6Grammar {
+  surface-grammar = "VRTCore_VirtualSphere_Syntax.ebnf";
+  surface-parser-status = not-kernel-proved;
+  formal-grammar = BitstreamGrammar;
+  grammar-induction-theorem = render_grammar;
+  decode = parseDocument;
+  encode = renderDocument;
+  normalize = normalizeDocumentBits;
+  well-formed = WellFormed;
+  unique-parse-theorem = grammar_unique;
+  parse-serialize-theorem = parse_render_roundtrip;
+  serialize-parse-theorem = normalize_of_parse;
+  serialize-injective-theorem = render_injective;
+  canonical-idempotence-theorem = normalize_idempotent;
+  normalization-semantics-theorem = normalize_preserves_semantics;
+  reject-invalid-theorem = parse_none_iff_not_wellFormed;
+  rejection-completeness-theorem = parse_none_iff_not_wellFormed;
+};
+
+refinement-chain H6Refinement {
+  bytes-to-tokens = externalReceiptToListBoolBoundary;
+  tokens-to-ast = parseDocument;
+  ast-to-semantics = modelOfDocument;
+  byte-token-theorem = verify_h6_package_exact_inventory;
+  token-ast-theorem = parse_some_iff_grammar;
+  semantic-totality-theorem = semantic_binding_total_unique;
+  semantic-binding-theorem = canonicalDocument_exact_semanticModel;
+  end-to-end-theorem = canonicalBits_exact_model;
+};
+
+virtual-cosmos H6Cosmos {
+  seed = seed;
+  step-spec = StepSpec;
+  transition = next;
+  step-refinement-theorem = next_refines_stepSpec;
+  reachable = Reachable;
+  population = population;
+  non-vacuity-theorem = state_nonvacuous;
+  seed-validity-theorem = state_virtualInvariant;
+  determinism-theorem = stepSpec_deterministic;
+  generatedness-theorem = every_state_reachable;
+  predecessor-theorem = reachable_nonseed_has_predecessor;
+  no-gap-theorem = next_shell_delta_exact;
+  progress-theorem = reachable_progress;
+  strict-growth-theorem = run_strict_growth;
+  finite-population-theorem = population_eq_radius_succ;
+  unboundedness-theorem = reachable_unbounded;
+  growth-meaning = "Each discrete successor preserves the prior informational core, satisfies every invariant and adds at least one reachable unit.";
+};
+
+invariant-contract H6Invariants {
+  invariants = [noHole,centerPresent,populationDerived];
+  legal-state = VirtualInvariant;
+  seed-invariants-theorem = state_virtualInvariant;
+  preservation-theorem = reachable_virtualInvariant;
+  no-illegal-reachable-theorem = reachable_virtualInvariant;
+  no-erasure-theorem = next_preserves_shells;
+};
+
+virtual-closure H6Closure {
+  certificate = BoundVirtualClosureCertificate;
+  projection-theorem = kernelClosureProjection_all_true;
+  byte-bound = true;
+  grammar-sound = true;
+  grammar-complete = true;
+  canonical-roundtrip = true;
+  semantic-totality = true;
+  non-vacuous = true;
+  initial-state-valid = true;
+  invariants-preserved = true;
+  no-illegal-reachable-state = true;
+  progress = true;
+  strict-growth = true;
+  unbounded = true;
+  effect-boundary-preserved = true;
+  result = VIRTUAL_CLOSURE_TRUE;
+  closure-theorem = QIKVRT.VRTCore.VirtualSphereH6.h6_virtualSphere_noHole_complete;
+};
+
+scope-separation H6Scope {
+  kernel-model-closure-status = kernel-proved;
+  receipt-bound-package-closure-status = kernel-proved;
+  physical-closure-status = open;
+  closure-types-distinct = true;
+  virtual-to-physical-promotion = false;
+  physical-big-bang-identity = open;
+  empirical-promotion = open;
+  boundary = "H6 proves the declared virtual construction only. It neither completes quantum gravity nor identifies execution with the physical universe or Big Bang.";
+};
+
+effect-boundary H6Effect {
+  technical-result = kernel-accepted;
+  ordinary-release = false;
+  external-mutation = false;
+  no-escalation-theorem = virtual_no_effect_escalation;
+  effect-preservation-theorem = effect_preserved;
+  effect-state = EFFECT_ACK_CONTINUE;
+  authorization-source = none;
+};
+
+outside-scope O01 {
+  kind = open;
+  statement = "A correspondence from H6 virtual states and transitions to measured physical states and dynamics is not supplied.";
+  required-evidence = "A non-circular mathematical map, domain assumptions, preserved observables and independent empirical tests.";
+  falsifier = "Failure of the map to recover validated observations in its declared domain.";
+  owner = "future mathematical-physics and experimental review";
+};
+
+outside-scope O02 {
+  kind = open;
+  statement = "Independent exact-head reproduction of the final H6 package remains distinct from local kernel execution.";
+  required-evidence = "A second environment rebuilds the receipt-bound bytes and obtains the same declared kernel and audit result.";
+  falsifier = "Any unexplained source, axiom, theorem, digest or result mismatch.";
+  owner = "independent reproducer";
+};
+
+outside-scope O03 {
+  kind = normative;
+  statement = "Growth should enlarge the reachable space without erasing provenance, responsibility or effect boundaries.";
+  required-evidence = "A separately governed release decision for every externally consequential application.";
+  falsifier = "An authorized policy revision or a demonstrated conflict with protected rights and safety constraints.";
+  owner = "responsible human authority";
+};

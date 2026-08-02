@@ -1,0 +1,113 @@
+vrtcore-smg 5.0 scope qik-vrt-smg-h5 author "Ingolf Lohmann" effect-state EFFECT_ACK_CONTINUE;
+
+planck-bridge PB1 {
+  reduced-compton = "hbar/(m_P*c)=l_P";
+  gravitational-radius = "G*m_P/c^2=l_P";
+  length-momentum = "l_P*p_P=hbar";
+  time-energy = "t_P*E_P=hbar";
+  length-time-ratio = "l_P/t_P=c";
+  energy-momentum-ratio = "E_P/p_P=c";
+  kernel-theorem = symbolicPlanckNormalForm;
+  physical-status = conditional;
+};
+
+duality D1 {
+  wave-role = "possibility, propagation and amplitude structure";
+  record-role = "localized interaction result and persistent record";
+  identity-preservation = dualViews_share_identity;
+  physical-completeness = open;
+};
+
+empirical-anchors E1 {
+  higgs-field-excitation = observed;
+  gravitational-wave = observed;
+  graviton = not-observed;
+  quantum-gravity-prediction = not-observed;
+  boundary = "The first two records do not imply the latter two.";
+};
+
+limits L1 {
+  standard-model = open;
+  classical-einstein = open;
+  low-energy-eft = conditional;
+  scope = "SMG_VRT extension, not the unchanged Standard Model";
+};
+
+coupling C1 {
+  source = stress-energy;
+  higgs-sector-included = true;
+  universality = open;
+  derivation = none;
+};
+
+consistency K1 {
+  stability-unitarity = open;
+  causal-consistency = kernel-checked-model;
+  non-circularity = open;
+  countermodel = none;
+};
+
+prediction P1 {
+  statement = "No differentiating numerical prediction is yet frozen.";
+  differs-from = [StandardModel, GeneralRelativity, GravityEFT];
+  observable = "to be specified";
+  falsifier = "to be specified before empirical promotion";
+  status = open;
+};
+
+massive-closure M1 {
+  planck-normal-form = true;
+  field-record-duality = true;
+  standard-model-limit = false;
+  classical-einstein-limit = false;
+  universal-stress-energy-coupling = false;
+  quantum-gravity-correspondence = false;
+  stability-unitarity = false;
+  causal-consistency = true;
+  non-circularity = false;
+  falsifiable-prediction = false;
+  empirical-correspondence = false;
+  independent-reproduction = false;
+  result = MASSIVE_CLOSURE_FALSE;
+};
+
+virtual-cosmogenesis V1 {
+  seed = SeedState;
+  transition = TypedTransition;
+  reachability = ReachableWithin;
+  monotonicity-theorem = reachableWithin_monotone;
+  unboundedness = conditional;
+  physical-cosmology-identity = open;
+};
+
+effect-boundary B1 {
+  kernel-receipt = H5_LOCAL_KERNEL_RECEIPT;
+  technical-result = kernel-accepted;
+  physical-discovery = open;
+  ordinary-release = false;
+  effect-state = EFFECT_ACK_CONTINUE;
+};
+
+open O01 {
+  kind = open;
+  question = "Does a local SMG_VRT action yield the Standard Model limit?";
+  required-evidence = "Explicit action, fields, symmetries and decoupling proof.";
+  falsifier = "Failure to recover tested Standard Model amplitudes in scope.";
+  owner = "future formal and physics review";
+};
+
+open O02 {
+  kind = open;
+  question = "Does the same action yield the classical Einstein limit?";
+  required-evidence = "Controlled coarse-graining and field-equation correspondence.";
+  falsifier = "Failure to recover validated weak-field and relativistic limits.";
+  owner = "future formal and physics review";
+};
+
+open O03 {
+  kind = open;
+  question = "Is there a non-circular, differentiating empirical prediction?";
+  required-evidence = "Frozen observable, uncertainty model and preregistered test.";
+  falsifier = "Measured result outside the predicted interval.";
+  owner = "independent experimental review";
+};

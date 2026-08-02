@@ -1,0 +1,202 @@
+(*
+  QIK-VRT VRTCore SMG H5 surface grammar
+  Version: 2026-08-02-h5
+  Status: EXECUTABLE_REFERENCE_SUBSET
+
+  Parsing does not prove a physical claim.  Static elaboration binds every
+  declaration to an epistemic kind and preserves every OPEN bridge.  Only the
+  Lean source defines the kernel-checked model semantics.
+*)
+
+document                = header, planck-bridge, duality,
+                          empirical-anchors, limits, coupling,
+                          consistency, prediction, closure,
+                          virtual-cosmogenesis, effect-boundary,
+                          { open-obligation } ;
+
+header                  = "vrtcore-smg", version,
+                          "scope", identifier,
+                          "author", quoted-text,
+                          "effect-state", effect-state, ";" ;
+
+planck-bridge           = "planck-bridge", identifier, "{",
+                            "reduced-compton", "=", expression, ";",
+                            "gravitational-radius", "=", expression, ";",
+                            "length-momentum", "=", expression, ";",
+                            "time-energy", "=", expression, ";",
+                            "length-time-ratio", "=", expression, ";",
+                            "energy-momentum-ratio", "=", expression, ";",
+                            "kernel-theorem", "=", identifier, ";",
+                            "physical-status", "=", bridge-status, ";",
+                          "}", ";" ;
+
+duality                 = "duality", identifier, "{",
+                            "wave-role", "=", quoted-text, ";",
+                            "record-role", "=", quoted-text, ";",
+                            "identity-preservation", "=", identifier, ";",
+                            "physical-completeness", "=", bridge-status, ";",
+                          "}", ";" ;
+
+empirical-anchors       = "empirical-anchors", identifier, "{",
+                            "higgs-field-excitation", "=", evidence-state, ";",
+                            "gravitational-wave", "=", evidence-state, ";",
+                            "graviton", "=", evidence-state, ";",
+                            "quantum-gravity-prediction", "=", evidence-state, ";",
+                            "boundary", "=", quoted-text, ";",
+                          "}", ";" ;
+
+limits                  = "limits", identifier, "{",
+                            "standard-model", "=", bridge-status, ";",
+                            "classical-einstein", "=", bridge-status, ";",
+                            "low-energy-eft", "=", bridge-status, ";",
+                            "scope", "=", quoted-text, ";",
+                          "}", ";" ;
+
+coupling                = "coupling", identifier, "{",
+                            "source", "=", "stress-energy", ";",
+                            "higgs-sector-included", "=", boolean, ";",
+                            "universality", "=", bridge-status, ";",
+                            "derivation", "=", identifier-or-none, ";",
+                          "}", ";" ;
+
+consistency             = "consistency", identifier, "{",
+                            "stability-unitarity", "=", bridge-status, ";",
+                            "causal-consistency", "=", bridge-status, ";",
+                            "non-circularity", "=", bridge-status, ";",
+                            "countermodel", "=", identifier-or-none, ";",
+                          "}", ";" ;
+
+prediction              = "prediction", identifier, "{",
+                            "statement", "=", quoted-text, ";",
+                            "differs-from", "=", identifier-list, ";",
+                            "observable", "=", quoted-text, ";",
+                            "falsifier", "=", quoted-text, ";",
+                            "status", "=", bridge-status, ";",
+                          "}", ";" ;
+
+closure                 = "massive-closure", identifier, "{",
+                            "planck-normal-form", "=", boolean, ";",
+                            "field-record-duality", "=", boolean, ";",
+                            "standard-model-limit", "=", boolean, ";",
+                            "classical-einstein-limit", "=", boolean, ";",
+                            "universal-stress-energy-coupling", "=", boolean, ";",
+                            "quantum-gravity-correspondence", "=", boolean, ";",
+                            "stability-unitarity", "=", boolean, ";",
+                            "causal-consistency", "=", boolean, ";",
+                            "non-circularity", "=", boolean, ";",
+                            "falsifiable-prediction", "=", boolean, ";",
+                            "empirical-correspondence", "=", boolean, ";",
+                            "independent-reproduction", "=", boolean, ";",
+                            "result", "=", closure-result, ";",
+                          "}", ";" ;
+
+virtual-cosmogenesis    = "virtual-cosmogenesis", identifier, "{",
+                            "seed", "=", identifier, ";",
+                            "transition", "=", identifier, ";",
+                            "reachability", "=", identifier, ";",
+                            "monotonicity-theorem", "=", identifier, ";",
+                            "unboundedness", "=", bridge-status, ";",
+                            "physical-cosmology-identity", "=", bridge-status, ";",
+                          "}", ";" ;
+
+effect-boundary         = "effect-boundary", identifier, "{",
+                            "kernel-receipt", "=", identifier, ";",
+                            "technical-result", "=", technical-result, ";",
+                            "physical-discovery", "=", bridge-status, ";",
+                            "ordinary-release", "=", boolean, ";",
+                            "effect-state", "=", effect-state, ";",
+                          "}", ";" ;
+
+open-obligation         = "open", identifier, "{",
+                            "kind", "=", epistemic-kind, ";",
+                            "question", "=", quoted-text, ";",
+                            "required-evidence", "=", quoted-text, ";",
+                            "falsifier", "=", quoted-text, ";",
+                            "owner", "=", quoted-text, ";",
+                          "}", ";" ;
+
+epistemic-kind          = "formal-proved"
+                        | "empirical-supported"
+                        | "source-bound"
+                        | "normative"
+                        | "interpretive"
+                        | "open" ;
+
+bridge-status           = "kernel-checked-model"
+                        | "empirically-supported"
+                        | "conditional"
+                        | "open"
+                        | "refuted" ;
+
+evidence-state          = "observed" | "not-observed" | "open" ;
+
+closure-result          = "MASSIVE_CLOSURE_TRUE"
+                        | "MASSIVE_CLOSURE_FALSE" ;
+
+technical-result        = "not-run" | "failed" | "kernel-accepted" ;
+
+effect-state            = "EFFECT_NACK"
+                        | "EFFECT_ACK_CONTINUE"
+                        | "EFFECT_ACK_DONE"
+                        | "EFFECT_ACK_ISOLATE"
+                        | "EFFECT_ACK_BLOCK" ;
+
+expression              = quoted-text ;
+
+identifier-list         = "[", [ identifier, { ",", identifier } ], "]" ;
+
+identifier-or-none      = identifier | "none" ;
+
+boolean                 = "true" | "false" ;
+
+version                 = digit, { digit | "." } ;
+
+identifier              = letter, { letter | digit | "_" | "-" | "." } ;
+
+quoted-text             = '"', text-character, { text-character }, '"' ;
+
+letter                  = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+                        | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+                        | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+                        | "V" | "W" | "X" | "Y" | "Z"
+                        | "a" | "b" | "c" | "d" | "e" | "f" | "g"
+                        | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+                        | "o" | "p" | "q" | "r" | "s" | "t" | "u"
+                        | "v" | "w" | "x" | "y" | "z" ;
+
+digit                   = "0" | "1" | "2" | "3" | "4"
+                        | "5" | "6" | "7" | "8" | "9" ;
+
+text-character          = ? any Unicode scalar except an unescaped quotation
+                             mark, reverse solidus or control character ? ;
+
+(*
+  Static elaboration obligations:
+
+  S01. Exactly one declaration of each mandatory H5 block is present.
+  S02. The gravitational radius is G*m_P/c^2; a Schwarzschild radius must
+       retain its separate factor two.
+  S03. A kernel theorem licenses only its declared formal model statement.
+  S04. Wave and record views preserve one event identity but do not imply
+       ontological or empirical completeness.
+  S05. Higgs-field excitation and gravitational-wave observations never set
+       graviton=observed or quantum-gravity-prediction=observed.
+  S06. The Standard-Model and classical-Einstein limits are separate witnesses.
+  S07. Gravity is an extension sector; it is not silently relabelled as the
+       unchanged Standard Model.
+  S08. Universal coupling requires a derivation through stress-energy that
+       explicitly includes the Higgs sector.
+  S09. Stability/unitarity, causal consistency and non-circularity are separate.
+  S10. A differentiating prediction carries an observable and a falsifier.
+  S11. MASSIVE_CLOSURE_TRUE is valid iff all twelve closure booleans are true.
+  S12. Any false closure field forces MASSIVE_CLOSURE_FALSE.
+  S13. Virtual reachability is monotone only under the named transition model.
+  S14. Unbounded virtual growth requires a strict-growth witness.
+  S15. Virtual cosmogenesis is not physical-cosmology identity.
+  S16. kernel-accepted never implies physical-discovery or ordinary-release.
+  S17. Every OPEN obligation names required evidence, a falsifier and an owner.
+  S18. The six epistemic kinds are never collapsed into one proof status.
+  S19. Syntax success is not semantic, kernel, empirical or effect success.
+  S20. EFFECT_ACK_DONE requires a separate scope-bound authorization not
+       constructible by this scientific model document.
+*)
