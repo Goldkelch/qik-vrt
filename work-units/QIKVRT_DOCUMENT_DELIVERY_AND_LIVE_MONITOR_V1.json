@@ -1,0 +1,92 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "id": "QIKVRT_DOCUMENT_DELIVERY_AND_LIVE_MONITOR_V1",
+  "state": "AUTHORIZED_IN_PROGRESS",
+  "owner": "Ingolf Lohmann",
+  "purpose": "Produce, verify, expose and announce the requested QIK-VRT document family through the repository-operated live monitor.",
+  "source_monitor_pair": {
+    "authority_pr": 317,
+    "mirror_pr": 189
+  },
+  "required_deliveries": [
+    {
+      "id": "PUBLIC_EXECUTIVE_SUMMARY_DE",
+      "format": "markdown",
+      "status": "existing_candidate_requires_verification",
+      "path": "docs/explanation/QIKVRT_FOR_THE_PUBLIC_EXECUTIVE_SUMMARY_DE.md"
+    },
+    {
+      "id": "HISTORICAL_RECONSTRUCTION_P1_DE",
+      "format": "markdown",
+      "status": "in_progress",
+      "path": "docs/history/QIKVRT_HISTORICAL_RECONSTRUCTION_P1_DE.md"
+    },
+    {
+      "id": "SCIENTIFIC_MONOGRAPH_DE_TEX",
+      "format": "latex",
+      "status": "pending",
+      "path": "publications/QIKVRT_SCIENTIFIC_MONOGRAPH_DE.tex"
+    },
+    {
+      "id": "SCIENTIFIC_MONOGRAPH_DE_PDF",
+      "format": "pdf",
+      "status": "pending_reproducible_build",
+      "path": "publications/QIKVRT_SCIENTIFIC_MONOGRAPH_DE.pdf"
+    },
+    {
+      "id": "MACHINE_PROOF_BUNDLE",
+      "format": "json+receipts+kernel",
+      "status": "pending",
+      "path": "proof/QIKVRT_PUBLIC_EXPLANATION_MACHINE_PROOF_V1/"
+    },
+    {
+      "id": "ZENODO_CANDIDATE",
+      "format": "frozen_fileset",
+      "status": "pending_no_external_mutation",
+      "path": "release/zenodo-qikvrt-public-explanation-v1/"
+    },
+    {
+      "id": "IETF_GAP_ANALYSIS_AND_RFCXML",
+      "format": "markdown+rfcxml",
+      "status": "pending",
+      "path": "ietf/"
+    },
+    {
+      "id": "WHATSAPP_READALOUD_DE",
+      "format": "markdown",
+      "status": "existing_candidate_requires_expansion_and_verification",
+      "path": "publications/QIKVRT_WHATSAPP_READALOUD_SUMMARY_DE.md"
+    }
+  ],
+  "monitor_requirements": {
+    "show_delivery_progress": true,
+    "show_status_per_delivery": true,
+    "show_exact_repository_path": true,
+    "show_direct_download_link": true,
+    "show_latest_bound_commit": true,
+    "show_gate_state": true,
+    "show_receipt_state": true,
+    "show_new_delivery_event": true,
+    "distinguish_telemetry_from_verified_delivery": true
+  },
+  "notification_contract": {
+    "repository_is_source_of_truth": true,
+    "new_delivery_must_update": [
+      "DELIVERY/CURRENT/DELIVERIES.json",
+      "DELIVERY/CURRENT/OWNER_STATUS.md",
+      "docs/monitor/index.html"
+    ],
+    "new_delivery_requires_receipt": true,
+    "chat_notification_is_secondary_projection": true
+  },
+  "required_next_effect": "MATERIALIZE_DELIVERY_LEDGER_AND_EXTEND_LIVE_MONITOR_THEN_CONTINUE_DOCUMENT_PROGRAM",
+  "boundaries": {
+    "merge_authorized": false,
+    "zenodo_mutation_authorized": false,
+    "ietf_submission_authorized": false,
+    "release_authorized": false,
+    "pass_claimed": false,
+    "final_pass_claimed": false,
+    "effect_ack_done_claimed": false
+  }
+}
