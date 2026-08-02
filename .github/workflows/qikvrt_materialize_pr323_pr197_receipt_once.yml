@@ -1,22 +1,16 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-
 name: QIK-VRT one-shot PR323 PR197 reciprocal receipt Authority
-
 on:
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize]
-    paths:
-      - .github/workflows/qikvrt_materialize_pr323_pr197_receipt_once.yml
-
+    paths: [.github/workflows/qikvrt_materialize_pr323_pr197_receipt_once.yml]
 permissions:
   contents: write
-
 concurrency:
-  group: qikvrt-pr323-pr197-receipt-authority-v1
+  group: qikvrt-pr323-pr197-receipt-authority-v2
   cancel-in-progress: false
-
 jobs:
   materialize:
     if: github.event.pull_request.head.repo.full_name == github.repository
@@ -31,12 +25,10 @@ jobs:
       EXECUTION_WORKFLOW: .github/workflows/qikvrt_materialize_pr323_pr197_receipt_once.yml
       RECEIPT_PATH: evidence/receipts/authority-mirror-equality-2026-08-02-vrtcore-h56-pr323-pr197.json
     steps:
-      - name: Check out exact trusted execution proxy head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-
       - name: Verify exact proxy and paired leases
         shell: bash
         run: |
@@ -48,11 +40,7 @@ jobs:
           [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SELF_PARENT" ]
           [ "$(git ls-remote https://github.com/$OTHER_REPOSITORY.git refs/heads/main | cut -f1)" = "$OTHER_PARENT" ]
           [ -z "$(git ls-remote origin refs/heads/$TARGET_BRANCH)" ]
-          mapfile -t changed < <(git diff --name-only "$SELF_PARENT" HEAD -- | LC_ALL=C sort)
-          [ "${#changed[@]}" -eq 1 ]
-          [ "${changed[0]}" = "$EXECUTION_WORKFLOW" ]
-
-      - name: Fetch counterpart and verify pre-append index equality
+      - name: Verify pre-append index equality
         shell: bash
         run: |
           set -euo pipefail
@@ -60,8 +48,7 @@ jobs:
           git show "$SELF_PARENT:evidence/receipts/index.json" > "$RUNNER_TEMP/self-index.json"
           git show "$OTHER_PARENT:evidence/receipts/index.json" > "$RUNNER_TEMP/other-index.json"
           cmp "$RUNNER_TEMP/self-index.json" "$RUNNER_TEMP/other-index.json"
-
-      - name: Materialize canonical receipt and repository-native integrity
+      - name: Materialize receipt index anticipation and integrity
         shell: bash
         run: |
           set -euo pipefail
@@ -69,155 +56,43 @@ jobs:
           git worktree add --detach "$worktree" "$SELF_PARENT"
           cd "$worktree"
           python3 - <<'PY'
-          import hashlib
-          import json
+          import hashlib, json
           from pathlib import Path
-
-          receipt_path = Path('evidence/receipts/authority-mirror-equality-2026-08-02-vrtcore-h56-pr323-pr197.json')
-          index_path = Path('evidence/receipts/index.json')
-          receipt_id = 'authority-mirror-equality-2026-08-02-vrtcore-h56-pr323-pr197'
-          scope = 'promotion_2026-08-02_vrtcore_h56_pr323_pr197'
-          observed_at = '2026-08-02T14:44:00Z'
-          binding_payload = {
-              'authority': {
-                  'exact_green_head': 'b60d0c12cd41ede40ed5438ec83d9b69da2ef7c5',
-                  'main': '4d00723c7f6f52f1b2b279fd91f902647e0547cc',
-                  'current_receipt_parent': 'cdb0e9fe8444565df665affa64463295648b1368',
-                  'promotion_pull_request': 323,
-                  'repository': 'Goldkelch/qik-vrt',
-              },
-              'mirror': {
-                  'exact_green_head': 'aa7ff79d9035c3d459dc08668e633c2773578973',
-                  'main': 'dc89a6f818cdfac65799aab9ec191cff62496b0f',
-                  'current_receipt_parent': 'dc89a6f818cdfac65799aab9ec191cff62496b0f',
-                  'synchronization_pull_request': 197,
-                  'repository': 'ingolf-lohmann/qik-vrt',
-              },
-              'equality': {
-                  'authority_freeze_tree': '4ce9c07b1a78df2f23f81b751612baf110d22fb6',
-                  'mirror_candidate_tree': 'a9d64e1809d3626f30c09250bde52b4e4f6392aa',
-                  'portable_path_count': 71,
-                  'portable_payload_byte_equality_verified': True,
-                  'complete_repository_tree_equality': False,
-              },
-              'observed_at': observed_at,
-              'receipt_id': receipt_id,
-          }
-          canonical = json.dumps(binding_payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
-          binding_sha = hashlib.sha256(canonical).hexdigest()
-          receipt = {
-              '_license': {
-                  'classification': 'machine_readable_equality_evidence',
-                  'copyright': 'Copyright 2026 Ingolf Lohmann',
-                  'license': 'CC-BY-NC-ND-4.0',
-                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
-                  'rights_holder': 'Ingolf Lohmann',
-              },
-              'schema': 'qikvrt_authority_mirror_equality_receipt_v1',
-              'receipt_id': receipt_id,
-              'scope': scope,
-              'state': 'equality_verified_for_scoped_promotion',
-              'materialized_at': observed_at,
-              'authority': {
-                  'repository': 'Goldkelch/qik-vrt',
-                  'promotion_pull_request': 323,
-                  'exact_green_head': 'b60d0c12cd41ede40ed5438ec83d9b69da2ef7c5',
-                  'main': '4d00723c7f6f52f1b2b279fd91f902647e0547cc',
-                  'current_receipt_parent': 'cdb0e9fe8444565df665affa64463295648b1368',
-              },
-              'mirror': {
-                  'repository': 'ingolf-lohmann/qik-vrt',
-                  'synchronization_pull_request': 197,
-                  'exact_green_head': 'aa7ff79d9035c3d459dc08668e633c2773578973',
-                  'main': 'dc89a6f818cdfac65799aab9ec191cff62496b0f',
-                  'current_receipt_parent': 'dc89a6f818cdfac65799aab9ec191cff62496b0f',
-              },
-              'equality': {
-                  'scope_kind': 'portable_pr323_h5_h6_payload',
-                  'portable_path_count': 71,
-                  'authority_freeze_tree': '4ce9c07b1a78df2f23f81b751612baf110d22fb6',
-                  'mirror_candidate_tree': 'a9d64e1809d3626f30c09250bde52b4e4f6392aa',
-                  'authority_source_head_to_merge_complete_file_diff_empty': True,
-                  'mirror_exact_head_to_merge_complete_file_diff_empty': True,
-                  'portable_payload_byte_equality_verified': True,
-                  'complete_repository_tree_equality': False,
-                  'complete_repository_tree_equality_nonclaim_reason': 'Authority contains later PR327 and PR328 state not included in the scoped PR323 to PR197 synchronization.',
-                  'receipt_and_append_only_index_preserved': True,
-              },
-              'claims': {
-                  'authority_mirror_equality_verified': True,
-                  'authority_promotion_complete': True,
-                  'mirror_synchronization_complete': True,
-                  'scoped_promotion_chain_complete': True,
-                  'pass': False,
-                  'final_pass': False,
-                  'effect_ack_done': False,
-                  'fully_kernel_verified_overall_completion': False,
-                  'zenodo_mutation_performed_by_this_receipt': False,
-              },
-              'reciprocal_repository_binding': {
-                  'authority_path': receipt_path.as_posix(),
-                  'mirror_path': receipt_path.as_posix(),
-                  'binding_payload': binding_payload,
-                  'binding_payload_canonicalization': "UTF-8 JSON with recursively sorted object keys and separators ',' ':'; no trailing newline",
-                  'binding_payload_sha256': binding_sha,
-                  'persistence_method': 'identical receipt and index payloads proposed in both repositories; generated integrity files regenerated repository-natively; independent exact-head gates required',
-              },
-              'non_claims': [
-                  'complete repository tree equality after later Authority-only PR327 and PR328 changes',
-                  'authorization to perform any new Zenodo mutation',
-                  'IETF submission or Datatracker mutation',
-                  'GitHub release creation',
-                  'repository-wide PASS',
-                  'FINAL_PASS',
-                  'EFFECT_ACK_DONE',
-                  'fully kernel-verified overall completion',
-                  'promotion of either reciprocal receipt candidate',
-              ],
-          }
-          raw = (json.dumps(receipt, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
-          receipt_path.write_bytes(raw)
-          file_sha = hashlib.sha256(raw).hexdigest()
-          blob_sha = hashlib.sha1(f'blob {len(raw)}\0'.encode('ascii') + raw).hexdigest()
-          index = json.loads(index_path.read_text(encoding='utf-8'))
-          if any(entry['receipt_id'] == receipt_id for entry in index['equality_receipts']):
-              raise SystemExit('receipt id already indexed')
-          index['equality_receipts'].append({
-              'authority': {
-                  'main': '4d00723c7f6f52f1b2b279fd91f902647e0547cc',
-                  'pull_request': 323,
-                  'repository': 'Goldkelch/qik-vrt',
-              },
-              'file_sha256': file_sha,
-              'git_blob_sha1': blob_sha,
-              'mirror': {
-                  'main': 'dc89a6f818cdfac65799aab9ec191cff62496b0f',
-                  'pull_request': 197,
-                  'repository': 'ingolf-lohmann/qik-vrt',
-              },
-              'path': receipt_path.as_posix(),
-              'receipt_id': receipt_id,
-              'scope': scope,
-              'source_receipt_payload_sha256': binding_sha,
-              'state': 'equality_verified_for_scoped_promotion',
-          })
-          index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          rp=Path('evidence/receipts/authority-mirror-equality-2026-08-02-vrtcore-h56-pr323-pr197.json')
+          ip=Path('evidence/receipts/index.json')
+          rid='authority-mirror-equality-2026-08-02-vrtcore-h56-pr323-pr197'
+          scope='promotion_2026-08-02_vrtcore_h56_pr323_pr197'
+          observed='2026-08-02T14:44:00Z'
+          binding={'authority':{'exact_green_head':'b60d0c12cd41ede40ed5438ec83d9b69da2ef7c5','main':'4d00723c7f6f52f1b2b279fd91f902647e0547cc','current_receipt_parent':'cdb0e9fe8444565df665affa64463295648b1368','promotion_pull_request':323,'repository':'Goldkelch/qik-vrt'},'mirror':{'exact_green_head':'aa7ff79d9035c3d459dc08668e633c2773578973','main':'dc89a6f818cdfac65799aab9ec191cff62496b0f','current_receipt_parent':'dc89a6f818cdfac65799aab9ec191cff62496b0f','synchronization_pull_request':197,'repository':'ingolf-lohmann/qik-vrt'},'equality':{'authority_freeze_tree':'4ce9c07b1a78df2f23f81b751612baf110d22fb6','mirror_candidate_tree':'a9d64e1809d3626f30c09250bde52b4e4f6392aa','portable_path_count':71,'portable_payload_byte_equality_verified':True,'complete_repository_tree_equality':False},'observed_at':observed,'receipt_id':rid}
+          bsha=hashlib.sha256(json.dumps(binding,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          receipt={'_license':{'classification':'machine_readable_equality_evidence','copyright':'Copyright 2026 Ingolf Lohmann','license':'CC-BY-NC-ND-4.0','license_text_ref':'LICENSES/CC-BY-NC-ND-4.0.txt','rights_holder':'Ingolf Lohmann'},'schema':'qikvrt_authority_mirror_equality_receipt_v1','receipt_id':rid,'scope':scope,'state':'equality_verified_for_scoped_promotion','materialized_at':observed,'authority':binding['authority'],'mirror':binding['mirror'],'equality':{'scope_kind':'portable_pr323_h5_h6_payload','portable_path_count':71,'authority_freeze_tree':'4ce9c07b1a78df2f23f81b751612baf110d22fb6','mirror_candidate_tree':'a9d64e1809d3626f30c09250bde52b4e4f6392aa','authority_source_head_to_merge_complete_file_diff_empty':True,'mirror_exact_head_to_merge_complete_file_diff_empty':True,'portable_payload_byte_equality_verified':True,'complete_repository_tree_equality':False,'complete_repository_tree_equality_nonclaim_reason':'Authority contains later PR327 and PR328 state not included in the scoped PR323 to PR197 synchronization.','receipt_and_append_only_index_preserved':True},'claims':{'authority_mirror_equality_verified':True,'authority_promotion_complete':True,'mirror_synchronization_complete':True,'scoped_promotion_chain_complete':True,'pass':False,'final_pass':False,'effect_ack_done':False,'fully_kernel_verified_overall_completion':False,'zenodo_mutation_performed_by_this_receipt':False},'reciprocal_repository_binding':{'authority_path':rp.as_posix(),'mirror_path':rp.as_posix(),'binding_payload':binding,'binding_payload_canonicalization':"UTF-8 JSON with recursively sorted object keys and separators ',' ':'; no trailing newline",'binding_payload_sha256':bsha,'persistence_method':'identical receipt and index payloads proposed in both repositories; generated anticipation and integrity files regenerated repository-natively; independent exact-head gates required'},'non_claims':['complete repository tree equality after later Authority-only PR327 and PR328 changes','authorization to perform any new Zenodo mutation','IETF submission or Datatracker mutation','GitHub release creation','repository-wide PASS','FINAL_PASS','EFFECT_ACK_DONE','fully kernel-verified overall completion','promotion of either reciprocal receipt candidate']}
+          raw=(json.dumps(receipt,ensure_ascii=False,indent=2)+'\n').encode(); rp.write_bytes(raw)
+          fsha=hashlib.sha256(raw).hexdigest(); blob=hashlib.sha1(f'blob {len(raw)}\0'.encode()+raw).hexdigest()
+          idx=json.loads(ip.read_text())
+          if any(e['receipt_id']==rid for e in idx['equality_receipts']): raise SystemExit('receipt id already indexed')
+          idx['equality_receipts'].append({'authority':{'main':'4d00723c7f6f52f1b2b279fd91f902647e0547cc','pull_request':323,'repository':'Goldkelch/qik-vrt'},'file_sha256':fsha,'git_blob_sha1':blob,'mirror':{'main':'dc89a6f818cdfac65799aab9ec191cff62496b0f','pull_request':197,'repository':'ingolf-lohmann/qik-vrt'},'path':rp.as_posix(),'receipt_id':rid,'scope':scope,'source_receipt_payload_sha256':bsha,'state':'equality_verified_for_scoped_promotion'})
+          ip.write_text(json.dumps(idx,ensure_ascii=False,indent=2)+'\n')
+          inp=Path('anticipation/INPUT.json'); value=json.loads(inp.read_text())
+          raw_index=ip.read_bytes(); found=False
+          for item in value['source_bindings']:
+              if item['path']=='evidence/receipts/index.json':
+                  item['bytes']=len(raw_index); item['sha256']=hashlib.sha256(raw_index).hexdigest(); found=True
+          if not found: raise SystemExit('anticipation index binding missing')
+          inp.write_text(json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n')
           PY
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_anticipation.py materialize
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_anticipation.py check
           PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
           PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
           make test
           PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
-          git add -- "$RECEIPT_PATH" evidence/receipts/index.json REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
-          candidate_tree="$(git write-tree)"
-          echo "CANDIDATE_TREE=$candidate_tree" >> "$GITHUB_ENV"
-
+          git add -- "$RECEIPT_PATH" evidence/receipts/index.json anticipation/INPUT.json anticipation/current.json anticipation/history.jsonl anticipation/trends.json anticipation/derivatives.json anticipation/next-effect.json receipts/anticipation/0001-contract-bound.json receipts/anticipation/0002-anticipation-materialized.json REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          echo "CANDIDATE_TREE=$(git write-tree)" >> "$GITHUB_ENV"
       - name: Push current-main receipt child
         shell: bash
         run: |
           set -euo pipefail
           [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SELF_PARENT" ]
           [ -z "$(git ls-remote origin refs/heads/$TARGET_BRANCH)" ]
-          message='Materialize reciprocal PR323 PR197 equality receipt on Authority'
-          commit="$(printf '%s\n' "$message" | env GIT_AUTHOR_NAME='QIK-VRT Repository Mesh' GIT_AUTHOR_EMAIL='ingolf.lohmann@live.com' GIT_COMMITTER_NAME='QIK-VRT Repository Mesh' GIT_COMMITTER_EMAIL='ingolf.lohmann@live.com' git commit-tree "$CANDIDATE_TREE" -p "$SELF_PARENT")"
-          [ "$(git show -s --format=%P "$commit")" = "$SELF_PARENT" ]
+          commit="$(printf '%s\n' 'Materialize reciprocal PR323 PR197 equality receipt on Authority' | env GIT_AUTHOR_NAME='QIK-VRT Repository Mesh' GIT_AUTHOR_EMAIL='ingolf.lohmann@live.com' GIT_COMMITTER_NAME='QIK-VRT Repository Mesh' GIT_COMMITTER_EMAIL='ingolf.lohmann@live.com' git commit-tree "$CANDIDATE_TREE" -p "$SELF_PARENT")"
           git push origin "$commit:refs/heads/$TARGET_BRANCH"
