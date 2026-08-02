@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import os
+          import sys
           from pathlib import Path
 
           source_path = Path("tools/qikvrt_vrtcore_h3_audited_recovery.py")
@@ -75,6 +75,6 @@ jobs:
               "__file__": str(source_path),
               "__package__": None,
           }
-          os.sys.argv = [str(source_path), "--execute"]
+          sys.argv = [str(source_path), "--execute"]
           exec(compile(patched, str(source_path), "exec"), globals_value)
           PY
