@@ -199,6 +199,66 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
+    def test_r5_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+        for gate in (
+            "github.run_attempt == 1",
+            "github.event.created == false",
+            "github.event.deleted == false",
+            "github.event.forced == false",
+            "github.event.before == "
+            "'dfcf28f9f48b5857ef3b4ef50f979d9a1979be08'",
+            "github.event.after == github.sha",
+            'test "$GITHUB_RUN_ATTEMPT" = "1"',
+            'test "${{ github.event.before }}" = '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR"',
+            'test "${{ github.event.after }}" = "$GITHUB_SHA"',
+        ):
+            self.assertIn(gate, self.workflow)
+
+    def test_marker_is_create_only_and_cannot_trigger_any_zenodo_workflow(self) -> None:
+        source = inspect.getsource(recovery.persist_create_post_once_marker)
+        self.assertEqual(source.count('"POST"'), 1)
+        for forbidden in ('"PATCH"', '"DELETE"', '"force"'):
+            self.assertNotIn(forbidden, source)
+        marker_branch = recovery.EXPECTED["create_post_once_ref"].removeprefix(
+            "refs/heads/"
+        )
+        workflows: list[tuple[str, str]] = [
+            (str(path), path.read_text(encoding="utf-8"))
+            for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+        ]
+        c1 = str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
+        historical_paths = subprocess.check_output(
+            [
+                "git",
+                "ls-tree",
+                "-r",
+                "--name-only",
+                c1,
+                ".github/workflows",
+            ],
+            cwd=ROOT,
+            text=True,
+        ).splitlines()
+        workflows.extend(
+            (
+                c1 + ":" + path,
+                subprocess.check_output(
+                    ["git", "show", c1 + ":" + path],
+                    cwd=ROOT,
+                    text=True,
+                ),
+            )
+            for path in historical_paths
+            if pathlib.PurePosixPath(path).suffix in {".yml", ".yaml"}
+        )
+        for name, text in workflows:
+            if "ZENODO_ACCESS_TOKEN" not in text:
+                continue
+            trigger = text.split("permissions:", 1)[0]
+            self.assertIn("branches:", trigger, msg=name)
+            self.assertNotIn(marker_branch, trigger, msg=name)
+
     def test_parent_placeholder_is_unique_and_fails_closed(self) -> None:
         placeholder = recovery.EXPECTED["controller_parent_placeholder"]
         binding = re.search(
@@ -290,7 +350,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r4_is_exact_direct_child_of_r3_with_r2_r1_r0_lineage(self) -> None:
+    def test_r5_is_exact_direct_child_of_r4_with_r3_r2_r1_r0_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -304,12 +364,15 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -334,6 +397,12 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn(
             'git -C controller show -s --format=%P \\\n'
             '              "$EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
@@ -1043,19 +1112,21 @@ class VRTCoreH3E1RecoveryGitDataTests(unittest.TestCase):
             self.call(api, expected_old_sha=old, commit_sha=new)
         self.assertEqual(len(api.mutations), 1)
 
-    def test_wrong_success_response_blocks_without_retry(self) -> None:
+    def test_wrong_success_response_is_advisory_after_exact_get_readback(self) -> None:
         old = "a" * 40
         new = "b" * 40
         for initial, expected_old in (({}, None), ({RECOVERY_REF: old}, old)):
             with self.subTest(operation="create" if expected_old is None else "update"):
                 api = FakeGitData(initial)
                 api.mutation_result = "wrong_response_after_effect"
-                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.assertEqual(
                     self.call(
                         api,
                         expected_old_sha=expected_old,
                         commit_sha=new,
-                    )
+                    ),
+                    new,
+                )
                 self.assertEqual(len(api.mutations), 1)
 
     def test_unsafe_ref_and_identifiers_are_rejected_before_transport(self) -> None:
@@ -1077,6 +1148,459 @@ class VRTCoreH3E1RecoveryGitDataTests(unittest.TestCase):
                         commit_sha=new,
                     )
                 self.assertEqual(api.calls, [])
+
+
+class VRTCoreH3E1CreatePostOnceMarkerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = ROOT
+        self.target = str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
+        self.ref = recovery.EXPECTED["create_post_once_ref"]
+
+    def call(self, api: FakeGitData) -> str:
+        with mock.patch.object(recovery, "_fetch_credential_free") as fetch:
+            result = recovery.persist_create_post_once_marker(
+                api,
+                self.root,
+                repository=recovery.EXPECTED["repository"],
+                commit_sha=self.target,
+            )
+        fetch.assert_called_once_with(self.root, self.ref, self.target)
+        return result
+
+    def test_marker_requires_own_201_auth_get_and_anonymous_readback(self) -> None:
+        api = FakeGitData()
+        self.assertEqual(self.call(api), self.target)
+        self.assertEqual(api.refs, {self.ref: self.target})
+        self.assertEqual(
+            [call["method"] for call in api.calls],
+            ["GET", "POST", "GET"],
+        )
+        self.assertEqual(len(api.mutations), 1)
+        self.assertEqual(
+            api.mutations[0]["payload"],
+            {"ref": self.ref, "sha": self.target},
+        )
+
+    def test_existing_marker_never_counts_as_this_invocations_success(self) -> None:
+        api = FakeGitData({self.ref: self.target})
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            self.call(api)
+        self.assertEqual(api.mutations, [])
+
+    def test_conflict_or_ambiguous_transport_never_reconciles_marker(self) -> None:
+        for result in (
+            "conflict",
+            "conflict_after_effect",
+            "transport",
+            "transport_after_effect",
+        ):
+            with self.subTest(result=result):
+                api = FakeGitData()
+                api.mutation_result = result
+                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                    self.call(api)
+                self.assertEqual(len(api.mutations), 1)
+
+    def test_wrong_201_body_or_wrong_authenticated_readback_blocks(self) -> None:
+        wrong_body = FakeGitData()
+        wrong_body.mutation_result = "wrong_response_after_effect"
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            self.call(wrong_body)
+        self.assertEqual(len(wrong_body.mutations), 1)
+
+        wrong_get = FakeGitData()
+        wrong_get.wrong_readback_sha = "c" * 40
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            self.call(wrong_get)
+        self.assertEqual(len(wrong_get.mutations), 1)
+
+    def test_anonymous_readback_failure_blocks_after_one_marker_post(self) -> None:
+        api = FakeGitData()
+        with mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+            side_effect=SystemExit("BLOCK: simulated anonymous readback failure"),
+        ):
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                recovery.persist_create_post_once_marker(
+                    api,
+                    self.root,
+                    repository=recovery.EXPECTED["repository"],
+                    commit_sha=self.target,
+                )
+        self.assertEqual(len(api.mutations), 1)
+
+
+class VRTCoreH3E1InitialCreateReplayTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.c1 = str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
+        cls.c1_raw = subprocess.check_output(
+            [
+                "git",
+                "show",
+                cls.c1 + ":" + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+        cls.c1_value = json.loads(cls.c1_raw.decode("utf-8"))
+
+    def store(self, root: pathlib.Path) -> recovery.RecoveryReceiptStore:
+        store = object.__new__(recovery.RecoveryReceiptStore)
+        store.root = root
+        store.api = object()
+        store.controller_parent = "d" * 40
+        store.manifest_path = root / "publish-request.json"
+        store.evidence_path = root / recovery.EVIDENCE_RELATIVE
+        store.evidence_path.parent.mkdir(parents=True)
+        store.evidence_path.write_bytes(b"{}\n")
+        store.publisher = publish
+        store.manifest = {}
+        store.remote_consumption = self.c1_value["remote_consumption"]
+        store.publication_head = E1
+        store.current_tip = self.c1
+        store.create_post_once_head = None
+        store._prepared_replay_pending = False
+        store._initial_create_replay_pending = True
+        return store
+
+    def execute(self, *, marker_fails: bool) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            store = self.store(root)
+            events: list[str] = []
+            validated = {
+                "phase": "create_requested",
+                "remote_consumption": store.remote_consumption,
+            }
+
+            def fake_publish(_manifest: pathlib.Path, _root: pathlib.Path) -> dict[str, Any]:
+                publish._atomic_recovery_evidence(
+                    store.evidence_path,
+                    self.c1_value,
+                    {},
+                )
+                events.append("zenodo-create")
+                return {"result": "after-create"}
+
+            def marker(*_args: Any, **_kwargs: Any) -> str:
+                events.append("marker-create-auth-anonymous-readback")
+                if marker_fails:
+                    raise SystemExit("BLOCK: simulated marker boundary failure")
+                return self.c1
+
+            def git(
+                _root: pathlib.Path,
+                *arguments: str,
+                **_kwargs: object,
+            ) -> tuple[int, bytes]:
+                if arguments == (
+                    "show",
+                    self.c1 + ":" + recovery.EVIDENCE_RELATIVE.as_posix(),
+                ):
+                    return 0, self.c1_raw
+                raise AssertionError("unexpected replay Git call: " + repr(arguments))
+
+            with mock.patch.object(
+                publish,
+                "_validate_recovery_evidence",
+                return_value=validated,
+            ), mock.patch.object(
+                store,
+                "_recheck_remote_boundary",
+            ), mock.patch.object(
+                store,
+                "validate_recovery_chain",
+                return_value=[
+                    {"phase": "authorization_consumed"},
+                    {"phase": "create_requested"},
+                ],
+            ), mock.patch.object(
+                recovery,
+                "persist_create_post_once_marker",
+                side_effect=marker,
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                side_effect=git,
+            ):
+                if marker_fails:
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery.run_publisher_with_checkpoints(
+                            store.manifest_path,
+                            root,
+                            store,
+                            publish_callable=fake_publish,
+                        )
+                else:
+                    result = recovery.run_publisher_with_checkpoints(
+                        store.manifest_path,
+                        root,
+                        store,
+                        publish_callable=fake_publish,
+                    )
+                    self.assertEqual(result, {"result": "after-create"})
+                    self.assertEqual(store.create_post_once_head, self.c1)
+                    self.assertFalse(store._initial_create_replay_pending)
+            return events
+
+    def test_marker_is_durable_before_unchanged_publishers_create_effect(self) -> None:
+        self.assertEqual(
+            self.execute(marker_fails=False),
+            ["marker-create-auth-anonymous-readback", "zenodo-create"],
+        )
+
+    def test_any_marker_boundary_failure_keeps_zenodo_create_unreachable(self) -> None:
+        self.assertEqual(
+            self.execute(marker_fails=True),
+            ["marker-create-auth-anonymous-readback"],
+        )
+
+    def test_marker_present_reconciliation_requires_exactly_one_inventory_match(
+        self,
+    ) -> None:
+        exact = (123456, "10.5281/zenodo.123456", None)
+        for matches, accepted in (([], False), ([exact], True), ([exact, exact], False)):
+            with self.subTest(count=len(matches)), mock.patch.object(
+                publish,
+                "_canonical_inventory_candidates",
+                return_value=matches,
+            ):
+                if accepted:
+                    self.assertEqual(
+                        publish._recover_create_requested_record(
+                            object(),
+                            "token",
+                            {},
+                            [],
+                        ),
+                        exact,
+                    )
+                else:
+                    with self.assertRaisesRegex(
+                        publish.zenodo.ZenodoError,
+                        "requires exactly one",
+                    ):
+                        publish._recover_create_requested_record(
+                            object(),
+                            "token",
+                            {},
+                            [],
+                        )
+
+    def test_precreate_replay_requires_zero_inventory_matches(self) -> None:
+        exact = (123456, "10.5281/zenodo.123456", None)
+        with mock.patch.object(
+            publish,
+            "_canonical_inventory_candidates",
+            return_value=[],
+        ):
+            publish._gate_precreate_inventory(object(), "token", {}, [])
+        with mock.patch.object(
+            publish,
+            "_canonical_inventory_candidates",
+            return_value=[exact],
+        ):
+            with self.assertRaisesRegex(
+                publish.zenodo.ZenodoError,
+                "pre-create inventory contains",
+            ):
+                publish._gate_precreate_inventory(object(), "token", {}, [])
+
+
+class VRTCoreH3E1R5OneShotExecutionTests(unittest.TestCase):
+    CONTROLLER = "f" * 40
+
+    @classmethod
+    def event(cls) -> dict[str, Any]:
+        return {
+            "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            "before": recovery.R4_UNSENT_CREATE_INCIDENT["controller"],
+            "after": cls.CONTROLLER,
+            "created": False,
+            "deleted": False,
+            "forced": False,
+            "repository": {"full_name": recovery.EXPECTED["repository"]},
+            "head_commit": {"id": cls.CONTROLLER},
+        }
+
+    @classmethod
+    def environment(cls, event_path: pathlib.Path) -> dict[str, str]:
+        return {
+            "GITHUB_SHA": cls.CONTROLLER,
+            "GITHUB_REPOSITORY": recovery.EXPECTED["repository"],
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            "GITHUB_REF_NAME": recovery.EXPECTED["trigger_branch"],
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_EVENT_PATH": str(event_path),
+        }
+
+    def validate(
+        self,
+        root: pathlib.Path,
+        event: dict[str, Any],
+        environment: dict[str, str],
+    ) -> str:
+        path = pathlib.Path(environment["GITHUB_EVENT_PATH"])
+        path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        with mock.patch.dict(recovery.os.environ, environment, clear=True), mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ) as fetch, mock.patch.object(
+            recovery,
+            "_git",
+            return_value=(
+                0,
+                (str(recovery.R4_UNSENT_CREATE_INCIDENT["controller"]) + "\n").encode(
+                    "ascii"
+                ),
+            ),
+        ):
+            result = recovery._validate_r5_one_shot_execution(root)
+        fetch.assert_called_once_with(
+            root,
+            "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            self.CONTROLLER,
+        )
+        return result
+
+    def test_exact_first_nonforced_r4_to_r5_push_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            event_path = root / "event.json"
+            self.assertEqual(
+                self.validate(
+                    root,
+                    self.event(),
+                    self.environment(event_path),
+                ),
+                self.CONTROLLER,
+            )
+
+    def test_attempt_event_and_branch_tampering_fail_closed(self) -> None:
+        cases: list[tuple[str, str, object]] = [
+            ("environment", "GITHUB_RUN_ATTEMPT", "2"),
+            ("environment", "GITHUB_EVENT_NAME", "workflow_dispatch"),
+            ("environment", "GITHUB_REF_NAME", "wrong-branch"),
+            ("event", "created", True),
+            ("event", "deleted", True),
+            ("event", "forced", True),
+            ("event", "before", "e" * 40),
+            ("event", "after", "e" * 40),
+            ("head_commit", "id", "e" * 40),
+            ("repository", "full_name", "other/repository"),
+        ]
+        for scope, key, value in cases:
+            with self.subTest(scope=scope, key=key), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                event_path = root / "event.json"
+                event = self.event()
+                environment = self.environment(event_path)
+                if scope == "environment":
+                    environment[key] = str(value)
+                elif scope == "event":
+                    event[key] = value
+                else:
+                    nested = event[scope]
+                    assert isinstance(nested, dict)
+                    nested[key] = value
+                event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+                with mock.patch.dict(
+                    recovery.os.environ,
+                    environment,
+                    clear=True,
+                ), mock.patch.object(
+                    recovery,
+                    "_fetch_credential_free",
+                ) as fetch:
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery._validate_r5_one_shot_execution(root)
+                fetch.assert_not_called()
+
+    def test_arm_accepts_only_exact_c1_without_marker_and_binds_r4_incident(self) -> None:
+        store = object.__new__(recovery.RecoveryReceiptStore)
+        store.root = ROOT
+        store.api = object()
+        store.publisher = publish
+        store.publication_head = E1
+        store.current_tip = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+        store.create_post_once_head = None
+        store._initial_create_replay_pending = False
+        with mock.patch.object(
+            recovery,
+            "_validate_r5_one_shot_execution",
+            return_value=self.CONTROLLER,
+        ) as execution, mock.patch.object(
+            recovery,
+            "verify_historical_r4_unsent_create_incident",
+        ) as incident, mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ), mock.patch.object(
+            recovery,
+            "_verify_r4_local_object_chain",
+        ) as objects, mock.patch.object(
+            store,
+            "validate_recovery_chain",
+            return_value=[
+                {"phase": "authorization_consumed"},
+                {"phase": "create_requested"},
+            ],
+        ):
+            self.assertTrue(store.arm_exact_unsent_create_replay())
+        self.assertTrue(store._initial_create_replay_pending)
+        execution.assert_called_once_with(ROOT)
+        incident.assert_called_once_with(store.api, ROOT)
+        objects.assert_called_once_with(ROOT)
+
+    def test_existing_marker_never_rearms_c0_and_wrong_tip_blocks(self) -> None:
+        store = object.__new__(recovery.RecoveryReceiptStore)
+        store.root = ROOT
+        store.api = object()
+        store.publisher = publish
+        store.publication_head = E1
+        store.current_tip = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+        store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+        store._initial_create_replay_pending = False
+        with mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ), mock.patch.object(
+            store,
+            "validate_recovery_chain",
+            return_value=[
+                {"phase": "authorization_consumed"},
+                {"phase": "create_requested"},
+            ],
+        ), mock.patch.object(
+            recovery,
+            "verify_historical_r4_unsent_create_incident",
+        ) as incident:
+            self.assertFalse(store.arm_exact_unsent_create_replay())
+        self.assertFalse(store._initial_create_replay_pending)
+        incident.assert_not_called()
+
+        store.current_tip = recovery.R4_UNSENT_CREATE_INCIDENT["c0"]
+        with mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ), mock.patch.object(
+            store,
+            "validate_recovery_chain",
+            return_value=[{"phase": "authorization_consumed"}],
+        ):
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                store.arm_exact_unsent_create_replay()
+
+        store.current_tip = None
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            store.arm_exact_unsent_create_replay()
+
+        store.create_post_once_head = None
+        store.current_tip = "c" * 40
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            store.arm_exact_unsent_create_replay()
 
 
 class FakeRecoveryReceiptStore:
@@ -1294,6 +1818,9 @@ class VRTCoreH3E1RecoveryRestoreTests(unittest.TestCase):
         store.evidence_path = evidence_path
         store.publication_head = E1
         store.current_tip = "a" * 40
+        store.publisher = publish
+        store.create_post_once_head = None
+        store._initial_create_replay_pending = False
         return store
 
     def restore(self, root: pathlib.Path, evidence_path: pathlib.Path) -> bytes:
@@ -1361,6 +1888,93 @@ class VRTCoreH3E1RecoveryRestoreTests(unittest.TestCase):
             self.assertTrue(evidence_path.is_symlink())
             self.assertEqual(target.read_bytes(), b"sentinel")
 
+    def test_exact_unsent_create_replay_restores_c0_but_keeps_remote_c1(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            evidence_path = root / "state" / "zenodo-publication.json"
+            store = self.store(root, evidence_path)
+            store.current_tip = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+            store._initial_create_replay_pending = True
+            c0_raw = b'{"phase":"authorization_consumed"}\n'
+
+            def git(
+                _root: pathlib.Path,
+                *arguments: str,
+                **_kwargs: object,
+            ) -> tuple[int, bytes]:
+                expected = (
+                    "show",
+                    str(recovery.R4_UNSENT_CREATE_INCIDENT["c0"])
+                    + ":"
+                    + recovery.EVIDENCE_RELATIVE.as_posix(),
+                )
+                if arguments == expected:
+                    return 0, c0_raw
+                raise AssertionError("unexpected C0 restore Git call: " + repr(arguments))
+
+            with mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                side_effect=git,
+            ), mock.patch.object(
+                store,
+                "validate_recovery_chain",
+                return_value=[
+                    {"phase": "authorization_consumed"},
+                    {"phase": "create_requested"},
+                ],
+            ):
+                self.assertEqual(
+                    store.restore_or_bootstrap(),
+                    (False, recovery.R4_UNSENT_CREATE_INCIDENT["c1"]),
+                )
+            self.assertEqual(evidence_path.read_bytes(), c0_raw)
+            self.assertEqual(
+                store.current_tip,
+                recovery.R4_UNSENT_CREATE_INCIDENT["c1"],
+            )
+
+    def test_record_bearing_recovery_without_marker_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            evidence_path = root / "state" / "zenodo-publication.json"
+            store = self.store(root, evidence_path)
+            store.current_tip = "b" * 40
+            with mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                store,
+                "validate_recovery_chain",
+                return_value=[
+                    {"phase": "authorization_consumed"},
+                    {"phase": "create_requested"},
+                    {"phase": "record_created"},
+                ],
+            ):
+                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                    store.restore_or_bootstrap()
+
+    def test_marker_with_only_c0_or_no_recovery_chain_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            store = self.store(root, root / "state" / "zenodo-publication.json")
+            store.current_tip = recovery.R4_UNSENT_CREATE_INCIDENT["c0"]
+            store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+            with mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                store,
+                "validate_recovery_chain",
+                return_value=[{"phase": "authorization_consumed"}],
+            ):
+                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                    store.restore_or_bootstrap()
+
 
 class VRTCoreH3E1RecoveryRemoteBoundaryTests(unittest.TestCase):
     @staticmethod
@@ -1377,6 +1991,9 @@ class VRTCoreH3E1RecoveryRemoteBoundaryTests(unittest.TestCase):
         store.remote_consumption = {"tag_object": recovery.EXPECTED["tag_object"]}
         store.publication_head = E1
         store.current_tip = None
+        store.create_post_once_head = None
+        store._prepared_replay_pending = False
+        store._initial_create_replay_pending = False
         return store
 
     def test_remote_recheck_brackets_candidate_before_ref_mutation(self) -> None:
@@ -1528,7 +2145,9 @@ class VRTCoreH3E1RecoveryReplayTests(unittest.TestCase):
         store.remote_consumption = {"tag_object": recovery.EXPECTED["tag_object"]}
         store.publication_head = E1
         store.current_tip = "a" * 40
+        store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
         store._prepared_replay_pending = False
+        store._initial_create_replay_pending = False
         return store
 
     @staticmethod
@@ -1775,6 +2394,7 @@ class VRTCoreH3E1RecoveryReceiptVerificationTests(unittest.TestCase):
         store = object.__new__(recovery.RecoveryReceiptStore)
         store.root = root
         store.api = object()
+        store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
         return store
 
     def verify_finalized(
@@ -1857,6 +2477,15 @@ class VRTCoreH3E1RecoveryReceiptVerificationTests(unittest.TestCase):
                     ):
                         self.verify_finalized(store, evidence, prior)
 
+    def test_final_persistence_blocks_without_the_c1_marker(self) -> None:
+        store = object.__new__(recovery.RecoveryReceiptStore)
+        store.current_tip = "a" * 40
+        store._prepared_replay_pending = False
+        store._initial_create_replay_pending = False
+        store.create_post_once_head = None
+        with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+            store.persist_final()
+
     def test_recovery_chain_must_be_an_exact_phase_prefix(self) -> None:
         store = object.__new__(recovery.RecoveryReceiptStore)
         store.root = ROOT
@@ -1864,8 +2493,8 @@ class VRTCoreH3E1RecoveryReceiptVerificationTests(unittest.TestCase):
         store.remote_consumption = {
             "tag_object": recovery.EXPECTED["tag_object"],
         }
-        first = "a" * 40
-        tip = "b" * 40
+        first = str(recovery.R4_UNSENT_CREATE_INCIDENT["c0"])
+        tip = str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
         parents = {tip: first, first: E1}
         evidence = {
             first: {
@@ -2167,6 +2796,306 @@ class VRTCoreH3E1RecoveryIncidentTests(unittest.TestCase):
                 FakeIncidentAPI(marker_tampered),
                 digest_for=marker_tampered,
             )
+
+
+class FakeR4IncidentAPI:
+    def __init__(self, log: bytes, artifact_zip: bytes) -> None:
+        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+        self.log = log
+        self.artifact_zip = artifact_zip
+        self.calls: list[tuple[str, str]] = []
+        self.run = {
+            "id": incident["run_id"],
+            "run_attempt": 1,
+            "event": "push",
+            "head_sha": incident["controller"],
+            "head_branch": recovery.EXPECTED["trigger_branch"],
+            "status": "completed",
+            "conclusion": "failure",
+            "repository": {"full_name": recovery.EXPECTED["repository"]},
+            "head_repository": {"full_name": recovery.EXPECTED["repository"]},
+        }
+        self.job = {
+            "id": incident["job_id"],
+            "run_id": incident["run_id"],
+            "run_attempt": 1,
+            "head_sha": incident["controller"],
+            "status": "completed",
+            "conclusion": "failure",
+            "run_url": (
+                "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+                + str(incident["run_id"])
+            ),
+        }
+        self.artifacts = {
+            "total_count": 1,
+            "artifacts": [
+                {
+                    "id": incident["artifact_id"],
+                    "name": incident["artifact_name"],
+                    "size_in_bytes": incident["artifact_size"],
+                    "digest": incident["artifact_digest"],
+                    "expired": False,
+                }
+            ],
+        }
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: Mapping[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> tuple[int, dict[str, Any]]:
+        if method != "GET" or payload is not None:
+            raise AssertionError("R4 incident API attempted a mutation")
+        self.calls.append((method, path))
+        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+        run_path = (
+            "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+        )
+        job_path = (
+            "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+        )
+        if path == run_path + "/attempts/1":
+            return 200, copy.deepcopy(self.run)
+        if path == job_path:
+            return 200, copy.deepcopy(self.job)
+        if path == run_path + "/artifacts":
+            return 200, copy.deepcopy(self.artifacts)
+        raise AssertionError("unexpected R4 incident path: " + path)
+
+    def request_bytes(self, path: str, maximum: int) -> bytes:
+        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+        log_path = (
+            "/repos/Goldkelch/qik-vrt/actions/jobs/"
+            + str(incident["job_id"])
+            + "/logs"
+        )
+        artifact_path = (
+            "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+            + str(incident["artifact_id"])
+            + "/zip"
+        )
+        self.calls.append(("GET_BYTES", path))
+        if path == log_path and maximum == incident["log_bytes"]:
+            return self.log
+        if path == artifact_path and maximum == incident["artifact_size"]:
+            return self.artifact_zip
+        raise AssertionError("R4 incident raw request differs")
+
+
+class VRTCoreH3E1R4UnsentCreateIncidentTests(unittest.TestCase):
+    @staticmethod
+    def artifact_fixture() -> tuple[bytes, dict[str, Any]]:
+        evidence = subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+        buffer = recovery.io.BytesIO()
+        with recovery.zipfile.ZipFile(
+            buffer,
+            mode="w",
+            compression=recovery.zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as archive:
+            entry = recovery.zipfile.ZipInfo(
+                str(recovery.R4_UNSENT_CREATE_INCIDENT["artifact_entry"]),
+                (2026, 8, 2, 19, 24, 26),
+            )
+            entry.create_system = 3
+            entry.external_attr = 0o100600 << 16
+            entry.compress_type = recovery.zipfile.ZIP_DEFLATED
+            archive.writestr(entry, evidence, compresslevel=6)
+        raw = buffer.getvalue()
+        with recovery.zipfile.ZipFile(recovery.io.BytesIO(raw), mode="r") as archive:
+            parsed = archive.infolist()[0]
+        overrides = {
+            "artifact_size": len(raw),
+            "artifact_digest": "sha256:" + recovery.hashlib.sha256(raw).hexdigest(),
+            "artifact_entry_compressed_bytes": parsed.compress_size,
+            "artifact_entry_crc32": parsed.CRC,
+            "artifact_entry_unix_mode": parsed.external_attr >> 16,
+        }
+        return raw, overrides
+
+    @staticmethod
+    def log_bytes() -> bytes:
+        lines: list[str] = []
+        for marker, count in recovery.R4_INCIDENT_LOG_REQUIRED_COUNTS.items():
+            lines.extend(marker for _index in range(count))
+        prefix = b"\xef\xbb\xbf" + ("\n".join(lines) + "\n").encode("utf-8")
+        size = int(recovery.R4_UNSENT_CREATE_INCIDENT["log_bytes"])
+        if len(prefix) > size:
+            raise AssertionError("R4 incident fixture exceeds exact size")
+        return prefix + b"x" * (size - len(prefix))
+
+    @staticmethod
+    def verify(api: FakeR4IncidentAPI, *, digest_for: bytes) -> None:
+        real_sha256 = recovery.hashlib.sha256
+
+        class FixedDigest:
+            def hexdigest(self) -> str:
+                return str(recovery.R4_UNSENT_CREATE_INCIDENT["log_sha256"])
+
+        def sha256(raw: bytes = b"") -> Any:
+            if raw == digest_for:
+                return FixedDigest()
+            return real_sha256(raw)
+
+        with mock.patch.object(recovery.hashlib, "sha256", side_effect=sha256):
+            recovery.verify_historical_r4_unsent_create_incident(api, ROOT)
+
+    def test_exact_r4_run_job_artifact_and_log_are_read_only(self) -> None:
+        raw = self.log_bytes()
+        artifact_zip, overrides = self.artifact_fixture()
+        with mock.patch.dict(recovery.R4_UNSENT_CREATE_INCIDENT, overrides):
+            api = FakeR4IncidentAPI(raw, artifact_zip)
+            self.verify(api, digest_for=raw)
+        self.assertEqual(
+            [method for method, _path in api.calls],
+            ["GET", "GET", "GET", "GET_BYTES", "GET_BYTES"],
+        )
+
+    def test_r4_c0_c1_commit_tree_parent_and_evidence_pins_are_real(self) -> None:
+        recovery._verify_r4_local_object_chain(ROOT)
+
+    def test_r4_metadata_or_artifact_tampering_blocks(self) -> None:
+        raw = self.log_bytes()
+        artifact_zip, overrides = self.artifact_fixture()
+        with mock.patch.dict(recovery.R4_UNSENT_CREATE_INCIDENT, overrides):
+            run_api = FakeR4IncidentAPI(raw, artifact_zip)
+            run_api.run["head_sha"] = "c" * 40
+            artifact_api = FakeR4IncidentAPI(raw, artifact_zip)
+            artifact_api.artifacts["artifacts"][0]["digest"] = "sha256:" + "0" * 64
+            for label, api in (("run", run_api), ("artifact", artifact_api)):
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(api, digest_for=raw)
+                    self.assertTrue(
+                        all(
+                            method in {"GET", "GET_BYTES"}
+                            for method, _path in api.calls
+                        )
+                    )
+
+    def test_r4_artifact_zip_structure_and_c1_bytes_fail_closed(self) -> None:
+        log = self.log_bytes()
+        evidence = subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(recovery.R4_UNSENT_CREATE_INCIDENT["c1"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+
+        def build(
+            *,
+            name: str,
+            body: bytes,
+            mode: int = 0o100600,
+            extra_entry: bool = False,
+        ) -> tuple[bytes, dict[str, Any]]:
+            buffer = recovery.io.BytesIO()
+            with recovery.zipfile.ZipFile(
+                buffer,
+                mode="w",
+                compression=recovery.zipfile.ZIP_DEFLATED,
+                compresslevel=6,
+            ) as archive:
+                entry = recovery.zipfile.ZipInfo(name, (2026, 8, 2, 19, 24, 26))
+                entry.create_system = 3
+                entry.external_attr = mode << 16
+                entry.compress_type = recovery.zipfile.ZIP_DEFLATED
+                archive.writestr(entry, body, compresslevel=6)
+                if extra_entry:
+                    archive.writestr("unexpected.txt", b"unexpected")
+            artifact = buffer.getvalue()
+            with recovery.zipfile.ZipFile(
+                recovery.io.BytesIO(artifact), mode="r"
+            ) as archive:
+                parsed = archive.infolist()[0]
+            return artifact, {
+                "artifact_size": len(artifact),
+                "artifact_digest": (
+                    "sha256:" + recovery.hashlib.sha256(artifact).hexdigest()
+                ),
+                "artifact_entry_compressed_bytes": parsed.compress_size,
+                "artifact_entry_crc32": parsed.CRC,
+            }
+
+        changed_evidence = evidence.replace(b'"create_requested"', b'"create_requesteD"', 1)
+        self.assertEqual(len(changed_evidence), len(evidence))
+        cases = (
+            build(
+                name=str(recovery.R4_UNSENT_CREATE_INCIDENT["artifact_entry"]),
+                body=evidence,
+                extra_entry=True,
+            ),
+            build(name="../zenodo-publication.json", body=evidence),
+            build(
+                name=str(recovery.R4_UNSENT_CREATE_INCIDENT["artifact_entry"]),
+                body=evidence,
+                mode=0o120777,
+            ),
+            build(
+                name=str(recovery.R4_UNSENT_CREATE_INCIDENT["artifact_entry"]),
+                body=changed_evidence,
+            ),
+        )
+        for index, (artifact_zip, overrides) in enumerate(cases):
+            with self.subTest(index=index):
+                with mock.patch.dict(recovery.R4_UNSENT_CREATE_INCIDENT, overrides):
+                    api = FakeR4IncidentAPI(log, artifact_zip)
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(api, digest_for=log)
+                    self.assertTrue(
+                        all(
+                            method in {"GET", "GET_BYTES"}
+                            for method, _path in api.calls
+                        )
+                    )
+
+    def test_r4_log_bom_digest_and_effect_markers_are_exact(self) -> None:
+        raw = self.log_bytes()
+        artifact_zip, overrides = self.artifact_fixture()
+        without_bom = b"xxx" + raw[3:]
+        with mock.patch.dict(recovery.R4_UNSENT_CREATE_INCIDENT, overrides):
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(
+                    FakeR4IncidentAPI(without_bom, artifact_zip),
+                    digest_for=without_bom,
+                )
+
+            marker = next(iter(recovery.R4_INCIDENT_LOG_REQUIRED_COUNTS))
+            marker_tampered = raw.replace(
+                marker.encode("utf-8"),
+                ("_" * len(marker)).encode("utf-8"),
+                1,
+            )
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(
+                    FakeR4IncidentAPI(marker_tampered, artifact_zip),
+                    digest_for=marker_tampered,
+                )
+
+            published = recovery.R4_INCIDENT_LOG_FORBIDDEN_MARKERS[0].encode("utf-8")
+            effect_tampered = raw[:-len(published)] + published
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(
+                    FakeR4IncidentAPI(effect_tampered, artifact_zip),
+                    digest_for=effect_tampered,
+                )
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ import base64
 import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -30,6 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
@@ -68,6 +70,10 @@ HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 CONTROLLER_PARENT_PLACEHOLDER = "__H3_E1_RECOVERY_EXPECTED_PARENT__"
 TRIGGER_BRANCH = "recovery-execution/vrtcore-relational-h3-e1-v1"
+CREATE_POST_ONCE_REF = (
+    "refs/heads/qikvrt-recovery/vrtcore-zenodo/h3-create-post-once/"
+    "53e757ebce929b40250f90a02ed2a9ec62de6217"
+)
 
 EXPECTED: dict[str, Any] = {
     "repository": "Goldkelch/qik-vrt",
@@ -91,6 +97,7 @@ EXPECTED: dict[str, Any] = {
     "failure_boundary": "NO_ZENODO_API_CALL_BEFORE_FAILURE",
     "controller_parent_placeholder": CONTROLLER_PARENT_PLACEHOLDER,
     "trigger_branch": TRIGGER_BRANCH,
+    "create_post_once_ref": CREATE_POST_ONCE_REF,
     "e1_publisher_blob": "886f614106fe05f3c8f10cd485dd11455845cc54",
     "e1_publisher_bytes": 91976,
     "e1_publisher_sha256": (
@@ -112,6 +119,62 @@ EXPECTED: dict[str, Any] = {
         "8ed7450c89681d195144f7fa6a8d39ff5f0e2cf8a224d21da4cf085fe219e258"
     ),
 }
+
+R4_UNSENT_CREATE_INCIDENT: dict[str, Any] = {
+    "controller": "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08",
+    "controller_parent": "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e",
+    "controller_tree": "ffef6ba9411e278e322fb9d9c2f5df36990426ec",
+    "run_id": 30763216363,
+    "job_id": 91537354739,
+    "run_attempt": 1,
+    "log_bytes": 403287,
+    "log_sha256": (
+        "8e699ac3e5926f9e88883be709c2133ffe14e65780224cdf07d68ce3957ee3a3"
+    ),
+    "artifact_id": 8838129332,
+    "artifact_name": "vrtcore-h3-e1-recovery-30763216363-1",
+    "artifact_size": 2848,
+    "artifact_digest": (
+        "sha256:e25db1d81ec283b9385af4b6eba06834ffadff52c3fa53d1e14ee89a53930ae9"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 2688,
+    "artifact_entry_crc32": 0xB62880C8,
+    "artifact_entry_unix_mode": 0o100600,
+    "c0": "7bd0a61432b8f8ce7c867cde14b727e47c6d5495",
+    "c0_parent": "53e757ebce929b40250f90a02ed2a9ec62de6217",
+    "c0_tree": "22e221a80c99fa4fefb91af6f348bf1792f2a3a0",
+    "c0_evidence_blob": "75c6bb4984c06ef7ae061b763b47fed4bf18b774",
+    "c0_evidence_bytes": 7504,
+    "c0_evidence_sha256": (
+        "ba4829864e098aa961bb9796ee82e83f067a66e18cc3819e7465e3e60af9aced"
+    ),
+    "c1": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c1_parent": "7bd0a61432b8f8ce7c867cde14b727e47c6d5495",
+    "c1_tree": "fe6d32d5c65be8a2a58cf8fb39a29c7804581733",
+    "c1_evidence_blob": "0eeb82a0e5949ab987dd4a36cb225507e1b4baad",
+    "c1_evidence_bytes": 8634,
+    "c1_evidence_sha256": (
+        "62444943f36c7896663a09649aebf97e0b7b5d0c1b11465daa392a8663b9e5db"
+    ),
+}
+
+R4_INCIDENT_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "BLOCK: GitHub receipt ref response differs": 1,
+    "Process completed with exit code 2.": 1,
+    'test "2" = "0"': 1,
+}
+R4_INCIDENT_LOG_FORBIDDEN_MARKERS = (
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+    "ZENODO_PUBLICATION_STATE=published",
+)
+R5_GOVERNANCE_BOUNDARIES = (
+    "PRIVILEGED_REPLAY_MARKER_REF_DELETION_NOT_PREVENTED",
+    "AMBIGUOUS_MARKER_MUTATION_BLOCKS_WITHOUT_REARM",
+    "R5_RUN_ATTEMPT_ONE_ONLY",
+)
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
     "BLOCK: GitHub Git-Data API rejected GET (HTTP 404)": 1,
@@ -728,13 +791,25 @@ class GitHubAPI:
             _fail("GitHub Actions log redirect escaped its credential-free allowlist")
 
     def request_bytes(self, path: str, maximum: int) -> bytes:
-        """Read one bounded job log; bearer credentials never follow redirects."""
-        expected = (
-            "/repos/Goldkelch/qik-vrt/actions/jobs/"
-            + str(EXPECTED["job_id"])
-            + "/logs"
-        )
-        if path != expected or maximum != EXPECTED["job_log_bytes"]:
+        """Read one bounded Actions object without forwarding credentials."""
+        allowed = {
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(EXPECTED["job_id"])
+                + "/logs"
+            ): EXPECTED["job_log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R4_UNSENT_CREATE_INCIDENT["job_id"])
+                + "/logs"
+            ): R4_UNSENT_CREATE_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R4_UNSENT_CREATE_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R4_UNSENT_CREATE_INCIDENT["artifact_size"],
+        }
+        if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
         if self._raw_transport is not None:
             raw = self._raw_transport(path, maximum)
@@ -910,6 +985,214 @@ def verify_historical_incident(
         _fail("historical E1 job log crossed the claimed effect boundary")
 
 
+def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Download the bounded R4 artifact and bind its only entry exactly to C1."""
+    incident = R4_UNSENT_CREATE_INCIDENT
+    artifact_path = (
+        "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+        + str(incident["artifact_id"])
+        + "/zip"
+    )
+    raw = _call_api_bytes(api, artifact_path, int(incident["artifact_size"]))
+    expected_digest = str(incident["artifact_digest"])
+    if (
+        len(raw) != incident["artifact_size"]
+        or not expected_digest.startswith("sha256:")
+        or hashlib.sha256(raw).hexdigest()
+        != expected_digest.removeprefix("sha256:")
+    ):
+        _fail("historical R4 artifact ZIP identity differs")
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), mode="r") as archive:
+            entries = archive.infolist()
+            if archive.comment != b"" or len(entries) != 1:
+                _fail("historical R4 artifact ZIP inventory differs")
+            entry = entries[0]
+            unix_mode = entry.external_attr >> 16
+            if (
+                entry.filename != incident["artifact_entry"]
+                or entry.orig_filename != incident["artifact_entry"]
+                or entry.is_dir()
+                or entry.create_system != 3
+                or unix_mode != incident["artifact_entry_unix_mode"]
+                or entry.file_size != incident["c1_evidence_bytes"]
+                or entry.compress_size
+                != incident["artifact_entry_compressed_bytes"]
+                or entry.CRC != incident["artifact_entry_crc32"]
+                or entry.compress_type != zipfile.ZIP_DEFLATED
+                or entry.flag_bits & 0x1
+                or entry.extra != b""
+                or entry.comment != b""
+            ):
+                _fail("historical R4 artifact ZIP entry differs")
+            evidence = archive.read(entry)
+    except (OSError, RuntimeError, ValueError, zipfile.BadZipFile, NotImplementedError):
+        _fail("historical R4 artifact ZIP is invalid")
+    _status, expected = _git(
+        root,
+        "show",
+        f"{incident['c1']}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    if (
+        evidence != expected
+        or len(evidence) != incident["c1_evidence_bytes"]
+        or hashlib.sha256(evidence).hexdigest()
+        != incident["c1_evidence_sha256"]
+    ):
+        _fail("historical R4 artifact evidence is not exact C1")
+    try:
+        value = json.loads(evidence.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        _fail("historical R4 artifact evidence JSON is invalid")
+    if (
+        not isinstance(value, dict)
+        or value.get("phase") != "create_requested"
+        or value.get("state") != publish.CONSUMPTION_STATE
+        or "record_id" in value
+        or "doi" in value
+    ):
+        _fail("historical R4 artifact crossed the pre-create evidence boundary")
+
+
+def verify_historical_r4_unsent_create_incident(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind the one R4 failure that advanced C0 to C1 before any Zenodo create.
+
+    The R4 log does not expose a Python traceback.  R5 therefore protects both
+    possible response-validation sites and treats the exact run, job, artifact
+    inventory, and decoded log as one indivisible read-only incident record.
+    """
+    incident = R4_UNSENT_CREATE_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R4 workflow run differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R4 workflow job differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R4 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(
+        api,
+        job_path + "/logs",
+        int(incident["log_bytes"]),
+    )
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R4 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R4 job log is not exact UTF-8 with BOM")
+    for marker, count in R4_INCIDENT_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R4 job log required marker count differs")
+    if any(marker in decoded for marker in R4_INCIDENT_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R4 job log crossed the claimed effect boundary")
+    _verify_r4_artifact_evidence(api, root)
+
+
+def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
+    incident = R4_UNSENT_CREATE_INCIDENT
+    for prefix in ("controller", "c0", "c1"):
+        commit = str(incident[prefix])
+        _status, resolved = _git(
+            root,
+            "rev-parse",
+            "--verify",
+            f"{commit}^{{commit}}",
+        )
+        _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+        _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+        if (
+            resolved.decode("ascii").strip() != commit
+            or parents.decode("ascii").strip() != incident[prefix + "_parent"]
+            or tree.decode("ascii").strip() != incident[prefix + "_tree"]
+        ):
+            _fail("R4 unsent-create local object chain differs")
+    for prefix in ("c0", "c1"):
+        commit = str(incident[prefix])
+        _status, blob = _git(
+            root,
+            "rev-parse",
+            "--verify",
+            f"{commit}:{EVIDENCE_RELATIVE.as_posix()}",
+        )
+        _status, raw = _git(
+            root,
+            "show",
+            f"{commit}:{EVIDENCE_RELATIVE.as_posix()}",
+        )
+        if (
+            blob.decode("ascii").strip() != incident[prefix + "_evidence_blob"]
+            or len(raw) != incident[prefix + "_evidence_bytes"]
+            or hashlib.sha256(raw).hexdigest()
+            != incident[prefix + "_evidence_sha256"]
+        ):
+            _fail("R4 unsent-create evidence identity differs")
+
+
 def _head_ref_path(ref: str, *, plural: bool) -> str:
     if (
         ref not in {EXPECTED["recovery_ref"], EXPECTED["publication_ref"]}
@@ -935,6 +1218,19 @@ def _validate_ref(value: Mapping[str, Any], ref: str, sha: str) -> None:
         _fail("GitHub receipt ref response differs")
 
 
+def _validate_ref_target_sha(value: Mapping[str, Any], sha: str) -> None:
+    """Validate the authoritative target while the requested endpoint binds ref.
+
+    GitHub has already demonstrated that a mutation/read response envelope can
+    differ after the ref effect is visible.  The endpoint and expected SHA are
+    therefore authoritative here; a following credential-free Git read binds
+    the actual ref name, commit, and tree independently.
+    """
+    target = value.get("object")
+    if not isinstance(target, dict) or target.get("sha") != sha:
+        _fail("GitHub receipt ref target differs")
+
+
 def persist_receipt_create_only_or_ff(
     api: Any,
     *,
@@ -958,7 +1254,7 @@ def persist_receipt_create_only_or_ff(
         # a second mutation; any different target remains a hard boundary.
         target = before.get("object")
         if isinstance(target, dict) and target.get("sha") == commit_sha:
-            _validate_ref(before, ref, commit_sha)
+            _validate_ref_target_sha(before, commit_sha)
             return commit_sha
     if expected_old_sha is None:
         if status != 404:
@@ -967,13 +1263,12 @@ def persist_receipt_create_only_or_ff(
     else:
         if status != 200:
             _fail("fast-forward receipt ref is absent")
-        _validate_ref(before, ref, expected_old_sha)
+        _validate_ref_target_sha(before, expected_old_sha)
         operation = "update"
     mutation_status: int | None = None
-    changed: dict[str, Any] = {}
     try:
         if operation == "create":
-            mutation_status, changed = _call_api(
+            mutation_status, _changed = _call_api(
                 api,
                 "POST",
                 "/repos/Goldkelch/qik-vrt/git/refs",
@@ -983,7 +1278,7 @@ def persist_receipt_create_only_or_ff(
             )
             success = 201
         else:
-            mutation_status, changed = _call_api(
+            mutation_status, _changed = _call_api(
                 api,
                 "PATCH",
                 _head_ref_path(ref, plural=True),
@@ -995,20 +1290,65 @@ def persist_receipt_create_only_or_ff(
     except AmbiguousRefMutation:
         success = 201 if operation == "create" else 200
         mutation_status = None
-    if mutation_status == success:
-        _validate_ref(changed, ref, commit_sha)
-    elif mutation_status not in {None, 409, 422}:
+    if mutation_status not in {success, None, 409, 422}:
         _fail("receipt ref mutation status differs")
     for attempt in range(len(REF_RECONCILIATION_DELAYS_SECONDS) + 1):
         status, after = _call_api(api, "GET", singular, accept=(200, 404))
         if status == 200:
             # A visible but different ref is not eventual consistency and is
             # rejected immediately without another write.
-            _validate_ref(after, ref, commit_sha)
+            _validate_ref_target_sha(after, commit_sha)
             return commit_sha
         if attempt < len(REF_RECONCILIATION_DELAYS_SECONDS):
             time.sleep(REF_RECONCILIATION_DELAYS_SECONDS[attempt])
     _fail("receipt ref mutation has no exact readback")
+
+
+def persist_create_post_once_marker(
+    api: Any,
+    root: pathlib.Path,
+    *,
+    repository: str,
+    commit_sha: str,
+) -> str:
+    """Create the R5 replay latch exactly once before a possible Zenodo create.
+
+    Unlike normal receipt refs, an already-existing marker, a conflict, an
+    ambiguous transport result, or a non-exact immediate response is never
+    reconciled as success in this invocation.  That deliberately sacrifices
+    availability so the unchanged publisher cannot cross the create boundary
+    after an uncertain latch mutation.
+    """
+    if repository != EXPECTED["repository"]:
+        _fail("create-post-once marker repository differs")
+    if commit_sha != R4_UNSENT_CREATE_INCIDENT["c1"]:
+        _fail("create-post-once marker target differs")
+    ref = EXPECTED["create_post_once_ref"]
+    suffix = urllib.parse.quote(ref.removeprefix("refs/"), safe="/")
+    singular = "/repos/Goldkelch/qik-vrt/git/ref/" + suffix
+    status, _before = _call_api(api, "GET", singular, accept=(200, 404))
+    if status != 404:
+        _fail("create-post-once marker already exists")
+    try:
+        mutation_status, changed = _call_api(
+            api,
+            "POST",
+            "/repos/Goldkelch/qik-vrt/git/refs",
+            payload={"ref": ref, "sha": commit_sha},
+            accept=(201, 409, 422),
+            allow_ambiguous_transport=True,
+        )
+    except AmbiguousRefMutation:
+        _fail("create-post-once marker mutation is ambiguous and cannot rearm")
+    if mutation_status != 201:
+        _fail("create-post-once marker was not created by this invocation")
+    _validate_ref(changed, ref, commit_sha)
+    status, after = _call_api(api, "GET", singular, accept=(200, 404))
+    if status != 200:
+        _fail("create-post-once marker lacks authenticated exact readback")
+    _validate_ref(after, ref, commit_sha)
+    _fetch_credential_free(root, ref, commit_sha)
+    return commit_sha
 
 
 def _read_head_ref(
@@ -1432,6 +1772,47 @@ def _write_exclusive_regular(path: pathlib.Path, raw: bytes) -> None:
         os.close(descriptor)
 
 
+def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind the replay permit to the first, non-forced R4 -> R5 push attempt."""
+    controller = os.environ.get("GITHUB_SHA", "")
+    event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
+    if (
+        HEX40.fullmatch(controller) is None
+        or os.environ.get("GITHUB_REPOSITORY") != EXPECTED["repository"]
+        or os.environ.get("GITHUB_EVENT_NAME") != "push"
+        or os.environ.get("GITHUB_REF") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_REF_NAME") != EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+        or not event_path_raw
+    ):
+        _fail("R5 replay execution environment differs")
+    event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
+    repository = event.get("repository")
+    head_commit = event.get("head_commit")
+    if (
+        event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or event.get("before") != R4_UNSENT_CREATE_INCIDENT["controller"]
+        or event.get("after") != controller
+        or event.get("created") is not False
+        or event.get("deleted") is not False
+        or event.get("forced") is not False
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_commit, dict)
+        or head_commit.get("id") != controller
+    ):
+        _fail("R5 replay push event differs")
+    _fetch_credential_free(
+        root,
+        "refs/heads/" + EXPECTED["trigger_branch"],
+        controller,
+    )
+    _status, parent = _git(root, "show", "-s", "--format=%P", controller)
+    if parent.decode("ascii").strip() != R4_UNSENT_CREATE_INCIDENT["controller"]:
+        _fail("R5 controller is not the exact single successor of R4")
+    return controller
+
+
 @contextlib.contextmanager
 def _without_effect_credentials() -> Any:
     """Temporarily hide effect credentials from synchronous local helpers."""
@@ -1448,7 +1829,7 @@ def _without_effect_credentials() -> Any:
 
 
 class RecoveryReceiptStore:
-    """Exact four-path Git receipt chain for one fixed E1 publication."""
+    """Exact four-path receipt chain plus one orthogonal create-only R5 latch."""
 
     def __init__(
         self,
@@ -1498,7 +1879,18 @@ class RecoveryReceiptStore:
             EXPECTED["recovery_ref"],
             allow_absent=True,
         )
+        self.create_post_once_head = _read_head_ref(
+            self.api,
+            EXPECTED["create_post_once_ref"],
+            allow_absent=True,
+        )
+        if self.create_post_once_head not in {
+            None,
+            R4_UNSENT_CREATE_INCIDENT["c1"],
+        }:
+            _fail("create-post-once marker target differs")
         self._prepared_replay_pending = False
+        self._initial_create_replay_pending = False
 
     def _recheck_remote_boundary(self) -> None:
         if _read_head_ref(self.api, "refs/heads/main") != self.controller_parent:
@@ -1514,9 +1906,60 @@ class RecoveryReceiptStore:
             != self.current_tip
         ):
             _fail("recovery branch moved across the checkpoint boundary")
+        if (
+            _read_head_ref(
+                self.api,
+                EXPECTED["create_post_once_ref"],
+                allow_absent=True,
+            )
+            != self.create_post_once_head
+        ):
+            _fail("create-post-once marker moved across the checkpoint boundary")
         observed = _validate_existing_consumption_tag(self.api, self.manifest)
         if observed != self.remote_consumption:
             _fail("consumption tag moved across the recovery boundary")
+
+    def arm_exact_unsent_create_replay(self) -> bool:
+        """Arm only the exact R4 C1-without-Zenodo-effect state once."""
+        if self.publication_head != EXPECTED["e1"]:
+            return False
+        if self.create_post_once_head == R4_UNSENT_CREATE_INCIDENT["c1"]:
+            if self.current_tip is None:
+                _fail("create-post-once marker exists without a recovery chain")
+            _fetch_credential_free(
+                self.root,
+                EXPECTED["recovery_ref"],
+                self.current_tip,
+            )
+            chain = self.validate_recovery_chain(self.current_tip)
+            if (
+                not chain
+                or self.publisher.RECOVERY_PHASES.index(str(chain[-1]["phase"]))
+                < self.publisher.RECOVERY_PHASES.index("create_requested")
+            ):
+                _fail("create-post-once marker precedes the exact C1 checkpoint")
+            return False
+        if (
+            self.create_post_once_head is not None
+            or self.current_tip != R4_UNSENT_CREATE_INCIDENT["c1"]
+        ):
+            _fail("R5 unsent-create replay state differs")
+        _validate_r5_one_shot_execution(self.root)
+        _fetch_credential_free(
+            self.root,
+            EXPECTED["recovery_ref"],
+            R4_UNSENT_CREATE_INCIDENT["c1"],
+        )
+        _verify_r4_local_object_chain(self.root)
+        verify_historical_r4_unsent_create_incident(self.api, self.root)
+        chain = self.validate_recovery_chain(self.current_tip)
+        if [item["phase"] for item in chain] != [
+            "authorization_consumed",
+            "create_requested",
+        ]:
+            _fail("R4 unsent-create recovery chain differs")
+        self._initial_create_replay_pending = True
+        return True
 
     def _prepare_integrity(self) -> None:
         with _without_effect_credentials():
@@ -1720,6 +2163,8 @@ class RecoveryReceiptStore:
             _fail("checkpoint evidence path differs")
         if phase not in CHECKPOINT_PHASES:
             _fail("checkpoint phase is not a non-final recovery phase")
+        if self._initial_create_replay_pending and phase != "create_requested":
+            _fail("R5 initial create replay emitted an unexpected phase")
         value = _read_json(evidence_path)
         validated = self.publisher._validate_recovery_evidence(
             value,
@@ -1772,11 +2217,33 @@ class RecoveryReceiptStore:
                 )
                 if existing != evidence_path.read_bytes():
                     _fail("same-phase checkpoint evidence differs")
+                if self._initial_create_replay_pending:
+                    raw = evidence_path.read_bytes()
+                    if (
+                        self.current_tip != R4_UNSENT_CREATE_INCIDENT["c1"]
+                        or phase != "create_requested"
+                        or self.create_post_once_head is not None
+                        or len(raw)
+                        != R4_UNSENT_CREATE_INCIDENT["c1_evidence_bytes"]
+                        or hashlib.sha256(raw).hexdigest()
+                        != R4_UNSENT_CREATE_INCIDENT["c1_evidence_sha256"]
+                    ):
+                        _fail("R5 create-request replay evidence differs")
+                    persist_create_post_once_marker(
+                        self.api,
+                        self.root,
+                        repository=EXPECTED["repository"],
+                        commit_sha=R4_UNSENT_CREATE_INCIDENT["c1"],
+                    )
+                    self.create_post_once_head = R4_UNSENT_CREATE_INCIDENT["c1"]
+                    self._initial_create_replay_pending = False
                 if phase == "publish_requested":
                     self._prepared_replay_pending = False
                 return self.current_tip
             if self._prepared_replay_pending:
                 _fail("prepared replay lacks identical publish_requested confirmation")
+            if self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]:
+                _fail("recovery phase advance lacks the create-post-once marker")
         commit, tree = self._create_receipt_commit(parent, phase)
         self._recheck_remote_boundary()
         persist_receipt_create_only_or_ff(
@@ -1834,16 +2301,37 @@ class RecoveryReceiptStore:
             self.current_tip,
         )
         chain = self.validate_recovery_chain(self.current_tip)
+        if not chain:
+            _fail("durable recovery branch has no exact receipt chain")
+        last_phase = str(chain[-1]["phase"])
+        if (
+            self.create_post_once_head == R4_UNSENT_CREATE_INCIDENT["c1"]
+            and self.publisher.RECOVERY_PHASES.index(last_phase)
+            < self.publisher.RECOVERY_PHASES.index("create_requested")
+        ):
+            _fail("create-post-once marker is not cross-bound to C1 ancestry")
+        if (
+            self.publisher.RECOVERY_PHASES.index(last_phase)
+            >= self.publisher.RECOVERY_PHASES.index("record_created")
+            and self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]
+        ):
+            _fail("durable record recovery lacks the create-post-once marker")
+        source_commit = (
+            R4_UNSENT_CREATE_INCIDENT["c0"]
+            if self._initial_create_replay_pending
+            else self.current_tip
+        )
         raw = _git(
             self.root,
             "show",
-            f"{self.current_tip}:{EVIDENCE_RELATIVE.as_posix()}",
+            f"{source_commit}:{EVIDENCE_RELATIVE.as_posix()}",
         )[1]
         _write_exclusive_regular(self.evidence_path, raw)
         return False, self.current_tip
 
     def validate_recovery_chain(self, tip: str) -> list[dict[str, Any]]:
         reverse: list[dict[str, Any]] = []
+        reverse_commits: list[str] = []
         cursor = tip
         visited: set[str] = set()
         while cursor != EXPECTED["e1"]:
@@ -1855,11 +2343,22 @@ class RecoveryReceiptStore:
             if evidence["phase"] == "public_verified":
                 _fail("recovery branch contains final public evidence")
             reverse.append(evidence)
+            reverse_commits.append(cursor)
             cursor = parent
         chain = list(reversed(reverse))
+        commits = list(reversed(reverse_commits))
         phases = [str(item["phase"]) for item in chain]
         if phases != list(CHECKPOINT_PHASES[: len(phases)]):
             _fail("recovery receipt chain is not the exact phase prefix")
+        if (
+            not commits
+            or commits[0] != R4_UNSENT_CREATE_INCIDENT["c0"]
+            or (
+                len(commits) >= 2
+                and commits[1] != R4_UNSENT_CREATE_INCIDENT["c1"]
+            )
+        ):
+            _fail("recovery chain diverges from the exact C0/C1 incident ancestry")
         record_identity: tuple[Any, Any] | None = None
         for item in chain:
             if item["remote_consumption"] != self.remote_consumption:
@@ -1880,6 +2379,10 @@ class RecoveryReceiptStore:
             _fail("final receipt lacks a durable recovery parent")
         if self._prepared_replay_pending:
             _fail("final receipt lacks replayed publish intent confirmation")
+        if self._initial_create_replay_pending:
+            _fail("final receipt crossed an unconsumed initial create replay")
+        if self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]:
+            _fail("final receipt lacks the create-post-once marker")
         self._recheck_remote_boundary()
         value = _read_json(self.evidence_path)
         validated = self.publisher._validate_recovery_evidence(
@@ -1928,6 +2431,8 @@ class RecoveryReceiptStore:
     def verify_finalized(self, final: str | None) -> dict[str, Any]:
         if not isinstance(final, str) or HEX40.fullmatch(final) is None:
             _fail("finalized publication ref identity differs")
+        if self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]:
+            _fail("finalized publication lacks the create-post-once marker")
         _fetch_credential_free(self.root, EXPECTED["publication_ref"], final)
         parent = self._parent_of(final)
         evidence = _validate_receipt_commit(
@@ -2081,6 +2586,8 @@ def main(argv: list[str] | None = None) -> int:
             print("VRTCORE_H3_E1_RECOVERY_BASIS=VALID")
             return 0
         store = _controller_store(args)
+        if args.publish:
+            store.arm_exact_unsent_create_replay()
         finalized, tip = store.restore_or_bootstrap()
         if args.prepare:
             _write_outputs(
