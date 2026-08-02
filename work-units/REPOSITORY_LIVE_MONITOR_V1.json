@@ -1,0 +1,23 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "id": "REPOSITORY_LIVE_MONITOR_V1",
+  "state": "CANDIDATE",
+  "purpose": "Provide a directly observable live view of Authority and Mirror repository activity without requiring chat-mediated status requests.",
+  "monitor": {
+    "entrypoint": "docs/monitor/index.html",
+    "transport": "official_public_github_api",
+    "poll_interval_seconds": 10,
+    "observes": ["default_branch_head", "open_pull_requests", "pull_request_heads", "draft_state", "workflow_runs", "workflow_status", "workflow_conclusion", "recent_commits"],
+    "event_log": true,
+    "chat_independent": true,
+    "credentials_required": false
+  },
+  "truth_boundary": {
+    "telemetry_is_exact_head_proof": false,
+    "telemetry_is_effect_ack": false,
+    "public_api_rate_limits_apply": true,
+    "private_data_is_not_observed": true,
+    "pass_final_pass_effect_ack_done_claimed": false
+  },
+  "required_next_effect": "MATERIALIZE_MONITOR_INTEGRITY_AND_RUN_EXACT_HEAD_GATES"
+}
