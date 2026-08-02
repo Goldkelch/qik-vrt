@@ -1,0 +1,203 @@
+(*
+  QIK-VRT VRTCore surface grammar
+  Version: 2026-08-02
+  Status: SYNTAX_CANDIDATE; parser implementation remains OPEN.
+
+  The grammar makes epistemic kind, scope, evidence, causal bridge and
+  effect authorization explicit. A parser accepting this grammar must not
+  promote a claim's epistemic status by syntax alone.
+*)
+
+document           = header, { declaration } ;
+
+header             = "vrtcore", version, "scope", identifier,
+                     "effect-state", effect-state, ";" ;
+
+declaration        = claim-declaration
+                   | evidence-declaration
+                   | relation-declaration
+                   | bridge-declaration
+                   | measurement-declaration
+                   | effect-declaration
+                   | extension-declaration
+                   | boundary-declaration
+                   | open-obligation ;
+
+claim-declaration  = "claim", identifier, ":", epistemic-kind, "{",
+                       "statement", "=", quoted-text, ";",
+                       "scope", "=", identifier, ";",
+                       "assumptions", "=", identifier-list, ";",
+                       "evidence", "=", identifier-list, ";",
+                       "status", "=", claim-status, ";",
+                     "}", ";" ;
+
+evidence-declaration
+                   = "evidence", identifier, ":", evidence-kind, "{",
+                       "locator", "=", quoted-text, ";",
+                       [ "sha256", "=", sha256, ";" ],
+                       "boundary", "=", quoted-text, ";",
+                     "}", ";" ;
+
+measurement-declaration
+                   = "measurement", identifier, "{",
+                       "instrument", "=", quoted-text, ";",
+                       "context", "=", quoted-text, ";",
+                       "uncertainty", "=", quoted-text, ";",
+                       "time", "=", quoted-text, ";",
+                     "}", ";" ;
+
+relation-declaration
+                   = "relation", identifier, ":",
+                     identifier, relation-operator, identifier,
+                     [ "via", identifier ],
+                     "scope", identifier,
+                     "evidence", identifier-list, ";" ;
+
+bridge-declaration = "bridge", identifier, "{",
+                       "assumptions", "=", nonempty-identifier-list, ";",
+                       "mechanism", "=", quoted-text, ";",
+                       "falsifier", "=", quoted-text, ";",
+                       "scope", "=", identifier, ";",
+                     "}", ";" ;
+
+effect-declaration = "effect", identifier, "{",
+                       "receipt", "=", identifier, ";",
+                       "technical-state", "=", technical-state, ";",
+                       "authorization", "=", authorization, ";",
+                       "scope", "=", identifier, ";",
+                     "}", ";" ;
+
+extension-declaration
+                   = "extend", identifier, "with", "{",
+                       field-update, { ",", field-update },
+                     "}", ";" ;
+
+field-update       = vrt-field, "=", identifier-list ;
+
+boundary-declaration
+                   = "boundary", identifier, ":", boundary-kind, "{",
+                       "stable", "=", boolean, ";",
+                       "witness", "=", identifier-or-none, ";",
+                       "empirical-bridge", "=", identifier-or-none, ";",
+                       "status", "=", claim-status, ";",
+                     "}", ";" ;
+
+open-obligation    = "open", identifier, "{",
+                       "question", "=", quoted-text, ";",
+                       "owner", "=", quoted-text, ";",
+                       "closure-condition", "=", quoted-text, ";",
+                     "}", ";" ;
+
+epistemic-kind     = "formal-proved"
+                   | "empirical-supported"
+                   | "source-bound"
+                   | "normative"
+                   | "interpretive"
+                   | "open" ;
+
+claim-status       = "candidate"
+                   | "kernel-checked"
+                   | "evidence-checked"
+                   | "refuted"
+                   | "open" ;
+
+evidence-kind      = "kernel-receipt"
+                   | "measurement"
+                   | "source"
+                   | "review"
+                   | "counterexample"
+                   | "authorization" ;
+
+relation-operator  = "before"
+                   | "compatible-with"
+                   | "supports"
+                   | "refutes"
+                   | "depends-on"
+                   | "correlates-with"
+                   | "causal-candidate" ;
+
+technical-state    = "not-run" | "failed" | "succeeded" ;
+
+authorization      = "withheld"
+                   | "granted", "(", quoted-text, ",", identifier, ")" ;
+
+effect-state       = "EFFECT_NACK"
+                   | "EFFECT_ACK_CONTINUE"
+                   | "EFFECT_ACK_DONE"
+                   | "EFFECT_ACK_ISOLATE"
+                   | "EFFECT_ACK_BLOCK" ;
+
+boundary-kind      = "minkowski-conditional"
+                   | "lorentzian-general"
+                   | "quantum-classical-bridge" ;
+
+vrt-field          = "D" | "I" | "M" | "W" | "R" | "C" | "A" | "P" ;
+
+identifier-list    = "[", [ identifier, { ",", identifier } ], "]" ;
+
+nonempty-identifier-list
+                   = "[", identifier, { ",", identifier }, "]" ;
+
+identifier-or-none = identifier | "none" ;
+
+boolean            = "true" | "false" ;
+
+version            = digit, { digit | "." } ;
+
+identifier         = letter, { letter | digit | "_" | "-" | "." } ;
+
+sha256             = hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit,
+                     hex-digit, hex-digit, hex-digit, hex-digit ;
+
+quoted-text         = '"', text-character, { text-character }, '"' ;
+
+letter              = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+                   | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+                   | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+                   | "V" | "W" | "X" | "Y" | "Z"
+                   | "a" | "b" | "c" | "d" | "e" | "f" | "g"
+                   | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+                   | "o" | "p" | "q" | "r" | "s" | "t" | "u"
+                   | "v" | "w" | "x" | "y" | "z" ;
+
+digit               = "0" | "1" | "2" | "3" | "4"
+                   | "5" | "6" | "7" | "8" | "9" ;
+
+hex-digit           = digit | "a" | "b" | "c" | "d" | "e" | "f" ;
+
+text-character      = ? any Unicode scalar except unescaped quotation mark,
+                         reverse solidus, and control character ? ;
+
+(*
+  Static elaboration obligations, normative for a future parser:
+
+  S01. Every claim has exactly one epistemic-kind.
+  S02. Declaration IDs are unique and every reference resolves.
+  S03. formal-proved requires pinned source bytes, toolchain and kernel receipt.
+  S04. empirical-supported requires measurement context, uncertainty and falsifier.
+  S05. source-bound requires an immutable locator or digest.
+  S06. normative requires named authority and effect scope.
+  S07. interpretive records premises and viable alternative readings.
+  S08. open records an owner and a closure condition.
+  S09. before and correlates-with never elaborate to causal admissibility.
+  S10. causal-candidate elaborates only through a nonempty bridge.
+  S11. technical-state=succeeded never elaborates to authorization=granted.
+  S12. An extension is additive; conflicts are added and typed, never overwritten.
+  S13. A classical boundary remains conditional on stability and a witness.
+  S14. lorentzian-general and quantum-classical-bridge remain open in this version.
+  S15. EFFECT_ACK_DONE is scope-bound and cannot be inferred from parser success.
+*)

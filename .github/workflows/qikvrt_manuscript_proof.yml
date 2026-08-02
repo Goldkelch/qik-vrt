@@ -14,6 +14,7 @@ on:
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/CLAIM_MATRIX.json"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
       - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
+      - "docs/publications/2026-08-02-causality-is-relation-vrtcore/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -27,6 +28,7 @@ on:
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/CLAIM_MATRIX.json"
       - "docs/publications/2026-07-30-canonical-temporal-memory-effect-ack/KERNEL_PROOF_PLAN.json"
       - "docs/publications/2026-07-31-survival-anschlussfaehigsten/**"
+      - "docs/publications/2026-08-02-causality-is-relation-vrtcore/**"
       - ".github/workflows/qikvrt_manuscript_proof.yml"
       - "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
       - "schemas/human_machine_progress.schema.json"
@@ -115,8 +117,136 @@ jobs:
         run: |
           python3 ../../tests/test_survival_connectability_kernel_evidence_tool.py
           python3 ../../tests/test_survival_connectability_publication.py
+      - name: Run VRTCore relational-causality publication boundary tests
+        env:
+          PYTHONPATH: ../..
+        run: python3 ../../tests/test_vrtcore_relational_causality_publication.py
       - name: Compile exact statement/proof bindings
         run: lake build
+      - name: Kernel-check the VRTCore relational-causality candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          publication=../../docs/publications/2026-08-02-causality-is-relation-vrtcore
+          module_dir=.lake/build/vrtcore-relational-causality-modules
+          mkdir -p "$module_dir"
+          LEAN_PATH="$publication" lake env lean \
+            -E hasSorry \
+            --root="$publication" \
+            -o "$module_dir/VRTCore_RelationalCausality_Candidate.olean" \
+            "$publication/VRTCore_RelationalCausality_Candidate.lean" \
+            2>&1 | tee .lake/build/vrtcore-relational-causality-kernel.log
+          LEAN_PATH="$module_dir:$publication" lake env lean \
+            -E hasSorry \
+            --root="$publication" \
+            "$publication/VRTCore_RelationalCausality_AxiomAudit.lean" \
+            2>&1 | tee .lake/build/vrtcore-relational-causality-axioms.log
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          from collections import Counter
+          from pathlib import Path
+
+          repository_root = Path('../..').resolve()
+          publication_dir = repository_root / 'docs/publications/2026-08-02-causality-is-relation-vrtcore'
+          plan = json.loads((publication_dir / 'KERNEL_PROOF_PLAN.json').read_text(encoding='utf-8'))
+          expected_names = plan['theorems']
+          expected_axioms = plan['expected_axioms_by_theorem']
+          if list(expected_axioms) != expected_names:
+              raise SystemExit('proof-plan theorem and expected-axiom inventories differ')
+
+          text = Path('.lake/build/vrtcore-relational-causality-axioms.log').read_text(encoding='utf-8')
+          lines = [line for line in text.splitlines() if line.strip()]
+          pattern = re.compile(
+              r"'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])"
+          )
+          reports = []
+          for line in lines:
+              match = pattern.fullmatch(line)
+              if match is None:
+                  raise SystemExit(f'unexpected axiom-audit output line: {line!r}')
+              axioms = [item.strip() for item in (match.group(2) or '').split(',') if item.strip()]
+              reports.append((match.group(1), axioms))
+          names = [name for name, _axioms in reports]
+          counts = Counter(names)
+          if counts != Counter(expected_names) or any(count != 1 for count in counts.values()):
+              raise SystemExit(f'axiom-report inventory differs: observed={dict(counts)}')
+          observed_axioms = {name: axioms for name, axioms in reports}
+          if observed_axioms != expected_axioms:
+              raise SystemExit(f'axiom inventory differs: observed={observed_axioms}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': path.relative_to(repository_root).as_posix(),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': hashlib.sha1(
+                      f'blob {len(raw)}\0'.encode('ascii') + raw
+                  ).hexdigest(),
+              }
+
+          source = repository_root / plan['source']['path']
+          audit = repository_root / plan['axiom_audit']['path']
+          if identity(source) != plan['source']:
+              raise SystemExit('candidate identity differs from proof plan')
+          if identity(audit) != plan['axiom_audit']:
+              raise SystemExit('axiom-audit identity differs from proof plan')
+
+          lean_version = subprocess.check_output(
+              ['lake', 'env', 'lean', '--version'], text=True
+          ).strip()
+          lean_githash = subprocess.check_output(
+              ['lake', 'env', 'lean', '--githash'], text=True
+          ).strip()
+          evidence = {
+              'schema': 'qikvrt_vrtcore_ci_kernel_evidence_v1',
+              'publication_id': plan['publication_id'],
+              'state': 'KERNEL_STEP_VERIFIED',
+              'global_pass': 'NOT_CLAIMED',
+              'final_pass': 'NOT_CLAIMED',
+              'effect_ack_done': 'NOT_CLAIMED',
+              'exact_head_bound': True,
+              'github_sha': os.environ['GITHUB_SHA'],
+              'github_run_id': os.environ['GITHUB_RUN_ID'],
+              'github_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'github_run_url': (
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+                  f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              ),
+              'runtime': {
+                  'lean_version_output': lean_version,
+                  'lean_githash': lean_githash,
+                  'toolchain': plan['toolchain'],
+                  'imports': plan['imports'],
+              },
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'source_exit_code': 0,
+              'axiom_audit_exit_code': 0,
+              'theorem_count': len(expected_names),
+              'axioms_by_theorem': observed_axioms,
+              'project_axioms': [],
+              'scope_boundary': plan['nonclaims'],
+          }
+          Path('.lake/build/vrtcore-relational-causality-evidence.json').write_text(
+              json.dumps(evidence, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+      - name: Upload VRTCore kernel evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-vrtcore-relational-causality-kernel-evidence
+          retention-days: 30
+          path: |
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/vrtcore-relational-causality-kernel.log
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/vrtcore-relational-causality-axioms.log
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/vrtcore-relational-causality-evidence.json
+          if-no-files-found: error
       - name: Audit legacy and EFFECT_ACK theorem dependencies
         run: python3 scripts/audit_lean_axioms.py
       - name: Verify canonical temporal-memory publication kernel plan

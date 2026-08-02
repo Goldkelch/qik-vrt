@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt_vrtcore_artifact_path_map_v1",
+  "publication_id": "qikvrt-causality-is-relation-vrtcore-v1",
+  "purpose": "Preserve returned names while making additive H0 and local-evidence aliases explicit.",
+  "byte_identical_aliases": [
+    {
+      "original_path": "VRTCore_CLAIM_MATRIX.json",
+      "stored_path": "VRTCore_CLAIM_MATRIX_H0_RETURNED.json",
+      "sha256": "b663ebe9ea146f8e10149f1850ee7ae9d45450be28eba0cdeee22956b3b8ad2e",
+      "reason": "The H0 suffix prevents the pre-kernel claim state from being mistaken for a later verified transition."
+    },
+    {
+      "original_path": "Lean_Proc_SelfExe_Diagnostic.log",
+      "stored_alias": "LOCAL_PROC_DIAGNOSTIC.log",
+      "sha256": "23ae55b6917a0d28772e55eff1aea6c26522f2597e93cd5478818c6cde5dd12b"
+    },
+    {
+      "original_path": "Lean_4.19.0_Runtime_Identity.log",
+      "stored_alias": "LOCAL_RUNTIME_IDENTITY.log",
+      "sha256": "44bcb508922d9d5288284c5507399e7e7f58e5df05f6746749ab31bfdfc03029"
+    },
+    {
+      "original_path": "VRTCore_Lean_4.19.0_Kernel_Command.log",
+      "stored_alias": "LOCAL_KERNEL_COMMAND.log",
+      "sha256": "58ebbe9e2e8cb8d0f30652c69353b4e06bc34ee7f74f34f9c99d2cdfe7b583db"
+    },
+    {
+      "original_path": "VRTCore_Lean_4.19.0_Axiom_Audit.log",
+      "stored_alias": "LOCAL_AXIOM_AUDIT.log",
+      "sha256": "c9d02a95435eb2c11c6ac340eb35366767e5a6619b8ae267fe810b05a6a4fc01"
+    }
+  ],
+  "separate_audit_sources": [
+    {
+      "path": "VRTCore_Axiom_Audit.lean",
+      "sha256": "f0af1df9fefb32871d715d366d437e2360e11d7c21719da5f3239e588b7e1ce5",
+      "role": "exact source used for the supplemental local execution"
+    },
+    {
+      "path": "VRTCore_RelationalCausality_AxiomAudit.lean",
+      "sha256": "5d3ceb24125acd41b34725e485ab0a4f4f61492273cf60b6973c9851da7eabb7",
+      "role": "comment-documented, theorem-identical source bound by the repository CI proof plan"
+    }
+  ],
+  "intentionally_excluded": [
+    {
+      "path": "lean_selfexe_compat.so",
+      "sha256": "5e6c3e1cc676d21064ac242e0df4c97d55bd352d9216799605474f798b4e3f64",
+      "reason": "Host-specific compiled preload binary; its auditable C source is preserved and CI does not use the shim."
+    },
+    {
+      "path": "Lean 4.19.0 distribution tree",
+      "sha256": null,
+      "reason": "Third-party runtime is identified by official release URL and archive digest rather than vendored into the publication."
+    }
+  ]
+}

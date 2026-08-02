@@ -1,0 +1,180 @@
+{
+  "schema_id": "qik-vrt.lean-kernel-receipt.v1",
+  "receipt_type": "QIK-VRT_VRTCORE_LEAN_KERNEL_CHECK",
+  "issued_at_utc": "2026-08-02T03:50:20Z",
+  "kernel_check": "PASS",
+  "global_pass": "NOT_CLAIMED",
+  "final_pass": "NOT_CLAIMED",
+  "effect_ack_done": "NOT_CLAIMED",
+  "source": {
+    "path": "VRTCore_RelationalCausality_Candidate.lean",
+    "bytes": 12301,
+    "sha256_before_check": "1a39cd338f543f642acf634ffb2b63cd2c1a2ffe92878208f48d71a68a8e7d22",
+    "sha256_after_check": "1a39cd338f543f642acf634ffb2b63cd2c1a2ffe92878208f48d71a68a8e7d22",
+    "theorem_declarations": 21,
+    "source_mutated_for_check": false
+  },
+  "runtime": {
+    "distribution": "official leanprover/lean4 GitHub release asset",
+    "release_url": "https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst",
+    "archive_bytes": 343842845,
+    "archive_sha256": "6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe",
+    "lean_version": "4.19.0",
+    "lean_target": "x86_64-unknown-linux-gnu",
+    "lean_profile": "Release",
+    "lean_commit": "6caaee842e9495688c1567e78c0e68dbb96942aa",
+    "lean_binary_sha256": "92c3d35b5bfaa5e0fea413a775d504cf46cd95e1345df61c2274f76779e7e023",
+    "lake_version": "5.0.0-6caaee8",
+    "lake_binary_sha256": "5111aee5c9434ab05d4265606475ef22e8bda69aaf3a0657b61a7eec6e550bed",
+    "temporary_sysroot": "/tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux"
+  },
+  "environment_diagnosis": {
+    "initial_path_tools": {
+      "lean": false,
+      "lake": false,
+      "elan": false,
+      "nix": false,
+      "docker": false,
+      "podman": false
+    },
+    "proc_self_exe": "READABLE",
+    "proc_numeric_own_pid_exe": "EACCES",
+    "direct_lean_version_exit_code": 1,
+    "direct_lean_error": "error: failed to locate application",
+    "cause": "Lean 4.19's Linux runtime resolves its application through /proc/<pid>/exe; this environment denies numeric /proc PID executable links, including the caller's own PID, while allowing /proc/self/exe.",
+    "diagnostic_log": {
+      "path": "Lean_Proc_SelfExe_Diagnostic.log",
+      "sha256": "23ae55b6917a0d28772e55eff1aea6c26522f2597e93cd5478818c6cde5dd12b"
+    },
+    "direct_start_log": {
+      "path": "Lean_4.19.0_Direct_Start_Blocker.log",
+      "sha256": "c82df870ca9b5c1f3b845ad4db1390a1c2eb49cdd84e15c5945db5e5dc20089d"
+    }
+  },
+  "compatibility_route": {
+    "method": "LD_PRELOAD self-executable compatibility shim",
+    "scope": "Only maps /proc/<current-process-pid>/exe to the equivalent /proc/self/exe alias; all other readlink calls are passed unchanged to the kernel.",
+    "reads_other_processes": false,
+    "modifies_lean_binary": false,
+    "source_path": "lean_selfexe_compat.c",
+    "source_sha256": "5b797bcf5673e81099b2f675f42211b0af92bef2c4553701e82d02035bc08f4d",
+    "binary_path": "lean_selfexe_compat.so",
+    "binary_sha256": "5e6c3e1cc676d21064ac242e0df4c97d55bd352d9216799605474f798b4e3f64",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "compile_exit_code": 0,
+    "runtime_identity_log": {
+      "path": "Lean_4.19.0_Runtime_Identity.log",
+      "sha256": "44bcb508922d9d5288284c5507399e7e7f58e5df05f6746749ab31bfdfc03029"
+    }
+  },
+  "commands": [
+    {
+      "purpose": "download official runtime",
+      "command": "curl --fail --location --retry 3 --retry-delay 2 --output /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar.zst https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst",
+      "exit_code": 0
+    },
+    {
+      "purpose": "attempt native zstd extraction",
+      "command": "tar --zstd -xf /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar.zst -C /tmp/qik-vrt-lean-4.19.0/extracted",
+      "exit_code": 2,
+      "result": "expected toolchain blocker: the zstd CLI was not installed"
+    },
+    {
+      "purpose": "decompress official zstd archive",
+      "command": "python3 -c <zstandard.ZstdDecompressor.copy_stream> /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar.zst /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar",
+      "python_version": "3.12.13",
+      "zstandard_version": "0.25.0",
+      "exit_code": 0
+    },
+    {
+      "purpose": "attempt extraction with archived numeric ownership",
+      "command": "tar -xf /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar -C /tmp/qik-vrt-lean-4.19.0/extracted",
+      "exit_code": 2,
+      "result": "archive payload was readable, but applying archived uid 1001/gid 1002 was rejected by the environment"
+    },
+    {
+      "purpose": "extract runtime without archived ownership",
+      "command": "tar --no-same-owner -xf /tmp/qik-vrt-lean-4.19.0/lean-4.19.0-linux.tar -C /tmp/qik-vrt-lean-4.19.0/extracted-clean",
+      "exit_code": 0
+    },
+    {
+      "purpose": "compile compatibility shim",
+      "command": "cc -shared -fPIC -O2 -Wall -Wextra -Werror -Wl,-z,relro,-z,now -o lean_selfexe_compat.so lean_selfexe_compat.c",
+      "exit_code": 0
+    },
+    {
+      "purpose": "reproduce direct-start blocker",
+      "command": "/tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean --version",
+      "exit_code": 1
+    },
+    {
+      "purpose": "test whether LEAN_SYSROOT alone resolves the blocker",
+      "command": "LEAN_SYSROOT=/tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux /tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean --version",
+      "exit_code": 1,
+      "result": "error: failed to locate application"
+    },
+    {
+      "purpose": "identify runtime through compatibility route",
+      "command": "LD_PRELOAD=lean_selfexe_compat.so /tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean --version",
+      "exit_code": 0
+    },
+    {
+      "purpose": "kernel-elaborate exact candidate",
+      "command": "LD_PRELOAD=lean_selfexe_compat.so /tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean VRTCore_RelationalCausality_Candidate.lean",
+      "exit_code": 0
+    },
+    {
+      "purpose": "build temporary OLean for independent axiom audit",
+      "command": "LD_PRELOAD=lean_selfexe_compat.so /tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean -o /tmp/qik-vrt-lean-4.19.0/audit-modules/VRTCore_RelationalCausality_Candidate.olean VRTCore_RelationalCausality_Candidate.lean",
+      "exit_code": 0
+    },
+    {
+      "purpose": "print theorem axiom dependencies",
+      "command": "LEAN_PATH=/tmp/qik-vrt-lean-4.19.0/audit-modules LD_PRELOAD=lean_selfexe_compat.so /tmp/qik-vrt-lean-4.19.0/extracted-clean/lean-4.19.0-linux/bin/lean VRTCore_Axiom_Audit.lean",
+      "exit_code": 0
+    }
+  ],
+  "kernel_result": {
+    "exit_code": 0,
+    "stdout_stderr": "empty",
+    "raw_log_path": "VRTCore_Lean_4.19.0_Kernel_Check.log",
+    "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "command_log_path": "VRTCore_Lean_4.19.0_Kernel_Command.log",
+    "command_log_sha256": "58ebbe9e2e8cb8d0f30652c69353b4e06bc34ee7f74f34f9c99d2cdfe7b583db"
+  },
+  "axiom_audit": {
+    "exit_code": 0,
+    "theorems_audited": 21,
+    "no_axiom_dependencies": 15,
+    "lean_foundational_propext_only": 6,
+    "project_axioms": [],
+    "sorry_or_admit": false,
+    "propext_theorems": [
+      "QIKVRT.VRTCore.epistemicKindExhaustive",
+      "QIKVRT.VRTCore.withheldAuthorizationBlocksAnyReceipt",
+      "QIKVRT.VRTCore.successfulReceiptStillBlockedWithoutAuthority",
+      "QIKVRT.VRTCore.memAppendLeft",
+      "QIKVRT.VRTCore.mergePreserves",
+      "QIKVRT.VRTCore.recursiveStepPreserves"
+    ],
+    "audit_source_path": "VRTCore_Axiom_Audit.lean",
+    "audit_source_sha256": "f0af1df9fefb32871d715d366d437e2360e11d7c21719da5f3239e588b7e1ce5",
+    "audit_log_path": "VRTCore_Lean_4.19.0_Axiom_Audit.log",
+    "audit_log_sha256": "c9d02a95435eb2c11c6ac340eb35366767e5a6619b8ae267fe810b05a6a4fc01"
+  },
+  "scope_boundary": {
+    "proved": "The 21 declarations elaborate and are accepted by Lean 4.19.0 for the exact source hash above.",
+    "not_proved": [
+      "physical causality is fundamentally relational",
+      "quantum-to-classical spacetime emergence",
+      "Minkowski geometry follows from quantum dynamics",
+      "general Lorentzian emergence",
+      "empirical adequacy or human benefit"
+    ]
+  },
+  "effects": {
+    "repository_files_modified_by_this_check": false,
+    "remote_mutation": false,
+    "external_publication": false
+  }
+}

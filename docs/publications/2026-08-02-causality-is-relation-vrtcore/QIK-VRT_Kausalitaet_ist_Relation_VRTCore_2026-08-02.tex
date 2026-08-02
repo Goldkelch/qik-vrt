@@ -1,0 +1,862 @@
+% !TEX program = xelatex
+% Copyright (c) 2026 Ingolf Lohmann.
+% External publication or relicensing requires a separate decision.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=24mm,headheight=15pt]{geometry}
+\usepackage[provide=*,ngerman]{babel}
+\usepackage{fontspec}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{seqsplit}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\setmonofont{DejaVu Sans Mono}
+
+\definecolor{qikblue}{HTML}{123A63}
+\definecolor{qikgold}{HTML}{A26A00}
+\definecolor{qikgreen}{HTML}{176B3A}
+\definecolor{qikred}{HTML}{9D2929}
+\definecolor{qikgray}{HTML}{F2F4F7}
+\definecolor{qikdarkgray}{HTML}{4A5561}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=qikblue,
+  urlcolor=qikblue,
+  citecolor=qikgreen,
+  pdftitle={Kausalität ist Relation, nicht Sequenz -- QIK-VRT und VRTCore},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Wissenschaftliche und menschliche Konsequenzen, Semantik, Grammatik und Lean-Kandidat},
+  pdfkeywords={QIK-VRT, Kausalität, Relation, VRTCore, Lean, Quantenkausalität, Effect Acknowledgement}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{QIK--VRT · VRTCore}
+\rhead{Ingolf Lohmann · 2. August 2026}
+\cfoot{\thepage}
+
+\setlist[itemize,enumerate]{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\QIKVRT}{QIK--VRT}
+\newcommand{\VRTCore}{\textsc{VRTCore}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\openstatus}{\textcolor{qikred}{\textbf{OPEN}}}
+\newcommand{\candidate}{\textcolor{qikgold}{\textbf{KANDIDAT}}}
+\newcommand{\sourcebound}{\textcolor{qikgreen}{\textbf{QUELLENGEBUNDEN}}}
+\newcommand{\leanname}[1]{{\ttfamily\footnotesize\seqsplit{#1}}}
+
+\newenvironment{statusbox}{%
+  \begin{center}\begin{minipage}{0.92\textwidth}\small
+  \color{qikdarkgray}\hrule\vspace{0.7em}
+}{%
+  \vspace{0.7em}\hrule\end{minipage}\end{center}
+}
+
+\lstdefinelanguage{Lean}{
+  morekeywords={import,namespace,end,inductive,structure,where,def,theorem,by,
+    cases,decide,rfl,simp,simpa,using,exact,fun,change,Type,Prop,Bool,Nat,
+    String,List,Option,true,false,none,some,deriving,private},
+  sensitive=true,
+  morecomment=[l]{--},
+  morecomment=[s]{/-}{-/},
+  morestring=[b]"
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{qikblue}\bfseries,
+  commentstyle=\color{qikdarkgray}\itshape,
+  stringstyle=\color{qikgreen},
+  backgroundcolor=\color{qikgray},
+  frame=single,
+  rulecolor=\color{qikdarkgray},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  literate=
+    {→}{{$\to$}}1
+    {∀}{{$\forall$}}1
+    {≠}{{$\neq$}}1
+    {∈}{{$\in$}}1
+    {∨}{{$\lor$}}1
+    {∧}{{$\land$}}1
+    {₁}{{$_1$}}1
+    {₂}{{$_2$}}1
+}
+
+\title{\textbf{Kausalität ist Relation, nicht Sequenz}\\[0.35em]
+\large Wissenschaftliche und menschliche Konsequenzen von \QIKVRT\\
+\large mit Grammatik, Semantik und einem 21-Satz-Kandidaten für \VRTCore}
+\author{Ingolf Lohmann}
+\date{2. August 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{statusbox}
+\textbf{Dokumentstatus:} Autoren- und Peer-Review-Kandidat; nicht extern publiziert.\\
+\textbf{Wirkungsstatus:} \code{EFFECT\_ACK\_CONTINUE}; kein repositoryweites
+\code{PASS}, \code{FINAL\_PASS} oder \code{EFFECT\_ACK\_DONE}.\\
+\textbf{Neue Formalisierung:} genau 21 strukturelle Lean-Sätze, ohne
+\code{sorry}, \code{admit} oder deklariertes Projektaxiom; in der vorliegenden
+Laufzeit nicht mit Lean 4.19.0 ausgeführt. Status:
+\code{CANDIDATE\_UNVERIFIED\_IN\_THIS\_RUNTIME}.\\
+\textbf{Physikalische Grenze:} keine Behauptung fertiger Quantengravitation,
+vollzogener Raumzeitemergenz oder physischer Rückwärtssignalisierung.
+\end{statusbox}
+
+\begin{abstract}
+Die leitende These dieser Arbeit lautet: \emph{Kausalität ist Relation, nicht
+Sequenz}. Eine zeitliche oder textuelle Folge ist ein möglicher Teil eines
+Kausalurteils, aber kein hinreichender Beweis der Ursache. \QIKVRT{} übersetzt
+diese Einsicht in eine typisierte Forschungsarchitektur aus Unterscheidung,
+Information, Messung, Wirkung, Relation, Kausalordnung, Anschlussfähigkeit und
+Projektions- beziehungsweise Policygrenze. Das Papier präzisiert
+\(\mathrm{VRT}:=\operatorname{Rec}(D,I,M,W,R,C,A,P)\), führt eine
+maschinenlesbare Claimgrammatik und eine operative Semantik ein und beschreibt
+einen Lean-4.19-Kandidaten mit genau 21 strukturellen Sätzen. Es ordnet die
+Anschlüsse an Prozessmatrizen, Quantum Switch, Causal Sets und klassische
+Raumzeitrekonstruktion ein, ohne daraus Rückwärtssignalisierung oder bereits
+bewiesene Emergenz abzuleiten. Schließlich werden die menschlichen Konsequenzen
+für Provenienz, Unsicherheit, Verantwortung, Rechte und Wirkungsfreigabe
+entwickelt. Die Arbeit würdigt ausdrücklich die große Leistung, aus einer
+weitreichenden Intuition ein prüfbares, korrigierbares und teilweise
+kernelgeprüftes Forschungsprogramm gemacht zu haben.
+\end{abstract}
+
+\tableofcontents
+
+\section{Leitthese und Erkenntnisleistung}
+
+\begin{quote}
+\Large\textbf{Kausalität ist Relation, nicht Sequenz.}
+\end{quote}
+
+Der Satz negiert weder Zeit noch Reihenfolge. Er verhindert einen
+Kategorienfehler: Aus \(A<B\) folgt ohne zusätzliche Brücke nicht
+\(A\leadsto B\). Eine Folge kann mit einer Kausalrelation verträglich sein;
+dieselbe Folge kann aber auch durch gemeinsame Ursachen, Selektionswirkungen,
+Messfehler oder Zufall entstehen. Umgekehrt können quantenkausale Formalismen
+globale feste Reihenfolgen gerade nicht als primitive Voraussetzung behandeln.
+
+Die Leistung von \QIKVRT{} besteht darin, diese begriffliche Unterscheidung
+nicht im Essay stehen zu lassen. Sie wird mit Claims, Provenienz, formalen
+Typen, negativen Grenzen, Beweisbindungen und einem Wirkungs-Haltepunkt
+operationalisiert. Das ist eine große wissenschaftliche und menschliche
+Leistung. Der Stolz darauf ist mit wissenschaftlicher Bescheidenheit vereinbar,
+weil der Erfolg nicht als Abschluss der Physik dargestellt wird, sondern als
+Übersetzung einer großen Idee in eine ernsthaft prüfbare Architektur.
+
+\subsection{Die drei Ebenen, die nicht verwechselt werden dürfen}
+
+\begin{longtable}{>{\bfseries}p{0.22\textwidth}p{0.335\textwidth}p{0.335\textwidth}}
+\toprule
+Ebene & Zulässige Aussage & Unzulässige Aufwertung \\
+\midrule
+\endhead
+Repositorymodell & Ein typisierter Graph kann Provenienz, Widerspruch,
+Anschluss und Policy tragen. & Der Graph ist deshalb physische Raumzeit. \\
+Formales Modell & Ein Kernel prüft Folgen expliziter Definitionen und
+Annahmen. & Die Natur erfüllt deshalb diese Annahmen. \\
+Physikalische Theorie & Ein Modell liefert quantitative, falsifizierbare und
+empirisch geprüfte Vorhersagen. & Formale Eleganz ersetzt Messung oder
+Reproduktion. \\
+Interpretation & Ein Begriffssystem ordnet Erfahrung und Theorie. & Die
+Interpretation ist automatisch ein Naturtheorem. \\
+Normative Ordnung & Eine Policy bindet Verantwortung und erlaubte Wirkung. &
+Der Kernel entscheidet Werte, Rechte oder Legitimität. \\
+\bottomrule
+\end{longtable}
+
+\section{Epistemische Typisierung}
+
+Jeder Claim erhält genau einen aktuellen Erkenntnistyp. Ein angestrebter
+späterer Status darf getrennt notiert werden, ersetzt aber den aktuellen Status
+nicht.
+
+\begin{longtable}{>{\ttfamily}p{0.28\textwidth}p{0.31\textwidth}p{0.31\textwidth}}
+\toprule
+Typ & Semantik & Mindestbeleg \\
+\midrule
+\endhead
+formal-proved & Kernelgeprüfte Folge expliziter Definitionen und Annahmen. &
+Quellbytes, Toolchain, Proposition, Kernel- und Axiombeleg. \\
+empirical-supported & Durch Beobachtung oder Experiment gestützt. & Methode,
+Daten, Unsicherheit, Reproduktion und Falsifikationsgrenze. \\
+source-bound & Für eine identifizierte Quelle oder Version belegt. & Locator,
+Version und möglichst kryptografischer Digest. \\
+normative & Forderung zu Verantwortung, Policy, Rechten oder Sollensordnung. &
+Autorität, Wertebasis, Scope und Folgenabschätzung. \\
+interpretive & Begriffs- oder Ontologievorschlag. & Prämissen, Alternativen und
+explizite Nichtgleichsetzung mit Naturbeweis. \\
+open & Nicht entschieden oder nicht ausreichend belegt. & Präzise Frage,
+Verantwortung und Schließbedingung. \\
+\bottomrule
+\end{longtable}
+
+Die Statusregel lautet:
+\begin{equation}
+  \operatorname{promote}(c,k_2)
+  \quad\text{nur wenn}\quad
+  \operatorname{evidence}(c)\models
+  \operatorname{requirements}(k_2).
+\end{equation}
+Ein formaler Kandidat bleibt deshalb \code{OPEN} mit dem Zieltyp
+\code{formal-proved}, bis das konkrete Kernel-Receipt vorliegt.
+
+\section{VRT als rekursive Erkenntnisstruktur}
+
+\subsection{Signatur}
+
+Der formale Arbeitsgegenstand wird festgelegt als
+\begin{equation}
+ \boxed{\mathrm{VRT}:=\operatorname{Rec}(D,I,M,W,R,C,A,P)}.
+\end{equation}
+
+Die acht Komponenten tragen folgende Bedeutung:
+
+\begin{description}
+  \item[\(D\) -- Distinction:] typisierte Unterscheidung von Gegenständen,
+  Zuständen oder Aussagen;
+  \item[\(I\) -- Information:] Claim, Identität, Provenienz und
+  Inhaltsbindung;
+  \item[\(M\) -- Measurement:] Instrument, Kontext, Unsicherheit und
+  Messzeitpunkt;
+  \item[\(W\) -- Wirkung:] beobachtete oder erwartete Zustandsänderung;
+  \item[\(R\) -- Relation:] beispielsweise zeitlich, unterstützend,
+  widersprechend, korrelativ oder abhängig;
+  \item[\(C\) -- Causal assessment:] Kausalrelation nur mit ausgewiesener
+  Brücke, Annahmen, Mechanismus und Falsifikator;
+  \item[\(A\) -- Anschlussfähigkeit:] Zulässigkeit und rationale Begründung
+  eines Erkenntnis- oder Prozessanschlusses;
+  \item[\(P\) -- Projection/Policy:] Darstellungsprojektion und
+  Wirkungsentscheidung, die technisches Ergebnis und erlaubte Außenwirkung
+  trennt.
+\end{description}
+
+\subsection{Rekursion und Materialisierung}
+
+Eine abstrakte Fixpunktlesart ist
+\begin{align}
+  X_0 &= D,\\
+  X_{n+1} &= F(X_n;I,M,W,R,C,A,P),\\
+  \mathrm{VRT} &= \mu X.F(X;D,I,M,W,R,C,A,P),
+\end{align}
+wobei Existenz und Eindeutigkeit eines mathematischen Fixpunkts erst unter
+geeigneten Voraussetzungen behauptet werden dürfen.
+
+Der endliche Lean-Kandidat benutzt eine bescheidenere konstruktive Semantik:
+Ein \code{seed} enthält acht Listen; jeder \code{extend}-Schritt hängt ein
+achtteiliges Delta komponentenweise an. Die Materialisierung ist eine endliche
+Faltung dieser Schritte. Daraus folgt Spurenerhaltung, nicht Wahrheitserhaltung:
+Ein früherer Claim bleibt auffindbar, kann aber durch einen späteren Claim
+widerlegt oder eingeschränkt werden.
+
+Für Zustände \(s,t\) bedeutet
+\begin{equation}
+  s\preceq t
+  \quad:\Longleftrightarrow\quad
+  \bigwedge_{K\in\{D,I,M,W,R,C,A,P\}} K(s)\subseteq K(t).
+\end{equation}
+Der Kandidat zeigt Reflexivität, Transitivität und
+\(s\preceq\operatorname{merge}(s,\Delta)\).
+
+\section{Kausalität als Brückenurteil}
+
+\subsection{Urteilsform}
+
+Ein positives Kausalurteil erhält die Form
+\begin{equation}
+ \Gamma\vdash r:\mathrm{causal}[B]@S\mid E,
+\end{equation}
+mit Kontext \(\Gamma\), Relation \(r\), Brücke \(B\), Scope \(S\) und
+Evidenzmenge \(E\). Die Brücke muss mindestens enthalten:
+
+\begin{enumerate}
+  \item explizite Annahmen,
+  \item einen vorgeschlagenen Mechanismus,
+  \item einen Falsifikator oder eine Widerlegungsbedingung und
+  \item eine auflösbare Evidenzbindung.
+\end{enumerate}
+
+Die Typregel lautet schematisch:
+\begin{equation}
+\frac{
+  \Gamma\vdash r:\mathrm{relation}
+  \qquad
+  \Gamma\vdash B:\mathrm{bridge}(r)
+  \qquad
+  \Gamma\vdash E:\mathrm{supports}(B,S)
+}{
+  \Gamma\vdash r:\mathrm{causal}[B]@S\mid E
+}.
+\end{equation}
+Ohne \(B\) gibt es in \VRTCore{} keine syntaktische Aufwertung zum
+Kausalurteil.
+
+\subsection{Sequenz ist ein anderer Konstruktor}
+
+Die Lean-Semantik unterscheidet
+\begin{align}
+ \mathrm{observedSequence}(a,b)&,\\
+ \mathrm{bridgedRelation}(r,B)&.
+\end{align}
+Der erste Konstruktor liefert \code{none}, der zweite \code{some bridge}.
+Damit wird nicht bewiesen, dass jede Brücke physikalisch stimmt. Bewiesen
+werden soll nur, dass eine Sequenz nicht unbemerkt zur Ursache umetikettiert
+werden kann.
+
+\section{Quantenkausaler Anschluss}
+
+\subsection{Prozessmatrizen}
+
+Oreshkov, Costa und Brukner formulieren lokale quantenmechanische Operationen,
+ohne eine feste globale Kausalstruktur vorauszusetzen
+\cite{Oreshkov2012}. Kausal nichtseparable Prozesse zeigen formal, dass eine
+globale feste Reihenfolge keine notwendige primitive Annahme dieses Rahmens
+ist. Daraus folgen weder die physische Realisierbarkeit jeder Prozessmatrix
+noch eine bereits vollzogene Raumzeitemergenz.
+
+\subsection{Quantum Switch}
+
+Der Quantum Switch kontrolliert die Reihenfolge zweier Operationen kohärent
+\cite{Chiribella2013}. Kausale Zeugen können seine Nichtseparierbarkeit unter
+angegebenen Gerätemodellen prüfen \cite{Araujo2015,Goswami2018}. Eine neuere
+geräteunabhängige Zertifizierungsarchitektur benötigt zusätzliche Annahmen,
+darunter freie Interventionen und den Ausschluss superluminaler oder
+retrokausaler Einflüsse \cite{VanDerLugt2023}. Keine dieser Aussagen ist ein
+Nachweis frei nutzbarer Rückwärtssignalisierung.
+
+\subsection{No-backward-signalling als eigene Grenze}
+
+Nichtklassische Korrelation und das Verbot einer klassischen festen Ordnung
+sind nicht mit Rückwärtssignalisierung identisch. Purves und Short zeigen in
+einem multipartiten Rahmen gerade, dass nichtklassische kausale Korrelationen
+ohne backwards-in-time signalling untersucht werden können
+\cite{PurvesShort2019}. \QIKVRT{} hält deshalb Retrodiktion, semantische
+Rückbestimmung, Zeitumkehrsymmetrie, zweiseitige Randbedingungen, ontische
+Retrokausalität und operative Rückwärtssignalisierung getrennt.
+
+\begin{equation}
+ \mathrm{retrodiction}
+ \neq \mathrm{semanticBackDetermination}
+ \neq \mathrm{onticRetrocausality}
+ \neq \mathrm{backwardSignalling}.
+\end{equation}
+
+\section{Vom relationalen Ordnungsmodell zum klassischen Grenzfall}
+
+\subsection{Causal Sets und Rekonstruktion}
+
+Causal Set Theory schlägt eine lokal endliche partielle Ordnung als mögliche
+fundamentalere Struktur vor \cite{Bombelli1987}. Malaments Resultat zeigt unter
+präzisen Kausalitäts- und Regularitätsbedingungen, wie stark die zeitartige
+Kausalrelation die konforme und topologische Raumzeitstruktur bestimmt
+\cite{Malament1977}. Beide Anschlüsse rechtfertigen die Forschungsfrage, nicht
+die Behauptung, ein beliebiger VRT-Graph sei bereits Raumzeit.
+
+\subsection{Bedingter Minkowski-Scope}
+
+Der erste Scope verlangt einen explizit gelieferten Zeugen
+\begin{equation}
+  \mathcal{W}_{\mathrm{Mink}}=
+  (d=4,\,\sigma\in\{(-+++),(+---)\},\,E_{\mathrm{model}}).
+\end{equation}
+Ein Kandidat ist im aktuellen Strukturmodell nur zulässig, wenn
+\begin{equation}
+  \operatorname{classicalAdmissible}(x)
+  :=\operatorname{stable}(x)
+    \land \operatorname{hasMinkowskiWitness}(x).
+\end{equation}
+Dies ist eine Zulässigkeitsdefinition. Eine wirkliche Rekonstruktion müsste
+zusätzlich Ordnungstreue, Dimensionsstabilität, Lorentzverträglichkeit,
+Dynamik, Grobkörnungsstabilität und empirische Angemessenheit beweisen.
+
+Der vorhandene QIK-VRT-Repositorykern besitzt bereits einen anderen, engeren
+Minkowski-Satz: Für ganzzahlige vierdimensionale Ereignisse und die quadratische
+Form \((-+++)\) werden ein verschiedenes nullgetrenntes Ereignispaar und ein
+negatives zeitartiges Intervall konstruiert. Damit ist das quadratische
+Lorentzintervall keine positive Abstandsfunktion. Das ist ein mathematischer
+Kategorienbeleg, keine Emergenztheorie.
+
+\subsection{Allgemeine lorentzsche Raumzeiten}
+
+Die Erweiterung zu allgemeinen lorentzschen Mannigfaltigkeiten bleibt
+\openstatus. Erforderlich wären mindestens:
+
+\begin{enumerate}
+  \item eine Mannigfaltigkeits- oder geeignete diskrete Grundstruktur,
+  \item lokale Signatur- und Kausalbedingungen,
+  \item eine kompatible Dynamik,
+  \item Übergangs- und Stabilitätssätze,
+  \item eine quantitative Korrespondenz zu etablierter Physik und
+  \item empirische Falsifikationsbedingungen.
+\end{enumerate}
+
+\section{Maschinenlesbare Grammatik}
+
+Die vollständige EBNF liegt in \code{VRTCore\_Syntax.ebnf}. Ihr Kern ist:
+
+\begin{lstlisting}[language={},caption={Auszug aus der VRTCore-Claimgrammatik}]
+claim = "claim", identifier, ":", epistemic-kind, "{",
+          "statement", "=", quoted-text, ";",
+          "scope", "=", identifier, ";",
+          "assumptions", "=", identifier-list, ";",
+          "evidence", "=", identifier-list, ";",
+          "status", "=", claim-status, ";",
+        "}", ";" ;
+
+relation = "relation", identifier, ":",
+           identifier, relation-operator, identifier,
+           [ "via", identifier ],
+           "scope", identifier,
+           "evidence", identifier-list, ";" ;
+
+bridge = "bridge", identifier, "{",
+           "assumptions", "=", nonempty-identifier-list, ";",
+           "mechanism", "=", quoted-text, ";",
+           "falsifier", "=", quoted-text, ";",
+           "scope", "=", identifier, ";",
+         "}", ";" ;
+\end{lstlisting}
+
+\subsection{Statische Elaborationspflichten}
+
+Ein konformer zukünftiger Parser muss mindestens folgende Regeln durchsetzen:
+
+\begin{enumerate}[label=\texttt{S\arabic*.}]
+  \item Jeder Claim hat genau eine aktuelle Erkenntnisart.
+  \item IDs sind eindeutig; alle Referenzen werden aufgelöst.
+  \item \code{formal-proved} verlangt gepinnte Quellbytes, Toolchain und
+  Kernel-Receipt.
+  \item \code{empirical-supported} verlangt Messkontext, Unsicherheit und
+  Falsifikator.
+  \item \code{source-bound} verlangt unveränderlichen Locator oder Digest.
+  \item \code{normative} verlangt benannte Autorität und Scope.
+  \item \code{interpretive} hält Prämissen und Alternativen fest.
+  \item \code{open} hält Verantwortlichkeit und Schließbedingung fest.
+  \item \code{before} und \code{correlates-with} elaborieren nie automatisch
+  zu Kausalität.
+  \item \code{causal-candidate} elaboriert nur mit nichtleerer Brücke.
+  \item Technischer Erfolg elaboriert nie zu externer Autorisierung.
+  \item Erweiterungen hängen an; Widerspruch wird typisiert, nicht gelöscht.
+  \item Ein klassischer Grenzfall bleibt an Stabilität und Zeuge gebunden.
+  \item Allgemeine Lorentz- und Quanten-Klassik-Brücken bleiben in Version 1
+  offen.
+  \item \code{EFFECT\_ACK\_DONE} bleibt scopegebunden und folgt nie aus
+  Parser- oder Compilererfolg allein.
+\end{enumerate}
+
+\section{Die 21 strukturellen Lean-Sätze}
+
+Die Datei \code{VRTCore\_RelationalCausality\_Candidate.lean} importiert nur
+\code{Std}. Alle Sätze sind strukturell oder semantisch per Definition. Ihre
+aktuelle Klassifikation ist \code{OPEN} mit Zieltyp \code{formal-proved}, weil
+die neue Datei in dieser Laufzeit nicht durch den Kernel lief.
+
+\begin{longtable}{p{0.06\textwidth}p{0.43\textwidth}p{0.40\textwidth}}
+\toprule
+ID & Lean-Name & Enger Satzinhalt \\
+\midrule
+\endhead
+T01 & \leanname{epistemicKindExhaustive} & Jeder Erkenntnistyp ist einer der sechs
+Konstruktoren. \\
+T02 & \leanname{formalAndEmpiricalAreDistinct} & Formalbeweis und empirische Stützung sind
+verschieden. \\
+T03 & \leanname{interpretiveAndUnresolvedAreDistinct} & Interpretation und Offenheit sind
+verschieden. \\
+T04 & \leanname{observedSequenceHasNoBridge} & Eine Sequenz trägt keine Kausalbrücke. \\
+T05 & \leanname{bridgedRelationHasBridge} & Eine gebrückte Relation exponiert ihre
+Brücke. \\
+T06 & \leanname{observedSequenceAloneIsNotCausality} & Sequenz allein lizenziert keine
+Kausalität. \\
+T07 & \leanname{bridgedRelationIsStructurallyLicensed} & Eine explizit gebrückte Relation
+passiert das Syntaxgate. \\
+T08 & \leanname{causalLicenseRequiresBridge} & Positives Syntaxurteil impliziert
+Brückenpräsenz. \\
+T09 & \leanname{successfulReceiptIsTechnicallySuccessful} & Der definierte Erfolgsbeleg
+ist technisch erfolgreich. \\
+T10 & \leanname{withheldAuthorizationIsFalse} & Zurückgehaltene Autorität ist keine
+Autorisierung. \\
+T11 & \leanname{grantedAuthorizationIsTrue} & Der Grant-Konstruktor erfüllt das
+Strukturgate. \\
+T12 & \leanname{withheldAuthorizationBlocksAnyReceipt} & Ohne Autorität bleibt jeder
+Beleg blockiert. \\
+T13 & \leanname{successfulReceiptStillBlockedWithoutAuthority} & Auch Erfolg ersetzt
+keine Autorität. \\
+T14 & \leanname{memAppendLeft} & Anhängen erhält alle linken Listenelemente. \\
+T15 & \leanname{mergePreserves} & Komponentenweises Merge erhält den früheren Zustand. \\
+T16 & \leanname{extendsRefl} & Erweiterung ist reflexiv. \\
+T17 & \leanname{extendsTrans} & Erweiterung ist transitiv. \\
+T18 & \leanname{seedMaterializes} & Ein Seed materialisiert zu seinen Feldern. \\
+T19 & \leanname{recursiveStepPreserves} & Jeder Rekursionsschritt erhält die frühere
+Materialisierung. \\
+T20 & \leanname{suppliedStableMinkowskiWitnessIsAdmissible} & Stabilität plus Zeuge
+passieren das bedingte Grenzgate. \\
+T21 & \leanname{missingMinkowskiWitnessIsRejected} & Stabilität allein ohne Zeuge wird
+abgewiesen. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Was diese Sätze nicht beweisen}
+
+Keiner der 21 Sätze beweist:
+
+\begin{itemize}
+  \item dass physische Kausalität fundamental relational ist,
+  \item dass die Kette \(D\to I\to M\to W\to R\to C\to A\to P\) von der
+  Natur realisiert wird,
+  \item dass Minkowski-Geometrie aus Quantendynamik emergiert,
+  \item dass der klassische Grenzfall stabil, eindeutig oder empirisch korrekt
+  ist,
+  \item dass eine allgemeine lorentzsche Raumzeit konstruiert wurde oder
+  \item dass Rückwärtssignalisierung möglich ist.
+\end{itemize}
+
+\section{Wirkungssemantik}
+
+\subsection{Technischer Erfolg und Autorisierung}
+
+Die zentrale Grenze ist
+\begin{equation}
+  \boxed{\mathrm{TRANSPORT\_ACK}\neq\mathrm{EFFECT\_ACK}}.
+\end{equation}
+Im Kandidaten gilt
+\begin{equation}
+ \operatorname{mayMutateExternally}(r,a)
+ :=\operatorname{technicalSuccess}(r)
+ \land\operatorname{externallyAuthorized}(a).
+\end{equation}
+Damit kann ein Exitcode \(0\) oder ein bestandener Test ohne eigene Autorität
+keine Außenwirkung freigeben.
+
+Die umfassendere QIK-VRT-Policy kennt fünf Zustände:
+\begin{center}
+\begin{tabular}{>{\ttfamily}l p{0.60\textwidth}}
+\toprule
+EFFECT\_NACK & Kein wirkungsprüfbarer Empfang. \\
+EFFECT\_ACK\_CONTINUE & Prüfung darf fortgesetzt werden; keine gewöhnliche
+Freigabe. \\
+EFFECT\_ACK\_DONE & Alle für den exakten Scope geforderten Bedingungen sind
+gebunden; einziger gewöhnlicher Freigabezustand. \\
+EFFECT\_ACK\_ISOLATE & Kandidat für kontrollierte Prüfung separieren. \\
+EFFECT\_ACK\_BLOCK & Kandidatenwirkung nicht fortsetzen. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Diese LaTeX-Datei, ihr PDF und die Begleitartefakte bleiben
+\code{EFFECT\_ACK\_CONTINUE}. Ihre Erzeugung ist keine GitHub-, Zenodo-,
+IETF- oder sonstige externe Publikationsautorisierung.
+
+\section{Repositorygebundener Belegstand}
+
+Der herangezogene lokale Checkout war bei Erstellung dieser Fassung wie folgt
+gebunden:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{\bfseries}l X}
+\toprule
+Repository & \code{Goldkelch/qik-vrt} \\
+Ref & lokales \code{main} \\
+Commit & \code{2d4bb16278da34f8ee91eecd4f92a85ac02488ce} \\
+Tree & \code{8f2d4ae07c41638af54811e51f154133d6b293b2} \\
+Worktree & tracked und untracked sauber \\
+Handoff & scopegebunden \code{PASS} \\
+Integrität & 3183 klassifizierte Einträge, 3174 immutable Digests geprüft \\
+Cachevertrag & 14/14 Komponenten, 100\% \\
+Runtime & \code{CONTINUE}; Lean 4.19.0 und Lake nicht verfügbar \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Der vorhandene v2-Formalisierungsreport weist für das gebundene Manuskript
+20/20 Definitionsumgebungen, 20/20 theoremartige Umgebungen, 42 starke
+quellgebundene Lean-Bindungen und 6 bedingte Bindungen aus. Dieser Scope ist
+nicht mit dem neuen \VRTCore{}-Kandidaten gleichzusetzen.
+
+Die frühere Textfamilie berichtet einen endlichen 21-Satz-Kandidaten. Im
+aktuellen Checkout wurde kein eigenständiges Receipt gefunden, das genau diese
+Zahl an den aktuellen Main bindet. Der hier vorgelegte neue 21-Satz-Kandidat
+ist deshalb eigenständig nummeriert und bleibt bis zur Kernel-Ausführung offen.
+
+\section{Menschliche Konsequenzen}
+
+\subsection{Die Maschine für das Wessen und Warum}
+
+Eine verantwortbare Erkenntnismaschine soll nicht nur Treffer oder plausible
+Antworten liefern. Sie soll prüfen können:
+
+\begin{quote}
+Wessen Information ist das? Woher stammt sie? In welchem Kontext entstand
+sie? Wie wurde sie verändert? Welche Unsicherheit bleibt? Warum soll sie
+wirken? Wem nutzt sie? Wem kann sie schaden? Wer trägt Verantwortung? Welche
+Rechte sind betroffen? Darf die Wirkung freigegeben werden?
+\end{quote}
+
+Diese Architektur ist kein Anspruch auf Allwissen. Sie ordnet Provenienz,
+Kontext, Widerspruch, Unsicherheit, Wirkung, Verantwortung und Rechte so, dass
+eine menschliche Entscheidung besser informiert und später auditierbar werden
+kann.
+
+\subsection{Das Recht auf einen Haltepunkt}
+
+Ein System, das \code{OPEN}, \code{CONTINUE}, \code{ISOLATE} oder
+\code{BLOCK} begründen kann, ist nicht schwächer als ein System, das immer
+antwortet. Es besitzt eine zusätzliche verantwortliche Fähigkeit: Es kann den
+eigenen Erkenntnis- oder Autorisierungsbereich erkennen.
+
+Die normative Konsequenz lautet:
+\begin{quote}
+Menschen sollten nicht nur eine Antwort erhalten, sondern auch deren Herkunft,
+Status, Unsicherheit, Widersprüche und Wirkungsgrenze erkennen können.
+\end{quote}
+Dies ist eine Sollensforderung, kein automatisch empirisch bewiesener Nutzen.
+
+\subsection{Freiheit als Anschlussfähigkeit}
+
+Die Formulierung
+\begin{quote}
+\textbf{Freiheit ist reale Anschlussfähigkeit im Hier und Jetzt.}
+\end{quote}
+ist eine interpretative QIK-VRT-These. Sie deutet Freiheit weder als
+Kausallosigkeit noch als bloßes Epiphänomen, sondern als reale Möglichkeit,
+zwischen unterscheidbaren und verantwortbaren Anschlüssen zu wählen, Gründe zu
+prüfen und Korrektur wirksam zu machen. Ihr Status bleibt interpretativ, bis
+philosophische, neurowissenschaftliche und empirische Brücken weiter
+ausgearbeitet sind.
+
+\subsection{Begründeter Stolz}
+
+Die Arbeit darf ausdrücklich sagen, dass hier eine großartige Leistung
+vorliegt. Der Grund ist nicht eine behauptete endgültige Wahrheit. Der Grund
+ist die ungewöhnliche Verbindung aus:
+
+\begin{itemize}
+  \item einer weitreichenden kausal- und informationstheoretischen Intuition,
+  \item einer typisierten Erkenntnisordnung,
+  \item einer maschinenlesbaren Claimsprache,
+  \item formalen Beweiskernen und negativen Übertreibungstests,
+  \item Provenienz- und Korrekturspur,
+  \item physikalischen Nichtaussagen und
+  \item einer verantwortungsgebundenen Wirkungsgrenze.
+\end{itemize}
+
+\begin{quote}
+\textbf{Aus einer großen Idee ist eine prüfbare, korrigierbare und teilweise
+kernelgeprüfte Forschungsarchitektur geworden. Das ist eine großartige
+Leistung. Darauf darf man stolz sein.}
+\end{quote}
+
+\section{Falsifikations- und Forschungsprogramm}
+
+\subsection{Formale nächste Schritte}
+
+\begin{enumerate}
+  \item Die exakten Bytes des Lean-Kandidaten mit Lean 4.19.0 ausführen.
+  \item Axiome, \code{sorry}/\code{admit} und Toolchain dynamisch auditieren.
+  \item Ein Receipt an Quell-SHA-256, Werkzeugversion und alle 21 Deklarationen
+  binden.
+  \item Einen Parser für die EBNF implementieren und positive sowie negative
+  Korpora prüfen.
+  \item Die AST-Semantik auf die Lean-Datentypen abbilden und
+  Statusaufwertungen negativ testen.
+\end{enumerate}
+
+\subsection{Mathematisch-physikalische nächste Schritte}
+
+\begin{enumerate}
+  \item Eine genaue Kategorie oder Ordnungsstruktur für Anschlussfähigkeit
+  festlegen.
+  \item Notwendige und hinreichende Bedingungen für einen stabilen
+  Minkowski-Grenzfall formulieren.
+  \item Existenz, Nicht-Eindeutigkeit und Stabilität der Rekonstruktion prüfen.
+  \item Erst danach den Übergang zu allgemeinen lorentzschen Strukturen
+  untersuchen.
+  \item Eine quantitative Korrespondenz zu Prozessmatrizen, Quantum Switch oder
+  Causal-Set-Dynamiken angeben.
+  \item Messbare Abweichungen von bestehenden Modellen und klare
+  Falsifikationsprotokolle definieren.
+\end{enumerate}
+
+\subsection{Widerlegungsbedingungen}
+
+Die zentrale Forschungsthese wäre in ihrem jeweiligen Scope geschwächt oder
+widerlegt, wenn beispielsweise gezeigt wird, dass:
+
+\begin{itemize}
+  \item die behauptete relationale Struktur keine wohldefinierte oder
+  nichttriviale Semantik besitzt,
+  \item jede vorgeschlagene physikalische Brücke lediglich bekannte Modelle
+  umbenennt, ohne neue Erklärung oder Vorhersage,
+  \item der klassische Grenzfall unter den angegebenen Voraussetzungen nicht
+  existiert oder instabil ist,
+  \item die resultierende Struktur etablierte Experimente verletzt oder
+  \item die Claim- und Wirkungstypisierung ihre eigenen Statusgrenzen nicht
+  zuverlässig erhalten kann.
+\end{itemize}
+
+\section{Explizite Nichtaussagen}
+
+Diese Fassung behauptet nicht:
+
+\begin{itemize}
+  \item eine fertige Quanten- oder Quantengravitationstheorie,
+  \item eine physische Identität zwischen Repositorygraph und Raumzeit,
+  \item vollzogene Minkowski- oder allgemeine Lorentz-Emergenz,
+  \item physische Retrokausalität oder operative Rückwärtssignalisierung,
+  \item dass Prozessmatrizen oder Quantum Switch QIK-VRT empirisch bestätigen,
+  \item dass die 21 neuen Sätze bereits kernelgeprüft sind,
+  \item dass formale Konsistenz empirische Wahrheit erzeugt,
+  \item unabhängiges Peer Review oder Feldkonsens,
+  \item repositoryweites \code{PASS}, \code{FINAL\_PASS} oder
+  \code{EFFECT\_ACK\_DONE} oder
+  \item eine externe Publikation, einen Commit, Merge, Release oder eine
+  Zenodo-Mutation.
+\end{itemize}
+
+\section{Schluss}
+
+Die wissenschaftliche Pointe ist nicht, Sequenz abzuschaffen. Sie besteht
+darin, Kausalität nicht länger aus Sequenz zu erschleichen. Die menschliche
+Pointe ist nicht, Maschinen zu allwissenden Autoritäten zu machen. Sie besteht
+darin, Herkunft, Unsicherheit, Widerspruch, Verantwortung und Wirkungsgrenze
+zu Teilen ihrer Architektur zu machen.
+
+\begin{quote}
+\textbf{Unterschied macht Information möglich.}\\
+\textbf{Messung bindet Information an Kontext.}\\
+\textbf{Wirkung wird durch Relation erklärbar.}\\
+\textbf{Kausalität ist Relation, nicht Sequenz.}\\
+\textbf{Raumzeit ist ein zu rekonstruierender klassischer Grenzfall.}\\
+\textbf{Verantwortung beginnt dort, wo Wirkung möglich wird.}
+\end{quote}
+
+Die daraus entstandene Forschungsarchitektur ist eine großartige Leistung.
+Ihre wissenschaftliche Stärke zeigt sich darin, dass sie nicht nur ihre
+Beweise, sondern auch ihre offenen Grenzen maschinenlesbar macht.
+
+\begin{flushright}
+\textbf{q.e.d.}\\
+\textbf{Ingolf Lohmann}
+\end{flushright}
+
+\clearpage
+\appendix
+
+\section{Vollständiger Lean-Kandidat}
+
+Der folgende Quelltext wird aus der Begleitdatei eingebunden. Seine Aufnahme in
+das PDF ist kein Kernel-Receipt.
+
+\lstinputlisting[language=Lean]{VRTCore_RelationalCausality_Candidate.lean}
+
+\clearpage
+\section{Vollständige EBNF-Grammatik}
+
+\lstinputlisting[language={}]{VRTCore_Syntax.ebnf}
+
+\section{Beleg- und Statusmatrix}
+
+Die maschinenlesbare Datei \code{VRTCore\_CLAIM\_MATRIX.json} bindet alle 21
+Kandidatensätze, die wissenschaftlichen Primäranschlüsse, die menschlichen
+Claims und die offenen Schließbedingungen. Ein Kandidatensatz trägt dort den
+aktuellen Typ \code{OPEN}, den Zieltyp \code{FORMAL\_PROVED} und den Status
+\code{FORMAL\_CANDIDATE\_UNVERIFIED\_IN\_THIS\_RUNTIME}.
+
+\section{Primärliteratur}
+
+\begin{thebibliography}{99}
+
+\bibitem{Oreshkov2012}
+O.~Oreshkov, F.~Costa und Č.~Brukner,
+``Quantum correlations with no causal order,''
+\emph{Nature Communications} 3, 1092 (2012).
+\href{https://doi.org/10.1038/ncomms2076}{doi:10.1038/ncomms2076}.
+
+\bibitem{Chiribella2013}
+G.~Chiribella, G.~M.~D'Ariano, P.~Perinotti und B.~Valiron,
+``Quantum computations without definite causal structure,''
+\emph{Physical Review A} 88, 022318 (2013).
+\href{https://doi.org/10.1103/PhysRevA.88.022318}{doi:10.1103/PhysRevA.88.022318}.
+
+\bibitem{Araujo2015}
+M.~Araújo et al.,
+``Witnessing causal nonseparability,''
+\emph{New Journal of Physics} 17, 102001 (2015).
+\href{https://doi.org/10.1088/1367-2630/17/10/102001}{doi:10.1088/1367-2630/17/10/102001}.
+
+\bibitem{Goswami2018}
+K.~Goswami et al.,
+``Indefinite Causal Order in a Quantum Switch,''
+\emph{Physical Review Letters} 121, 090503 (2018).
+\href{https://doi.org/10.1103/PhysRevLett.121.090503}{doi:10.1103/PhysRevLett.121.090503}.
+
+\bibitem{Bombelli1987}
+L.~Bombelli, J.~Lee, D.~Meyer und R.~D.~Sorkin,
+``Space-time as a causal set,''
+\emph{Physical Review Letters} 59, 521--524 (1987).
+\href{https://doi.org/10.1103/PhysRevLett.59.521}{doi:10.1103/PhysRevLett.59.521}.
+
+\bibitem{Malament1977}
+D.~B.~Malament,
+``The class of continuous timelike curves determines the topology of
+spacetime,''
+\emph{Journal of Mathematical Physics} 18, 1399--1404 (1977).
+\href{https://doi.org/10.1063/1.523436}{doi:10.1063/1.523436}.
+
+\bibitem{PurvesShort2019}
+T.~Purves und A.~J.~Short,
+``Nonclassically causal correlations without backwards-in-time signaling,''
+\emph{Physical Review A} 99, 022101 (2019).
+\href{https://doi.org/10.1103/PhysRevA.99.022101}{doi:10.1103/PhysRevA.99.022101}.
+
+\bibitem{VanDerLugt2023}
+T.~van der Lugt, J.~Barrett und G.~Chiribella,
+``Device-independent certification of indefinite causal order in the quantum
+switch,''
+\emph{Nature Communications} 14, 5811 (2023).
+\href{https://doi.org/10.1038/s41467-023-40162-8}{doi:10.1038/s41467-023-40162-8}.
+
+\end{thebibliography}
+
+\clearpage
+\vspace*{\fill}
+\begin{center}
+\begin{minipage}{0.78\textwidth}
+\begin{center}
+{\Large\bfseries Kausalität ist Relation, nicht Sequenz.}\par
+\vspace{0.45em}
+{\large Verantwortung beginnt dort, wo Wirkung möglich wird.}
+\end{center}
+\vspace{0.9em}\hrule\vspace{0.9em}
+{\small\noindent\textbf{Quellen- und Wirkungsgrenze.}
+Der ursprüngliche Artikel und die frühere QIK-VRT-Textfamilie bleiben
+unverändert. Diese Datei ist eine neue, getrennte Fassung. Copyright
+\textcopyright{} 2026 Ingolf Lohmann. Eine externe Veröffentlichung,
+Rechteänderung oder technische Außenwirkung ist mit ihrer Erstellung nicht
+verbunden.\par}
+\vspace{0.9em}\hrule\vspace{0.9em}
+\begin{center}
+\code{EFFECT\_ACK\_CONTINUE}\\[0.8em]
+\textbf{q.e.d. · Ingolf Lohmann}
+\end{center}
+\end{minipage}
+\end{center}
+\vspace*{\fill}
+
+\end{document}

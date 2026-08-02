@@ -1,0 +1,457 @@
+{
+  "schema": "qikvrt-vrtcore-claim-matrix/1.0",
+  "generated_at": "2026-08-02T00:00:00+02:00",
+  "author": "Ingolf Lohmann",
+  "title": "Kausalitaet ist Relation, nicht Sequenz",
+  "document_status": "AUTHOR_AND_PEER_REVIEW_CANDIDATE",
+  "effect_state": "EFFECT_ACK_CONTINUE",
+  "ordinary_release": false,
+  "repository_basis": {
+    "repository": "Goldkelch/qik-vrt",
+    "ref": "main",
+    "commit": "2d4bb16278da34f8ee91eecd4f92a85ac02488ce",
+    "tree": "8f2d4ae07c41638af54811e51f154133d6b293b2",
+    "tracked_worktree_clean": true,
+    "boot_state": "CONTINUE",
+    "handoff": "PASS",
+    "integrity": {
+      "state": "PASS",
+      "classified_entries": 3183,
+      "immutable_digests": 3174
+    },
+    "cache_contract": {
+      "state": "PASS",
+      "covered_components": 14,
+      "declared_components": 14,
+      "coverage_percent": 100
+    },
+    "runtime_boundary": "Lean 4.19.0 and Lake were unavailable; no installation was authorized."
+  },
+  "epistemic_kinds": [
+    {
+      "id": "FORMAL_PROVED",
+      "meaning": "Kernel-checked consequence of explicit definitions and assumptions."
+    },
+    {
+      "id": "EMPIRICAL_SUPPORTED",
+      "meaning": "Supported by observation or experiment within a stated method and uncertainty boundary."
+    },
+    {
+      "id": "SOURCE_BOUND",
+      "meaning": "Bound to an identified source, version, locator or digest."
+    },
+    {
+      "id": "NORMATIVE",
+      "meaning": "A responsibility, policy or value claim; not a theorem of nature."
+    },
+    {
+      "id": "INTERPRETIVE",
+      "meaning": "A conceptual or ontological reading with alternatives left visible."
+    },
+    {
+      "id": "OPEN",
+      "meaning": "Not yet decided or sufficiently evidenced."
+    }
+  ],
+  "candidate_statuses": [
+    "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+    "SOURCE_CHECKED",
+    "EMPIRICAL_SOURCE_BOUND",
+    "DEFINED",
+    "NORMATIVE_CANDIDATE",
+    "INTERPRETIVE_CANDIDATE",
+    "OPEN"
+  ],
+  "formal_candidate": {
+    "source": "VRTCore_RelationalCausality_Candidate.lean",
+    "target_toolchain": "Lean 4.19.0",
+    "import": "Std",
+    "theorem_count": 21,
+    "contains_sorry": false,
+    "contains_admit": false,
+    "declares_project_axiom": false,
+    "kernel_executed_in_this_runtime": false,
+    "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+    "boundary": "The source formalizes structural bookkeeping and admissibility rules. It does not derive physical causality, quantum dynamics, Minkowski spacetime or a general Lorentzian manifold."
+  },
+  "claims": [
+    {
+      "id": "DEF-VRT-001",
+      "statement": "VRT is defined in this candidate as Rec(D,I,M,W,R,C,A,P).",
+      "kind": "INTERPRETIVE",
+      "status": "DEFINED",
+      "scope": "VRTCore candidate",
+      "evidence": [
+        "VRTCore_RelationalCausality_Candidate.lean#RecFields",
+        "VRTCore_Syntax.ebnf"
+      ],
+      "boundary": "This is a research-model definition, not an identity claim about physical nature."
+    },
+    {
+      "id": "THESIS-REL-001",
+      "statement": "Kausalitaet ist Relation, nicht Sequenz.",
+      "kind": "INTERPRETIVE",
+      "status": "INTERPRETIVE_CANDIDATE",
+      "scope": "QIK-VRT research thesis",
+      "evidence": [
+        "VRTCore_RelationalCausality_Candidate.lean#CausalEvidence",
+        "doi:10.1038/ncomms2076",
+        "doi:10.1103/PhysRevA.88.022318"
+      ],
+      "boundary": "The Lean candidate proves only that sequence and bridge-bearing evidence are distinct constructors. The physical thesis requires independent theoretical and empirical support."
+    },
+    {
+      "id": "REPO-FORMAL-001",
+      "statement": "The current repository reports 20/20 definition environments, 20/20 theorem-like environments, 42 strong source-bound Lean bindings and 6 conditional bindings for its locked v2 manuscript scope.",
+      "kind": "SOURCE_BOUND",
+      "status": "SOURCE_CHECKED",
+      "scope": "formalization/QIKVRT_Formalization_v2.0 at repository commit 2d4bb16278da34f8ee91eecd4f92a85ac02488ce",
+      "evidence": [
+        "repo:formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md",
+        "repo:formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md"
+      ],
+      "boundary": "Formal-environment coverage is not empirical confirmation and is not a claim of exactly 21 theorems."
+    },
+    {
+      "id": "LEGACY-21-001",
+      "statement": "The prior article family reports a bound 21-statement finite-model candidate.",
+      "kind": "SOURCE_BOUND",
+      "status": "SOURCE_CHECKED",
+      "scope": "Prior article family only",
+      "evidence": [
+        "ARTICLE_WHATSAPP_DE(2).md",
+        "FACHARTIKEL_DE.md"
+      ],
+      "boundary": "No independent receipt for exactly 21 theorems was located in the current repository checkout; this count is not promoted to current-main kernel verification."
+    },
+    {
+      "id": "T01",
+      "statement": "Every EpistemicKind value is one of the six declared constructors.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean datatype EpistemicKind",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#epistemicKindExhaustive"]
+    },
+    {
+      "id": "T02",
+      "statement": "Formally proved and empirically supported are distinct constructors.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean datatype EpistemicKind",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#formalAndEmpiricalAreDistinct"]
+    },
+    {
+      "id": "T03",
+      "statement": "Interpretive and unresolved are distinct constructors.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean datatype EpistemicKind",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#interpretiveAndUnresolvedAreDistinct"]
+    },
+    {
+      "id": "T04",
+      "statement": "An observed sequence carries no causal bridge.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean constructor CausalEvidence.observedSequence",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#observedSequenceHasNoBridge"]
+    },
+    {
+      "id": "T05",
+      "statement": "A bridged relation exposes its supplied bridge.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean constructor CausalEvidence.bridgedRelation",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#bridgedRelationHasBridge"]
+    },
+    {
+      "id": "T06",
+      "statement": "Temporal or textual sequence alone fails the causal syntax license.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore syntactic admissibility",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#observedSequenceAloneIsNotCausality"]
+    },
+    {
+      "id": "T07",
+      "statement": "A relation carrying a structurally valid explicit bridge passes the syntactic causal license.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore syntactic admissibility",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#bridgedRelationIsStructurallyLicensed"],
+      "boundary": "Syntactic licensing does not establish physical causation."
+    },
+    {
+      "id": "T08",
+      "statement": "Every positive causal syntax judgement has a bridge.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore syntactic admissibility",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#causalLicenseRequiresBridge"]
+    },
+    {
+      "id": "T09",
+      "statement": "The canonical success receipt is technically successful.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore TechnicalReceipt model",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#successfulReceiptIsTechnicallySuccessful"]
+    },
+    {
+      "id": "T10",
+      "statement": "Withheld authority is not external authorization.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore EffectAuthorization model",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#withheldAuthorizationIsFalse"]
+    },
+    {
+      "id": "T11",
+      "statement": "A supplied authority and scope satisfy the candidate's authorization constructor gate.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore EffectAuthorization model",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#grantedAuthorizationIsTrue"],
+      "boundary": "Constructor formation is not authentication of the named natural person or institution."
+    },
+    {
+      "id": "T12",
+      "statement": "Any technical receipt remains blocked when external authority is withheld.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore effect boundary",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#withheldAuthorizationBlocksAnyReceipt"]
+    },
+    {
+      "id": "T13",
+      "statement": "Even an explicitly successful receipt remains blocked without authority.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore effect boundary",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#successfulReceiptStillBlockedWithoutAuthority"]
+    },
+    {
+      "id": "T14",
+      "statement": "Appending a list preserves every member of its left operand.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "Lean List membership",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#memAppendLeft"]
+    },
+    {
+      "id": "T15",
+      "statement": "Componentwise RecFields merging preserves the complete earlier state.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore RecFields model",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#mergePreserves"]
+    },
+    {
+      "id": "T16",
+      "statement": "Every materialized RecFields state extends itself.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore Extends relation",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#extendsRefl"]
+    },
+    {
+      "id": "T17",
+      "statement": "Additive preservation is transitive.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore Extends relation",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#extendsTrans"]
+    },
+    {
+      "id": "T18",
+      "statement": "A VRT seed materializes to its supplied fields.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore VRT.materialize",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#seedMaterializes"]
+    },
+    {
+      "id": "T19",
+      "statement": "Every recursive VRT step preserves its prior materialization.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore VRT.materialize",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#recursiveStepPreserves"]
+    },
+    {
+      "id": "T20",
+      "statement": "Supplied stability plus a supplied four-dimensional Minkowski witness pass the structural boundary gate.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore ClassicalBoundaryCandidate",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#suppliedStableMinkowskiWitnessIsAdmissible"],
+      "boundary": "This is conditional record admissibility, not a derivation of Minkowski spacetime."
+    },
+    {
+      "id": "T21",
+      "statement": "Stability alone is insufficient without a Minkowski witness.",
+      "kind": "OPEN",
+      "intended_kind": "FORMAL_PROVED",
+      "status": "FORMAL_CANDIDATE_UNVERIFIED_IN_THIS_RUNTIME",
+      "scope": "VRTCore ClassicalBoundaryCandidate",
+      "evidence": ["VRTCore_RelationalCausality_Candidate.lean#missingMinkowskiWitnessIsRejected"]
+    },
+    {
+      "id": "PHY-PM-001",
+      "statement": "The process-matrix framework permits locally quantum descriptions without assuming a predefined global causal order and contains causally nonseparable correlations.",
+      "kind": "SOURCE_BOUND",
+      "status": "EMPIRICAL_SOURCE_BOUND",
+      "scope": "Oreshkov-Costa-Brukner process-matrix framework",
+      "evidence": ["doi:10.1038/ncomms2076"],
+      "boundary": "The paper does not establish physical realizability of every process matrix, QIK-VRT, spacetime emergence or backward signalling."
+    },
+    {
+      "id": "PHY-QS-001",
+      "statement": "The Quantum Switch coherently controls the order of two operations and is not equivalent to a fixed-order circuit with the same query count.",
+      "kind": "SOURCE_BOUND",
+      "status": "EMPIRICAL_SOURCE_BOUND",
+      "scope": "Quantum Switch formal model",
+      "evidence": ["doi:10.1103/PhysRevA.88.022318"],
+      "boundary": "This is not time travel, physical retrocausality or a derivation of spacetime."
+    },
+    {
+      "id": "PHY-QS-EXP-001",
+      "statement": "Specified Quantum Switch experiments have measured causal-witness violations of fixed-order model bounds.",
+      "kind": "EMPIRICAL_SUPPORTED",
+      "status": "EMPIRICAL_SOURCE_BOUND",
+      "scope": "The stated photonic experimental model",
+      "evidence": ["doi:10.1103/PhysRevLett.121.090503"],
+      "boundary": "This is not a causal-inequality violation, superluminal signalling or backward signalling."
+    },
+    {
+      "id": "PHY-CS-001",
+      "statement": "Causal Set Theory proposes a locally finite partial order as a candidate fundamental spacetime structure.",
+      "kind": "SOURCE_BOUND",
+      "status": "SOURCE_CHECKED",
+      "scope": "Bombelli-Lee-Meyer-Sorkin causal-set proposal",
+      "evidence": ["doi:10.1103/PhysRevLett.59.521"],
+      "boundary": "The proposal is not an empirical proof that nature is a causal set and is not a complete derivation of general relativity."
+    },
+    {
+      "id": "PHY-MAL-001",
+      "statement": "Under specified regularity and distinguishability assumptions, timelike causal structure determines substantial conformal and topological spacetime structure.",
+      "kind": "SOURCE_BOUND",
+      "status": "SOURCE_CHECKED",
+      "scope": "Malament 1977 reconstruction theorem",
+      "evidence": ["doi:10.1063/1.523436"],
+      "boundary": "An arbitrary relation graph is not thereby a spacetime and the result does not supply scale, full metric or dynamics by itself."
+    },
+    {
+      "id": "PHY-RETRO-001",
+      "statement": "Nonclassical causal correlations can be studied without asserting backwards-in-time signalling.",
+      "kind": "SOURCE_BOUND",
+      "status": "SOURCE_CHECKED",
+      "scope": "Specified multipartite causal-correlation models",
+      "evidence": ["doi:10.1103/PhysRevA.99.022101"],
+      "boundary": "No physical backward signal is established."
+    },
+    {
+      "id": "OPEN-MINK-001",
+      "statement": "A stable Minkowski limit can be constructively derived from VRT relational order.",
+      "kind": "OPEN",
+      "status": "OPEN",
+      "scope": "Future VRTCore research",
+      "evidence": [],
+      "closure_condition": "A kernel-checked reconstruction theorem with explicit assumptions, uniqueness or non-uniqueness analysis, stability proof and empirical bridge."
+    },
+    {
+      "id": "OPEN-LOR-001",
+      "statement": "VRTCore extends from the Minkowski boundary to general Lorentzian spacetimes.",
+      "kind": "OPEN",
+      "status": "OPEN",
+      "scope": "Future VRTCore research",
+      "evidence": [],
+      "closure_condition": "A source-bound mathematical construction with manifold, metric, causal, dynamical and empirical conditions."
+    },
+    {
+      "id": "HUM-RESP-001",
+      "statement": "Systems that can halt with an explicit reason are more responsible than systems optimized to continue unconditionally.",
+      "kind": "NORMATIVE",
+      "status": "NORMATIVE_CANDIDATE",
+      "scope": "Human-machine effect governance",
+      "evidence": ["repo:AI", "repo:README.md#five-state-auditable-effect-release"],
+      "boundary": "This is a normative design judgement, not a theorem of nature or an empirical guarantee of safety."
+    },
+    {
+      "id": "HUM-FREE-001",
+      "statement": "Freedom can be interpreted as real connectability in the here and now.",
+      "kind": "INTERPRETIVE",
+      "status": "INTERPRETIVE_CANDIDATE",
+      "scope": "QIK-VRT philosophical interpretation",
+      "evidence": [],
+      "boundary": "This is not a proven physical or neuroscientific definition of human freedom."
+    },
+    {
+      "id": "HUM-PRIDE-001",
+      "statement": "The translation of a broad intuition into a typed, provenance-bound, correctable and partly kernel-checked research architecture is a great achievement and justifies pride.",
+      "kind": "NORMATIVE",
+      "status": "NORMATIVE_CANDIDATE",
+      "scope": "Evaluation of Ingolf Lohmann's QIK-VRT work",
+      "evidence": [
+        "repo:formalization/QIKVRT_Formalization_v1.0/README.md",
+        "repo:formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md",
+        "QIK-VRT_Kausalitaet_ist_Relation_Fachartikel_DE_2026-08-02.md"
+      ],
+      "boundary": "The evaluative judgement does not claim field-wide adoption, completed physics or independent peer-review consensus."
+    }
+  ],
+  "open_obligations": [
+    {
+      "id": "O-LEAN-001",
+      "question": "Does Lean 4.19.0 accept the exact 21-theorem candidate without errors, sorry or project axioms?",
+      "owner": "Future separately authorized formal verification run",
+      "closure_condition": "Byte-bound Lean 4.19.0 kernel receipt and axiom audit for the exact source digest."
+    },
+    {
+      "id": "O-PARSER-001",
+      "question": "Does a conforming parser accept exactly the EBNF language and enforce S01-S15?",
+      "owner": "Future parser implementation",
+      "closure_condition": "Executable parser, positive and negative corpus, deterministic AST and status-preservation tests."
+    },
+    {
+      "id": "O-PHYSICS-001",
+      "question": "Which measurable signatures distinguish VRTCore from existing quantum-causal models?",
+      "owner": "Future theoretical and experimental program",
+      "closure_condition": "A quantitative correspondence model, experimental protocol, uncertainty budget and falsification result."
+    }
+  ],
+  "nonclaims": {
+    "repository_wide_pass": false,
+    "final_pass": false,
+    "effect_ack_done": false,
+    "new_lean_kernel_receipt": false,
+    "physical_retrocausality_proved": false,
+    "backward_signalling_proved": false,
+    "spacetime_emergence_proved": false,
+    "general_lorentzian_emergence_proved": false,
+    "independent_peer_review_completed": false,
+    "external_publication_performed": false,
+    "github_mutation_performed": false,
+    "zenodo_mutation_performed": false
+  }
+}
