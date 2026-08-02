@@ -1,0 +1,63 @@
+{
+  "schema": "qikvrt_owner_standing_delegation_v1",
+  "delegation_id": "OWNER-NO-REINTERACTION-STANDING-DELEGATION-V1",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "type": "NATURAL_PERSON"
+  },
+  "effective_date": "2026-08-02",
+  "source_instruction": "Routine repository work that is already authorized and deterministically executable must continue without requiring further owner interaction.",
+  "observed_repository_bindings": {
+    "authority_main": "319f2629a7224fd32e4e818f09cce2f3c64e574f",
+    "mirror_main": "2cf14d3229f9ad335b8f48f94e79c4ebcd30b8df"
+  },
+  "allowed_without_reinteraction": [
+    "read_only_repository_and_public_evidence_observation",
+    "deterministic_repository_local_materialization",
+    "repository_native_integrity_regeneration",
+    "exact_head_verification_trigger_creation",
+    "history_preserving_authority_or_mirror_port_creation",
+    "append_only_receipt_and_status_projection_creation",
+    "closing_fully_superseded_execution_proxy_recovery_or_verification_pull_requests_without_merge",
+    "creating_draft_pull_requests for reviewable repository_internal_repairs"
+  ],
+  "preconditions": [
+    "the operation is within an already declared repository work unit or is the smallest deterministic repair of an evidenced blocker",
+    "all source and target refs are reobserved immediately before mutation",
+    "the operation is reversible or append_only",
+    "the operation does not weaken an evidence boundary",
+    "the operation does not infer PASS FINAL_PASS EFFECT_ACK_DONE publication deployment synchronization or merge",
+    "all applicable exact_head gates remain required"
+  ],
+  "not_authorized_by_this_delegation": [
+    "zenodo_create_upload_metadata_mutation_or_publication",
+    "ietf_datatracker_submission_resubmission_or_metadata_mutation",
+    "github_release_or_tag_creation",
+    "deployment_to_an_external_runtime",
+    "financial_legal_medical_physical_or_actuator_effects",
+    "force_push_or_history_rewrite",
+    "merge_without_a_separate_repository_bound_promotion_contract"
+  ],
+  "external_effect_policy": {
+    "default": "DEFER",
+    "required": "separate exact artifact hash and scope bound authorization",
+    "no_retroactive_authorization": true
+  },
+  "merge_policy": {
+    "default": "DEFER_TO_EXISTING_PROMOTION_CONTRACT",
+    "blanket_merge_authorization": false
+  },
+  "revocation": {
+    "revocable": true,
+    "method": "append a later owner decision that names this delegation_id and sets state to REVOKED"
+  },
+  "completion_claims": {
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false,
+    "zenodo_publication_complete": false,
+    "ietf_submission_authorized": false,
+    "deployment_complete": false
+  },
+  "state": "ACTIVE_FOR_BOUNDED_REPOSITORY_INTERNAL_CONTINUATION"
+}
