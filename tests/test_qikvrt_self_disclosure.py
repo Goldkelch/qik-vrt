@@ -160,9 +160,16 @@ class SelfDisclosureTests(unittest.TestCase):
                 self.assertRegex(artifact['sha256'], r'^[0-9a-f]{64}$', artifact['id'])
 
     def test_ietf_provenance_coverage_and_truthful_state(self):
-        indexed = {entry.get('evidence_path'): entry for entry in self.overview['ietf_documents'] if entry.get('evidence_path')}
+        indexed = {}
+        for entry in self.overview['ietf_documents']:
+            paths = entry.get('evidence_paths') or [entry.get('evidence_path')]
+            for path in paths:
+                if path:
+                    self.assertNotIn(path, indexed, path)
+                    indexed[path] = entry
         evidence_paths = sorted((ROOT / 'external' / 'ietf').glob('*.PROVENANCE.json'))
         evidence_paths += sorted((ROOT / 'external' / 'ietf').glob('*.CANDIDATE.json'))
+        evidence_paths += sorted((ROOT / 'external' / 'ietf').glob('*.SUBMISSION_RECEIPT.json'))
         self.assertTrue(evidence_paths)
         for path in evidence_paths:
             relative = path.relative_to(ROOT).as_posix()
@@ -179,14 +186,27 @@ class SelfDisclosureTests(unittest.TestCase):
 
         for path in (ROOT / 'external' / 'ietf').glob('*.json'):
             evidence = read_json(path)
-            if evidence.get('datatracker_submission_performed') is True:
+            if (
+                evidence.get('datatracker_submission_performed') is True
+                or evidence.get('submitted') is True
+            ):
                 matches = [entry for entry in self.overview['ietf_documents'] if entry['id'] == evidence.get('internet_draft')]
                 self.assertTrue(matches, path.name)
-                self.assertEqual(matches[0]['state'], 'published_internet_draft', path.name)
+                expected_state = (
+                    'published_internet_draft'
+                    if evidence.get('published') is not False
+                    and evidence.get('state')
+                    != 'AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL'
+                    else 'awaiting_previous_version_author_approval'
+                )
+                self.assertEqual(matches[0]['state'], expected_state, path.name)
 
         for entry in self.overview['ietf_documents']:
             self.assertIn(entry['boundary'], json.dumps(self.overview, ensure_ascii=False))
-            if entry['state'] == 'published_internet_draft':
+            if entry['state'] in {
+                'published_internet_draft',
+                'awaiting_previous_version_author_approval',
+            }:
                 self.assertIn(entry['official_url'], self.html, entry['id'])
             else:
                 self.assertNotIn('official_url', entry, entry['id'])

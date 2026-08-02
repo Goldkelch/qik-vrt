@@ -1,0 +1,247 @@
+{
+  "schema": "qikvrt-vrtcore-kernel-receipt/1.0",
+  "receipt_id": "KERNEL_RECEIPT_H0_CI",
+  "publication_id": "qikvrt-causality-is-relation-vrtcore-v1",
+  "observed_at": "2026-08-02T04:27:51Z",
+  "status": "SUCCESS",
+  "status_scope": "EXACT_SOURCE_AND_AXIOM_AUDIT_BYTES_ONLY",
+  "evidence_chain": {
+    "workflow": {
+      "repository": "Goldkelch/qik-vrt",
+      "event": "pull_request",
+      "run_id": "30732070295",
+      "run_attempt": "1",
+      "run_url": "https://github.com/Goldkelch/qik-vrt/actions/runs/30732070295",
+      "status": "completed",
+      "conclusion": "success",
+      "job_id": "91454104825",
+      "job_name": "source-claim-and-kernel-gates",
+      "job_conclusion": "success",
+      "workflow_run_head_sha": "987e4a6f163562bba32ea7575c41013c91a0b6a1",
+      "workflow_run_head_sha_semantics": "Value exposed by the GitHub workflow-run record; it is not promoted here to an exact current branch-head or repository-head claim.",
+      "checkout_ref": "refs/pull/320/merge",
+      "checkout_github_sha": "fc0b05cd13d7607883fbab9f16b4628f77a0958c",
+      "checkout_commit_relation": "Synthetic pull-request merge of 987e4a6f163562bba32ea7575c41013c91a0b6a1 into 2d4bb16278da34f8ee91eecd4f92a85ac02488ce",
+      "merge_base_sha": "2d4bb16278da34f8ee91eecd4f92a85ac02488ce"
+    },
+    "artifact": {
+      "artifact_id": "8828292691",
+      "name": "qikvrt-vrtcore-relational-causality-kernel-evidence",
+      "size_in_bytes": 2172,
+      "created_at": "2026-08-02T04:16:21Z",
+      "expires_at": "2026-09-01T04:16:20Z",
+      "expired_when_observed": false,
+      "archive_digest": "sha256:30ab2ac64e444bcf48c443bc49e686e633a5a6de11c2ed6b9699f9327f377fab",
+      "archive_digest_verified_after_download": true,
+      "preserved_evidence_payload": {
+        "path": "CI_KERNEL_EVIDENCE_H0_PR_MERGE.json",
+        "archive_member": "vrtcore-relational-causality-evidence.json",
+        "bytes": 3046,
+        "sha256": "18d370482ca19e1a2e109fbb38ea225e022955182c72c1846331d5c3a2cc7d04",
+        "byte_identity": "UNCHANGED_EXTRACTED_ARTIFACT_MEMBER"
+      }
+    }
+  },
+  "binding_assessment": {
+    "source_bytes_exact": true,
+    "source_bytes_exact_basis": [
+      "The preserved CI payload records the source and audit byte counts, SHA-256 digests and Git blob identities.",
+      "Both Lean invocations returned exit code 0 for those identities.",
+      "The observed archive SHA-256 equals the GitHub artifact digest."
+    ],
+    "repository_head_exact": false,
+    "repository_head_exact_reason": "The pull_request run checked out the synthetic merge commit fc0b05cd13d7607883fbab9f16b4628f77a0958c. GitHub separately reports workflow_run.head_sha 987e4a6f163562bba32ea7575c41013c91a0b6a1, but this receipt does not establish either value as the current branch head, current main head or current repository-wide state.",
+    "artifact_internal_exact_head_bound": true,
+    "artifact_internal_exact_head_bound_interpretation": "The artifact's exact_head_bound=true is accepted only as a binding to its recorded GITHUB_SHA, the PR merge checkout fc0b05cd13d7607883fbab9f16b4628f77a0958c. It is not a repository_head_exact claim.",
+    "workflow_run_head_sha_branch_head_exact": false,
+    "checkout_sha_exact_for_ci_execution": true
+  },
+  "runtime": {
+    "toolchain": "leanprover/lean4:v4.19.0",
+    "lean_version_output": "Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)",
+    "lean_githash": "6caaee842e9495688c1567e78c0e68dbb96942aa",
+    "imports": [
+      "Std"
+    ]
+  },
+  "exact_inputs": {
+    "source": {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_RelationalCausality_Candidate.lean",
+      "bytes": 12301,
+      "sha256": "1a39cd338f543f642acf634ffb2b63cd2c1a2ffe92878208f48d71a68a8e7d22",
+      "git_blob_sha1": "beaf17e1c068441defabbad5f1dbcc666fad3d0d"
+    },
+    "axiom_audit_source": {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_RelationalCausality_AxiomAudit.lean",
+      "bytes": 1575,
+      "sha256": "5d3ceb24125acd41b34725e485ab0a4f4f61492273cf60b6973c9851da7eabb7",
+      "git_blob_sha1": "89bc85ee4f7147dbb525d3a6fe94d7b2a202c006"
+    },
+    "proof_plan": {
+      "path": "KERNEL_PROOF_PLAN.json",
+      "bytes": 3621,
+      "sha256": "8736aefe64d86d6837ef148b37c0b346ce2308e02d001bc2c2f1f81a0db15b87"
+    }
+  },
+  "checks": {
+    "source_exit_code": 0,
+    "axiom_audit_exit_code": 0,
+    "theorem_count_expected": 21,
+    "theorem_count_accepted": 21,
+    "contains_sorry": false,
+    "contains_admit": false,
+    "contains_unsafe": false,
+    "project_axioms": [],
+    "proof_escape_gate": "SUCCESS"
+  },
+  "theorem_results": [
+    {
+      "claim_id": "T01",
+      "theorem": "QIKVRT.VRTCore.epistemicKindExhaustive",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T02",
+      "theorem": "QIKVRT.VRTCore.formalAndEmpiricalAreDistinct",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T03",
+      "theorem": "QIKVRT.VRTCore.interpretiveAndUnresolvedAreDistinct",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T04",
+      "theorem": "QIKVRT.VRTCore.observedSequenceHasNoBridge",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T05",
+      "theorem": "QIKVRT.VRTCore.bridgedRelationHasBridge",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T06",
+      "theorem": "QIKVRT.VRTCore.observedSequenceAloneIsNotCausality",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T07",
+      "theorem": "QIKVRT.VRTCore.bridgedRelationIsStructurallyLicensed",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T08",
+      "theorem": "QIKVRT.VRTCore.causalLicenseRequiresBridge",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T09",
+      "theorem": "QIKVRT.VRTCore.successfulReceiptIsTechnicallySuccessful",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T10",
+      "theorem": "QIKVRT.VRTCore.withheldAuthorizationIsFalse",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T11",
+      "theorem": "QIKVRT.VRTCore.grantedAuthorizationIsTrue",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T12",
+      "theorem": "QIKVRT.VRTCore.withheldAuthorizationBlocksAnyReceipt",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T13",
+      "theorem": "QIKVRT.VRTCore.successfulReceiptStillBlockedWithoutAuthority",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T14",
+      "theorem": "QIKVRT.VRTCore.memAppendLeft",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T15",
+      "theorem": "QIKVRT.VRTCore.mergePreserves",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T16",
+      "theorem": "QIKVRT.VRTCore.extendsRefl",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T17",
+      "theorem": "QIKVRT.VRTCore.extendsTrans",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T18",
+      "theorem": "QIKVRT.VRTCore.seedMaterializes",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T19",
+      "theorem": "QIKVRT.VRTCore.recursiveStepPreserves",
+      "kernel_status": "ACCEPTED",
+      "axioms": ["propext"]
+    },
+    {
+      "claim_id": "T20",
+      "theorem": "QIKVRT.VRTCore.suppliedStableMinkowskiWitnessIsAdmissible",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    },
+    {
+      "claim_id": "T21",
+      "theorem": "QIKVRT.VRTCore.missingMinkowskiWitnessIsRejected",
+      "kernel_status": "ACCEPTED",
+      "axioms": []
+    }
+  ],
+  "summary": {
+    "accepted_theorems": 21,
+    "axiom_free_theorems": 15,
+    "propext_only_theorems": 6,
+    "project_axiom_theorems": 0,
+    "failed_theorems": 0
+  },
+  "scope_boundary": [
+    "No physical causality is derived.",
+    "No retrocausality or backward signalling is proved.",
+    "No Minkowski spacetime is shown to emerge.",
+    "No general Lorentzian spacetime is shown to emerge.",
+    "No empirical correspondence is established.",
+    "No independent peer review or field-wide consensus is established.",
+    "No repository-wide, publication or external-effect state is established."
+  ],
+  "claim_state": {
+    "kernel_scope": "PASS",
+    "global_pass": "NOT_CLAIMED",
+    "final_pass": "NOT_CLAIMED",
+    "effect_ack_done": "NOT_CLAIMED"
+  }
+}

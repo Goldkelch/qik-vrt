@@ -1,0 +1,77 @@
+{
+  "schema": "qikvrt_vrtcore_local_validation_report_v1",
+  "publication_id": "qikvrt-causality-is-relation-vrtcore-v1",
+  "issued_at_utc": "2026-08-02T04:11:10Z",
+  "candidate_stage": "H0_PRE_REMOTE_EXACT_HEAD",
+  "result": "LOCAL_GATES_PASS",
+  "global_pass": "NOT_CLAIMED",
+  "final_pass": "NOT_CLAIMED",
+  "effect_ack_done": "NOT_CLAIMED",
+  "checks": [
+    {
+      "id": "VRTCORE-PRIMARY-BYTES",
+      "command": "python3 tests/test_vrtcore_relational_causality_publication.py",
+      "tests": 4,
+      "result": "PASS"
+    },
+    {
+      "id": "LEAN-4.19-EXACT-COMMAND",
+      "scope": "exact candidate, -E hasSorry, OLean module build, exact 21-line axiom inventory",
+      "result": "PASS",
+      "theorems": 21,
+      "no_axiom_dependencies": 15,
+      "propext_only": 6,
+      "project_axioms": 0
+    },
+    {
+      "id": "IETF-REVISION-02-REGRESSION",
+      "command": "python3 tests/test_ietf_revision_02.py --xml2rfc <pinned-3.34.0>",
+      "tests": 12,
+      "result": "PASS"
+    },
+    {
+      "id": "IETF-REVISION-03-INVARIANTS",
+      "command": "python3 tests/test_ietf_revision_03.py --xml2rfc <pinned-3.34.0>",
+      "tests": 8,
+      "result": "PASS",
+      "wire_members": 35,
+      "states": 5,
+      "core_done_conjuncts": 17,
+      "normative_wire_change": false,
+      "fresh_txt_html_byte_identical": true,
+      "warning_or_error_diagnostics": false
+    },
+    {
+      "id": "PUBLICATION-INDEX",
+      "command": "python3 tests/test_qikvrt_self_disclosure.py",
+      "tests": 8,
+      "result": "PASS"
+    },
+    {
+      "id": "WORKFLOW-CONTRACTS",
+      "command": "PYTHONPATH=. python3 tests/test_effect_ack_release_workflows.py",
+      "tests": 10,
+      "result": "PASS"
+    },
+    {
+      "id": "STATIC-SYNTAX",
+      "scope": "all new JSON, both changed GitHub Actions YAML files and git diff whitespace",
+      "result": "PASS"
+    }
+  ],
+  "runtime": {
+    "lean": "4.19.0",
+    "lean_commit": "6caaee842e9495688c1567e78c0e68dbb96942aa",
+    "xml2rfc": "3.34.0",
+    "gh": "2.96.0"
+  },
+  "external_effects": {
+    "chatgpt_library_whatsapp_persisted": true,
+    "chatgpt_library_persisted_sha256": "4199dc4eb2b239e60c375424228a7d4ff5b1238a2370b88898befab5ceb34d09",
+    "github_candidate_persisted": false,
+    "github_exact_head_ci_observed": false,
+    "zenodo_mutation": false,
+    "ietf_datatracker_submission": false
+  },
+  "boundary": "Local PASS and Library persistence do not establish GitHub exact-head success, Zenodo publication, IETF submission, peer review, empirical confirmation or physical truth."
+}
