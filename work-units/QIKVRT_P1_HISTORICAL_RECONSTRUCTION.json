@@ -1,0 +1,52 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "QIKVRT_P1_HISTORICAL_RECONSTRUCTION",
+  "state": "IN_PROGRESS",
+  "purpose": "Reconstruct the development of QIK-VRT from repository and publication evidence before producing the classical LaTeX monograph and machine-proof bundle.",
+  "execution_contract": {
+    "use_official_github_api_when_available": true,
+    "do_not_report_local_cli_absence_as_repository_blocker_when_api_can_execute": true,
+    "perform_smallest_history_preserving_effect": true,
+    "persist_exact_commits_and_pull_requests": true,
+    "require_repository_native_materialization": true,
+    "require_exact_head_gates": true
+  },
+  "inputs": [
+    "Authority and Mirror commit histories",
+    "pull requests, reviews, comments and workflow evidence",
+    "append-only receipts and indices",
+    "claim matrices and kernel receipts",
+    "Zenodo candidates and publication receipts",
+    "IETF candidates and provenance records",
+    "owner decisions and effect boundaries"
+  ],
+  "outputs": [
+    "docs/history/QIKVRT_HISTORICAL_RECONSTRUCTION_P1_DE.md",
+    "chronological machine-readable event inventory",
+    "claim-to-evidence traceability table",
+    "source inventory for the LaTeX monograph",
+    "source inventory for the machine-proof bundle"
+  ],
+  "epistemic_classes": [
+    "FORMALLY_PROVED",
+    "EMPIRICALLY_SUPPORTED",
+    "SOURCE_BOUND",
+    "NORMATIVE",
+    "INTERPRETATIVE",
+    "OPEN"
+  ],
+  "invariants": [
+    "no rewriting of historical events",
+    "later correction remains distinct from earlier state",
+    "no publication claim without effect receipt",
+    "no IETF consensus claim from an individual draft",
+    "no physical claim inferred from repository execution alone",
+    "no PASS FINAL_PASS or EFFECT_ACK_DONE without complete evidence"
+  ],
+  "next_effect": "MATERIALIZE_P1_INPUTS_AND_EXTRACT_CHRONOLOGICAL_EVENT_INVENTORY",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
