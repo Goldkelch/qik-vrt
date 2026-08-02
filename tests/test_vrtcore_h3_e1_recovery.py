@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import types
 import urllib.parse
 import unittest
 from typing import Any, Mapping
@@ -199,14 +200,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
-    def test_r5_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+    def test_r6_push_and_run_attempt_are_exactly_one_shot(self) -> None:
         for gate in (
             "github.run_attempt == 1",
             "github.event.created == false",
             "github.event.deleted == false",
             "github.event.forced == false",
             "github.event.before == "
-            "'dfcf28f9f48b5857ef3b4ef50f979d9a1979be08'",
+            "'8db28488afa35549eea640f40f98321c1e56a4e0'",
             "github.event.after == github.sha",
             'test "$GITHUB_RUN_ATTEMPT" = "1"',
             'test "${{ github.event.before }}" = '
@@ -214,6 +215,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             'test "${{ github.event.after }}" = "$GITHUB_SHA"',
         ):
             self.assertIn(gate, self.workflow)
+
+    def test_main_arms_only_c2_reconciliation_and_passes_exact_record(self) -> None:
+        source = inspect.getsource(recovery.main)
+        self.assertIn("store.arm_exact_record_created_reconciliation()", source)
+        self.assertNotIn("store.arm_exact_unsent_create_replay()", source)
+        self.assertIn("reconcile_record=(", source)
+        self.assertIn('R5_RECORD_CREATED_TIMEOUT_INCIDENT["record_id"]', source)
+        self.assertIn('R5_RECORD_CREATED_TIMEOUT_INCIDENT["doi"]', source)
 
     def test_marker_is_create_only_and_cannot_trigger_any_zenodo_workflow(self) -> None:
         source = inspect.getsource(recovery.persist_create_post_once_marker)
@@ -350,7 +359,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r5_is_exact_direct_child_of_r4_with_r3_r2_r1_r0_lineage(self) -> None:
+    def test_r6_is_exact_direct_child_of_r5_with_full_r4_to_r0_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -364,15 +373,18 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
+                    "8db28488afa35549eea640f40f98321c1e56a4e0"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -403,6 +415,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn(
             'git -C controller show -s --format=%P \\\n'
             '              "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT"\n'
+            '          )" = '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
@@ -1603,6 +1623,779 @@ class VRTCoreH3E1R5OneShotExecutionTests(unittest.TestCase):
             store.arm_exact_unsent_create_replay()
 
 
+class VRTCoreH3E1R6OneShotExecutionTests(unittest.TestCase):
+    CONTROLLER = "e" * 40
+
+    @classmethod
+    def event(cls) -> dict[str, Any]:
+        return {
+            "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            "before": recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"],
+            "after": cls.CONTROLLER,
+            "created": False,
+            "deleted": False,
+            "forced": False,
+            "repository": {"full_name": recovery.EXPECTED["repository"]},
+            "head_commit": {"id": cls.CONTROLLER},
+        }
+
+    @classmethod
+    def environment(cls, event_path: pathlib.Path) -> dict[str, str]:
+        return {
+            "GITHUB_SHA": cls.CONTROLLER,
+            "GITHUB_REPOSITORY": recovery.EXPECTED["repository"],
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            "GITHUB_REF_NAME": recovery.EXPECTED["trigger_branch"],
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_EVENT_PATH": str(event_path),
+        }
+
+    def validate(
+        self,
+        root: pathlib.Path,
+        event: dict[str, Any],
+        environment: dict[str, str],
+    ) -> str:
+        path = pathlib.Path(environment["GITHUB_EVENT_PATH"])
+        path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        parent = str(recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"])
+        with mock.patch.dict(recovery.os.environ, environment, clear=True), mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ) as fetch, mock.patch.object(
+            recovery,
+            "_git",
+            return_value=(0, (parent + "\n").encode("ascii")),
+        ):
+            result = recovery._validate_r6_one_shot_execution(root)
+        fetch.assert_called_once_with(
+            root,
+            "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+            self.CONTROLLER,
+        )
+        return result
+
+    def test_exact_first_nonforced_r5_to_r6_push_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            event_path = root / "event.json"
+            self.assertEqual(
+                self.validate(
+                    root,
+                    self.event(),
+                    self.environment(event_path),
+                ),
+                self.CONTROLLER,
+            )
+
+    def test_attempt_event_and_branch_tampering_fail_closed(self) -> None:
+        cases: list[tuple[str, str, object]] = [
+            ("environment", "GITHUB_RUN_ATTEMPT", "2"),
+            ("environment", "GITHUB_EVENT_NAME", "workflow_dispatch"),
+            ("environment", "GITHUB_REF_NAME", "wrong-branch"),
+            ("event", "created", True),
+            ("event", "deleted", True),
+            ("event", "forced", True),
+            ("event", "before", "d" * 40),
+            ("event", "after", "d" * 40),
+            ("head_commit", "id", "d" * 40),
+            ("repository", "full_name", "other/repository"),
+        ]
+        for scope, key, value in cases:
+            with self.subTest(scope=scope, key=key), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                event_path = root / "event.json"
+                event = self.event()
+                environment = self.environment(event_path)
+                if scope == "environment":
+                    environment[key] = str(value)
+                elif scope == "event":
+                    event[key] = value
+                else:
+                    nested = event[scope]
+                    assert isinstance(nested, dict)
+                    nested[key] = value
+                event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+                with mock.patch.dict(
+                    recovery.os.environ,
+                    environment,
+                    clear=True,
+                ), mock.patch.object(
+                    recovery,
+                    "_fetch_credential_free",
+                ) as fetch:
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery._validate_r6_one_shot_execution(root)
+                fetch.assert_not_called()
+
+    def test_local_controller_parent_must_be_exact_r5(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            event_path = root / "event.json"
+            event_path.write_text(json.dumps(self.event()) + "\n", encoding="utf-8")
+            with mock.patch.dict(
+                recovery.os.environ,
+                self.environment(event_path),
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, ("d" * 40 + "\n").encode("ascii")),
+            ):
+                with self.assertRaisesRegex(SystemExit, "single successor of R5"):
+                    recovery._validate_r6_one_shot_execution(root)
+
+    def test_arm_binds_exact_c2_marker_publication_and_r5_incident(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        store = object.__new__(recovery.RecoveryReceiptStore)
+        store.root = ROOT
+        store.api = object()
+        store.publisher = publish
+        store.publication_head = E1
+        store.current_tip = incident["c2"]
+        store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+        store._initial_create_replay_pending = False
+        store._record_created_reconciliation_armed = False
+        store._r6_controller = None
+        chain = [
+            {"phase": "authorization_consumed"},
+            {"phase": "create_requested"},
+            {
+                "phase": "record_created",
+                "state": incident["state"],
+                "record_id": incident["record_id"],
+                "doi": incident["doi"],
+            },
+        ]
+        with mock.patch.object(
+            recovery,
+            "_validate_r6_one_shot_execution",
+            return_value=self.CONTROLLER,
+        ) as execution, mock.patch.object(
+            recovery,
+            "verify_historical_r5_record_created_timeout",
+        ) as historical, mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+        ) as fetch, mock.patch.object(
+            recovery,
+            "_verify_r5_local_object_chain",
+        ) as objects, mock.patch.object(
+            store,
+            "validate_recovery_chain",
+            return_value=chain,
+        ):
+            store.arm_exact_record_created_reconciliation()
+        self.assertTrue(store._record_created_reconciliation_armed)
+        self.assertEqual(store._r6_controller, self.CONTROLLER)
+        execution.assert_called_once_with(ROOT)
+        historical.assert_called_once_with(store.api, ROOT)
+        objects.assert_called_once_with(ROOT)
+        self.assertEqual(
+            fetch.call_args_list,
+            [
+                mock.call(ROOT, recovery.EXPECTED["publication_ref"], E1),
+                mock.call(
+                    ROOT,
+                    recovery.EXPECTED["create_post_once_ref"],
+                    recovery.R4_UNSENT_CREATE_INCIDENT["c1"],
+                ),
+                mock.call(
+                    ROOT,
+                    recovery.EXPECTED["recovery_ref"],
+                    incident["c2"],
+                ),
+            ],
+        )
+
+    def test_arm_rejects_malformed_c2_chain_or_identity(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        exact = [
+            {"phase": "authorization_consumed"},
+            {"phase": "create_requested"},
+            {
+                "phase": "record_created",
+                "state": incident["state"],
+                "record_id": incident["record_id"],
+                "doi": incident["doi"],
+            },
+        ]
+        cases: list[tuple[str, list[dict[str, Any]]]] = []
+        wrong_phase = copy.deepcopy(exact)
+        wrong_phase[-1]["phase"] = "prepared"
+        cases.append(("phase", wrong_phase))
+        for key, value in (
+            ("record_id", int(incident["record_id"]) + 1),
+            ("doi", "10.5281/zenodo.21763615"),
+            ("state", "published"),
+        ):
+            changed = copy.deepcopy(exact)
+            changed[-1][key] = value
+            cases.append((key, changed))
+        for label, chain in cases:
+            with self.subTest(label=label):
+                store = object.__new__(recovery.RecoveryReceiptStore)
+                store.root = ROOT
+                store.api = object()
+                store.publisher = publish
+                store.publication_head = E1
+                store.current_tip = incident["c2"]
+                store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+                store._initial_create_replay_pending = False
+                store._record_created_reconciliation_armed = False
+                store._r6_controller = None
+                with mock.patch.object(
+                    recovery,
+                    "_validate_r6_one_shot_execution",
+                    return_value=self.CONTROLLER,
+                ), mock.patch.object(
+                    recovery,
+                    "verify_historical_r5_record_created_timeout",
+                ), mock.patch.object(
+                    recovery,
+                    "_fetch_credential_free",
+                ), mock.patch.object(
+                    recovery,
+                    "_verify_r5_local_object_chain",
+                ), mock.patch.object(
+                    store,
+                    "validate_recovery_chain",
+                    return_value=chain,
+                ):
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        store.arm_exact_record_created_reconciliation()
+                self.assertFalse(store._record_created_reconciliation_armed)
+
+    def test_arm_rejects_every_nonexact_start_identity(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        cases = (
+            ("publication_head", "d" * 40),
+            ("current_tip", recovery.R4_UNSENT_CREATE_INCIDENT["c1"]),
+            ("create_post_once_head", None),
+            ("_initial_create_replay_pending", True),
+        )
+        for attribute, value in cases:
+            with self.subTest(attribute=attribute):
+                store = object.__new__(recovery.RecoveryReceiptStore)
+                store.root = ROOT
+                store.api = object()
+                store.publisher = publish
+                store.publication_head = E1
+                store.current_tip = incident["c2"]
+                store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+                store._initial_create_replay_pending = False
+                store._record_created_reconciliation_armed = False
+                store._r6_controller = None
+                setattr(store, attribute, value)
+                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                    store.arm_exact_record_created_reconciliation()
+                self.assertFalse(store._record_created_reconciliation_armed)
+
+
+class VRTCoreH3E1R6InventoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        manifest_path = (
+            ROOT
+            / "release/vrtcore-relational-h3-publication-2026-08-02"
+            / "publish-request.json"
+        )
+        cls.manifest = publish.load_manifest(manifest_path, ROOT)
+
+    @classmethod
+    def draft(cls, *, record_id: int = 21763614, doi: str | None = None) -> dict[str, Any]:
+        metadata = copy.deepcopy(cls.manifest["metadata"])
+        metadata["prereserve_doi"] = {
+            "doi": doi or "10.5281/zenodo.21763614"
+        }
+        return {
+            "id": record_id,
+            "doi": doi or "10.5281/zenodo.21763614",
+            "metadata": metadata,
+            "links": {"bucket": "https://zenodo.org/api/files/exact-c2-bucket"},
+            "files": [{"filename": "one-partial-file-only"}],
+        }
+
+    class Client:
+        def __init__(self, current_by_id: Mapping[int, tuple[str, dict[str, Any]]]) -> None:
+            self.current_by_id = dict(current_by_id)
+            self.get_calls: list[int] = []
+            self.wait_calls: list[tuple[object, ...]] = []
+
+        def get_deposition_or_record(self, record_id: int) -> tuple[str, dict[str, Any]]:
+            self.get_calls.append(record_id)
+            return self.current_by_id[record_id]
+
+        def wait_for_gated_record(self, *args: object, **kwargs: object) -> dict[str, Any]:
+            self.wait_calls.append((*args, kwargs))
+            initial = kwargs.get("initial")
+            assert isinstance(initial, dict)
+            return initial
+
+    def test_exact_single_partial_draft_is_identity_gated_without_file_gate(self) -> None:
+        draft = self.draft()
+        client = self.Client({21763614: ("draft", draft)})
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            return_value=[draft],
+        ) as inventory:
+            state, current = recovery._gate_r6_owned_inventory_identity(
+                publish,
+                self.manifest,
+                client,
+                "z" * 32,
+            )
+        self.assertEqual((state, current), ("draft", draft))
+        self.assertEqual(client.get_calls, [21763614])
+        self.assertEqual(client.wait_calls, [])
+        inventory.assert_called_once_with(client, "z" * 32)
+
+    def test_zero_duplicate_and_unstable_inventory_block(self) -> None:
+        draft = self.draft()
+        client = self.Client({21763614: ("draft", draft)})
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            return_value=[],
+        ):
+            with self.assertRaisesRegex(SystemExit, "observed 0"):
+                recovery._gate_r6_owned_inventory_identity(
+                    publish,
+                    self.manifest,
+                    client,
+                    "z" * 32,
+                )
+
+        duplicate = copy.deepcopy(draft)
+        duplicate["id"] = 21763615
+        client = self.Client(
+            {
+                21763614: ("draft", draft),
+                21763615: ("draft", duplicate),
+            }
+        )
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            return_value=[draft, duplicate],
+        ), mock.patch.object(
+            recovery,
+            "_validate_r6_record_identity",
+        ):
+            with self.assertRaisesRegex(SystemExit, "observed 2"):
+                recovery._gate_r6_owned_inventory_identity(
+                    publish,
+                    self.manifest,
+                    client,
+                    "z" * 32,
+                )
+
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            side_effect=SystemExit("BLOCK: inventory changed between complete passes"),
+        ):
+            with self.assertRaisesRegex(SystemExit, "inventory changed"):
+                recovery._gate_r6_owned_inventory_identity(
+                    publish,
+                    self.manifest,
+                    client,
+                    "z" * 32,
+                )
+
+    def test_wrong_record_or_doi_blocks(self) -> None:
+        cases = (
+            self.draft(record_id=21763615),
+            self.draft(doi="10.5281/zenodo.21763615"),
+        )
+        for candidate in cases:
+            with self.subTest(record=candidate["id"], doi=candidate["doi"]):
+                record_id = int(candidate["id"])
+                client = self.Client({record_id: ("draft", candidate)})
+                with mock.patch.object(
+                    publish,
+                    "_list_all_owned_depositions",
+                    return_value=[candidate],
+                ):
+                    with self.assertRaisesRegex(SystemExit, "exact C2"):
+                        recovery._gate_r6_owned_inventory_identity(
+                            publish,
+                            self.manifest,
+                            client,
+                            "z" * 32,
+                        )
+
+    def test_published_candidate_requires_full_public_gate(self) -> None:
+        published = self.draft()
+        client = self.Client({21763614: ("published", published)})
+        with mock.patch.object(
+            publish,
+            "_list_all_owned_depositions",
+            return_value=[published],
+        ), mock.patch.object(
+            recovery,
+            "_validate_r6_record_identity",
+        ) as identity:
+            state, current = recovery._gate_r6_owned_inventory_identity(
+                publish,
+                self.manifest,
+                client,
+                "z" * 32,
+            )
+        self.assertEqual((state, current), ("published", published))
+        identity.assert_called_once()
+        self.assertEqual(len(client.wait_calls), 1)
+        self.assertTrue(client.wait_calls[0][-1]["published"])
+
+
+class VRTCoreH3E1R6PublisherFirewallTests(unittest.TestCase):
+    RECORD_ID = 21763614
+    DOI = "10.5281/zenodo.21763614"
+    BUCKET = "https://zenodo.org/api/files/exact-c2-bucket"
+
+    @classmethod
+    def draft(cls) -> dict[str, Any]:
+        return {
+            "id": cls.RECORD_ID,
+            "doi": cls.DOI,
+            "metadata": {
+                "title": "Exact C2",
+                "version": "v1",
+                "creators": [{"name": "Ingolf Lohmann"}],
+                "prereserve_doi": {"doi": cls.DOI},
+            },
+            "links": {"bucket": cls.BUCKET},
+            "files": [],
+        }
+
+    def fixture(
+        self,
+        operation: tuple[str, str] | str,
+        *,
+        fail_boundary_at: int | None = None,
+    ) -> tuple[Any, Any, list[str], Any]:
+        events: list[str] = []
+        current = self.draft()
+
+        class PinnedZenodoError(RuntimeError):
+            pass
+
+        class Client:
+            def __init__(
+                instance: Any,
+                _token: str,
+                base_url: str,
+                _transport: Any | None = None,
+                *,
+                poll_attempts: int = 30,
+                poll_interval: float = 2.0,
+                sleeper: Any = None,
+            ) -> None:
+                del sleeper
+                instance.base_url = base_url
+                events.append(f"init:{poll_attempts}:{poll_interval}")
+
+            def request(
+                instance: Any,
+                method: str,
+                url: str,
+                **_kwargs: Any,
+            ) -> tuple[object, dict[str, Any]]:
+                del instance
+                events.append("transport:" + method + ":" + urllib.parse.urlsplit(url).path)
+                return object(), {}
+
+            def create_paper(instance: Any, _metadata: Mapping[str, Any]) -> dict[str, Any]:
+                del instance
+                events.append("original-create")
+                return current
+
+            def get_deposition_or_record(
+                instance: Any,
+                record_id: int,
+            ) -> tuple[str, dict[str, Any]]:
+                del instance
+                self.assertEqual(record_id, self.RECORD_ID)
+                events.append("record-get")
+                return "draft", current
+
+        zenodo_module = types.SimpleNamespace(
+            ZenodoClient=Client,
+            ZenodoError=PinnedZenodoError,
+            TOKEN_ENVIRONMENT_VARIABLE=publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE,
+            validate_response_url=publish.zenodo.validate_response_url,
+            _record_id=publish.zenodo._record_id,
+            _doi_from_deposition=publish.zenodo._doi_from_deposition,
+            _metadata_matches=publish.zenodo._metadata_matches,
+            _published_metadata_matches=publish.zenodo._published_metadata_matches,
+        )
+        module = types.SimpleNamespace()
+        module.zenodo = zenodo_module
+        module._create_consumption_receipt = lambda *_args, **_kwargs: None
+        module._atomic_recovery_evidence = lambda *_args, **_kwargs: None
+        module._acquire_remote_consumption_lock = lambda *_args, **_kwargs: None
+        module._shared_entries = lambda _files: []
+
+        def original_resume(
+            _evidence: Mapping[str, Any],
+            _evidence_path: pathlib.Path,
+            _manifest_path: pathlib.Path,
+            _root: pathlib.Path,
+            _manifest: Mapping[str, Any],
+            _execution_head: str,
+            _verified: Mapping[tuple[str, str], bytes],
+            client: Any,
+            _secrets: Mapping[str, str],
+        ) -> dict[str, Any]:
+            events.append("resume")
+            if operation == "create_paper":
+                client.create_paper({})
+            else:
+                assert isinstance(operation, tuple)
+                client.request(operation[0], operation[1])
+            return {"record_id": self.RECORD_ID, "doi": self.DOI}
+
+        module._resume_publication = original_resume
+
+        manifest = {
+            "metadata": {
+                "title": "Exact C2",
+                "version": "v1",
+                "creators": [{"name": "Ingolf Lohmann"}],
+                "prereserve_doi": True,
+            },
+            "files": [],
+        }
+        evidence = {
+            "phase": "record_created",
+            "state": publish.CONSUMPTION_STATE,
+            "record_id": self.RECORD_ID,
+            "doi": self.DOI,
+        }
+
+        def execute(manifest_path: pathlib.Path, root: pathlib.Path) -> dict[str, Any]:
+            client = Client("z" * 32, "https://zenodo.org/api")
+            return module._resume_publication(
+                evidence,
+                root / "zenodo-publication.json",
+                manifest_path,
+                root,
+                manifest,
+                E1,
+                {},
+                client,
+                {publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE: "z" * 32},
+            )
+
+        module.publish = execute
+
+        class Store:
+            _record_created_reconciliation_armed = True
+
+            def __init__(instance: Any) -> None:
+                instance.boundaries = 0
+
+            def persist_and_readback(
+                instance: Any,
+                _path: pathlib.Path,
+                _phase: str,
+            ) -> None:
+                del instance
+
+            def _recheck_remote_boundary(instance: Any) -> None:
+                instance.boundaries += 1
+                events.append("boundary")
+                if fail_boundary_at == instance.boundaries:
+                    raise SystemExit("BLOCK: simulated boundary drift")
+
+        return module, Client, events, Store()
+
+    def run_fixture(
+        self,
+        operation: tuple[str, str] | str,
+        *,
+        fail_boundary_at: int | None = None,
+    ) -> tuple[list[str], Any, Any, tuple[Any, ...]]:
+        module, client_type, events, store = self.fixture(
+            operation,
+            fail_boundary_at=fail_boundary_at,
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r6_owned_inventory_identity",
+            side_effect=lambda *_args: (events.append("inventory") or ("draft", self.draft())),
+        ):
+            root = pathlib.Path(directory)
+            result = recovery.run_publisher_with_checkpoints(
+                root / "publish-request.json",
+                root,
+                store,
+                reconcile_record=(self.RECORD_ID, self.DOI),
+            )
+        self.assertEqual(result, {"record_id": self.RECORD_ID, "doi": self.DOI})
+        return events, module, client_type, originals
+
+    @staticmethod
+    def assert_restored(module: Any, client_type: Any, originals: tuple[Any, ...]) -> None:
+        current = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+        )
+        for observed, expected in zip(current, originals):
+            if observed is not expected:
+                raise AssertionError("R6 wrapper hook was not restored")
+
+    def test_allowed_metadata_put_is_bracketed_and_restored(self) -> None:
+        events, module, client_type, originals = self.run_fixture(
+            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+        )
+        self.assertEqual(events[0], "init:120:2.0")
+        self.assertLess(events.index("inventory"), events.index("resume"))
+        mutation = "transport:PUT:/api/deposit/depositions/21763614"
+        self.assertEqual(events[-4:], ["boundary", "record-get", "boundary", mutation])
+        self.assert_restored(module, client_type, originals)
+
+    def test_every_exact_c2_effect_path_is_reachable_after_all_gates(self) -> None:
+        allowed = (
+            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+            ("PUT", self.BUCKET + "/paper.pdf"),
+            ("DELETE", self.BUCKET + "/old-paper.pdf"),
+            (
+                "DELETE",
+                f"/api/deposit/depositions/{self.RECORD_ID}/files/legacy-file-id",
+            ),
+            (
+                "POST",
+                f"/api/deposit/depositions/{self.RECORD_ID}/actions/publish",
+            ),
+        )
+        for method, url in allowed:
+            with self.subTest(method=method, url=url):
+                events, module, client_type, originals = self.run_fixture(
+                    (method, url),
+                )
+                path = urllib.parse.urlsplit(url).path
+                self.assertEqual(
+                    events[-4:],
+                    ["boundary", "record-get", "boundary", f"transport:{method}:{path}"],
+                )
+                self.assert_restored(module, client_type, originals)
+
+    def test_create_and_nonallowlisted_mutations_fail_before_transport(self) -> None:
+        forbidden: tuple[tuple[str, str] | str, ...] = (
+            "create_paper",
+            ("POST", "/api/deposit/depositions"),
+            (
+                "POST",
+                f"/api/deposit/depositions/{self.RECORD_ID}/actions/newversion",
+            ),
+            ("DELETE", f"/api/deposit/depositions/{self.RECORD_ID}"),
+            ("PUT", "/api/deposit/depositions/21763615"),
+        )
+        for operation in forbidden:
+            with self.subTest(operation=operation):
+                module, client_type, events, store = self.fixture(operation)
+                originals = (
+                    module._create_consumption_receipt,
+                    module._atomic_recovery_evidence,
+                    module._acquire_remote_consumption_lock,
+                    module._resume_publication,
+                    client_type.__init__,
+                    client_type.request,
+                    client_type.create_paper,
+                )
+                with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+                    recovery,
+                    "_load_e1_publisher",
+                    return_value=module,
+                ), mock.patch.object(
+                    recovery,
+                    "_gate_r6_owned_inventory_identity",
+                    return_value=("draft", self.draft()),
+                ):
+                    root = pathlib.Path(directory)
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        recovery.run_publisher_with_checkpoints(
+                            root / "publish-request.json",
+                            root,
+                            store,
+                            reconcile_record=(self.RECORD_ID, self.DOI),
+                        )
+                self.assertFalse(any(item.startswith("transport:") for item in events))
+                self.assertNotIn("original-create", events)
+                self.assert_restored(module, client_type, originals)
+
+    def test_second_boundary_drift_blocks_the_original_transport(self) -> None:
+        module, client_type, events, store = self.fixture(
+            ("PUT", f"/api/deposit/depositions/{self.RECORD_ID}"),
+            fail_boundary_at=3,
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ), mock.patch.object(
+            recovery,
+            "_gate_r6_owned_inventory_identity",
+            return_value=("draft", self.draft()),
+        ):
+            root = pathlib.Path(directory)
+            with self.assertRaisesRegex(SystemExit, "simulated boundary drift"):
+                recovery.run_publisher_with_checkpoints(
+                    root / "publish-request.json",
+                    root,
+                    store,
+                    reconcile_record=(self.RECORD_ID, self.DOI),
+                )
+        self.assertEqual(events.count("boundary"), 3)
+        self.assertIn("record-get", events)
+        self.assertFalse(any(item.startswith("transport:") for item in events))
+        self.assert_restored(module, client_type, originals)
+
+    def test_invalid_target_blocks_before_loading_or_installing_hooks(self) -> None:
+        with mock.patch.object(recovery, "_load_e1_publisher") as loader:
+            with self.assertRaisesRegex(SystemExit, "target differs from exact C2"):
+                recovery.run_publisher_with_checkpoints(
+                    pathlib.Path("publish-request.json"),
+                    pathlib.Path("."),
+                    object(),
+                    reconcile_record=(self.RECORD_ID + 1, self.DOI),
+                )
+        loader.assert_not_called()
+
+
 class FakeRecoveryReceiptStore:
     def __init__(self, events: list[str], fail_phase: str | None = None) -> None:
         self.events = events
@@ -1995,6 +2788,36 @@ class VRTCoreH3E1RecoveryRemoteBoundaryTests(unittest.TestCase):
         store._prepared_replay_pending = False
         store._initial_create_replay_pending = False
         return store
+
+    def test_r6_trigger_branch_drift_blocks_the_remote_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.store(pathlib.Path(directory))
+            store._r6_controller = "e" * 40
+
+            def read_ref(
+                _api: Any,
+                ref: str,
+                *,
+                allow_absent: bool = False,
+            ) -> str | None:
+                del allow_absent
+                if ref == "refs/heads/main":
+                    return store.controller_parent
+                if ref == "refs/heads/" + recovery.EXPECTED["trigger_branch"]:
+                    return "c" * 40
+                raise AssertionError("boundary read passed the moved trigger")
+
+            with mock.patch.object(
+                recovery,
+                "_read_head_ref",
+                side_effect=read_ref,
+            ), mock.patch.object(
+                recovery,
+                "_validate_existing_consumption_tag",
+            ) as tag:
+                with self.assertRaisesRegex(SystemExit, "trigger branch moved"):
+                    store._recheck_remote_boundary()
+            tag.assert_not_called()
 
     def test_remote_recheck_brackets_candidate_before_ref_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2799,8 +3622,14 @@ class VRTCoreH3E1RecoveryIncidentTests(unittest.TestCase):
 
 
 class FakeR4IncidentAPI:
-    def __init__(self, log: bytes, artifact_zip: bytes) -> None:
-        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+    def __init__(
+        self,
+        log: bytes,
+        artifact_zip: bytes,
+        incident: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.incident = incident or recovery.R4_UNSENT_CREATE_INCIDENT
+        incident = self.incident
         self.log = log
         self.artifact_zip = artifact_zip
         self.calls: list[tuple[str, str]] = []
@@ -2851,7 +3680,7 @@ class FakeR4IncidentAPI:
         if method != "GET" or payload is not None:
             raise AssertionError("R4 incident API attempted a mutation")
         self.calls.append((method, path))
-        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+        incident = self.incident
         run_path = (
             "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
         )
@@ -2864,10 +3693,10 @@ class FakeR4IncidentAPI:
             return 200, copy.deepcopy(self.job)
         if path == run_path + "/artifacts":
             return 200, copy.deepcopy(self.artifacts)
-        raise AssertionError("unexpected R4 incident path: " + path)
+        raise AssertionError("unexpected recovery incident path: " + path)
 
     def request_bytes(self, path: str, maximum: int) -> bytes:
-        incident = recovery.R4_UNSENT_CREATE_INCIDENT
+        incident = self.incident
         log_path = (
             "/repos/Goldkelch/qik-vrt/actions/jobs/"
             + str(incident["job_id"])
@@ -2883,7 +3712,7 @@ class FakeR4IncidentAPI:
             return self.log
         if path == artifact_path and maximum == incident["artifact_size"]:
             return self.artifact_zip
-        raise AssertionError("R4 incident raw request differs")
+        raise AssertionError("recovery incident raw request differs")
 
 
 class VRTCoreH3E1R4UnsentCreateIncidentTests(unittest.TestCase):
@@ -3096,6 +3925,153 @@ class VRTCoreH3E1R4UnsentCreateIncidentTests(unittest.TestCase):
                     FakeR4IncidentAPI(effect_tampered, artifact_zip),
                     digest_for=effect_tampered,
                 )
+
+
+class VRTCoreH3E1R5RecordCreatedIncidentTests(unittest.TestCase):
+    @staticmethod
+    def evidence() -> bytes:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        return subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(incident["c2"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+
+    @classmethod
+    def artifact_fixture(
+        cls,
+        body: bytes | None = None,
+    ) -> tuple[bytes, dict[str, Any]]:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        evidence = cls.evidence() if body is None else body
+        buffer = recovery.io.BytesIO()
+        with recovery.zipfile.ZipFile(
+            buffer,
+            mode="w",
+            compression=recovery.zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as archive:
+            entry = recovery.zipfile.ZipInfo(
+                str(incident["artifact_entry"]),
+                (2026, 8, 2, 20, 2, 28),
+            )
+            entry.create_system = 3
+            entry.external_attr = 0o100600 << 16
+            entry.compress_type = recovery.zipfile.ZIP_DEFLATED
+            archive.writestr(entry, evidence, compresslevel=6)
+        raw = buffer.getvalue()
+        with recovery.zipfile.ZipFile(recovery.io.BytesIO(raw), mode="r") as archive:
+            parsed = archive.infolist()[0]
+        return raw, {
+            "artifact_size": len(raw),
+            "artifact_digest": "sha256:" + recovery.hashlib.sha256(raw).hexdigest(),
+            "artifact_entry_compressed_bytes": parsed.compress_size,
+            "artifact_entry_crc32": parsed.CRC,
+            "artifact_entry_unix_mode": parsed.external_attr >> 16,
+        }
+
+    @staticmethod
+    def log_bytes() -> bytes:
+        lines: list[str] = []
+        for marker, count in recovery.R5_TIMEOUT_LOG_REQUIRED_COUNTS.items():
+            lines.extend(marker for _index in range(count))
+        prefix = b"\xef\xbb\xbf" + ("\n".join(lines) + "\n").encode("utf-8")
+        size = int(recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT["log_bytes"])
+        if len(prefix) > size:
+            raise AssertionError("R5 incident fixture exceeds exact size")
+        return prefix + b"x" * (size - len(prefix))
+
+    @staticmethod
+    def verify(api: FakeR4IncidentAPI, *, digest_for: bytes) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        real_sha256 = recovery.hashlib.sha256
+
+        class FixedDigest:
+            def hexdigest(self) -> str:
+                return str(incident["log_sha256"])
+
+        def sha256(raw: bytes = b"") -> Any:
+            if raw == digest_for:
+                return FixedDigest()
+            return real_sha256(raw)
+
+        with mock.patch.object(recovery.hashlib, "sha256", side_effect=sha256):
+            recovery.verify_historical_r5_record_created_timeout(api, ROOT)
+
+    def test_exact_r5_run_job_artifact_and_log_are_read_only(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        log = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            api = FakeR4IncidentAPI(log, artifact, incident)
+            self.verify(api, digest_for=log)
+        self.assertEqual(
+            [method for method, _path in api.calls],
+            ["GET", "GET", "GET", "GET_BYTES", "GET_BYTES"],
+        )
+
+    def test_r5_controller_c2_parent_tree_and_evidence_pins_are_real(self) -> None:
+        recovery._verify_r5_local_object_chain(ROOT)
+
+    def test_r5_metadata_artifact_and_c2_byte_tampering_block(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        log = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            run_api = FakeR4IncidentAPI(log, artifact, incident)
+            run_api.run["head_sha"] = "c" * 40
+            digest_api = FakeR4IncidentAPI(log, artifact, incident)
+            digest_api.artifacts["artifacts"][0]["digest"] = "sha256:" + "0" * 64
+            for label, api in (("run", run_api), ("artifact", digest_api)):
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(api, digest_for=log)
+                    self.assertTrue(
+                        all(
+                            method in {"GET", "GET_BYTES"}
+                            for method, _path in api.calls
+                        )
+                    )
+
+        evidence = self.evidence()
+        changed = evidence.replace(b'"record_created"', b'"record_createD"', 1)
+        self.assertEqual(len(changed), len(evidence))
+        changed_artifact, changed_overrides = self.artifact_fixture(changed)
+        with mock.patch.dict(incident, changed_overrides):
+            api = FakeR4IncidentAPI(log, changed_artifact, incident)
+            with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                self.verify(api, digest_for=log)
+
+    def test_r5_log_bom_required_and_forbidden_markers_are_exact(self) -> None:
+        incident = recovery.R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        raw = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        without_bom = b"xxx" + raw[3:]
+        marker = next(iter(recovery.R5_TIMEOUT_LOG_REQUIRED_COUNTS))
+        marker_tampered = raw.replace(
+            marker.encode("utf-8"),
+            ("_" * len(marker)).encode("utf-8"),
+            1,
+        )
+        published = recovery.R5_TIMEOUT_LOG_FORBIDDEN_MARKERS[0].encode("utf-8")
+        forbidden = raw[: -len(published)] + published
+        with mock.patch.dict(incident, overrides):
+            for label, log in (
+                ("bom", without_bom),
+                ("required", marker_tampered),
+                ("forbidden", forbidden),
+            ):
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(
+                            FakeR4IncidentAPI(log, artifact, incident),
+                            digest_for=log,
+                        )
 
 
 if __name__ == "__main__":

@@ -170,10 +170,62 @@ R4_INCIDENT_LOG_FORBIDDEN_MARKERS = (
     "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
     "ZENODO_PUBLICATION_STATE=published",
 )
+
+R5_RECORD_CREATED_TIMEOUT_INCIDENT: dict[str, Any] = {
+    "controller": "8db28488afa35549eea640f40f98321c1e56a4e0",
+    "controller_parent": "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08",
+    "controller_tree": "bc733e7ab1917efe7d4145e869bcfcd2a75d9570",
+    "run_id": 30766184456,
+    "job_id": 91545233271,
+    "run_attempt": 1,
+    "log_bytes": 411666,
+    "log_sha256": (
+        "c6af2132d5b2414557af7fe6245dde82f74a0f30507ffc2521b04edba3fdd60e"
+    ),
+    "artifact_id": 8839044468,
+    "artifact_name": "vrtcore-h3-e1-recovery-30766184456-1",
+    "artifact_size": 6688,
+    "artifact_digest": (
+        "sha256:4ad87dc34479ff226e059718d8a8d9a0569ee69068c86faa7e4a01cf176fc605"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 6528,
+    "artifact_entry_crc32": 0xF3A6D7EB,
+    "artifact_entry_unix_mode": 0o100600,
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+}
+
+R5_TIMEOUT_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "BLOCK: timed out waiting for editable Zenodo metadata 21763614": 1,
+    "Process completed with exit code 2.": 1,
+    "Process completed with exit code 1.": 1,
+}
+R5_TIMEOUT_LOG_FORBIDDEN_MARKERS = (
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+    "ZENODO_PUBLICATION_STATE=published",
+)
 R5_GOVERNANCE_BOUNDARIES = (
     "PRIVILEGED_REPLAY_MARKER_REF_DELETION_NOT_PREVENTED",
     "AMBIGUOUS_MARKER_MUTATION_BLOCKS_WITHOUT_REARM",
     "R5_RUN_ATTEMPT_ONE_ONLY",
+)
+R6_GOVERNANCE_BOUNDARIES = (
+    "R5_RUN_MUST_NOT_BE_RERUN",
+    "R6_RUN_ATTEMPT_ONE_ONLY",
+    "R6_RECONCILES_RECORD_21763614_WITHOUT_CREATE",
 )
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
@@ -808,6 +860,16 @@ class GitHubAPI:
                 + str(R4_UNSENT_CREATE_INCIDENT["artifact_id"])
                 + "/zip"
             ): R4_UNSENT_CREATE_INCIDENT["artifact_size"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R5_RECORD_CREATED_TIMEOUT_INCIDENT["job_id"])
+                + "/logs"
+            ): R5_RECORD_CREATED_TIMEOUT_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R5_RECORD_CREATED_TIMEOUT_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R5_RECORD_CREATED_TIMEOUT_INCIDENT["artifact_size"],
         }
         if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
@@ -985,9 +1047,16 @@ def verify_historical_incident(
         _fail("historical E1 job log crossed the claimed effect boundary")
 
 
-def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
-    """Download the bounded R4 artifact and bind its only entry exactly to C1."""
-    incident = R4_UNSENT_CREATE_INCIDENT
+def _verify_pinned_incident_artifact_evidence(
+    api: Any,
+    root: pathlib.Path,
+    incident: Mapping[str, Any],
+    *,
+    evidence_prefix: str,
+    expected_phase: str,
+    expected_state: str,
+) -> None:
+    """Bind one bounded Actions artifact exactly to one receipt checkpoint."""
     artifact_path = (
         "/repos/Goldkelch/qik-vrt/actions/artifacts/"
         + str(incident["artifact_id"])
@@ -1001,12 +1070,12 @@ def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
         or hashlib.sha256(raw).hexdigest()
         != expected_digest.removeprefix("sha256:")
     ):
-        _fail("historical R4 artifact ZIP identity differs")
+        _fail("historical recovery artifact ZIP identity differs")
     try:
         with zipfile.ZipFile(io.BytesIO(raw), mode="r") as archive:
             entries = archive.infolist()
             if archive.comment != b"" or len(entries) != 1:
-                _fail("historical R4 artifact ZIP inventory differs")
+                _fail("historical recovery artifact ZIP inventory differs")
             entry = entries[0]
             unix_mode = entry.external_attr >> 16
             if (
@@ -1015,7 +1084,8 @@ def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
                 or entry.is_dir()
                 or entry.create_system != 3
                 or unix_mode != incident["artifact_entry_unix_mode"]
-                or entry.file_size != incident["c1_evidence_bytes"]
+                or entry.file_size
+                != incident[evidence_prefix + "_evidence_bytes"]
                 or entry.compress_size
                 != incident["artifact_entry_compressed_bytes"]
                 or entry.CRC != incident["artifact_entry_crc32"]
@@ -1024,34 +1094,78 @@ def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
                 or entry.extra != b""
                 or entry.comment != b""
             ):
-                _fail("historical R4 artifact ZIP entry differs")
+                _fail("historical recovery artifact ZIP entry differs")
             evidence = archive.read(entry)
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile, NotImplementedError):
-        _fail("historical R4 artifact ZIP is invalid")
+        _fail("historical recovery artifact ZIP is invalid")
+    commit = str(incident[evidence_prefix])
     _status, expected = _git(
         root,
         "show",
-        f"{incident['c1']}:{EVIDENCE_RELATIVE.as_posix()}",
+        f"{commit}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    _status, blob = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{commit}:{EVIDENCE_RELATIVE.as_posix()}",
     )
     if (
         evidence != expected
-        or len(evidence) != incident["c1_evidence_bytes"]
+        or blob.decode("ascii").strip()
+        != incident[evidence_prefix + "_evidence_blob"]
+        or len(evidence) != incident[evidence_prefix + "_evidence_bytes"]
         or hashlib.sha256(evidence).hexdigest()
-        != incident["c1_evidence_sha256"]
+        != incident[evidence_prefix + "_evidence_sha256"]
     ):
-        _fail("historical R4 artifact evidence is not exact C1")
+        _fail("historical recovery artifact evidence differs from its checkpoint")
     try:
         value = json.loads(evidence.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError):
-        _fail("historical R4 artifact evidence JSON is invalid")
+        _fail("historical recovery artifact evidence JSON is invalid")
+    expected_record = incident.get("record_id")
+    expected_doi = incident.get("doi")
     if (
         not isinstance(value, dict)
-        or value.get("phase") != "create_requested"
-        or value.get("state") != publish.CONSUMPTION_STATE
-        or "record_id" in value
-        or "doi" in value
+        or value.get("phase") != expected_phase
+        or value.get("state") != expected_state
+        or (
+            expected_record is None
+            and ("record_id" in value or "doi" in value)
+        )
+        or (
+            expected_record is not None
+            and (
+                value.get("record_id") != expected_record
+                or value.get("doi") != expected_doi
+            )
+        )
     ):
-        _fail("historical R4 artifact crossed the pre-create evidence boundary")
+        _fail("historical recovery artifact crossed its evidence boundary")
+
+
+def _verify_r4_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Download the bounded R4 artifact and bind its only entry exactly to C1."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R4_UNSENT_CREATE_INCIDENT,
+        evidence_prefix="c1",
+        expected_phase="create_requested",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
+
+
+def _verify_r5_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Bind the sole R5 artifact exactly to record-created checkpoint C2."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R5_RECORD_CREATED_TIMEOUT_INCIDENT,
+        evidence_prefix="c2",
+        expected_phase="record_created",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
 
 
 def verify_historical_r4_unsent_create_incident(
@@ -1153,6 +1267,100 @@ def verify_historical_r4_unsent_create_incident(
     _verify_r4_artifact_evidence(api, root)
 
 
+def verify_historical_r5_record_created_timeout(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind the exact R5 timeout after C2 and before public verification."""
+    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R5 workflow run differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R5 workflow job differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R5 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(
+        api,
+        job_path + "/logs",
+        int(incident["log_bytes"]),
+    )
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R5 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R5 job log is not exact UTF-8 with BOM")
+    for marker, count in R5_TIMEOUT_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R5 job log required marker count differs")
+    if any(marker in decoded for marker in R5_TIMEOUT_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R5 job log crossed the public effect boundary")
+    _verify_r5_artifact_evidence(api, root)
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -1191,6 +1399,46 @@ def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
             != incident[prefix + "_evidence_sha256"]
         ):
             _fail("R4 unsent-create evidence identity differs")
+
+
+def _verify_r5_local_object_chain(root: pathlib.Path) -> None:
+    """Bind the R5 controller and its sole durable record-created checkpoint."""
+    _verify_r4_local_object_chain(root)
+    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    for prefix in ("controller", "c2"):
+        commit = str(incident[prefix])
+        _status, resolved = _git(
+            root,
+            "rev-parse",
+            "--verify",
+            f"{commit}^{{commit}}",
+        )
+        _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+        _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+        if (
+            resolved.decode("ascii").strip() != commit
+            or parents.decode("ascii").strip() != incident[prefix + "_parent"]
+            or tree.decode("ascii").strip() != incident[prefix + "_tree"]
+        ):
+            _fail("R5 record-created local object chain differs")
+    _status, blob = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{incident['c2']}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    _status, evidence = _git(
+        root,
+        "show",
+        f"{incident['c2']}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    if (
+        blob.decode("ascii").strip() != incident["c2_evidence_blob"]
+        or len(evidence) != incident["c2_evidence_bytes"]
+        or hashlib.sha256(evidence).hexdigest()
+        != incident["c2_evidence_sha256"]
+    ):
+        _fail("R5 record-created evidence object differs")
 
 
 def _head_ref_path(ref: str, *, plural: bool) -> str:
@@ -1813,6 +2061,50 @@ def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
     return controller
 
 
+def _validate_r6_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind reconciliation to the first non-forced R5 -> R6 push attempt."""
+    controller = os.environ.get("GITHUB_SHA", "")
+    event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
+    if (
+        HEX40.fullmatch(controller) is None
+        or os.environ.get("GITHUB_REPOSITORY") != EXPECTED["repository"]
+        or os.environ.get("GITHUB_EVENT_NAME") != "push"
+        or os.environ.get("GITHUB_REF") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_REF_NAME") != EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+        or not event_path_raw
+    ):
+        _fail("R6 reconciliation execution environment differs")
+    event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
+    repository = event.get("repository")
+    head_commit = event.get("head_commit")
+    if (
+        event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or event.get("before") != R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"]
+        or event.get("after") != controller
+        or event.get("created") is not False
+        or event.get("deleted") is not False
+        or event.get("forced") is not False
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_commit, dict)
+        or head_commit.get("id") != controller
+    ):
+        _fail("R6 reconciliation push event differs")
+    _fetch_credential_free(
+        root,
+        "refs/heads/" + EXPECTED["trigger_branch"],
+        controller,
+    )
+    _status, parent = _git(root, "show", "-s", "--format=%P", controller)
+    if (
+        parent.decode("ascii").strip()
+        != R5_RECORD_CREATED_TIMEOUT_INCIDENT["controller"]
+    ):
+        _fail("R6 controller is not the exact single successor of R5")
+    return controller
+
+
 @contextlib.contextmanager
 def _without_effect_credentials() -> Any:
     """Temporarily hide effect credentials from synchronous local helpers."""
@@ -1891,10 +2183,22 @@ class RecoveryReceiptStore:
             _fail("create-post-once marker target differs")
         self._prepared_replay_pending = False
         self._initial_create_replay_pending = False
+        self._record_created_reconciliation_armed = False
+        self._r6_controller: str | None = None
 
     def _recheck_remote_boundary(self) -> None:
         if _read_head_ref(self.api, "refs/heads/main") != self.controller_parent:
             _fail("main moved across the exact recovery boundary")
+        r6_controller = getattr(self, "_r6_controller", None)
+        if (
+            r6_controller is not None
+            and _read_head_ref(
+                self.api,
+                "refs/heads/" + EXPECTED["trigger_branch"],
+            )
+            != r6_controller
+        ):
+            _fail("R6 trigger branch moved across the reconciliation boundary")
         if _read_head_ref(self.api, EXPECTED["publication_ref"]) != EXPECTED["e1"]:
             _fail("publication branch moved across the recovery boundary")
         if (
@@ -1960,6 +2264,50 @@ class RecoveryReceiptStore:
             _fail("R4 unsent-create recovery chain differs")
         self._initial_create_replay_pending = True
         return True
+
+    def arm_exact_record_created_reconciliation(self) -> None:
+        """Arm only exact C2 from the first R5 timeout, never a create replay."""
+        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        if (
+            self.publication_head != EXPECTED["e1"]
+            or self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]
+            or self.current_tip != incident["c2"]
+            or self._initial_create_replay_pending
+        ):
+            _fail("R6 record-created reconciliation state differs")
+        self._r6_controller = _validate_r6_one_shot_execution(self.root)
+        _fetch_credential_free(
+            self.root,
+            EXPECTED["publication_ref"],
+            EXPECTED["e1"],
+        )
+        _fetch_credential_free(
+            self.root,
+            EXPECTED["create_post_once_ref"],
+            R4_UNSENT_CREATE_INCIDENT["c1"],
+        )
+        _fetch_credential_free(
+            self.root,
+            EXPECTED["recovery_ref"],
+            incident["c2"],
+        )
+        _verify_r5_local_object_chain(self.root)
+        verify_historical_r5_record_created_timeout(self.api, self.root)
+        chain = self.validate_recovery_chain(incident["c2"])
+        if [item["phase"] for item in chain] != [
+            "authorization_consumed",
+            "create_requested",
+            "record_created",
+        ]:
+            _fail("R5 record-created recovery chain differs")
+        last = chain[-1]
+        if (
+            last.get("record_id") != incident["record_id"]
+            or last.get("doi") != incident["doi"]
+            or last.get("state") != incident["state"]
+        ):
+            _fail("R5 record-created recovery identity differs")
+        self._record_created_reconciliation_armed = True
 
     def _prepare_integrity(self) -> None:
         with _without_effect_credentials():
@@ -2462,12 +2810,105 @@ class RecoveryReceiptStore:
         return evidence
 
 
+def _validate_r6_record_identity(
+    publisher_module: Any,
+    manifest: Mapping[str, Any],
+    state: str,
+    current: Mapping[str, Any],
+) -> None:
+    """Validate C2 identity without requiring draft file completeness."""
+    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    record_id = publisher_module.zenodo._record_id(
+        current,
+        "R6 record-created reconciliation record",
+    )
+    doi = publisher_module.zenodo._doi_from_deposition(
+        current,
+        "R6 record-created reconciliation record",
+    )
+    if record_id != incident["record_id"] or doi != incident["doi"]:
+        _fail("R6 owned record identity differs from exact C2")
+    actual_metadata = current.get("metadata")
+    metadata = manifest["metadata"]
+    if state == "published":
+        if not publisher_module.zenodo._published_metadata_matches(
+            actual_metadata,
+            metadata,
+        ):
+            _fail("R6 published record metadata differs from exact C2 manifest")
+        return
+    if state != "draft":
+        _fail("R6 owned record state is unsupported")
+    expected_metadata = dict(metadata)
+    expected_metadata.pop("prereserve_doi", None)
+    if not publisher_module.zenodo._metadata_matches(
+        actual_metadata,
+        expected_metadata,
+    ):
+        _fail("R6 draft metadata differs from exact C2 manifest")
+
+
+def _gate_r6_owned_inventory_identity(
+    publisher_module: Any,
+    manifest: Mapping[str, Any],
+    client: Any,
+    zenodo_token: str,
+) -> tuple[str, Mapping[str, Any]]:
+    """Require one stable owned C2 identity before any R6 Zenodo mutation."""
+    metadata = manifest["metadata"]
+    entries = publisher_module._shared_entries(manifest["files"])
+    inventory = publisher_module._list_all_owned_depositions(client, zenodo_token)
+    matches: list[tuple[int, str, str, Mapping[str, Any]]] = []
+    for item in inventory:
+        if not publisher_module._inventory_publication_identity_candidate(
+            item,
+            metadata,
+        ):
+            continue
+        record_id = publisher_module.zenodo._record_id(
+            item,
+            "R6 owned inventory candidate",
+        )
+        state, current = client.get_deposition_or_record(record_id)
+        _validate_r6_record_identity(
+            publisher_module,
+            manifest,
+            state,
+            current,
+        )
+        doi = publisher_module.zenodo._doi_from_deposition(
+            current,
+            "R6 owned inventory candidate",
+        )
+        matches.append((record_id, doi, state, current))
+    if len(matches) != 1:
+        _fail(
+            "R6 reconciliation requires exactly one canonically matching "
+            f"owned deposition; observed {len(matches)}"
+        )
+    record_id, doi, state, current = matches[0]
+    incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+    if record_id != incident["record_id"] or doi != incident["doi"]:
+        _fail("R6 sole owned candidate differs from exact C2 identity")
+    if state == "published":
+        current = client.wait_for_gated_record(
+            record_id,
+            metadata,
+            entries,
+            doi,
+            published=True,
+            initial=current,
+        )
+    return state, current
+
+
 def run_publisher_with_checkpoints(
     manifest_path: pathlib.Path,
     root: pathlib.Path,
     store: CheckpointStore,
     *,
     publish_callable: Callable[[pathlib.Path, pathlib.Path], dict[str, Any]] | None = None,
+    reconcile_record: tuple[int, str] | None = None,
 ) -> dict[str, Any]:
     """Run the unchanged publisher with synchronous, remote phase checkpoints.
 
@@ -2476,11 +2917,38 @@ def run_publisher_with_checkpoints(
     read back that phase.  Consequently ``create_requested`` is durable before
     ``create_paper`` and ``publish_requested`` before ``publish_and_poll``.
     """
-    publisher_module = publish if publish_callable is not None else _load_e1_publisher(root)
+    if reconcile_record is not None and publish_callable is not None:
+        _fail("R6 reconciliation may only run the freshly loaded E1 publisher")
+    if reconcile_record is not None:
+        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        if reconcile_record != (
+            int(incident["record_id"]),
+            str(incident["doi"]),
+        ):
+            _fail("R6 reconciliation target differs from exact C2")
+    publisher_module = (
+        publish if publish_callable is not None else _load_e1_publisher(root)
+    )
     callable_value = publish_callable or publisher_module.publish
     original_exclusive = publisher_module._create_consumption_receipt
     original_atomic = publisher_module._atomic_recovery_evidence
     original_acquire = publisher_module._acquire_remote_consumption_lock
+    client_type: Any | None = None
+    original_client_init: Any | None = None
+    original_request: Any | None = None
+    original_create_paper: Any | None = None
+    original_resume: Any | None = None
+    if reconcile_record is not None:
+        client_type = publisher_module.zenodo.ZenodoClient
+        original_client_init = client_type.__init__
+        original_request = client_type.request
+        original_create_paper = client_type.create_paper
+        original_resume = publisher_module._resume_publication
+    reconciliation: dict[str, Any] = {
+        "inventory_complete": False,
+        "manifest": None,
+        "bucket_path": None,
+    }
 
     def reject_new_consumption_lock(*_args: Any, **_kwargs: Any) -> Any:
         _fail("recovery may not acquire or create an authorization lock")
@@ -2506,9 +2974,183 @@ def run_publisher_with_checkpoints(
         original_atomic(path, value, secrets_by_name)
         persist_after_write(path, value)
 
+    def extended_client_init(
+        instance: Any,
+        token: str,
+        base_url: str,
+        transport: Any | None = None,
+        *,
+        poll_attempts: int = 30,
+        poll_interval: float = 2.0,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        if poll_attempts != 30 or poll_interval != 2.0:
+            _fail("R6 reconciliation client polling inputs differ")
+        if original_client_init is None:
+            _fail("R6 reconciliation client initializer is unavailable")
+        original_client_init(
+            instance,
+            token,
+            base_url,
+            transport,
+            poll_attempts=120,
+            poll_interval=2.0,
+            sleeper=sleeper,
+        )
+
+    def reject_create_paper(*_args: Any, **_kwargs: Any) -> Any:
+        _fail("R6 reconciliation forbids creation of a Zenodo deposition")
+
+    def guarded_request(
+        instance: Any,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> Any:
+        normalized_method = str(method).upper()
+        safe_url = publisher_module.zenodo.validate_response_url(
+            url,
+            instance.base_url,
+        )
+        path = urllib.parse.urlsplit(safe_url).path
+        if normalized_method == "POST" and path == "/api/deposit/depositions":
+            _fail("R6 reconciliation blocked the exact Zenodo create endpoint")
+        if normalized_method != "GET":
+            incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+            if (
+                reconcile_record
+                != (int(incident["record_id"]), str(incident["doi"]))
+                or getattr(store, "_record_created_reconciliation_armed", False)
+                is not True
+                or reconciliation["inventory_complete"] is not True
+                or not isinstance(reconciliation["manifest"], Mapping)
+            ):
+                _fail("R6 Zenodo mutation preceded its exact reconciliation gate")
+            record_id = int(incident["record_id"])
+            deposition_prefix = f"/api/deposit/depositions/{record_id}"
+            bucket_path = reconciliation["bucket_path"]
+            legacy_file = path.startswith(deposition_prefix + "/files/")
+            bucket_child = (
+                isinstance(bucket_path, str)
+                and path.startswith(bucket_path + "/")
+            )
+            publish_action = deposition_prefix + "/actions/publish"
+            permitted = (
+                (normalized_method == "PUT" and path == deposition_prefix)
+                or (normalized_method == "PUT" and bucket_child)
+                or (
+                    normalized_method == "DELETE"
+                    and (legacy_file or bucket_child)
+                )
+                or (
+                    normalized_method == "POST"
+                    and path == publish_action
+                )
+            )
+            if not permitted:
+                _fail("R6 Zenodo mutation escaped the exact C2 record boundary")
+            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+            state, current = instance.get_deposition_or_record(record_id)
+            if state != "draft":
+                _fail("R6 forbids mutation after the exact C2 record is public")
+            _validate_r6_record_identity(
+                publisher_module,
+                reconciliation["manifest"],
+                state,
+                current,
+            )
+            store._recheck_remote_boundary()  # type: ignore[attr-defined]
+        if original_request is None:
+            _fail("R6 reconciliation request transport is unavailable")
+        return original_request(instance, normalized_method, safe_url, **kwargs)
+
+    def reconcile_exact_record(
+        evidence: Mapping[str, Any],
+        evidence_path: pathlib.Path,
+        pinned_manifest_path: pathlib.Path,
+        pinned_root: pathlib.Path,
+        manifest: Mapping[str, Any],
+        execution_head: str,
+        verified: Mapping[tuple[str, str], bytes],
+        client: Any,
+        secrets_by_name: Mapping[str, str],
+    ) -> dict[str, Any]:
+        incident = R5_RECORD_CREATED_TIMEOUT_INCIDENT
+        if (
+            reconcile_record
+            != (int(incident["record_id"]), str(incident["doi"]))
+            or getattr(store, "_record_created_reconciliation_armed", False)
+            is not True
+            or evidence.get("phase") != incident["phase"]
+            or evidence.get("state") != incident["state"]
+            or evidence.get("record_id") != incident["record_id"]
+            or evidence.get("doi") != incident["doi"]
+        ):
+            _fail("R6 resume input differs from the exact durable C2 checkpoint")
+        zenodo_token = secrets_by_name.get(
+            publisher_module.zenodo.TOKEN_ENVIRONMENT_VARIABLE,
+            "",
+        )
+        if not isinstance(zenodo_token, str) or not zenodo_token:
+            _fail("R6 reconciliation lacks its validated Zenodo credential")
+        state, current = _gate_r6_owned_inventory_identity(
+            publisher_module,
+            manifest,
+            client,
+            zenodo_token,
+        )
+        store._recheck_remote_boundary()  # type: ignore[attr-defined]
+        _validate_r6_record_identity(publisher_module, manifest, state, current)
+        bucket_path: str | None = None
+        if state == "draft":
+            links = current.get("links")
+            bucket = links.get("bucket") if isinstance(links, dict) else None
+            if not isinstance(bucket, str):
+                _fail("R6 exact C2 draft lacks its bounded upload bucket")
+            safe_bucket = publisher_module.zenodo.validate_response_url(
+                bucket,
+                client.base_url,
+            )
+            bucket_path = urllib.parse.urlsplit(safe_bucket).path.rstrip("/")
+            if not bucket_path.startswith("/api/"):
+                _fail("R6 exact C2 upload bucket escaped the Zenodo API")
+        reconciliation.update(
+            {
+                "inventory_complete": True,
+                "manifest": manifest,
+                "bucket_path": bucket_path,
+            }
+        )
+        if original_resume is None:
+            _fail("R6 reconciliation resume function is unavailable")
+        result = original_resume(
+            evidence,
+            evidence_path,
+            pinned_manifest_path,
+            pinned_root,
+            manifest,
+            execution_head,
+            verified,
+            client,
+            secrets_by_name,
+        )
+        if (
+            result.get("record_id") != incident["record_id"]
+            or result.get("doi") != incident["doi"]
+        ):
+            _fail("R6 publisher result changed the exact C2 record identity")
+        return result
+
     publisher_module._create_consumption_receipt = checkpointing_exclusive_writer
     publisher_module._atomic_recovery_evidence = checkpointing_atomic_writer
     publisher_module._acquire_remote_consumption_lock = reject_new_consumption_lock
+    if reconcile_record is not None:
+        if client_type is None:
+            _fail("R6 reconciliation client type is unavailable")
+        client_type.__init__ = extended_client_init
+        client_type.request = guarded_request
+        client_type.create_paper = reject_create_paper
+        publisher_module._resume_publication = reconcile_exact_record
     try:
         try:
             return callable_value(manifest_path, root)
@@ -2517,6 +3159,11 @@ def run_publisher_with_checkpoints(
                 raise
             raise zenodo.ZenodoError(str(exc)) from None
     finally:
+        if client_type is not None:
+            client_type.__init__ = original_client_init
+            client_type.request = original_request
+            client_type.create_paper = original_create_paper
+            publisher_module._resume_publication = original_resume
         publisher_module._create_consumption_receipt = original_exclusive
         publisher_module._atomic_recovery_evidence = original_atomic
         publisher_module._acquire_remote_consumption_lock = original_acquire
@@ -2587,7 +3234,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         store = _controller_store(args)
         if args.publish:
-            store.arm_exact_unsent_create_replay()
+            store.arm_exact_record_created_reconciliation()
         finalized, tip = store.restore_or_bootstrap()
         if args.prepare:
             _write_outputs(
@@ -2621,6 +3268,10 @@ def main(argv: list[str] | None = None) -> int:
             store.manifest_path,
             store.root,
             store,
+            reconcile_record=(
+                int(R5_RECORD_CREATED_TIMEOUT_INCIDENT["record_id"]),
+                str(R5_RECORD_CREATED_TIMEOUT_INCIDENT["doi"]),
+            ),
         )
         if (
             result.get("phase") != "public_verified"
