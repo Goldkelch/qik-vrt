@@ -21,14 +21,16 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: qikvrt-vrtcore-h3-audited-recovery-run30753751400-v1
+  group: qikvrt-vrtcore-causal-zenodo-publication-v1
   cancel-in-progress: false
 
 jobs:
   recover:
     if: >-
       github.repository == 'Goldkelch/qik-vrt' &&
-      github.ref == 'refs/heads/trusted/vrtcore-h3-audited-recovery-run30753751400-v1'
+      github.ref == 'refs/heads/trusted/vrtcore-h3-audited-recovery-run30753751400-v1' &&
+      github.event_name == 'push' &&
+      github.event.forced == false
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -38,15 +40,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify immutable recovery executor and tests
+      - name: Verify immutable exact-one recovery executor and tests
         shell: bash
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/qikvrt-h3-recovery.sha256" <<'EOF'
-          65f5827ced4f9ec89cac5df368371e9a51b9570403df4671d41ecdf5f0b18ba2  tools/qikvrt_vrtcore_h3_audited_recovery.py
-          6b94bd1797d9b5621a7ffbbbce440eefc1c714128940efd8891e3622d33104de  tests/test_vrtcore_h3_audited_recovery.py
-          EOF
-          sha256sum --check "$RUNNER_TEMP/qikvrt-h3-recovery.sha256"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify HEAD:tools/qikvrt_vrtcore_h3_audited_recovery.py)" = \
+            fa6df7c9874edb78af0c071042709b853b6a2057
+          test "$(git rev-parse --verify HEAD:tests/test_vrtcore_h3_audited_recovery.py)" = \
+            a85ef0870836cb8e80340779b0895eae00e9376b
           python3 -B -m py_compile tools/qikvrt_vrtcore_h3_audited_recovery.py
           python3 -B -m unittest -v tests.test_vrtcore_h3_audited_recovery
 
@@ -57,4 +59,9 @@ jobs:
           ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_vrtcore_h3_audited_recovery.py --execute
+          python3 -B - <<'PY'
+          from tools import qikvrt_vrtcore_h3_audited_recovery as recovery
+
+          recovery.EXPECTED_MAIN = "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
+          raise SystemExit(recovery.main(["--execute"]))
+          PY
