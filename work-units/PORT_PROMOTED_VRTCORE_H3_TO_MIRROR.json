@@ -1,0 +1,47 @@
+{
+  "schema": "qikvrt_history_preserving_mirror_port_work_unit_v1",
+  "work_unit_id": "PORT-PROMOTED-VRTCORE-H3-TO-MIRROR",
+  "state": "AUTHORIZED_PENDING_PORT_MATERIALIZATION",
+  "source": {
+    "repository": "Goldkelch/qik-vrt",
+    "pull_request": 320,
+    "exact_source_head": "8b3f8cdc3ac5fc381b0796d5f7503f3a0e9689ba",
+    "promoted_main": "319f2629a7224fd32e4e818f09cce2f3c64e574f"
+  },
+  "target": {
+    "repository": "ingolf-lohmann/qik-vrt",
+    "base_main": "2cf14d3229f9ad335b8f48f94e79c4ebcd30b8df",
+    "required_result": "history_preserving_current_main_child_candidate"
+  },
+  "requirements": [
+    "copy only the portable VRTCore H3 source blobs from the exact Authority source head",
+    "preserve Mirror history and all newer Mirror-only receipts",
+    "regenerate only Mirror-native repository integrity outputs",
+    "run all applicable exact-head Mirror gates on the final unchanged head",
+    "byte-compare every portable non-generated path with Authority PR 320",
+    "create a reciprocal equality receipt only after separately authorized promotion"
+  ],
+  "forbidden_effects": [
+    "zenodo_mutation",
+    "ietf_datatracker_submission_or_resubmission",
+    "release_or_tag_creation",
+    "deployment",
+    "force_push_or_history_rewrite",
+    "merge_without_existing_promotion_contract"
+  ],
+  "cross_repository_pr_attempt": {
+    "performed": true,
+    "result": "UPSTREAM_502_NO_PR_CREATED",
+    "fallback": "repository_native_history_preserving_port"
+  },
+  "completion_claims": {
+    "port_created": false,
+    "mirror_gates_complete": false,
+    "mirror_promotion_complete": false,
+    "reciprocal_receipt_complete": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  },
+  "next_effect": "MATERIALIZE_HISTORY_PRESERVING_MIRROR_PORT_FROM_EXACT_AUTHORITY_PR320_HEAD"
+}
