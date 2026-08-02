@@ -1,0 +1,55 @@
+{
+  "schema": "qikvrt_bounded_autonomous_self_healing_v1",
+  "title": "Bounded autonomous self-healing archive and memory",
+  "state": "candidate",
+  "principle": "Detect, classify, repair, verify, persist, and learn from repository-local failures without weakening truth, provenance, rights, or external-effect boundaries.",
+  "autonomy_boundary": {
+    "repository_local_repairs": "authorized_when_deterministic_and_reversible",
+    "retry_failed_jobs": "authorized_once_per_exact_head_and_failure_signature",
+    "regenerate_repository_native_outputs": "authorized",
+    "create_history_preserving_repair_branch_and_draft_pr": "authorized",
+    "merge": "requires_exact_head_owner_or_policy_authorization",
+    "zenodo_publication": "requires_separate_byte_bound_authorization_and_transport",
+    "ietf_datatracker_submission": "requires_separate_exact_artifact_authorization_and_transport",
+    "secrets_or_permissions_escalation": "forbidden",
+    "claim_inflation": "forbidden"
+  },
+  "failure_classes": [
+    "transient_runner_or_network_failure",
+    "stale_generated_integrity",
+    "stale_repository_projection",
+    "non_fast_forward_materialization_race",
+    "base_lease_drift",
+    "missing_optional_runtime_component",
+    "substantive_test_or_claim_regression",
+    "external_effect_unavailable_or_unauthorized"
+  ],
+  "repair_rules": {
+    "transient_runner_or_network_failure": "rerun_failed_jobs_once",
+    "stale_generated_integrity": "regenerate_only_canonical_integrity_outputs_then_run_full_gates",
+    "stale_repository_projection": "regenerate_only_repository_native_projection_outputs_then_run_full_gates",
+    "non_fast_forward_materialization_race": "reobserve_head_and_create_history_preserving_successor",
+    "base_lease_drift": "port_intended_non_generated_delta_to_current_main_without_force",
+    "missing_optional_runtime_component": "use_reviewed_bootstrap_only_and_record_exact_version",
+    "substantive_test_or_claim_regression": "fail_closed_and_open_attributable_diagnostic_issue",
+    "external_effect_unavailable_or_unauthorized": "persist_candidate_and_receipt_without_claiming_effect"
+  },
+  "proof_obligations": [
+    "exact_head_binding",
+    "append_only_repair_ledger",
+    "before_after_failure_signature",
+    "changed_path_allowlist",
+    "deterministic_repeat_run",
+    "complete_repository_gate_result",
+    "no_secret_or_permission_expansion",
+    "no_external_effect_without_separate_authorization",
+    "no_PASS_FINAL_PASS_or_EFFECT_ACK_DONE_without_evidence"
+  ],
+  "scientific_claim": "The repository can establish bounded operational autonomy for enumerated failure classes under explicit capabilities and invariants. It cannot prove absolute autonomy against unknown faults, unavailable infrastructure, hostile maintainers, revoked credentials, or physical destruction.",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "ABSOLUTE_AUTONOMY": false
+  }
+}

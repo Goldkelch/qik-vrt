@@ -1,0 +1,86 @@
+name: QIKVRT bounded autonomous self-heal
+
+on:
+  workflow_run:
+    workflows:
+      - QIKVRT CI
+      - QIKVRT Collective Proposal Review
+      - QIKVRT repository evidence materialization
+      - QIKVRT Batch-003 remaining subject disposition
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: qikvrt-self-heal-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event.workflow_run.name || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  classify-and-repair:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Bind exact failed run
+        id: bind
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "manual=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test -n "$RUN_ID"
+          test -n "$HEAD_SHA"
+          echo "manual=false" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "attempt=${RUN_ATTEMPT:-1}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "workflow_name=$WORKFLOW_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Retry transient failure once
+        if: steps.bind.outputs.manual == 'false' && fromJSON(steps.bind.outputs.attempt) < 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ steps.bind.outputs.run_id }}
+        run: |
+          set -eu
+          gh api --method POST "repos/$REPOSITORY/actions/runs/$RUN_ID/rerun-failed-jobs"
+
+      - name: Persist exhausted blocker as attributable issue
+        if: steps.bind.outputs.manual == 'false' && fromJSON(steps.bind.outputs.attempt) >= 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ steps.bind.outputs.run_id }}
+          HEAD_SHA: ${{ steps.bind.outputs.head_sha }}
+          WORKFLOW_NAME: ${{ steps.bind.outputs.workflow_name }}
+        run: |
+          set -eu
+          signature=$(printf '%s\n%s\n%s\n' "$WORKFLOW_NAME" "$RUN_ID" "$HEAD_SHA" | sha256sum | cut -d' ' -f1)
+          title="[self-heal blocked] $WORKFLOW_NAME at ${HEAD_SHA:0:12}"
+          body=$(cat <<EOF
+A bounded autonomous retry was exhausted.
+
+- workflow: \`$WORKFLOW_NAME\`
+- exact head: \`$HEAD_SHA\`
+- failed run: \`$RUN_ID\`
+- failure signature: \`$signature\`
+- state: \`BLOCKED_WITH_RECEIPT\`
+
+No merge, publication, deployment, permission expansion, PASS, FINAL_PASS or EFFECT_ACK_DONE is implied. A substantive diagnosis or an allowlisted repository-local repair is required.
+EOF
+)
+          existing=$(gh issue list --repo "$REPOSITORY" --state open --search "$signature in:body" --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$REPOSITORY" --title "$title" --body "$body"
+          fi
