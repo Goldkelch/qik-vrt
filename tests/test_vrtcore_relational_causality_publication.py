@@ -28,10 +28,15 @@ PATH_MAP = PUBLICATION / "ARTIFACT_PATH_MAP.json"
 CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H0_PR_MERGE.json"
 KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT_H0_CI.json"
 H1_MATRIX = PUBLICATION / "VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json"
-EXACT_CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json"
+EXACT_CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H2FIX_EXACT_HEAD.json"
 FINAL_CLAIM_MATRIX = PUBLICATION / "CLAIM_MATRIX.json"
 FINAL_KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT.json"
 BOUNDARY_TEST_REPORT = PUBLICATION / "BOUNDARY_TEST_REPORT.json"
+CHANGE_NOTICE = PUBLICATION / "CHANGE_NOTICE.md"
+RETURN_RECEIPT = PUBLICATION / "PREPUBLICATION_RETURN_RECEIPT.json"
+ZENODO_METADATA = PUBLICATION / "ZENODO_METADATA.json"
+ZENODO_CHECKSUMS = PUBLICATION / "ZENODO_SHA256SUMS"
+MACHINE_PROOF_BUNDLE = PUBLICATION / "MACHINE_PROOF_BUNDLE.json"
 H2_GENERATOR = ROOT / "tools/qikvrt_vrtcore_zenodo_candidate.py"
 
 NAMESPACE = "QIKVRT.VRTCore"
@@ -467,7 +472,7 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
     def test_exact_head_h2_materialization_is_complete_and_reproducible(self) -> None:
         self.assertEqual(
             sha256(EXACT_CI_KERNEL_EVIDENCE),
-            "ea25ab8ddcbe34b33d14309d25a944e05bfd6899cb832cb1280c2aa7e121f0f1",
+            "25ca9640b212ea5b331c8cb8e1200a95353525a1686145d967e8884dd5cfbf9f",
         )
         evidence = load_json(EXACT_CI_KERNEL_EVIDENCE)
         self.assertIs(evidence["source_bytes_exact"], True)
@@ -476,10 +481,10 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
         self.assertEqual(evidence["checkout"]["mode"], "exact_ref_head")
         self.assertEqual(
             evidence["checkout"]["tested_commit_sha"],
-            "7de3bd9e5fff9b8aedf0d6385c0904646d99b2ac",
+            "bc4aeba26a79baed40f7b7ce709f0a9fd77d318f",
         )
         self.assertEqual(evidence["github_sha"], evidence["checkout"]["tested_commit_sha"])
-        self.assertEqual(evidence["github_run_id"], "30733039956")
+        self.assertEqual(evidence["github_run_id"], "30733784535")
 
         matrix = load_json(FINAL_CLAIM_MATRIX)
         self.assertEqual(matrix["publication_id"], "qikvrt-causality-is-relation-vrtcore-v1")
@@ -513,7 +518,7 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
         self.assertIs(receipt["workflow"]["exact_head_bound"], True)
         self.assertEqual(receipt["workflow"]["conclusion"], "success")
         self.assertEqual(receipt["workflow"]["sha"], evidence["github_sha"])
-        stage = receipt["receipt_stage"]
+        stage = receipt["successor_binding"]
         self.assertEqual(stage["required_relation"], "SINGLE_PARENT_SUCCESSOR")
         self.assertIs(stage["self_inclusion_claimed"], False)
         target = receipt["claim_transition"]["target_claim_matrix"]
@@ -550,7 +555,135 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("PASS verified VRTCore H2", completed.stdout)
+        self.assertIn("PASS verified VRTCore H3 kernel foundation", completed.stdout)
+
+    def test_h3_return_metadata_checksums_and_machine_proof_are_exact(self) -> None:
+        receipt = load_json(RETURN_RECEIPT)
+        self.assertEqual(receipt["schema"], "qikvrt_prepublication_return_receipt_v2")
+        self.assertIs(receipt["content_changed"], True)
+        self.assertEqual(
+            receipt["changed_claim_ids"],
+            [f"T{index:02d}" for index in range(1, 22)],
+        )
+        self.assertIs(receipt["return"]["candidate_returned_to_owner"], True)
+        self.assertEqual(receipt["return"]["owner_name"], "Ingolf Lohmann")
+        self.assertEqual(len(receipt["candidate_files"]), 6)
+        notice = CHANGE_NOTICE.read_text(encoding="utf-8")
+        for binding in receipt["change_reasons"]:
+            self.assertIn(binding["claim_id"], notice)
+            self.assertIn(binding["reason"], notice)
+
+        metadata = load_json(ZENODO_METADATA)
+        self.assertEqual(
+            set(metadata),
+            {
+                "title",
+                "upload_type",
+                "publication_type",
+                "description",
+                "creators",
+                "version",
+                "publication_date",
+                "access_right",
+                "license",
+                "language",
+                "keywords",
+                "notes",
+                "prereserve_doi",
+            },
+        )
+        self.assertEqual(metadata["upload_type"], "publication")
+        self.assertEqual(metadata["publication_type"], "workingpaper")
+        self.assertEqual(metadata["creators"], [{"name": "Lohmann, Ingolf"}])
+        self.assertEqual(metadata["access_right"], "open")
+        self.assertIs(metadata["prereserve_doi"], True)
+        canonical_metadata = json.dumps(
+            metadata,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(canonical_metadata).hexdigest(),
+            "2e81fd54ba4ee37db8461bab6f0f09e49bad2a0cd9a5102ad6747f16c8a2f202",
+        )
+
+        bundle = load_json(MACHINE_PROOF_BUNDLE)
+        self.assertEqual(bundle["schema"], "qikvrt_zenodo_machine_proof_bundle_v2")
+        self.assertEqual(bundle["publication_id"], receipt["publication_id"])
+        self.assertEqual(len(bundle["candidate"]["files"]), 6)
+        self.assertEqual(len(bundle["artifacts"]), 31)
+        self.assertEqual(len(bundle["claims"]), 36)
+        self.assertEqual(
+            pathlib.PurePosixPath(bundle["candidate"]["primary_document_path"]).name,
+            "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf",
+        )
+        self.assertEqual(
+            [item["kind"] for item in bundle["artifacts"]].count("CLAIM_MATRIX"),
+            1,
+        )
+        self.assertEqual(
+            [item["kind"] for item in bundle["artifacts"]].count("KERNEL_RECEIPT"),
+            1,
+        )
+        self.assertNotIn(
+            MACHINE_PROOF_BUNDLE.relative_to(ROOT).as_posix(),
+            {item["path"] for item in bundle["artifacts"]},
+        )
+
+        checksum_lines = ZENODO_CHECKSUMS.read_text(encoding="ascii").splitlines()
+        declared = {}
+        for line in checksum_lines:
+            digest, name = line.split("  ", 1)
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertNotIn(name, declared)
+            declared[name] = digest
+        candidates = bundle["candidate"]["files"]
+        artifacts = [
+            item for item in bundle["artifacts"]
+            if pathlib.PurePosixPath(item["path"]).name != ZENODO_CHECKSUMS.name
+        ]
+        expected = {
+            item["name"]: item["sha256"] for item in candidates
+        }
+        expected.update(
+            {
+                pathlib.PurePosixPath(item["path"]).name: item["sha256"]
+                for item in artifacts
+            }
+        )
+        self.assertEqual(declared, expected)
+        self.assertNotIn(ZENODO_CHECKSUMS.name, declared)
+        self.assertNotIn(MACHINE_PROOF_BUNDLE.name, declared)
+
+        environment = dict(os.environ)
+        environment.update(PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1")
+        completed = subprocess.run(
+            [
+                "python3",
+                "-B",
+                str(H2_GENERATOR.relative_to(ROOT)),
+                "return",
+                "--check",
+            ],
+            cwd=ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("PASS verified VRTCore H3 return/proof freeze", completed.stdout)
+        self.assertIn(
+            "RETURN_SHA256=3c964218535908de94cd54decf7cb8d46706f910040ea520985cdc76cfa78098",
+            completed.stdout,
+        )
+        self.assertIn(
+            "MACHINE_PROOF_SHA256=ccdc516209ea4b3106976470c244c7c1e1b965a30be16f7a832d3d95e03b1a06",
+            completed.stdout,
+        )
 
 
 if __name__ == "__main__":

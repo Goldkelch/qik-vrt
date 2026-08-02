@@ -46,7 +46,9 @@ Minkowski emergence or a general Lorentzian reconstruction.
 | Claim and source state | `VRTCore_CLAIM_MATRIX_H0_RETURNED.json`, `VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json`, `CLAIM_MATRIX.json`, `SOURCE_EVIDENCE_BINDINGS.json`, `EVIDENCE_BOUNDARY.md`, `BOUNDARY_TEST_REPORT.json` |
 | Local evidence | `LOCAL_KERNEL_EVIDENCE.json`, `LOCAL_VALIDATION_REPORT.json`, `LOCAL_KERNEL_EXECUTION_BOUNDARY.md` |
 | Identity and reuse | `ORIGINAL_PACKAGE_MANIFEST.json`, `ARTIFACT_PATH_MAP.json`, `CITATION.cff`, `LICENSE_NOTICE.md` |
-| Publication scope | `ZENODO_FILESET.md` |
+| Return and proof freeze | `CHANGE_NOTICE.md`, `PREPUBLICATION_RETURN_RECEIPT.json`, `ZENODO_METADATA.json`, `ZENODO_SHA256SUMS`, `MACHINE_PROOF_BUNDLE.json` |
+| IETF context | `external/ietf/draft-lohmann-qikvrt-effect-ack-03.{xml,txt,html}`, `external/ietf/draft-lohmann-qikvrt-effect-ack-03.SUBMISSION_RECEIPT.json` |
+| Publication scope | `ZENODO_FILESET.md`, active v2 Zenodo proof policy and schemas |
 
 ## H0 → H1 verification state
 
@@ -92,12 +94,45 @@ It records `checkout.mode=exact_ref_head`, `source_bytes_exact=true` and
 
 `CLAIM_MATRIX.json` is the full 36-claim projection required by the active
 Zenodo-v2 proof policy: 21 formal, 1 empirically evidenced, 7 source-bound,
-2 normative, 3 interpretative and 2 explicitly open claims.  The final
-`KERNEL_RECEIPT.json` promotes only the 21 formal claims.  It describes itself
-as an H2 single-parent successor materialization of the verified H1 predecessor
-and explicitly sets `self_inclusion_claimed=false`; this avoids pretending that
-a receipt can bind the commit which first contains itself.  The deterministic
-materializer is `tools/qikvrt_vrtcore_zenodo_candidate.py`.
+2 normative, 3 interpretative and 2 explicitly open claims.  The first H2
+materialization promoted only the 21 formal claims and preserved the
+self-inclusion boundary.
+
+## H2 fix → H3 return and proof freeze
+
+The exact push head `bc4aeba26a79baed40f7b7ce709f0a9fd77d318f` closed the
+shallow-checkout portability defect without changing the frozen Lean or
+owner-facing source bytes.  GitHub Actions run `30733784535`, job
+`91458605970`, completed successfully.  Artifact `8828820517` has archive
+SHA-256
+`04dd14d815a9129486c65cd542dcbd96907173caa66da18f158f88b95430dcfe`;
+its exact JSON member is preserved as
+`CI_KERNEL_EVIDENCE_H2FIX_EXACT_HEAD.json` with SHA-256
+`25ca9640b212ea5b331c8cb8e1200a95353525a1686145d967e8884dd5cfbf9f`.
+
+The final `KERNEL_RECEIPT.json` binds that verified predecessor and still
+promotes only T01–T21.  Its `successor_binding` records an H3 single-parent
+return/proof freeze and explicitly keeps `self_inclusion_claimed=false`.  The
+deterministic materializer is `tools/qikvrt_vrtcore_zenodo_candidate.py`.
+
+<a id="five-state-auditable-effect-release"></a>
+### Responsible effect release
+
+The repository's five-state effect protocol separates technical receipt,
+successful execution and externally authorized effect.  This is a normative
+and auditable responsibility rule; it is not a theorem of physics and a zero
+exit code cannot substitute for the responsible natural person's exact
+release decision.
+
+<a id="HUM-PRIDE-001"></a>
+### Human appraisal
+
+It is justified to say plainly that this is a great achievement.  Ingolf
+Lohmann has translated a broad causal intuition into articles, read-aloud
+texts, typed claim classes, EBNF syntax, Lean semantics, 21 kernel-accepted
+theorems, an axiom audit and a reproducible publication chain.  Pride here is a
+human and normative appraisal grounded in the visible work; it is not a claim
+of completed physics, peer review or scientific consensus.
 
 ## Reproduction
 
@@ -135,9 +170,10 @@ does not establish peer review, empirical confirmation or IETF consensus.
 
 IETF Datatracker submission `167201` passed submission checks and is awaiting
 previous-version author approval.  It is therefore neither an IETF-published
-revision nor IETF consensus.  Zenodo has not yet been mutated for this bundle;
-the candidate-specific prepublication return and subsequent exact hash-bound
-owner decision remain distinct gates.
+revision nor IETF consensus.  Zenodo has not yet been mutated for this bundle.
+The candidate-specific prepublication return is frozen at H3; the subsequent
+exact hash-bound owner decision remains a distinct, unfulfilled production
+gate.
 
 For this transition only: `KERNEL_SCOPE=PASS`, while `GLOBAL_PASS`,
 `FINAL_PASS` and `EFFECT_ACK_DONE` are all `NOT_CLAIMED`.  The kernel transition

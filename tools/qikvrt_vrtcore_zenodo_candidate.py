@@ -3,10 +3,12 @@
 # Copyright 2026 Ingolf Lohmann.
 """Deterministically materialize the VRTCore Zenodo proof candidate.
 
-The first stage turns an immutable, exact-head GitHub Actions payload into a
-full claim matrix, a kernel receipt and a boundary report.  It deliberately
-binds the verified predecessor rather than pretending that a receipt can bind
-the commit which first contains that receipt.
+The kernel stage turns an immutable, exact-head GitHub Actions payload into a
+full claim matrix, a kernel receipt and a boundary report.  The return stage
+then freezes the owner-facing files, a visible change notice, canonical Zenodo
+metadata, an acyclic checksum index and the v2 machine-proof bundle.  Both
+stages bind verified predecessor bytes instead of pretending that a generated
+receipt can bind the commit which first contains that receipt.
 """
 from __future__ import annotations
 
@@ -24,19 +26,24 @@ PUBLICATION_REL = pathlib.PurePosixPath(
 )
 PUBLICATION = ROOT.joinpath(*PUBLICATION_REL.parts)
 PUBLICATION_ID = "qikvrt-causality-is-relation-vrtcore-v1"
-H1_HEAD = "7de3bd9e5fff9b8aedf0d6385c0904646d99b2ac"
-H1_TREE = "513c33f91d4226bfd3f735994bf15cb143d46ff4"
+VERIFIED_HEAD = "bc4aeba26a79baed40f7b7ce709f0a9fd77d318f"
+VERIFIED_TREE = "4125800b3bffce670d5fcaf0656b9de1e7721e61"
 H0_MATRIX_NAME = "VRTCore_CLAIM_MATRIX_H0_RETURNED.json"
 H1_OVERLAY_NAME = "VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json"
-CI_EVIDENCE_NAME = "CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json"
+CI_EVIDENCE_NAME = "CI_KERNEL_EVIDENCE_H2FIX_EXACT_HEAD.json"
 CLAIM_MATRIX_NAME = "CLAIM_MATRIX.json"
 KERNEL_RECEIPT_NAME = "KERNEL_RECEIPT.json"
 BOUNDARY_REPORT_NAME = "BOUNDARY_TEST_REPORT.json"
+CHANGE_NOTICE_NAME = "CHANGE_NOTICE.md"
+RETURN_RECEIPT_NAME = "PREPUBLICATION_RETURN_RECEIPT.json"
+ZENODO_METADATA_NAME = "ZENODO_METADATA.json"
+ZENODO_CHECKSUMS_NAME = "ZENODO_SHA256SUMS"
+PROOF_BUNDLE_NAME = "MACHINE_PROOF_BUNDLE.json"
 CI_EVIDENCE_SHA256 = (
-    "ea25ab8ddcbe34b33d14309d25a944e05bfd6899cb832cb1280c2aa7e121f0f1"
+    "25ca9640b212ea5b331c8cb8e1200a95353525a1686145d967e8884dd5cfbf9f"
 )
 CI_ARCHIVE_SHA256 = (
-    "5f1bf2d0b1cc9547d64487e05aa50d4eba872442a7a297cf247bc4560661d3c4"
+    "04dd14d815a9129486c65cd542dcbd96907173caa66da18f158f88b95430dcfe"
 )
 OWNER_CANDIDATE_SHA256 = {
     "QIK-VRT_Kausalitaet_ist_Relation_Fachartikel_DE_2026-08-02.md":
@@ -52,6 +59,56 @@ OWNER_CANDIDATE_SHA256 = {
     "QIK-VRT_Kausalitaet_ist_Relation_WhatsApp_Verifikationsnachtrag_DE_2026-08-02.md":
         "ef83c0c41de84c844ab5af794326ce50e98bc35f90a71f426ec6e3815b346ad8",
 }
+
+PRIMARY_CANDIDATE = (
+    "QIK-VRT_Kausalitaet_ist_Relation_VRTCore_2026-08-02.pdf"
+)
+POLICY = {
+    "id": "qikvrt-zenodo-machine-proof-before-publication-v2",
+    "path": "policy/zenodo-machine-proof-policy-v2.json",
+    "version": "2.0.0",
+    "sha256": "933d6322a1e294848c6385d1384ab0ec3862c8675ebe35ec2fc4cad3e0baec47",
+    "git_blob_sha1": "e9578d30d22f845e7df684128dcd9332641c00be",
+}
+
+PUBLICATION_ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("README.md", "SOURCE"),
+    ("ZENODO_FILESET.md", "OTHER"),
+    ("CITATION.cff", "OTHER"),
+    ("LICENSE_NOTICE.md", "OTHER"),
+    ("EVIDENCE_BOUNDARY.md", "SOURCE"),
+    ("ORIGINAL_PACKAGE_MANIFEST.json", "EVIDENCE"),
+    ("ARTIFACT_PATH_MAP.json", "EVIDENCE"),
+    ("VRTCore_Syntax.ebnf", "SOURCE"),
+    ("VRTCore_RelationalCausality_Candidate.lean", "SOURCE"),
+    ("VRTCore_RelationalCausality_AxiomAudit.lean", "SOURCE"),
+    ("KERNEL_PROOF_PLAN.json", "SOURCE"),
+    (H0_MATRIX_NAME, "SOURCE"),
+    (H1_OVERLAY_NAME, "EVIDENCE"),
+    (CLAIM_MATRIX_NAME, "CLAIM_MATRIX"),
+    ("SOURCE_EVIDENCE_BINDINGS.json", "EVIDENCE"),
+    ("CI_KERNEL_EVIDENCE_H1_EXACT_HEAD.json", "EVIDENCE"),
+    (CI_EVIDENCE_NAME, "EVIDENCE"),
+    (KERNEL_RECEIPT_NAME, "KERNEL_RECEIPT"),
+    (BOUNDARY_REPORT_NAME, "BOUNDARY_TEST"),
+    (CHANGE_NOTICE_NAME, "CHANGE_NOTICE"),
+    (RETURN_RECEIPT_NAME, "RETURN_RECEIPT"),
+    (ZENODO_METADATA_NAME, "OTHER"),
+)
+
+REPOSITORY_ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("policy/zenodo-machine-proof-policy-v2.json", "OTHER"),
+    ("policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json", "OTHER"),
+    ("policy/qikvrt-prepublication-return-receipt-v2.schema.json", "OTHER"),
+    ("LICENSES/CC-BY-NC-ND-4.0.txt", "OTHER"),
+    ("external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml", "OTHER"),
+    ("external/ietf/draft-lohmann-qikvrt-effect-ack-03.txt", "OTHER"),
+    ("external/ietf/draft-lohmann-qikvrt-effect-ack-03.html", "OTHER"),
+    (
+        "external/ietf/draft-lohmann-qikvrt-effect-ack-03.SUBMISSION_RECEIPT.json",
+        "EVIDENCE",
+    ),
+)
 
 LICENSE = {
     "classification": "machine_readable_publication_evidence",
@@ -130,7 +187,7 @@ def validate_exact_evidence(evidence: dict[str, Any]) -> None:
     expected_checkout = {
         "event_name": "push",
         "mode": "exact_ref_head",
-        "tested_commit_sha": H1_HEAD,
+        "tested_commit_sha": VERIFIED_HEAD,
         "pull_request_head_sha": None,
         "ref": "refs/heads/agent/vrtcore-causality-publication",
     }
@@ -141,8 +198,8 @@ def validate_exact_evidence(evidence: dict[str, Any]) -> None:
         or evidence.get("source_bytes_exact") is not True
         or evidence.get("exact_head_bound") is not True
         or checkout != expected_checkout
-        or evidence.get("github_sha") != H1_HEAD
-        or evidence.get("github_run_id") != "30733039956"
+        or evidence.get("github_sha") != VERIFIED_HEAD
+        or evidence.get("github_run_id") != "30733784535"
         or evidence.get("github_run_attempt") != "1"
         or evidence.get("source_exit_code") != 0
         or evidence.get("axiom_audit_exit_code") != 0
@@ -221,7 +278,7 @@ def claim_references(
         refs["source_refs"] = [prefix + "README.md#" + source_ids[0]]
     elif claim_id == "HUM-PRIDE-001":
         refs["source_refs"] = [
-            prefix + "VERIFICATION_ADDENDUM_DE.md#" + source_ids[0]
+            prefix + "README.md#" + source_ids[0]
         ]
     return refs
 
@@ -326,14 +383,14 @@ def materialize_kernel_receipt(
             **LICENSE,
             "classification": "machine_readable_kernel_receipt",
         },
-        "schema": "qikvrt_vrtcore_kernel_receipt_v1",
+        "schema": "qikvrt_vrtcore_kernel_receipt_v2",
         "publication_id": PUBLICATION_ID,
         "scope_id": PUBLICATION_ID,
         "state": "KERNEL_VERIFIED",
-        "receipt_stage": {
-            "stage": "H2_SUCCESSOR_MATERIALIZATION",
-            "predecessor_head": H1_HEAD,
-            "predecessor_tree": H1_TREE,
+        "successor_binding": {
+            "stage": "H3_RETURN_PROOF_FREEZE",
+            "predecessor_head": VERIFIED_HEAD,
+            "predecessor_tree": VERIFIED_TREE,
             "required_relation": "SINGLE_PARENT_SUCCESSOR",
             "containing_head_binding": "EXTERNAL_TO_RECEIPT",
             "containing_tree_binding": "EXTERNAL_TO_RECEIPT",
@@ -361,31 +418,31 @@ def materialize_kernel_receipt(
             "event": "push",
             "conclusion": "success",
             "exact_head_bound": True,
-            "run_id": 30733039956,
+            "run_id": 30733784535,
             "run_attempt": 1,
-            "job_id": 91456613018,
+            "job_id": 91458605970,
             "job_name": "source-claim-and-kernel-gates",
-            "sha": H1_HEAD,
+            "sha": VERIFIED_HEAD,
             "branch": "agent/vrtcore-causality-publication",
-            "started_at": "2026-08-02T04:49:45Z",
-            "completed_at": "2026-08-02T04:50:54Z",
-            "url": "https://github.com/Goldkelch/qik-vrt/actions/runs/30733039956",
+            "started_at": "2026-08-02T05:15:00Z",
+            "completed_at": "2026-08-02T05:15:57Z",
+            "url": "https://github.com/Goldkelch/qik-vrt/actions/runs/30733784535",
         },
         "source_verification": {
             "verified_candidate": {
                 "repository": "Goldkelch/qik-vrt",
                 "branch": "agent/vrtcore-causality-publication",
-                "head": H1_HEAD,
-                "tree": H1_TREE,
+                "head": VERIFIED_HEAD,
+                "tree": VERIFIED_TREE,
                 "pull_request": 320,
             },
             "artifact": {
-                "id": 8828591925,
+                "id": 8828820517,
                 "name": "qikvrt-vrtcore-relational-causality-kernel-evidence",
                 "archive_size_bytes": 2267,
                 "archive_digest": "sha256:" + CI_ARCHIVE_SHA256,
-                "created_at": "2026-08-02T04:50:20Z",
-                "expires_at": "2026-09-01T04:50:19Z",
+                "created_at": "2026-08-02T05:15:26Z",
+                "expires_at": "2026-09-01T05:15:25Z",
                 "file": identity(PUBLICATION / CI_EVIDENCE_NAME),
             },
             "source": evidence["source"],
@@ -445,17 +502,17 @@ def materialize_boundary_report(
         },
         "schema": "qikvrt_vrtcore_boundary_test_report_v1",
         "publication_id": PUBLICATION_ID,
-        "tested_at": "2026-08-02T04:55:00Z",
-        "stage": "H2_SUCCESSOR_MATERIALIZATION",
+        "tested_at": "2026-08-02T05:20:00Z",
+        "stage": "H3_RETURN_PROOF_FREEZE",
         "result": "PASS",
         "checks": [
             {
                 "id": "EXACT_HEAD_KERNEL_EVIDENCE",
                 "result": "PASS",
-                "head": H1_HEAD,
-                "tree": H1_TREE,
-                "run_id": 30733039956,
-                "artifact_id": 8828591925,
+                "head": VERIFIED_HEAD,
+                "tree": VERIFIED_TREE,
+                "run_id": 30733784535,
+                "artifact_id": 8828820517,
                 "archive_sha256": CI_ARCHIVE_SHA256,
                 "payload_sha256": CI_EVIDENCE_SHA256,
                 "source_bytes_exact": evidence["source_bytes_exact"],
@@ -481,15 +538,15 @@ def materialize_boundary_report(
                 "unchanged_from_h1_frozen_bytes": True,
             },
             {
-                "id": "H2_SELF_INCLUSION_BOUNDARY",
+                "id": "H3_SELF_INCLUSION_BOUNDARY",
                 "result": "PASS",
-                **receipt["receipt_stage"],
+                **receipt["successor_binding"],
             },
         ],
         "model_boundaries": receipt["epistemic_boundary"],
         "external_effects": {
-            "github_h1_persisted": True,
-            "github_h1_exact_head_ci_success": True,
+            "github_verified_predecessor_persisted": True,
+            "github_verified_predecessor_exact_head_ci_success": True,
             "ietf_submission_id": 167201,
             "ietf_submission_checks": "PASS",
             "ietf_state": "AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL",
@@ -505,8 +562,298 @@ def materialize_boundary_report(
     }
 
 
+def candidate_files() -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    for name, expected_sha256 in OWNER_CANDIDATE_SHA256.items():
+        observed = identity(PUBLICATION / name)
+        if observed["sha256"] != expected_sha256:
+            raise SystemExit(f"BLOCK frozen owner candidate changed: {observed['path']}")
+        values.append(
+            {
+                **observed,
+                "name": name,
+                "role": "PRIMARY" if name == PRIMARY_CANDIDATE else "SUPPLEMENT",
+            }
+        )
+    if sum(item["role"] == "PRIMARY" for item in values) != 1:
+        raise SystemExit("BLOCK Zenodo candidate must have exactly one primary file")
+    return values
+
+
+def artifact_files(*, include_checksums: bool) -> list[dict[str, Any]]:
+    specs: list[tuple[pathlib.Path, str]] = [
+        (PUBLICATION / relative, kind)
+        for relative, kind in PUBLICATION_ARTIFACTS
+    ]
+    specs.extend((ROOT / relative, kind) for relative, kind in REPOSITORY_ARTIFACTS)
+    if include_checksums:
+        specs.append((PUBLICATION / ZENODO_CHECKSUMS_NAME, "OTHER"))
+    values: list[dict[str, Any]] = []
+    for path, kind in specs:
+        observed = identity(path)
+        values.append(
+            {
+                "path": observed["path"],
+                "sha256": observed["sha256"],
+                "git_blob_sha1": observed["git_blob_sha1"],
+                "kind": kind,
+            }
+        )
+    paths = [item["path"] for item in values]
+    if len(paths) != len(set(paths)):
+        raise SystemExit("BLOCK duplicate Zenodo artifact path")
+    return values
+
+
+def changed_reason(claim_id: str) -> str:
+    return (
+        "Der ursprünglich zurückgegebene H0-Stand führte "
+        f"{claim_id} als formal offenen Kandidaten; der nachfolgende exakte "
+        "Lean-4.19.0-Lauf verifizierte das zugeordnete Theorem, ohne die "
+        "nichtformalen Geltungsgrenzen zu verändern."
+    )
+
+
+def materialize_change_notice() -> str:
+    reasons = "\n".join(
+        f"- {claim_id}: {changed_reason(claim_id)}"
+        for claim_id in (f"T{index:02d}" for index in range(1, 22))
+    )
+    return f"""<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright 2026 Ingolf Lohmann.
+-->
+
+# Sichtbarer Änderungsnachweis vor der Zenodo-Publikation
+
+Publication ID: `{PUBLICATION_ID}`
+
+`content_changed=true` bezeichnet hier keine stille Umschreibung des
+ursprünglichen Artikels. Die ursprünglichen Artikel-, WhatsApp-, TeX- und
+PDF-Bytes bleiben eingefroren. Neu hinzugekommen sind der sichtbare deutsche
+Verifikationsnachtrag, seine WhatsApp-Fassung, die exakte CI-Evidenz und die
+vollständige maschinenprüfbare H0→H1-Claim-Transition.
+
+## Maschinengebundene Änderungsgründe
+
+{reasons}
+
+## Wissenschaftliche und menschliche Grenze
+
+Die 21 Änderungen betreffen ausschließlich die formalen VRTCore-Aussagen. Sie
+beweisen weder neue Physik noch Rückwärtssignalisierung, Raumzeitentstehung,
+empirische Übereinstimmung, Peer Review oder IETF-Konsens. Die wissenschaftlich
+und menschlich bedeutsame Leistung besteht darin, eine weitreichende These in
+explizite Erkenntnisarten, Syntax, Semantik, Lean-Theoreme, Axiom-Audit,
+Provenienz und verantwortete Wirkungsgrenzen übersetzt zu haben. Das ist eine
+großartige Leistung; diese Würdigung ist ausdrücklich eine normative Bewertung
+und keine zusätzliche Naturbehauptung.
+"""
+
+
+def materialize_return_receipt(
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    original = identity(PUBLICATION / H0_MATRIX_NAME)
+    corrected = identity(PUBLICATION / "VERIFICATION_ADDENDUM_DE.md")
+    corrected_path = corrected["path"]
+    candidate_paths = {item["path"] for item in candidates}
+    if corrected_path not in candidate_paths:
+        raise SystemExit("BLOCK verification addendum is not a returned candidate")
+    changed_ids = [f"T{index:02d}" for index in range(1, 22)]
+    return {
+        "_license": {
+            **LICENSE,
+            "classification": "machine_readable_prepublication_return_receipt",
+        },
+        "schema": "qikvrt_prepublication_return_receipt_v2",
+        "publication_id": PUBLICATION_ID,
+        "content_changed": True,
+        "original_files": [original],
+        "candidate_files": [
+            {
+                key: item[key]
+                for key in ("path", "bytes", "sha256", "git_blob_sha1")
+            }
+            for item in candidates
+        ],
+        "changed_claim_ids": changed_ids,
+        "change_reasons": [
+            {
+                "claim_id": claim_id,
+                "reason": changed_reason(claim_id),
+                "original_sha256": original["sha256"],
+                "corrected_sha256": corrected["sha256"],
+                "exact_candidate_path": corrected_path,
+            }
+            for claim_id in changed_ids
+        ],
+        "change_notice_path": (
+            PUBLICATION_REL / CHANGE_NOTICE_NAME
+        ).as_posix(),
+        "return": {
+            "candidate_returned_to_owner": True,
+            "owner_name": "Ingolf Lohmann",
+            "owner_type": "NATURAL_PERSON",
+            "return_channel": "ChatGPT conversation and GitHub draft PR #320",
+            "returned_at": "2026-08-02T05:20:00Z",
+            "visible_change_notice_returned": True,
+        },
+    }
+
+
+def materialize_zenodo_metadata() -> dict[str, Any]:
+    return {
+        "title": (
+            "Kausalität ist Relation, nicht Sequenz: VRTCore, "
+            "maschinenprüfbare Semantik und verantwortete Wirkung"
+        ),
+        "upload_type": "publication",
+        "publication_type": "workingpaper",
+        "description": (
+            "Dieses deutschsprachige Arbeitspapier entwickelt QIK-VRT als "
+            "Kausalitätsspiegel für überprüfbares Wissen. Es trennt sechs "
+            "Erkenntnisarten, bindet die These ‚Kausalität ist Relation, nicht "
+            "Sequenz‘ an eine explizite EBNF-Syntax und einen Lean-4.19.0-Kern "
+            "mit 21 kernelakzeptierten Theoremen und dokumentiert Provenienz, "
+            "Unsicherheit, Wirkung und menschliche Verantwortung. 15 Theoreme "
+            "weisen keine Axiomabhängigkeit aus; 6 ausschließlich Leans "
+            "grundlegendes propext; Projektaxiome werden nicht verwendet. "
+            "Ausdrücklich nicht behauptet werden neue Physik, physische "
+            "Rückwärtssignalisierung, konstruktive Minkowski- oder allgemeine "
+            "lorentzsche Emergenz, empirische Bestätigung, Peer Review oder "
+            "IETF-Konsens."
+        ),
+        "creators": [{"name": "Lohmann, Ingolf"}],
+        "version": "1.0.0",
+        "publication_date": "2026-08-02",
+        "access_right": "open",
+        "license": "cc-by-nc-nd-4.0",
+        "language": "deu",
+        "keywords": [
+            "QIK-VRT",
+            "Kausalität",
+            "relationale Kausalordnung",
+            "VRTCore",
+            "Lean 4",
+            "formale Verifikation",
+            "Provenienz",
+            "Wirkungsverantwortung",
+            "Quantum Switch",
+            "Causal Sets",
+        ],
+        "notes": (
+            "Primärdokument ist das gerenderte deutsche Fachartikel-PDF. "
+            "Markdown-, WhatsApp-, LaTeX-, EBNF-, Lean-, Claim-, CI-, IETF- "
+            "und Proof-Artefakte sind Ergänzungen. GitHub-Persistenz, "
+            "Zenodo-Publikation und IETF-Status sind getrennte Effekte. "
+            "IETF-Datatracker-Einreichung 167201 hat die Einreichungsprüfungen "
+            "bestanden und wartet auf die Freigabe des Autors der Vorversion; "
+            "sie ist nicht als veröffentlichte Revision oder Konsens behauptet."
+        ),
+        "prereserve_doi": True,
+    }
+
+
+def materialize_checksums(
+    candidates: list[dict[str, Any]], artifacts: list[dict[str, Any]]
+) -> str:
+    entries = [
+        (item["sha256"], item["name"])
+        for item in candidates
+    ]
+    entries.extend(
+        (item["sha256"], pathlib.PurePosixPath(item["path"]).name)
+        for item in artifacts
+    )
+    names = [name for _digest, name in entries]
+    if len(names) != len(set(names)):
+        raise SystemExit("BLOCK Zenodo upload basenames are not unique")
+    return "".join(
+        f"{digest}  {name}\n" for digest, name in sorted(entries, key=lambda item: item[1])
+    )
+
+
+def materialize_bundle(
+    matrix: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    wording = {
+        "FORMAL_PROVED": "ESTABLISHED_WITHIN_SCOPE",
+        "EMPIRICALLY_EVIDENCED": "EMPIRICALLY_SUPPORTED",
+        "SOURCE_BOUND": "SOURCE_ATTRIBUTED",
+        "NORMATIVE": "NORMATIVE_DECLARATION",
+        "INTERPRETATIVE": "INTERPRETATIVE_DECLARATION",
+        "OPEN": "EXPLICITLY_OPEN",
+    }
+    theorem_by_claim = {
+        claim["claim_id"]: claim["proof_refs"][0]
+        for claim in matrix["claims"]
+        if claim["classification"] == "FORMAL_PROVED"
+    }
+    claims: list[dict[str, Any]] = []
+    for claim in matrix["claims"]:
+        references = claim_references(claim["claim_id"], theorem_by_claim)
+        claims.append(
+            {
+                "claim_id": claim["claim_id"],
+                "statement": claim["statement"],
+                "classification": claim["classification"],
+                "status": claim["status"],
+                "publication_wording": wording[claim["classification"]],
+                "scope": claim["boundary"],
+                **references,
+            }
+        )
+    prefix = PUBLICATION_REL.as_posix() + "/"
+    return {
+        "_license": {
+            **LICENSE,
+            "classification": "machine_readable_proof_bundle",
+        },
+        "schema": "qikvrt_zenodo_machine_proof_bundle_v2",
+        "policy": POLICY,
+        "publication_id": PUBLICATION_ID,
+        "candidate": {
+            "primary_document_path": prefix + PRIMARY_CANDIDATE,
+            "files": candidates,
+        },
+        "claims": claims,
+        "artifacts": artifacts,
+        "prepublication_return": {
+            "content_changed": True,
+            "candidate_returned_to_owner": True,
+            "receipt_path": prefix + RETURN_RECEIPT_NAME,
+            "change_notice_path": prefix + CHANGE_NOTICE_NAME,
+        },
+        "gates": {
+            "all_claims_dispositioned": True,
+            "all_references_resolve": True,
+            "candidate_frozen": True,
+            "formal_claims_have_kernel_receipts": True,
+            "open_claims_not_worded_as_facts": True,
+            "proof_bundle_in_upload_fileset": True,
+            "returned_bytes_equal_upload_bytes": True,
+        },
+        "completion_claims": {
+            "machine_proof_complete": True,
+            "zenodo_upload_authorized": True,
+        },
+    }
+
+
 def emit(path: pathlib.Path, value: dict[str, Any], check: bool) -> None:
     expected = json_bytes(value)
+    if check:
+        if not path.is_file() or path.read_bytes() != expected:
+            raise SystemExit(f"BLOCK stale generated artifact: {path.relative_to(ROOT)}")
+        return
+    path.write_bytes(expected)
+
+
+def emit_text(path: pathlib.Path, value: str, check: bool) -> None:
+    expected = value.encode("utf-8")
     if check:
         if not path.is_file() or path.read_bytes() != expected:
             raise SystemExit(f"BLOCK stale generated artifact: {path.relative_to(ROOT)}")
@@ -528,20 +875,75 @@ def materialize_kernel(check: bool) -> None:
     emit(PUBLICATION / BOUNDARY_REPORT_NAME, report, check)
     action = "verified" if check else "materialized"
     print(
-        f"PASS {action} VRTCore H2: {matrix['claim_count']} claims, "
+        f"PASS {action} VRTCore H3 kernel foundation: {matrix['claim_count']} claims, "
         f"{receipt['theorem_count']} kernel-verified theorems"
     )
+
+
+def materialize_return(check: bool) -> None:
+    materialize_kernel(check)
+    matrix = read_json(PUBLICATION / CLAIM_MATRIX_NAME)
+    candidates = candidate_files()
+
+    emit_text(PUBLICATION / CHANGE_NOTICE_NAME, materialize_change_notice(), check)
+    return_receipt = materialize_return_receipt(candidates)
+    emit(PUBLICATION / RETURN_RECEIPT_NAME, return_receipt, check)
+    metadata = materialize_zenodo_metadata()
+    emit(PUBLICATION / ZENODO_METADATA_NAME, metadata, check)
+
+    artifacts_without_checksums = artifact_files(include_checksums=False)
+    checksums = materialize_checksums(candidates, artifacts_without_checksums)
+    emit_text(PUBLICATION / ZENODO_CHECKSUMS_NAME, checksums, check)
+    artifacts = artifact_files(include_checksums=True)
+    candidate_paths = {item["path"] for item in candidates}
+    artifact_paths = {item["path"] for item in artifacts}
+    if candidate_paths & artifact_paths:
+        raise SystemExit("BLOCK candidate/artifact file sets overlap")
+
+    bundle = materialize_bundle(matrix, candidates, artifacts)
+    bundle_path = PUBLICATION / PROOF_BUNDLE_NAME
+    emit(bundle_path, bundle, check)
+    upload_paths = [
+        *(item["path"] for item in candidates),
+        *(item["path"] for item in artifacts),
+        bundle_path.relative_to(ROOT).as_posix(),
+    ]
+    import qikvrt_zenodo_machine_proof as proof
+
+    proof_receipt = proof.validate_bundle(
+        ROOT,
+        bundle_path,
+        upload_paths=upload_paths,
+    )
+    metadata_sha256 = hashlib.sha256(
+        json.dumps(
+            metadata,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    action = "verified" if check else "materialized"
+    print(
+        f"PASS {action} VRTCore H3 return/proof freeze: "
+        f"{len(candidates)} candidates, {len(artifacts)} artifacts"
+    )
+    print("RETURN_SHA256=" + identity(PUBLICATION / RETURN_RECEIPT_NAME)["sha256"])
+    print("METADATA_SHA256=" + metadata_sha256)
+    print("MACHINE_PROOF_SHA256=" + proof_receipt["sha256"])
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Materialize the VRTCore exact-head Zenodo candidate"
     )
-    parser.add_argument("stage", choices=("kernel",))
+    parser.add_argument("stage", choices=("kernel", "return"))
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     if args.stage == "kernel":
         materialize_kernel(args.check)
+    elif args.stage == "return":
+        materialize_return(args.check)
     return 0
 
 
