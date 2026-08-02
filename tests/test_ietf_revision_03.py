@@ -40,6 +40,9 @@ REVISION_03_HTML = IETF_ROOT / "draft-lohmann-qikvrt-effect-ack-03.html"
 REVISION_03_CANDIDATE = (
     IETF_ROOT / "draft-lohmann-qikvrt-effect-ack-03.CANDIDATE.json"
 )
+REVISION_03_SUBMISSION_RECEIPT = (
+    IETF_ROOT / "draft-lohmann-qikvrt-effect-ack-03.SUBMISSION_RECEIPT.json"
+)
 
 UNCHANGED_NORMATIVE_ANCHORS = (
     "conventions",
@@ -194,6 +197,7 @@ class IETFRevision03Tests(unittest.TestCase):
             REVISION_03_TXT,
             REVISION_03_HTML,
             REVISION_03_CANDIDATE,
+            REVISION_03_SUBMISSION_RECEIPT,
         ):
             if not path.is_file():
                 raise AssertionError(f"required revision source is absent: {path}")
@@ -202,13 +206,23 @@ class IETFRevision03Tests(unittest.TestCase):
         cls.candidate = json.loads(
             REVISION_03_CANDIDATE.read_text(encoding="utf-8")
         )
+        cls.submission_receipt = json.loads(
+            REVISION_03_SUBMISSION_RECEIPT.read_text(encoding="utf-8")
+        )
 
     def test_candidate_receipt_binds_exact_local_artifacts(self) -> None:
         self.assertEqual(
             self.candidate["schema"], "qikvrt_ietf_draft_candidate_v1"
         )
-        self.assertEqual(self.candidate["state"], "CANDIDATE_NOT_SUBMITTED")
-        self.assertIs(self.candidate["datatracker_submission_performed"], False)
+        self.assertEqual(
+            self.candidate["state"],
+            "AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL",
+        )
+        self.assertIs(self.candidate["datatracker_submission_performed"], True)
+        self.assertIs(self.candidate["submitted"], True)
+        self.assertEqual(self.candidate["submission_checks"], "PASS")
+        self.assertIs(self.candidate["published"], False)
+        self.assertIs(self.candidate["consensus"], False)
         self.assertEqual(
             self.candidate["internet_draft"],
             "draft-lohmann-qikvrt-effect-ack-03",
@@ -225,6 +239,49 @@ class IETFRevision03Tests(unittest.TestCase):
             self.assertEqual(
                 binding["sha256"], hashlib.sha256(raw).hexdigest()
             )
+
+    def test_submission_receipt_records_pending_effect_without_overclaim(self) -> None:
+        receipt = self.submission_receipt
+        self.assertEqual(
+            receipt["schema"],
+            "qikvrt_ietf_datatracker_submission_receipt_v1",
+        )
+        self.assertEqual(receipt["submission_id"], 167201)
+        self.assertEqual(
+            receipt["internet_draft"],
+            "draft-lohmann-qikvrt-effect-ack-03",
+        )
+        self.assertEqual(receipt["submission_checks"], "PASS")
+        self.assertIs(receipt["submitted"], True)
+        self.assertEqual(
+            receipt["state"],
+            "AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL",
+        )
+        self.assertIs(receipt["author_email_notification_sent"], True)
+        self.assertIs(receipt["published"], False)
+        self.assertIs(receipt["consensus"], False)
+        self.assertIs(
+            receipt["security_boundary"]["secret_status_token_recorded"],
+            False,
+        )
+        self.assertIs(
+            receipt["security_boundary"][
+                "token_bearing_status_url_recorded"
+            ],
+            False,
+        )
+        serialized = REVISION_03_SUBMISSION_RECEIPT.read_text(encoding="utf-8")
+        self.assertNotIn("/submit/status/167201/", serialized)
+        for kind, path in (
+            ("xml", REVISION_03_XML),
+            ("txt", REVISION_03_TXT),
+            ("html", REVISION_03_HTML),
+        ):
+            raw = path.read_bytes()
+            binding = receipt["artifacts"][kind]
+            self.assertEqual(binding["path"], path.relative_to(ROOT).as_posix())
+            self.assertEqual(binding["size_bytes"], len(raw))
+            self.assertEqual(binding["sha256"], hashlib.sha256(raw).hexdigest())
 
     def test_revision_metadata_is_exact(self) -> None:
         self.assertEqual(

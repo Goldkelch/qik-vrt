@@ -23,6 +23,9 @@ CLAIM_MATRIX = PUBLICATION / "VRTCore_CLAIM_MATRIX_H0_RETURNED.json"
 LOCAL_EVIDENCE = PUBLICATION / "LOCAL_KERNEL_EVIDENCE.json"
 LOCAL_AUDIT_LOG = PUBLICATION / "LOCAL_AXIOM_AUDIT.log"
 PATH_MAP = PUBLICATION / "ARTIFACT_PATH_MAP.json"
+CI_KERNEL_EVIDENCE = PUBLICATION / "CI_KERNEL_EVIDENCE_H0_PR_MERGE.json"
+KERNEL_RECEIPT = PUBLICATION / "KERNEL_RECEIPT_H0_CI.json"
+H1_MATRIX = PUBLICATION / "VRTCore_CLAIM_MATRIX_H1_KERNEL_VERIFIED.json"
 
 NAMESPACE = "QIKVRT.VRTCore"
 THEOREMS = (
@@ -365,6 +368,94 @@ class VRTCoreRelationalCausalityPublicationTests(unittest.TestCase):
             excluded["lean_selfexe_compat.so"]["sha256"],
             evidence["compatibility_route"]["binary_sha256"],
         )
+
+    def test_ci_kernel_receipt_and_h1_transition_are_exact_and_scoped(self) -> None:
+        self.assertEqual(
+            sha256(CI_KERNEL_EVIDENCE),
+            "18d370482ca19e1a2e109fbb38ea225e022955182c72c1846331d5c3a2cc7d04",
+        )
+        ci_evidence = load_json(CI_KERNEL_EVIDENCE)
+        self.assertEqual(ci_evidence["github_run_id"], "30732070295")
+        self.assertEqual(
+            ci_evidence["github_sha"],
+            "fc0b05cd13d7607883fbab9f16b4628f77a0958c",
+        )
+        self.assertEqual(ci_evidence["source_exit_code"], 0)
+        self.assertEqual(ci_evidence["axiom_audit_exit_code"], 0)
+        self.assertEqual(ci_evidence["theorem_count"], 21)
+
+        receipt = load_json(KERNEL_RECEIPT)
+        self.assertEqual(receipt["status"], "SUCCESS")
+        workflow = receipt["evidence_chain"]["workflow"]
+        self.assertEqual(workflow["run_id"], "30732070295")
+        self.assertEqual(
+            workflow["workflow_run_head_sha"],
+            "987e4a6f163562bba32ea7575c41013c91a0b6a1",
+        )
+        self.assertEqual(
+            workflow["checkout_github_sha"],
+            "fc0b05cd13d7607883fbab9f16b4628f77a0958c",
+        )
+        assessment = receipt["binding_assessment"]
+        self.assertIs(assessment["source_bytes_exact"], True)
+        self.assertIs(assessment["repository_head_exact"], False)
+        self.assertEqual(receipt["summary"]["accepted_theorems"], 21)
+        self.assertEqual(receipt["summary"]["axiom_free_theorems"], 15)
+        self.assertEqual(receipt["summary"]["propext_only_theorems"], 6)
+        results = receipt["theorem_results"]
+        self.assertEqual(
+            [item["theorem"] for item in results],
+            list(THEOREMS),
+        )
+        self.assertEqual(
+            {
+                item["theorem"]
+                for item in results
+                if item["axioms"] == ["propext"]
+            },
+            PROPEXT_THEOREMS,
+        )
+        self.assertTrue(
+            all(item["axioms"] in ([], ["propext"]) for item in results)
+        )
+
+        h0 = load_json(CLAIM_MATRIX)
+        h1 = load_json(H1_MATRIX)
+        self.assertEqual(h1["representation"], "ADDITIVE_TRANSITION_OVERLAY")
+        self.assertEqual(h1["base_matrix"]["bytes"], CLAIM_MATRIX.stat().st_size)
+        self.assertEqual(h1["base_matrix"]["sha256"], sha256(CLAIM_MATRIX))
+        transitions = h1["claim_transitions"]
+        self.assertEqual(
+            [item["claim_id"] for item in transitions],
+            [f"T{i:02d}" for i in range(1, 22)],
+        )
+        self.assertEqual([item["theorem"] for item in transitions], list(THEOREMS))
+        self.assertTrue(
+            all(
+                item["to"]
+                == {
+                    "kind": "FORMAL_PROVED",
+                    "status": "FORMAL_PROVED_KERNEL_VERIFIED",
+                }
+                for item in transitions
+            )
+        )
+        h0_by_id = {item["id"]: item for item in h0["claims"]}
+        unchanged_ids = {item["claim_id"] for item in h1["unchanged_claims"]}
+        self.assertEqual(unchanged_ids, set(h0_by_id) - {f"T{i:02d}" for i in range(1, 22)})
+        guards = h1["promotion_guards"]
+        for key in (
+            "physical_claims_promoted",
+            "empirical_claims_promoted",
+            "interpretive_claims_promoted",
+            "normative_claims_promoted",
+            "open_spacetime_claims_promoted",
+        ):
+            self.assertIs(guards[key], False)
+        self.assertEqual(h1["claim_state"]["kernel_scope"], "PASS")
+        self.assertEqual(h1["claim_state"]["global_pass"], "NOT_CLAIMED")
+        self.assertEqual(h1["claim_state"]["final_pass"], "NOT_CLAIMED")
+        self.assertEqual(h1["claim_state"]["effect_ack_done"], "NOT_CLAIMED")
 
 
 if __name__ == "__main__":

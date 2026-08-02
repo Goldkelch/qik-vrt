@@ -202,6 +202,16 @@ jobs:
           lean_githash = subprocess.check_output(
               ['lake', 'env', 'lean', '--githash'], text=True
           ).strip()
+          event_name = os.environ['GITHUB_EVENT_NAME']
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8'))
+          pull_request_head_sha = (
+              event.get('pull_request', {}).get('head', {}).get('sha')
+          )
+          checkout_mode = (
+              'pull_request_merge'
+              if event_name == 'pull_request'
+              else 'exact_ref_head'
+          )
           evidence = {
               'schema': 'qikvrt_vrtcore_ci_kernel_evidence_v1',
               'publication_id': plan['publication_id'],
@@ -209,7 +219,15 @@ jobs:
               'global_pass': 'NOT_CLAIMED',
               'final_pass': 'NOT_CLAIMED',
               'effect_ack_done': 'NOT_CLAIMED',
-              'exact_head_bound': True,
+              'source_bytes_exact': True,
+              'exact_head_bound': checkout_mode == 'exact_ref_head',
+              'checkout': {
+                  'event_name': event_name,
+                  'mode': checkout_mode,
+                  'tested_commit_sha': os.environ['GITHUB_SHA'],
+                  'pull_request_head_sha': pull_request_head_sha,
+                  'ref': os.environ['GITHUB_REF'],
+              },
               'github_sha': os.environ['GITHUB_SHA'],
               'github_run_id': os.environ['GITHUB_RUN_ID'],
               'github_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
