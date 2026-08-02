@@ -390,6 +390,44 @@ def reference_fragment(reference: str, where: str) -> str:
     return fragment
 
 
+def json_contains_exact_string(value: Any, fragment: str) -> bool:
+    if isinstance(value, str):
+        return value == fragment
+    if isinstance(value, list):
+        return any(json_contains_exact_string(item, fragment) for item in value)
+    if isinstance(value, dict):
+        return fragment in value or any(
+            json_contains_exact_string(item, fragment) for item in value.values()
+        )
+    return False
+
+
+def validate_reference_fragment_target(
+    path: pathlib.Path, fragment: str, where: str
+) -> None:
+    """Require an exact identifier in the referenced bound artifact.
+
+    JSON references resolve only to an exact string value or object key. Text
+    references resolve to a token delimited from the identifier alphabet used
+    by the v2 claim contract. Merely naming an existing file is insufficient.
+    """
+    if path.suffix.lower() == ".json":
+        value, _raw = load_json(path, where + " target")
+        found = json_contains_exact_string(value, fragment)
+    else:
+        try:
+            text = read_regular(path).decode("utf-8")
+        except UnicodeDecodeError:
+            fail(where + " target must be UTF-8 text or JSON")
+        identifier = r"A-Za-z0-9_.:-"
+        found = re.search(
+            rf"(?<![{identifier}]){re.escape(fragment)}(?![{identifier}])",
+            text,
+        ) is not None
+    if not found:
+        fail(f"unresolved exact identifier fragment for {where}: {fragment}")
+
+
 def require_unique_text_list(value: Any, where: str) -> list[str]:
     if not isinstance(value, list):
         fail(f"{where} must be a string list")
@@ -2204,6 +2242,19 @@ def validate_bundle(
                 base = reference_base(reference)
                 if base not in artifact_by_path:
                     fail(f"unresolved {key} reference for {claim_id}: {reference}")
+                if key != "proof_refs":
+                    fragment = reference_fragment(
+                        reference, f"{where}.{key} reference"
+                    )
+                    validate_reference_fragment_target(
+                        safe_relative(
+                            root,
+                            base,
+                            f"{where}.{key} reference target",
+                        ),
+                        fragment,
+                        f"{key} reference for {claim_id}",
+                    )
         if classification == "FORMAL_PROVED":
             if not references["proof_refs"]:
                 fail(f"formal claim {claim_id} lacks a proof reference")
