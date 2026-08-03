@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: Recover the exact consumed VRTCore H3 E1 publication
+name: Observe exact VRTCore H3 R9 Zenodo normalizations read only
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
       - .github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 concurrency:
@@ -27,21 +27,22 @@ jobs:
       github.event.created == false &&
       github.event.deleted == false &&
       github.event.forced == false &&
-      github.event.before == '6edde9cbcc0fb57cd29ab71de6718228cc258d80' &&
+      github.event.before == '59ed0836a55d37c20ed9ffeca558414bad6c1a01' &&
       github.event.after == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       EXPECTED_CONTROLLER_PARENT: bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62
-      EXPECTED_CONTROLLER_PREDECESSOR: 6edde9cbcc0fb57cd29ab71de6718228cc258d80
-      EXPECTED_CONTROLLER_PREDECESSOR_TREE: 9cefcb13ed1e7efdc11f7ccf844544b5e5e280d3
-      EXPECTED_CONTROLLER_PREDECESSOR_PARENT: d941ca6b792d569b2c37c571123c7524a53c33fd
-      EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT: eec6f14ad937e15764d28ccf4fc5afef0c198236
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT: 8db28488afa35549eea640f40f98321c1e56a4e0
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT: dfcf28f9f48b5857ef3b4ef50f979d9a1979be08
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT: 89fa9a49a73a7194ccdbed080e9dbdc26a506d5e
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 0d104a2692be53f47f2f200d710d2190dfa2f46d
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
+      EXPECTED_CONTROLLER_PREDECESSOR: 59ed0836a55d37c20ed9ffeca558414bad6c1a01
+      EXPECTED_CONTROLLER_PREDECESSOR_TREE: 0376d2187f1b5898217e06e6a83f9538a763c7db
+      EXPECTED_CONTROLLER_PREDECESSOR_PARENT: 6edde9cbcc0fb57cd29ab71de6718228cc258d80
+      EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT: d941ca6b792d569b2c37c571123c7524a53c33fd
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT: eec6f14ad937e15764d28ccf4fc5afef0c198236
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT: 8db28488afa35549eea640f40f98321c1e56a4e0
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT: dfcf28f9f48b5857ef3b4ef50f979d9a1979be08
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 89fa9a49a73a7194ccdbed080e9dbdc26a506d5e
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 0d104a2692be53f47f2f200d710d2190dfa2f46d
+      EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
       E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
       E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
       E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
@@ -114,6 +115,11 @@ jobs:
               'BLOCK: controller predecessor fifth great-grandparent is not exact' >&2
             exit 2
           fi
+          if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' \
+              'BLOCK: controller predecessor sixth great-grandparent is not exact' >&2
+            exit 2
+          fi
           test "$GITHUB_RUN_ATTEMPT" = "1"
           test "${{ github.event.created }}" = "false"
           test "${{ github.event.deleted }}" = "false"
@@ -162,6 +168,10 @@ jobs:
           test "$(
             git -C controller show -s --format=%P \
               "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"
+          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT"
+          test "$(
+            git -C controller show -s --format=%P \
+              "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT"
           )" = "$EXPECTED_CONTROLLER_PARENT"
           test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
             "$(
@@ -234,75 +244,83 @@ jobs:
           make -C execution test
           test -z "$(git -C execution status --porcelain=v1 --untracked-files=all)"
 
-      - name: Persist and read back authorization_consumed before Zenodo
-        id: prepare
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
-            --prepare \
-            --execution-root execution \
-            --controller-parent "$EXPECTED_CONTROLLER_PARENT" \
-            --github-output "$GITHUB_OUTPUT"
-          grep -Fx 'prepared=true' "$GITHUB_OUTPUT"
-          grep -Eq '^finalized=(true|false)$' "$GITHUB_OUTPUT"
-          grep -Eq '^receipt_commit=[0-9a-f]{40}$' "$GITHUB_OUTPUT"
-
-      - name: Recheck out clean immutable E1 after bootstrap receipt
-        if: steps.prepare.outputs.finalized != 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          clean: true
-          fetch-depth: 0
-          persist-credentials: false
-          ref: 53e757ebce929b40250f90a02ed2a9ec62de6217
-          path: execution
-
-      - name: Run E1 run_publisher_with_checkpoints after durable bootstrap
-        id: publish
-        if: steps.prepare.outputs.finalized != 'true'
-        continue-on-error: true
-        timeout-minutes: 30
+      - name: Observe exact R9 normalizations using two Zenodo GETs only
+        id: observe
+        timeout-minutes: 10
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
+          test -n "$GITHUB_TOKEN"
+          test -n "$ZENODO_ACCESS_TOKEN"
           test "$(
             env -u GITHUB_TOKEN -u GH_TOKEN -u ZENODO_ACCESS_TOKEN \
               git -C execution rev-parse --verify HEAD^{commit}
           )" = "$E1"
           python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
-            --publish \
+            --observe-normalizations \
             --execution-root execution \
-            --controller-parent "$EXPECTED_CONTROLLER_PARENT" \
+            --observation-output \
+              execution/.qikvrt/vrtcore-h3-r10/normalization-observation.json \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: Upload bounded local recovery evidence
-        if: always()
+      - name: Upload unchanged C2 and bounded R10 observation
+        id: upload
+        if: steps.observe.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vrtcore-h3-e1-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          name: vrtcore-h3-r10-normalization-observation-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 90
-          if-no-files-found: ignore
-          path: execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+            execution/.qikvrt/vrtcore-h3-r10/normalization-observation.json
 
-      - name: Enforce exact checkpointed publication result
+      - name: Enforce terminal observation-only boundary
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ steps.prepare.outputs.prepared }}" = "true"
-          [[ "${{ steps.prepare.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
-          if test "${{ steps.prepare.outputs.finalized }}" = "true"; then
-            test -z "${{ steps.publish.outputs.status }}"
-          else
-            test "${{ steps.publish.outputs.status }}" = "0"
-            test "${{ steps.publish.outputs.finalized }}" = "false"
-            test "${{ steps.publish.outputs.phase }}" = "public_verified"
-            test "${{ steps.publish.outputs.state }}" = "published"
-            [[ "${{ steps.publish.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
-          fi
+          test "${{ steps.observe.outcome }}" = "success"
+          test "${{ steps.upload.outcome }}" = "success"
+          test "${{ steps.observe.outputs.observed }}" = "true"
+          test "${{ steps.observe.outputs.read_only }}" = "true"
+          test "${{ steps.observe.outputs.request_count }}" = "2"
+          test "${{ steps.observe.outputs.zenodo_mutation }}" = "false"
+          test "${{ steps.observe.outputs.phase }}" = "record_created"
+          test "${{ steps.observe.outputs.record_id }}" = "21763614"
+          [[ "${{ steps.observe.outputs.evidence_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${{ steps.observe.outputs.evidence_bytes }}" =~ ^[1-9][0-9]{0,4}$ ]]
+          report=execution/.qikvrt/vrtcore-h3-r10/normalization-observation.json
+          checkpoint=execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(stat -c '%a' "$report")" = "600"
+          test "$(sha256sum "$report" | awk '{print $1}')" = \
+            "${{ steps.observe.outputs.evidence_sha256 }}"
+          test "$(wc -c < "$report" | tr -d '[:space:]')" = \
+            "${{ steps.observe.outputs.evidence_bytes }}"
+          test "$(sha256sum "$checkpoint" | awk '{print $1}')" = \
+            "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+          test "$(wc -c < "$checkpoint" | tr -d '[:space:]')" = "23415"
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("execution/.qikvrt/vrtcore-h3-r10/normalization-observation.json")
+          value = json.loads(path.read_text(encoding="utf-8"))
+          assert value["schema"] == "qikvrt_vrtcore_h3_r10_normalization_observation_v1"
+          assert value["read_only"] is True
+          assert value["request"] == {
+              "api_origin": "https://zenodo.org",
+              "count": 2,
+              "method": "GET",
+              "path": "/api/deposit/depositions/21763614",
+              "redirects_followed": False,
+          }
+          assert value["effect_boundary"]["zenodo_mutation"] is False
+          assert value["effect_boundary"]["terminal_result"] == "OBSERVATION_ONLY_BLOCKED"
+          PY
+          printf '%s\n' \
+            'BLOCK: R10 observation only; metadata correction, upload, and publication remain unauthorized' >&2
+          exit 2

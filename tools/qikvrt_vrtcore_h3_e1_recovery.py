@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import html
 import hashlib
 import importlib.util
 import io
@@ -24,6 +25,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -323,6 +325,43 @@ R8_DESCRIPTION_NORMALIZATION_INCIDENT: dict[str, Any] = {
     "doi": "10.5281/zenodo.21763614",
 }
 
+R9_METADATA_NORMALIZATION_INCIDENT: dict[str, Any] = {
+    "controller": "59ed0836a55d37c20ed9ffeca558414bad6c1a01",
+    "controller_parent": "6edde9cbcc0fb57cd29ab71de6718228cc258d80",
+    "controller_tree": "0376d2187f1b5898217e06e6a83f9538a763c7db",
+    "run_id": 30775452815,
+    "job_id": 91570016267,
+    "run_attempt": 1,
+    "log_bytes": 443088,
+    "log_sha256": (
+        "7e531570ef88940bc411cb4304e6badb3a62869b8b5879df3e6ef7643ed317cf"
+    ),
+    "artifact_id": 8841971613,
+    "artifact_name": "vrtcore-h3-e1-recovery-30775452815-1",
+    "artifact_size": 6688,
+    "artifact_digest": (
+        "sha256:809c042f9f23c0ad81f38409ee9a8383600e93106c9034df01f7d66692e5b85a"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 6528,
+    "artifact_entry_crc32": 0xF3A6D7EB,
+    "artifact_entry_unix_mode": 0o100600,
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+    "metadata_put_count": 1,
+    "post_put_mismatches": ("description", "imprint_publisher"),
+}
+
 R8_NULL_AFFILIATION_EVIDENCE: dict[str, Any] = {
     "path": (
         "release/zenodo-corpus-proof-2026-07-28/"
@@ -399,6 +438,67 @@ R8_DESCRIPTION_LOG_FORBIDDEN_MARKERS = (
     "VRTCORE_H3_E1_PUBLISH_COMPLETED",
     "VRTCORE_H3_E1_DOI_VERIFIED",
 )
+R9_METADATA_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "VRTCORE_H3_R8_CREATOR_NORMALIZATION=EXACT": 18,
+    "VRTCORE_H3_R8_CREATOR_NORMALIZATION=NULL_AFFILIATION_ACCEPTED": 4,
+    "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=EXACT": 0,
+    "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=HTML_PARAGRAPH": 2,
+    "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=REJECTED": 20,
+    "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=ABSENT": 19,
+    "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=NULL_ACCEPTED": 2,
+    "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=REJECTED": 1,
+    "VRTCORE_H3_R9_METADATA_PRECONVERGED=false": 20,
+    "VRTCORE_H3_R9_METADATA_PRECONVERGED=true": 2,
+    (
+        "BLOCK: R9 timed out waiting for semantically exact metadata: "
+        "description,imprint_publisher"
+    ): 1,
+    "Process completed with exit code 2.": 1,
+    "Process completed with exit code 1.": 1,
+}
+R9_METADATA_LOG_FORBIDDEN_MARKERS = (
+    *R8_DESCRIPTION_LOG_FORBIDDEN_MARKERS,
+)
+R9_PRODUCTIVE_UPLOAD_GROUP = (
+    "##[group]Run actions/upload-artifact@"
+    "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+)
+R9_PRODUCTIVE_SHELL_GROUP = "##[group]Run set -euo pipefail"
+R9_PRODUCTIVE_BLOCK = (
+    "BLOCK: R9 timed out waiting for semantically exact metadata: "
+    "description,imprint_publisher"
+)
+R9_STEP9_REQUIRED_MARKERS = (
+    R9_PRODUCTIVE_BLOCK,
+    "VRTCORE_H3_R8_CREATOR_NORMALIZATION=NULL_AFFILIATION_ACCEPTED",
+    "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=REJECTED",
+    "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=REJECTED",
+    "VRTCORE_H3_R9_METADATA_PRECONVERGED=false",
+    "##[error]Process completed with exit code 2.",
+)
+R9_STEP10_REQUIRED_MARKERS = (
+    "name: vrtcore-h3-e1-recovery-30775452815-1",
+    "Uploaded bytes 6688",
+    (
+        "SHA256 digest of uploaded artifact is "
+        "809c042f9f23c0ad81f38409ee9a8383600e93106c9034df01f7d66692e5b85a"
+    ),
+    (
+        "Artifact vrtcore-h3-e1-recovery-30775452815-1 "
+        "successfully finalized. Artifact ID 8841971613"
+    ),
+    (
+        "Artifact vrtcore-h3-e1-recovery-30775452815-1 has been "
+        "successfully uploaded! Final size is 6688 bytes. "
+        "Artifact ID is 8841971613"
+    ),
+)
+R9_STEP11_REQUIRED_MARKERS = (
+    'test "2" = "0"',
+    "##[error]Process completed with exit code 1.",
+)
 R5_GOVERNANCE_BOUNDARIES = (
     "PRIVILEGED_REPLAY_MARKER_REF_DELETION_NOT_PREVENTED",
     "AMBIGUOUS_MARKER_MUTATION_BLOCKS_WITHOUT_REARM",
@@ -430,6 +530,23 @@ R9_GOVERNANCE_BOUNDARIES = (
     "R9_ACCEPTS_IMPRINT_PUBLISHER_ONLY_WHEN_JSON_NULL",
     "R9_REQUIRES_DOUBLE_READ_CONVERGENCE_BEFORE_FILES",
 )
+R10_GOVERNANCE_BOUNDARIES = (
+    *R9_GOVERNANCE_BOUNDARIES,
+    "R9_RUN_MUST_NOT_BE_RERUN",
+    "R10_RUN_ATTEMPT_ONE_ONLY",
+    "R10_GETS_ONLY_EXACT_DRAFT_21763614",
+    "R10_PERFORMS_ZERO_ZENODO_MUTATIONS",
+    "R10_OBSERVATION_DOES_NOT_AUTHORIZE_METADATA_CORRECTION",
+    "R10_OBSERVATION_DOES_NOT_ADVANCE_THE_C2_RECEIPT",
+)
+
+R10_OBSERVATION_PATH = pathlib.PurePosixPath(
+    ".qikvrt/vrtcore-h3-r10/normalization-observation.json"
+)
+R10_ZENODO_BASE_URL = "https://zenodo.org/api"
+R10_ZENODO_DEPOSITION_PATH = "/api/deposit/depositions/21763614"
+R10_MAX_RESPONSE_BYTES = 512 * 1024
+R10_MAX_REPORT_BYTES = 64 * 1024
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
     "BLOCK: GitHub Git-Data API rejected GET (HTTP 404)": 1,
@@ -1103,6 +1220,16 @@ class GitHubAPI:
                 + str(R8_DESCRIPTION_NORMALIZATION_INCIDENT["artifact_id"])
                 + "/zip"
             ): R8_DESCRIPTION_NORMALIZATION_INCIDENT["artifact_size"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R9_METADATA_NORMALIZATION_INCIDENT["job_id"])
+                + "/logs"
+            ): R9_METADATA_NORMALIZATION_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R9_METADATA_NORMALIZATION_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R9_METADATA_NORMALIZATION_INCIDENT["artifact_size"],
         }
         if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
@@ -1431,6 +1558,18 @@ def _verify_r8_artifact_evidence(api: Any, root: pathlib.Path) -> None:
         api,
         root,
         R8_DESCRIPTION_NORMALIZATION_INCIDENT,
+        evidence_prefix="c2",
+        expected_phase="record_created",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
+
+
+def _verify_r9_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Prove that R9 uploaded only the unchanged record-created C2 receipt."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R9_METADATA_NORMALIZATION_INCIDENT,
         evidence_prefix="c2",
         expected_phase="record_created",
         expected_state=publish.CONSUMPTION_STATE,
@@ -1942,6 +2081,241 @@ def verify_historical_r8_description_normalization_incident(
             _fail("historical R8 run changed during exact evidence binding")
 
 
+def _r9_actions_log_messages(decoded: str) -> tuple[str, ...]:
+    """Remove only GitHub's exact UTC prefix from every decoded log line."""
+    messages: list[str] = []
+    pattern = re.compile(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z (.*)$"
+    )
+    for line in decoded.splitlines():
+        match = pattern.fullmatch(line)
+        if match is None:
+            _fail("historical R9 job log line framing differs")
+        messages.append(match.group(1))
+    if not messages:
+        _fail("historical R9 job log is empty after framing")
+    return tuple(messages)
+
+
+def _verify_r9_productive_step_spans(decoded: str) -> None:
+    """Bind R9's exit codes and artifact evidence to job steps 9, 10, and 11."""
+    messages = _r9_actions_log_messages(decoded)
+    upload_indices = [
+        index
+        for index, message in enumerate(messages)
+        if message == R9_PRODUCTIVE_UPLOAD_GROUP
+    ]
+    if len(upload_indices) != 1:
+        _fail("historical R9 artifact-upload step span differs")
+    upload_at = upload_indices[0]
+    shell_before = [
+        index
+        for index, message in enumerate(messages[:upload_at])
+        if message == R9_PRODUCTIVE_SHELL_GROUP
+    ]
+    shell_after = [
+        index
+        for index, message in enumerate(messages[upload_at + 1 :], upload_at + 1)
+        if message == R9_PRODUCTIVE_SHELL_GROUP
+    ]
+    if not shell_before or not shell_after:
+        _fail("historical R9 productive shell step spans differ")
+    step9_at = shell_before[-1]
+    step11_at = shell_after[0]
+    step9 = messages[step9_at:upload_at]
+    step10 = messages[upload_at:step11_at]
+    step11 = messages[step11_at:]
+    if any(
+        message.startswith("##[group]Run ")
+        for message in step9[1:]
+    ) or any(
+        message.startswith("##[group]Run ")
+        for message in step10[1:]
+    ):
+        _fail("historical R9 productive step boundary is ambiguous")
+    if not any("--publish" in message for message in step9):
+        _fail("historical R9 productive step lacks its exact publish invocation")
+    for marker in R9_STEP9_REQUIRED_MARKERS:
+        if sum(marker in message for message in step9) != 1:
+            _fail("historical R9 step 9 marker span differs")
+    if any(
+        marker in message
+        for marker in (
+            "Process completed with exit code 1.",
+            "ZENODO_PUBLICATION_STATE=published",
+        )
+        for message in step9
+    ):
+        _fail("historical R9 step 9 crossed its exact failure boundary")
+    for marker in R9_STEP10_REQUIRED_MARKERS:
+        if sum(marker in message for message in step10) != 1:
+            _fail("historical R9 step 10 artifact span differs")
+    if any("Process completed with exit code" in message for message in step10):
+        _fail("historical R9 step 10 unexpectedly failed")
+    for marker in R9_STEP11_REQUIRED_MARKERS:
+        if sum(marker in message for message in step11) != 1:
+            _fail("historical R9 step 11 enforcement span differs")
+    if any(
+        marker in message
+        for marker in (
+            "Process completed with exit code 2.",
+            R9_PRODUCTIVE_BLOCK,
+        )
+        for message in step11
+    ):
+        _fail("historical R9 step 11 contains a displaced productive failure")
+
+
+def verify_historical_r9_metadata_normalization_incident(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind R9's one-PUT timeout and unchanged C2 artifact using GET only."""
+    incident = R9_METADATA_NORMALIZATION_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, latest_run = _call_api(api, "GET", base_run_path, accept=(200,))
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    for observed in (latest_run, run):
+        if (
+            observed.get("id") != incident["run_id"]
+            or observed.get("run_attempt") != incident["run_attempt"]
+            or observed.get("event") != "push"
+            or observed.get("head_sha") != incident["controller"]
+            or observed.get("head_branch") != EXPECTED["trigger_branch"]
+            or observed.get("status") != "completed"
+            or observed.get("conclusion") != "failure"
+            or observed.get("name")
+            != "Recover the exact consumed VRTCore H3 E1 publication"
+            or observed.get("path")
+            != ".github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml"
+        ):
+            _fail("historical R9 workflow run differs")
+    if (
+        not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R9 workflow repository differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R9 workflow job differs")
+    steps = job.get("steps")
+    if not isinstance(steps, list) or not all(
+        isinstance(item, dict) for item in steps
+    ):
+        _fail("historical R9 workflow job steps differ")
+    selected_steps = [
+        item for item in steps if item.get("number") in {9, 10, 11}
+    ]
+    relevant_steps = {
+        item.get("number"): {
+            "name": item.get("name"),
+            "status": item.get("status"),
+            "conclusion": item.get("conclusion"),
+        }
+        for item in selected_steps
+    }
+    if len(selected_steps) != 3 or relevant_steps != {
+        9: {
+            "name": "Run E1 run_publisher_with_checkpoints after durable bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+        },
+        10: {
+            "name": "Upload bounded local recovery evidence",
+            "status": "completed",
+            "conclusion": "success",
+        },
+        11: {
+            "name": "Enforce exact checkpointed publication result",
+            "status": "completed",
+            "conclusion": "failure",
+        },
+    }:
+        _fail("historical R9 productive job-step boundary differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R9 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(api, job_path + "/logs", int(incident["log_bytes"]))
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R9 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R9 job log is not exact UTF-8 with BOM")
+    for marker, count in R9_METADATA_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R9 job log required marker count differs")
+    if any(marker in decoded for marker in R9_METADATA_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R9 job log crossed its observation boundary")
+    _verify_r9_productive_step_spans(decoded)
+    _verify_r9_artifact_evidence(api, root)
+    _status, latest_after = _call_api(api, "GET", base_run_path, accept=(200,))
+    for key in (
+        "id",
+        "run_attempt",
+        "event",
+        "head_sha",
+        "head_branch",
+        "status",
+        "conclusion",
+        "name",
+        "path",
+        "repository",
+        "head_repository",
+    ):
+        if latest_after.get(key) != latest_run.get(key):
+            _fail("historical R9 run changed during exact evidence binding")
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -2098,6 +2472,43 @@ def _verify_r8_local_object_chain(root: pathlib.Path) -> None:
         or tree.decode("ascii").strip() != incident["controller_tree"]
     ):
         _fail("R8 description-normalization local object chain differs")
+
+
+def _verify_r9_local_object_chain(root: pathlib.Path) -> None:
+    """Bind R9 as the exact one-PUT successor of R8 with unchanged C2."""
+    _verify_r8_local_object_chain(root)
+    incident = R9_METADATA_NORMALIZATION_INCIDENT
+    canonical = R8_DESCRIPTION_NORMALIZATION_INCIDENT
+    for key in (
+        "c2",
+        "c2_parent",
+        "c2_tree",
+        "c2_evidence_blob",
+        "c2_evidence_bytes",
+        "c2_evidence_sha256",
+        "phase",
+        "state",
+        "record_id",
+        "doi",
+    ):
+        if incident[key] != canonical[key]:
+            _fail("R9 unchanged C2 identity differs from the R8 boundary")
+    if (
+        incident["metadata_put_count"] != 1
+        or incident["post_put_mismatches"]
+        != ("description", "imprint_publisher")
+    ):
+        _fail("R9 metadata-normalization incident boundary differs")
+    commit = str(incident["controller"])
+    _status, resolved = _git(root, "rev-parse", "--verify", f"{commit}^{{commit}}")
+    _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+    _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+    if (
+        resolved.decode("ascii").strip() != commit
+        or parents.decode("ascii").strip() != incident["controller_parent"]
+        or tree.decode("ascii").strip() != incident["controller_tree"]
+    ):
+        _fail("R9 metadata-normalization local object chain differs")
 
 
 def _verify_r8_null_affiliation_evidence(root: pathlib.Path) -> None:
@@ -2702,6 +3113,7 @@ def _write_exclusive_regular(path: pathlib.Path, raw: bytes) -> None:
         _fail("refusing to overwrite an existing local recovery evidence path")
     except OSError as exc:
         _fail(f"cannot create local recovery evidence: {exc}")
+    complete = False
     try:
         os.fchmod(descriptor, 0o600)
         offset = 0
@@ -2711,10 +3123,18 @@ def _write_exclusive_regular(path: pathlib.Path, raw: bytes) -> None:
                 _fail("local recovery evidence write made no progress")
             offset += written
         os.fsync(descriptor)
+        complete = True
     except OSError as exc:
         _fail(f"local recovery evidence write failed: {exc}")
     finally:
         os.close(descriptor)
+        if not complete:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
 
 def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
@@ -2800,6 +3220,49 @@ def _validate_r9_one_shot_execution(root: pathlib.Path) -> str:
         != R8_DESCRIPTION_NORMALIZATION_INCIDENT["controller"]
     ):
         _fail("R9 controller is not the exact single successor of R8")
+    return controller
+
+
+def _validate_r10_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind observation to the first non-forced R9 -> R10 push attempt."""
+    controller = os.environ.get("GITHUB_SHA", "")
+    event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
+    if (
+        HEX40.fullmatch(controller) is None
+        or os.environ.get("GITHUB_REPOSITORY") != EXPECTED["repository"]
+        or os.environ.get("GITHUB_EVENT_NAME") != "push"
+        or os.environ.get("GITHUB_REF")
+        != "refs/heads/" + EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_REF_NAME") != EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+        or not event_path_raw
+    ):
+        _fail("R10 observation execution environment differs")
+    event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
+    repository = event.get("repository")
+    head_commit = event.get("head_commit")
+    incident = R9_METADATA_NORMALIZATION_INCIDENT
+    if (
+        event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or event.get("before") != incident["controller"]
+        or event.get("after") != controller
+        or event.get("created") is not False
+        or event.get("deleted") is not False
+        or event.get("forced") is not False
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_commit, dict)
+        or head_commit.get("id") != controller
+    ):
+        _fail("R10 observation push event differs")
+    _fetch_credential_free(
+        root,
+        "refs/heads/" + EXPECTED["trigger_branch"],
+        controller,
+    )
+    _status, parent = _git(root, "show", "-s", "--format=%P", controller)
+    if parent.decode("ascii").strip() != incident["controller"]:
+        _fail("R10 controller is not the exact single successor of R9")
     return controller
 
 
@@ -3863,6 +4326,657 @@ def _gate_r7_owned_inventory_identity(
     return state, current
 
 
+def _r10_canonical_json(value: Any) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        _fail("R10 observation contains a non-canonical JSON value")
+
+
+def _r10_strict_json_object(raw: bytes) -> dict[str, Any]:
+    if not raw or len(raw) > R10_MAX_RESPONSE_BYTES:
+        _fail("R10 Zenodo response is empty or oversized")
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON member")
+            result[key] = value
+        return result
+
+    def reject_constant(_value: str) -> Any:
+        raise ValueError("non-finite JSON number")
+
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+        _fail("R10 Zenodo response is not strict UTF-8 JSON")
+    if not isinstance(value, dict):
+        _fail("R10 Zenodo response root is not an object")
+    return value
+
+
+def _r10_json_type(value: Any, *, present: bool) -> str:
+    if not present:
+        return "absent"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    _fail("R10 observed value is not JSON-compatible")
+
+
+def _r10_field_evidence(container: Mapping[str, Any], key: str) -> dict[str, Any]:
+    present = key in container
+    value = container.get(key)
+    if not present:
+        return {
+            "present": False,
+            "json_type": "absent",
+            "canonical_json_bytes": 0,
+            "canonical_json_sha256": None,
+            "string_codepoints": None,
+            "string_utf8_bytes": None,
+        }
+    raw = _r10_canonical_json(value)
+    if len(raw) > 16 * 1024:
+        _fail("R10 observed normalization field exceeds its evidence bound")
+    return {
+        "present": True,
+        "json_type": _r10_json_type(value, present=True),
+        "canonical_json_bytes": len(raw),
+        "canonical_json_sha256": hashlib.sha256(raw).hexdigest(),
+        "string_codepoints": len(value) if isinstance(value, str) else None,
+        "string_utf8_bytes": (
+            len(value.encode("utf-8")) if isinstance(value, str) else None
+        ),
+    }
+
+
+def _r10_description_classification(actual: Any, expected: Any) -> str:
+    """Classify only fixed or strictly text-equivalent HTML normalizations."""
+    if not isinstance(actual, str) or not isinstance(expected, str):
+        return "UNKNOWN"
+    if actual == expected:
+        return "EXACT"
+    if actual == "<p>" + expected + "</p>":
+        return "HTML_PARAGRAPH"
+    candidates = (
+        ("HTML_PARAGRAPH_TRAILING_NEWLINE", "<p>" + expected + "</p>\n"),
+        ("HTML_PARAGRAPH_SURROUNDING_NEWLINES", "\n<p>" + expected + "</p>\n"),
+    )
+    for label, candidate in candidates:
+        if actual == candidate:
+            return label
+
+    stripped = actual.strip("\r\n")
+    wrapper = stripped.startswith("<p>") and stripped.endswith("</p>")
+    inner = stripped[3:-4] if wrapper else stripped
+    if "<" in inner or ">" in inner:
+        return "UNKNOWN"
+    unescaped = html.unescape(inner)
+    if unescaped != expected:
+        return "UNKNOWN"
+    if any(
+        ord(character) < 0x20 and character not in "\t\n\r"
+        for character in unescaped
+    ):
+        return "UNKNOWN"
+    return "HTML_PARAGRAPH_ENTITY_EQUIVALENT" if wrapper else "HTML_ENTITY_EQUIVALENT"
+
+
+def _r10_imprint_publisher_classification(
+    metadata: Mapping[str, Any],
+) -> str:
+    if "imprint_publisher" not in metadata:
+        return "ABSENT"
+    value = metadata.get("imprint_publisher")
+    if value is None:
+        return "JSON_NULL"
+    if value == "":
+        return "EMPTY_STRING"
+    if value == "Zenodo":
+        return "ZENODO_LITERAL"
+    return "UNKNOWN"
+
+
+def _r10_sensitive_values(*values: Any) -> tuple[str, ...]:
+    observed: set[str] = set()
+
+    def walk(value: Any, sensitive: bool = False) -> None:
+        if isinstance(value, Mapping):
+            for key, nested in value.items():
+                child_sensitive = sensitive or bool(
+                    re.search(
+                        r"(?:authorization|nonce|consumption)",
+                        str(key),
+                        flags=re.IGNORECASE,
+                    )
+                )
+                walk(nested, child_sensitive)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested, sensitive)
+        elif sensitive and isinstance(value, str) and len(value) >= 8:
+            observed.add(value)
+
+    for value in values:
+        walk(value)
+    return tuple(sorted(observed))
+
+
+def _r10_validate_draft_snapshot(
+    publisher_module: Any,
+    manifest: Mapping[str, Any],
+    client: Any,
+    value: Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    incident = R9_METADATA_NORMALIZATION_INCIDENT
+    record_id = publisher_module.zenodo._record_id(
+        value,
+        "R10 exact draft observation",
+    )
+    doi = publisher_module.zenodo._doi_from_deposition(
+        value,
+        "R10 exact draft observation",
+    )
+    metadata = value.get("metadata")
+    raw_files = value.get("files")
+    files = client._server_files(value)
+    if (
+        record_id != incident["record_id"]
+        or doi != incident["doi"]
+        or value.get("doi") != incident["doi"]
+        or not isinstance(metadata, dict)
+        or "files" not in value
+        or not isinstance(raw_files, list)
+        or raw_files != []
+        or files != []
+        or value.get("submitted") is not False
+        or value.get("state") != "unsubmitted"
+    ):
+        _fail("R10 response is not the exact empty editable C2 draft")
+    for key in ("record_id", "recid"):
+        alias = value.get(key)
+        normalized = int(alias) if isinstance(alias, str) and alias.isdecimal() else alias
+        if (
+            alias is not None
+            and (
+                isinstance(normalized, bool)
+                or not isinstance(normalized, int)
+                or normalized != incident["record_id"]
+            )
+        ):
+            _fail("R10 draft exposes a conflicting record identity alias")
+    metadata_doi = metadata.get("doi")
+    if metadata_doi is not None and metadata_doi != incident["doi"]:
+        _fail("R10 draft exposes a conflicting metadata DOI")
+    reserved = metadata.get("prereserve_doi")
+    if not isinstance(reserved, dict) or reserved.get("doi") != incident["doi"]:
+        _fail("R10 draft lacks its exact reserved DOI identity")
+    reserved_recid = reserved.get("recid")
+    normalized_recid = (
+        int(reserved_recid)
+        if isinstance(reserved_recid, str) and reserved_recid.isdecimal()
+        else reserved_recid
+    )
+    if (
+        reserved_recid is not None
+        and (
+            isinstance(normalized_recid, bool)
+            or not isinstance(normalized_recid, int)
+            or normalized_recid != incident["record_id"]
+        )
+    ):
+        _fail("R10 draft exposes a conflicting reserved record identity")
+    expected_metadata = manifest["metadata"]
+    if (
+        metadata.get("title") != expected_metadata["title"]
+        or metadata.get("version") != expected_metadata["version"]
+        or not _creators_match_r8_null_affiliation_normalization(
+            metadata.get("creators"),
+            expected_metadata["creators"],
+        )
+    ):
+        _fail("R10 draft immutable publication identity differs")
+    mismatches = _r7_draft_metadata_mismatch_keys(
+        publisher_module,
+        metadata,
+        expected_metadata,
+    )
+    if mismatches != incident["post_put_mismatches"]:
+        _fail(
+            "R10 draft mismatch boundary differs: "
+            + (",".join(mismatches) if mismatches else "none")
+        )
+    links = value.get("links")
+    if not isinstance(links, dict):
+        _fail("R10 exact draft lacks its link object")
+    identity_link_paths = {
+        "self": "/api/deposit/depositions/21763614",
+        "latest_draft": "/api/deposit/depositions/21763614",
+        "html": "/deposit/21763614",
+        "latest_draft_html": "/deposit/21763614",
+    }
+    for key, expected_path in identity_link_paths.items():
+        if key not in links:
+            continue
+        candidate = links.get(key)
+        if not isinstance(candidate, str):
+            _fail("R10 draft identity-bearing link is not a string")
+        parts = urllib.parse.urlsplit(candidate)
+        try:
+            port = parts.port
+        except ValueError:
+            _fail("R10 draft identity-bearing link has an invalid port")
+        if (
+            parts.scheme != "https"
+            or (parts.hostname or "").lower() != "zenodo.org"
+            or parts.username is not None
+            or parts.password is not None
+            or port not in {None, 443}
+            or parts.path.rstrip("/") != expected_path
+            or parts.query
+            or parts.fragment
+        ):
+            _fail("R10 draft exposes a conflicting identity-bearing link")
+    bucket = links.get("bucket") if isinstance(links, dict) else None
+    if not isinstance(bucket, str):
+        _fail("R10 exact draft lacks its upload-bucket identity")
+    safe_bucket = publisher_module.zenodo.validate_response_url(
+        bucket,
+        R10_ZENODO_BASE_URL,
+    )
+    parts = urllib.parse.urlsplit(safe_bucket)
+    bucket_path = parts.path.rstrip("/")
+    if re.fullmatch(
+        r"/api/files/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        bucket_path,
+    ) is None:
+        _fail("R10 exact draft bucket escaped its canonical shape")
+    projection = {
+        "record_id": record_id,
+        "doi": doi,
+        "submitted_present": "submitted" in value,
+        "submitted": value.get("submitted"),
+        "state_present": "state" in value,
+        "state": value.get("state"),
+        "files_present": "files" in value,
+        "files_json_type": _r10_json_type(
+            raw_files,
+            present="files" in value,
+        ),
+        "files": files,
+        "metadata": metadata,
+        "bucket_path_sha256": hashlib.sha256(
+            bucket_path.encode("ascii")
+        ).hexdigest(),
+    }
+    return projection, bucket_path
+
+
+def observe_r10_normalizations(
+    publisher_module: Any,
+    manifest: Mapping[str, Any],
+    c2_evidence: Mapping[str, Any],
+    client: Any,
+    output_path: pathlib.Path,
+    *,
+    token: str,
+    controller: str,
+    recheck_boundary: Callable[[], None],
+) -> dict[str, Any]:
+    """Capture two stable GET-only views of the two unknown normalized fields."""
+    responses: list[bytes] = []
+    snapshots: list[dict[str, Any]] = []
+    projections: list[bytes] = []
+    buckets: list[str] = []
+    for _index in range(2):
+        recheck_boundary()
+        response, _parsed = client.request(
+            "GET",
+            R10_ZENODO_DEPOSITION_PATH,
+            accept=(200,),
+            max_response_bytes=R10_MAX_RESPONSE_BYTES,
+        )
+        raw = getattr(response, "body", None)
+        if not isinstance(raw, bytes) or token.encode("utf-8") in raw:
+            _fail("R10 Zenodo response bytes are unavailable or contain the token")
+        value = _r10_strict_json_object(raw)
+        projection, bucket = _r10_validate_draft_snapshot(
+            publisher_module,
+            manifest,
+            client,
+            value,
+        )
+        responses.append(raw)
+        snapshots.append(value)
+        projections.append(_r10_canonical_json(projection))
+        buckets.append(bucket)
+    recheck_boundary()
+    if projections[0] != projections[1] or buckets[0] != buckets[1]:
+        _fail("R10 exact draft changed between its two bounded GETs")
+
+    metadata = snapshots[0]["metadata"]
+    observed_description = metadata.get("description")
+    expected_text = manifest["metadata"]["description"]
+    description_classification = _r10_description_classification(
+        observed_description,
+        expected_text,
+    )
+    imprint_classification = _r10_imprint_publisher_classification(metadata)
+    report = {
+        "schema": "qikvrt_vrtcore_h3_r10_normalization_observation_v1",
+        "operation": "READ_ONLY_EXACT_DRAFT_NORMALIZATION_OBSERVATION",
+        "read_only": True,
+        "request": {
+            "api_origin": "https://zenodo.org",
+            "method": "GET",
+            "path": R10_ZENODO_DEPOSITION_PATH,
+            "count": 2,
+            "redirects_followed": False,
+        },
+        "binding": {
+            "controller": controller,
+            "r9_controller": R9_METADATA_NORMALIZATION_INCIDENT["controller"],
+            "r9_run_id": R9_METADATA_NORMALIZATION_INCIDENT["run_id"],
+            "r9_job_id": R9_METADATA_NORMALIZATION_INCIDENT["job_id"],
+            "e1": EXPECTED["e1"],
+            "e1_tree": EXPECTED["e1_tree"],
+            "manifest_sha256": manifest["manifest_sha256"],
+            "c2_commit": R9_METADATA_NORMALIZATION_INCIDENT["c2"],
+            "c2_evidence_blob_sha1": R9_METADATA_NORMALIZATION_INCIDENT[
+                "c2_evidence_blob"
+            ],
+            "c2_evidence_sha256": R9_METADATA_NORMALIZATION_INCIDENT[
+                "c2_evidence_sha256"
+            ],
+            "checkpoint_phase": c2_evidence["phase"],
+            "record_id": c2_evidence["record_id"],
+            "doi": c2_evidence["doi"],
+        },
+        "draft": {
+            "derived_state": "draft",
+            "submitted_present": "submitted" in snapshots[0],
+            "submitted": snapshots[0].get("submitted"),
+            "server_state_present": "state" in snapshots[0],
+            "server_state": snapshots[0].get("state"),
+            "files_count": 0,
+            "files_present": "files" in snapshots[0],
+            "files_json_type": _r10_json_type(
+                snapshots[0].get("files"),
+                present="files" in snapshots[0],
+            ),
+            "metadata_canonical_json_bytes": len(
+                _r10_canonical_json(metadata)
+            ),
+            "metadata_canonical_json_sha256": hashlib.sha256(
+                _r10_canonical_json(metadata)
+            ).hexdigest(),
+            "stable_projection_sha256": hashlib.sha256(
+                projections[0]
+            ).hexdigest(),
+        },
+        "fields": {
+            "expected_description": _r10_field_evidence(
+                manifest["metadata"],
+                "description",
+            ),
+            "expected_imprint_publisher": _r10_field_evidence(
+                manifest["metadata"],
+                "imprint_publisher",
+            ),
+            "description": _r10_field_evidence(metadata, "description"),
+            "imprint_publisher": _r10_field_evidence(
+                metadata,
+                "imprint_publisher",
+            ),
+        },
+        "comparison": {
+            "description_classification": description_classification,
+            "imprint_publisher_classification": imprint_classification,
+            "r11_bounded_candidate_identified": (
+                description_classification != "UNKNOWN"
+                and imprint_classification != "UNKNOWN"
+            ),
+            "mismatch_keys": list(
+                R9_METADATA_NORMALIZATION_INCIDENT["post_put_mismatches"]
+            ),
+        },
+        "response_bindings": [
+            {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+            for raw in responses
+        ],
+        "effect_boundary": {
+            "zenodo_mutation": False,
+            "metadata_correction_authorized": False,
+            "file_upload_authorized": False,
+            "publication_authorized": False,
+            "recovery_checkpoint_advanced": False,
+            "terminal_result": "OBSERVATION_ONLY_BLOCKED",
+        },
+        "governance_boundaries": list(R10_GOVERNANCE_BOUNDARIES),
+    }
+    report_raw = (
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    forbidden = (
+        token,
+        os.environ.get("GITHUB_TOKEN", ""),
+        os.environ.get("GH_TOKEN", ""),
+    ) + _r10_sensitive_values(
+        manifest.get("owner_authorization"),
+        c2_evidence,
+    )
+    if (
+        len(report_raw) > R10_MAX_REPORT_BYTES
+        or any(value.encode("utf-8") in report_raw for value in forbidden if value)
+    ):
+        _fail("R10 observation report is oversized or contains forbidden material")
+    _write_exclusive_regular(output_path, report_raw)
+    descriptor = os.open(
+        output_path,
+        os.O_RDONLY
+        | (os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0)
+        | (os.O_NOFOLLOW if hasattr(os, "O_NOFOLLOW") else 0),
+    )
+    try:
+        info = os.fstat(descriptor)
+        persisted = b""
+        while len(persisted) <= R10_MAX_REPORT_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(8192, R10_MAX_REPORT_BYTES + 1 - len(persisted)),
+            )
+            if not chunk:
+                break
+            persisted += chunk
+    finally:
+        os.close(descriptor)
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_IMODE(info.st_mode) != 0o600
+        or persisted != report_raw
+    ):
+        _fail("R10 persisted observation readback differs")
+    recheck_boundary()
+    return {
+        "report": report,
+        "sha256": hashlib.sha256(report_raw).hexdigest(),
+        "bytes": len(report_raw),
+        "request_count": 2,
+    }
+
+
+def run_r10_normalization_observation(
+    execution_root: pathlib.Path,
+    output_path: pathlib.Path,
+) -> dict[str, Any]:
+    """Run every local/historical gate, then only the exact two Zenodo GETs."""
+    root = execution_root.resolve()
+    expected_output = root.joinpath(*R10_OBSERVATION_PATH.parts)
+    if pathlib.Path(os.path.abspath(output_path)) != expected_output:
+        _fail("R10 observation output path differs from its exact execution path")
+    parent = root
+    for part in R10_OBSERVATION_PATH.parts[:-1]:
+        parent = parent / part
+        if os.path.lexists(parent):
+            try:
+                parent_info = parent.lstat()
+            except OSError:
+                _fail("R10 observation output parent cannot be inspected")
+            if stat.S_ISLNK(parent_info.st_mode) or not stat.S_ISDIR(
+                parent_info.st_mode
+            ):
+                _fail("R10 observation output parent is not a trusted directory")
+    basis = load_recovery_basis()
+    validate_e1_repository_objects(root, basis)
+    controller = _validate_r10_one_shot_execution(root)
+    _fetch_credential_free(
+        root,
+        EXPECTED["recovery_ref"],
+        str(R9_METADATA_NORMALIZATION_INCIDENT["c2"]),
+    )
+    _verify_r9_local_object_chain(root)
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    github_api = GitHubAPI(github_token)
+    verify_historical_r9_metadata_normalization_incident(
+        github_api,
+        root,
+    )
+    publisher_module = _load_e1_publisher(root)
+    manifest_path = root / MANIFEST_RELATIVE
+    manifest = publisher_module.load_manifest(manifest_path, root)
+    previous_sha = os.environ.get("GITHUB_SHA")
+    try:
+        os.environ["GITHUB_SHA"] = EXPECTED["e1"]
+        with _without_effect_credentials():
+            execution_head = publisher_module._validate_repository_source_head(
+                root,
+                manifest_path,
+                manifest,
+            )
+            publisher_module._validate_origin_repository(
+                root,
+                EXPECTED["repository"],
+            )
+    finally:
+        if previous_sha is None:
+            os.environ.pop("GITHUB_SHA", None)
+        else:
+            os.environ["GITHUB_SHA"] = previous_sha
+    if execution_head != EXPECTED["e1"]:
+        _fail("R10 E1 execution-head gate differs")
+
+    incident = R9_METADATA_NORMALIZATION_INCIDENT
+    _status, c2_raw = _git(
+        root,
+        "show",
+        f"{incident['c2']}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    if (
+        len(c2_raw) != incident["c2_evidence_bytes"]
+        or hashlib.sha256(c2_raw).hexdigest() != incident["c2_evidence_sha256"]
+    ):
+        _fail("R10 exact C2 recovery evidence bytes differ")
+    c2_evidence = _r10_strict_json_object(c2_raw)
+    c2_evidence = publisher_module._validate_recovery_evidence(
+        c2_evidence,
+        manifest_path,
+        root,
+        manifest,
+        EXPECTED["e1"],
+    )
+    if (
+        c2_evidence.get("phase") != incident["phase"]
+        or c2_evidence.get("state") != incident["state"]
+        or c2_evidence.get("record_id") != incident["record_id"]
+        or c2_evidence.get("doi") != incident["doi"]
+    ):
+        _fail("R10 exact C2 recovery evidence identity differs")
+    _write_exclusive_regular(root / EVIDENCE_RELATIVE, c2_raw)
+
+    token = os.environ.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, "")
+    client = zenodo.ZenodoClient(token, R10_ZENODO_BASE_URL)
+    verified = publisher_module.verify_files(manifest, root, token)
+    publisher_module._reject_tokens_in_publication_bytes(
+        manifest_path,
+        root,
+        manifest,
+        verified,
+        {
+            zenodo.TOKEN_ENVIRONMENT_VARIABLE: token,
+            "GITHUB_TOKEN": github_token,
+        },
+    )
+    if token.encode("utf-8") in c2_raw:
+        _fail("R10 exact C2 evidence contains the Zenodo token")
+    def recheck_boundary() -> None:
+        expected_main = os.environ.get("EXPECTED_CONTROLLER_PARENT", "")
+        if (
+            HEX40.fullmatch(expected_main) is None
+            or _read_head_ref(github_api, "refs/heads/main") != expected_main
+        ):
+            _fail("R10 main moved across the observation boundary")
+        if (
+            _read_head_ref(
+                github_api,
+                "refs/heads/" + EXPECTED["trigger_branch"],
+            )
+            != controller
+            or _read_head_ref(github_api, EXPECTED["publication_ref"])
+            != EXPECTED["e1"]
+            or _read_head_ref(github_api, EXPECTED["recovery_ref"])
+            != incident["c2"]
+            or _read_head_ref(github_api, EXPECTED["create_post_once_ref"])
+            != R4_UNSENT_CREATE_INCIDENT["c1"]
+        ):
+            _fail("R10 repository refs moved across the observation boundary")
+        remote = _validate_existing_consumption_tag(github_api, manifest)
+        if remote.get("tag_object") != EXPECTED["tag_object"]:
+            _fail("R10 consumption tag moved across the observation boundary")
+
+    return observe_r10_normalizations(
+        publisher_module,
+        manifest,
+        c2_evidence,
+        client,
+        output_path,
+        token=token,
+        controller=controller,
+        recheck_boundary=recheck_boundary,
+    )
+
+
 def run_publisher_with_checkpoints(
     manifest_path: pathlib.Path,
     root: pathlib.Path,
@@ -4553,9 +5667,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="resume E1 with remote checkpoints and persist the final receipt",
     )
+    operations.add_argument(
+        "--observe-normalizations",
+        action="store_true",
+        help="observe the exact R9 draft twice using Zenodo GET only",
+    )
     parser.add_argument("--execution-root", type=pathlib.Path, default=ROOT)
     parser.add_argument("--controller-parent")
     parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--observation-output", type=pathlib.Path)
     return parser
 
 
@@ -4597,6 +5717,29 @@ def main(argv: list[str] | None = None) -> int:
             basis = load_recovery_basis()
             validate_e1_repository_objects(args.execution_root.resolve(), basis)
             print("VRTCORE_H3_E1_RECOVERY_BASIS=VALID")
+            return 0
+        if args.observe_normalizations:
+            if not isinstance(args.observation_output, pathlib.Path):
+                _fail("R10 observation output path is required")
+            result = run_r10_normalization_observation(
+                args.execution_root,
+                args.observation_output,
+            )
+            _write_outputs(
+                args.github_output,
+                {
+                    "observed": True,
+                    "read_only": True,
+                    "request_count": result["request_count"],
+                    "zenodo_mutation": False,
+                    "phase": R9_METADATA_NORMALIZATION_INCIDENT["phase"],
+                    "record_id": R9_METADATA_NORMALIZATION_INCIDENT["record_id"],
+                    "evidence_sha256": result["sha256"],
+                    "evidence_bytes": result["bytes"],
+                },
+            )
+            print("VRTCORE_H3_R10_NORMALIZATION_OBSERVATION=CAPTURED")
+            print("ZENODO_MUTATION=false")
             return 0
         store = _controller_store(args)
         if args.publish:

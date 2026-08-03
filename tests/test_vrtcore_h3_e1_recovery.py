@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import copy
+import base64
 import hashlib
 import inspect
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -201,14 +203,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
-    def test_r9_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+    def test_r10_push_and_run_attempt_are_exactly_one_shot(self) -> None:
         for gate in (
             "github.run_attempt == 1",
             "github.event.created == false",
             "github.event.deleted == false",
             "github.event.forced == false",
             "github.event.before == "
-            "'6edde9cbcc0fb57cd29ab71de6718228cc258d80'",
+            "'59ed0836a55d37c20ed9ffeca558414bad6c1a01'",
             "github.event.after == github.sha",
             'test "$GITHUB_RUN_ATTEMPT" = "1"',
             'test "${{ github.event.before }}" = '
@@ -362,7 +364,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r9_is_exact_direct_child_of_r8_with_full_r7_to_r0_lineage(self) -> None:
+    def test_r10_is_exact_direct_child_of_r9_with_full_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -376,30 +378,33 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "6edde9cbcc0fb57cd29ab71de6718228cc258d80"
+                    "59ed0836a55d37c20ed9ffeca558414bad6c1a01"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_TREE": (
-                    "9cefcb13ed1e7efdc11f7ccf844544b5e5e280d3"
+                    "0376d2187f1b5898217e06e6a83f9538a763c7db"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
+                    "6edde9cbcc0fb57cd29ab71de6718228cc258d80"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
-                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
+                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
-                    "8db28488afa35549eea640f40f98321c1e56a4e0"
+                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT": (
-                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
+                    "8db28488afa35549eea640f40f98321c1e56a4e0"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -470,29 +475,28 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             'git -C controller show -s --format=%P \\\n'
             '              '
             '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
 
-    def test_prepare_step_reads_its_output_file_not_self_step_context(self) -> None:
+    def test_observe_step_does_not_read_its_own_outputs(self) -> None:
         step_start = self.workflow.index(
-            "      - name: Persist and read back authorization_consumed before Zenodo"
+            "      - name: Observe exact R9 normalizations using two Zenodo GETs only"
         )
         step_end = self.workflow.index("\n      - name:", step_start + 1)
-        prepare_step = self.workflow[step_start:step_end]
-        self.assertNotIn("${{ steps.prepare.outputs.", prepare_step)
-        self.assertIn("grep -Fx 'prepared=true' \"$GITHUB_OUTPUT\"", prepare_step)
-        self.assertIn(
-            "grep -Eq '^finalized=(true|false)$' \"$GITHUB_OUTPUT\"",
-            prepare_step,
-        )
-        self.assertIn(
-            "grep -Eq '^receipt_commit=[0-9a-f]{40}$' \"$GITHUB_OUTPUT\"",
-            prepare_step,
-        )
+        observe_step = self.workflow[step_start:step_end]
+        self.assertNotIn("${{ steps.observe.outputs.", observe_step)
+        self.assertIn('--github-output "$GITHUB_OUTPUT"', observe_step)
+        self.assertNotIn("grep ", observe_step)
         later_workflow = self.workflow[step_end:]
-        self.assertIn("steps.prepare.outputs.prepared", later_workflow)
-        self.assertIn("steps.prepare.outputs.receipt_commit", later_workflow)
+        self.assertIn("steps.observe.outputs.observed", later_workflow)
+        self.assertIn("steps.observe.outputs.evidence_sha256", later_workflow)
 
     def test_no_step_reads_its_own_outputs_during_that_step(self) -> None:
         step_blocks = re.split(r"(?m)(?=^      - name: )", self.workflow)
@@ -511,9 +515,9 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                 step_block,
                 msg=f"step {step_id!r} reads its own unavailable outputs",
             )
-        self.assertEqual(checked_ids, ["prepare", "publish"])
+        self.assertEqual(checked_ids, ["observe", "upload"])
 
-    def test_workflow_serializes_with_the_original_publisher(self) -> None:
+    def test_workflow_serializes_the_read_only_observation(self) -> None:
         self.assertIn(
             "group: qikvrt-vrtcore-causal-zenodo-publication-v1",
             self.workflow,
@@ -525,17 +529,19 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         )[0]
         self.assertEqual(
             permissions,
-            "  contents: write\n  actions: read\n",
+            "  contents: read\n  actions: read\n",
         )
         self.assertIn("persist-credentials: false", self.workflow)
         self.assertIn(E1, self.workflow)
-        self.assertIn("run_publisher_with_checkpoints", self.workflow)
+        self.assertIn("--observe-normalizations", self.workflow)
+        self.assertNotIn("--publish", self.workflow)
+        self.assertNotIn("run_publisher_with_checkpoints", self.workflow)
         for action in re.findall(
             r"(?m)^\s*uses:\s*([^\s#]+)", self.workflow
         ):
             self.assertRegex(action, r"^[^@]+@[0-9a-f]{40}$")
 
-    def test_zenodo_secret_is_scoped_to_the_publisher_step(self) -> None:
+    def test_zenodo_secret_is_scoped_to_the_observation_step(self) -> None:
         expression = "${{ secrets.ZENODO_ACCESS_TOKEN }}"
         self.assertEqual(self.workflow.count(expression), 1)
         secret_at = self.workflow.index(expression)
@@ -545,7 +551,9 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         if step_end < 0:
             step_end = len(self.workflow)
         secret_step = self.workflow[step_start:step_end]
-        self.assertIn("run_publisher_with_checkpoints", secret_step)
+        self.assertIn("--observe-normalizations", secret_step)
+        self.assertNotIn("--publish", secret_step)
+        self.assertNotIn("run_publisher_with_checkpoints", secret_step)
         self.assertNotIn(expression, self.workflow[:step_start])
         self.assertNotIn(expression, self.workflow[step_end:])
 
@@ -2172,7 +2180,10 @@ class VRTCoreH3E1R7MetadataSemanticsTests(unittest.TestCase):
                 "bucket": (
                     "https://zenodo.org/api/files/"
                     "12345678-1234-1234-1234-123456789abc"
-                )
+                ),
+                "self": (
+                    "https://zenodo.org/api/deposit/depositions/21763614"
+                ),
             },
             "files": [],
         }
@@ -5847,6 +5858,970 @@ class VRTCoreH3E1R8DescriptionNormalizationIncidentTests(unittest.TestCase):
                             FakeR4IncidentAPI(changed, artifact, incident),
                             digest_for=changed,
                         )
+
+
+class VRTCoreH3R10NormalizationObservationTests(unittest.TestCase):
+    TOKEN = "zenodo-observation-token-" + "z" * 24
+    GITHUB_TOKEN = "github-observation-token-" + "g" * 24
+    DESCRIPTION = "Exact description"
+    OBSERVED_DESCRIPTION = "<section>Exact description</section>"
+
+    @classmethod
+    def manifest(cls) -> dict[str, Any]:
+        return {
+            "metadata": {
+                "title": "Exact C2",
+                "version": "v1",
+                "creators": [{"name": "Ingolf Lohmann"}],
+                "description": cls.DESCRIPTION,
+                "prereserve_doi": True,
+            },
+            "manifest_sha256": "a" * 64,
+            "owner_authorization": {
+                "authorization_id": "authorization-" + "a" * 32,
+                "nonce": "n" * 64,
+                "authorization_event": {
+                    "exact_statement": "AUTHORIZE_EXACT_UPLOAD " + "s" * 96,
+                },
+            },
+        }
+
+    @classmethod
+    def draft(cls, description: str | None = None) -> dict[str, Any]:
+        return {
+            "id": 21763614,
+            "doi": "10.5281/zenodo.21763614",
+            "submitted": False,
+            "state": "unsubmitted",
+            "metadata": {
+                "title": "Exact C2",
+                "version": "v1",
+                "creators": [
+                    {"name": "Ingolf Lohmann", "affiliation": None}
+                ],
+                "description": description or cls.OBSERVED_DESCRIPTION,
+                "imprint_publisher": "Zenodo",
+                "prereserve_doi": {
+                    "doi": "10.5281/zenodo.21763614",
+                },
+            },
+            "files": [],
+            "links": {
+                "bucket": (
+                    "https://zenodo.org/api/files/"
+                    "12345678-1234-1234-1234-123456789abc"
+                )
+            },
+        }
+
+    @staticmethod
+    def c2() -> dict[str, Any]:
+        return {
+            "phase": "record_created",
+            "record_id": 21763614,
+            "doi": "10.5281/zenodo.21763614",
+            "owner_authorization": {
+                "nonce": "n" * 64,
+                "authorization_event": {
+                    "exact_statement": "AUTHORIZE_EXACT_UPLOAD " + "s" * 96,
+                },
+            },
+        }
+
+    class Client:
+        def __init__(self, values: list[dict[str, Any]]) -> None:
+            self.values = values
+            self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            **kwargs: Any,
+        ) -> tuple[Any, dict[str, Any]]:
+            self.calls.append((method, path, dict(kwargs)))
+            value = self.values[len(self.calls) - 1]
+            raw = json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            return types.SimpleNamespace(status=200, body=raw), copy.deepcopy(value)
+
+        @staticmethod
+        def _server_files(value: Mapping[str, Any]) -> list[dict[str, Any]]:
+            files = value.get("files")
+            if files is None:
+                return []
+            if not isinstance(files, list):
+                raise AssertionError("invalid test file shape")
+            return list(files)
+
+    def observe(
+        self,
+        directory: str,
+        values: list[dict[str, Any]],
+        *,
+        output_name: str = "observation.json",
+    ) -> tuple[dict[str, Any], Any, list[str], pathlib.Path]:
+        client = self.Client(values)
+        boundaries: list[str] = []
+        output = pathlib.Path(directory) / output_name
+        with mock.patch.dict(
+            os.environ,
+            {
+                "GITHUB_TOKEN": self.GITHUB_TOKEN,
+                "GH_TOKEN": "",
+            },
+            clear=False,
+        ):
+            result = recovery.observe_r10_normalizations(
+                publish,
+                self.manifest(),
+                self.c2(),
+                client,
+                output,
+                token=self.TOKEN,
+                controller="c" * 40,
+                recheck_boundary=lambda: boundaries.append("boundary"),
+            )
+        return result, client, boundaries, output
+
+    def test_exactly_two_gets_stable_report_and_no_secrets_or_nonces(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result, client, boundaries, output = self.observe(
+                directory,
+                [self.draft(), self.draft()],
+            )
+            self.assertEqual(
+                client.calls,
+                [
+                    (
+                        "GET",
+                        "/api/deposit/depositions/21763614",
+                        {"accept": (200,), "max_response_bytes": 512 * 1024},
+                    ),
+                    (
+                        "GET",
+                        "/api/deposit/depositions/21763614",
+                        {"accept": (200,), "max_response_bytes": 512 * 1024},
+                    ),
+                ],
+            )
+            self.assertEqual(
+                boundaries,
+                ["boundary", "boundary", "boundary", "boundary"],
+            )
+            self.assertEqual(result["request_count"], 2)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            raw = output.read_bytes()
+            for forbidden in (
+                self.TOKEN,
+                self.GITHUB_TOKEN,
+                "n" * 64,
+                "AUTHORIZE_EXACT_UPLOAD " + "s" * 96,
+                "12345678-1234-1234-1234-123456789abc",
+            ):
+                self.assertNotIn(forbidden.encode("utf-8"), raw)
+            report = json.loads(raw.decode("utf-8"))
+            self.assertEqual(
+                report["comparison"]["mismatch_keys"],
+                ["description", "imprint_publisher"],
+            )
+            self.assertEqual(
+                report["comparison"]["description_classification"],
+                "UNKNOWN",
+            )
+            self.assertEqual(
+                report["comparison"]["imprint_publisher_classification"],
+                "ZENODO_LITERAL",
+            )
+            self.assertFalse(
+                report["comparison"]["r11_bounded_candidate_identified"]
+            )
+            descriptor = report["fields"]["description"]
+            canonical = json.dumps(
+                self.OBSERVED_DESCRIPTION,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self.assertEqual(
+                hashlib.sha256(canonical).hexdigest(),
+                descriptor["canonical_json_sha256"],
+            )
+            self.assertNotIn("value", descriptor)
+            self.assertNotIn("canonical_json_base64", descriptor)
+            self.assertEqual(
+                report["fields"]["expected_imprint_publisher"],
+                {
+                    "present": False,
+                    "json_type": "absent",
+                    "canonical_json_bytes": 0,
+                    "canonical_json_sha256": None,
+                    "string_codepoints": None,
+                    "string_utf8_bytes": None,
+                },
+            )
+            self.assertNotIn("links", report)
+            self.assertNotIn("metadata", report["draft"])
+            self.assertFalse(report["effect_boundary"]["zenodo_mutation"])
+
+    def test_unstable_second_get_blocks_without_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "observation.json"
+            client = self.Client(
+                [self.draft(), self.draft("<aside>Exact description</aside>")]
+            )
+            boundaries: list[str] = []
+            with self.assertRaisesRegex(SystemExit, "changed between"):
+                recovery.observe_r10_normalizations(
+                    publish,
+                    self.manifest(),
+                    self.c2(),
+                    client,
+                    output,
+                    token=self.TOKEN,
+                    controller="c" * 40,
+                    recheck_boundary=lambda: boundaries.append("boundary"),
+                )
+            self.assertEqual([call[0] for call in client.calls], ["GET", "GET"])
+            self.assertEqual(boundaries, ["boundary", "boundary", "boundary"])
+            self.assertFalse(output.exists())
+
+    def test_existing_or_symlink_output_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            existing = pathlib.Path(directory) / "existing.json"
+            existing.write_text("existing", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "refusing to overwrite"):
+                self.observe(
+                    directory,
+                    [self.draft(), self.draft()],
+                    output_name="existing.json",
+                )
+            target = pathlib.Path(directory) / "target.json"
+            target.write_text("target", encoding="utf-8")
+            link = pathlib.Path(directory) / "link.json"
+            link.symlink_to(target)
+            with self.assertRaisesRegex(SystemExit, "cannot create|overwrite"):
+                self.observe(
+                    directory,
+                    [self.draft(), self.draft()],
+                    output_name="link.json",
+                )
+
+    def test_token_in_observed_field_blocks_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            value = self.draft("prefix " + self.TOKEN + " suffix")
+            with self.assertRaisesRegex(SystemExit, "contain the token|forbidden material"):
+                self.observe(directory, [value, value])
+
+    def test_unknown_response_only_nonce_and_url_are_not_persisted(self) -> None:
+        nonce = "response-only-nonce-" + "r" * 48
+        url = "https://example.invalid/private/" + "u" * 48
+        description = self.DESCRIPTION + " " + nonce + " " + url
+        with tempfile.TemporaryDirectory() as directory:
+            result, _client, boundaries, output = self.observe(
+                directory,
+                [self.draft(description), self.draft(description)],
+            )
+            raw = output.read_bytes()
+            self.assertNotIn(nonce.encode("utf-8"), raw)
+            self.assertNotIn(url.encode("utf-8"), raw)
+            self.assertNotIn(
+                base64.b64encode(json.dumps(description).encode("utf-8")),
+                raw,
+            )
+            self.assertEqual(
+                result["report"]["comparison"]["description_classification"],
+                "UNKNOWN",
+            )
+            self.assertEqual(len(boundaries), 4)
+
+    def test_only_exact_empty_unsubmitted_draft_and_identity_aliases_pass(
+        self,
+    ) -> None:
+        client = self.Client([])
+        malformed: list[tuple[str, dict[str, Any]]] = []
+        state = self.draft()
+        state.update({"submitted": "yes", "state": "published", "files": None})
+        malformed.append(("state", state))
+        missing_files = self.draft()
+        missing_files.pop("files")
+        malformed.append(("missing-files", missing_files))
+        metadata_doi = self.draft()
+        metadata_doi["metadata"]["doi"] = "10.5281/zenodo.99999999"
+        malformed.append(("metadata-doi", metadata_doi))
+        top_level_doi = self.draft()
+        top_level_doi["doi"] = "10.5281/zenodo.99999999"
+        malformed.append(("top-level-doi", top_level_doi))
+        missing_top_level_doi = self.draft()
+        missing_top_level_doi.pop("doi")
+        malformed.append(("missing-top-level-doi", missing_top_level_doi))
+        record_alias = self.draft()
+        record_alias["record_id"] = 99999999
+        malformed.append(("record-alias", record_alias))
+        recid_alias = self.draft()
+        recid_alias["recid"] = "99999999"
+        malformed.append(("recid-alias", recid_alias))
+        self_link = self.draft()
+        self_link["links"]["self"] = (
+            "https://zenodo.org/api/deposit/depositions/99999999"
+        )
+        malformed.append(("self-link", self_link))
+        reserved_alias = self.draft()
+        reserved_alias["metadata"]["prereserve_doi"]["recid"] = 99999999
+        malformed.append(("reserved-recid", reserved_alias))
+        for label, value in malformed:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                    recovery._r10_validate_draft_snapshot(
+                        publish,
+                        self.manifest(),
+                        client,
+                        value,
+                    )
+
+    def test_full_r10_orchestration_reaches_only_two_zenodo_gets(self) -> None:
+        controller = "c" * 40
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        c2 = {
+            "phase": incident["phase"],
+            "state": incident["state"],
+            "record_id": incident["record_id"],
+            "doi": incident["doi"],
+        }
+        c2_raw = (json.dumps(c2, sort_keys=True) + "\n").encode("utf-8")
+        events: list[str] = []
+        client = self.Client([self.draft(), self.draft()])
+        original_client_request = client.request
+
+        def traced_client_request(*args: Any, **kwargs: Any) -> Any:
+            events.append("zenodo-get")
+            return original_client_request(*args, **kwargs)
+
+        client.request = traced_client_request  # type: ignore[method-assign]
+        github_api = object()
+        load_manifest = mock.Mock(
+            side_effect=lambda *_args: (
+                events.append("manifest") or self.manifest()
+            )
+        )
+        validate_source = mock.Mock(
+            side_effect=lambda *_args: (
+                events.append("source-head") or recovery.EXPECTED["e1"]
+            )
+        )
+        validate_origin = mock.Mock(
+            side_effect=lambda *_args: events.append("origin")
+        )
+        validate_evidence = mock.Mock(
+            side_effect=lambda value, *_args: (
+                events.append("c2-evidence") or value
+            )
+        )
+        verify_files = mock.Mock(
+            side_effect=lambda *_args: events.append("files") or []
+        )
+        reject_tokens = mock.Mock(
+            side_effect=lambda *_args: events.append("token-scan")
+        )
+        fake_publisher = types.SimpleNamespace(
+            zenodo=publish.zenodo,
+            load_manifest=load_manifest,
+            _validate_repository_source_head=validate_source,
+            _validate_origin_repository=validate_origin,
+            _validate_recovery_evidence=validate_evidence,
+            verify_files=verify_files,
+            _reject_tokens_in_publication_bytes=reject_tokens,
+        )
+
+        def read_head(_api: Any, ref: str, **_kwargs: Any) -> str:
+            events.append("boundary-ref")
+            values = {
+                "refs/heads/main": "a" * 40,
+                "refs/heads/" + recovery.EXPECTED["trigger_branch"]: controller,
+                recovery.EXPECTED["publication_ref"]: recovery.EXPECTED["e1"],
+                recovery.EXPECTED["recovery_ref"]: incident["c2"],
+                recovery.EXPECTED["create_post_once_ref"]: (
+                    recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
+                ),
+            }
+            return values[ref]
+
+        def validate_objects(root: pathlib.Path, basis: Mapping[str, Any]) -> None:
+            events.append("objects")
+
+        def validate_execution(root: pathlib.Path) -> str:
+            events.append("execution")
+            return controller
+
+        def fetch_recovery(*_args: Any) -> None:
+            events.append("fetch-c2")
+
+        def verify_chain(*_args: Any) -> None:
+            events.append("chain")
+
+        def construct_github(*_args: Any) -> Any:
+            events.append("github-client")
+            return github_api
+
+        def verify_incident(*_args: Any) -> None:
+            events.append("r9-incident")
+
+        def load_publisher(*_args: Any) -> Any:
+            events.append("publisher")
+            return fake_publisher
+
+        def construct_zenodo(*_args: Any) -> Any:
+            events.append("zenodo-client")
+            return client
+
+        def validate_tag(*_args: Any) -> dict[str, str]:
+            events.append("boundary-tag")
+            return {"tag_object": recovery.EXPECTED["tag_object"]}
+
+        incident_overrides = {
+            "c2_evidence_bytes": len(c2_raw),
+            "c2_evidence_sha256": hashlib.sha256(c2_raw).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            incident,
+            incident_overrides,
+        ), mock.patch.dict(
+            os.environ,
+            {
+                "EXPECTED_CONTROLLER_PARENT": "a" * 40,
+                "GITHUB_TOKEN": self.GITHUB_TOKEN,
+                "ZENODO_ACCESS_TOKEN": self.TOKEN,
+            },
+            clear=False,
+        ), mock.patch.object(
+            recovery,
+            "load_recovery_basis",
+            return_value={},
+        ) as load_basis, mock.patch.object(
+            recovery,
+            "validate_e1_repository_objects",
+            side_effect=validate_objects,
+        ) as validate_objects_call, mock.patch.object(
+            recovery,
+            "_validate_r10_one_shot_execution",
+            side_effect=validate_execution,
+        ) as validate_execution_call, mock.patch.object(
+            recovery,
+            "_fetch_credential_free",
+            side_effect=fetch_recovery,
+        ) as fetch_call, mock.patch.object(
+            recovery,
+            "_verify_r9_local_object_chain",
+            side_effect=verify_chain,
+        ) as chain_call, mock.patch.object(
+            recovery,
+            "GitHubAPI",
+            side_effect=construct_github,
+        ) as github_constructor, mock.patch.object(
+            recovery,
+            "verify_historical_r9_metadata_normalization_incident",
+            side_effect=verify_incident,
+        ) as incident_call, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            side_effect=load_publisher,
+        ) as publisher_loader, mock.patch.object(
+            recovery,
+            "_git",
+            return_value=(0, c2_raw),
+        ) as git_call, mock.patch.object(
+            recovery.zenodo,
+            "ZenodoClient",
+            side_effect=construct_zenodo,
+        ) as zenodo_constructor, mock.patch.object(
+            recovery,
+            "_read_head_ref",
+            side_effect=read_head,
+        ) as read_head_call, mock.patch.object(
+            recovery,
+            "_validate_existing_consumption_tag",
+            side_effect=validate_tag,
+        ) as tag_call, mock.patch.object(
+            recovery,
+            "run_publisher_with_checkpoints",
+            side_effect=AssertionError("R10 entered the publisher path"),
+        ) as publisher_effect:
+            root = pathlib.Path(directory)
+            output = root.joinpath(*recovery.R10_OBSERVATION_PATH.parts)
+            result = recovery.run_r10_normalization_observation(root, output)
+        load_basis.assert_called_once_with()
+        validate_objects_call.assert_called_once_with(root, {})
+        validate_execution_call.assert_called_once_with(root)
+        fetch_call.assert_called_once_with(
+            root,
+            recovery.EXPECTED["recovery_ref"],
+            incident["c2"],
+        )
+        chain_call.assert_called_once_with(root)
+        github_constructor.assert_called_once_with(self.GITHUB_TOKEN)
+        incident_call.assert_called_once_with(github_api, root)
+        publisher_loader.assert_called_once_with(root)
+        git_call.assert_called_once_with(
+            root,
+            "show",
+            f"{incident['c2']}:{recovery.EVIDENCE_RELATIVE.as_posix()}",
+        )
+        zenodo_constructor.assert_called_once_with(
+            self.TOKEN,
+            recovery.R10_ZENODO_BASE_URL,
+        )
+        self.assertEqual(read_head_call.call_count, 20)
+        self.assertEqual(tag_call.call_count, 4)
+        publisher_effect.assert_not_called()
+        first_get = events.index("zenodo-get")
+        for required in (
+            "objects",
+            "execution",
+            "fetch-c2",
+            "chain",
+            "github-client",
+            "r9-incident",
+            "publisher",
+            "manifest",
+            "source-head",
+            "origin",
+            "c2-evidence",
+            "zenodo-client",
+            "files",
+            "token-scan",
+            "boundary-ref",
+            "boundary-tag",
+        ):
+            self.assertLess(events.index(required), first_get, msg=required)
+        self.assertEqual([call[0] for call in client.calls], ["GET", "GET"])
+        self.assertEqual(result["request_count"], 2)
+        self.assertEqual(result["report"]["effect_boundary"]["zenodo_mutation"], False)
+
+
+class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
+    @staticmethod
+    def r9_log_bytes() -> bytes:
+        step9_markers = set(recovery.R9_STEP9_REQUIRED_MARKERS)
+        deferred = {
+            "Process completed with exit code 2.",
+            "Process completed with exit code 1.",
+        }
+        lines: list[str] = []
+        for marker, count in recovery.R9_METADATA_LOG_REQUIRED_COUNTS.items():
+            reserved = 1 if marker in step9_markers or marker in deferred else 0
+            lines.extend(marker for _index in range(count - reserved))
+        lines.extend(
+            [
+                recovery.R9_PRODUCTIVE_SHELL_GROUP,
+                "python3 controller.py --publish \\",
+                *recovery.R9_STEP9_REQUIRED_MARKERS,
+                recovery.R9_PRODUCTIVE_UPLOAD_GROUP,
+                *recovery.R9_STEP10_REQUIRED_MARKERS,
+                recovery.R9_PRODUCTIVE_SHELL_GROUP,
+                *recovery.R9_STEP11_REQUIRED_MARKERS,
+            ]
+        )
+        stamped = "".join(
+            "2026-08-03T00:00:00.0000000Z " + line + "\n" for line in lines
+        ).encode("utf-8")
+        prefix = b"\xef\xbb\xbf" + stamped
+        size = int(recovery.R9_METADATA_NORMALIZATION_INCIDENT["log_bytes"])
+        if len(prefix) > size:
+            raise AssertionError("R9 incident fixture exceeds exact size")
+        remaining = size - len(prefix)
+        filler_prefix = b"2026-08-03T00:00:00.0000000Z "
+        if remaining < len(filler_prefix):
+            raise AssertionError("R9 incident fixture lacks framed filler space")
+        return prefix + filler_prefix + b"x" * (remaining - len(filler_prefix))
+
+    @staticmethod
+    def exact_r9_api(
+        log: bytes,
+        artifact: bytes,
+    ) -> FakeR4IncidentAPI:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        api = FakeR4IncidentAPI(log, artifact, incident)
+        api.run.update(
+            {
+                "name": "Recover the exact consumed VRTCore H3 E1 publication",
+                "path": ".github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml",
+            }
+        )
+        api.job["steps"] = [
+            {
+                "number": 9,
+                "name": "Run E1 run_publisher_with_checkpoints after durable bootstrap",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            {
+                "number": 10,
+                "name": "Upload bounded local recovery evidence",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            {
+                "number": 11,
+                "name": "Enforce exact checkpointed publication result",
+                "status": "completed",
+                "conclusion": "failure",
+            },
+        ]
+        return api
+
+    @staticmethod
+    def verify_r9(api: FakeR4IncidentAPI, *, digest_for: bytes) -> None:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        real_sha256 = recovery.hashlib.sha256
+
+        class FixedDigest:
+            def hexdigest(self) -> str:
+                return str(incident["log_sha256"])
+
+        def sha256(raw: bytes = b"") -> Any:
+            if raw == digest_for:
+                return FixedDigest()
+            return real_sha256(raw)
+
+        with mock.patch.object(recovery.hashlib, "sha256", side_effect=sha256):
+            recovery.verify_historical_r9_metadata_normalization_incident(
+                api,
+                ROOT,
+            )
+
+    def test_exact_r9_incident_pins(self) -> None:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        self.assertEqual(
+            recovery.R9_METADATA_LOG_REQUIRED_COUNTS,
+            {
+                "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+                "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+                "VRTCORE_H3_R8_CREATOR_NORMALIZATION=EXACT": 18,
+                "VRTCORE_H3_R8_CREATOR_NORMALIZATION=NULL_AFFILIATION_ACCEPTED": 4,
+                "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=EXACT": 0,
+                "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=HTML_PARAGRAPH": 2,
+                "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION=REJECTED": 20,
+                "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=ABSENT": 19,
+                "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=NULL_ACCEPTED": 2,
+                "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION=REJECTED": 1,
+                "VRTCORE_H3_R9_METADATA_PRECONVERGED=false": 20,
+                "VRTCORE_H3_R9_METADATA_PRECONVERGED=true": 2,
+                (
+                    "BLOCK: R9 timed out waiting for semantically exact metadata: "
+                    "description,imprint_publisher"
+                ): 1,
+                "Process completed with exit code 2.": 1,
+                "Process completed with exit code 1.": 1,
+            },
+        )
+        self.assertEqual(
+            recovery.R9_METADATA_LOG_FORBIDDEN_MARKERS,
+            (
+                "VRTCORE_H3_E1_RECOVERY_PREPARE=FINALIZED",
+                "VRTCORE_H3_E1_RECOVERY_PUBLICATION=ALREADY_FINALIZED",
+                "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+                "ZENODO_PUBLICATION_STATE=published",
+                "prepared_durable=true",
+                "publish_requested",
+                "publish_and_poll",
+                "VRTCORE_H3_E1_METADATA_PREPARED",
+                "VRTCORE_H3_E1_FILES_UPLOADED",
+                "VRTCORE_H3_E1_PUBLISH_COMPLETED",
+                "VRTCORE_H3_E1_DOI_VERIFIED",
+            ),
+        )
+        verifier_source = inspect.getsource(
+            recovery.verify_historical_r9_metadata_normalization_incident
+        )
+        self.assertEqual(
+            verifier_source.count("_verify_r9_productive_step_spans(decoded)"),
+            1,
+        )
+        self.assertEqual(
+            {
+                key: incident[key]
+                for key in (
+                    "controller",
+                    "controller_parent",
+                    "controller_tree",
+                    "run_id",
+                    "job_id",
+                    "run_attempt",
+                    "log_bytes",
+                    "log_sha256",
+                    "artifact_id",
+                    "artifact_name",
+                    "artifact_size",
+                    "artifact_digest",
+                )
+            },
+            {
+                "controller": "59ed0836a55d37c20ed9ffeca558414bad6c1a01",
+                "controller_parent": "6edde9cbcc0fb57cd29ab71de6718228cc258d80",
+                "controller_tree": "0376d2187f1b5898217e06e6a83f9538a763c7db",
+                "run_id": 30775452815,
+                "job_id": 91570016267,
+                "run_attempt": 1,
+                "log_bytes": 443088,
+                "log_sha256": "7e531570ef88940bc411cb4304e6badb3a62869b8b5879df3e6ef7643ed317cf",
+                "artifact_id": 8841971613,
+                "artifact_name": "vrtcore-h3-e1-recovery-30775452815-1",
+                "artifact_size": 6688,
+                "artifact_digest": "sha256:809c042f9f23c0ad81f38409ee9a8383600e93106c9034df01f7d66692e5b85a",
+            },
+        )
+        for key in (
+            "c2",
+            "c2_parent",
+            "c2_tree",
+            "c2_evidence_blob",
+            "c2_evidence_bytes",
+            "c2_evidence_sha256",
+            "phase",
+            "state",
+            "record_id",
+            "doi",
+        ):
+            self.assertEqual(
+                incident[key],
+                recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT[key],
+            )
+
+    def test_active_workflow_is_direct_r9_child_and_terminal_get_only(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "github.event.before == '59ed0836a55d37c20ed9ffeca558414bad6c1a01'",
+            workflow,
+        )
+        self.assertIn(
+            "EXPECTED_CONTROLLER_PREDECESSOR_TREE: 0376d2187f1b5898217e06e6a83f9538a763c7db",
+            workflow,
+        )
+        permissions = workflow.split("permissions:\n", 1)[1].split(
+            "\nconcurrency:", 1
+        )[0]
+        self.assertEqual(permissions, "  contents: read\n  actions: read\n")
+        secret_at = workflow.index("${{ secrets.ZENODO_ACCESS_TOKEN }}")
+        step_start = workflow.rfind("\n      - name:", 0, secret_at)
+        step_end = workflow.find("\n      - name:", secret_at)
+        secret_step = workflow[step_start:step_end]
+        self.assertIn("--observe-normalizations", secret_step)
+        self.assertNotIn("--publish", secret_step)
+        self.assertNotIn("run_publisher_with_checkpoints", secret_step)
+        for method in ("PUT", "POST", "PATCH", "DELETE"):
+            self.assertNotRegex(secret_step, rf"\b{method}\b")
+        self.assertIn("include-hidden-files: true", workflow)
+        self.assertIn("if: steps.observe.outcome == 'success'", workflow)
+        self.assertIn("normalization-observation.json", workflow)
+        self.assertIn("zenodo-publication.json", workflow)
+        self.assertIn(
+            "BLOCK: R10 observation only; metadata correction, upload, and publication remain unauthorized",
+            workflow,
+        )
+        terminal = workflow.split(
+            "      - name: Enforce terminal observation-only boundary\n",
+            1,
+        )[1]
+        self.assertRegex(terminal, r"(?m)^\s*exit 2\s*$")
+        self.assertIn("set -euo pipefail", terminal)
+        self.assertIn('test "${{ steps.observe.outcome }}" = "success"', terminal)
+        self.assertIn('test "${{ steps.upload.outcome }}" = "success"', terminal)
+        self.assertIn("stat -c '%a' \"$report\"", terminal)
+        self.assertIn(
+            "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4",
+            terminal,
+        )
+        self.assertIn('wc -c < "$checkpoint"', terminal)
+        self.assertNotIn("if test", terminal)
+
+    def test_historical_r9_run_job_log_and_artifact_are_get_only(self) -> None:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        log = self.r9_log_bytes()
+        artifact, overrides = (
+            VRTCoreH3E1R8DescriptionNormalizationIncidentTests.artifact_fixture()
+        )
+        with mock.patch.dict(incident, overrides), mock.patch.object(
+            recovery,
+            "_verify_r9_productive_step_spans",
+            wraps=recovery._verify_r9_productive_step_spans,
+        ) as verify_spans:
+            api = self.exact_r9_api(log, artifact)
+            self.verify_r9(api, digest_for=log)
+        verify_spans.assert_called_once_with(log.decode("utf-8-sig"))
+        self.assertEqual(
+            [method for method, _path in api.calls],
+            [
+                "GET",
+                "GET",
+                "GET",
+                "GET",
+                "GET_BYTES",
+                "GET_BYTES",
+                "GET",
+            ],
+        )
+
+    def test_historical_r9_rejects_changed_productive_step(self) -> None:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        log = self.r9_log_bytes()
+        artifact, overrides = (
+            VRTCoreH3E1R8DescriptionNormalizationIncidentTests.artifact_fixture()
+        )
+        with mock.patch.dict(incident, overrides):
+            api = self.exact_r9_api(log, artifact)
+            api.job["steps"][2]["conclusion"] = "success"
+            with self.assertRaisesRegex(SystemExit, "job-step boundary differs"):
+                self.verify_r9(api, digest_for=log)
+
+    def test_r9_exit_codes_are_bound_to_disjoint_productive_step_spans(
+        self,
+    ) -> None:
+        decoded = self.r9_log_bytes().decode("utf-8-sig")
+        recovery._verify_r9_productive_step_spans(decoded)
+        exit_two = "##[error]Process completed with exit code 2."
+        displaced = decoded.replace(exit_two, "_" * len(exit_two), 1)
+        displaced += (
+            "\n2026-08-03T00:00:01.0000000Z " + exit_two
+        )
+        with self.assertRaisesRegex(SystemExit, "step 9 marker span differs"):
+            recovery._verify_r9_productive_step_spans(displaced)
+
+    def test_r9_raw_log_and_artifact_reads_are_exactly_allowlisted(self) -> None:
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        calls: list[tuple[str, int]] = []
+
+        def raw_transport(path: str, maximum: int) -> bytes:
+            calls.append((path, maximum))
+            return b"x"
+
+        api = recovery.GitHubAPI("t" * 32, raw_transport=raw_transport)
+        log_path = (
+            "/repos/Goldkelch/qik-vrt/actions/jobs/"
+            + str(incident["job_id"])
+            + "/logs"
+        )
+        artifact_path = (
+            "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+            + str(incident["artifact_id"])
+            + "/zip"
+        )
+        self.assertEqual(
+            api.request_bytes(log_path, int(incident["log_bytes"])),
+            b"x",
+        )
+        self.assertEqual(
+            api.request_bytes(artifact_path, int(incident["artifact_size"])),
+            b"x",
+        )
+        self.assertEqual(
+            calls,
+            [
+                (log_path, int(incident["log_bytes"])),
+                (artifact_path, int(incident["artifact_size"])),
+            ],
+        )
+        with self.assertRaisesRegex(SystemExit, "raw-read boundary differs"):
+            api.request_bytes(log_path, int(incident["log_bytes"]) + 1)
+        with self.assertRaisesRegex(SystemExit, "raw-read boundary differs"):
+            api.request_bytes(artifact_path + "/unexpected", 1)
+
+    def test_r10_execution_gate_requires_exact_direct_r9_child(self) -> None:
+        controller = "a" * 40
+        incident = recovery.R9_METADATA_NORMALIZATION_INCIDENT
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            event_path = root / "event.json"
+            event = {
+                "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                "before": incident["controller"],
+                "after": controller,
+                "created": False,
+                "deleted": False,
+                "forced": False,
+                "repository": {"full_name": recovery.EXPECTED["repository"]},
+                "head_commit": {"id": controller},
+            }
+            event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            environment = {
+                "GITHUB_SHA": controller,
+                "GITHUB_REPOSITORY": recovery.EXPECTED["repository"],
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REF": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                "GITHUB_REF_NAME": recovery.EXPECTED["trigger_branch"],
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_EVENT_PATH": str(event_path),
+            }
+            with mock.patch.dict(
+                recovery.os.environ,
+                environment,
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ) as fetch, mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, (str(incident["controller"]) + "\n").encode("ascii")),
+            ):
+                self.assertEqual(
+                    recovery._validate_r10_one_shot_execution(root),
+                    controller,
+                )
+            fetch.assert_called_once_with(
+                root,
+                "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                controller,
+            )
+
+            with mock.patch.dict(
+                recovery.os.environ,
+                environment,
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, ("b" * 40 + "\n").encode("ascii")),
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "not the exact single successor of R9",
+                ):
+                    recovery._validate_r10_one_shot_execution(root)
+
+            event["before"] = "b" * 40
+            event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with mock.patch.dict(
+                recovery.os.environ,
+                environment,
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, (str(incident["controller"]) + "\n").encode("ascii")),
+            ):
+                with self.assertRaisesRegex(SystemExit, "push event differs"):
+                    recovery._validate_r10_one_shot_execution(root)
+
+    def test_main_observation_branch_precedes_and_never_calls_publisher(self) -> None:
+        source = inspect.getsource(recovery.main)
+        observe_at = source.index("if args.observe_normalizations:")
+        store_at = source.index("store = _controller_store(args)")
+        self.assertLess(observe_at, store_at)
+        branch = source[observe_at:store_at]
+        self.assertIn("run_r10_normalization_observation", branch)
+        self.assertNotIn("run_publisher_with_checkpoints", branch)
+        self.assertNotIn("restore_or_bootstrap", branch)
 
 
 if __name__ == "__main__":
