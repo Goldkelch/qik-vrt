@@ -1,0 +1,367 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Repair one pending retrospective proof corpus upload
+
+on:
+  push:
+    branches:
+      - recovery-execution/retrospective-proof-corpus-v3-upload-intent-4-v1
+    paths:
+      - .github/workflows/qikvrt_retrospective_proof_corpus_zenodo_pending_upload_repair.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-retrospective-proof-corpus-zenodo-v3
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: Goldkelch/qik-vrt
+  EXPECTED_REPAIR_BRANCH: recovery-execution/retrospective-proof-corpus-v3-upload-intent-4-v1
+  EXPECTED_EXECUTION_HEAD: 092b66215ddb894c2671bd4107edace47ca77da5
+  EXPECTED_RECOVERY_HEAD: 8ac13f291136a666051b7153f20dd41a72990eda
+  EXPECTED_CONSUMPTION_TAG_OBJECT: 01133cf4bf492bdaa8a2ba1a5c6d9677cbd6e678
+  EXPECTED_RECORD_ID: "21775695"
+  EXPECTED_DOI: 10.5281/zenodo.21775695
+  EXPECTED_PREFIX_COUNT: "4"
+  EXPECTED_PENDING_INDEX: "4"
+  EXPECTED_PENDING_NAME: SUBJECT-2beab714d1dc6019__CLAIM_MATRIX.json
+  EXPECTED_PENDING_SIZE: "30478"
+  EXPECTED_PENDING_SHA256: e13350a668803233087ea3b6d2c074bee0c42f4c3c174ceded3139061c2225e8
+  EXPECTED_PENDING_MD5: f10624f6e6d472b0bd513c35d229a66a
+  EXPECTED_PENDING_GIT_BLOB: 5c60c679a7f4043721391be9581d92b9a34262f3
+  EXPECTED_PUBLICATION_REF: refs/heads/publication/retrospective-proof-corpus-v3
+  EXPECTED_RECOVERY_REF: refs/heads/qikvrt-recovery/retrospective-proof-corpus-v3/7a3b3b5e7cc973025b229fe5a6e0aac42cdf880cb82bb851ac23b20588b870af
+  EXPECTED_CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/7a3b3b5e7cc973025b229fe5a6e0aac42cdf880cb82bb851ac23b20588b870af
+  REPAIR_WORKFLOW_PATH: .github/workflows/qikvrt_retrospective_proof_corpus_zenodo_pending_upload_repair.yml
+
+jobs:
+  repair_exact_pending_upload:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/recovery-execution/retrospective-proof-corpus-v3-upload-intent-4-v1' &&
+      github.event_name == 'push' &&
+      github.event.forced == false &&
+      github.event.created == true &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the create-only repair event head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Verify the exact create-only repair envelope without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_REPAIR_BRANCH"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_REPAIR_BRANCH"
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_EXECUTION_HEAD"
+          test "$(git rev-list --count "$EXPECTED_EXECUTION_HEAD..HEAD")" = 1
+          observed_delta="$(
+            git diff --name-status --no-renames "$EXPECTED_EXECUTION_HEAD" HEAD --
+          )"
+          test "$observed_delta" = "A	$REPAIR_WORKFLOW_PATH"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          repository = event.get("repository")
+          if (
+              event.get("after") != os.environ["GITHUB_SHA"]
+              or event.get("before") != "0" * 40
+              or event.get("created") is not True
+              or event.get("deleted") is True
+              or event.get("forced") is not False
+              or event.get("ref") != "refs/heads/" + os.environ["EXPECTED_REPAIR_BRANCH"]
+              or not isinstance(repository, dict)
+              or repository.get("full_name") != os.environ["EXPECTED_REPOSITORY"]
+              or event.get("pusher", {}).get("name") != "ingolf-lohmann"
+          ):
+              raise SystemExit("BLOCK: repair event is not the exact create-only owner push")
+
+          workflow = Path(os.environ["REPAIR_WORKFLOW_PATH"]).read_text()
+          upload_call = "remote.upload_" + "once(record, entry)"
+          read_call = "remote.read_" + "draft_once(record)"
+          required = (
+              "permissions:\n  contents: read",
+              "group: qikvrt-retrospective-proof-corpus-zenodo-v3",
+              upload_call,
+              read_call,
+          )
+          if any(fragment not in workflow for fragment in required):
+              raise SystemExit("BLOCK: one-shot workflow invariants are absent")
+          if workflow.count(upload_call) != 1:
+              raise SystemExit("BLOCK: one-shot workflow does not contain exactly one upload call")
+          if workflow.count(read_call) != 1:
+              raise SystemExit("BLOCK: one-shot workflow does not contain exactly one readback call")
+          for forbidden in (
+              ".create_" + "once(",
+              ".publish_" + "once(",
+              "mutate_ref_" + "once(",
+              'request("DEL' + 'ETE"',
+              'request("PO' + 'ST"',
+          ):
+              if forbidden in workflow:
+                  raise SystemExit("BLOCK: forbidden mutation path entered repair workflow")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reobserve exact immutable refs immediately before the credential boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          publication_head="$(
+            git ls-remote --refs origin "$EXPECTED_PUBLICATION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          recovery_head="$(
+            git ls-remote --refs origin "$EXPECTED_RECOVERY_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          consumption_object="$(
+            git ls-remote --refs origin "$EXPECTED_CONSUMPTION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$publication_head" = "$EXPECTED_EXECUTION_HEAD"
+          test "$recovery_head" = "$EXPECTED_RECOVERY_HEAD"
+          test "$consumption_object" = "$EXPECTED_CONSUMPTION_TAG_OBJECT"
+          git checkout --detach "$EXPECTED_EXECUTION_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Perform exactly one bound PUT and verify prefix five
+        id: repair
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          ZENODO_API_BASE: https://zenodo.org/api
+        run: |
+          set -euo pipefail
+          umask 077
+          GITHUB_SHA="$EXPECTED_EXECUTION_HEAD" python3 -B - <<'PY'
+          import datetime
+          import inspect
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_recovery as recovery
+          from tools import qikvrt_zenodo_actions as zenodo
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          execution_head = os.environ["EXPECTED_EXECUTION_HEAD"]
+          recovery_head_expected = os.environ["EXPECTED_RECOVERY_HEAD"]
+          tag_object = os.environ["EXPECTED_CONSUMPTION_TAG_OBJECT"]
+          record_id = int(os.environ["EXPECTED_RECORD_ID"])
+          expected_count = int(os.environ["EXPECTED_PREFIX_COUNT"])
+          pending_index = int(os.environ["EXPECTED_PENDING_INDEX"])
+
+          if os.environ.get("ZENODO_API_BASE") != zenodo.DEFAULT_BASE_URL:
+              raise SystemExit("BLOCK: repair escaped the production Zenodo origin")
+          if os.environ.get("GITHUB_REPOSITORY") != os.environ["EXPECTED_REPOSITORY"]:
+              raise SystemExit("BLOCK: repair repository identity differs")
+          if os.environ.get("GITHUB_EVENT_NAME") != "push":
+              raise SystemExit("BLOCK: repair event identity differs")
+
+          contract = recovery.load_frozen_contract()
+          manifest_path, manifest = recovery._load_production_manifest(contract)
+          observed_execution = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, recovery.REPOSITORY)
+          if observed_execution != execution_head:
+              raise SystemExit("BLOCK: exact execution head differs")
+          secrets = publish._validated_network_secrets()
+          publish._reject_owner_authorization_replay(
+              root, manifest["owner_authorization"], secrets
+          )
+          github_token = secrets[recovery.GITHUB_TOKEN_ENVIRONMENT_VARIABLE]
+          zenodo_token = secrets[recovery.ZENODO_TOKEN_ENVIRONMENT_VARIABLE]
+
+          status, tag_value = publish._github_api_request(
+              "GET",
+              "/repos/Goldkelch/qik-vrt/git/tags/" + tag_object,
+              github_token,
+              accept=(200,),
+          )
+          if status != 200:
+              raise SystemExit("BLOCK: exact consumption tag object is absent")
+          publish._validate_github_tag_response(
+              tag_value,
+              publish._expected_consumption_tag(manifest, execution_head),
+              tag_object,
+          )
+
+          context = recovery.make_context(
+              execution_head,
+              manifest["manifest_sha256"],
+              manifest["owner_authorization"]["consumption_key"]["value"],
+              tag_object,
+          )
+          if (
+              context.publication_ref != os.environ["EXPECTED_PUBLICATION_REF"]
+              or context.recovery_ref != os.environ["EXPECTED_RECOVERY_REF"]
+          ):
+              raise SystemExit("BLOCK: persisted ref identities differ")
+          ref_status, ref_value = publish._github_api_request(
+              "GET",
+              publish._github_ref_path(context.consumption.ref),
+              github_token,
+              accept=(200,),
+          )
+          if ref_status != 200:
+              raise SystemExit("BLOCK: exact consumption ref is absent")
+          publish._validate_github_ref_response(
+              ref_value, context.consumption.ref, tag_object
+          )
+
+          raw_date = recovery._git_text("show", "-s", "--format=%cI", execution_head)
+          parsed_date = datetime.datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+          commit_date = (
+              parsed_date.astimezone(datetime.timezone.utc)
+              .isoformat()
+              .replace("+00:00", "Z")
+          )
+          class ReadOnlyReceiptAPI(recovery.GitHubReceiptAPI):
+              def request(self, method, path, **kwargs):
+                  if method != "GET":
+                      raise SystemExit("BLOCK: repair attempted a GitHub mutation")
+                  return super().request(method, path, **kwargs)
+
+          checkpoint_port = recovery.GitHubCheckpointPort(
+              ReadOnlyReceiptAPI(github_token), execution_head, commit_date
+          )
+          history, recovery_head, publication_head, final = checkpoint_port.restore(
+              contract, context
+          )
+          if (
+              recovery_head != recovery_head_expected
+              or publication_head != execution_head
+              or final is not None
+              or not history
+              or history[-1].commit_sha != recovery_head_expected
+          ):
+              raise SystemExit("BLOCK: durable recovery/publication state differs")
+          values = recovery.validate_recovery_chain(history, contract, context)
+          current = values[-1]
+          state, count, pending = recovery._validate_preparation(
+              current["preparation"], contract
+          )
+          expected_pending = {
+              "index": pending_index,
+              "name": os.environ["EXPECTED_PENDING_NAME"],
+              "size": int(os.environ["EXPECTED_PENDING_SIZE"]),
+              "sha256": os.environ["EXPECTED_PENDING_SHA256"],
+          }
+          if (
+              current.get("phase") != "record_created"
+              or current.get("sequence") != 11
+              or current.get("record")
+              != {"record_id": record_id, "doi": os.environ["EXPECTED_DOI"]}
+              or state != "UPLOAD_INTENT"
+              or count != expected_count
+              or pending != expected_pending
+          ):
+              raise SystemExit("BLOCK: persisted pending upload intent differs")
+
+          entry = contract.entries[pending_index]
+          if (
+              entry.index != pending_index
+              or entry.name != os.environ["EXPECTED_PENDING_NAME"]
+              or entry.size != int(os.environ["EXPECTED_PENDING_SIZE"])
+              or entry.sha256 != os.environ["EXPECTED_PENDING_SHA256"]
+              or entry.md5 != os.environ["EXPECTED_PENDING_MD5"]
+              or entry.git_blob_sha != os.environ["EXPECTED_PENDING_GIT_BLOB"]
+          ):
+              raise SystemExit("BLOCK: frozen pending entry differs")
+
+          upload_source = inspect.getsource(recovery.ProductionZenodoAdapter.upload_once)
+          if (
+              upload_source.count("self.client.request(") != 1
+              or '"PUT"' not in upload_source
+              or '"POST"' in upload_source
+              or '"DELETE"' in upload_source
+          ):
+              raise SystemExit("BLOCK: production one-shot adapter semantics differ")
+
+          base_url = zenodo.validate_base_url(os.environ["ZENODO_API_BASE"])
+          class OnePutZenodoClient(zenodo.ZenodoClient):
+              def __init__(self, token, origin):
+                  super().__init__(token, origin, poll_attempts=1)
+                  self.put_attempts = 0
+
+              def request(self, method, url, **kwargs):
+                  if method not in {"GET", "PUT"}:
+                      raise SystemExit("BLOCK: repair attempted a forbidden Zenodo method")
+                  if method == "PUT":
+                      if self.put_attempts != 0:
+                          raise SystemExit("BLOCK: repair attempted more than one PUT")
+                      self.put_attempts += 1
+                  return super().request(method, url, **kwargs)
+
+          client = OnePutZenodoClient(zenodo_token, base_url)
+          remote = recovery.ProductionZenodoAdapter(
+              client,
+              zenodo_token,
+              contract,
+              manifest["metadata"],
+              tuple(secrets.values()),
+          )
+          record = recovery.RecordIdentity(record_id, os.environ["EXPECTED_DOI"])
+          try:
+              remote.upload_once(record, entry)
+          except recovery.RemoteMutationError:
+              pass
+          snapshot = remote.read_draft_once(record)
+          observed_count = recovery.exact_prefix_count(snapshot, contract, record)
+          if client.put_attempts != 1 or observed_count != expected_count + 1:
+              raise SystemExit("BLOCK: one-shot repair did not produce exact prefix five")
+
+          print("ONE_SHOT_PENDING_UPLOAD_REPAIR=VERIFIED")
+          print(f"RECORD_ID={record_id}")
+          print(f"VERIFIED_PREFIX_COUNT={observed_count}")
+          print("PENDING_SHA256=" + entry.sha256)
+          PY
+          {
+            printf '%s\n' 'state=verified'
+            printf '%s\n' 'record_id=21775695'
+            printf '%s\n' 'verified_prefix_count=5'
+            printf '%s\n' 'pending_sha256=e13350a668803233087ea3b6d2c074bee0c42f4c3c174ceded3139061c2225e8'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enforce the exact bounded repair result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.repair.outcome }}" = success
+          test "${{ steps.repair.outputs.state }}" = verified
+          test "${{ steps.repair.outputs.record_id }}" = "$EXPECTED_RECORD_ID"
+          test "${{ steps.repair.outputs.verified_prefix_count }}" = 5
+          test "${{ steps.repair.outputs.pending_sha256 }}" = "$EXPECTED_PENDING_SHA256"
+          {
+            printf '%s\n' '## One-shot retrospective proof corpus upload repair'
+            printf '%s\n' ''
+            printf '%s\n' '- Exact durable intent: verified'
+            printf '%s\n' '- Zenodo record: `21775695`'
+            printf '%s\n' '- Prefix transition: `4 -> 5`'
+            printf '%s\n' '- Mutation: exactly one bounded `PUT` call path'
+            printf '%s\n' '- Create/publish/delete/ref mutation: unavailable'
+            printf '%s\n' '- Next: rerun the original GET-only checkpointed controller'
+          } >> "$GITHUB_STEP_SUMMARY"
