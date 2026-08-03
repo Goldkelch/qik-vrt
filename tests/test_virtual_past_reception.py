@@ -92,6 +92,13 @@ class VirtualPastReceptionTests(unittest.TestCase):
             False,
         )
 
+    def test_makefile_is_repository_adapted_not_byte_portable(self) -> None:
+        self.assertNotIn("Makefile", self.work_unit["portable_paths"])
+        adapted = {
+            entry["path"] for entry in self.work_unit["repository_adapted_paths"]
+        }
+        self.assertEqual(adapted, {"Makefile"})
+
     def test_note_preserves_scientific_boundary(self) -> None:
         note = (BUNDLE / "NOTE_DE.md").read_text(encoding="utf-8")
         evidence = (BUNDLE / "EVIDENCE_BOUNDARY.md").read_text(encoding="utf-8")
