@@ -27,19 +27,21 @@ jobs:
       github.event.created == false &&
       github.event.deleted == false &&
       github.event.forced == false &&
-      github.event.before == 'd941ca6b792d569b2c37c571123c7524a53c33fd' &&
+      github.event.before == '6edde9cbcc0fb57cd29ab71de6718228cc258d80' &&
       github.event.after == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       EXPECTED_CONTROLLER_PARENT: bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62
-      EXPECTED_CONTROLLER_PREDECESSOR: d941ca6b792d569b2c37c571123c7524a53c33fd
-      EXPECTED_CONTROLLER_PREDECESSOR_PARENT: eec6f14ad937e15764d28ccf4fc5afef0c198236
-      EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT: 8db28488afa35549eea640f40f98321c1e56a4e0
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT: dfcf28f9f48b5857ef3b4ef50f979d9a1979be08
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT: 89fa9a49a73a7194ccdbed080e9dbdc26a506d5e
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT: 0d104a2692be53f47f2f200d710d2190dfa2f46d
-      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
+      EXPECTED_CONTROLLER_PREDECESSOR: 6edde9cbcc0fb57cd29ab71de6718228cc258d80
+      EXPECTED_CONTROLLER_PREDECESSOR_TREE: 9cefcb13ed1e7efdc11f7ccf844544b5e5e280d3
+      EXPECTED_CONTROLLER_PREDECESSOR_PARENT: d941ca6b792d569b2c37c571123c7524a53c33fd
+      EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT: eec6f14ad937e15764d28ccf4fc5afef0c198236
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT: 8db28488afa35549eea640f40f98321c1e56a4e0
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT: dfcf28f9f48b5857ef3b4ef50f979d9a1979be08
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT: 89fa9a49a73a7194ccdbed080e9dbdc26a506d5e
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 0d104a2692be53f47f2f200d710d2190dfa2f46d
+      EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT: 4e794afb21c8e5a31ff713b15b77890bbbd950c4
       E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
       E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
       E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
@@ -72,6 +74,11 @@ jobs:
               'BLOCK: controller predecessor is not an exact commit' >&2
             exit 2
           fi
+          if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR_TREE" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' \
+              'BLOCK: controller predecessor tree is not exact' >&2
+            exit 2
+          fi
           if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT" =~ ^[0-9a-f]{40}$ ]]; then
             printf '%s\n' \
               'BLOCK: controller predecessor parent is not an exact commit' >&2
@@ -102,6 +109,11 @@ jobs:
               'BLOCK: controller predecessor great-great-great-great-grandparent is not exact' >&2
             exit 2
           fi
+          if ! [[ "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' \
+              'BLOCK: controller predecessor fifth great-grandparent is not exact' >&2
+            exit 2
+          fi
           test "$GITHUB_RUN_ATTEMPT" = "1"
           test "${{ github.event.created }}" = "false"
           test "${{ github.event.deleted }}" = "false"
@@ -117,6 +129,10 @@ jobs:
             git -C controller show -s --format=%P \
               "$EXPECTED_CONTROLLER_PREDECESSOR"
           )" = "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"
+          test "$(
+            git -C controller rev-parse --verify \
+              "$EXPECTED_CONTROLLER_PREDECESSOR^{tree}"
+          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_TREE"
           test "$(
             git -C controller show -s --format=%P \
               "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"
@@ -141,6 +157,11 @@ jobs:
           test "$(
             git -C controller show -s --format=%P \
               "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"
+          )" = \
+            "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"
+          test "$(
+            git -C controller show -s --format=%P \
+              "$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"
           )" = "$EXPECTED_CONTROLLER_PARENT"
           test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
             "$(

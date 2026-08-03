@@ -201,14 +201,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
-    def test_r8_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+    def test_r9_push_and_run_attempt_are_exactly_one_shot(self) -> None:
         for gate in (
             "github.run_attempt == 1",
             "github.event.created == false",
             "github.event.deleted == false",
             "github.event.forced == false",
             "github.event.before == "
-            "'d941ca6b792d569b2c37c571123c7524a53c33fd'",
+            "'6edde9cbcc0fb57cd29ab71de6718228cc258d80'",
             "github.event.after == github.sha",
             'test "$GITHUB_RUN_ATTEMPT" = "1"',
             'test "${{ github.event.before }}" = '
@@ -222,8 +222,10 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("store.arm_exact_record_created_reconciliation()", source)
         self.assertNotIn("store.arm_exact_unsent_create_replay()", source)
         self.assertIn("reconcile_record=(", source)
-        self.assertIn('R6_DRAFT_METADATA_INCIDENT["record_id"]', source)
-        self.assertIn('R6_DRAFT_METADATA_INCIDENT["doi"]', source)
+        self.assertIn(
+            'R8_DESCRIPTION_NORMALIZATION_INCIDENT["record_id"]', source
+        )
+        self.assertIn('R8_DESCRIPTION_NORMALIZATION_INCIDENT["doi"]', source)
 
     def test_marker_is_create_only_and_cannot_trigger_any_zenodo_workflow(self) -> None:
         source = inspect.getsource(recovery.persist_create_post_once_marker)
@@ -360,7 +362,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r8_is_exact_direct_child_of_r7_with_full_r6_to_r0_lineage(self) -> None:
+    def test_r9_is_exact_direct_child_of_r8_with_full_r7_to_r0_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -374,24 +376,30 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
+                    "6edde9cbcc0fb57cd29ab71de6718228cc258d80"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_TREE": (
+                    "9cefcb13ed1e7efdc11f7ccf844544b5e5e280d3"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
+                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
-                    "8db28488afa35549eea640f40f98321c1e56a4e0"
+                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
-                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
+                    "8db28488afa35549eea640f40f98321c1e56a4e0"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -405,6 +413,12 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             'git -C controller show -s --format=%P \\\n'
             '              "$EXPECTED_CONTROLLER_PREDECESSOR"\n'
             '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_PARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller rev-parse --verify \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR^{tree}"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_TREE"',
             self.workflow,
         )
         self.assertIn(
@@ -445,8 +459,17 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         )
         self.assertIn(
             'git -C controller show -s --format=%P \\\n'
+              '              '
+              '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"\n'
+            '          )" = \\\n'
+            '            '
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
             '              '
-            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"\n'
+            '"$EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
@@ -1647,14 +1670,14 @@ class VRTCoreH3E1R5OneShotExecutionTests(unittest.TestCase):
             store.arm_exact_unsent_create_replay()
 
 
-class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
+class VRTCoreH3E1R9OneShotExecutionTests(unittest.TestCase):
     CONTROLLER = "e" * 40
 
     @classmethod
     def event(cls) -> dict[str, Any]:
         return {
             "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
-            "before": recovery.R7_CREATOR_NORMALIZATION_INCIDENT["controller"],
+            "before": recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT["controller"],
             "after": cls.CONTROLLER,
             "created": False,
             "deleted": False,
@@ -1683,7 +1706,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
     ) -> str:
         path = pathlib.Path(environment["GITHUB_EVENT_PATH"])
         path.write_text(json.dumps(event) + "\n", encoding="utf-8")
-        parent = str(recovery.R7_CREATOR_NORMALIZATION_INCIDENT["controller"])
+        parent = str(recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT["controller"])
         with mock.patch.dict(recovery.os.environ, environment, clear=True), mock.patch.object(
             recovery,
             "_fetch_credential_free",
@@ -1692,7 +1715,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
             "_git",
             return_value=(0, (parent + "\n").encode("ascii")),
         ):
-            result = recovery._validate_r8_one_shot_execution(root)
+            result = recovery._validate_r9_one_shot_execution(root)
         fetch.assert_called_once_with(
             root,
             "refs/heads/" + recovery.EXPECTED["trigger_branch"],
@@ -1700,7 +1723,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
         )
         return result
 
-    def test_exact_first_nonforced_r7_to_r8_push_is_accepted(self) -> None:
+    def test_exact_first_nonforced_r8_to_r9_push_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             event_path = root / "event.json"
@@ -1750,10 +1773,10 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                     "_fetch_credential_free",
                 ) as fetch:
                     with self.assertRaisesRegex(SystemExit, "BLOCK:"):
-                        recovery._validate_r8_one_shot_execution(root)
+                        recovery._validate_r9_one_shot_execution(root)
                 fetch.assert_not_called()
 
-    def test_local_controller_parent_must_be_exact_r7(self) -> None:
+    def test_local_controller_parent_must_be_exact_r8(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             event_path = root / "event.json"
@@ -1770,11 +1793,11 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                 "_git",
                 return_value=(0, ("d" * 40 + "\n").encode("ascii")),
             ):
-                with self.assertRaisesRegex(SystemExit, "single successor of R7"):
-                    recovery._validate_r8_one_shot_execution(root)
+                with self.assertRaisesRegex(SystemExit, "single successor of R8"):
+                    recovery._validate_r9_one_shot_execution(root)
 
-    def test_arm_binds_exact_c2_marker_publication_and_r7_incident(self) -> None:
-        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+    def test_arm_binds_exact_c2_marker_publication_and_r8_incident(self) -> None:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
         store = object.__new__(recovery.RecoveryReceiptStore)
         store.root = ROOT
         store.api = object()
@@ -1784,7 +1807,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
         store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
         store._initial_create_replay_pending = False
         store._record_created_reconciliation_armed = False
-        store._r8_controller = None
+        store._r9_controller = None
         chain = [
             {"phase": "authorization_consumed"},
             {"phase": "create_requested"},
@@ -1797,7 +1820,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
         ]
         with mock.patch.object(
             recovery,
-            "_validate_r8_one_shot_execution",
+            "_validate_r9_one_shot_execution",
             return_value=self.CONTROLLER,
         ) as execution, mock.patch.object(
             recovery,
@@ -1810,10 +1833,13 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
             "verify_historical_r7_creator_normalization_incident",
         ) as historical_r7, mock.patch.object(
             recovery,
+            "verify_historical_r8_description_normalization_incident",
+        ) as historical_r8, mock.patch.object(
+            recovery,
             "_fetch_credential_free",
         ) as fetch, mock.patch.object(
             recovery,
-            "_verify_r7_local_object_chain",
+            "_verify_r8_local_object_chain",
         ) as objects, mock.patch.object(
             recovery,
             "_verify_r8_null_affiliation_evidence",
@@ -1824,11 +1850,12 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
         ):
             store.arm_exact_record_created_reconciliation()
         self.assertTrue(store._record_created_reconciliation_armed)
-        self.assertEqual(store._r8_controller, self.CONTROLLER)
+        self.assertEqual(store._r9_controller, self.CONTROLLER)
         execution.assert_called_once_with(ROOT)
         historical_r5.assert_called_once_with(store.api, ROOT)
         historical_r6.assert_called_once_with(store.api, ROOT)
         historical_r7.assert_called_once_with(store.api, ROOT)
+        historical_r8.assert_called_once_with(store.api, ROOT)
         objects.assert_called_once_with(ROOT)
         normalization.assert_called_once_with(ROOT)
         self.assertEqual(
@@ -1849,7 +1876,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
         )
 
     def test_arm_rejects_malformed_c2_chain_or_identity(self) -> None:
-        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
         exact = [
             {"phase": "authorization_consumed"},
             {"phase": "create_requested"},
@@ -1883,10 +1910,10 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                 store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
                 store._initial_create_replay_pending = False
                 store._record_created_reconciliation_armed = False
-                store._r8_controller = None
+                store._r9_controller = None
                 with mock.patch.object(
                     recovery,
-                    "_validate_r8_one_shot_execution",
+                    "_validate_r9_one_shot_execution",
                     return_value=self.CONTROLLER,
                 ), mock.patch.object(
                     recovery,
@@ -1899,10 +1926,13 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                     "verify_historical_r7_creator_normalization_incident",
                 ), mock.patch.object(
                     recovery,
+                    "verify_historical_r8_description_normalization_incident",
+                ), mock.patch.object(
+                    recovery,
                     "_fetch_credential_free",
                 ), mock.patch.object(
                     recovery,
-                    "_verify_r7_local_object_chain",
+                    "_verify_r8_local_object_chain",
                 ), mock.patch.object(
                     recovery,
                     "_verify_r8_null_affiliation_evidence",
@@ -1916,7 +1946,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                 self.assertFalse(store._record_created_reconciliation_armed)
 
     def test_arm_rejects_every_nonexact_start_identity(self) -> None:
-        incident = recovery.R6_DRAFT_METADATA_INCIDENT
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
         cases = (
             ("publication_head", "d" * 40),
             ("current_tip", recovery.R4_UNSENT_CREATE_INCIDENT["c1"]),
@@ -1934,7 +1964,7 @@ class VRTCoreH3E1R8OneShotExecutionTests(unittest.TestCase):
                 store.create_post_once_head = recovery.R4_UNSENT_CREATE_INCIDENT["c1"]
                 store._initial_create_replay_pending = False
                 store._record_created_reconciliation_armed = False
-                store._r8_controller = None
+                store._r9_controller = None
                 setattr(store, attribute, value)
                 with self.assertRaisesRegex(SystemExit, "BLOCK:"):
                     store.arm_exact_record_created_reconciliation()
@@ -2211,6 +2241,120 @@ class VRTCoreH3E1R7MetadataSemanticsTests(unittest.TestCase):
                     )
                 )
 
+    def test_r9_description_accepts_only_exact_or_exact_paragraph(self) -> None:
+        expected = str(self.manifest["metadata"]["description"])
+        self.assertEqual(
+            recovery._r9_description_normalization(expected, expected),
+            "EXACT",
+        )
+        self.assertEqual(
+            recovery._r9_description_normalization(
+                "<p>" + expected + "</p>",
+                expected,
+            ),
+            "HTML_PARAGRAPH",
+        )
+        for actual in (
+            "<div>" + expected + "</div>",
+            '<p class="zenodo">' + expected + "</p>",
+            "<p>" + expected + "</p>\n",
+            "<p><span>" + expected + "</span></p>",
+            "<p>" + expected + " changed</p>",
+            "<p><p>" + expected + "</p></p>",
+            None,
+            True,
+        ):
+            with self.subTest(actual=actual):
+                self.assertIsNone(
+                    recovery._r9_description_normalization(actual, expected)
+                )
+
+    def test_r9_nullable_imprint_and_paragraph_are_semantically_exact(self) -> None:
+        current = self.draft()
+        metadata = current["metadata"]
+        metadata["description"] = (
+            "<p>" + self.manifest["metadata"]["description"] + "</p>"
+        )
+        metadata["imprint_publisher"] = None
+        self.assertEqual(
+            recovery._r7_draft_metadata_mismatch_keys(
+                publish,
+                metadata,
+                self.manifest["metadata"],
+            ),
+            (),
+        )
+        recovery._validate_r7_record_identity(
+            publish,
+            self.manifest,
+            "draft",
+            current,
+            require_exact_draft_metadata=True,
+        )
+
+    def test_r9_nonnull_imprint_and_nearby_html_forms_block(self) -> None:
+        for value in ("Publisher", "", False, 0, {}, []):
+            with self.subTest(imprint=value):
+                current = self.draft()
+                current["metadata"]["imprint_publisher"] = value
+                with self.assertRaisesRegex(SystemExit, "imprint_publisher"):
+                    recovery._validate_r7_record_identity(
+                        publish,
+                        self.manifest,
+                        "draft",
+                        current,
+                        require_exact_draft_metadata=True,
+                    )
+        current = self.draft()
+        expected = self.manifest["metadata"]["description"]
+        current["metadata"]["description"] = "<p>" + expected + " </p>"
+        with self.assertRaisesRegex(SystemExit, "description"):
+            recovery._validate_r7_record_identity(
+                publish,
+                self.manifest,
+                "draft",
+                current,
+                require_exact_draft_metadata=True,
+            )
+
+    def test_r9_public_comparator_normalizes_only_bounded_fields(self) -> None:
+        current = self.draft()
+        metadata = current["metadata"]
+        expected = self.manifest["metadata"]
+        metadata["license"] = {"id": expected["license"]}
+        metadata["resource_type"] = {
+            "type": metadata.pop("upload_type"),
+            "subtype": metadata.pop("publication_type"),
+        }
+        metadata.pop("prereserve_doi", None)
+        metadata["doi"] = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT["doi"]
+        metadata["description"] = "<p>" + expected["description"] + "</p>"
+        metadata["imprint_publisher"] = None
+        self.assertTrue(
+            recovery._published_metadata_matches_r9_normalizations(
+                publish,
+                metadata,
+                expected,
+            )
+        )
+        metadata["description"] = "<div>" + expected["description"] + "</div>"
+        self.assertFalse(
+            recovery._published_metadata_matches_r9_normalizations(
+                publish,
+                metadata,
+                expected,
+            )
+        )
+        metadata["description"] = "<p>" + expected["description"] + "</p>"
+        metadata["imprint_publisher"] = "unauthorized"
+        self.assertFalse(
+            recovery._published_metadata_matches_r9_normalizations(
+                publish,
+                metadata,
+                expected,
+            )
+        )
+
     def test_every_nonidentity_field_is_correctable_but_not_strictly_accepted(self) -> None:
         mutable = sorted(
             set(self.manifest["metadata"])
@@ -2272,6 +2416,10 @@ class VRTCoreH3E1R7MetadataSemanticsTests(unittest.TestCase):
             "type": metadata.pop("upload_type"),
             "subtype": metadata.pop("publication_type"),
         }
+        metadata["description"] = (
+            "<p>" + self.manifest["metadata"]["description"] + "</p>"
+        )
+        metadata["imprint_publisher"] = None
         self.assertEqual(
             recovery._r7_draft_metadata_mismatch_keys(
                 publish,
@@ -2457,7 +2605,13 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
             "creators": [{"name": "Ingolf Lohmann"}],
             "prereserve_doi": {"doi": cls.DOI},
         }
-        if not preconverged:
+        if preconverged:
+            metadata["creators"] = [
+                {"affiliation": None, "name": "Ingolf Lohmann"}
+            ]
+            metadata["description"] = "<p>Exact description</p>"
+            metadata["imprint_publisher"] = None
+        else:
             metadata["notes"] = "stale pre-R8 metadata"
         return {
             "id": cls.RECORD_ID,
@@ -2475,7 +2629,11 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
         fail_phase: str | None = None,
     ) -> tuple[Any, Any, list[str], Any]:
         events: list[str] = []
-        preconverged = operation == "metadata_put_preconverged"
+        preconverged = operation in {
+            "metadata_put_preconverged",
+            "published_gate",
+            "already_published_entry",
+        }
         current = self.draft(preconverged=preconverged)
         upload_body = b"exact-r7-bucket-drift-test\n"
         upload_entry = {
@@ -2548,7 +2706,11 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
                 del instance
                 self.assertEqual(record_id, self.RECORD_ID)
                 events.append("record-get")
-                return "draft", current
+                return (
+                    "published"
+                    if operation == "already_published_entry"
+                    else "draft"
+                ), current
 
             def get(
                 instance: Any,
@@ -2581,8 +2743,45 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
                 del instance
                 return current
 
-            def gate_record(instance: Any, *_args: Any, **_kwargs: Any) -> None:
+            def wait_for_gated_record(
+                instance: Any,
+                record_id: int,
+                metadata: Mapping[str, Any],
+                entries: Any,
+                expected_doi: str,
+                *,
+                published: bool,
+                initial: Mapping[str, Any] | None = None,
+            ) -> dict[str, Any]:
+                self.assertTrue(published)
+                self.assertEqual(record_id, self.RECORD_ID)
+                self.assertEqual(expected_doi, self.DOI)
+                self.assertIsNotNone(initial)
+                assert initial is not None
+                events.append("public-wait")
+                instance.gate_record(
+                    initial,
+                    record_id,
+                    metadata,
+                    entries,
+                    expected_doi,
+                    published=True,
+                )
+                return dict(initial)
+
+            def gate_record(
+                instance: Any,
+                value: Mapping[str, Any],
+                *_args: Any,
+                **kwargs: Any,
+            ) -> None:
                 del instance
+                if kwargs.get("published") is True:
+                    self.assertEqual(
+                        value.get("metadata", {}).get("description"),
+                        "Exact description",
+                    )
+                    events.append("original-published-gate-normalized")
 
             def gate_files(instance: Any, *_args: Any, **_kwargs: Any) -> None:
                 del instance
@@ -2605,6 +2804,9 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
         module._shared_entries = lambda files: [dict(item) for item in files]
         module._inventory_publication_identity_candidate = (
             lambda _value, _metadata: True
+        )
+        module._list_all_owned_depositions = (
+            lambda _client, _token: [copy.deepcopy(current)]
         )
 
         def original_resume(
@@ -2727,6 +2929,22 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
                     self.RECORD_ID,
                     _manifest["metadata"],
                 )
+            elif operation == "published_gate":
+                client.gate_record(
+                    current,
+                    self.RECORD_ID,
+                    _manifest["metadata"],
+                    [],
+                    self.DOI,
+                    published=True,
+                )
+            elif operation == "already_published_entry":
+                return {
+                    "record_id": self.RECORD_ID,
+                    "doi": self.DOI,
+                    "phase": "public_verified",
+                    "state": "published",
+                }
             else:
                 assert isinstance(operation, tuple)
                 client.request(operation[0], operation[1])
@@ -2742,6 +2960,7 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
                 "title": "Exact C2",
                 "version": "v1",
                 "creators": [{"name": "Ingolf Lohmann"}],
+                "description": "Exact description",
                 "prereserve_doi": True,
             },
             "files": manifest_files,
@@ -2803,7 +3022,11 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
         *,
         fail_boundary_at: int | None = None,
     ) -> tuple[list[str], Any, Any, tuple[Any, ...]]:
-        preconverged = operation == "metadata_put_preconverged"
+        preconverged = operation in {
+            "metadata_put_preconverged",
+            "published_gate",
+            "already_published_entry",
+        }
         module, client_type, events, store = self.fixture(
             operation,
             fail_boundary_at=fail_boundary_at,
@@ -2880,6 +3103,58 @@ class VRTCoreH3E1R7PublisherFirewallTests(unittest.TestCase):
             "transport:PUT:/api/deposit/depositions/21763614",
             events,
         )
+        self.assert_restored(module, client_type, originals)
+
+    def test_published_gate_uses_only_in_memory_description_normalization(self) -> None:
+        events, module, client_type, originals = self.run_fixture(
+            "published_gate",
+        )
+        self.assertIn("original-published-gate-normalized", events)
+        self.assertFalse(any(item.startswith("transport:") for item in events))
+        self.assert_restored(module, client_type, originals)
+
+    def test_already_public_entry_converges_read_only_before_inventory_arm(
+        self,
+    ) -> None:
+        module, client_type, events, store = self.fixture(
+            "already_published_entry"
+        )
+        originals = (
+            module._create_consumption_receipt,
+            module._atomic_recovery_evidence,
+            module._acquire_remote_consumption_lock,
+            module._resume_publication,
+            client_type.__init__,
+            client_type.request,
+            client_type.create_paper,
+            client_type.wait_for_editable_metadata,
+            client_type.gate_record,
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            recovery,
+            "_load_e1_publisher",
+            return_value=module,
+        ):
+            root = pathlib.Path(directory)
+            result = recovery.run_publisher_with_checkpoints(
+                root / "publish-request.json",
+                root,
+                store,
+                reconcile_record=(self.RECORD_ID, self.DOI),
+            )
+        self.assertEqual(
+            result,
+            {
+                "record_id": self.RECORD_ID,
+                "doi": self.DOI,
+                "phase": "public_verified",
+                "state": "published",
+            },
+        )
+        self.assertIn("public-wait", events)
+        self.assertIn("original-published-gate-normalized", events)
+        self.assertFalse(any(item.startswith("transport:") for item in events))
+        self.assertFalse(any(item.startswith("durable:") for item in events))
         self.assert_restored(module, client_type, originals)
 
     def test_wrong_or_second_metadata_put_blocks_before_extra_transport(self) -> None:
@@ -3864,13 +4139,13 @@ class VRTCoreH3E1RecoveryRemoteBoundaryTests(unittest.TestCase):
         store.create_post_once_head = None
         store._prepared_replay_pending = False
         store._initial_create_replay_pending = False
-        store._r8_controller = None
+        store._r9_controller = None
         return store
 
-    def test_r8_trigger_branch_drift_blocks_the_remote_boundary(self) -> None:
+    def test_r9_trigger_branch_drift_blocks_the_remote_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = self.store(pathlib.Path(directory))
-            store._r8_controller = "e" * 40
+            store._r9_controller = "e" * 40
 
             def read_ref(
                 _api: Any,
@@ -4596,7 +4871,7 @@ class FakeIncidentAPI:
             "/repos/Goldkelch/qik-vrt/actions/jobs/"
             + str(recovery.EXPECTED["job_id"])
         )
-        if path == run_path + "/attempts/1":
+        if path in {run_path, run_path + "/attempts/1"}:
             return 200, copy.deepcopy(self.run)
         if path == job_path:
             return 200, copy.deepcopy(self.job)
@@ -4765,7 +5040,7 @@ class FakeR4IncidentAPI:
         job_path = (
             "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
         )
-        if path == run_path + "/attempts/1":
+        if path in {run_path, run_path + "/attempts/1"}:
             return 200, copy.deepcopy(self.run)
         if path == job_path:
             return 200, copy.deepcopy(self.job)
@@ -5398,6 +5673,172 @@ class VRTCoreH3E1R7CreatorNormalizationIncidentTests(unittest.TestCase):
         artifact, overrides = self.artifact_fixture()
         with mock.patch.dict(incident, overrides):
             for marker in recovery.R7_CREATOR_LOG_FORBIDDEN_MARKERS:
+                with self.subTest(marker=marker):
+                    encoded = marker.encode("utf-8")
+                    changed = raw[: -len(encoded)] + encoded
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(
+                            FakeR4IncidentAPI(changed, artifact, incident),
+                            digest_for=changed,
+                        )
+
+
+class VRTCoreH3E1R8DescriptionNormalizationIncidentTests(unittest.TestCase):
+    @staticmethod
+    def evidence() -> bytes:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        return subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(incident["c2"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+
+    @classmethod
+    def artifact_fixture(cls) -> tuple[bytes, dict[str, Any]]:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        buffer = recovery.io.BytesIO()
+        with recovery.zipfile.ZipFile(
+            buffer,
+            mode="w",
+            compression=recovery.zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as archive:
+            entry = recovery.zipfile.ZipInfo(
+                str(incident["artifact_entry"]),
+                (2026, 8, 2, 23, 59, 58),
+            )
+            entry.create_system = 3
+            entry.external_attr = 0o100600 << 16
+            entry.compress_type = recovery.zipfile.ZIP_DEFLATED
+            archive.writestr(entry, cls.evidence(), compresslevel=6)
+        raw = buffer.getvalue()
+        with recovery.zipfile.ZipFile(
+            recovery.io.BytesIO(raw), mode="r"
+        ) as archive:
+            parsed = archive.infolist()[0]
+        return raw, {
+            "artifact_size": len(raw),
+            "artifact_digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+            "artifact_entry_compressed_bytes": parsed.compress_size,
+            "artifact_entry_crc32": parsed.CRC,
+            "artifact_entry_unix_mode": parsed.external_attr >> 16,
+        }
+
+    @staticmethod
+    def log_bytes() -> bytes:
+        lines: list[str] = []
+        for marker, count in recovery.R8_DESCRIPTION_LOG_REQUIRED_COUNTS.items():
+            lines.extend(marker for _index in range(count))
+        prefix = b"\xef\xbb\xbf" + ("\n".join(lines) + "\n").encode("utf-8")
+        size = int(recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT["log_bytes"])
+        if len(prefix) > size:
+            raise AssertionError("R8 incident fixture exceeds exact size")
+        return prefix + b"x" * (size - len(prefix))
+
+    @staticmethod
+    def verify(api: FakeR4IncidentAPI, *, digest_for: bytes) -> None:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        real_sha256 = recovery.hashlib.sha256
+
+        class FixedDigest:
+            def hexdigest(self) -> str:
+                return str(incident["log_sha256"])
+
+        def sha256(raw: bytes = b"") -> Any:
+            if raw == digest_for:
+                return FixedDigest()
+            return real_sha256(raw)
+
+        with mock.patch.object(recovery.hashlib, "sha256", side_effect=sha256):
+            recovery.verify_historical_r8_description_normalization_incident(
+                api,
+                ROOT,
+            )
+
+    def test_exact_r8_run_job_artifact_and_log_are_read_only(self) -> None:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        log = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            api = FakeR4IncidentAPI(log, artifact, incident)
+            self.verify(api, digest_for=log)
+        self.assertEqual(
+            [method for method, _path in api.calls],
+            [
+                "GET",
+                "GET",
+                "GET",
+                "GET",
+                "GET_BYTES",
+                "GET_BYTES",
+                "GET",
+            ],
+        )
+
+    def test_r8_controller_tree_and_unchanged_c2_pins_are_real(self) -> None:
+        recovery._verify_r8_local_object_chain(ROOT)
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        canonical = recovery.R7_CREATOR_NORMALIZATION_INCIDENT
+        for key in (
+            "c2",
+            "c2_parent",
+            "c2_tree",
+            "c2_evidence_blob",
+            "c2_evidence_bytes",
+            "c2_evidence_sha256",
+            "phase",
+            "state",
+            "record_id",
+            "doi",
+        ):
+            self.assertEqual(incident[key], canonical[key], msg=key)
+        with mock.patch.dict(incident, {"c2_parent": "0" * 40}):
+            with self.assertRaisesRegex(SystemExit, "unchanged C2"):
+                recovery._verify_r8_local_object_chain(ROOT)
+
+    def test_r8_run_attempt_log_and_artifact_tampering_block(self) -> None:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        raw = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        marker = next(iter(recovery.R8_DESCRIPTION_LOG_REQUIRED_COUNTS))
+        changed_log = raw.replace(
+            marker.encode("utf-8"),
+            ("_" * len(marker)).encode("utf-8"),
+            1,
+        )
+        with mock.patch.dict(incident, overrides):
+            rerun = FakeR4IncidentAPI(raw, artifact, incident)
+            rerun.run["run_attempt"] = 2
+            digest = FakeR4IncidentAPI(raw, artifact, incident)
+            digest.artifacts["artifacts"][0]["digest"] = "sha256:" + "0" * 64
+            for label, api, log in (
+                ("attempt", rerun, raw),
+                ("log", FakeR4IncidentAPI(changed_log, artifact, incident), changed_log),
+                ("artifact", digest, raw),
+            ):
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(SystemExit, "BLOCK:"):
+                        self.verify(api, digest_for=log)
+                    self.assertTrue(
+                        all(
+                            method in {"GET", "GET_BYTES"}
+                            for method, _path in api.calls
+                        )
+                    )
+
+    def test_r8_public_and_post_metadata_effect_markers_are_forbidden(
+        self,
+    ) -> None:
+        incident = recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        raw = self.log_bytes()
+        artifact, overrides = self.artifact_fixture()
+        with mock.patch.dict(incident, overrides):
+            for marker in recovery.R8_DESCRIPTION_LOG_FORBIDDEN_MARKERS:
                 with self.subTest(marker=marker):
                     encoded = marker.encode("utf-8")
                     changed = raw[: -len(encoded)] + encoded

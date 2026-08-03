@@ -288,6 +288,41 @@ R7_CREATOR_NORMALIZATION_INCIDENT: dict[str, Any] = {
     "doi": "10.5281/zenodo.21763614",
 }
 
+R8_DESCRIPTION_NORMALIZATION_INCIDENT: dict[str, Any] = {
+    "controller": "6edde9cbcc0fb57cd29ab71de6718228cc258d80",
+    "controller_parent": "d941ca6b792d569b2c37c571123c7524a53c33fd",
+    "controller_tree": "9cefcb13ed1e7efdc11f7ccf844544b5e5e280d3",
+    "run_id": 30773210888,
+    "job_id": 91563873247,
+    "run_attempt": 1,
+    "log_bytes": 432876,
+    "log_sha256": (
+        "d77b6fac1ed0753184742cfff35a76dfdf3e3876047cad84c8c585de8c795f34"
+    ),
+    "artifact_id": 8841262308,
+    "artifact_name": "vrtcore-h3-e1-recovery-30773210888-1",
+    "artifact_size": 6688,
+    "artifact_digest": (
+        "sha256:3c742c866bd791ccb45780429faee62b2769c757129726d39d397c0811688573"
+    ),
+    "artifact_entry": "zenodo-publication.json",
+    "artifact_entry_compressed_bytes": 6528,
+    "artifact_entry_crc32": 0xF3A6D7EB,
+    "artifact_entry_unix_mode": 0o100600,
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+}
+
 R8_NULL_AFFILIATION_EVIDENCE: dict[str, Any] = {
     "path": (
         "release/zenodo-corpus-proof-2026-07-28/"
@@ -337,6 +372,33 @@ R7_CREATOR_LOG_FORBIDDEN_MARKERS = (
     "publish_requested",
     "publish_and_poll",
 )
+R8_DESCRIPTION_LOG_REQUIRED_COUNTS = {
+    "VRTCORE_H3_E1_RECOVERY_BASIS=VALID": 1,
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=CHECKPOINTED": 1,
+    "VRTCORE_H3_R8_CREATOR_NORMALIZATION=NULL_AFFILIATION_ACCEPTED": 2,
+    "VRTCORE_H3_R8_CREATOR_NORMALIZATION=EXACT": 19,
+    "VRTCORE_H3_R8_METADATA_PRECONVERGED=false": 20,
+    "VRTCORE_H3_R8_METADATA_PRECONVERGED=true": 1,
+    (
+        "BLOCK: R7 timed out waiting for exact corrected metadata: "
+        "description,unexpected:imprint_publisher"
+    ): 1,
+    "Process completed with exit code 2.": 1,
+    "Process completed with exit code 1.": 1,
+}
+R8_DESCRIPTION_LOG_FORBIDDEN_MARKERS = (
+    "VRTCORE_H3_E1_RECOVERY_PREPARE=FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=ALREADY_FINALIZED",
+    "VRTCORE_H3_E1_RECOVERY_PUBLICATION=PUBLISHED",
+    "ZENODO_PUBLICATION_STATE=published",
+    "prepared_durable=true",
+    "publish_requested",
+    "publish_and_poll",
+    "VRTCORE_H3_E1_METADATA_PREPARED",
+    "VRTCORE_H3_E1_FILES_UPLOADED",
+    "VRTCORE_H3_E1_PUBLISH_COMPLETED",
+    "VRTCORE_H3_E1_DOI_VERIFIED",
+)
 R5_GOVERNANCE_BOUNDARIES = (
     "PRIVILEGED_REPLAY_MARKER_REF_DELETION_NOT_PREVENTED",
     "AMBIGUOUS_MARKER_MUTATION_BLOCKS_WITHOUT_REARM",
@@ -359,6 +421,14 @@ R8_GOVERNANCE_BOUNDARIES = (
     "R8_ACCEPTS_ONLY_EXACT_CREATOR_NAME_PLUS_NULL_AFFILIATION_NORMALIZATION",
     "R8_TREATS_R7_METADATA_PUT_OUTCOME_AS_POTENTIALLY_AMBIGUOUS",
     "R8_SKIPS_DUPLICATE_METADATA_PUT_AFTER_DOUBLE_READ_CONVERGENCE",
+)
+R9_GOVERNANCE_BOUNDARIES = (
+    *R8_GOVERNANCE_BOUNDARIES,
+    "R8_RUN_MUST_NOT_BE_RERUN",
+    "R9_RUN_ATTEMPT_ONE_ONLY",
+    "R9_ACCEPTS_ONLY_EXACT_DESCRIPTION_OR_EXACT_HTML_PARAGRAPH_WRAPPER",
+    "R9_ACCEPTS_IMPRINT_PUBLISHER_ONLY_WHEN_JSON_NULL",
+    "R9_REQUIRES_DOUBLE_READ_CONVERGENCE_BEFORE_FILES",
 )
 
 INCIDENT_LOG_REQUIRED_COUNTS = {
@@ -1023,6 +1093,16 @@ class GitHubAPI:
                 + str(R7_CREATOR_NORMALIZATION_INCIDENT["artifact_id"])
                 + "/zip"
             ): R7_CREATOR_NORMALIZATION_INCIDENT["artifact_size"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/jobs/"
+                + str(R8_DESCRIPTION_NORMALIZATION_INCIDENT["job_id"])
+                + "/logs"
+            ): R8_DESCRIPTION_NORMALIZATION_INCIDENT["log_bytes"],
+            (
+                "/repos/Goldkelch/qik-vrt/actions/artifacts/"
+                + str(R8_DESCRIPTION_NORMALIZATION_INCIDENT["artifact_id"])
+                + "/zip"
+            ): R8_DESCRIPTION_NORMALIZATION_INCIDENT["artifact_size"],
         }
         if path not in allowed or maximum != allowed[path]:
             _fail("GitHub Actions raw-read boundary differs")
@@ -1339,6 +1419,18 @@ def _verify_r7_artifact_evidence(api: Any, root: pathlib.Path) -> None:
         api,
         root,
         R7_CREATOR_NORMALIZATION_INCIDENT,
+        evidence_prefix="c2",
+        expected_phase="record_created",
+        expected_state=publish.CONSUMPTION_STATE,
+    )
+
+
+def _verify_r8_artifact_evidence(api: Any, root: pathlib.Path) -> None:
+    """Prove that R8 uploaded only the unchanged C2 checkpoint."""
+    _verify_pinned_incident_artifact_evidence(
+        api,
+        root,
+        R8_DESCRIPTION_NORMALIZATION_INCIDENT,
         evidence_prefix="c2",
         expected_phase="record_created",
         expected_state=publish.CONSUMPTION_STATE,
@@ -1726,6 +1818,130 @@ def verify_historical_r7_creator_normalization_incident(
     _verify_r7_artifact_evidence(api, root)
 
 
+def verify_historical_r8_description_normalization_incident(
+    api: Any,
+    root: pathlib.Path,
+) -> None:
+    """Bind R8's description-normalization block and unchanged C2 artifact."""
+    incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
+    base_run_path = (
+        "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    )
+    _status, latest_run = _call_api(
+        api,
+        "GET",
+        base_run_path,
+        accept=(200,),
+    )
+    _status, run = _call_api(
+        api,
+        "GET",
+        base_run_path + "/attempts/1",
+        accept=(200,),
+    )
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        latest_run.get("id") != incident["run_id"]
+        or latest_run.get("run_attempt") != incident["run_attempt"]
+        or latest_run.get("head_sha") != incident["controller"]
+        or latest_run.get("head_branch") != EXPECTED["trigger_branch"]
+        or latest_run.get("status") != "completed"
+        or latest_run.get("conclusion") != "failure"
+        or latest_run.get("event") != "push"
+        or run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R8 workflow run differs")
+
+    job_path = (
+        "/repos/Goldkelch/qik-vrt/actions/jobs/" + str(incident["job_id"])
+    )
+    _status, job = _call_api(api, "GET", job_path, accept=(200,))
+    expected_run_url = (
+        "https://api.github.com/repos/Goldkelch/qik-vrt/actions/runs/"
+        + str(incident["run_id"])
+    )
+    if (
+        job.get("id") != incident["job_id"]
+        or job.get("run_id") != incident["run_id"]
+        or job.get("run_attempt") != incident["run_attempt"]
+        or job.get("head_sha") != incident["controller"]
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("run_url") != expected_run_url
+    ):
+        _fail("historical R8 workflow job differs")
+
+    _status, artifacts = _call_api(
+        api,
+        "GET",
+        base_run_path + "/artifacts",
+        accept=(200,),
+    )
+    items = artifacts.get("artifacts")
+    if (
+        artifacts.get("total_count") != 1
+        or not isinstance(items, list)
+        or len(items) != 1
+        or not isinstance(items[0], dict)
+        or items[0].get("id") != incident["artifact_id"]
+        or items[0].get("name") != incident["artifact_name"]
+        or items[0].get("size_in_bytes") != incident["artifact_size"]
+        or items[0].get("digest") != incident["artifact_digest"]
+        or items[0].get("expired") is not False
+    ):
+        _fail("historical R8 workflow artifact inventory differs")
+
+    raw = _call_api_bytes(
+        api,
+        job_path + "/logs",
+        int(incident["log_bytes"]),
+    )
+    if (
+        len(raw) != incident["log_bytes"]
+        or hashlib.sha256(raw).hexdigest() != incident["log_sha256"]
+        or not raw.startswith(b"\xef\xbb\xbf")
+    ):
+        _fail("historical R8 decoded job log identity differs")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _fail("historical R8 job log is not exact UTF-8 with BOM")
+    for marker, count in R8_DESCRIPTION_LOG_REQUIRED_COUNTS.items():
+        if decoded.count(marker) != count:
+            _fail("historical R8 job log required marker count differs")
+    if any(marker in decoded for marker in R8_DESCRIPTION_LOG_FORBIDDEN_MARKERS):
+        _fail("historical R8 job log crossed the public effect boundary")
+    _verify_r8_artifact_evidence(api, root)
+    _status, latest_after = _call_api(
+        api,
+        "GET",
+        base_run_path,
+        accept=(200,),
+    )
+    for key in (
+        "id",
+        "run_attempt",
+        "event",
+        "head_sha",
+        "head_branch",
+        "status",
+        "conclusion",
+    ):
+        if latest_after.get(key) != latest_run.get(key):
+            _fail("historical R8 run changed during exact evidence binding")
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -1846,6 +2062,42 @@ def _verify_r7_local_object_chain(root: pathlib.Path) -> None:
         or tree.decode("ascii").strip() != incident["controller_tree"]
     ):
         _fail("R7 creator-normalization local object chain differs")
+
+
+def _verify_r8_local_object_chain(root: pathlib.Path) -> None:
+    """Bind R8 as the exact no-receipt successor of R7 and unchanged C2."""
+    _verify_r7_local_object_chain(root)
+    incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
+    canonical = R7_CREATOR_NORMALIZATION_INCIDENT
+    for key in (
+        "c2",
+        "c2_parent",
+        "c2_tree",
+        "c2_evidence_blob",
+        "c2_evidence_bytes",
+        "c2_evidence_sha256",
+        "phase",
+        "state",
+        "record_id",
+        "doi",
+    ):
+        if incident[key] != canonical[key]:
+            _fail("R8 unchanged C2 identity differs from the R7 boundary")
+    commit = str(incident["controller"])
+    _status, resolved = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        f"{commit}^{{commit}}",
+    )
+    _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+    _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+    if (
+        resolved.decode("ascii").strip() != commit
+        or parents.decode("ascii").strip() != incident["controller_parent"]
+        or tree.decode("ascii").strip() != incident["controller_tree"]
+    ):
+        _fail("R8 description-normalization local object chain differs")
 
 
 def _verify_r8_null_affiliation_evidence(root: pathlib.Path) -> None:
@@ -2506,8 +2758,8 @@ def _validate_r5_one_shot_execution(root: pathlib.Path) -> str:
     return controller
 
 
-def _validate_r8_one_shot_execution(root: pathlib.Path) -> str:
-    """Bind correction to the first non-forced R7 -> R8 push attempt."""
+def _validate_r9_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind correction to the first non-forced R8 -> R9 push attempt."""
     controller = os.environ.get("GITHUB_SHA", "")
     event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
     if (
@@ -2519,14 +2771,14 @@ def _validate_r8_one_shot_execution(root: pathlib.Path) -> str:
         or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
         or not event_path_raw
     ):
-        _fail("R8 reconciliation execution environment differs")
+        _fail("R9 reconciliation execution environment differs")
     event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
     repository = event.get("repository")
     head_commit = event.get("head_commit")
     if (
         event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
         or event.get("before")
-        != R7_CREATOR_NORMALIZATION_INCIDENT["controller"]
+        != R8_DESCRIPTION_NORMALIZATION_INCIDENT["controller"]
         or event.get("after") != controller
         or event.get("created") is not False
         or event.get("deleted") is not False
@@ -2536,7 +2788,7 @@ def _validate_r8_one_shot_execution(root: pathlib.Path) -> str:
         or not isinstance(head_commit, dict)
         or head_commit.get("id") != controller
     ):
-        _fail("R8 reconciliation push event differs")
+        _fail("R9 reconciliation push event differs")
     _fetch_credential_free(
         root,
         "refs/heads/" + EXPECTED["trigger_branch"],
@@ -2545,9 +2797,9 @@ def _validate_r8_one_shot_execution(root: pathlib.Path) -> str:
     _status, parent = _git(root, "show", "-s", "--format=%P", controller)
     if (
         parent.decode("ascii").strip()
-        != R7_CREATOR_NORMALIZATION_INCIDENT["controller"]
+        != R8_DESCRIPTION_NORMALIZATION_INCIDENT["controller"]
     ):
-        _fail("R8 controller is not the exact single successor of R7")
+        _fail("R9 controller is not the exact single successor of R8")
     return controller
 
 
@@ -2630,21 +2882,21 @@ class RecoveryReceiptStore:
         self._prepared_replay_pending = False
         self._initial_create_replay_pending = False
         self._record_created_reconciliation_armed = False
-        self._r8_controller: str | None = None
+        self._r9_controller: str | None = None
 
     def _recheck_remote_boundary(self) -> None:
         if _read_head_ref(self.api, "refs/heads/main") != self.controller_parent:
             _fail("main moved across the exact recovery boundary")
-        r8_controller = getattr(self, "_r8_controller", None)
+        r9_controller = getattr(self, "_r9_controller", None)
         if (
-            r8_controller is not None
+            r9_controller is not None
             and _read_head_ref(
                 self.api,
                 "refs/heads/" + EXPECTED["trigger_branch"],
             )
-            != r8_controller
+            != r9_controller
         ):
-            _fail("R8 trigger branch moved across the reconciliation boundary")
+            _fail("R9 trigger branch moved across the reconciliation boundary")
         if _read_head_ref(self.api, EXPECTED["publication_ref"]) != EXPECTED["e1"]:
             _fail("publication branch moved across the recovery boundary")
         if (
@@ -2712,16 +2964,16 @@ class RecoveryReceiptStore:
         return True
 
     def arm_exact_record_created_reconciliation(self) -> None:
-        """Arm exact C2 after the pinned R7 creator-normalization failure."""
-        incident = R6_DRAFT_METADATA_INCIDENT
+        """Arm exact C2 after the pinned R8 description-normalization failure."""
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
         if (
             self.publication_head != EXPECTED["e1"]
             or self.create_post_once_head != R4_UNSENT_CREATE_INCIDENT["c1"]
             or self.current_tip != incident["c2"]
             or self._initial_create_replay_pending
         ):
-            _fail("R8 record-created reconciliation state differs")
-        self._r8_controller = _validate_r8_one_shot_execution(self.root)
+            _fail("R9 record-created reconciliation state differs")
+        self._r9_controller = _validate_r9_one_shot_execution(self.root)
         _fetch_credential_free(
             self.root,
             EXPECTED["publication_ref"],
@@ -2737,25 +2989,26 @@ class RecoveryReceiptStore:
             EXPECTED["recovery_ref"],
             incident["c2"],
         )
-        _verify_r7_local_object_chain(self.root)
+        _verify_r8_local_object_chain(self.root)
         _verify_r8_null_affiliation_evidence(self.root)
         verify_historical_r5_record_created_timeout(self.api, self.root)
         verify_historical_r6_draft_metadata_incident(self.api, self.root)
         verify_historical_r7_creator_normalization_incident(self.api, self.root)
+        verify_historical_r8_description_normalization_incident(self.api, self.root)
         chain = self.validate_recovery_chain(incident["c2"])
         if [item["phase"] for item in chain] != [
             "authorization_consumed",
             "create_requested",
             "record_created",
         ]:
-            _fail("R8 record-created recovery chain differs")
+            _fail("R9 record-created recovery chain differs")
         last = chain[-1]
         if (
             last.get("record_id") != incident["record_id"]
             or last.get("doi") != incident["doi"]
             or last.get("state") != incident["state"]
         ):
-            _fail("R8 record-created recovery identity differs")
+            _fail("R9 record-created recovery identity differs")
         self._record_created_reconciliation_armed = True
 
     def _prepare_integrity(self) -> None:
@@ -3315,6 +3568,43 @@ def _creators_match_r8_null_affiliation_normalization(
     return True
 
 
+def _r9_description_normalization(actual: Any, expected: Any) -> str | None:
+    """Classify only exact text or Zenodo's exact single paragraph wrapper."""
+    if not isinstance(actual, str) or not isinstance(expected, str):
+        return None
+    if actual == expected:
+        return "EXACT"
+    if actual == "<p>" + expected + "</p>":
+        return "HTML_PARAGRAPH"
+    return None
+
+
+def _published_metadata_matches_r9_normalizations(
+    publisher_module: Any,
+    actual: Any,
+    expected: Mapping[str, Any],
+) -> bool:
+    """Apply the two bounded draft normalizations before the public gate."""
+    if not isinstance(actual, dict):
+        return False
+    description = expected.get("description")
+    if (
+        _r9_description_normalization(actual.get("description"), description)
+        is None
+        or (
+            "imprint_publisher" in actual
+            and actual.get("imprint_publisher") is not None
+        )
+    ):
+        return False
+    normalized = dict(actual)
+    normalized["description"] = description
+    return publisher_module.zenodo._published_metadata_matches(
+        normalized,
+        expected,
+    )
+
+
 def _r7_draft_metadata_mismatch_keys(
     publisher_module: Any,
     actual: Any,
@@ -3323,10 +3613,19 @@ def _r7_draft_metadata_mismatch_keys(
     """Compare every authorized field across legacy/normalized draft shapes."""
     if not isinstance(actual, dict):
         return tuple(sorted(key for key in expected if key != "prereserve_doi"))
-    allowed_keys = set(expected) | {"doi", "resource_type"}
+    allowed_keys = set(expected) | {
+        "doi",
+        "resource_type",
+        "imprint_publisher",
+    }
     mismatches: list[str] = [
         "unexpected:" + key for key in sorted(set(actual) - allowed_keys)
     ]
+    if (
+        "imprint_publisher" in actual
+        and actual.get("imprint_publisher") is not None
+    ):
+        mismatches.append("imprint_publisher")
     resource_type = actual.get("resource_type")
     for key, expected_value in expected.items():
         if key == "prereserve_doi":
@@ -3335,6 +3634,16 @@ def _r7_draft_metadata_mismatch_keys(
             if not _creators_match_r8_null_affiliation_normalization(
                 actual.get("creators"),
                 expected_value,
+            ):
+                mismatches.append(key)
+            continue
+        if key == "description":
+            if (
+                _r9_description_normalization(
+                    actual.get("description"),
+                    expected_value,
+                )
+                is None
             ):
                 mismatches.append(key)
             continue
@@ -3402,7 +3711,7 @@ def _validate_r7_record_identity(
     require_exact_draft_metadata: bool,
 ) -> None:
     """Bind immutable C2 identity; relax only mutable draft fields pre-PUT."""
-    incident = R6_DRAFT_METADATA_INCIDENT
+    incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
     record_id = publisher_module.zenodo._record_id(
         current,
         "R7 record-created reconciliation record",
@@ -3457,7 +3766,8 @@ def _validate_r7_record_identity(
     ):
         _fail("R8 title, version, or creators differ from exact C2 identity")
     if state == "published":
-        if not publisher_module.zenodo._published_metadata_matches(
+        if not _published_metadata_matches_r9_normalizations(
+            publisher_module,
             actual_metadata,
             metadata,
         ):
@@ -3538,7 +3848,7 @@ def _gate_r7_owned_inventory_identity(
             f"owned deposition; observed {len(matches)}"
         )
     record_id, doi, state, current = matches[0]
-    incident = R6_DRAFT_METADATA_INCIDENT
+    incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
     if record_id != incident["record_id"] or doi != incident["doi"]:
         _fail("R7 sole owned candidate differs from exact C2 identity")
     if state == "published":
@@ -3571,7 +3881,7 @@ def run_publisher_with_checkpoints(
     if reconcile_record is not None and publish_callable is not None:
         _fail("R7 reconciliation may only run the freshly loaded E1 publisher")
     if reconcile_record is not None:
-        incident = R6_DRAFT_METADATA_INCIDENT
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
         if reconcile_record != (
             int(incident["record_id"]),
             str(incident["doi"]),
@@ -3711,7 +4021,7 @@ def run_publisher_with_checkpoints(
         record_id: int,
         metadata: Mapping[str, Any],
     ) -> dict[str, Any]:
-        incident = R6_DRAFT_METADATA_INCIDENT
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
         mutated = (
             reconciliation["metadata_put_attempted"] is True
             and reconciliation["metadata_put_succeeded"] is True
@@ -3782,7 +4092,7 @@ def run_publisher_with_checkpoints(
             if attempt + 1 < instance.poll_attempts:
                 instance.sleeper(instance.poll_interval)
         suffix = ",".join(last_mismatches) if last_mismatches else "response"
-        _fail("R7 timed out waiting for exact corrected metadata: " + suffix)
+        _fail("R9 timed out waiting for semantically exact metadata: " + suffix)
 
     def gate_semantically_exact_record(
         instance: Any,
@@ -3794,12 +4104,36 @@ def run_publisher_with_checkpoints(
         *,
         published: bool,
     ) -> None:
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
+        bound_manifest = reconciliation.get("manifest")
+        if (
+            not isinstance(bound_manifest, Mapping)
+            or record_id != incident["record_id"]
+            or expected_doi != incident["doi"]
+            or metadata != bound_manifest.get("metadata")
+            or entries != reconciliation.get("entries")
+        ):
+            _fail("R9 record gate inputs differ from the exact C2 publication")
         if published:
             if original_gate_record is None:
-                _fail("R7 published-record gate is unavailable")
+                _fail("R9 published-record gate is unavailable")
+            _validate_r7_record_identity(
+                publisher_module,
+                bound_manifest,
+                "published",
+                value,
+                require_exact_draft_metadata=True,
+            )
+            actual_metadata = value.get("metadata")
+            if not isinstance(actual_metadata, dict):
+                _fail("R9 published-record metadata is absent")
+            normalized_value = dict(value)
+            normalized_metadata = dict(actual_metadata)
+            normalized_metadata["description"] = metadata["description"]
+            normalized_value["metadata"] = normalized_metadata
             original_gate_record(
                 instance,
-                value,
+                normalized_value,
                 record_id,
                 metadata,
                 entries,
@@ -3807,19 +4141,13 @@ def run_publisher_with_checkpoints(
                 published=True,
             )
             return
-        incident = R6_DRAFT_METADATA_INCIDENT
         if (
-            record_id != incident["record_id"]
-            or expected_doi != incident["doi"]
-            or reconciliation["metadata_confirmed"] is not True
-            or metadata
-            != reconciliation.get("manifest", {}).get("metadata")
-            or entries != reconciliation["entries"]
+            reconciliation["metadata_confirmed"] is not True
         ):
             _fail("R7 draft gate inputs differ from exact C2")
         _validate_r7_record_identity(
             publisher_module,
-            reconciliation["manifest"],
+            bound_manifest,
             "draft",
             value,
             require_exact_draft_metadata=True,
@@ -3872,7 +4200,7 @@ def run_publisher_with_checkpoints(
             return original_request(instance, normalized_method, safe_url, **kwargs)
         if normalized_method == "POST" and path == "/api/deposit/depositions":
             _fail("R7 reconciliation blocked the exact Zenodo create endpoint")
-        incident = R6_DRAFT_METADATA_INCIDENT
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
         if (
             parts.query
             or parts.fragment
@@ -4063,7 +4391,7 @@ def run_publisher_with_checkpoints(
         client: Any,
         secrets_by_name: Mapping[str, str],
     ) -> dict[str, Any]:
-        incident = R6_DRAFT_METADATA_INCIDENT
+        incident = R8_DESCRIPTION_NORMALIZATION_INCIDENT
         if (
             reconcile_record
             != (int(incident["record_id"]), str(incident["doi"]))
@@ -4081,6 +4409,16 @@ def run_publisher_with_checkpoints(
         )
         if not isinstance(zenodo_token, str) or not zenodo_token:
             _fail("R7 reconciliation lacks its validated Zenodo credential")
+        entries = publisher_module._shared_entries(manifest["files"])
+        if not isinstance(entries, list) or not isinstance(verified, Mapping):
+            _fail("R9 immutable publication inputs differ")
+        reconciliation.update(
+            {
+                "manifest": manifest,
+                "entries": entries,
+                "verified": verified,
+            }
+        )
         state, current = _gate_r7_owned_inventory_identity(
             publisher_module,
             manifest,
@@ -4112,16 +4450,35 @@ def run_publisher_with_checkpoints(
                 )
             )
             print(
-                "VRTCORE_H3_R8_METADATA_PRECONVERGED="
+                "VRTCORE_H3_R9_DESCRIPTION_NORMALIZATION="
+                + (
+                    _r9_description_normalization(
+                        current.get("metadata", {}).get("description"),
+                        manifest["metadata"]["description"],
+                    )
+                    or "REJECTED"
+                )
+            )
+            print(
+                "VRTCORE_H3_R9_IMPRINT_PUBLISHER_NORMALIZATION="
+                + (
+                    "ABSENT"
+                    if "imprint_publisher" not in current.get("metadata", {})
+                    else (
+                        "NULL_ACCEPTED"
+                        if current.get("metadata", {}).get("imprint_publisher")
+                        is None
+                        else "REJECTED"
+                    )
+                )
+            )
+            print(
+                "VRTCORE_H3_R9_METADATA_PRECONVERGED="
                 + ("true" if not preflight_mismatches else "false")
             )
-        entries = publisher_module._shared_entries(manifest["files"])
         reconciliation.update(
             {
                 "inventory_complete": True,
-                "manifest": manifest,
-                "entries": entries,
-                "verified": verified,
                 "metadata_preconverged": preflight_mismatches == (),
                 "metadata_preflight_mismatches": preflight_mismatches,
             }
@@ -4278,8 +4635,8 @@ def main(argv: list[str] | None = None) -> int:
             store.root,
             store,
             reconcile_record=(
-                int(R6_DRAFT_METADATA_INCIDENT["record_id"]),
-                str(R6_DRAFT_METADATA_INCIDENT["doi"]),
+                int(R8_DESCRIPTION_NORMALIZATION_INCIDENT["record_id"]),
+                str(R8_DESCRIPTION_NORMALIZATION_INCIDENT["doi"]),
             ),
         )
         if (
