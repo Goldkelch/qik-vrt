@@ -1,0 +1,1193 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish the exact retrospective proof corpus v3 to Zenodo
+
+on:
+  push:
+    branches:
+      - publication/retrospective-proof-corpus-v3
+    paths:
+      - .github/workflows/qikvrt_retrospective_proof_corpus_zenodo_publish.yml
+      - release/zenodo-corpus-proof-publication-2026-08-03/OWNER_ZENODO_AUTHORIZATION.json
+      - release/zenodo-corpus-proof-publication-2026-08-03/publish-request.json
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: qikvrt-retrospective-proof-corpus-zenodo-v3
+  cancel-in-progress: false
+
+env:
+  EXPECTED_REPOSITORY: Goldkelch/qik-vrt
+  EXPECTED_BRANCH: publication/retrospective-proof-corpus-v3
+  EXPECTED_BASIS: c556382c89d32faf7bdd193d8e58c4a190ebc3cc
+  SOURCE_HEAD: 035642a660583113ec739d90577193ccb5a08889
+  PUBLICATION_ID: qikvrt-retrospective-proof-corpus-2026-07-28-v3
+  AUTHORIZATION_ID: qikvrt-retrospective-proof-corpus-v3-rebuild-20260803t094446z
+  RETURN_SHA256: 46c57378a6708df379768f943a99905cde3da4c4a11220f9a177e9bc968d3968
+  METADATA_SHA256: 4bb6abea1f226f3950337ee3585abd1ba5d52f731a93f25fabfc2722f5b170de
+  MACHINE_PROOF_SHA256: cfe9ae60e3da81a6427c96399bd70299c74f12999dc4371809b879f5a5630be1
+  UPLOAD_CONTRACT_SHA256: 3965b4167094ff47de60fc32023ac74ea1598148ab381885be8da3db4c427609
+  MANIFEST_PATH: release/zenodo-corpus-proof-publication-2026-08-03/publish-request.json
+  AUTHORIZATION_PATH: release/zenodo-corpus-proof-publication-2026-08-03/OWNER_ZENODO_AUTHORIZATION.json
+  RECOVERY_PATH: release/zenodo-corpus-proof-publication-2026-08-03/zenodo-recovery.json
+  EVIDENCE_PATH: release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json
+  MATRIX_PATH: release/zenodo-corpus-proof-2026-07-28/CORPUS_CLAIM_MATRIX.json
+  RECOVERY_TOOL: tools/qikvrt_retrospective_proof_corpus_zenodo_recovery.py
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/retrospective-proof-corpus-v3' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.event.forced == false))
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Fresh checkout of the immutable workflow event head for verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve the immutable execution envelope and accepted branch head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          event_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$event_head" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify "$EXPECTED_BASIS^{commit}")" = \
+            "$EXPECTED_BASIS"
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          if set(event).isdisjoint({"after", "forced", "ref", "repository"}):
+              raise SystemExit("BLOCK: push event lacks exact identity fields")
+          repository = event.get("repository")
+          if (
+              event.get("forced") is not False
+              or event.get("deleted") is True
+              or event.get("after") != os.environ["GITHUB_SHA"]
+              or event.get("ref") != "refs/heads/" + os.environ["EXPECTED_BRANCH"]
+              or not isinstance(repository, dict)
+              or repository.get("full_name") != os.environ["EXPECTED_REPOSITORY"]
+          ):
+              raise SystemExit("BLOCK: push event is not the exact non-force publication event")
+          PY
+              ;;
+            workflow_dispatch)
+              ;;
+            *)
+              printf '%s\n' 'BLOCK: unsupported publication event' >&2
+              exit 2
+              ;;
+          esac
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git merge-base --is-ancestor "$EXPECTED_BASIS" "$event_head"
+          test -z "$(git rev-list --merges "$EXPECTED_BASIS..$event_head")"
+          readarray -t branch_commits < <(
+            git rev-list \
+              --reverse \
+              --ancestry-path \
+              "$EXPECTED_BASIS..$event_head"
+          )
+          test "${#branch_commits[@]}" -ge 1
+          execution_head="${branch_commits[0]}"
+          [[ "$execution_head" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git show -s --format=%P "$execution_head")" = "$EXPECTED_BASIS"
+          test "$(git rev-list --count "$EXPECTED_BASIS..$execution_head")" = "1"
+          expected_delta="$(
+            printf '%s\n' \
+              'A	.github/workflows/qikvrt_retrospective_proof_corpus_mirror_finalize.yml' \
+              'A	.github/workflows/qikvrt_retrospective_proof_corpus_zenodo_publish.yml' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'A	release/zenodo-corpus-proof-publication-2026-08-03/OWNER_ZENODO_AUTHORIZATION.json' \
+              'A	release/zenodo-corpus-proof-publication-2026-08-03/publish-request.json' \
+              'A	tests/test_retrospective_proof_corpus_mirror_finalize.py' \
+              'A	tests/test_retrospective_proof_corpus_zenodo_recovery.py' \
+              'A	tests/test_retrospective_proof_corpus_zenodo_workflow.py' \
+              'A	tools/qikvrt_retrospective_proof_corpus_mirror_finalize.py' \
+              'A	tools/qikvrt_retrospective_proof_corpus_zenodo_recovery.py'
+          )"
+          observed_delta="$(
+            git diff --name-status --no-renames \
+              "$EXPECTED_BASIS" "$execution_head" --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          [[ "$remote_head" =~ ^[0-9a-f]{40}$ ]]
+          if ! git cat-file -e "$remote_head^{commit}" 2>/dev/null; then
+            git fetch \
+              --no-tags \
+              --no-write-fetch-head \
+              origin \
+              "refs/heads/$EXPECTED_BRANCH"
+          fi
+          test "$(git rev-parse --verify "$remote_head^{commit}")" = "$remote_head"
+          if test "$event_head" != "$execution_head"; then
+            test "$event_head" = "$remote_head"
+            test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          fi
+          if test "$remote_head" != "$event_head"; then
+            test "$event_head" = "$execution_head"
+          fi
+          finalized_rerun=false
+          if test "$remote_head" = "$execution_head"; then
+            test ! -e "$EVIDENCE_PATH"
+          else
+            finalized_rerun=true
+            receipt_head="$remote_head"
+            receipt_parent="$(git show -s --format=%P "$receipt_head")"
+            [[ "$receipt_parent" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git show -s --format=%s "$receipt_head")" = \
+              'zenodo: persist retrospective proof corpus publication'
+            readarray -t recovery_commits < <(
+              git rev-list \
+                --reverse \
+                --ancestry-path \
+                "$execution_head..$receipt_parent"
+            )
+            test "${#recovery_commits[@]}" -ge 1
+            test "${#recovery_commits[@]}" -le 135
+            chain_parent="$execution_head"
+            for recovery_commit in "${recovery_commits[@]}"; do
+              test "$(git show -s --format=%P "$recovery_commit")" = "$chain_parent"
+              test "$(git show -s --format=%s "$recovery_commit")" = \
+                'zenodo: persist retrospective proof corpus recovery'
+              recovery_delta="$(
+                git diff --name-status --no-renames \
+                  "$chain_parent" "$recovery_commit" --
+              )"
+              if test "$chain_parent" = "$execution_head"; then
+                test "$recovery_delta" = "A	$RECOVERY_PATH"
+              else
+                test "$recovery_delta" = "M	$RECOVERY_PATH"
+              fi
+              chain_parent="$recovery_commit"
+            done
+            test "$chain_parent" = "$receipt_parent"
+            expected_final_delta="$(
+              printf '%s\n' \
+                'M	REPOSITORY_FILE_MANIFEST.json' \
+                'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                'M	SHA256SUMS.txt' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json'
+            )"
+            observed_final_delta="$(
+              git diff --name-status --no-renames \
+                "$receipt_parent" "$receipt_head" --
+            )"
+            test "$observed_final_delta" = "$expected_final_delta"
+            expected_cumulative_delta="$(
+              printf '%s\n' \
+                'M	REPOSITORY_FILE_MANIFEST.json' \
+                'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                'M	SHA256SUMS.txt' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-recovery.json'
+            )"
+            observed_cumulative_delta="$(
+              git diff --name-status --no-renames \
+                "$execution_head" "$receipt_head" --
+            )"
+            test "$observed_cumulative_delta" = "$expected_cumulative_delta"
+            EXECUTION_HEAD="$execution_head" \
+            RECEIPT_HEAD="$receipt_head" \
+            RECEIPT_PARENT="$receipt_parent" \
+            python3 -B - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_recovery as recovery
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = pathlib.Path.cwd().resolve()
+          execution_head = os.environ["EXECUTION_HEAD"]
+          receipt_head = os.environ["RECEIPT_HEAD"]
+          receipt_parent = os.environ["RECEIPT_PARENT"]
+
+          def git(*arguments: str) -> bytes:
+              environment = {
+                  key: value
+                  for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ")
+                  if (value := os.environ.get(key)) is not None
+              }
+              environment.update(
+                  {"GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+              )
+              completed = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  env=environment,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+                  timeout=30,
+              )
+              if completed.returncode != 0:
+                  raise SystemExit("BLOCK: credential-free Git validation failed")
+              return completed.stdout
+
+          contract = recovery.load_frozen_contract()
+          manifest_path, manifest = recovery._load_production_manifest(contract)
+          evidence_raw = git("show", f"{receipt_head}:{recovery.EVIDENCE_RELATIVE}")
+          evidence = candidate.parse_json_bytes(
+              evidence_raw, "final publication receipt"
+          )
+          normalized = publish._validate_recovery_evidence(
+              evidence, manifest_path, root, manifest, execution_head
+          )
+          if normalized != evidence or evidence.get("phase") != "public_verified":
+              raise SystemExit("BLOCK: finalized rerun evidence differs")
+          context = recovery.make_context(
+              execution_head,
+              manifest["manifest_sha256"],
+              manifest["owner_authorization"]["consumption_key"]["value"],
+              evidence["remote_consumption"]["tag_object"],
+          )
+          recovery_shas = git(
+              "rev-list",
+              "--reverse",
+              "--ancestry-path",
+              f"{execution_head}..{receipt_parent}",
+          ).decode("ascii").splitlines()
+          history = []
+          for sha in recovery_shas:
+              if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+                  raise SystemExit("BLOCK: recovery history identity differs")
+              parent = git("show", "-s", "--format=%P", sha).decode("ascii").strip()
+              raw = git("show", f"{sha}:{recovery.RECOVERY_RELATIVE}")
+              history.append(
+                  recovery.PersistedCheckpoint(
+                      sha, parent, recovery.RECOVERY_RELATIVE, raw
+                  )
+              )
+          values = recovery.validate_recovery_chain(history, contract, context)
+          if (
+              not values
+              or values[-1]["phase"] != "publish_requested"
+              or values[-1]["sequence"] != len(values) - 1
+          ):
+              raise SystemExit("BLOCK: recovery journal is not terminal/contiguous")
+
+          def exact_remote_ref(ref: str) -> str:
+              raw = git("ls-remote", "--refs", "origin", ref)
+              try:
+                  line = raw.decode("ascii").rstrip("\n")
+              except UnicodeDecodeError:
+                  raise SystemExit("BLOCK: remote ref readback is not ASCII")
+              match = re.fullmatch(r"([0-9a-f]{40})\t([^\r\n]+)", line)
+              if match is None or match.group(2) != ref:
+                  raise SystemExit("BLOCK: remote ref readback differs")
+              return match.group(1)
+
+          recovery_head = exact_remote_ref(context.recovery_ref)
+          if recovery_head != receipt_parent:
+              raise SystemExit("BLOCK: dedicated recovery ref differs from receipt parent")
+          if exact_remote_ref(context.consumption.ref) != context.consumption.tag_object:
+              raise SystemExit("BLOCK: consumption ref differs from final evidence")
+          final = recovery.PersistedCheckpoint(
+              receipt_head,
+              receipt_parent,
+              recovery.EVIDENCE_RELATIVE,
+              evidence_raw,
+          )
+          recovery.validate_ref_state(
+              history, context, recovery_head, receipt_head, final
+          )
+          print("FINALIZED_RERUN_RECOVERY_CHAIN=PASS")
+          PY
+          fi
+          {
+            printf 'EXECUTION_HEAD=%s\n' "$execution_head"
+            printf 'EVENT_HEAD=%s\n' "$event_head"
+            printf 'BRANCH_HEAD=%s\n' "$remote_head"
+            printf 'FINALIZED_RERUN=%s\n' "$finalized_rerun"
+          } >> "$GITHUB_ENV"
+          git checkout --detach "$execution_head"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$execution_head"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Verify exact source contract manifest and generic read-only gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXECUTION_HEAD"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$EXECUTION_HEAD" \
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_publication_controls as controls
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          if controls.SOURCE_HEAD != os.environ["SOURCE_HEAD"]:
+              raise SystemExit("BLOCK: controls source head differs")
+          if controls.PUBLICATION_ID != os.environ["PUBLICATION_ID"]:
+              raise SystemExit("BLOCK: controls publication id differs")
+          if controls.AUTHORIZATION_ID != os.environ["AUTHORIZATION_ID"]:
+              raise SystemExit("BLOCK: controls authorization id differs")
+          if controls.RETURN_SHA256 != os.environ["RETURN_SHA256"]:
+              raise SystemExit("BLOCK: controls return digest differs")
+          if controls.METADATA_SHA256 != os.environ["METADATA_SHA256"]:
+              raise SystemExit("BLOCK: controls metadata digest differs")
+          if controls.MACHINE_PROOF_SHA256 != os.environ["MACHINE_PROOF_SHA256"]:
+              raise SystemExit("BLOCK: controls proof digest differs")
+          if controls.UPLOAD_CONTRACT_SHA256 != os.environ["UPLOAD_CONTRACT_SHA256"]:
+              raise SystemExit("BLOCK: controls upload-contract digest differs")
+
+          matrix = candidate.load_json(root / os.environ["MATRIX_PATH"], "corpus matrix")
+          contract = matrix.get("upload_contract", {})
+          entries = contract.get("ordered_entries")
+          if (
+              contract.get("entry_count") != 65
+              or not isinstance(entries, list)
+              or len(entries) != 65
+              or contract.get("ordered_entries_canonical_sha256")
+              != os.environ["UPLOAD_CONTRACT_SHA256"]
+              or candidate.canonical_json_sha256(entries)
+              != os.environ["UPLOAD_CONTRACT_SHA256"]
+          ):
+              raise SystemExit("BLOCK: exact 65-entry matrix upload contract differs")
+
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest_raw = candidate.load_json(manifest_path, "publication manifest")
+          raw_pairs = [(item["path"], item["name"]) for item in manifest_raw["files"]]
+          contract_pairs = [(item["path"], item["name"]) for item in entries]
+          if raw_pairs != contract_pairs:
+              raise SystemExit("BLOCK: manifest order/names differ from matrix contract")
+          forbidden = {
+              os.environ["MANIFEST_PATH"],
+              os.environ["AUTHORIZATION_PATH"],
+              os.environ["EVIDENCE_PATH"],
+          }
+          if forbidden & {path for path, _name in raw_pairs}:
+              raise SystemExit("BLOCK: publication controls entered the upload set")
+
+          normalized = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root,
+              manifest_path,
+              normalized,
+          )
+          publish._validate_origin_repository(root, normalized["repository"])
+          normalized_pairs = [
+              (item["path"], item["name"]) for item in normalized["files"]
+          ]
+          if (
+              execution_head != os.environ["GITHUB_SHA"]
+              or normalized.get("source_head") != os.environ["SOURCE_HEAD"]
+              or normalized.get("machine_proof", {}).get("publication_id")
+              != os.environ["PUBLICATION_ID"]
+              or normalized.get("owner_authorization", {}).get("authorization_id")
+              != os.environ["AUTHORIZATION_ID"]
+              or normalized_pairs != contract_pairs
+              or normalized.get("owner_authorization", {}).get("upload_count") != 65
+          ):
+              raise SystemExit("BLOCK: generic publisher source/contract gates differ")
+          print("CORPUS_PUBLICATION_READ_ONLY_GATES=PASS")
+          PY
+          python3 -B "$RECOVERY_TOOL" --check
+          python3 -B tools/qikvrt_integrity.py verify
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run complete repository and static workflow gates without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          python3 -B -m unittest -v \
+            tests.test_retrospective_proof_corpus_zenodo_candidate \
+            tests.test_retrospective_proof_corpus_zenodo_publication_controls \
+            tests.test_retrospective_proof_corpus_zenodo_recovery \
+            tests.test_retrospective_proof_corpus_mirror_finalize \
+            tests.test_retrospective_proof_corpus_zenodo_workflow
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  publish:
+    needs: verify
+    if: >-
+      needs.verify.result == 'success' &&
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/retrospective-proof-corpus-v3' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.event.forced == false))
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Fresh checkout of the immutable workflow event head for publication
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Reverify exact remote execution head and source immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          event_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$event_head" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASIS" "$event_head"
+          test -z "$(git rev-list --merges "$EXPECTED_BASIS..$event_head")"
+          readarray -t branch_commits < <(
+            git rev-list \
+              --reverse \
+              --ancestry-path \
+              "$EXPECTED_BASIS..$event_head"
+          )
+          test "${#branch_commits[@]}" -ge 1
+          execution_head="${branch_commits[0]}"
+          [[ "$execution_head" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git show -s --format=%P "$execution_head")" = "$EXPECTED_BASIS"
+          test "$(git rev-list --count "$EXPECTED_BASIS..$execution_head")" = "1"
+          if test "$event_head" != "$execution_head"; then
+            test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+            test -e "$EVIDENCE_PATH"
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          [[ "$remote_head" =~ ^[0-9a-f]{40}$ ]]
+          if ! git cat-file -e "$remote_head^{commit}" 2>/dev/null; then
+            git fetch \
+              --no-tags \
+              --no-write-fetch-head \
+              origin \
+              "refs/heads/$EXPECTED_BRANCH"
+          fi
+          test "$(git rev-parse --verify "$remote_head^{commit}")" = "$remote_head"
+          if test "$event_head" != "$execution_head"; then
+            test "$event_head" = "$remote_head"
+          fi
+          if test "$remote_head" != "$event_head"; then
+            test "$event_head" = "$execution_head"
+          fi
+          if test "$remote_head" != "$execution_head"; then
+            receipt_head="$remote_head"
+            receipt_parent="$(git show -s --format=%P "$receipt_head")"
+            [[ "$receipt_parent" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git show -s --format=%s "$receipt_head")" = \
+              'zenodo: persist retrospective proof corpus publication'
+            readarray -t recovery_commits < <(
+              git rev-list \
+                --reverse \
+                --ancestry-path \
+                "$execution_head..$receipt_parent"
+            )
+            test "${#recovery_commits[@]}" -ge 1
+            test "${#recovery_commits[@]}" -le 135
+            chain_parent="$execution_head"
+            for recovery_commit in "${recovery_commits[@]}"; do
+              test "$(git show -s --format=%P "$recovery_commit")" = "$chain_parent"
+              test "$(git show -s --format=%s "$recovery_commit")" = \
+                'zenodo: persist retrospective proof corpus recovery'
+              recovery_delta="$(
+                git diff --name-status --no-renames \
+                  "$chain_parent" "$recovery_commit" --
+              )"
+              if test "$chain_parent" = "$execution_head"; then
+                test "$recovery_delta" = "A	$RECOVERY_PATH"
+              else
+                test "$recovery_delta" = "M	$RECOVERY_PATH"
+              fi
+              chain_parent="$recovery_commit"
+            done
+            test "$chain_parent" = "$receipt_parent"
+            expected_final_delta="$(
+              printf '%s\n' \
+                'M	REPOSITORY_FILE_MANIFEST.json' \
+                'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                'M	SHA256SUMS.txt' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json'
+            )"
+            observed_final_delta="$(
+              git diff --name-status --no-renames \
+                "$receipt_parent" "$receipt_head" --
+            )"
+            test "$observed_final_delta" = "$expected_final_delta"
+            expected_cumulative_delta="$(
+              printf '%s\n' \
+                'M	REPOSITORY_FILE_MANIFEST.json' \
+                'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+                'M	SHA256SUMS.txt' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json' \
+                'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-recovery.json'
+            )"
+            observed_cumulative_delta="$(
+              git diff --name-status --no-renames \
+                "$execution_head" "$receipt_head" --
+            )"
+            test "$observed_cumulative_delta" = "$expected_cumulative_delta"
+            EXECUTION_HEAD="$execution_head" \
+            RECEIPT_HEAD="$receipt_head" \
+            RECEIPT_PARENT="$receipt_parent" \
+            python3 -B - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_recovery as recovery
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = pathlib.Path.cwd().resolve()
+          execution_head = os.environ["EXECUTION_HEAD"]
+          receipt_head = os.environ["RECEIPT_HEAD"]
+          receipt_parent = os.environ["RECEIPT_PARENT"]
+
+          def git(*arguments: str) -> bytes:
+              environment = {
+                  key: value
+                  for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ")
+                  if (value := os.environ.get(key)) is not None
+              }
+              environment.update(
+                  {"GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+              )
+              completed = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  env=environment,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+                  timeout=30,
+              )
+              if completed.returncode != 0:
+                  raise SystemExit("BLOCK: credential-free Git validation failed")
+              return completed.stdout
+
+          contract = recovery.load_frozen_contract()
+          manifest_path, manifest = recovery._load_production_manifest(contract)
+          evidence_raw = git("show", f"{receipt_head}:{recovery.EVIDENCE_RELATIVE}")
+          evidence = candidate.parse_json_bytes(
+              evidence_raw, "pre-effect final publication receipt"
+          )
+          normalized = publish._validate_recovery_evidence(
+              evidence, manifest_path, root, manifest, execution_head
+          )
+          if normalized != evidence or evidence.get("phase") != "public_verified":
+              raise SystemExit("BLOCK: pre-effect final evidence differs")
+          context = recovery.make_context(
+              execution_head,
+              manifest["manifest_sha256"],
+              manifest["owner_authorization"]["consumption_key"]["value"],
+              evidence["remote_consumption"]["tag_object"],
+          )
+          recovery_shas = git(
+              "rev-list",
+              "--reverse",
+              "--ancestry-path",
+              f"{execution_head}..{receipt_parent}",
+          ).decode("ascii").splitlines()
+          history = []
+          for sha in recovery_shas:
+              if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+                  raise SystemExit("BLOCK: recovery history identity differs")
+              parent = git("show", "-s", "--format=%P", sha).decode("ascii").strip()
+              raw = git("show", f"{sha}:{recovery.RECOVERY_RELATIVE}")
+              history.append(
+                  recovery.PersistedCheckpoint(
+                      sha, parent, recovery.RECOVERY_RELATIVE, raw
+                  )
+              )
+          values = recovery.validate_recovery_chain(history, contract, context)
+          if (
+              not values
+              or values[-1]["phase"] != "publish_requested"
+              or values[-1]["sequence"] != len(values) - 1
+          ):
+              raise SystemExit("BLOCK: recovery journal is not terminal/contiguous")
+
+          def exact_remote_ref(ref: str) -> str:
+              raw = git("ls-remote", "--refs", "origin", ref)
+              try:
+                  line = raw.decode("ascii").rstrip("\n")
+              except UnicodeDecodeError:
+                  raise SystemExit("BLOCK: remote ref readback is not ASCII")
+              match = re.fullmatch(r"([0-9a-f]{40})\t([^\r\n]+)", line)
+              if match is None or match.group(2) != ref:
+                  raise SystemExit("BLOCK: remote ref readback differs")
+              return match.group(1)
+
+          recovery_head = exact_remote_ref(context.recovery_ref)
+          if recovery_head != receipt_parent:
+              raise SystemExit("BLOCK: dedicated recovery ref differs from receipt parent")
+          if exact_remote_ref(context.consumption.ref) != context.consumption.tag_object:
+              raise SystemExit("BLOCK: consumption ref differs from final evidence")
+          final = recovery.PersistedCheckpoint(
+              receipt_head,
+              receipt_parent,
+              recovery.EVIDENCE_RELATIVE,
+              evidence_raw,
+          )
+          recovery.validate_ref_state(
+              history, context, recovery_head, receipt_head, final
+          )
+          print("PRE_EFFECT_FINALIZED_RECOVERY_CHAIN=PASS")
+          PY
+          fi
+          {
+            printf 'EXECUTION_HEAD=%s\n' "$execution_head"
+            printf 'EVENT_HEAD=%s\n' "$event_head"
+            printf 'BRANCH_HEAD=%s\n' "$remote_head"
+          } >> "$GITHUB_ENV"
+          git checkout --detach "$execution_head"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$execution_head"
+          test ! -e "$EVIDENCE_PATH"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$execution_head" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          matrix = candidate.load_json(root / os.environ["MATRIX_PATH"], "corpus matrix")
+          entries = matrix["upload_contract"]["ordered_entries"]
+          if (
+              len(entries) != 65
+              or candidate.canonical_json_sha256(entries)
+              != os.environ["UPLOAD_CONTRACT_SHA256"]
+          ):
+              raise SystemExit("BLOCK: pre-effect upload contract differs")
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          raw_manifest = candidate.load_json(manifest_path, "publication manifest")
+          if [
+              (item["path"], item["name"]) for item in raw_manifest["files"]
+          ] != [(item["path"], item["name"]) for item in entries]:
+              raise SystemExit("BLOCK: pre-effect manifest order/names differ")
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: pre-effect execution head differs")
+          PY
+          python3 -B "$RECOVERY_TOOL" --check
+          python3 -B tools/qikvrt_integrity.py verify
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute the dedicated checkpointed publication controller once
+        id: recovery
+        continue-on-error: true
+        timeout-minutes: 40
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          ZENODO_API_BASE: https://zenodo.org/api
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXECUTION_HEAD"
+          GITHUB_SHA="$EXECUTION_HEAD" python3 -B "$RECOVERY_TOOL" \
+            --execute \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Enforce the exact dedicated-controller result without fallback
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.recovery.outcome }}" = "success"
+          test "${{ steps.recovery.outputs.phase }}" = "public_verified"
+          test "${{ steps.recovery.outputs.state }}" = "published"
+          test "${{ steps.recovery.outputs.finalized }}" = "true"
+          [[ "${{ steps.recovery.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
+
+  post_public_verify:
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/publication/retrospective-proof-corpus-v3'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Fresh checkout of the persisted publication receipt head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/heads/publication/retrospective-proof-corpus-v3
+
+      - name: Verify exact non-force receipt commit and immutable execution binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          receipt_head="$(git rev-parse --verify HEAD^{commit})"
+          git merge-base --is-ancestor "$EXPECTED_BASIS" "$receipt_head"
+          test -z "$(git rev-list --merges "$EXPECTED_BASIS..$receipt_head")"
+          readarray -t branch_commits < <(
+            git rev-list \
+              --reverse \
+              --ancestry-path \
+              "$EXPECTED_BASIS..$receipt_head"
+          )
+          test "${#branch_commits[@]}" -ge 3
+          EXECUTION_HEAD="${branch_commits[0]}"
+          [[ "$EXECUTION_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git show -s --format=%P "$EXECUTION_HEAD")" = "$EXPECTED_BASIS"
+          if test "$GITHUB_SHA" != "$EXECUTION_HEAD"; then
+            test "$GITHUB_SHA" = "$receipt_head"
+            test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          fi
+          git merge-base --is-ancestor "$EXECUTION_HEAD" "$receipt_head"
+          test "$receipt_head" != "$EXECUTION_HEAD"
+          test -z "$(git rev-list --merges "$EXECUTION_HEAD..$receipt_head")"
+          receipt_parent="$(git show -s --format=%P "$receipt_head")"
+          [[ "$receipt_parent" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git show -s --format=%s HEAD)" = \
+            'zenodo: persist retrospective proof corpus publication'
+          readarray -t recovery_commits < <(
+            git rev-list \
+              --reverse \
+              --ancestry-path \
+              "$EXECUTION_HEAD..$receipt_parent"
+          )
+          test "${#recovery_commits[@]}" -ge 1
+          test "${#recovery_commits[@]}" -le 135
+          chain_parent="$EXECUTION_HEAD"
+          for recovery_commit in "${recovery_commits[@]}"; do
+            test "$(git show -s --format=%P "$recovery_commit")" = "$chain_parent"
+            test "$(git show -s --format=%s "$recovery_commit")" = \
+              'zenodo: persist retrospective proof corpus recovery'
+            recovery_delta="$(
+              git diff --name-status --no-renames "$chain_parent" "$recovery_commit" --
+            )"
+            if test "$chain_parent" = "$EXECUTION_HEAD"; then
+              test "$recovery_delta" = "A	$RECOVERY_PATH"
+            else
+              test "$recovery_delta" = "M	$RECOVERY_PATH"
+            fi
+            chain_parent="$recovery_commit"
+          done
+          test "$chain_parent" = "$receipt_parent"
+          expected_final_delta="$(
+            printf '%s\n' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json'
+          )"
+          observed_final_delta="$(
+            git diff --name-status --no-renames "$receipt_parent" "$receipt_head" --
+          )"
+          test "$observed_final_delta" = "$expected_final_delta"
+          expected_cumulative_delta="$(
+            printf '%s\n' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-publication.json' \
+              'A	release/zenodo-corpus-proof-publication-2026-08-03/zenodo-recovery.json'
+          )"
+          observed_cumulative_delta="$(
+            git diff --name-status --no-renames "$EXECUTION_HEAD" "$receipt_head" --
+          )"
+          test "$observed_cumulative_delta" = "$expected_cumulative_delta"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$receipt_head"
+          EXECUTION_HEAD="$EXECUTION_HEAD" \
+          RECEIPT_HEAD="$receipt_head" \
+          RECEIPT_PARENT="$receipt_parent" \
+          python3 -B - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_recovery as recovery
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = pathlib.Path.cwd().resolve()
+          execution_head = os.environ["EXECUTION_HEAD"]
+          receipt_head = os.environ["RECEIPT_HEAD"]
+          receipt_parent = os.environ["RECEIPT_PARENT"]
+
+          def git(*arguments: str) -> bytes:
+              environment = {
+                  key: value
+                  for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ")
+                  if (value := os.environ.get(key)) is not None
+              }
+              environment.update(
+                  {"GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+              )
+              completed = subprocess.run(
+                  ["git", *arguments],
+                  cwd=root,
+                  env=environment,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  check=False,
+                  timeout=30,
+              )
+              if completed.returncode != 0:
+                  raise SystemExit("BLOCK: credential-free Git validation failed")
+              return completed.stdout
+
+          contract = recovery.load_frozen_contract()
+          manifest_path, manifest = recovery._load_production_manifest(contract)
+          evidence_raw = candidate.regular_bytes(root / recovery.EVIDENCE_RELATIVE)
+          evidence = candidate.parse_json_bytes(
+              evidence_raw, "persisted final publication receipt"
+          )
+          normalized = publish._validate_recovery_evidence(
+              evidence, manifest_path, root, manifest, execution_head
+          )
+          if normalized != evidence or evidence.get("phase") != "public_verified":
+              raise SystemExit("BLOCK: persisted final evidence differs")
+          context = recovery.make_context(
+              execution_head,
+              manifest["manifest_sha256"],
+              manifest["owner_authorization"]["consumption_key"]["value"],
+              evidence["remote_consumption"]["tag_object"],
+          )
+          recovery_shas = git(
+              "rev-list",
+              "--reverse",
+              "--ancestry-path",
+              f"{execution_head}..{receipt_parent}",
+          ).decode("ascii").splitlines()
+          history = []
+          for sha in recovery_shas:
+              if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+                  raise SystemExit("BLOCK: recovery history identity differs")
+              parent = git("show", "-s", "--format=%P", sha).decode("ascii").strip()
+              raw = git("show", f"{sha}:{recovery.RECOVERY_RELATIVE}")
+              history.append(
+                  recovery.PersistedCheckpoint(
+                      sha, parent, recovery.RECOVERY_RELATIVE, raw
+                  )
+              )
+          values = recovery.validate_recovery_chain(history, contract, context)
+          if (
+              not values
+              or values[-1]["phase"] != "publish_requested"
+              or values[-1]["sequence"] != len(values) - 1
+          ):
+              raise SystemExit("BLOCK: recovery journal is not terminal/contiguous")
+
+          def exact_remote_ref(ref: str) -> str:
+              raw = git("ls-remote", "--refs", "origin", ref)
+              try:
+                  line = raw.decode("ascii").rstrip("\n")
+              except UnicodeDecodeError:
+                  raise SystemExit("BLOCK: remote ref readback is not ASCII")
+              match = re.fullmatch(r"([0-9a-f]{40})\t([^\r\n]+)", line)
+              if match is None or match.group(2) != ref:
+                  raise SystemExit("BLOCK: remote ref readback differs")
+              return match.group(1)
+
+          recovery_head = exact_remote_ref(context.recovery_ref)
+          if recovery_head != receipt_parent:
+              raise SystemExit("BLOCK: dedicated recovery ref differs from receipt parent")
+          if exact_remote_ref(context.consumption.ref) != context.consumption.tag_object:
+              raise SystemExit("BLOCK: consumption ref differs from final evidence")
+          final = recovery.PersistedCheckpoint(
+              receipt_head,
+              receipt_parent,
+              recovery.EVIDENCE_RELATIVE,
+              evidence_raw,
+          )
+          recovery.validate_ref_state(
+              history, context, recovery_head, receipt_head, final
+          )
+          print("POST_PUBLIC_RECOVERY_CHAIN=PASS")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+          {
+            printf 'EXECUTION_HEAD=%s\n' "$EXECUTION_HEAD"
+            printf 'RECEIPT_HEAD=%s\n' "$receipt_head"
+          } >> "$GITHUB_ENV"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Independently verify anonymous public metadata and all 65 file bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          from tools import qikvrt_retrospective_proof_corpus_zenodo_candidate as candidate
+          from tools import qikvrt_zenodo_actions as zenodo
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          evidence_path = root / os.environ["EVIDENCE_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          evidence_raw = candidate.regular_bytes(evidence_path)
+          evidence = candidate.parse_json_bytes(evidence_raw, "publication evidence")
+          validated = publish._validate_recovery_evidence(
+              evidence,
+              manifest_path,
+              root,
+              manifest,
+              os.environ["EXECUTION_HEAD"],
+          )
+          if (
+              validated.get("phase") != "public_verified"
+              or validated.get("state") != "published"
+              or len(manifest["files"]) != 65
+          ):
+              raise SystemExit("BLOCK: persisted publication is not exact public_verified")
+
+          def safe_zenodo_url(url: str) -> str:
+              if not isinstance(url, str):
+                  raise SystemExit("BLOCK: anonymous Zenodo URL is absent")
+              parts = urllib.parse.urlsplit(url)
+              try:
+                  port = parts.port
+              except ValueError:
+                  raise SystemExit("BLOCK: anonymous Zenodo URL has an invalid port")
+              if (
+                  parts.scheme != "https"
+                  or parts.hostname != "zenodo.org"
+                  or parts.username is not None
+                  or parts.password is not None
+                  or port not in (None, 443)
+                  or parts.query
+                  or parts.fragment
+                  or not parts.path.startswith("/")
+              ):
+                  raise SystemExit("BLOCK: anonymous URL escaped exact Zenodo HTTPS")
+              return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+                  return None
+
+          opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler({}),
+              RejectRedirects(),
+          )
+
+          def request(url: str, maximum: int, *, accept_json: bool) -> bytes:
+              safe = safe_zenodo_url(url)
+              headers = {"User-Agent": "qikvrt-corpus-v3-anonymous-verifier/1"}
+              if accept_json:
+                  headers["Accept"] = "application/json"
+              response = opener.open(
+                  urllib.request.Request(safe, headers=headers, method="GET"),
+                  timeout=180,
+              )
+              with response:
+                  safe_zenodo_url(response.geturl())
+                  chunks = []
+                  total = 0
+                  while True:
+                      chunk = response.read(min(1024 * 1024, maximum + 1 - total))
+                      if not chunk:
+                          break
+                      chunks.append(chunk)
+                      total += len(chunk)
+                      if total > maximum:
+                          raise SystemExit("BLOCK: anonymous response exceeded bound")
+              return b"".join(chunks)
+
+          record_id = validated["record_id"]
+          doi = validated["doi"]
+          public_raw = request(
+              f"https://zenodo.org/api/records/{record_id}",
+              16 * 1024 * 1024,
+              accept_json=True,
+          )
+          public = candidate.parse_json_bytes(public_raw, "anonymous public record")
+          if (
+              zenodo._record_id(public, "anonymous public record") != record_id
+              or zenodo._doi_from_deposition(public, "anonymous public record") != doi
+              or not zenodo._published_metadata_matches(
+                  public.get("metadata"), manifest["metadata"]
+              )
+          ):
+              raise SystemExit("BLOCK: anonymous public record identity/metadata differs")
+          conceptdoi, record_url = publish._public_record_identity(public, record_id, doi)
+          if (
+              conceptdoi != validated["conceptdoi"]
+              or record_url != validated["record_url"]
+          ):
+              raise SystemExit("BLOCK: anonymous public identity differs from receipt")
+
+          public_files = zenodo.ZenodoClient._server_files(public)
+          by_name = {}
+          for item in public_files:
+              name = zenodo.ZenodoClient._server_file_name(item)
+              if name in by_name:
+                  raise SystemExit("BLOCK: anonymous public file name is duplicated")
+              by_name[name] = item
+          if set(by_name) != {item["name"] for item in manifest["files"]}:
+              raise SystemExit("BLOCK: anonymous public file set differs")
+
+          aggregate = 0
+          verified_names = []
+          for expected in manifest["files"]:
+              name = expected["name"]
+              item = by_name[name]
+              raw_size = item.get("filesize", item.get("size"))
+              if isinstance(raw_size, str) and raw_size.isdecimal():
+                  raw_size = int(raw_size)
+              checksum = item.get("checksum")
+              if (
+                  raw_size != expected["size"]
+                  or checksum not in {expected["md5"], "md5:" + expected["md5"]}
+              ):
+                  raise SystemExit("BLOCK: anonymous public file metadata differs: " + name)
+              links = item.get("links")
+              candidates = (
+                  links.get("download"), links.get("self"), links.get("content")
+              ) if isinstance(links, dict) else ()
+              download = next(
+                  (safe_zenodo_url(value) for value in candidates if isinstance(value, str)),
+                  None,
+              )
+              if download is None:
+                  raise SystemExit("BLOCK: anonymous public file URL is absent: " + name)
+              raw = request(download, expected["size"], accept_json=False)
+              aggregate += len(raw)
+              if aggregate > 512 * 1024 * 1024:
+                  raise SystemExit("BLOCK: anonymous aggregate download exceeded bound")
+              if (
+                  len(raw) != expected["size"]
+                  or hashlib.md5(raw, usedforsecurity=False).hexdigest() != expected["md5"]
+                  or hashlib.sha256(raw).hexdigest() != expected["sha256"]
+              ):
+                  raise SystemExit("BLOCK: anonymous public file bytes differ: " + name)
+              verified_names.append(name)
+          if verified_names != [item["name"] for item in manifest["files"]]:
+              raise SystemExit("BLOCK: anonymous verification order differs")
+          print("ANONYMOUS_PUBLIC_BYTE_EXACT_VERIFY=PASS")
+          print("PUBLIC_FILE_COUNT=65")
+          print("EFFECT_STATE=EFFECT_ACK_CONTINUE")
+          PY
+          {
+            printf '%s\n' '## Retrospective proof corpus post-public verification'
+            printf '%s\n' '- Anonymous public metadata and all 65 files: byte-exact PASS'
+            printf '%s\n' '- Effect state: `EFFECT_ACK_CONTINUE`'
+            printf '%s\n' '- Authority/Mirror reciprocal persistence remains a separate required effect.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Bootstrap the create-only Authority public ref after the complete byte gate
+        shell: bash
+        env:
+          QIKVRT_MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -z "${ZENODO_ACCESS_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${GH_TOKEN:-}"
+          receipt_head="$(git rev-parse --verify HEAD^{commit})"
+          [[ "$receipt_head" =~ ^[0-9a-f]{40}$ ]]
+          test "$receipt_head" = "$RECEIPT_HEAD"
+          test "$(git show -s --format=%s "$receipt_head")" = \
+            'zenodo: persist retrospective proof corpus publication'
+          test -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          bootstrap_report="$RUNNER_TEMP/qikvrt-corpus-authority-public-ref-bootstrap.log"
+          python3 -B tools/qikvrt_retrospective_proof_corpus_mirror_finalize.py \
+            --bootstrap-authority-public-ref | tee "$bootstrap_report"
+          BOOTSTRAP_REPORT="$bootstrap_report" python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path(os.environ["BOOTSTRAP_REPORT"])
+          raw = report_path.read_bytes()
+          done_state = "EFFECT_ACK_" + "DONE"
+          if not raw or len(raw) > 1024 * 1024 or done_state.encode("ascii") in raw:
+              raise SystemExit("BLOCK: Authority public-ref bootstrap report is invalid")
+          try:
+              lines = [line for line in raw.decode("utf-8").splitlines() if line]
+              report = json.loads(lines[-1])
+          except (UnicodeDecodeError, IndexError, json.JSONDecodeError) as exc:
+              raise SystemExit("BLOCK: Authority public-ref bootstrap report is not JSON") from exc
+          if (
+              not isinstance(report, dict)
+              or report.get("effect_state") != "EFFECT_ACK_CONTINUE"
+              or report.get("effect_state") == done_state
+          ):
+              raise SystemExit("BLOCK: Authority public-ref bootstrap crossed effect boundary")
+          print("AUTHORITY_PUBLIC_REF_BOOTSTRAP=PASS")
+          print("EFFECT_STATE=EFFECT_ACK_CONTINUE")
+          PY
+          {
+            printf '%s\n' '## Retrospective proof corpus Authority public-ref bootstrap'
+            printf '%s\n' '```text'
+            cat "$bootstrap_report"
+            printf '%s\n' '```'
+            printf '%s\n' '- Effect state: `EFFECT_ACK_CONTINUE`'
+            printf '%s\n' '- Mirror reciprocal persistence remains a separately triggered effect.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

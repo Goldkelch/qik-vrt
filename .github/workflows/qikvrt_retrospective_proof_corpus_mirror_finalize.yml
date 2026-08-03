@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT retrospective proof corpus mirror finalize
+
+on:
+  push:
+    branches:
+      - evidence/retrospective-proof-corpus-public-verified-v3
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-retrospective-proof-corpus-mirror-finalize-v3
+  cancel-in-progress: false
+
+jobs:
+  finalize-scoped-reciprocal-equality:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Frame 1 — check out exact create-only public_verified head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Frame 2 — select the locked Python runtime
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12.13'
+
+      - name: Frame 3 — verify source, cache and offline negative controls
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_tool_cache.py verify
+          python3 -B tools/qikvrt_integrity.py verify
+          python3 -B tools/qikvrt_retrospective_proof_corpus_mirror_finalize.py --check-source
+          python3 -B -m unittest -v tests.test_retrospective_proof_corpus_mirror_finalize
+
+      - name: Frame 4 — finalize only the corpus publication/equality refs
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          QIKVRT_MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+          QIKVRT_EVENT_CREATED: ${{ github.event.created }}
+          QIKVRT_EVENT_DELETED: ${{ github.event.deleted }}
+          QIKVRT_EVENT_FORCED: ${{ github.event.forced }}
+          QIKVRT_EVENT_BEFORE: ${{ github.event.before }}
+          QIKVRT_EVENT_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/qikvrt-corpus-mirror-finalize.log"
+          python3 -B tools/qikvrt_retrospective_proof_corpus_mirror_finalize.py | tee "$report"
+          {
+            echo '## Retrospective proof corpus — scope-bound finalization'
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Frame 5 — preserve the non-global effect boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo 'The reported EFFECT_ACK_DONE is restricted to the named proof-corpus publication,'
+            echo 'the three dedicated public/overview/equality refs, and their exact common commits/trees.'
+            echo 'No main equality or repository-wide symmetry is claimed.'
+          } >> "$GITHUB_STEP_SUMMARY"
