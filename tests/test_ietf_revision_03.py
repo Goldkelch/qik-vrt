@@ -43,6 +43,9 @@ REVISION_03_CANDIDATE = (
 REVISION_03_SUBMISSION_RECEIPT = (
     IETF_ROOT / "draft-lohmann-qikvrt-effect-ack-03.SUBMISSION_RECEIPT.json"
 )
+REVISION_03_PUBLICATION_RECEIPT = (
+    IETF_ROOT / "draft-lohmann-qikvrt-effect-ack-03.PUBLICATION_RECEIPT.json"
+)
 
 UNCHANGED_NORMATIVE_ANCHORS = (
     "conventions",
@@ -198,6 +201,7 @@ class IETFRevision03Tests(unittest.TestCase):
             REVISION_03_HTML,
             REVISION_03_CANDIDATE,
             REVISION_03_SUBMISSION_RECEIPT,
+            REVISION_03_PUBLICATION_RECEIPT,
         ):
             if not path.is_file():
                 raise AssertionError(f"required revision source is absent: {path}")
@@ -208,6 +212,9 @@ class IETFRevision03Tests(unittest.TestCase):
         )
         cls.submission_receipt = json.loads(
             REVISION_03_SUBMISSION_RECEIPT.read_text(encoding="utf-8")
+        )
+        cls.publication_receipt = json.loads(
+            REVISION_03_PUBLICATION_RECEIPT.read_text(encoding="utf-8")
         )
 
     def test_candidate_receipt_binds_exact_local_artifacts(self) -> None:
@@ -282,6 +289,77 @@ class IETFRevision03Tests(unittest.TestCase):
             self.assertEqual(binding["path"], path.relative_to(ROOT).as_posix())
             self.assertEqual(binding["size_bytes"], len(raw))
             self.assertEqual(binding["sha256"], hashlib.sha256(raw).hexdigest())
+
+    def test_publication_receipt_adds_current_state_without_rewriting_history(
+        self,
+    ) -> None:
+        receipt = self.publication_receipt
+        self.assertEqual(
+            set(receipt),
+            {
+                "_license",
+                "schema",
+                "receipt_id",
+                "observed_utc",
+                "internet_draft",
+                "revision",
+                "public_state",
+                "observation",
+                "datatracker",
+                "artifacts",
+                "comparison",
+                "candidate_before_transition",
+                "repository_binding",
+                "truth_boundaries",
+            },
+        )
+        self.assertEqual(
+            receipt["schema"],
+            "qikvrt_ietf_datatracker_publication_receipt_v1",
+        )
+        self.assertEqual(
+            receipt["public_state"], "ACTIVE_INDIVIDUAL_INTERNET_DRAFT"
+        )
+        self.assertIs(receipt["observation"]["read_only"], True)
+        self.assertIs(
+            receipt["observation"]["remote_mutation_performed"],
+            False,
+        )
+        predecessor = receipt["candidate_before_transition"]
+        self.assertEqual(
+            predecessor["path"],
+            REVISION_03_SUBMISSION_RECEIPT.relative_to(ROOT).as_posix(),
+        )
+        self.assertEqual(
+            predecessor["state"],
+            "AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL",
+        )
+        self.assertEqual(
+            predecessor["sha256"],
+            hashlib.sha256(REVISION_03_SUBMISSION_RECEIPT.read_bytes()).hexdigest(),
+        )
+        for kind, path in (("xml", REVISION_03_XML), ("txt", REVISION_03_TXT)):
+            binding = receipt["artifacts"][kind]
+            self.assertIs(binding["byte_identical_to_local"], True)
+            self.assertEqual(binding["local"]["size_bytes"], path.stat().st_size)
+            self.assertEqual(
+                binding["local"]["sha256"],
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(binding["local"]["sha256"], binding["public"]["sha256"])
+        html = receipt["artifacts"]["html"]
+        self.assertIs(html["byte_identical_to_local"], False)
+        self.assertNotEqual(html["local"]["sha256"], html["public"]["sha256"])
+        self.assertEqual(receipt["comparison"]["exact_kinds"], ["txt", "xml"])
+        self.assertEqual(receipt["comparison"]["divergent_kinds"], ["html"])
+        boundaries = receipt["truth_boundaries"]
+        self.assertIs(boundaries["internet_draft_publication_verified"], True)
+        self.assertIs(boundaries["ietf_standard_claimed"], False)
+        self.assertIs(boundaries["ietf_consensus_claimed"], False)
+        self.assertIs(
+            boundaries["physical_or_ontic_retrocausality_proved"],
+            False,
+        )
 
     def test_revision_metadata_is_exact(self) -> None:
         self.assertEqual(
