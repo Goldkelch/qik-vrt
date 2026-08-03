@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT bounded audio chunk transport 2026-08-04
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_audio_chunk_transport_20260804.yml"
+      - "requests/audio-chunk-transport/20260804/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-audio-chunk-transport-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  transcribe-a04:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'audio-transport/20260804-aphorism-a010405-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      AUDIO_ID: a04
+      AUDIO_FILENAME: A04-so-einfach-ist-das-chunked.ogg
+      AUDIO_BYTES: "18739"
+      AUDIO_SHA256: 2dcb1d6ccd32e2f9124bda52f89409e0a7aa44866ccd6bee660ce1e5a06d141e
+      ORIGINAL_SHA256: 4c1a90f7861121fc4690c7c1d610d530761dac9cb3e98c8abd0fc7e18922ce74
+      CHUNKS_JSON: >-
+        [{"sha":"ccc12995c727baadc1eae413a9d2476d2111a96a","bytes":12000,"sha256":"2ed87869cb2d5e932450d1a6b8316ed6d2de8d16b3bf266db50102fa044cbe6d"},{"sha":"f937f2d3006bc931833dacba267b9b4c9fb3249d","bytes":6739,"sha256":"f90476020c88de2541698ddcbf58743dc90e4107901c529b65ffb6aee4faaf67"}]
+    steps:
+      - name: Check out exact carrier without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/offline-audio-transcription/package-lock.json
+
+      - name: Install and verify media runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              apt-get install --yes --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Install and test repository-owned audio tool
+        working-directory: tools/offline-audio-transcription
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+
+      - name: Install and hash-verify declared speech model
+        working-directory: tools/offline-audio-transcription
+        env:
+          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+        run: ./scripts/install-model.sh
+
+      - name: Materialize exact authenticated Git-blob chunks
+        id: materialized
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          chunks = json.loads(os.environ["CHUNKS_JSON"])
+          combined = bytearray()
+          observed = []
+          for index, expected in enumerate(chunks):
+              url = f"https://api.github.com/repos/{repository}/git/blobs/{expected['sha']}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "qikvrt-bounded-audio-chunk-transport/1.0",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+              if payload.get("sha") != expected["sha"] or payload.get("encoding") != "base64":
+                  raise SystemExit(f"chunk {index}: GitHub object identity or encoding mismatch")
+              raw = base64.b64decode("".join(payload["content"].split()), validate=True)
+              digest = hashlib.sha256(raw).hexdigest()
+              if len(raw) != expected["bytes"] or digest != expected["sha256"]:
+                  raise SystemExit(f"chunk {index}: byte or SHA-256 mismatch")
+              combined.extend(raw)
+              observed.append({"index": index, "git_blob_sha1": expected["sha"], "bytes": len(raw), "sha256": digest})
+
+          aggregate = bytes(combined)
+          aggregate_digest = hashlib.sha256(aggregate).hexdigest()
+          if len(aggregate) != int(os.environ["AUDIO_BYTES"]) or aggregate_digest != os.environ["AUDIO_SHA256"]:
+              raise SystemExit("aggregate audio byte or SHA-256 mismatch")
+
+          input_dir = pathlib.Path(os.environ["RUNNER_TEMP"]) / "qikvrt-audio-input"
+          input_dir.mkdir(mode=0o700)
+          audio = input_dir / os.environ["AUDIO_FILENAME"]
+          audio.write_bytes(aggregate)
+          receipt = input_dir / "chunk-materialization-receipt.json"
+          receipt.write_text(json.dumps({
+              "schema": "qikvrt_audio_chunk_materialization_receipt_v1",
+              "repository": repository,
+              "carrier_sha": os.environ["GITHUB_SHA"],
+              "audio_id": os.environ["AUDIO_ID"],
+              "original_sha256": os.environ["ORIGINAL_SHA256"],
+              "derivative": {"filename": audio.name, "bytes": len(aggregate), "sha256": aggregate_digest},
+              "chunks": observed,
+          }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          with pathlib.Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"audio_path={audio}\nreceipt_path={receipt}\n")
+          PY
+
+      - name: Transcribe without network disclosure of audio or transcript
+        working-directory: tools/offline-audio-transcription
+        env:
+          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./bin/transcribe-audio \
+            --input "${{ steps.materialized.outputs.audio_path }}" \
+            --output-dir "${RUNNER_TEMP}/qikvrt-audio-output" \
+            --language de \
+            --chunk-seconds 28 \
+            --overlap-seconds 1.5 \
+            --threads 4
+
+      - name: Build normalization observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          output = Path(os.environ["RUNNER_TEMP"]) / "qikvrt-audio-output"
+          transcript = next(output.glob("*.transcript.txt"))
+          structured = next(output.glob("*.transcript.json"))
+          provenance = next(output.glob("*.provenance.json"))
+          def record(path):
+              raw = path.read_bytes()
+              return {"filename": path.name, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+          observation = {
+              "schema": "qikvrt_audio_normalization_observation_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "carrier_sha": os.environ["GITHUB_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "audio_id": os.environ["AUDIO_ID"],
+              "original_sha256": os.environ["ORIGINAL_SHA256"],
+              "derivative_sha256": os.environ["AUDIO_SHA256"],
+              "automatic_asr": "COMPLETE",
+              "human_acoustic_review": "PENDING",
+              "verbatim_verified": False,
+              "outputs": [record(transcript), record(structured), record(provenance)],
+          }
+          (output / "normalization-observation.json").write_text(
+              json.dumps(observation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload bounded ASR evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-audio-request-a04-chunked-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/qikvrt-audio-output/**
+            ${{ steps.materialized.outputs.receipt_path }}
+
+      - name: Remove materialized input and model
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/qikvrt-audio-input" "${RUNNER_TEMP}/qikvrt-audio-model"
