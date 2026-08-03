@@ -19,6 +19,7 @@ import copy
 import datetime
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -177,6 +178,12 @@ class ProofGateError(RuntimeError):
     """Safe, fail-closed proof validation failure."""
 
 
+# Descriptive public alias for callers that treat this validator as a machine-
+# proof component.  The historical name remains the canonical implementation
+# type so existing callers and exception handlers retain exact compatibility.
+MachineProofError = ProofGateError
+
+
 def fail(message: str) -> NoReturn:
     raise ProofGateError(message)
 
@@ -265,10 +272,49 @@ def read_regular(path: pathlib.Path, limit: int = MAX_FILE_BYTES) -> bytes:
 
 def load_json(path: pathlib.Path, where: str) -> tuple[dict[str, Any], bytes]:
     raw = read_regular(path, MAX_JSON_BYTES)
+
+    def strict_object(
+        pairs: list[tuple[str, Any]],
+    ) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                fail(f"invalid JSON in {where}: duplicate object key")
+            value[key] = item
+        return value
+
+    def reject_nonfinite_constant(_constant: str) -> NoReturn:
+        fail(f"invalid JSON in {where}: non-finite number")
+
     try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=strict_object,
+            parse_constant=reject_nonfinite_constant,
+        )
+    except ProofGateError:
+        raise
+    except (UnicodeDecodeError, ValueError, RecursionError, OverflowError) as exc:
         fail(f"invalid JSON in {where}: {exc}")
+
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if any(0xD800 <= ord(character) <= 0xDFFF for character in item):
+                fail(
+                    f"invalid JSON in {where}: lone UTF-16 surrogate "
+                    "is not a Unicode scalar value"
+                )
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                fail(f"invalid JSON in {where}: non-finite number")
+        elif isinstance(item, list):
+            pending.extend(item)
+        elif isinstance(item, dict):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+
     if not isinstance(value, dict):
         fail(f"{where} must contain a JSON object")
     return value, raw

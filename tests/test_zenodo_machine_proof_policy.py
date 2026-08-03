@@ -932,6 +932,112 @@ def materialize_git_history(
 
 
 class MachineProofBeforeZenodoTests(unittest.TestCase):
+    def test_strict_json_loader_rejects_duplicate_keys_at_every_depth(self) -> None:
+        cases = (
+            b'{"same":1,"same":2}',
+            b'{"outer":{"same":1,"\\u0073ame":2}}',
+            b'{"outer":[{"same":1,"same":2}]}',
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = pathlib.Path(temporary) / "input.json"
+                    path.write_bytes(raw)
+                    with self.assertRaisesRegex(
+                        proof.MachineProofError,
+                        "duplicate object key",
+                    ):
+                        proof.load_json(path, "strict fixture")
+
+    def test_strict_json_loader_rejects_nonfinite_numbers(self) -> None:
+        cases = (
+            b'{"value":NaN}',
+            b'{"value":Infinity}',
+            b'{"value":-Infinity}',
+            b'{"value":1e400}',
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = pathlib.Path(temporary) / "input.json"
+                    path.write_bytes(raw)
+                    with self.assertRaisesRegex(
+                        proof.ProofGateError,
+                        "non-finite number",
+                    ):
+                        proof.load_json(path, "strict fixture")
+
+    def test_strict_json_loader_rejects_invalid_unicode(self) -> None:
+        cases = (
+            b'{"value":"\xff"}',
+            b'{"outer":{"value":"\\ud800"}}',
+            b'{"outer":{"\\udfff":"value"}}',
+            b'{"outer":["valid",{"value":"\\ud800"}]}',
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = pathlib.Path(temporary) / "input.json"
+                    path.write_bytes(raw)
+                    with self.assertRaisesRegex(
+                        proof.ProofGateError,
+                        "invalid JSON|lone UTF-16 surrogate",
+                    ):
+                        proof.load_json(path, "strict fixture")
+
+    def test_strict_json_loader_accepts_unicode_astral_scalars(self) -> None:
+        cases = (
+            '{"key":"😀","😀":"value"}'.encode("utf-8"),
+            b'{"key":"\\ud83d\\ude00","\\ud83d\\ude00":"value"}',
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = pathlib.Path(temporary) / "input.json"
+                    path.write_bytes(raw)
+                    value, observed = proof.load_json(path, "strict fixture")
+                    self.assertEqual(observed, raw)
+                    self.assertEqual(value, {"key": "😀", "😀": "value"})
+
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW is required")
+    def test_strict_json_loader_retains_nofollow_safety(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            target = write(root, "target.json", b'{"safe":true}')
+            link = root / "link.json"
+            link.symlink_to(target.name)
+            with self.assertRaisesRegex(
+                proof.ProofGateError,
+                "cannot open regular file",
+            ):
+                proof.load_json(link, "strict fixture")
+
+    def test_strict_json_cli_blocks_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write(root, "invalid.json", b'{"value":"\\ud800"}')
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    "-B",
+                    str(ROOT / "tools/qikvrt_zenodo_machine_proof.py"),
+                    "--proof-bundle",
+                    "invalid.json",
+                ],
+                cwd=root,
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("BLOCK: invalid JSON", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
     maxDiff = None
 
     def fixture(self, root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
