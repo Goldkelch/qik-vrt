@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT stable audio runtime export transport
+
+on:
+  push:
+    branches:
+      - "audio-runtime-export-ingolf-20260803-v1"
+    paths:
+      - ".github/workflows/qikvrt_audio_runtime_export_stable.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-stable-audio-runtime-export
+  cancel-in-progress: false
+
+jobs:
+  export-runtime:
+    if: github.ref_name == 'audio-runtime-export-ingolf-20260803-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact transport head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/offline-audio-transcription/package-lock.json
+
+      - name: Install and test the repository-owned audio tool
+        working-directory: tools/offline-audio-transcription
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          node --version
+
+      - name: Install and hash-verify the declared speech model
+        working-directory: tools/offline-audio-transcription
+        env:
+          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+        shell: bash
+        run: ./scripts/install-model.sh
+
+      - name: Stage self-describing ephemeral runtime bundle
+        env:
+          MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
+          BUNDLE_DIR: ${{ runner.temp }}/qikvrt-audio-runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const root = process.env.GITHUB_WORKSPACE;
+          const modelDir = process.env.MODEL_DIR;
+          const bundleDir = process.env.BUNDLE_DIR;
+          const toolSource = path.join(root, 'tools', 'offline-audio-transcription');
+          const receiptPath = path.join(bundleDir, 'RUNTIME_BUNDLE_RECEIPT.json');
+
+          fs.mkdirSync(bundleDir, { recursive: true, mode: 0o700 });
+          fs.mkdirSync(path.join(bundleDir, 'bin'), { recursive: true, mode: 0o700 });
+          fs.cpSync(toolSource, path.join(bundleDir, 'tool'), { recursive: true, dereference: true });
+          fs.cpSync(modelDir, path.join(bundleDir, 'model'), { recursive: true, dereference: true });
+          fs.copyFileSync(process.execPath, path.join(bundleDir, 'bin', 'node'));
+          fs.chmodSync(path.join(bundleDir, 'bin', 'node'), 0o755);
+
+          const entries = [];
+          function walk(current) {
+            for (const name of fs.readdirSync(current).sort()) {
+              const absolute = path.join(current, name);
+              const stat = fs.lstatSync(absolute);
+              if (stat.isDirectory()) walk(absolute);
+              else if (stat.isFile() && absolute !== receiptPath) {
+                const bytes = fs.readFileSync(absolute);
+                entries.push({
+                  path: path.relative(bundleDir, absolute).split(path.sep).join('/'),
+                  bytes: bytes.length,
+                  sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+                  executable: Boolean(stat.mode & 0o111),
+                });
+              } else if (stat.isSymbolicLink()) {
+                throw new Error(`unexpected symbolic link after dereferenced copy: ${absolute}`);
+              }
+            }
+          }
+          walk(bundleDir);
+          const nodeEntry = entries.find((entry) => entry.path === 'bin/node');
+          const receipt = {
+            schema: 'qikvrt-offline-audio-runtime-bundle/1.0',
+            repository: process.env.GITHUB_REPOSITORY,
+            source_sha: process.env.GITHUB_SHA,
+            source_ref: process.env.GITHUB_REF,
+            run_id: process.env.GITHUB_RUN_ID,
+            runner_os: process.platform,
+            runner_arch: process.arch,
+            node_version: process.version,
+            node_exec_sha256: nodeEntry.sha256,
+            model_authority: 'tools/offline-audio-transcription/models/whisper-base-int8/MODEL.json',
+            package_lock: 'tools/offline-audio-transcription/package-lock.json',
+            source_audio_included: false,
+            effect_state: 'EFFECT_ACK_CONTINUE',
+            ordinary_release: false,
+            files: entries,
+          };
+          fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+          console.log(`runtime_bundle_files=${entries.length + 1}`);
+          console.log(`runtime_bundle_bytes=${entries.reduce((sum, entry) => sum + entry.bytes, 0)}`);
+          NODE
+
+      - name: Upload verified runtime bundle without source audio
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-offline-audio-runtime
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: true
+          path: ${{ runner.temp }}/qikvrt-audio-runtime/**
+
+      - name: Record bounded transport receipt
+        shell: bash
+        run: |
+          {
+            echo "## QIK-VRT stable offline audio runtime export"
+            echo
+            echo "- Source head: \`${GITHUB_SHA}\`"
+            echo "- Node: \`$(node --version)\`"
+            echo "- Model files: verified by the repository installer"
+            echo "- Source audio included: no"
+            echo "- Effect state: \`EFFECT_ACK_CONTINUE\`"
+            echo "- Ordinary release: \`false\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Remove staged runtime from the runner
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/qikvrt-audio-runtime" "${RUNNER_TEMP}/qikvrt-audio-model"
