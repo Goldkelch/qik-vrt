@@ -203,14 +203,14 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", self.workflow)
         self.assertIn("github.event.forced == false", self.workflow)
 
-    def test_r10_push_and_run_attempt_are_exactly_one_shot(self) -> None:
+    def test_r11_push_and_run_attempt_are_exactly_one_shot(self) -> None:
         for gate in (
             "github.run_attempt == 1",
             "github.event.created == false",
             "github.event.deleted == false",
             "github.event.forced == false",
             "github.event.before == "
-            "'59ed0836a55d37c20ed9ffeca558414bad6c1a01'",
+            "'507f4f30b694df3a415194b2c2cae41a0922b6d9'",
             "github.event.after == github.sha",
             'test "$GITHUB_RUN_ATTEMPT" = "1"',
             'test "${{ github.event.before }}" = '
@@ -364,7 +364,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             ],
         )
 
-    def test_r10_is_exact_direct_child_of_r9_with_full_lineage(self) -> None:
+    def test_r11_is_exact_direct_child_of_r10_with_full_lineage(self) -> None:
         bindings = dict(
             re.findall(
                 r"(?m)^\s*(EXPECTED_CONTROLLER_[A-Z_]+):\s*([0-9a-f]{40})\s*$",
@@ -378,33 +378,36 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
                     "bad1a0558b88b9bc13a6b47fe621ac27d8bfaa62"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR": (
-                    "59ed0836a55d37c20ed9ffeca558414bad6c1a01"
+                    "507f4f30b694df3a415194b2c2cae41a0922b6d9"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_TREE": (
-                    "0376d2187f1b5898217e06e6a83f9538a763c7db"
+                    "97939ac05a0c1b74a2d106d6f6aa1d7dbdfc2298"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_PARENT": (
-                    "6edde9cbcc0fb57cd29ab71de6718228cc258d80"
+                    "59ed0836a55d37c20ed9ffeca558414bad6c1a01"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GRANDPARENT": (
-                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
+                    "6edde9cbcc0fb57cd29ab71de6718228cc258d80"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GRANDPARENT": (
-                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
+                    "d941ca6b792d569b2c37c571123c7524a53c33fd"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GRANDPARENT": (
-                    "8db28488afa35549eea640f40f98321c1e56a4e0"
+                    "eec6f14ad937e15764d28ccf4fc5afef0c198236"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
+                    "8db28488afa35549eea640f40f98321c1e56a4e0"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
+                    "dfcf28f9f48b5857ef3b4ef50f979d9a1979be08"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_GREAT_GREAT_GREAT_GREAT_GREAT_GRANDPARENT": (
-                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                    "89fa9a49a73a7194ccdbed080e9dbdc26a506d5e"
                 ),
                 "EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT": (
+                    "0d104a2692be53f47f2f200d710d2190dfa2f46d"
+                ),
+                "EXPECTED_CONTROLLER_PREDECESSOR_SEVENTH_GREAT_GRANDPARENT": (
                     "4e794afb21c8e5a31ff713b15b77890bbbd950c4"
                 ),
             },
@@ -481,13 +484,19 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn(
             'git -C controller show -s --format=%P \\\n'
             '              "$EXPECTED_CONTROLLER_PREDECESSOR_SIXTH_GREAT_GRANDPARENT"\n'
+            '          )" = "$EXPECTED_CONTROLLER_PREDECESSOR_SEVENTH_GREAT_GRANDPARENT"',
+            self.workflow,
+        )
+        self.assertIn(
+            'git -C controller show -s --format=%P \\\n'
+            '              "$EXPECTED_CONTROLLER_PREDECESSOR_SEVENTH_GREAT_GRANDPARENT"\n'
             '          )" = "$EXPECTED_CONTROLLER_PARENT"',
             self.workflow,
         )
 
     def test_observe_step_does_not_read_its_own_outputs(self) -> None:
         step_start = self.workflow.index(
-            "      - name: Observe exact R9 normalizations using two Zenodo GETs only"
+            "      - name: Observe exact R10 private draft shape using two Zenodo GETs only"
         )
         step_end = self.workflow.index("\n      - name:", step_start + 1)
         observe_step = self.workflow[step_start:step_end]
@@ -533,7 +542,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         )
         self.assertIn("persist-credentials: false", self.workflow)
         self.assertIn(E1, self.workflow)
-        self.assertIn("--observe-normalizations", self.workflow)
+        self.assertIn("--observe-draft-shape", self.workflow)
         self.assertNotIn("--publish", self.workflow)
         self.assertNotIn("run_publisher_with_checkpoints", self.workflow)
         for action in re.findall(
@@ -551,7 +560,7 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         if step_end < 0:
             step_end = len(self.workflow)
         secret_step = self.workflow[step_start:step_end]
-        self.assertIn("--observe-normalizations", secret_step)
+        self.assertIn("--observe-draft-shape", secret_step)
         self.assertNotIn("--publish", secret_step)
         self.assertNotIn("run_publisher_with_checkpoints", secret_step)
         self.assertNotIn(expression, self.workflow[:step_start])
@@ -6403,6 +6412,701 @@ class VRTCoreH3R10NormalizationObservationTests(unittest.TestCase):
         self.assertEqual(result["report"]["effect_boundary"]["zenodo_mutation"], False)
 
 
+class VRTCoreH3R11DraftShapeObservationTests(unittest.TestCase):
+    TOKEN = VRTCoreH3R10NormalizationObservationTests.TOKEN
+    GITHUB_TOKEN = VRTCoreH3R10NormalizationObservationTests.GITHUB_TOKEN
+
+    @staticmethod
+    def manifest() -> dict[str, Any]:
+        return VRTCoreH3R10NormalizationObservationTests.manifest()
+
+    @staticmethod
+    def c2() -> dict[str, Any]:
+        return VRTCoreH3R10NormalizationObservationTests.c2()
+
+    @staticmethod
+    def exact_c2() -> tuple[bytes, dict[str, Any]]:
+        incident = recovery.R10_DRAFT_SHAPE_INCIDENT
+        raw = subprocess.check_output(
+            [
+                "git",
+                "show",
+                str(incident["c2"])
+                + ":"
+                + recovery.EVIDENCE_RELATIVE.as_posix(),
+            ],
+            cwd=ROOT,
+        )
+        return raw, json.loads(raw.decode("utf-8"))
+
+    @staticmethod
+    def draft() -> dict[str, Any]:
+        return VRTCoreH3R10NormalizationObservationTests.draft()
+
+    def observe(
+        self,
+        directory: str,
+        values: list[Any],
+        *,
+        output_name: str = "draft-shape.json",
+    ) -> tuple[dict[str, Any], Any, list[str], pathlib.Path]:
+        client = VRTCoreH3R10NormalizationObservationTests.Client(values)
+        boundaries: list[str] = []
+        output = pathlib.Path(directory) / output_name
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_TOKEN": self.GITHUB_TOKEN, "GH_TOKEN": ""},
+            clear=False,
+        ):
+            result = recovery.observe_r11_draft_shape(
+                self.manifest(),
+                self.c2(),
+                client,
+                output,
+                token=self.TOKEN,
+                controller="c" * 40,
+                recheck_boundary=lambda: boundaries.append("boundary"),
+            )
+        return result, client, boundaries, output
+
+    def test_exactly_two_gets_persist_canonical_0600_allowlisted_receipt(
+        self,
+    ) -> None:
+        value = self.draft()
+        with tempfile.TemporaryDirectory() as directory:
+            result, client, boundaries, output = self.observe(
+                directory,
+                [value, copy.deepcopy(value)],
+            )
+            self.assertEqual(
+                client.calls,
+                [
+                    (
+                        "GET",
+                        "/api/deposit/depositions/21763614",
+                        {
+                            "accept": (200,),
+                            "parse_json": False,
+                            "max_response_bytes": 512 * 1024,
+                        },
+                    ),
+                    (
+                        "GET",
+                        "/api/deposit/depositions/21763614",
+                        {
+                            "accept": (200,),
+                            "parse_json": False,
+                            "max_response_bytes": 512 * 1024,
+                        },
+                    ),
+                ],
+            )
+            self.assertEqual(boundaries, ["boundary"] * 4)
+            self.assertEqual(result["request_count"], 2)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            raw = output.read_bytes()
+            report = json.loads(raw.decode("utf-8"))
+            self.assertEqual(
+                raw,
+                (
+                    json.dumps(
+                        report,
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8"),
+            )
+            self.assertEqual(
+                report["schema"],
+                "qikvrt_vrtcore_h3_r11_draft_shape_observation_v1",
+            )
+            self.assertTrue(report["read_only"])
+            self.assertTrue(report["comparison"]["safe_projection_stable"])
+            self.assertFalse(
+                report["allowlist"]["arbitrary_response_values_persisted"]
+            )
+            self.assertFalse(report["allowlist"]["raw_response_bytes_persisted"])
+            self.assertFalse(
+                report["allowlist"]["raw_response_sha256_persisted"]
+            )
+            self.assertFalse(report["binding"]["r10_raw_log_identity_claimed"])
+            self.assertEqual(
+                report["binding"]["r10_failure_marker"],
+                "BLOCK: R10 response is not the exact empty editable C2 draft",
+            )
+            self.assertFalse(report["effect_boundary"]["zenodo_mutation"])
+            self.assertFalse(
+                report["effect_boundary"]["recovery_checkpoint_advanced"]
+            )
+            self.assertIn(
+                "R11_EVENT_ATTEMPT_ONE_ONLY",
+                report["governance_boundaries"],
+            )
+            self.assertIn(
+                (
+                    "R11_GET_ONLY_EVENT_GATE_DOES_NOT_CLAIM_"
+                    "GLOBAL_REPLAY_EXCLUSION"
+                ),
+                report["governance_boundaries"],
+            )
+            self.assertNotIn(
+                "R10_RUN_MUST_NOT_BE_RERUN",
+                report["governance_boundaries"],
+            )
+            link_projection = report["observations"][0]["safe_projection"]
+            link_projection = link_projection["links"]["fields"]["bucket"]
+            self.assertEqual(
+                set(link_projection),
+                {"present", "json_type", "classification"},
+            )
+            for forbidden in (
+                self.TOKEN,
+                self.GITHUB_TOKEN,
+                "n" * 64,
+                "AUTHORIZE_EXACT_UPLOAD " + "s" * 96,
+                "12345678-1234-1234-1234-123456789abc",
+            ):
+                self.assertNotIn(forbidden.encode("utf-8"), raw)
+
+    def test_exact_real_c2_public_bindings_do_not_block_receipt(self) -> None:
+        c2_raw, c2 = self.exact_c2()
+        incident = recovery.R10_DRAFT_SHAPE_INCIDENT
+        self.assertEqual(len(c2_raw), incident["c2_evidence_bytes"])
+        self.assertEqual(
+            hashlib.sha256(c2_raw).hexdigest(),
+            incident["c2_evidence_sha256"],
+        )
+        sensitive = set(
+            recovery._r11_sensitive_values(
+                self.manifest()["owner_authorization"],
+                c2,
+            )
+        )
+        exact_statement = c2["owner_authorization"]["authorization_event"][
+            "exact_statement"
+        ]
+        self.assertIn(exact_statement, sensitive)
+        public_bindings = {
+            c2["binding"]["authorization_id"],
+            c2["binding"]["consumption_key"]["value"],
+            c2["binding"]["execution_head"],
+            c2["binding"]["publication_id"],
+            c2["binding"]["source_head"],
+            c2["binding"]["statement_sha256"],
+            c2["owner_authorization"]["nonce_digest"]["value"],
+            c2["remote_consumption"]["ref"],
+            c2["remote_consumption"]["tag_object"],
+            c2["repository_commit"],
+            c2["source_head"],
+        }
+        self.assertTrue(public_bindings.isdisjoint(sensitive))
+
+        client = VRTCoreH3R10NormalizationObservationTests.Client(
+            [self.draft(), self.draft()]
+        )
+        boundaries: list[str] = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"GITHUB_TOKEN": self.GITHUB_TOKEN, "GH_TOKEN": ""},
+            clear=False,
+        ):
+            output = pathlib.Path(directory) / "draft-shape.json"
+            result = recovery.observe_r11_draft_shape(
+                self.manifest(),
+                c2,
+                client,
+                output,
+                token=self.TOKEN,
+                controller="c" * 40,
+                recheck_boundary=lambda: boundaries.append("boundary"),
+            )
+            persisted = output.read_bytes()
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(boundaries, ["boundary"] * 4)
+        self.assertEqual(result["report"]["binding"]["e1"], E1)
+        self.assertIn(E1.encode("ascii"), persisted)
+        self.assertNotIn(exact_statement.encode("utf-8"), persisted)
+
+    def test_different_response_shapes_are_persisted_before_block_boundary(
+        self,
+    ) -> None:
+        first = self.draft()
+        second = self.draft()
+        second["submitted"] = True
+        second["state"] = "done"
+        second["files"] = [{"secret_name": "private.bin"}]
+        second["unknown-private-field"] = "must-not-persist"
+        with tempfile.TemporaryDirectory() as directory:
+            result, client, boundaries, output = self.observe(
+                directory,
+                [first, second],
+            )
+            self.assertEqual([call[0] for call in client.calls], ["GET", "GET"])
+            self.assertEqual(boundaries, ["boundary"] * 4)
+            self.assertTrue(output.is_file())
+            report = result["report"]
+            self.assertFalse(report["comparison"]["safe_projection_stable"])
+            self.assertTrue(
+                report["comparison"]["differing_safe_projection_paths"]
+            )
+            self.assertFalse(
+                report["comparison"]["authorization_candidate_identified"]
+            )
+            self.assertEqual(
+                report["observations"][1]["safe_projection"]["files"]["count"],
+                1,
+            )
+            raw = output.read_bytes()
+            self.assertNotIn(b"private.bin", raw)
+            self.assertNotIn(b"unknown-private-field", raw)
+            self.assertNotIn(b"must-not-persist", raw)
+
+    def test_non_object_json_shape_still_persists_safe_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result, client, _boundaries, output = self.observe(
+                directory,
+                [
+                    ["raw-private-value", {"raw-private-key": "raw-nested-value"}],
+                    {"raw-unlisted-key": True},
+                ],
+            )
+            self.assertEqual(len(client.calls), 2)
+            self.assertTrue(output.is_file())
+            report = result["report"]
+            self.assertEqual(
+                report["observations"][0]["safe_projection"],
+                {
+                    "root_json_type": "array",
+                    "root_is_object": False,
+                    "decision_facts": {
+                        "expected_record_identity": False,
+                        "empty_editable_draft": False,
+                        "immutable_metadata_identity_compatible": False,
+                        "bounded_metadata_normalization": False,
+                        "metadata_doi_compatible": False,
+                        "identity_links_compatible": False,
+                    },
+                },
+            )
+            raw = output.read_bytes()
+            for forbidden in (
+                b"raw-private-value",
+                b"raw-private-key",
+                b"raw-nested-value",
+                b"raw-unlisted-key",
+            ):
+                self.assertNotIn(forbidden, raw)
+
+    def test_scalar_and_invalid_json_shapes_still_persist_safe_receipt(
+        self,
+    ) -> None:
+        class RawClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, dict[str, Any]]] = []
+                self.responses = [b'"private scalar"', b'{invalid-json']
+
+            def request(
+                self,
+                method: str,
+                path: str,
+                **kwargs: Any,
+            ) -> tuple[Any, dict[str, Any]]:
+                self.calls.append((method, path, dict(kwargs)))
+                raw = self.responses[len(self.calls) - 1]
+                return types.SimpleNamespace(status=200, body=raw), {}
+
+        client = RawClient()
+        boundaries: list[str] = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"GITHUB_TOKEN": self.GITHUB_TOKEN, "GH_TOKEN": ""},
+            clear=False,
+        ):
+            output = pathlib.Path(directory) / "draft-shape.json"
+            result = recovery.observe_r11_draft_shape(
+                self.manifest(),
+                self.c2(),
+                client,
+                output,
+                token=self.TOKEN,
+                controller="c" * 40,
+                recheck_boundary=lambda: boundaries.append("boundary"),
+            )
+            self.assertTrue(output.is_file())
+            raw = output.read_bytes()
+        self.assertEqual([call[0] for call in client.calls], ["GET", "GET"])
+        self.assertTrue(all(call[2]["parse_json"] is False for call in client.calls))
+        self.assertEqual(boundaries, ["boundary"] * 4)
+        observations = result["report"]["observations"]
+        self.assertEqual(observations[0]["root_json_type"], "string")
+        self.assertEqual(observations[0]["parse_classification"], "STRICT_JSON")
+        self.assertEqual(observations[1]["root_json_type"], "null")
+        self.assertEqual(
+            observations[1]["parse_classification"],
+            "INVALID_STRICT_JSON",
+        )
+        self.assertFalse(observations[1]["strict_json"])
+        self.assertNotIn(b"private scalar", raw)
+        self.assertNotIn(b"invalid-json", raw)
+
+    def test_credential_in_allowlisted_description_is_redacted_not_lost(
+        self,
+    ) -> None:
+        value = self.draft()
+        value["metadata"]["description"] = "prefix " + self.TOKEN + " suffix"
+        with tempfile.TemporaryDirectory() as directory:
+            result, _client, _boundaries, output = self.observe(
+                directory,
+                [value, copy.deepcopy(value)],
+            )
+            self.assertTrue(output.is_file())
+            raw = output.read_bytes()
+            self.assertNotIn(self.TOKEN.encode("utf-8"), raw)
+            descriptor = result["report"]["observations"][0]["safe_projection"]
+            descriptor = descriptor["metadata"]["fields"]["description"]
+            self.assertTrue(descriptor["redacted_due_to_credential"])
+            self.assertIsNone(descriptor["canonical_json_sha256"])
+            self.assertTrue(
+                result["report"]["observations"][0][
+                    "credential_material_detected"
+                ]
+            )
+            self.assertFalse(
+                result["report"]["comparison"][
+                    "authorization_candidate_identified"
+                ]
+            )
+
+    def test_candidate_rejects_credentials_when_all_shape_facts_match(
+        self,
+    ) -> None:
+        value = self.draft()
+        value["metadata"]["description"] = self.manifest()["metadata"][
+            "description"
+        ]
+        value["links"]["bucket"] = (
+            "https://zenodo.org/api/files/" + self.TOKEN
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result, _client, _boundaries, output = self.observe(
+                directory,
+                [value, copy.deepcopy(value)],
+            )
+            persisted = output.read_bytes()
+        report = result["report"]
+        for observation in report["observations"]:
+            self.assertTrue(observation["credential_material_detected"])
+            self.assertTrue(
+                all(
+                    observation["safe_projection"]["decision_facts"].values()
+                )
+            )
+        self.assertFalse(
+            report["comparison"]["authorization_candidate_identified"]
+        )
+        self.assertNotIn(self.TOKEN.encode("utf-8"), persisted)
+
+    def test_lone_surrogate_is_value_free_and_does_not_abort_receipt(self) -> None:
+        value = self.draft()
+        value["metadata"]["description"] = "\ud800"
+        response_raw = json.dumps(
+            value,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+
+        class RawClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+            def request(
+                self,
+                method: str,
+                path: str,
+                **kwargs: Any,
+            ) -> tuple[Any, dict[str, Any]]:
+                self.calls.append((method, path, dict(kwargs)))
+                return types.SimpleNamespace(status=200, body=response_raw), {}
+
+        client = RawClient()
+        boundaries: list[str] = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"GITHUB_TOKEN": self.GITHUB_TOKEN, "GH_TOKEN": ""},
+            clear=False,
+        ):
+            output = pathlib.Path(directory) / "draft-shape.json"
+            result = recovery.observe_r11_draft_shape(
+                self.manifest(),
+                self.c2(),
+                client,
+                output,
+                token=self.TOKEN,
+                controller="c" * 40,
+                recheck_boundary=lambda: boundaries.append("boundary"),
+            )
+            persisted = output.read_bytes()
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(boundaries, ["boundary"] * 4)
+        descriptor = result["report"]["observations"][0]["safe_projection"]
+        descriptor = descriptor["metadata"]["fields"]["description"]
+        self.assertIsNone(descriptor["canonical_json_bytes"])
+        self.assertIsNone(descriptor["canonical_json_sha256"])
+        self.assertIsNone(descriptor["string_codepoints"])
+        self.assertIsNone(descriptor["string_utf8_bytes"])
+        self.assertNotIn(b"\\ud800", persisted)
+
+    def test_candidate_rejects_metadata_doi_and_identity_link_conflicts(
+        self,
+    ) -> None:
+        cases = {
+            "metadata_doi": (
+                "metadata_doi_compatible",
+                "metadata",
+                "doi",
+                "10.5281/zenodo.99999999",
+            ),
+            "self": (
+                "identity_links_compatible",
+                "links",
+                "self",
+                "https://zenodo.org/api/deposit/depositions/99999999",
+            ),
+            "latest_draft": (
+                "identity_links_compatible",
+                "links",
+                "latest_draft",
+                "https://zenodo.org/api/deposit/depositions/99999999",
+            ),
+            "html": (
+                "identity_links_compatible",
+                "links",
+                "html",
+                "https://zenodo.org/deposit/99999999",
+            ),
+        }
+        for label, (fact, container, key, changed) in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as (
+                directory
+            ):
+                value = self.draft()
+                value[container][key] = changed
+                result, _client, _boundaries, _output = self.observe(
+                    directory,
+                    [value, copy.deepcopy(value)],
+                )
+                report = result["report"]
+                self.assertFalse(
+                    report["comparison"]["authorization_candidate_identified"]
+                )
+                for observation in report["observations"]:
+                    self.assertFalse(
+                        observation["safe_projection"]["decision_facts"][fact]
+                    )
+
+    def test_existing_output_is_rejected_without_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "existing.json"
+            output.write_text("keep", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "refusing to overwrite"):
+                self.observe(
+                    directory,
+                    [self.draft(), self.draft()],
+                    output_name="existing.json",
+                )
+            self.assertEqual(output.read_text(encoding="utf-8"), "keep")
+
+    def test_r11_observer_source_has_no_zenodo_mutation_method(self) -> None:
+        source = inspect.getsource(recovery.observe_r11_draft_shape)
+        self.assertEqual(source.count('client.request(\n            "GET"'), 1)
+        self.assertIn("parse_json=False", source)
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            self.assertNotRegex(source, rf'client\.request\(\s*"{method}"')
+        self.assertNotIn("run_publisher_with_checkpoints", source)
+
+    def test_r10_incident_binds_public_run_job_step_without_raw_log_claim(
+        self,
+    ) -> None:
+        incident = recovery.R10_DRAFT_SHAPE_INCIDENT
+        self.assertEqual(
+            {
+                key: incident[key]
+                for key in (
+                    "controller",
+                    "controller_parent",
+                    "controller_tree",
+                    "run_id",
+                    "job_id",
+                    "run_attempt",
+                    "failure_step",
+                    "failure_marker",
+                )
+            },
+            {
+                "controller": "507f4f30b694df3a415194b2c2cae41a0922b6d9",
+                "controller_parent": "59ed0836a55d37c20ed9ffeca558414bad6c1a01",
+                "controller_tree": "97939ac05a0c1b74a2d106d6f6aa1d7dbdfc2298",
+                "run_id": 30779321919,
+                "job_id": 91580733476,
+                "run_attempt": 1,
+                "failure_step": 7,
+                "failure_marker": (
+                    "BLOCK: R10 response is not the exact empty editable C2 draft"
+                ),
+            },
+        )
+        self.assertNotIn("log_bytes", incident)
+        self.assertNotIn("log_sha256", incident)
+
+        class API:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str]] = []
+
+            def request(
+                self,
+                method: str,
+                path: str,
+                **_kwargs: Any,
+            ) -> tuple[int, dict[str, Any]]:
+                self.calls.append((method, path))
+                base = "/repos/Goldkelch/qik-vrt/actions/runs/30779321919"
+                if path == base:
+                    return 200, {
+                        "id": 30779321919,
+                        "run_attempt": 1,
+                        "event": "push",
+                        "head_sha": incident["controller"],
+                        "head_branch": recovery.EXPECTED["trigger_branch"],
+                        "status": "completed",
+                        "conclusion": "failure",
+                        "name": incident["run_name"],
+                        "path": ".github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml",
+                        "repository": {"full_name": recovery.EXPECTED["repository"]},
+                        "head_repository": {
+                            "full_name": recovery.EXPECTED["repository"]
+                        },
+                    }
+                if path == base + "/jobs?per_page=100":
+                    return 200, {
+                        "jobs": [
+                            {
+                                "id": incident["job_id"],
+                                "name": "recover",
+                                "status": "completed",
+                                "conclusion": "failure",
+                                "head_sha": incident["controller"],
+                                "steps": [
+                                    {
+                                        "number": 7,
+                                        "name": "Observe exact R9 normalizations using two Zenodo GETs only",
+                                        "status": "completed",
+                                        "conclusion": "failure",
+                                    },
+                                    {
+                                        "number": 8,
+                                        "name": "Upload unchanged C2 and bounded R10 observation",
+                                        "status": "completed",
+                                        "conclusion": "skipped",
+                                    },
+                                    {
+                                        "number": 9,
+                                        "name": "Enforce terminal observation-only boundary",
+                                        "status": "completed",
+                                        "conclusion": "failure",
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                raise AssertionError(path)
+
+        api = API()
+        recovery.verify_historical_r10_draft_shape_incident(api)
+        self.assertEqual(
+            api.calls,
+            [
+                (
+                    "GET",
+                    "/repos/Goldkelch/qik-vrt/actions/runs/30779321919",
+                ),
+                (
+                    "GET",
+                    "/repos/Goldkelch/qik-vrt/actions/runs/30779321919/jobs?per_page=100",
+                ),
+            ],
+        )
+
+    def test_r11_execution_gate_requires_exact_direct_r10_child(self) -> None:
+        controller = "a" * 40
+        incident = recovery.R10_DRAFT_SHAPE_INCIDENT
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            event_path = root / "event.json"
+            event = {
+                "ref": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                "before": incident["controller"],
+                "after": controller,
+                "created": False,
+                "deleted": False,
+                "forced": False,
+                "repository": {"full_name": recovery.EXPECTED["repository"]},
+                "head_commit": {"id": controller},
+            }
+            event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            environment = {
+                "GITHUB_SHA": controller,
+                "GITHUB_REPOSITORY": recovery.EXPECTED["repository"],
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REF": "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                "GITHUB_REF_NAME": recovery.EXPECTED["trigger_branch"],
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_EVENT_PATH": str(event_path),
+            }
+            with mock.patch.dict(
+                recovery.os.environ,
+                environment,
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ) as fetch, mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, (str(incident["controller"]) + "\n").encode()),
+            ):
+                self.assertEqual(
+                    recovery._validate_r11_one_shot_execution(root),
+                    controller,
+                )
+            fetch.assert_called_once_with(
+                root,
+                "refs/heads/" + recovery.EXPECTED["trigger_branch"],
+                controller,
+            )
+            event["before"] = "b" * 40
+            event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with mock.patch.dict(
+                recovery.os.environ,
+                environment,
+                clear=True,
+            ), mock.patch.object(
+                recovery,
+                "_fetch_credential_free",
+            ), mock.patch.object(
+                recovery,
+                "_git",
+                return_value=(0, (str(incident["controller"]) + "\n").encode()),
+            ):
+                with self.assertRaisesRegex(SystemExit, "push event differs"):
+                    recovery._validate_r11_one_shot_execution(root)
+
+
 class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
     @staticmethod
     def r9_log_bytes() -> bytes:
@@ -6592,14 +7296,14 @@ class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
                 recovery.R8_DESCRIPTION_NORMALIZATION_INCIDENT[key],
             )
 
-    def test_active_workflow_is_direct_r9_child_and_terminal_get_only(self) -> None:
+    def test_active_workflow_is_direct_r10_child_and_terminal_get_only(self) -> None:
         workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn(
-            "github.event.before == '59ed0836a55d37c20ed9ffeca558414bad6c1a01'",
+            "github.event.before == '507f4f30b694df3a415194b2c2cae41a0922b6d9'",
             workflow,
         )
         self.assertIn(
-            "EXPECTED_CONTROLLER_PREDECESSOR_TREE: 0376d2187f1b5898217e06e6a83f9538a763c7db",
+            "EXPECTED_CONTROLLER_PREDECESSOR_TREE: 97939ac05a0c1b74a2d106d6f6aa1d7dbdfc2298",
             workflow,
         )
         permissions = workflow.split("permissions:\n", 1)[1].split(
@@ -6610,17 +7314,17 @@ class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
         step_start = workflow.rfind("\n      - name:", 0, secret_at)
         step_end = workflow.find("\n      - name:", secret_at)
         secret_step = workflow[step_start:step_end]
-        self.assertIn("--observe-normalizations", secret_step)
+        self.assertIn("--observe-draft-shape", secret_step)
         self.assertNotIn("--publish", secret_step)
         self.assertNotIn("run_publisher_with_checkpoints", secret_step)
         for method in ("PUT", "POST", "PATCH", "DELETE"):
             self.assertNotRegex(secret_step, rf"\b{method}\b")
         self.assertIn("include-hidden-files: true", workflow)
         self.assertIn("if: steps.observe.outcome == 'success'", workflow)
-        self.assertIn("normalization-observation.json", workflow)
+        self.assertIn("draft-shape-observation.json", workflow)
         self.assertIn("zenodo-publication.json", workflow)
         self.assertIn(
-            "BLOCK: R10 observation only; metadata correction, upload, and publication remain unauthorized",
+            "BLOCK: R11 observation receipt persisted; metadata correction, upload, and publication remain unauthorized",
             workflow,
         )
         terminal = workflow.split(
@@ -6631,6 +7335,10 @@ class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
         self.assertIn("set -euo pipefail", terminal)
         self.assertIn('test "${{ steps.observe.outcome }}" = "success"', terminal)
         self.assertIn('test "${{ steps.upload.outcome }}" = "success"', terminal)
+        self.assertIn(
+            'test "${{ steps.observe.outputs.receipt_persisted }}" = "true"',
+            terminal,
+        )
         self.assertIn("stat -c '%a' \"$report\"", terminal)
         self.assertIn(
             "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4",
@@ -6815,11 +7523,11 @@ class VRTCoreH3R9IncidentPinsAndR10WorkflowTests(unittest.TestCase):
 
     def test_main_observation_branch_precedes_and_never_calls_publisher(self) -> None:
         source = inspect.getsource(recovery.main)
-        observe_at = source.index("if args.observe_normalizations:")
+        observe_at = source.index("if args.observe_draft_shape:")
         store_at = source.index("store = _controller_store(args)")
         self.assertLess(observe_at, store_at)
         branch = source[observe_at:store_at]
-        self.assertIn("run_r10_normalization_observation", branch)
+        self.assertIn("run_r11_draft_shape_observation", branch)
         self.assertNotIn("run_publisher_with_checkpoints", branch)
         self.assertNotIn("restore_or_bootstrap", branch)
 

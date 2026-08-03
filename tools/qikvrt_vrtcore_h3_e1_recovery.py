@@ -540,6 +540,78 @@ R10_GOVERNANCE_BOUNDARIES = (
     "R10_OBSERVATION_DOES_NOT_ADVANCE_THE_C2_RECEIPT",
 )
 
+R10_DRAFT_SHAPE_INCIDENT: dict[str, Any] = {
+    "controller": "507f4f30b694df3a415194b2c2cae41a0922b6d9",
+    "controller_parent": "59ed0836a55d37c20ed9ffeca558414bad6c1a01",
+    "controller_tree": "97939ac05a0c1b74a2d106d6f6aa1d7dbdfc2298",
+    "run_id": 30779321919,
+    "job_id": 91580733476,
+    "run_attempt": 1,
+    "run_name": "Observe exact VRTCore H3 R9 Zenodo normalizations read only",
+    "failure_step": 7,
+    "failure_marker": "BLOCK: R10 response is not the exact empty editable C2 draft",
+    "c2": "376e869dc3504929b8913146cb29264d3ac585f3",
+    "c2_parent": "deb00ac782cc32080364a3c60d444db6098cd14c",
+    "c2_tree": "80602d60e138c4fab478b09b5d8a8aa75366521f",
+    "c2_evidence_blob": "d81135af4a14c5fa3d67966761f473569c7d2689",
+    "c2_evidence_bytes": 23415,
+    "c2_evidence_sha256": (
+        "3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4"
+    ),
+    "phase": "record_created",
+    "state": publish.CONSUMPTION_STATE,
+    "record_id": 21763614,
+    "doi": "10.5281/zenodo.21763614",
+}
+
+R11_GOVERNANCE_BOUNDARIES = (
+    *R10_GOVERNANCE_BOUNDARIES,
+    "R10_EVENT_ATTEMPT_ONE_ONLY",
+    "R11_EVENT_ATTEMPT_ONE_ONLY",
+    "R11_GET_ONLY_EVENT_GATE_DOES_NOT_CLAIM_GLOBAL_REPLAY_EXCLUSION",
+    "R11_PERFORMS_EXACTLY_TWO_PRIVATE_GETS",
+    "R11_PERFORMS_ZERO_ZENODO_MUTATIONS",
+    "R11_PERSISTS_ONLY_ALLOWLISTED_SAFE_PROJECTIONS",
+    "R11_PERSISTS_SHAPE_DIFFERENCES_BEFORE_BLOCKING",
+    "R11_OBSERVATION_DOES_NOT_AUTHORIZE_METADATA_CORRECTION",
+    "R11_OBSERVATION_DOES_NOT_ADVANCE_THE_C2_RECEIPT",
+)
+
+R11_OBSERVATION_PATH = pathlib.PurePosixPath(
+    ".qikvrt/vrtcore-h3-r11/draft-shape-observation.json"
+)
+R11_ZENODO_BASE_URL = "https://zenodo.org/api"
+R11_ZENODO_DEPOSITION_PATH = "/api/deposit/depositions/21763614"
+R11_MAX_RESPONSE_BYTES = 512 * 1024
+R11_MAX_REPORT_BYTES = 64 * 1024
+R11_SAFE_ROOT_FIELDS = (
+    "id",
+    "record_id",
+    "recid",
+    "doi",
+    "submitted",
+    "state",
+    "files",
+    "metadata",
+    "links",
+)
+R11_SAFE_METADATA_FIELDS = (
+    "title",
+    "version",
+    "creators",
+    "description",
+    "imprint_publisher",
+    "doi",
+    "prereserve_doi",
+)
+R11_SAFE_LINK_FIELDS = (
+    "self",
+    "latest_draft",
+    "html",
+    "latest_draft_html",
+    "bucket",
+)
+
 R10_OBSERVATION_PATH = pathlib.PurePosixPath(
     ".qikvrt/vrtcore-h3-r10/normalization-observation.json"
 )
@@ -2316,6 +2388,86 @@ def verify_historical_r9_metadata_normalization_incident(
             _fail("historical R9 run changed during exact evidence binding")
 
 
+def verify_historical_r10_draft_shape_incident(
+    api: Any,
+) -> None:
+    """Bind R10's public run/job boundary without claiming raw-log identity."""
+    incident = R10_DRAFT_SHAPE_INCIDENT
+    if incident["failure_marker"] != (
+        "BLOCK: R10 response is not the exact empty editable C2 draft"
+    ):
+        _fail("historical R10 authenticated failure marker differs")
+    run_path = "/repos/Goldkelch/qik-vrt/actions/runs/" + str(incident["run_id"])
+    _status, run = _call_api(api, "GET", run_path, accept=(200,))
+    repository = run.get("repository")
+    head_repository = run.get("head_repository")
+    if (
+        run.get("id") != incident["run_id"]
+        or run.get("run_attempt") != incident["run_attempt"]
+        or run.get("event") != "push"
+        or run.get("head_sha") != incident["controller"]
+        or run.get("head_branch") != EXPECTED["trigger_branch"]
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "failure"
+        or run.get("name") != incident["run_name"]
+        or run.get("path")
+        != ".github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml"
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_repository, dict)
+        or head_repository.get("full_name") != EXPECTED["repository"]
+    ):
+        _fail("historical R10 run boundary differs")
+    _status, jobs = _call_api(
+        api,
+        "GET",
+        run_path + "/jobs?per_page=100",
+        accept=(200,),
+    )
+    values = jobs.get("jobs")
+    if not isinstance(values, list) or len(values) != 1:
+        _fail("historical R10 job cardinality differs")
+    job = values[0]
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if (
+        not isinstance(job, dict)
+        or job.get("id") != incident["job_id"]
+        or job.get("name") != "recover"
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "failure"
+        or job.get("head_sha") != incident["controller"]
+        or not isinstance(steps, list)
+    ):
+        _fail("historical R10 job boundary differs")
+    selected = {
+        step.get("number"): {
+            "name": step.get("name"),
+            "status": step.get("status"),
+            "conclusion": step.get("conclusion"),
+        }
+        for step in steps
+        if isinstance(step, dict) and step.get("number") in {7, 8, 9}
+    }
+    if selected != {
+        7: {
+            "name": "Observe exact R9 normalizations using two Zenodo GETs only",
+            "status": "completed",
+            "conclusion": "failure",
+        },
+        8: {
+            "name": "Upload unchanged C2 and bounded R10 observation",
+            "status": "completed",
+            "conclusion": "skipped",
+        },
+        9: {
+            "name": "Enforce terminal observation-only boundary",
+            "status": "completed",
+            "conclusion": "failure",
+        },
+    }:
+        _fail("historical R10 step boundary differs")
+
+
 def _verify_r4_local_object_chain(root: pathlib.Path) -> None:
     incident = R4_UNSENT_CREATE_INCIDENT
     for prefix in ("controller", "c0", "c1"):
@@ -2509,6 +2661,37 @@ def _verify_r9_local_object_chain(root: pathlib.Path) -> None:
         or tree.decode("ascii").strip() != incident["controller_tree"]
     ):
         _fail("R9 metadata-normalization local object chain differs")
+
+
+def _verify_r10_local_object_chain(root: pathlib.Path) -> None:
+    """Bind R10 as the exact no-receipt successor of R9 with unchanged C2."""
+    _verify_r9_local_object_chain(root)
+    incident = R10_DRAFT_SHAPE_INCIDENT
+    canonical = R9_METADATA_NORMALIZATION_INCIDENT
+    for key in (
+        "c2",
+        "c2_parent",
+        "c2_tree",
+        "c2_evidence_blob",
+        "c2_evidence_bytes",
+        "c2_evidence_sha256",
+        "phase",
+        "state",
+        "record_id",
+        "doi",
+    ):
+        if incident[key] != canonical[key]:
+            _fail("R10 unchanged C2 identity differs from the R9 boundary")
+    commit = str(incident["controller"])
+    _status, resolved = _git(root, "rev-parse", "--verify", f"{commit}^{{commit}}")
+    _status, parents = _git(root, "show", "-s", "--format=%P", commit)
+    _status, tree = _git(root, "rev-parse", "--verify", f"{commit}^{{tree}}")
+    if (
+        resolved.decode("ascii").strip() != commit
+        or parents.decode("ascii").strip() != incident["controller_parent"]
+        or tree.decode("ascii").strip() != incident["controller_tree"]
+    ):
+        _fail("R10 draft-shape local object chain differs")
 
 
 def _verify_r8_null_affiliation_evidence(root: pathlib.Path) -> None:
@@ -3263,6 +3446,53 @@ def _validate_r10_one_shot_execution(root: pathlib.Path) -> str:
     _status, parent = _git(root, "show", "-s", "--format=%P", controller)
     if parent.decode("ascii").strip() != incident["controller"]:
         _fail("R10 controller is not the exact single successor of R9")
+    return controller
+
+
+def _validate_r11_one_shot_execution(root: pathlib.Path) -> str:
+    """Bind one non-forced R10 -> R11 push event at run attempt one.
+
+    This GET-only gate does not claim that an external branch rewind could not
+    later emit a distinct equivalent push event.
+    """
+    controller = os.environ.get("GITHUB_SHA", "")
+    event_path_raw = os.environ.get("GITHUB_EVENT_PATH", "")
+    if (
+        HEX40.fullmatch(controller) is None
+        or os.environ.get("GITHUB_REPOSITORY") != EXPECTED["repository"]
+        or os.environ.get("GITHUB_EVENT_NAME") != "push"
+        or os.environ.get("GITHUB_REF")
+        != "refs/heads/" + EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_REF_NAME") != EXPECTED["trigger_branch"]
+        or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+        or not event_path_raw
+    ):
+        _fail("R11 observation execution environment differs")
+    event = _read_json(pathlib.Path(event_path_raw), maximum=2 * 1024 * 1024)
+    repository = event.get("repository")
+    head_commit = event.get("head_commit")
+    incident = R10_DRAFT_SHAPE_INCIDENT
+    if (
+        event.get("ref") != "refs/heads/" + EXPECTED["trigger_branch"]
+        or event.get("before") != incident["controller"]
+        or event.get("after") != controller
+        or event.get("created") is not False
+        or event.get("deleted") is not False
+        or event.get("forced") is not False
+        or not isinstance(repository, dict)
+        or repository.get("full_name") != EXPECTED["repository"]
+        or not isinstance(head_commit, dict)
+        or head_commit.get("id") != controller
+    ):
+        _fail("R11 observation push event differs")
+    _fetch_credential_free(
+        root,
+        "refs/heads/" + EXPECTED["trigger_branch"],
+        controller,
+    )
+    _status, parent = _git(root, "show", "-s", "--format=%P", controller)
+    if parent.decode("ascii").strip() != incident["controller"]:
+        _fail("R11 controller is not the exact single successor of R10")
     return controller
 
 
@@ -4486,6 +4716,66 @@ def _r10_sensitive_values(*values: Any) -> tuple[str, ...]:
     return tuple(sorted(observed))
 
 
+def _r11_sensitive_values(*values: Any) -> tuple[str, ...]:
+    """Select only raw credentials, nonces, and authorization statements.
+
+    R11 persists public bindings such as commit IDs, authorization IDs,
+    consumption refs, and their digests.  Sensitivity therefore belongs to an
+    exact leaf name, never to all descendants of an authorization or
+    consumption container.
+    """
+    observed: set[str] = set()
+    raw_secret_names = {
+        "access_key",
+        "access_token",
+        "api_key",
+        "bearer_token",
+        "client_secret",
+        "credential",
+        "nonce",
+        "password",
+        "private_key",
+        "refresh_token",
+        "secret",
+        "token",
+    }
+
+    def sensitive_leaf_name(key: Any) -> bool:
+        normalized = str(key).strip().lower().replace("-", "_")
+        if normalized in {
+            "auth_statement",
+            "authorization_statement",
+            "exact_statement",
+        } or normalized.endswith("_authorization_statement"):
+            return True
+        return normalized in raw_secret_names or any(
+            normalized.endswith("_" + name) for name in raw_secret_names
+        )
+
+    def add(value: Any) -> None:
+        if not isinstance(value, str) or len(value) < 8:
+            return
+        try:
+            value.encode("utf-8")
+        except UnicodeError:
+            return
+        observed.add(value)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key, nested in value.items():
+                if sensitive_leaf_name(key):
+                    add(nested)
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    for value in values:
+        walk(value)
+    return tuple(sorted(observed))
+
+
 def _r10_validate_draft_snapshot(
     publisher_module: Any,
     manifest: Mapping[str, Any],
@@ -4975,6 +5265,692 @@ def run_r10_normalization_observation(
         controller=controller,
         recheck_boundary=recheck_boundary,
     )
+
+
+def _r11_parse_json_shape(raw: bytes) -> tuple[bool, Any, str]:
+    """Parse bounded strict JSON without turning an unexpected shape into loss."""
+    if not raw:
+        return False, None, "EMPTY_BODY"
+    if len(raw) > R11_MAX_RESPONSE_BYTES:
+        return False, None, "OVERSIZED_BODY"
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate JSON member")
+            value[key] = item
+        return value
+
+    def reject_constant(_value: str) -> Any:
+        raise ValueError("non-finite JSON number")
+
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+        return False, None, "INVALID_STRICT_JSON"
+    return True, value, "STRICT_JSON"
+
+
+def _r11_field_evidence(
+    container: Mapping[str, Any],
+    key: str,
+    *,
+    forbidden: tuple[str, ...],
+) -> dict[str, Any]:
+    """Project one allowlisted field without persisting its value."""
+    if key not in container:
+        return {
+            "present": False,
+            "json_type": "absent",
+            "canonical_json_bytes": 0,
+            "canonical_json_sha256": None,
+            "redacted_due_to_credential": False,
+            "string_codepoints": None,
+            "string_utf8_bytes": None,
+        }
+    value = container.get(key)
+    if isinstance(value, (dict, list)):
+        return {
+            "present": True,
+            "json_type": _r10_json_type(value, present=True),
+            "canonical_json_bytes": None,
+            "canonical_json_sha256": None,
+            "redacted_due_to_credential": False,
+            "string_codepoints": None,
+            "string_utf8_bytes": None,
+        }
+    try:
+        raw = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        return {
+            "present": True,
+            "json_type": _r10_json_type(value, present=True),
+            "canonical_json_bytes": None,
+            "canonical_json_sha256": None,
+            "redacted_due_to_credential": False,
+            "string_codepoints": None,
+            "string_utf8_bytes": None,
+        }
+    redacted = any(
+        secret.encode("utf-8") in raw
+        for secret in forbidden
+        if isinstance(secret, str) and secret
+    )
+    return {
+        "present": True,
+        "json_type": _r10_json_type(value, present=True),
+        "canonical_json_bytes": len(raw),
+        "canonical_json_sha256": (
+            None if redacted else hashlib.sha256(raw).hexdigest()
+        ),
+        "redacted_due_to_credential": redacted,
+        "string_codepoints": len(value) if isinstance(value, str) else None,
+        "string_utf8_bytes": (
+            len(value.encode("utf-8")) if isinstance(value, str) else None
+        ),
+    }
+
+
+def _r11_integer_match(value: Any, expected: int) -> dict[str, Any]:
+    normalized = (
+        int(value)
+        if isinstance(value, str) and value.isdecimal() and len(value) <= 20
+        else value
+    )
+    valid = isinstance(normalized, int) and not isinstance(normalized, bool)
+    return {
+        "integer_or_decimal_string": valid,
+        "matches_expected": valid and normalized == expected,
+    }
+
+
+def _r11_presence_type(container: Mapping[str, Any], key: str) -> dict[str, Any]:
+    present = key in container
+    return {
+        "present": present,
+        "json_type": _r10_json_type(container.get(key), present=present),
+    }
+
+
+def _r11_link_classification(key: str, value: Any) -> str:
+    if not isinstance(value, str):
+        return "NON_STRING"
+    try:
+        parts = urllib.parse.urlsplit(value)
+        port = parts.port
+    except ValueError:
+        return "INVALID_URL"
+    if (
+        parts.scheme != "https"
+        or (parts.hostname or "").lower() != "zenodo.org"
+        or parts.username is not None
+        or parts.password is not None
+        or port not in {None, 443}
+        or parts.query
+        or parts.fragment
+    ):
+        return "OUTSIDE_EXACT_ZENODO_ORIGIN"
+    path = parts.path.rstrip("/")
+    expected_paths = {
+        "self": "/api/deposit/depositions/21763614",
+        "latest_draft": "/api/deposit/depositions/21763614",
+        "html": "/deposit/21763614",
+        "latest_draft_html": "/deposit/21763614",
+    }
+    if key == "bucket":
+        if re.fullmatch(
+            r"/api/files/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+            r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            path,
+        ):
+            return "EXACT_ZENODO_BUCKET_SHAPE"
+        return "OTHER_ZENODO_PATH"
+    return "EXACT_EXPECTED_PATH" if path == expected_paths[key] else "OTHER_ZENODO_PATH"
+
+
+def _r11_snapshot_projection(
+    value: Any,
+    manifest: Mapping[str, Any],
+    *,
+    forbidden: tuple[str, ...],
+) -> dict[str, Any]:
+    """Return an allowlisted value-free projection of one private response."""
+    if not isinstance(value, dict):
+        return {
+            "root_json_type": _r10_json_type(value, present=True),
+            "root_is_object": False,
+            "decision_facts": {
+                "expected_record_identity": False,
+                "empty_editable_draft": False,
+                "immutable_metadata_identity_compatible": False,
+                "bounded_metadata_normalization": False,
+                "metadata_doi_compatible": False,
+                "identity_links_compatible": False,
+            },
+        }
+    expected_metadata = manifest["metadata"]
+    metadata = value.get("metadata")
+    metadata_map = metadata if isinstance(metadata, dict) else {}
+    links = value.get("links")
+    links_map = links if isinstance(links, dict) else {}
+    files = value.get("files")
+    creators = metadata_map.get("creators")
+    if creators == expected_metadata.get("creators"):
+        creators_classification = "EXACT"
+    elif _creators_match_r8_null_affiliation_normalization(
+        creators,
+        expected_metadata.get("creators"),
+    ):
+        creators_classification = "NULL_AFFILIATION_NORMALIZED"
+    else:
+        creators_classification = "UNKNOWN"
+    description_classification = _r10_description_classification(
+        metadata_map.get("description"),
+        expected_metadata.get("description"),
+    )
+    imprint_classification = _r10_imprint_publisher_classification(metadata_map)
+    aliases = {
+        key: {
+            **_r11_field_evidence(value, key, forbidden=forbidden),
+            **_r11_integer_match(value.get(key), 21763614),
+        }
+        for key in ("id", "record_id", "recid")
+    }
+    metadata_fields = {
+        key: _r11_field_evidence(metadata_map, key, forbidden=forbidden)
+        for key in R11_SAFE_METADATA_FIELDS
+    }
+    link_fields = {
+        key: {
+            **_r11_presence_type(links_map, key),
+            "classification": (
+                "ABSENT"
+                if key not in links_map
+                else _r11_link_classification(key, links_map.get(key))
+            ),
+        }
+        for key in R11_SAFE_LINK_FIELDS
+    }
+    reserved = metadata_map.get("prereserve_doi")
+    reserved_map = reserved if isinstance(reserved, dict) else {}
+    expected_record_identity = (
+        aliases["id"]["matches_expected"]
+        and value.get("doi") == R10_DRAFT_SHAPE_INCIDENT["doi"]
+        and (
+            "record_id" not in value
+            or aliases["record_id"]["matches_expected"]
+        )
+        and ("recid" not in value or aliases["recid"]["matches_expected"])
+    )
+    reserved_identity = (
+        isinstance(reserved, dict)
+        and reserved_map.get("doi") == R10_DRAFT_SHAPE_INCIDENT["doi"]
+        and (
+            "recid" not in reserved_map
+            or _r11_integer_match(
+                reserved_map.get("recid"),
+                21763614,
+            )["matches_expected"]
+        )
+    )
+    expected_record_identity = bool(expected_record_identity) and bool(
+        reserved_identity
+    )
+    empty_editable_draft = (
+        value.get("submitted") is False
+        and value.get("state") == "unsubmitted"
+        and isinstance(files, list)
+        and len(files) == 0
+    )
+    immutable_identity = (
+        metadata_map.get("title") == expected_metadata.get("title")
+        and metadata_map.get("version") == expected_metadata.get("version")
+        and creators_classification
+        in {"EXACT", "NULL_AFFILIATION_NORMALIZED"}
+    )
+    bounded_metadata = (
+        description_classification != "UNKNOWN"
+        and imprint_classification != "UNKNOWN"
+    )
+    metadata_doi_compatible = (
+        "doi" not in metadata_map
+        or metadata_map.get("doi") == R10_DRAFT_SHAPE_INCIDENT["doi"]
+    )
+    identity_link_keys = (
+        "self",
+        "latest_draft",
+        "html",
+        "latest_draft_html",
+    )
+    identity_links_compatible = (
+        ("links" not in value or isinstance(links, dict))
+        and all(
+            key not in links_map
+            or link_fields[key]["classification"] == "EXACT_EXPECTED_PATH"
+            for key in identity_link_keys
+        )
+    )
+    return {
+        "root_json_type": "object",
+        "root_is_object": True,
+        "root_key_count": len(value),
+        "root_unknown_key_count": len(set(value) - set(R11_SAFE_ROOT_FIELDS)),
+        "root_fields": {
+            key: _r11_presence_type(value, key)
+            for key in R11_SAFE_ROOT_FIELDS
+        },
+        "record_aliases": aliases,
+        "doi_matches_expected": value.get("doi")
+        == R10_DRAFT_SHAPE_INCIDENT["doi"],
+        "submitted_is_false": value.get("submitted") is False,
+        "state_is_unsubmitted": value.get("state") == "unsubmitted",
+        "files": {
+            "is_array": isinstance(files, list),
+            "count": len(files) if isinstance(files, list) else None,
+            "empty": isinstance(files, list) and len(files) == 0,
+        },
+        "metadata": {
+            "is_object": isinstance(metadata, dict),
+            "key_count": len(metadata_map) if isinstance(metadata, dict) else None,
+            "unknown_key_count": (
+                len(set(metadata_map) - set(R11_SAFE_METADATA_FIELDS))
+                if isinstance(metadata, dict)
+                else None
+            ),
+            "fields": metadata_fields,
+            "title_matches_expected": metadata_map.get("title")
+            == expected_metadata.get("title"),
+            "version_matches_expected": metadata_map.get("version")
+            == expected_metadata.get("version"),
+            "creators_classification": creators_classification,
+            "description_classification": description_classification,
+            "imprint_publisher_classification": imprint_classification,
+            "metadata_doi_matches_expected": metadata_doi_compatible,
+            "prereserve_doi_is_object": isinstance(reserved, dict),
+            "prereserve_identity_matches_expected": reserved_identity,
+        },
+        "links": {
+            "is_object": isinstance(links, dict),
+            "key_count": len(links_map) if isinstance(links, dict) else None,
+            "unknown_key_count": (
+                len(set(links_map) - set(R11_SAFE_LINK_FIELDS))
+                if isinstance(links, dict)
+                else None
+            ),
+            "fields": link_fields,
+        },
+        "decision_facts": {
+            "expected_record_identity": expected_record_identity,
+            "empty_editable_draft": empty_editable_draft,
+            "immutable_metadata_identity_compatible": immutable_identity,
+            "bounded_metadata_normalization": bounded_metadata,
+            "metadata_doi_compatible": metadata_doi_compatible,
+            "identity_links_compatible": identity_links_compatible,
+        },
+    }
+
+
+def _r11_safe_diff_paths(left: Any, right: Any, prefix: str = "") -> list[str]:
+    if type(left) is not type(right):
+        return [prefix or "$"]
+    if isinstance(left, dict):
+        result: list[str] = []
+        for key in sorted(set(left) | set(right)):
+            path = key if not prefix else prefix + "." + key
+            if key not in left or key not in right:
+                result.append(path)
+            else:
+                result.extend(_r11_safe_diff_paths(left[key], right[key], path))
+        return result
+    if isinstance(left, list):
+        if len(left) != len(right):
+            return [prefix]
+        result = []
+        for index, (left_item, right_item) in enumerate(zip(left, right)):
+            result.extend(
+                _r11_safe_diff_paths(
+                    left_item,
+                    right_item,
+                    f"{prefix}[{index}]",
+                )
+            )
+        return result
+    return [] if left == right else [prefix]
+
+
+def observe_r11_draft_shape(
+    manifest: Mapping[str, Any],
+    c2_evidence: Mapping[str, Any],
+    client: Any,
+    output_path: pathlib.Path,
+    *,
+    token: str,
+    controller: str,
+    recheck_boundary: Callable[[], None],
+) -> dict[str, Any]:
+    """Persist two GET-only safe projections even when the draft shape differs."""
+    if not isinstance(token, str) or not token:
+        _fail("R11 Zenodo credential is absent")
+    forbidden = _r11_sensitive_values(
+        {
+            "token": token,
+            "github_token": os.environ.get("GITHUB_TOKEN", ""),
+            "gh_token": os.environ.get("GH_TOKEN", ""),
+        },
+        manifest.get("owner_authorization"),
+        c2_evidence,
+    )
+    observations: list[dict[str, Any]] = []
+    projections: list[dict[str, Any]] = []
+    for index in range(2):
+        recheck_boundary()
+        response, _parsed = client.request(
+            "GET",
+            R11_ZENODO_DEPOSITION_PATH,
+            accept=(200,),
+            parse_json=False,
+            max_response_bytes=R11_MAX_RESPONSE_BYTES,
+        )
+        raw = getattr(response, "body", None)
+        if not isinstance(raw, bytes):
+            _fail("R11 Zenodo response bytes are unavailable")
+        strict, value, parse_classification = _r11_parse_json_shape(raw)
+        projection = _r11_snapshot_projection(
+            value,
+            manifest,
+            forbidden=forbidden,
+        )
+        projection_raw = _r10_canonical_json(projection)
+        projections.append(projection)
+        observations.append(
+            {
+                "ordinal": index + 1,
+                "body_bytes": len(raw),
+                "strict_json": strict,
+                "parse_classification": parse_classification,
+                "root_json_type": projection["root_json_type"],
+                "safe_projection_sha256": hashlib.sha256(
+                    projection_raw
+                ).hexdigest(),
+                "credential_material_detected": any(
+                    value.encode("utf-8") in raw for value in forbidden
+                ),
+                "safe_projection": projection,
+            }
+        )
+    recheck_boundary()
+    differences = _r11_safe_diff_paths(projections[0], projections[1])
+    decision_facts = [item["decision_facts"] for item in projections]
+    candidate = (
+        not differences
+        and all(item["expected_record_identity"] for item in decision_facts)
+        and all(item["empty_editable_draft"] for item in decision_facts)
+        and all(
+            item["immutable_metadata_identity_compatible"]
+            for item in decision_facts
+        )
+        and all(item["bounded_metadata_normalization"] for item in decision_facts)
+        and all(item["metadata_doi_compatible"] for item in decision_facts)
+        and all(item["identity_links_compatible"] for item in decision_facts)
+        and not any(
+            item["credential_material_detected"] for item in observations
+        )
+    )
+    report = {
+        "schema": "qikvrt_vrtcore_h3_r11_draft_shape_observation_v1",
+        "operation": "READ_ONLY_PRIVATE_DRAFT_SHAPE_OBSERVATION",
+        "read_only": True,
+        "request": {
+            "api_origin": "https://zenodo.org",
+            "method": "GET",
+            "path": R11_ZENODO_DEPOSITION_PATH,
+            "count": 2,
+            "redirects_followed": False,
+        },
+        "binding": {
+            "controller": controller,
+            "r10_controller": R10_DRAFT_SHAPE_INCIDENT["controller"],
+            "r10_run_id": R10_DRAFT_SHAPE_INCIDENT["run_id"],
+            "r10_job_id": R10_DRAFT_SHAPE_INCIDENT["job_id"],
+            "r10_failure_step": R10_DRAFT_SHAPE_INCIDENT["failure_step"],
+            "r10_failure_marker": R10_DRAFT_SHAPE_INCIDENT["failure_marker"],
+            "r10_raw_log_identity_claimed": False,
+            "e1": EXPECTED["e1"],
+            "e1_tree": EXPECTED["e1_tree"],
+            "manifest_sha256": manifest["manifest_sha256"],
+            "c2_commit": R10_DRAFT_SHAPE_INCIDENT["c2"],
+            "c2_evidence_blob_sha1": R10_DRAFT_SHAPE_INCIDENT[
+                "c2_evidence_blob"
+            ],
+            "c2_evidence_sha256": R10_DRAFT_SHAPE_INCIDENT[
+                "c2_evidence_sha256"
+            ],
+            "checkpoint_phase": c2_evidence["phase"],
+            "record_id": c2_evidence["record_id"],
+            "doi": c2_evidence["doi"],
+        },
+        "allowlist": {
+            "root_fields": list(R11_SAFE_ROOT_FIELDS),
+            "metadata_fields": list(R11_SAFE_METADATA_FIELDS),
+            "link_fields": list(R11_SAFE_LINK_FIELDS),
+            "arbitrary_response_values_persisted": False,
+            "raw_response_bytes_persisted": False,
+            "raw_response_sha256_persisted": False,
+        },
+        "observations": observations,
+        "comparison": {
+            "safe_projection_stable": not differences,
+            "differing_safe_projection_paths": differences,
+            "authorization_candidate_identified": candidate,
+        },
+        "effect_boundary": {
+            "zenodo_mutation": False,
+            "metadata_correction_authorized": False,
+            "file_upload_authorized": False,
+            "publication_authorized": False,
+            "recovery_checkpoint_advanced": False,
+            "terminal_result": "OBSERVATION_RECEIPT_PERSISTED_BLOCKED",
+        },
+        "governance_boundaries": list(R11_GOVERNANCE_BOUNDARIES),
+    }
+    report_raw = (
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if (
+        len(report_raw) > R11_MAX_REPORT_BYTES
+        or any(value.encode("utf-8") in report_raw for value in forbidden)
+    ):
+        _fail("R11 observation report is oversized or contains forbidden material")
+    _write_exclusive_regular(output_path, report_raw)
+    descriptor = os.open(
+        output_path,
+        os.O_RDONLY
+        | (os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0)
+        | (os.O_NOFOLLOW if hasattr(os, "O_NOFOLLOW") else 0),
+    )
+    try:
+        info = os.fstat(descriptor)
+        persisted = b""
+        while len(persisted) <= R11_MAX_REPORT_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(8192, R11_MAX_REPORT_BYTES + 1 - len(persisted)),
+            )
+            if not chunk:
+                break
+            persisted += chunk
+    finally:
+        os.close(descriptor)
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_IMODE(info.st_mode) != 0o600
+        or persisted != report_raw
+    ):
+        _fail("R11 persisted observation readback differs")
+    recheck_boundary()
+    return {
+        "report": report,
+        "sha256": hashlib.sha256(report_raw).hexdigest(),
+        "bytes": len(report_raw),
+        "request_count": 2,
+    }
+
+
+def run_r11_draft_shape_observation(
+    execution_root: pathlib.Path,
+    output_path: pathlib.Path,
+) -> dict[str, Any]:
+    """Bind R10, preserve C2, perform two GETs, and persist a safe receipt."""
+    root = execution_root.resolve()
+    expected_output = root.joinpath(*R11_OBSERVATION_PATH.parts)
+    if pathlib.Path(os.path.abspath(output_path)) != expected_output:
+        _fail("R11 observation output path differs from its exact execution path")
+    parent = root
+    for part in R11_OBSERVATION_PATH.parts[:-1]:
+        parent = parent / part
+        if os.path.lexists(parent):
+            try:
+                parent_info = parent.lstat()
+            except OSError:
+                _fail("R11 observation output parent cannot be inspected")
+            if stat.S_ISLNK(parent_info.st_mode) or not stat.S_ISDIR(
+                parent_info.st_mode
+            ):
+                _fail("R11 observation output parent is not a trusted directory")
+    basis = load_recovery_basis()
+    validate_e1_repository_objects(root, basis)
+    controller = _validate_r11_one_shot_execution(root)
+    incident = R10_DRAFT_SHAPE_INCIDENT
+    _fetch_credential_free(root, EXPECTED["recovery_ref"], str(incident["c2"]))
+    _verify_r10_local_object_chain(root)
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    github_api = GitHubAPI(github_token)
+    verify_historical_r10_draft_shape_incident(github_api)
+    publisher_module = _load_e1_publisher(root)
+    manifest_path = root / MANIFEST_RELATIVE
+    manifest = publisher_module.load_manifest(manifest_path, root)
+    previous_sha = os.environ.get("GITHUB_SHA")
+    try:
+        os.environ["GITHUB_SHA"] = EXPECTED["e1"]
+        with _without_effect_credentials():
+            execution_head = publisher_module._validate_repository_source_head(
+                root,
+                manifest_path,
+                manifest,
+            )
+            publisher_module._validate_origin_repository(
+                root,
+                EXPECTED["repository"],
+            )
+    finally:
+        if previous_sha is None:
+            os.environ.pop("GITHUB_SHA", None)
+        else:
+            os.environ["GITHUB_SHA"] = previous_sha
+    if execution_head != EXPECTED["e1"]:
+        _fail("R11 E1 execution-head gate differs")
+    _status, c2_raw = _git(
+        root,
+        "show",
+        f"{incident['c2']}:{EVIDENCE_RELATIVE.as_posix()}",
+    )
+    if (
+        len(c2_raw) != incident["c2_evidence_bytes"]
+        or hashlib.sha256(c2_raw).hexdigest() != incident["c2_evidence_sha256"]
+    ):
+        _fail("R11 exact C2 recovery evidence bytes differ")
+    c2_evidence = _r10_strict_json_object(c2_raw)
+    c2_evidence = publisher_module._validate_recovery_evidence(
+        c2_evidence,
+        manifest_path,
+        root,
+        manifest,
+        EXPECTED["e1"],
+    )
+    if (
+        c2_evidence.get("phase") != incident["phase"]
+        or c2_evidence.get("state") != incident["state"]
+        or c2_evidence.get("record_id") != incident["record_id"]
+        or c2_evidence.get("doi") != incident["doi"]
+    ):
+        _fail("R11 exact C2 recovery evidence identity differs")
+    checkpoint_path = root / EVIDENCE_RELATIVE
+    _write_exclusive_regular(checkpoint_path, c2_raw)
+    token = os.environ.get(zenodo.TOKEN_ENVIRONMENT_VARIABLE, "")
+    client = zenodo.ZenodoClient(token, R11_ZENODO_BASE_URL)
+    verified = publisher_module.verify_files(manifest, root, token)
+    publisher_module._reject_tokens_in_publication_bytes(
+        manifest_path,
+        root,
+        manifest,
+        verified,
+        {
+            zenodo.TOKEN_ENVIRONMENT_VARIABLE: token,
+            "GITHUB_TOKEN": github_token,
+        },
+    )
+    if token.encode("utf-8") in c2_raw:
+        _fail("R11 exact C2 evidence contains the Zenodo token")
+
+    def recheck_boundary() -> None:
+        expected_main = os.environ.get("EXPECTED_CONTROLLER_PARENT", "")
+        if (
+            HEX40.fullmatch(expected_main) is None
+            or _read_head_ref(github_api, "refs/heads/main") != expected_main
+        ):
+            _fail("R11 main moved across the observation boundary")
+        if (
+            _read_head_ref(
+                github_api,
+                "refs/heads/" + EXPECTED["trigger_branch"],
+            )
+            != controller
+            or _read_head_ref(github_api, EXPECTED["publication_ref"])
+            != EXPECTED["e1"]
+            or _read_head_ref(github_api, EXPECTED["recovery_ref"])
+            != incident["c2"]
+            or _read_head_ref(github_api, EXPECTED["create_post_once_ref"])
+            != R4_UNSENT_CREATE_INCIDENT["c1"]
+        ):
+            _fail("R11 repository refs moved across the observation boundary")
+        remote = _validate_existing_consumption_tag(github_api, manifest)
+        if remote.get("tag_object") != EXPECTED["tag_object"]:
+            _fail("R11 consumption tag moved across the observation boundary")
+
+    result = observe_r11_draft_shape(
+        manifest,
+        c2_evidence,
+        client,
+        output_path,
+        token=token,
+        controller=controller,
+        recheck_boundary=recheck_boundary,
+    )
+    try:
+        persisted_c2 = checkpoint_path.read_bytes()
+    except OSError as exc:
+        _fail(f"R11 cannot re-read exact C2 checkpoint: {exc}")
+    if persisted_c2 != c2_raw:
+        _fail("R11 local C2 checkpoint changed during observation")
+    return result
 
 
 def run_publisher_with_checkpoints(
@@ -5672,6 +6648,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="observe the exact R9 draft twice using Zenodo GET only",
     )
+    operations.add_argument(
+        "--observe-draft-shape",
+        action="store_true",
+        help="persist two safe GET-only projections of the private R10 draft",
+    )
     parser.add_argument("--execution-root", type=pathlib.Path, default=ROOT)
     parser.add_argument("--controller-parent")
     parser.add_argument("--github-output", type=pathlib.Path)
@@ -5717,6 +6698,30 @@ def main(argv: list[str] | None = None) -> int:
             basis = load_recovery_basis()
             validate_e1_repository_objects(args.execution_root.resolve(), basis)
             print("VRTCORE_H3_E1_RECOVERY_BASIS=VALID")
+            return 0
+        if args.observe_draft_shape:
+            if not isinstance(args.observation_output, pathlib.Path):
+                _fail("R11 observation output path is required")
+            result = run_r11_draft_shape_observation(
+                args.execution_root,
+                args.observation_output,
+            )
+            _write_outputs(
+                args.github_output,
+                {
+                    "observed": True,
+                    "receipt_persisted": True,
+                    "read_only": True,
+                    "request_count": result["request_count"],
+                    "zenodo_mutation": False,
+                    "phase": R10_DRAFT_SHAPE_INCIDENT["phase"],
+                    "record_id": R10_DRAFT_SHAPE_INCIDENT["record_id"],
+                    "evidence_sha256": result["sha256"],
+                    "evidence_bytes": result["bytes"],
+                },
+            )
+            print("VRTCORE_H3_R11_DRAFT_SHAPE_OBSERVATION=CAPTURED")
+            print("ZENODO_MUTATION=false")
             return 0
         if args.observe_normalizations:
             if not isinstance(args.observation_output, pathlib.Path):
