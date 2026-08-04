@@ -1,0 +1,81 @@
+name: QIK-VRT pre-spacetime image carrier probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_pre_spacetime_image_carrier_probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.event.pull_request.head.ref == 'transport/pre-spacetime-image-carrier-probe-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CANDIDATE_SHAS: >-
+        923c3b8492646ae42fd0d24a4ba4f43f08ed4734 c371cda4b017abad9507943d8f62da82fc721362 539efe83d8743e1460cd403d5e7baa281472740b d6b2f17ada5c30885d9b0e19d889209125f6a94b f3cf37b2072eb4b7e0a6584a4d4261ee563d7592 3f088d1ba39882d08cd18b88d8583d02c634321a 8ca6b832039c029d12fa928f6cd92dde1d462913 7107e9d9e582a9733157826b51972ed7436ad9e6 02e5ca1bfc328449f1b7b331551456eef78aa3f5 473d612d1fd991508a3364da9f4da617068566e0 18bad3beeb3f4129c68d416de19c1fc278131319 7535de8ef97fb17f25c859d8f8be1847f4fd5b04
+      EXPECTED_POSTER_SHA256: fe5af321bdf8f8f75bef7367c4fe49afc5239922f9477bb67bbaa14b552747e1
+      EXPECTED_SKETCH_SHA256: 9e6a58dd9f803a0fbe5f97ba36472ffff336f3a92e3989c54c4a50f51cf1c143
+    steps:
+      - name: Probe authenticated Git blobs and nested base64 carriers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64
+          import binascii
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GITHUB_TOKEN']
+          wanted = {os.environ['EXPECTED_POSTER_SHA256'], os.environ['EXPECTED_SKETCH_SHA256']}
+          matches = []
+          for sha in os.environ['CANDIDATE_SHAS'].split():
+              url = f'https://api.github.com/repos/{repo}/git/blobs/{sha}'
+              req = urllib.request.Request(url, headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f'Bearer {token}',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qikvrt-image-carrier-probe/1.0',
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      payload = json.load(response)
+              except urllib.error.HTTPError as exc:
+                  print(json.dumps({'sha': sha, 'http_error': exc.code}, sort_keys=True))
+                  continue
+              raw = base64.b64decode(''.join(payload['content'].split()), validate=True)
+              current = raw
+              for depth in range(3):
+                  digest = hashlib.sha256(current).hexdigest()
+                  git_blob = hashlib.sha1(f'blob {len(current)}\0'.encode('ascii') + current).hexdigest()
+                  record = {
+                      'source_sha': sha,
+                      'depth': depth,
+                      'bytes': len(current),
+                      'sha256': digest,
+                      'git_blob_sha1': git_blob,
+                      'jpeg_magic': current.startswith(b'\xff\xd8\xff'),
+                      'ascii_prefix': current[:16].decode('ascii', errors='replace'),
+                  }
+                  print(json.dumps(record, sort_keys=True))
+                  if digest in wanted:
+                      matches.append(record)
+                  try:
+                      compact = b''.join(current.split())
+                      current = base64.b64decode(compact, validate=True)
+                  except (binascii.Error, ValueError):
+                      break
+          print('MATCHES=' + json.dumps(matches, sort_keys=True))
+          if len(matches) != 2:
+              raise SystemExit('BLOCK: exact two image carriers were not recovered')
+          PY
