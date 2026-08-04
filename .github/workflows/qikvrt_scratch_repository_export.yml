@@ -1,0 +1,29 @@
+name: QIKVRT scratch repository export
+
+on:
+  push:
+    branches:
+      - scratch/base-tree-api-probe-20260804
+    paths:
+      - .github/workflows/qikvrt_scratch_repository_export.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Archive exact tree
+        run: git archive --format=tar.gz --output=qikvrt-pr368-source-tree.tar.gz HEAD
+      - name: Upload exact tree archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-pr368-source-tree
+          retention-days: 1
+          if-no-files-found: error
+          path: qikvrt-pr368-source-tree.tar.gz
