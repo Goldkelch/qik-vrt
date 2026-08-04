@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+
+name: QIK-VRT PR356 exact tree receipt transport
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qikvrt_pr356_exact_tree_receipt_transport.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-pr356-exact-tree-receipt-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'transport/pr356-exact-tree-receipt-20260804-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      EXPECTED_SOURCE_COMMIT: 59dce9401806b1e147f42a5539cfd116dd6b67b7
+    steps:
+      - name: Check out exact transport head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify one-path transport delta and emit source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_SOURCE_COMMIT"
+          test "$(git diff --name-only "$EXPECTED_SOURCE_COMMIT" HEAD --)" = \
+            ".github/workflows/qikvrt_pr356_exact_tree_receipt_transport.yml"
+          source_tree="$(git rev-parse --verify "$EXPECTED_SOURCE_COMMIT^{tree}")"
+          [[ "$source_tree" =~ ^[0-9a-f]{40}$ ]]
+          printf 'SOURCE_COMMIT=%s\n' "$EXPECTED_SOURCE_COMMIT"
+          printf 'SOURCE_TREE=%s\n' "$source_tree"
+          {
+            printf '{\n'
+            printf '  "schema": "qikvrt_pr356_exact_tree_receipt_v1",\n'
+            printf '  "source_commit": "%s",\n' "$EXPECTED_SOURCE_COMMIT"
+            printf '  "source_tree": "%s",\n' "$source_tree"
+            printf '  "effect_state": "EFFECT_ACK_CONTINUE",\n'
+            printf '  "ordinary_release": false\n'
+            printf '}\n'
+          } > /tmp/qikvrt-pr356-exact-tree-receipt.json
+
+      - name: Upload bounded tree receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-pr356-exact-tree-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          if-no-files-found: error
+          path: /tmp/qikvrt-pr356-exact-tree-receipt.json
