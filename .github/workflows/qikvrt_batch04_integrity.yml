@@ -20,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -240,6 +240,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "BLOCK: target ref advanced before repository evidence persistence" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
@@ -288,4 +299,14 @@ jobs:
             exit 0
           fi
           git commit -m "ci: materialize repository evidence"
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$source_head" ]; then
+            echo "BLOCK: target ref advanced while repository evidence was materialized" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head_after_commit=$remote_head_after_commit" >&2
+            exit 2
+          fi
           git push origin "HEAD:$TARGET_REF"
