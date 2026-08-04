@@ -160,6 +160,24 @@ jobs:
           else
             echo "No current content-disposition status projector is present on this branch."
           fi
+      - name: Materialize aphorism-corpus scientific assessment when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="tools/qikvrt_aphorism_corpus_v2.py"
+          if [ ! -f "$script" ]; then
+            echo "Aphorism-corpus materializer is not present on this branch."
+            exit 0
+          fi
+          for command in xelatex pdfinfo pdftotext pdftoppm pdffonts; do
+            command -v "$command" >/dev/null || {
+              echo "BLOCK: required publication tool is absent: $command" >&2
+              exit 1
+            }
+          done
+          python3 -B "$script" --materialize --json
+          python3 -B "$script" --check --json
+          python3 -B -m unittest -v tests.test_aphorism_corpus_v2
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
@@ -194,6 +212,10 @@ jobs:
             work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
             work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
+            docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
+            docs/publications/index.json \
+            docs/publications/index.html \
+            work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
             AI_PROGRESS.json \
             AI_STATUS.md \
             REPOSITORY_FILE_MANIFEST.json \

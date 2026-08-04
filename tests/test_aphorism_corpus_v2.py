@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+from __future__ import annotations
+
+import importlib.util
+import json
+import pathlib
+import subprocess
+import sys
+import unittest
+import tarfile
+import io
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+TOOL = ROOT / "tools/qikvrt_aphorism_corpus_v2.py"
+DEST = ROOT / "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment"
+
+
+def load_tool():
+    spec = importlib.util.spec_from_file_location("qikvrt_aphorism_corpus_v2", TOOL)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load aphorism materializer")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class AphorismCorpusV2Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tool = load_tool()
+
+    def test_payload_is_bounded_and_contains_no_audio(self) -> None:
+        raw = self.tool.payload_bytes()
+        self.assertEqual(self.tool.sha256_bytes(raw), self.tool.PAYLOAD_SHA256)
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:xz") as archive:
+            names = archive.getnames()
+        self.assertGreaterEqual(len(names), 40)
+        self.assertIn("ASR_LEDGER.json", names)
+        self.assertIn("QIK-VRT_Aphorism_Corpus_Scientific_Assessment_2026-08-04.tex", names)
+        self.assertFalse(any(pathlib.Path(name).suffix.lower() in {".m4a", ".wav", ".mp3", ".ogg", ".aac", ".flac"} for name in names))
+
+    def test_declared_boundaries_remain_fail_closed(self) -> None:
+        files = self.tool.payload_files()
+        claims = json.loads(files["CLAIM_MATRIX.json"][0].decode("utf-8"))
+        self.assertEqual(
+            claims["release_claims"],
+            {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
+        )
+        ledger = json.loads(files["ASR_LEDGER.json"][0].decode("utf-8"))
+        self.assertEqual(ledger["automatic_asr_two_pass_count"], 7)
+        self.assertEqual(ledger["human_acoustic_verbatim_certification_count"], 0)
+        self.assertTrue(all(item["verbatim_status"] == "NOT_VERIFIED" for item in ledger["items"]))
+
+    def test_materialized_bundle_when_present(self) -> None:
+        if not DEST.is_dir():
+            self.skipTest("repository evidence materializer has not run on this head")
+        completed = subprocess.run(
+            [sys.executable, "-B", str(TOOL), "--check", "--json"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn('"state": "SOURCE_AND_GENERATED_BYTES_VERIFIED"', completed.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
