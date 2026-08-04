@@ -160,6 +160,52 @@ jobs:
           else
             echo "No current content-disposition status projector is present on this branch."
           fi
+      - name: Provision and verify aphorism publication runtime when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="tools/qikvrt_aphorism_corpus_v2.py"
+          if [ ! -f "$script" ]; then
+            echo "Aphorism-corpus materializer is not present on this branch."
+            exit 0
+          fi
+          missing=0
+          for command in xelatex pdfinfo pdftotext pdftoppm pdffonts; do
+            if ! command -v "$command" >/dev/null 2>&1; then
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              apt-get install --yes --no-install-recommends \
+                texlive-xetex \
+                texlive-latex-extra \
+                texlive-lang-german \
+                texlive-fonts-recommended \
+                fonts-lmodern \
+                poppler-utils
+          fi
+          command -v xelatex
+          command -v pdfinfo
+          command -v pdftotext
+          command -v pdftoppm
+          command -v pdffonts
+          xelatex --version | sed -n '1p'
+          pdfinfo -v 2>&1 | sed -n '1p'
+          pdftotext -v 2>&1 | sed -n '1p'
+          pdftoppm -v 2>&1 | sed -n '1p'
+          pdffonts -v 2>&1 | sed -n '1p'
+          if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query --show \
+              --showformat='publication-package=${Package}=${Version}\n' \
+              texlive-xetex \
+              texlive-latex-extra \
+              texlive-lang-german \
+              texlive-fonts-recommended \
+              fonts-lmodern \
+              poppler-utils
+          fi
       - name: Materialize aphorism-corpus scientific assessment when present
         shell: bash
         run: |
