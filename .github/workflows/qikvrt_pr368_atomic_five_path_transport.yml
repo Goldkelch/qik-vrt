@@ -1,0 +1,198 @@
+name: PR368 atomic five-path materialization transport
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr368-atomic-five-path-materialization-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.ref == 'transport/pr368-five-path-materialization-707212d8-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Patch publication indexes exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          json_path = Path("docs/publications/index.json")
+          html_path = Path("docs/publications/index.html")
+
+          publication_id = "qikvrt-pre-spacetime-ontology-20260804-v1"
+          json_text = json_path.read_text(encoding="utf-8")
+          html_text = html_path.read_text(encoding="utf-8")
+
+          if publication_id in json_text or publication_id in html_text:
+              raise SystemExit("BLOCK: publication index entry already exists")
+
+          json_anchor = """    {
+                "id": "aphorism-corpus-scientific-assessment-v2",
+                "title": "Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2",
+                "path": "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md",
+                "state": "repository_candidate_human_acoustic_review_pending"
+              }
+            ],"""
+          json_replacement = """    {
+                "id": "aphorism-corpus-scientific-assessment-v2",
+                "title": "Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2",
+                "path": "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md",
+                "state": "repository_candidate_human_acoustic_review_pending"
+              },
+              {
+                "id": "qikvrt-pre-spacetime-ontology-20260804-v1",
+                "title": "Prä-raumzeitliche Ontologie: Unterschied, Relation, Information und emergente Raumzeit",
+                "path": "docs/publications/2026-08-04-pre-spacetime-ontology/README.md",
+                "state": "repository_candidate"
+              }
+            ],"""
+          if json_text.count(json_anchor) != 1:
+              raise SystemExit("BLOCK: index.json anchor missing or ambiguous")
+          json_text = json_text.replace(json_anchor, json_replacement, 1)
+
+          html_anchor = """        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md"><time>04.08.</time><span><strong>Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2</strong><small>Zwei automatische ASR-Pässe · menschliche Verbatim-Prüfung offen · keine physikalische Retrokausalität behauptet</small></span><b>Öffnen →</b></a>"""
+          html_entry = """        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-pre-spacetime-ontology/README.md"><time>04.08.</time><span><strong>Prä-raumzeitliche Ontologie der Unterscheidung</strong><small>Unterschied, Relation, Information und emergente Raumzeit · Repository-Kandidat · Zenodo staged · IETF nicht anwendbar</small></span><b>Öffnen →</b></a>"""
+          if html_text.count(html_anchor) != 1:
+              raise SystemExit("BLOCK: index.html anchor missing or ambiguous")
+          html_text = html_text.replace(
+              html_anchor,
+              html_anchor + "\n" + html_entry,
+              1,
+          )
+
+          json_path.write_text(json_text, encoding="utf-8", newline="\n")
+          html_path.write_text(html_text, encoding="utf-8", newline="\n")
+          PY
+
+      - name: Run focused publication coverage gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_self_disclosure.SelfDisclosureTests.test_publication_overview_discovery_and_bundle_coverage
+
+      - name: Generate integrity and run full repository suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Prove deterministic integrity regeneration and exact five-path diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp REPOSITORY_FILE_MANIFEST.json "$tmp/"
+          cp REPOSITORY_FILE_MANIFEST.json.sha256 "$tmp/"
+          cp SHA256SUMS.txt "$tmp/"
+          python3 -B tools/qikvrt_integrity.py generate
+          cmp "$tmp/REPOSITORY_FILE_MANIFEST.json" REPOSITORY_FILE_MANIFEST.json
+          cmp "$tmp/REPOSITORY_FILE_MANIFEST.json.sha256" REPOSITORY_FILE_MANIFEST.json.sha256
+          cmp "$tmp/SHA256SUMS.txt" SHA256SUMS.txt
+          python3 -B tools/qikvrt_integrity.py verify
+
+          expected="$tmp/expected.txt"
+          actual="$tmp/actual.txt"
+          cat >"$expected" <<'EOF'
+          REPOSITORY_FILE_MANIFEST.json
+          REPOSITORY_FILE_MANIFEST.json.sha256
+          SHA256SUMS.txt
+          docs/publications/index.html
+          docs/publications/index.json
+          EOF
+          git diff --name-only | LC_ALL=C sort >"$actual"
+          diff -u "$expected" "$actual"
+
+          git diff --check
+          git diff --stat
+          sha256sum \
+            docs/publications/index.json \
+            docs/publications/index.html \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+
+      - name: Write transport metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          from pathlib import Path
+
+          paths = [
+              "docs/publications/index.json",
+              "docs/publications/index.html",
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+          ]
+          value = {
+              "schema": "qikvrt_pr368_atomic_five_path_materialization_v1",
+              "source_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "publication_id": "qikvrt-pre-spacetime-ontology-20260804-v1",
+              "coverage_test_green": True,
+              "full_suite_green": True,
+              "deterministic_integrity_regeneration": True,
+              "exact_five_path_diff": True,
+              "files": [],
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+              },
+          }
+          for raw in paths:
+              data = Path(raw).read_bytes()
+              value["files"].append({
+                  "path": raw,
+                  "bytes": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+                  "git_blob_sha1": hashlib.sha1(
+                      f"blob {len(data)}\0".encode("ascii") + data
+                  ).hexdigest(),
+              })
+          Path("PR368_ATOMIC_FIVE_PATH_MATERIALIZATION.json").write_text(
+              json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY
+
+      - name: Upload exact five-path materialization
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: pr368-atomic-five-path-materialization
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 6
+          path: |
+            docs/publications/index.json
+            docs/publications/index.html
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+            PR368_ATOMIC_FIVE_PATH_MATERIALIZATION.json
