@@ -1,0 +1,139 @@
+name: PR368 current-main atomic five-path materialization
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr368-current-main-five-path-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.ref == 'transport/pr368-current-main-five-path-55efb84f-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Build and validate carrier-free current-main candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent="55efb84f01a7139b9b3dc906ace89c1a7271a37d"
+          test "$(git rev-parse HEAD^)" = "$parent"
+          rm .github/workflows/qikvrt_pr368_current_main_atomic_five_path.yml
+
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          publication_id = "qikvrt-pre-spacetime-ontology-20260804-v1"
+          json_path = Path("docs/publications/index.json")
+          html_path = Path("docs/publications/index.html")
+          json_text = json_path.read_text(encoding="utf-8")
+          html_text = html_path.read_text(encoding="utf-8")
+
+          if publication_id in json_text or publication_id in html_text:
+              raise SystemExit("BLOCK: publication index entry already exists")
+
+          json_anchor = '''    {
+                "id": "aphorism-corpus-scientific-assessment-v2",
+                "title": "Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2",
+                "path": "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md",
+                "state": "repository_candidate_human_acoustic_review_pending"
+              }
+            ],'''
+          json_replacement = '''    {
+                "id": "aphorism-corpus-scientific-assessment-v2",
+                "title": "Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2",
+                "path": "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md",
+                "state": "repository_candidate_human_acoustic_review_pending"
+              },
+              {
+                "id": "qikvrt-pre-spacetime-ontology-20260804-v1",
+                "title": "Prä-raumzeitliche Ontologie: Unterschied, Relation, Information und emergente Raumzeit",
+                "path": "docs/publications/2026-08-04-pre-spacetime-ontology/README.md",
+                "state": "repository_candidate"
+              }
+            ],'''
+          if json_text.count(json_anchor) != 1:
+              raise SystemExit("BLOCK: index.json anchor missing or ambiguous")
+          json_text = json_text.replace(json_anchor, json_replacement, 1)
+
+          html_anchor = '''        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md"><time>04.08.</time><span><strong>Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2</strong><small>Zwei automatische ASR-Pässe · menschliche Verbatim-Prüfung offen · keine physikalische Retrokausalität behauptet</small></span><b>Öffnen →</b></a>'''
+          html_entry = '''        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-pre-spacetime-ontology/README.md"><time>04.08.</time><span><strong>Prä-raumzeitliche Ontologie der Unterscheidung</strong><small>Unterschied, Relation, Information und emergente Raumzeit · Repository-Kandidat · Zenodo staged · IETF nicht anwendbar</small></span><b>Öffnen →</b></a>'''
+          if html_text.count(html_anchor) != 1:
+              raise SystemExit("BLOCK: index.html anchor missing or ambiguous")
+          html_text = html_text.replace(html_anchor, html_anchor + "\n" + html_entry, 1)
+
+          json_path.write_text(json_text, encoding="utf-8", newline="\n")
+          html_path.write_text(html_text, encoding="utf-8", newline="\n")
+          PY
+
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_self_disclosure.SelfDisclosureTests.test_publication_overview_discovery_and_bundle_coverage
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+          tmp="$(mktemp -d)"
+          cp REPOSITORY_FILE_MANIFEST.json "$tmp/"
+          cp REPOSITORY_FILE_MANIFEST.json.sha256 "$tmp/"
+          cp SHA256SUMS.txt "$tmp/"
+          python3 -B tools/qikvrt_integrity.py generate
+          cmp "$tmp/REPOSITORY_FILE_MANIFEST.json" REPOSITORY_FILE_MANIFEST.json
+          cmp "$tmp/REPOSITORY_FILE_MANIFEST.json.sha256" REPOSITORY_FILE_MANIFEST.json.sha256
+          cmp "$tmp/SHA256SUMS.txt" SHA256SUMS.txt
+          python3 -B tools/qikvrt_integrity.py verify
+
+          cat >"$tmp/expected.txt" <<'EOF'
+          REPOSITORY_FILE_MANIFEST.json
+          REPOSITORY_FILE_MANIFEST.json.sha256
+          SHA256SUMS.txt
+          docs/publications/index.html
+          docs/publications/index.json
+          EOF
+
+          git diff --name-only | LC_ALL=C sort | \
+            grep -v '^\.github/workflows/qikvrt_pr368_current_main_atomic_five_path\.yml$' \
+            >"$tmp/actual-worktree-final.txt"
+          diff -u "$tmp/expected.txt" "$tmp/actual-worktree-final.txt"
+          git diff --check
+
+          git reset --mixed "$parent"
+          git add \
+            docs/publications/index.json \
+            docs/publications/index.html \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --name-only | LC_ALL=C sort >"$tmp/cached.txt"
+          diff -u "$tmp/expected.txt" "$tmp/cached.txt"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: atomically index pre-spacetime ontology at current main"
+          test "$(git rev-parse HEAD^)" = "$parent"
+          python3 -B tools/qikvrt_integrity.py verify
+          git diff --name-only "$parent" HEAD | LC_ALL=C sort >"$tmp/committed.txt"
+          diff -u "$tmp/expected.txt" "$tmp/committed.txt"
+
+          staging_branch="transport/pr368-current-main-final-run${GITHUB_RUN_ID}"
+          if git ls-remote --exit-code --heads origin "refs/heads/$staging_branch" >/dev/null 2>&1; then
+            echo "BLOCK: staging branch already exists" >&2
+            exit 2
+          fi
+          git push origin "HEAD:refs/heads/$staging_branch"
+          echo "STAGING_BRANCH=$staging_branch"
+          echo "STAGING_COMMIT=$(git rev-parse HEAD)"
+          echo "STAGING_TREE=$(git rev-parse HEAD^{tree})"
+          echo "CANDIDATE_PARENT=$parent"
