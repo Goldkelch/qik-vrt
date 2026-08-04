@@ -1,4 +1,4 @@
-name: QIKVRT scratch repository export
+name: QIKVRT PR368 atomic five-path executor
 
 on:
   push:
@@ -8,22 +8,111 @@ on:
       - .github/workflows/qikvrt_scratch_repository_export.yml
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: qikvrt-pr368-atomic-five-path
+  cancel-in-progress: false
 
 jobs:
-  export:
+  execute:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: agent/pre-spacetime-ontology-router-v1
+      EXPECTED_REMOTE_HEAD: 3e0f6b68e3641f39d5328f713ffba521a67f0a7f
+      BASE_HEAD: 67f09805e42f7a775e8e1c43677653c7b7c63246
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Archive exact tree
-        run: git archive --format=tar.gz --output=qikvrt-pr368-source-tree.tar.gz HEAD
-      - name: Upload exact tree archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qikvrt-pr368-source-tree
-          retention-days: 1
-          if-no-files-found: error
-          path: qikvrt-pr368-source-tree.tar.gz
+      - name: Bind exact source and remote heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk 'NR==1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_REMOTE_HEAD"
+          git cat-file -e "$BASE_HEAD^{commit}"
+          git checkout --detach "$BASE_HEAD"
+      - name: Patch publication indexes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          json_path = root / 'docs/publications/index.json'
+          value = json.loads(json_path.read_text(encoding='utf-8'))
+          entry = {
+              'id': 'pre-spacetime-ontology-v1',
+              'title': 'Prä-raumzeitliche Ontologie der Unterscheidung',
+              'path': 'docs/publications/2026-08-04-pre-spacetime-ontology/README.md',
+              'state': 'repository_candidate',
+          }
+          if not any(item['path'] == entry['path'] for item in value['publication_bundles']):
+              value['publication_bundles'].append(entry)
+          json_path.write_text(
+              json.dumps(value, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          html_path = root / 'docs/publications/index.html'
+          html = html_path.read_text(encoding='utf-8')
+          target = entry['path']
+          if target not in html:
+              marker = '<a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md">'
+              start = html.index(marker)
+              end = html.index('</a>', start) + 4
+              row = (
+                  '\n        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/'
+                  + target
+                  + '"><time>04.08.</time><span><strong>Prä-raumzeitliche Ontologie der Unterscheidung</strong>'
+                  + '<small>Wissenschaftliches LaTeX-Dokument · Vorlesefassung · fail-closed Publikationsrouting</small>'
+                  + '</span><b>Öffnen →</b></a>'
+              )
+              html = html[:end] + row + html[end:]
+          html_path.write_text(html, encoding='utf-8', newline='\n')
+          PY
+      - name: Validate coverage and regenerate deterministic integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_self_disclosure.SelfDisclosureTests.test_publication_overview_discovery_and_bundle_coverage
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Run complete repository suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Enforce exact five-path diff and commit atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s\n' \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            docs/publications/index.html \
+            docs/publications/index.json | sort)"
+          actual="$(git diff --name-only "$BASE_HEAD" -- | sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            docs/publications/index.html \
+            docs/publications/index.json
+          git commit -m 'docs: index pre-spacetime ontology candidate'
+          commit_head="$(git rev-parse HEAD)"
+          test "$(git diff-tree --no-commit-id --name-only -r "$commit_head" | sort)" = "$expected"
+          git push \
+            --force-with-lease="refs/heads/$TARGET_BRANCH:$EXPECTED_REMOTE_HEAD" \
+            origin "HEAD:refs/heads/$TARGET_BRANCH"
+          printf 'ATOMIC_COMMIT=%s\n' "$commit_head"
