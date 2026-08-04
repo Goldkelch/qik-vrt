@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+
+name: QIK-VRT publication runtime contract export
+
+on:
+  push:
+    branches:
+      - transport/publication-runtime-contract-export-20260804-v1
+    paths:
+      - .github/workflows/qikvrt_publication_runtime_contract_export.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-publication-runtime-contract-export-20260804-v1
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_PARENT: da48411f2ac388518bb70568b52b4aee8b090b89
+    steps:
+      - name: Check out exact transport head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify sole parent and one-path transport delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD --)" = \
+            ".github/workflows/qikvrt_publication_runtime_contract_export.yml"
+
+      - name: Build exact source receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          candidates = [
+              Path('tools/bootstrap-runtime.sh'),
+              Path('tools/qikvrt_tool_cache.py'),
+              Path('.github/workflows/qikvrt_batch04_integrity.yml'),
+              Path('tests/test_ai_runtime_bootloader.py'),
+          ]
+          candidates.extend(sorted(Path('runtime/toolchains').glob('*')))
+          candidates.extend(sorted(Path('tests').glob('*tool_cache*.py')))
+          files = []
+          for path in candidates:
+              if not path.is_file() or path.is_symlink():
+                  continue
+              raw = path.read_bytes()
+              files.append({
+                  'path': path.as_posix(),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': hashlib.sha1(
+                      f'blob {len(raw)}\0'.encode('ascii') + raw
+                  ).hexdigest(),
+              })
+          if len(files) < 8:
+              raise SystemExit(f'expected at least eight runtime authority files, found {len(files)}')
+          receipt = {
+              'schema': 'qikvrt_publication_runtime_contract_export_v1',
+              'repository': 'Goldkelch/qik-vrt',
+              'source_commit': 'da48411f2ac388518bb70568b52b4aee8b090b89',
+              'transport_commit': __import__('subprocess').check_output(
+                  ['git', 'rev-parse', 'HEAD'], text=True
+              ).strip(),
+              'files': files,
+              'effect_state': 'EFFECT_ACK_CONTINUE',
+              'ordinary_release': False,
+          }
+          Path('/tmp/qikvrt-publication-runtime-contract-receipt.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Upload exact runtime-authority sources
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-publication-runtime-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            /tmp/qikvrt-publication-runtime-contract-receipt.json
+            tools/bootstrap-runtime.sh
+            tools/qikvrt_tool_cache.py
+            runtime/toolchains/**
+            .github/workflows/qikvrt_batch04_integrity.yml
+            tests/test_ai_runtime_bootloader.py
+            tests/*tool_cache*.py
