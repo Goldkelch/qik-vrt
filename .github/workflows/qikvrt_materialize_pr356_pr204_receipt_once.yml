@@ -18,83 +18,40 @@ jobs:
       github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      WORKFLOW_PATH: .github/workflows/qikvrt_materialize_pr356_pr204_receipt_once.yml
+      PARENT_WORKFLOW_BLOB: 3ce95cad6b2664ff20473d7a7c6bbed4552dab03
+      EXECUTOR_SHA256: f6b0e82e52aa2b147dd3f253b09153c07513e49317c013c29a5a6d13030dcc36
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - name: Verify compressed executor and materialize the exact paired receipt
+      - name: Recover and execute the exact digest-bound parent payload
         shell: bash
-        env:
-          EXECUTOR_SHA256: f6b0e82e52aa2b147dd3f253b09153c07513e49317c013c29a5a6d13030dcc36
         run: |
           set -euo pipefail
-          python3 - "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py" <<'PY'
+          test "$(git rev-parse "HEAD^:$WORKFLOW_PATH")" = "$PARENT_WORKFLOW_BLOB"
+          git show "HEAD^:$WORKFLOW_PATH" > "$RUNNER_TEMP/parent-workflow.yml"
+          python3 - "$RUNNER_TEMP/parent-workflow.yml" \
+            "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py" <<'PY'
           import base64
           import hashlib
+          import os
           from pathlib import Path
           import sys
           import zlib
 
-          encoded = """
-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
-/wfAFYly
-          """.replace("\n", "")
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          start_marker = '          encoded = """\n'
+          end_marker = '\n          """.replace("\\n", "")'
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          encoded = "".join(source[start:end].splitlines())
           raw = zlib.decompress(base64.b64decode(encoded))
           observed = hashlib.sha256(raw).hexdigest()
-          if observed != "f6b0e82e52aa2b147dd3f253b09153c07513e49317c013c29a5a6d13030dcc36":
+          if observed != os.environ["EXECUTOR_SHA256"]:
               raise SystemExit(f"BLOCK: executor digest differs: {observed}")
-          path = Path(sys.argv[1])
-          path.write_bytes(raw)
+          Path(sys.argv[2]).write_bytes(raw)
           PY
           python3 "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py"
