@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot PR356 PR204 reciprocal equality receipt v3
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - .github/workflows/qikvrt_materialize_pr356_pr204_receipt_once.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr356-pr204-receipt-v3-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the exact proxy event head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify and execute the exact reciprocal-receipt program
+        shell: bash
+        env:
+          EXECUTOR_SHA256: 73bd9542f602201774b96ec54f755133e3dcbaf27b582abdb4691958d995b9a2
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py" <<'PY'
+          import base64
+          import hashlib
+          import os
+          from pathlib import Path
+          import sys
+          import zlib
+
+          encoded = """
+          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
+          """.replace("\n", "").replace(" ", "")
+          raw = zlib.decompress(base64.b64decode(encoded))
+          observed = hashlib.sha256(raw).hexdigest()
+          if observed != os.environ["EXECUTOR_SHA256"]:
+              raise SystemExit(f"BLOCK: executor digest differs: {observed}")
+          Path(sys.argv[1]).write_bytes(raw)
+          PY
+          python3 "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py"
