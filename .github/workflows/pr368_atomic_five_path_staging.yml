@@ -1,0 +1,87 @@
+name: PR368 atomic five-path staging
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr368-atomic-five-path-staging-v1
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    if: github.head_ref == 'scratch/pr368-atomic-five-path-staging-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: scratch/pr368-atomic-five-path-staging-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Patch indexes deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          json_path = Path('docs/publications/index.json')
+          value = json.loads(json_path.read_text(encoding='utf-8'))
+          entry = {
+              'id': 'pre-spacetime-ontology',
+              'title': 'Prä-raumzeitliche Ontologie der Unterscheidung',
+              'path': 'docs/publications/2026-08-04-pre-spacetime-ontology/README.md',
+              'state': 'repository_candidate',
+          }
+          items = value['publication_bundles']
+          matches = [item for item in items if item.get('id') == entry['id']]
+          if matches and matches != [entry]:
+              raise SystemExit('BLOCK: conflicting pre-spacetime overview entry')
+          if not matches:
+              items.append(entry)
+          json_path.write_text(
+              json.dumps(value, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          html_path = Path('docs/publications/index.html')
+          html = html_path.read_text(encoding='utf-8')
+          anchor = '        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-aphorism-corpus-scientific-assessment/README.md"><time>04.08.</time><span><strong>Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2</strong><small>Zwei automatische ASR-Pässe · menschliche Verbatim-Prüfung offen · keine physikalische Retrokausalität behauptet</small></span><b>Öffnen →</b></a>\n'
+          row = '        <a class="collection-row" href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/publications/2026-08-04-pre-spacetime-ontology/README.md"><time>04.08.</time><span><strong>Prä-raumzeitliche Ontologie der Unterscheidung</strong><small>Erklärungsabhängigkeit statt zeitlichem Davor · epistemische Grenzen · kein eigenständiges IETF-Protokolldelta</small></span><b>Öffnen →</b></a>\n'
+          if row not in html:
+              if anchor not in html:
+                  raise SystemExit('BLOCK: deterministic HTML insertion anchor absent')
+              html = html.replace(anchor, anchor + row, 1)
+          html_path.write_text(html, encoding='utf-8', newline='\n')
+          PY
+      - name: Verify coverage
+        run: >-
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v
+          tests.test_qikvrt_self_disclosure.SelfDisclosureTests.test_publication_overview_discovery_and_bundle_coverage
+      - name: Regenerate integrity
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Run full repository suite
+        run: make test
+      - name: Verify exact five-path diff and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s\n' REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt docs/publications/index.html docs/publications/index.json)"
+          observed="$(git diff --name-only | LC_ALL=C sort)"
+          test "$observed" = "$expected"
+          git config user.name 'qikvrt-actions[bot]'
+          git config user.email 'qikvrt-actions[bot]@users.noreply.github.com'
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt docs/publications/index.html docs/publications/index.json
+          git commit -m 'docs(publications): index pre-spacetime ontology atomically'
+          git push origin HEAD:scratch/pr368-atomic-five-path-staging-v1
