@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+
+name: QIK-VRT PR356 mirror-source export transport
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/qikvrt_pr356_mirror_source_export.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-pr356-mirror-source-export-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'transport/pr356-mirror-source-export-20260804-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_PARENT: 770ac0c1e192aba7134020d972f42e50c27889ca
+      EXPORT_ROOT: ${{ runner.temp }}/qikvrt-pr356-mirror-source
+    steps:
+      - name: Check out exact transport head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify sole parent and one-path transport delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD --)" = \
+            ".github/workflows/qikvrt_pr356_mirror_source_export.yml"
+
+      - name: Stage exact Mirror-port source set and receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            .github/workflows/qikvrt_batch04_integrity.yml
+            tests/test_aphorism_corpus_v2.py
+            tests/test_ietf_revision_02.py
+            tools/qikvrt_aphorism_corpus_v2.py
+            tools/qikvrt_aphorism_corpus_v2_impl/impl.py.zlib
+            tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.00
+            tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.01
+            tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.02
+            tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.03
+          )
+          mkdir -p "$EXPORT_ROOT"
+          for path in "${paths[@]}"; do
+            test -f "$path"
+            test ! -L "$path"
+            mkdir -p "$EXPORT_ROOT/$(dirname "$path")"
+            cp -- "$path" "$EXPORT_ROOT/$path"
+          done
+          EXPORT_ROOT="$EXPORT_ROOT" python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['EXPORT_ROOT'])
+          entries = []
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              raw = path.read_bytes()
+              entries.append({
+                  'path': path.relative_to(root).as_posix(),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': hashlib.sha1(
+                      f'blob {len(raw)}\0'.encode('ascii') + raw
+                  ).hexdigest(),
+              })
+          if len(entries) != 9:
+              raise SystemExit(f'expected nine exported source files, found {len(entries)}')
+          receipt = {
+              'schema': 'qikvrt_pr356_mirror_source_export_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_head': os.environ['EXPECTED_PARENT'],
+              'transport_head': os.environ['GITHUB_SHA'],
+              'files': entries,
+              'effect_state': 'EFFECT_ACK_CONTINUE',
+              'ordinary_release': False,
+              'merge_authorized': False,
+          }
+          (root / 'EXPORT_RECEIPT.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Upload exact source set without audio or generated publication bytes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-pr356-mirror-source-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: true
+          path: ${{ runner.temp }}/qikvrt-pr356-mirror-source/**
+
+      - name: Remove staged transport bytes
+        if: always()
+        shell: bash
+        run: rm -rf "$EXPORT_ROOT"
