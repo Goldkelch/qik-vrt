@@ -9,12 +9,17 @@ on:
       - transport/publication-runtime-contract-export-20260804-v1
     paths:
       - .github/workflows/qikvrt_publication_runtime_contract_export.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qikvrt_publication_runtime_contract_export.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-publication-runtime-contract-export-20260804-v1
+  group: qikvrt-publication-runtime-contract-export-20260804-v1-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,11 +27,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      EXPECTED_PARENT: da48411f2ac388518bb70568b52b4aee8b090b89
+      EXPECTED_PARENT: 62f77eef9b7c11018d494a56a016ae4544bc2491
     steps:
       - name: Check out exact transport head without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
           persist-credentials: false
 
@@ -45,6 +51,7 @@ jobs:
           python3 -B - <<'PY'
           import hashlib
           import json
+          import subprocess
           from pathlib import Path
 
           candidates = [
@@ -74,7 +81,7 @@ jobs:
               'schema': 'qikvrt_publication_runtime_contract_export_v1',
               'repository': 'Goldkelch/qik-vrt',
               'source_commit': 'da48411f2ac388518bb70568b52b4aee8b090b89',
-              'transport_commit': __import__('subprocess').check_output(
+              'transport_commit': subprocess.check_output(
                   ['git', 'rev-parse', 'HEAD'], text=True
               ).strip(),
               'files': files,
