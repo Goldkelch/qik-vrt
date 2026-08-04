@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+
+name: QIK-VRT PR356 IETF-02 test source export
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qikvrt_pr356_ietf02_test_source_export.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-pr356-ietf02-test-export-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'transport/pr356-ietf02-test-source-export-20260804-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT: 46a76988a252f588063bfdfc34008ead18e055d1
+    steps:
+      - name: Check out exact transport head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify one-path transport delta and source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD --)" = \
+            ".github/workflows/qikvrt_pr356_ietf02_test_source_export.yml"
+          test -f tests/test_ietf_revision_02.py
+          test ! -L tests/test_ietf_revision_02.py
+          sha256sum tests/test_ietf_revision_02.py
+          git hash-object tests/test_ietf_revision_02.py
+
+      - name: Upload exact source and receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-pr356-ietf02-test-source-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          if-no-files-found: error
+          path: tests/test_ietf_revision_02.py
