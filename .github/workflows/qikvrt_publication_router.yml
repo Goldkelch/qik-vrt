@@ -1,0 +1,29 @@
+name: QIK-VRT publication router
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - docs/publications/**/PUBLICATION_ROUTING.json
+      - docs/publications/**/ZENODO_CANDIDATE.json
+      - docs/publications/**/IETF_DISPOSITION.json
+      - tools/qikvrt_publication_router.py
+      - tests/test_publication_router.py
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Validate publication routing
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_publication_router.py \
+            docs/publications/2026-08-04-pre-spacetime-ontology --json
+          python3 -B -m pytest -q tests/test_publication_router.py
