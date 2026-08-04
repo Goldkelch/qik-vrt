@@ -1,0 +1,24 @@
+name: QIKVRT pre-spacetime epistemic triad atomic materializer
+
+on:
+  push:
+    branches:
+      - transport/pre-spacetime-epistemic-triad-v1
+    paths:
+      - .qikvrt-transport/READY
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pre-spacetime-epistemic-triad-v1
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail closed until the complete exact carrier and final executor are installed
+        run: |
+          echo 'BLOCK: carrier staging is not yet complete' >&2
+          exit 1
