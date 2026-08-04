@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# Copyright (c) 2026 Ingolf Lohmann.
+# Copyright 2026 Ingolf Lohmann.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import pathlib
 import subprocess
 import sys
-import unittest
 import tarfile
-import io
+import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools/qikvrt_aphorism_corpus_v2.py"
 DEST = ROOT / "docs/publications/2026-08-04-aphorism-corpus-scientific-assessment"
+WORKFLOW = ROOT / ".github/workflows/qikvrt_batch04_integrity.yml"
 
 
 def load_tool():
@@ -37,8 +38,17 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             names = archive.getnames()
         self.assertGreaterEqual(len(names), 40)
         self.assertIn("ASR_LEDGER.json", names)
-        self.assertIn("QIK-VRT_Aphorism_Corpus_Scientific_Assessment_2026-08-04.tex", names)
-        self.assertFalse(any(pathlib.Path(name).suffix.lower() in {".m4a", ".wav", ".mp3", ".ogg", ".aac", ".flac"} for name in names))
+        self.assertIn(
+            "QIK-VRT_Aphorism_Corpus_Scientific_Assessment_2026-08-04.tex",
+            names,
+        )
+        self.assertFalse(
+            any(
+                pathlib.Path(name).suffix.lower()
+                in {".m4a", ".wav", ".mp3", ".ogg", ".aac", ".flac"}
+                for name in names
+            )
+        )
 
     def test_declared_boundaries_remain_fail_closed(self) -> None:
         files = self.tool.payload_files()
@@ -50,7 +60,43 @@ class AphorismCorpusV2Tests(unittest.TestCase):
         ledger = json.loads(files["ASR_LEDGER.json"][0].decode("utf-8"))
         self.assertEqual(ledger["automatic_asr_two_pass_count"], 7)
         self.assertEqual(ledger["human_acoustic_verbatim_certification_count"], 0)
-        self.assertTrue(all(item["verbatim_status"] == "NOT_VERIFIED" for item in ledger["items"]))
+        self.assertTrue(
+            all(item["verbatim_status"] == "NOT_VERIFIED" for item in ledger["items"])
+        )
+
+    def test_repository_writer_provisions_publication_runtime_before_use(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        provision = (
+            "- name: Provision and verify aphorism publication runtime when present"
+        )
+        materialize = (
+            "- name: Materialize aphorism-corpus scientific assessment when present"
+        )
+        self.assertIn(provision, workflow)
+        self.assertIn(materialize, workflow)
+        self.assertLess(workflow.index(provision), workflow.index(materialize))
+
+        start = workflow.index(provision)
+        end = workflow.index(materialize)
+        block = workflow[start:end]
+        for token in (
+            "sudo apt-get update -o Acquire::Retries=3",
+            "apt-get install --yes --no-install-recommends",
+            "texlive-xetex",
+            "texlive-latex-extra",
+            "texlive-lang-german",
+            "texlive-fonts-recommended",
+            "fonts-lmodern",
+            "poppler-utils",
+            "command -v xelatex",
+            "command -v pdfinfo",
+            "command -v pdftotext",
+            "command -v pdftoppm",
+            "command -v pdffonts",
+            "xelatex --version",
+            "dpkg-query --show",
+        ):
+            self.assertIn(token, block)
 
     def test_materialized_bundle_when_present(self) -> None:
         if not DEST.is_dir():
@@ -62,8 +108,15 @@ class AphorismCorpusV2Tests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn('"state": "SOURCE_AND_GENERATED_BYTES_VERIFIED"', completed.stdout)
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
+        self.assertIn(
+            '"state": "SOURCE_AND_GENERATED_BYTES_VERIFIED"',
+            completed.stdout,
+        )
 
 
 if __name__ == "__main__":
