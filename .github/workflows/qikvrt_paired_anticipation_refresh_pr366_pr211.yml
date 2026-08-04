@@ -1,26 +1,18 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIK-VRT paired current-main anticipation refresh PR366 PR211
-
 on:
   pull_request:
     branches: [main]
-    paths:
-      - .github/workflows/qikvrt_paired_anticipation_refresh_pr366_pr211.yml
-
+    paths: [.github/workflows/qikvrt_paired_anticipation_refresh_pr366_pr211.yml]
 permissions:
   contents: write
-
 concurrency:
   group: qikvrt-paired-anticipation-refresh-pr366-pr211-${{ github.repository }}
   cancel-in-progress: false
-
 jobs:
   materialize:
-    if: >-
-      github.repository == 'Goldkelch/qik-vrt' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/current-main-anticipation-refresh-pr366-pr211-v1'
+    if: github.repository == 'Goldkelch/qik-vrt' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/current-main-anticipation-refresh-pr366-pr211-v1'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -37,7 +29,7 @@ jobs:
           set -euo pipefail
           test "$(git show -s --format=%P HEAD)" = "b17c0c1e730e61648c571473bae3fa51005c35de"
           python3 -B - <<'PY'
-          import hashlib, json, subprocess
+          import hashlib, json
           from pathlib import Path
           authority_main = "b17c0c1e730e61648c571473bae3fa51005c35de"
           mirror_main = "7925fe1a97a3dc5d99a891441ec60ba854137172"
@@ -50,30 +42,14 @@ jobs:
               return {"path": p, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
           metrics = dict(value["observations"][-1]["metrics"])
           metrics["scoped_reciprocal_equality_receipts_materialized_on_both_mains"] = max(3, metrics.get("scoped_reciprocal_equality_receipts_materialized_on_both_mains", 0) + 1)
-          observation = {
-              "classification": "TEILFORTSCHRITT",
-              "evidence": [f"authority-git-commit:{authority_main}", f"mirror-git-commit:{mirror_main}", "authority-pull-request:366", "mirror-pull-request:211", receipt_path, index_path],
-              "metrics": metrics,
-              "observed_at": "2026-08-04T04:55:00Z",
-              "productive_chain_position": "POST_PR366_PR211_RECIPROCAL_EQUALITY_PROMOTED_R11_EVIDENCE_BINDING_OPEN",
-              "state_id": "post-pr366-pr211-reciprocal-equality-promoted-r11-evidence-binding-open"
-          }
-          if value["observations"][-1].get("state_id") != observation["state_id"]:
-              value["observations"].append(observation)
+          observation = {"classification":"TEILFORTSCHRITT","evidence":[f"authority-git-commit:{authority_main}",f"mirror-git-commit:{mirror_main}","authority-pull-request:366","mirror-pull-request:211",receipt_path,index_path],"metrics":metrics,"observed_at":"2026-08-04T04:55:00Z","productive_chain_position":"POST_PR366_PR211_RECIPROCAL_EQUALITY_PROMOTED_R11_EVIDENCE_BINDING_OPEN","state_id":"post-pr366-pr211-reciprocal-equality-promoted-r11-evidence-binding-open"}
+          if value["observations"][-1].get("state_id") != observation["state_id"]: value["observations"].append(observation)
           value["observed_at"] = observation["observed_at"]
-          tree = subprocess.check_output(["git", "rev-parse", authority_main + "^{tree}"], text=True).strip()
-          value["source_revision"] = "git-tree:" + tree
-          value["source_bindings"] = [binding("AI_PROGRESS.json"), binding("AI_STATUS.md"), binding(receipt_path), binding(index_path)]
-          value["next_effect"] = {
-              "anticipated_state_id": "r11-draft-shape-observation-receipt-pair-exact-head-green",
-              "description": "Resolve the exact Authority R11 push run for 26a45a0af463dcd8bb1667897d1a999230375307, download and verify the bounded draft-shape observation artifact, verify the unchanged C2 SHA-256, persist a receipt-only Authority successor, port the byte-identical substantive receipt to Mirror, regenerate repository-native integrity outputs, run all mandatory exact-head gates, and verify reciprocal Authority/Mirror synchronization. No Zenodo mutation, publication, release, deployment, IETF action, PASS, FINAL_PASS, or EFFECT_ACK_DONE is authorized.",
-              "effect_id": "RESOLVE_AND_PERSIST_R11_DRAFT_SHAPE_OBSERVATION_RECEIPT_PAIR",
-              "executor_capability": "qikvrt.repository.anticipation.v1",
-              "expected_receipt": "receipts/anticipation/0005-r11-draft-shape-observation-receipt-pair.json",
-              "preconditions": ["AUTHORITY_MAIN_EQUALS_B17C0C1E730E61648C571473BAE3FA51005C35DE", "MIRROR_MAIN_EQUALS_7925FE1A97A3DC5D99A891441EC60BA854137172", "PR366_PR211_RECIPROCAL_RECEIPT_PROMOTED", "RECEIPT_BLOB_04B30A72B3303933E2F857FD5D9AF562EEF6CEED_PRESERVED", "RECEIPT_INDEX_APPEND_ONLY_EQUALITY_PRESERVED", "RESOLVE_EXACT_R11_PUSH_RUN", "VERIFY_R11_ARTIFACT_AND_UNCHANGED_C2", "PERSIST_RECEIPT_ONLY_SUCCESSORS", "RUN_MANDATORY_EXACT_HEAD_GATES", "VERIFY_AUTHORITY_MIRROR_SYNCHRONIZATION", "NO_ZENODO_MUTATION", "NO_EXTERNAL_DISPATCH"]
-          }
-          value["completion_claims"] = {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False}
-          path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          value["source_revision"] = "git-tree:18c89bb1939d9f695b62a428e9e827bbf3fe77a6"
+          value["source_bindings"] = [binding("AI_PROGRESS.json"),binding("AI_STATUS.md"),binding(receipt_path),binding(index_path)]
+          value["next_effect"] = {"anticipated_state_id":"r11-draft-shape-observation-receipt-pair-exact-head-green","description":"Resolve the exact Authority R11 push run for 26a45a0af463dcd8bb1667897d1a999230375307, download and verify the bounded draft-shape observation artifact, verify the unchanged C2 SHA-256, persist a receipt-only Authority successor, port the byte-identical substantive receipt to Mirror, regenerate repository-native integrity outputs, run all mandatory exact-head gates, and verify reciprocal Authority/Mirror synchronization. No Zenodo mutation, publication, release, deployment, IETF action, PASS, FINAL_PASS, or EFFECT_ACK_DONE is authorized.","effect_id":"RESOLVE_AND_PERSIST_R11_DRAFT_SHAPE_OBSERVATION_RECEIPT_PAIR","executor_capability":"qikvrt.repository.anticipation.v1","expected_receipt":"receipts/anticipation/0005-r11-draft-shape-observation-receipt-pair.json","preconditions":["AUTHORITY_MAIN_EQUALS_B17C0C1E730E61648C571473BAE3FA51005C35DE","MIRROR_MAIN_EQUALS_7925FE1A97A3DC5D99A891441EC60BA854137172","PR366_PR211_RECIPROCAL_RECEIPT_PROMOTED","RECEIPT_BLOB_04B30A72B3303933E2F857FD5D9AF562EEF6CEED_PRESERVED","RECEIPT_INDEX_APPEND_ONLY_EQUALITY_PRESERVED","RESOLVE_EXACT_R11_PUSH_RUN","VERIFY_R11_ARTIFACT_AND_UNCHANGED_C2","PERSIST_RECEIPT_ONLY_SUCCESSORS","RUN_MANDATORY_EXACT_HEAD_GATES","VERIFY_AUTHORITY_MIRROR_SYNCHRONIZATION","NO_ZENODO_MUTATION","NO_EXTERNAL_DISPATCH"]}
+          value["completion_claims"]={"PASS":False,"FINAL_PASS":False,"EFFECT_ACK_DONE":False}
+          path.write_text(json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
           PY
           python3 -B tools/qikvrt_anticipation.py materialize
           python3 -B tools/qikvrt_anticipation.py check
