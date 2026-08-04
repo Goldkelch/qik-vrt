@@ -1,0 +1,254 @@
+name: QIKVRT pre-spacetime epistemic triad atomic materializer
+
+on:
+  push:
+    branches:
+      - transport/pre-spacetime-epistemic-triad-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pre-spacetime-epistemic-triad-v1
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact noncanonical transport carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Reconstruct exact sources and persist one clean atomic successor
+        id: materialize
+        env:
+          EXPECTED_AUTHORITY_MAIN: d0c0076cf1aeb6ce52bc99823ec55fda124d2f71
+          TARGET_BRANCH: agent/pre-spacetime-epistemic-triad-v1
+          BUNDLE: docs/publications/2026-08-04-pre-spacetime-ontology
+        run: |
+          set -euo pipefail
+
+          carrier_head="$(git rev-parse HEAD)"
+          observed_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$observed_main"
+          if [ "$observed_main" != "$EXPECTED_AUTHORITY_MAIN" ]; then
+            echo "BLOCK: Authority main moved: expected=$EXPECTED_AUTHORITY_MAIN observed=$observed_main" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "BLOCK: target branch already exists: $TARGET_BRANCH" >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin main
+          tmp="$(mktemp -d)"
+          worktree="$tmp/work"
+          receipt="$tmp/SOURCE_MATERIALIZATION_RECEIPT.json"
+          cleanup() {
+            git worktree remove --force "$worktree" >/dev/null 2>&1 || true
+            rm -rf "$tmp"
+          }
+          trap cleanup EXIT
+          git worktree add --detach "$worktree" "$EXPECTED_AUTHORITY_MAIN"
+
+          python3 -B .qikvrt-transport/materialize_epistemic_triad.py \
+            --carrier-root "$GITHUB_WORKSPACE" \
+            --worktree "$worktree" \
+            --receipt "$receipt"
+
+          cd "$worktree"
+          python3 -B tools/qikvrt_publication_router.py "$BUNDLE" --json
+          python3 -B -m unittest -v tests.test_publication_router
+
+          python3 -B tools/qikvrt_integrity.py --write
+          python3 -B tools/qikvrt_integrity.py --check
+          make test
+          python3 -B tools/qikvrt_integrity.py --check
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import pathlib
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/CLAIM_MATRIX.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EPISTEMIC_TRIAD_DE.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EVIDENCE_BOUNDARY.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_ORIGINAL_SKETCH.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_PROFESSIONAL_POSTER.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/NEGATIVE_AND_BOUNDARY_TESTS.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/PUBLICATION_ROUTING.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/README.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/SOURCE_FIGURE_INDEX.json",
+          }
+          raw = subprocess.run(
+              ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout
+          records = [record for record in raw.split(b"\0") if record]
+          observed: set[str] = set()
+          for record in records:
+              if len(record) < 4:
+                  raise SystemExit("BLOCK: malformed git-status record")
+              observed.add(record[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: final projection is not the exact twelve-path set; "
+                  f"missing={sorted(expected-observed)} extra={sorted(observed-expected)}"
+              )
+          print("EXACT_TWELVE_PATH_WORKTREE_PROJECTION=verified")
+          PY
+
+          git switch -c "$TARGET_BRANCH"
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$BUNDLE/CLAIM_MATRIX.json" \
+            "$BUNDLE/EPISTEMIC_TRIAD_DE.md" \
+            "$BUNDLE/EVIDENCE_BOUNDARY.md" \
+            "$BUNDLE/FIGURE_ORIGINAL_SKETCH.jpeg" \
+            "$BUNDLE/FIGURE_PROFESSIONAL_POSTER.jpeg" \
+            "$BUNDLE/NEGATIVE_AND_BOUNDARY_TESTS.json" \
+            "$BUNDLE/PUBLICATION_ROUTING.json" \
+            "$BUNDLE/README.md" \
+            "$BUNDLE/SOURCE_FIGURE_INDEX.json"
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/CLAIM_MATRIX.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EPISTEMIC_TRIAD_DE.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EVIDENCE_BOUNDARY.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_ORIGINAL_SKETCH.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_PROFESSIONAL_POSTER.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/NEGATIVE_AND_BOUNDARY_TESTS.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/PUBLICATION_ROUTING.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/README.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/SOURCE_FIGURE_INDEX.json",
+          }
+          raw = subprocess.run(
+              ["git", "diff", "--cached", "--name-only", "-z"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout
+          observed = {item.decode("utf-8") for item in raw.split(b"\0") if item}
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: staged projection is not exact; "
+                  f"missing={sorted(expected-observed)} extra={sorted(observed-expected)}"
+              )
+          if subprocess.run(["git", "diff", "--quiet"], check=False).returncode != 0:
+              raise SystemExit("BLOCK: unstaged tracked changes remain")
+          untracked = subprocess.run(
+              ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout
+          if untracked:
+              raise SystemExit("BLOCK: untracked paths remain after exact staging")
+          print("EXACT_TWELVE_PATH_STAGED_PROJECTION=verified")
+          PY
+
+          git config user.name "Ingolf Lohmann"
+          git config user.email "ingolf-lohmann@users.noreply.github.com"
+          git commit -m "docs: add exact epistemic-triad figures and evidence" -m "Atomically persist the two exact owner-supplied JPEGs, their source index, bounded epistemic analysis, claim matrix, evidence boundaries, negative tests, updated README and routing manifest, together with deterministically regenerated repository-native integrity." -m "The truth boundary remains explicit: coherence is not an automatic truth guarantee; artifact-mediated reception is forward causation, not physical retrocausality or mutation of past events." -m "No Zenodo, IETF, release, deployment, PASS, FINAL_PASS or EFFECT_ACK_DONE effect is claimed."
+
+          candidate_head="$(git rev-parse HEAD)"
+          parent="$(git rev-parse HEAD^)"
+          test "$parent" = "$EXPECTED_AUTHORITY_MAIN"
+
+          python3 - <<'PY'
+          from __future__ import annotations
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/CLAIM_MATRIX.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EPISTEMIC_TRIAD_DE.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/EVIDENCE_BOUNDARY.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_ORIGINAL_SKETCH.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_PROFESSIONAL_POSTER.jpeg",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/NEGATIVE_AND_BOUNDARY_TESTS.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/PUBLICATION_ROUTING.json",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/README.md",
+              "docs/publications/2026-08-04-pre-spacetime-ontology/SOURCE_FIGURE_INDEX.json",
+          }
+          raw = subprocess.run(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "HEAD"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout
+          observed = {item.decode("utf-8") for item in raw.split(b"\0") if item}
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: atomic commit is not exact; "
+                  f"missing={sorted(expected-observed)} extra={sorted(observed-expected)}"
+              )
+          print("SINGLE_ATOMIC_TWELVE_PATH_COMMIT=verified")
+          PY
+
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p .qikvrt-transport/result
+          python3 - "$receipt" ".qikvrt-transport/result/SOURCE_MATERIALIZATION_RECEIPT.json" "$carrier_head" "$EXPECTED_AUTHORITY_MAIN" "$candidate_head" <<'PY'
+          from __future__ import annotations
+          import json
+          import pathlib
+          import sys
+
+          source, target, carrier, base, candidate = sys.argv[1:]
+          data = json.loads(pathlib.Path(source).read_text(encoding="utf-8"))
+          data["carrier_commit"] = carrier
+          data["target_base"] = base
+          data["candidate_head"] = candidate
+          pathlib.Path(target).write_text(
+              json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY
+          cat > .qikvrt-transport/result/EXECUTION_SUMMARY.txt <<EOF
+          PUBLICATION_ID=qikvrt-pre-spacetime-ontology-20260804-v1
+          CARRIER_HEAD=$carrier_head
+          AUTHORITY_BASE=$EXPECTED_AUTHORITY_MAIN
+          TARGET_BRANCH=$TARGET_BRANCH
+          CANDIDATE_HEAD=$candidate_head
+          EXACT_SOURCE_IMAGES=2/2
+          EXACT_ATOMIC_PATHS=12/12
+          ZENODO_MUTATION=NONE
+          IETF_MUTATION=NONE
+          PASS=NOT_CLAIMED
+          FINAL_PASS=NOT_CLAIMED
+          EFFECT_ACK_DONE=NOT_CLAIMED
+          EOF
+          echo "candidate_head=$candidate_head" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded source-materialization evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-pre-spacetime-epistemic-triad-source-materialization
+          path: .qikvrt-transport/result
+          if-no-files-found: error
+          retention-days: 7
