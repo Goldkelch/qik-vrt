@@ -14,7 +14,7 @@ def main() -> int:
     ns = ap.parse_args()
     root = ns.bundle
     manifest = json.loads((root / "PUBLICATION_ROUTING.json").read_text(encoding="utf-8"))
-    required = {"schema","bundle_id","title","author","artifacts","routes","automation","release_claims"}
+    required = {"schema","bundle_id","title","author","repository_scope","artifacts","routes","automation","release_claims"}
     if set(manifest) != required:
         raise SystemExit("BLOCK: routing manifest shape mismatch")
     if manifest["schema"] != "qikvrt_publication_routing_manifest_v1":
