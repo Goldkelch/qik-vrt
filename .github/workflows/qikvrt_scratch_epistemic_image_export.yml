@@ -1,0 +1,39 @@
+name: QIKVRT scratch epistemic image export
+
+on:
+  push:
+    branches:
+      - scratch/base-tree-api-probe-20260804
+    paths:
+      - .github/workflows/qikvrt_scratch_epistemic_image_export.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Collect repository image candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p scratch-export
+          find incoming/qikvrt_payloads docs -type f \
+            \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
+            -print0 | while IFS= read -r -d '' path; do
+              target="scratch-export/$path"
+              mkdir -p "$(dirname "$target")"
+              cp -- "$path" "$target"
+            done
+          find scratch-export -type f -print0 | sort -z | xargs -0 sha256sum > scratch-export/SHA256SUMS.txt
+      - name: Upload exact repository image candidates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-scratch-epistemic-image-candidates
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: true
+          path: scratch-export/**
