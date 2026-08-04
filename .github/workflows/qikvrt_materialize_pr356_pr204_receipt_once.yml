@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot PR356 PR204 reciprocal equality receipt v2
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths: [.github/workflows/qikvrt_materialize_pr356_pr204_receipt_once.yml]
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr356-pr204-receipt-v2-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      WORKFLOW_PATH: .github/workflows/qikvrt_materialize_pr356_pr204_receipt_once.yml
+      SOURCE_COMMIT: 342d4a2a6b5b0bf09fe542ef3b143125b3d471c9
+      SOURCE_WORKFLOW_BLOB: 3ce95cad6b2664ff20473d7a7c6bbed4552dab03
+      SOURCE_EXECUTOR_SHA256: f6b0e82e52aa2b147dd3f253b09153c07513e49317c013c29a5a6d13030dcc36
+      PATCHED_EXECUTOR_SHA256: 972f11e380956dc6975cc12ef93e6b3b7de97d8f106e2717cf2e4c73ab2b02f1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Recover, patch and execute the exact digest-bound payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$SOURCE_COMMIT:$WORKFLOW_PATH")" = "$SOURCE_WORKFLOW_BLOB"
+          git show "$SOURCE_COMMIT:$WORKFLOW_PATH" > "$RUNNER_TEMP/source-workflow.yml"
+          python3 - "$RUNNER_TEMP/source-workflow.yml" \
+            "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py" <<'PY'
+          import base64
+          import hashlib
+          import os
+          from pathlib import Path
+          import sys
+          import zlib
+
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          start_marker = '          encoded = """\n'
+          end_marker = '\n          """.replace("\\n", "")'
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          encoded = "".join(source[start:end].splitlines())
+          raw = zlib.decompress(base64.b64decode(encoded))
+          observed = hashlib.sha256(raw).hexdigest()
+          if observed != os.environ["SOURCE_EXECUTOR_SHA256"]:
+              raise SystemExit(f"BLOCK: source executor digest differs: {observed}")
+          text = raw.decode("utf-8")
+          replacements = (
+              (
+                  '"trusted/pr356-pr204-receipt-executor-authority-v1"',
+                  '"trusted/pr356-pr204-receipt-executor-authority-v2"',
+              ),
+              (
+                  '"trusted/pr356-pr204-receipt-executor-mirror-v1"',
+                  '"trusted/pr356-pr204-receipt-executor-mirror-v2"',
+              ),
+          )
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f"BLOCK: executor patch anchor count differs: {old}")
+              text = text.replace(old, new, 1)
+          patched = text.encode("utf-8")
+          observed = hashlib.sha256(patched).hexdigest()
+          if observed != os.environ["PATCHED_EXECUTOR_SHA256"]:
+              raise SystemExit(f"BLOCK: patched executor digest differs: {observed}")
+          Path(sys.argv[2]).write_bytes(patched)
+          PY
+          python3 "$RUNNER_TEMP/qikvrt_pr356_pr204_receipt_executor.py"
