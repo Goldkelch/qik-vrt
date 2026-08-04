@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+
+name: QIK-VRT PR356 IETF-02 archival warning repair carrier v3
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qikvrt_pr356_ietf02_archival_warning_repair_pr_v3.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'repair/pr356-ietf02-archival-warning-v1' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXPECTED_BASE: 46a76988a252f588063bfdfc34008ead18e055d1
+      TARGET_REF: repair/pr356-ietf02-archival-warning-v1
+      SOURCE_SHA256: 4e9f274b575a1dbb1b1bf3e19fa3131e271f9de4e5eb981d96f9081204e719ab
+      REPAIRED_SHA256: 6d46c3c839de6e60e234fa2095669ce7b590ed4d12f22fa583f6a1e7e2ef80e6
+      REPAIRED_GIT_BLOB: ed9d3f81020bdbabdeb188d35372055b35102437
+    steps:
+      - name: Check out exact same-repository repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up exact renderer Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+          architecture: x64
+
+      - name: Verify bounded carrier ancestry and source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXPECTED_BASE" HEAD
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_BASE" HEAD --)
+          test "${#changed[@]}" -ge 4
+          carrier_count=0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .github/workflows/qikvrt_pr356_ietf02_archival_warning_repair*.yml)
+                carrier_count=$((carrier_count + 1))
+                ;;
+              REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt)
+                ;;
+              *)
+                printf 'BLOCK: unexpected pre-repair path: %s\n' "$path" >&2
+                exit 2
+                ;;
+            esac
+          done
+          test "$carrier_count" -ge 4
+          test "$(sha256sum tests/test_ietf_revision_02.py | awk '{print $1}')" = \
+            "$SOURCE_SHA256"
+
+      - name: Apply exact fail-closed archival warning repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          from pathlib import Path
+
+          path = Path("tests/test_ietf_revision_02.py")
+          raw_source = path.read_bytes()
+          if hashlib.sha256(raw_source).hexdigest() != (
+              "4e9f274b575a1dbb1b1bf3e19fa3131e271f9de4e5eb981d96f9081204e719ab"
+          ):
+              raise SystemExit("BLOCK: IETF revision-02 test source identity differs")
+          source = raw_source.decode("utf-8")
+
+          def block(lines: list[str]) -> str:
+              return "\n".join(lines) + "\n"
+
+          replacements = (
+              (
+                  block([
+                      'RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"',
+                      'OLD_VECTOR_PATH = REVISION_02_ROOT / "test-vectors/effect-ack-v1"',
+                      '',
+                      'REVISION_02_IDENTITIES = {',
+                  ]),
+                  block([
+                      'RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"',
+                      'OLD_VECTOR_PATH = REVISION_02_ROOT / "test-vectors/effect-ack-v1"',
+                      'REVISION_02_DOCUMENT_DATE = "2026-07-31"',
+                      'EXPECTED_ARCHIVAL_DATE_WARNING = re.compile(',
+                      '    rf".*[/\\\\]{re.escape(REVISION_02_XML.name)}\\(\\d+\\): "',
+                      '    rf"Warning: The document date \\({REVISION_02_DOCUMENT_DATE}\\) "',
+                      '    r"is more than \\d+ days away from today\'s date$"',
+                      ')',
+                      '',
+                      '',
+                      'def is_expected_archival_date_warning(line: str) -> bool:',
+                      '    """Accept only xml2rfc\'s clock-relative warning for the frozen -02 date."""',
+                      '    return EXPECTED_ARCHIVAL_DATE_WARNING.fullmatch(line) is not None',
+                      '',
+                      'REVISION_02_IDENTITIES = {',
+                  ]),
+                  "archival warning definition",
+              ),
+              (
+                  block([
+                      '    if warnings:',
+                      '        raise AssertionError(',
+                      '            f"xml2rfc emitted warning/error diagnostics for {mode}:\\n"',
+                      '            + "\\n".join(warnings[-40:])',
+                      '        )',
+                      '    return completed',
+                  ]),
+                  block([
+                      '    unexpected_warnings = tuple(',
+                      '        line for line in warnings if not is_expected_archival_date_warning(line)',
+                      '    )',
+                      '    if unexpected_warnings:',
+                      '        raise AssertionError(',
+                      '            f"xml2rfc emitted unexpected warning/error diagnostics for {mode}:\\n"',
+                      '            + "\\n".join(unexpected_warnings[-40:])',
+                      '        )',
+                      '    return completed',
+                  ]),
+                  "diagnostic filter",
+              ),
+              (
+                  block([
+                      '    def test_fresh_offline_renders_are_warning_free_and_byte_identical(self) -> None:',
+                  ]),
+                  block([
+                      '    def test_archival_date_warning_filter_is_exact(self) -> None:',
+                      '        expected = (',
+                      '            f"{REVISION_02_XML}(26): Warning: The document date "',
+                      '            f"({REVISION_02_DOCUMENT_DATE}) is more than 4 days away "',
+                      '            "from today\'s date"',
+                      '        )',
+                      '        self.assertTrue(is_expected_archival_date_warning(expected))',
+                      '        self.assertFalse(',
+                      '            is_expected_archival_date_warning(',
+                      '                expected.replace("Warning:", "Error:", 1)',
+                      '            )',
+                      '        )',
+                      '        self.assertFalse(',
+                      '            is_expected_archival_date_warning(',
+                      '                expected.replace(REVISION_02_XML.name, "draft-other.xml", 1)',
+                      '            )',
+                      '        )',
+                      '        self.assertFalse(',
+                      '            is_expected_archival_date_warning(',
+                      '                expected.replace(REVISION_02_DOCUMENT_DATE, "2026-08-01", 1)',
+                      '            )',
+                      '        )',
+                      '',
+                      '    def test_fresh_offline_renders_are_warning_free_and_byte_identical(self) -> None:',
+                  ]),
+                  "negative-control test",
+              ),
+          )
+
+          for old, new, label in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"BLOCK: {label} anchor count is {count}, expected 1")
+              source = source.replace(old, new, 1)
+
+          repaired = source.encode("utf-8")
+          observed_sha256 = hashlib.sha256(repaired).hexdigest()
+          expected_sha256 = (
+              "6d46c3c839de6e60e234fa2095669ce7b590ed4d12f22fa583f6a1e7e2ef80e6"
+          )
+          if observed_sha256 != expected_sha256:
+              raise SystemExit(
+                  f"BLOCK: repaired IETF revision-02 test identity differs: {observed_sha256}"
+              )
+          path.write_bytes(repaired)
+          PY
+          test "$(sha256sum tests/test_ietf_revision_02.py | awk '{print $1}')" = \
+            "$REPAIRED_SHA256"
+          test "$(git hash-object tests/test_ietf_revision_02.py)" = \
+            "$REPAIRED_GIT_BLOB"
+          python3 -m py_compile tests/test_ietf_revision_02.py
+
+      - name: Derive exact renderer and execute repaired revision-02 test
+        shell: bash
+        env:
+          QIKVRT_PYTHON: ${{ env.pythonLocation }}/bin/python
+        run: |
+          set -euo pipefail
+          contract_cache="$RUNNER_TEMP/qikvrt-pr356-ietf02-runtime"
+          sh tools/bootstrap-runtime.sh --install --accept-third-party \
+            --profile ietf --cache-dir "$contract_cache"
+          renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/linux-amd64/venv/bin/xml2rfc"
+          test -x "$renderer"
+          "$QIKVRT_PYTHON" -B tests/test_ietf_revision_02.py --xml2rfc "$renderer"
+
+      - name: Remove carriers and regenerate repository-native integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/qikvrt_pr356_ietf02_archival_warning_repair*.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist exact repair without external effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head" = "$source_head"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tests/test_ietf_revision_02.py \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git add -u .github/workflows/qikvrt_pr356_ietf02_archival_warning_repair*.yml
+          git commit -m "test: bind frozen IETF-02 archival date warning"
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_head_after_commit" = "$source_head"
+          git push origin "HEAD:$TARGET_REF"
