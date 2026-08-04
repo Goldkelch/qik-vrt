@@ -4,7 +4,9 @@
 name: QIK-VRT PR356 mirror-source export transport
 
 on:
-  pull_request:
+  push:
+    branches:
+      - transport/pr356-mirror-source-export-20260804-v1
     paths:
       - .github/workflows/qikvrt_pr356_mirror_source_export.yml
 
@@ -12,32 +14,29 @@ permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-pr356-mirror-source-export-${{ github.event.pull_request.number || github.ref }}
+  group: qikvrt-pr356-mirror-source-export-20260804-v1
   cancel-in-progress: false
 
 jobs:
   export:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'transport/pr356-mirror-source-export-20260804-v1'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      EXPECTED_PARENT: 770ac0c1e192aba7134020d972f42e50c27889ca
-      EXPORT_ROOT: ${{ runner.temp }}/qikvrt-pr356-mirror-source
+      EXPECTED_SOURCE: 770ac0c1e192aba7134020d972f42e50c27889ca
+      EXPORT_ROOT: /tmp/qikvrt-pr356-mirror-source
     steps:
       - name: Check out exact transport head without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify sole parent and one-path transport delta
+      - name: Verify source ancestry and transport-only delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD --)" = \
+          git merge-base --is-ancestor "$EXPECTED_SOURCE" HEAD
+          test "$(git diff --name-only "$EXPECTED_SOURCE" HEAD --)" = \
             ".github/workflows/qikvrt_pr356_mirror_source_export.yml"
 
       - name: Stage exact Mirror-port source set and receipt
@@ -55,6 +54,7 @@ jobs:
             tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.02
             tools/qikvrt_aphorism_corpus_v2_payload/payload.tar.xz.03
           )
+          rm -rf "$EXPORT_ROOT"
           mkdir -p "$EXPORT_ROOT"
           for path in "${paths[@]}"; do
             test -f "$path"
@@ -85,7 +85,7 @@ jobs:
           receipt = {
               'schema': 'qikvrt_pr356_mirror_source_export_v1',
               'repository': os.environ['GITHUB_REPOSITORY'],
-              'source_head': os.environ['EXPECTED_PARENT'],
+              'source_head': os.environ['EXPECTED_SOURCE'],
               'transport_head': os.environ['GITHUB_SHA'],
               'files': entries,
               'effect_state': 'EFFECT_ACK_CONTINUE',
@@ -105,7 +105,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           include-hidden-files: true
-          path: ${{ runner.temp }}/qikvrt-pr356-mirror-source/**
+          path: /tmp/qikvrt-pr356-mirror-source/**
 
       - name: Remove staged transport bytes
         if: always()
