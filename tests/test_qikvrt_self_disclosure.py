@@ -170,6 +170,7 @@ class SelfDisclosureTests(unittest.TestCase):
         evidence_paths = sorted((ROOT / 'external' / 'ietf').glob('*.PROVENANCE.json'))
         evidence_paths += sorted((ROOT / 'external' / 'ietf').glob('*.CANDIDATE.json'))
         evidence_paths += sorted((ROOT / 'external' / 'ietf').glob('*.SUBMISSION_RECEIPT.json'))
+        evidence_paths += sorted((ROOT / 'external' / 'ietf').glob('*.PUBLICATION_RECEIPT.json'))
         self.assertTrue(evidence_paths)
         for path in evidence_paths:
             relative = path.relative_to(ROOT).as_posix()
@@ -186,25 +187,77 @@ class SelfDisclosureTests(unittest.TestCase):
 
         for path in (ROOT / 'external' / 'ietf').glob('*.json'):
             evidence = read_json(path)
-            if (
+            is_publication_receipt = (
+                evidence.get('schema')
+                == 'qikvrt_ietf_datatracker_publication_receipt_v1'
+            )
+            is_submission_evidence = (
                 evidence.get('datatracker_submission_performed') is True
                 or evidence.get('submitted') is True
-            ):
-                matches = [entry for entry in self.overview['ietf_documents'] if entry['id'] == evidence.get('internet_draft')]
-                self.assertTrue(matches, path.name)
-                expected_state = (
-                    'published_internet_draft'
-                    if evidence.get('published') is not False
-                    and evidence.get('state')
-                    != 'AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL'
-                    else 'awaiting_previous_version_author_approval'
+            )
+            if not (is_publication_receipt or is_submission_evidence):
+                continue
+            matches = [
+                entry
+                for entry in self.overview['ietf_documents']
+                if entry['id'] == evidence.get('internet_draft')
+            ]
+            self.assertTrue(matches, path.name)
+            entry = matches[0]
+            relative = path.relative_to(ROOT).as_posix()
+            # Historical candidate and submission receipts remain truthful
+            # observations of their own time.  Only the selected evidence_path
+            # projects the overview state.
+            if relative != entry.get('evidence_path'):
+                self.assertIn(relative, entry.get('evidence_paths', []))
+                continue
+            if is_publication_receipt:
+                self.assertEqual(
+                    evidence.get('public_state'),
+                    'ACTIVE_INDIVIDUAL_INTERNET_DRAFT',
+                    path.name,
                 )
-                self.assertEqual(matches[0]['state'], expected_state, path.name)
+                if entry.get('superseded_by'):
+                    self.assertEqual(
+                        entry['state'],
+                        'published_superseded_internet_draft',
+                        path.name,
+                    )
+                    self.assertIs(entry.get('active'), False, path.name)
+                    superseders = [
+                        item
+                        for item in self.overview['ietf_documents']
+                        if item['id'] == entry['superseded_by']
+                    ]
+                    self.assertEqual(len(superseders), 1, path.name)
+                    self.assertEqual(
+                        superseders[0]['state'],
+                        'published_internet_draft',
+                        path.name,
+                    )
+                    self.assertIs(superseders[0].get('active'), True, path.name)
+                else:
+                    self.assertEqual(
+                        entry['state'],
+                        'published_internet_draft',
+                        path.name,
+                    )
+                    self.assertIs(entry.get('active'), True, path.name)
+                continue
+            expected_state = (
+                'published_internet_draft'
+                if evidence.get('published') is not False
+                and evidence.get('state')
+                != 'AWAITING_PREVIOUS_VERSION_AUTHOR_APPROVAL'
+                else 'awaiting_previous_version_author_approval'
+            )
+            self.assertEqual(entry['state'], expected_state, path.name)
 
         for entry in self.overview['ietf_documents']:
             self.assertIn(entry['boundary'], json.dumps(self.overview, ensure_ascii=False))
             if entry['state'] in {
                 'published_internet_draft',
+                'published_superseded_internet_draft',
                 'awaiting_previous_version_author_approval',
             }:
                 self.assertIn(entry['official_url'], self.html, entry['id'])

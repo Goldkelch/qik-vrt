@@ -40,6 +40,17 @@ PUBLICATION_RECEIPT = (
 )
 RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"
 OLD_VECTOR_PATH = REVISION_02_ROOT / "test-vectors/effect-ack-v1"
+REVISION_02_DOCUMENT_DATE = "2026-07-31"
+EXPECTED_ARCHIVAL_DATE_WARNING = re.compile(
+    rf".*[/\\]{re.escape(REVISION_02_XML.name)}\(\d+\): "
+    rf"Warning: The document date \({REVISION_02_DOCUMENT_DATE}\) "
+    r"is more than \d+ days away from today's date$"
+)
+
+
+def is_expected_archival_date_warning(line: str) -> bool:
+    """Accept only xml2rfc's clock-relative warning for the frozen -02 date."""
+    return EXPECTED_ARCHIVAL_DATE_WARNING.fullmatch(line) is not None
 
 REVISION_02_IDENTITIES = {
     REVISION_02_XML: (
@@ -397,10 +408,13 @@ def run_renderer(
         for line in diagnostics.splitlines()
         if re.search(r"\b(?:warning|error)\b", line, flags=re.IGNORECASE)
     )
-    if warnings:
+    unexpected_warnings = tuple(
+        line for line in warnings if not is_expected_archival_date_warning(line)
+    )
+    if unexpected_warnings:
         raise AssertionError(
-            f"xml2rfc emitted warning/error diagnostics for {mode}:\n"
-            + "\n".join(warnings[-40:])
+            f"xml2rfc emitted unexpected warning/error diagnostics for {mode}:\n"
+            + "\n".join(unexpected_warnings[-40:])
         )
     return completed
 
@@ -1013,6 +1027,29 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 for item in changes.findall("./ul/li")
             ),
             tuple(normalized(item) for item in REVISION_02_CHANGES),
+        )
+
+    def test_archival_date_warning_filter_is_exact(self) -> None:
+        expected = (
+            f"{REVISION_02_XML}(26): Warning: The document date "
+            f"({REVISION_02_DOCUMENT_DATE}) is more than 4 days away "
+            "from today's date"
+        )
+        self.assertTrue(is_expected_archival_date_warning(expected))
+        self.assertFalse(
+            is_expected_archival_date_warning(
+                expected.replace("Warning:", "Error:", 1)
+            )
+        )
+        self.assertFalse(
+            is_expected_archival_date_warning(
+                expected.replace(REVISION_02_XML.name, "draft-other.xml", 1)
+            )
+        )
+        self.assertFalse(
+            is_expected_archival_date_warning(
+                expected.replace(REVISION_02_DOCUMENT_DATE, "2026-08-01", 1)
+            )
         )
 
     def test_fresh_offline_renders_are_warning_free_and_byte_identical(self) -> None:

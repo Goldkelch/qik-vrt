@@ -20,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -160,6 +160,70 @@ jobs:
           else
             echo "No current content-disposition status projector is present on this branch."
           fi
+      - name: Provision and verify aphorism publication runtime when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="tools/qikvrt_aphorism_corpus_v2.py"
+          if [ ! -f "$script" ]; then
+            echo "Aphorism-corpus materializer is not present on this branch."
+            exit 0
+          fi
+          missing=0
+          for command in xelatex pdfinfo pdftotext pdftoppm pdffonts; do
+            if ! command -v "$command" >/dev/null 2>&1; then
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo env DEBIAN_FRONTEND=noninteractive \
+              apt-get install --yes --no-install-recommends \
+                texlive-xetex \
+                texlive-latex-extra \
+                texlive-lang-german \
+                texlive-fonts-recommended \
+                fonts-lmodern \
+                poppler-utils
+          fi
+          command -v xelatex
+          command -v pdfinfo
+          command -v pdftotext
+          command -v pdftoppm
+          command -v pdffonts
+          xelatex --version | sed -n '1p'
+          pdfinfo -v 2>&1 | sed -n '1p'
+          pdftotext -v 2>&1 | sed -n '1p'
+          pdftoppm -v 2>&1 | sed -n '1p'
+          pdffonts -v 2>&1 | sed -n '1p'
+          if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query --show \
+              --showformat='publication-package=${Package}=${Version}\n' \
+              texlive-xetex \
+              texlive-latex-extra \
+              texlive-lang-german \
+              texlive-fonts-recommended \
+              fonts-lmodern \
+              poppler-utils
+          fi
+      - name: Materialize aphorism-corpus scientific assessment when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="tools/qikvrt_aphorism_corpus_v2.py"
+          if [ ! -f "$script" ]; then
+            echo "Aphorism-corpus materializer is not present on this branch."
+            exit 0
+          fi
+          for command in xelatex pdfinfo pdftotext pdftoppm pdffonts; do
+            command -v "$command" >/dev/null || {
+              echo "BLOCK: required publication tool is absent: $command" >&2
+              exit 1
+            }
+          done
+          python3 -B "$script" --materialize --json
+          python3 -B "$script" --check --json
+          python3 -B -m unittest -v tests.test_aphorism_corpus_v2
       - name: Regenerate and verify repository integrity
         shell: bash
         run: |
@@ -176,6 +240,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "BLOCK: target ref advanced before repository evidence persistence" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
@@ -194,6 +269,10 @@ jobs:
             work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_172DD9BC2738FA43.json \
             release/zenodo-corpus-proof-2026-07-28/canonical-union/content-disposition-batch-003/subject-dispositions/SUBJECT-172dd9bc2738fa43 \
             work-units/EXTRACT_ARCHIVE_CONTENT_THEN_DISPOSITION_CLAIMS_BATCH_003_SUBJECT_B4849E1A2D6B2270.json \
+            docs/publications/2026-08-04-aphorism-corpus-scientific-assessment \
+            docs/publications/index.json \
+            docs/publications/index.html \
+            work-units/MATERIALIZE_APHORISM_CORPUS_SCIENTIFIC_ASSESSMENT_V2.json \
             AI_PROGRESS.json \
             AI_STATUS.md \
             REPOSITORY_FILE_MANIFEST.json \
@@ -220,4 +299,14 @@ jobs:
             exit 0
           fi
           git commit -m "ci: materialize repository evidence"
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/$TARGET_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$source_head" ]; then
+            echo "BLOCK: target ref advanced while repository evidence was materialized" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head_after_commit=$remote_head_after_commit" >&2
+            exit 2
+          fi
           git push origin "HEAD:$TARGET_REF"
