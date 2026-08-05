@@ -32,7 +32,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact candidate head and resolve source tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git -C ../../.. rev-parse HEAD)"
+          test "${actual}" = "${expected}"
+          tree="$(git -C ../../.. rev-parse 'HEAD^{tree}')"
+          test "${#actual}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=${actual}" >> "${GITHUB_OUTPUT}"
+          echo "tree=${tree}" >> "${GITHUB_OUTPUT}"
 
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
@@ -56,12 +72,7 @@ jobs:
           --axiom-output qce-axiom-output.txt
           > qce-verification.json
 
-      - name: Resolve exact source tree
-        id: binding
-        shell: bash
-        run: echo "tree=$(git -C ../../.. rev-parse \"${GITHUB_SHA}^{tree}\")" >> "$GITHUB_OUTPUT"
-
-      - name: Create execution-bound kernel receipt
+      - name: Create exact-head execution-bound kernel receipt
         run: >-
           python3 -B make_qce_kernel_receipt.py
           --lean "$(command -v lean)"
@@ -69,7 +80,7 @@ jobs:
           --verification-output qce-verification.json
           --output QCE_KERNEL_RECEIPT.json
           --repository "${GITHUB_REPOSITORY}"
-          --commit "${GITHUB_SHA}"
+          --commit "${{ steps.binding.outputs.head }}"
           --tree "${{ steps.binding.outputs.tree }}"
           --run-id "${GITHUB_RUN_ID}"
           --run-attempt "${GITHUB_RUN_ATTEMPT}"

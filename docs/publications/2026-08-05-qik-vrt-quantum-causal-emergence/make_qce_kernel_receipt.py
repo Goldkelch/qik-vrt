@@ -17,8 +17,10 @@ from datetime import datetime, timezone
 
 
 ROOT = pathlib.Path(__file__).resolve().parent
+REPOSITORY_ROOT = ROOT.parents[2]
 MODEL = ROOT / "VRTCore_QCE_Model.lean"
 AUDIT = ROOT / "VRTCore_QCE_AxiomAudit.lean"
+OBJECT_ID = re.compile(r"[0-9a-f]{40}")
 
 
 class ReceiptError(RuntimeError):
@@ -29,10 +31,10 @@ def sha256(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def run(command: list[str]) -> str:
+def run(command: list[str], *, cwd: pathlib.Path = ROOT) -> str:
     proc = subprocess.run(
         command,
-        cwd=ROOT,
+        cwd=cwd,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -62,6 +64,11 @@ def parse_axioms(text: str) -> dict[str, list[str]]:
     return result
 
 
+def require_object_id(label: str, value: str) -> None:
+    if OBJECT_ID.fullmatch(value) is None:
+        raise ReceiptError(f"{label} is not an exact 40-hex Git object id: {value!r}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lean", type=pathlib.Path, required=True)
@@ -69,11 +76,24 @@ def main() -> int:
     parser.add_argument("--verification-output", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "UNKNOWN"))
-    parser.add_argument("--commit", default=os.environ.get("GITHUB_SHA", "UNKNOWN"))
-    parser.add_argument("--tree", default="UNRESOLVED_BY_RECEIPT_GENERATOR")
+    parser.add_argument("--commit", required=True)
+    parser.add_argument("--tree", required=True)
     parser.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", "LOCAL"))
     parser.add_argument("--run-attempt", default=os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
     args = parser.parse_args()
+
+    require_object_id("commit", args.commit)
+    require_object_id("tree", args.tree)
+    resolved_commit = run(["git", "rev-parse", "HEAD"], cwd=REPOSITORY_ROOT).strip()
+    resolved_tree = run(["git", "rev-parse", "HEAD^{tree}"], cwd=REPOSITORY_ROOT).strip()
+    if args.commit != resolved_commit:
+        raise ReceiptError(
+            f"receipt commit {args.commit} does not equal checked-out HEAD {resolved_commit}"
+        )
+    if args.tree != resolved_tree:
+        raise ReceiptError(
+            f"receipt tree {args.tree} does not equal checked-out tree {resolved_tree}"
+        )
 
     if not args.lean.is_file():
         raise ReceiptError(f"Lean executable not found: {args.lean}")
@@ -110,7 +130,7 @@ def main() -> int:
             "repository": args.repository,
             "commit": args.commit,
             "tree": args.tree,
-            "candidate_path": str(ROOT.relative_to(ROOT.parents[2])),
+            "candidate_path": str(ROOT.relative_to(REPOSITORY_ROOT)),
             "model_sha256": sha256(MODEL),
             "axiom_audit_sha256": sha256(AUDIT),
         },
@@ -147,7 +167,10 @@ def main() -> int:
             "EFFECT_ACK_DONE": False,
         },
     }
-    args.output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    args.output.write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps({"result": "RECEIPT_CREATED", "output": str(args.output)}, indent=2))
     return 0
 
