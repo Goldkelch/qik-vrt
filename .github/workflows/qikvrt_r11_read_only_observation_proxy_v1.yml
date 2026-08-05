@@ -1,0 +1,472 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT exact R11 read-only draft-shape observer
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+    paths:
+      - .github/workflows/qikvrt_r11_read_only_observation_proxy_v1.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: qikvrt-r11-read-only-observation-dispatch-20260805-v1
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.action == 'opened' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'trusted/r11-read-only-observation-proxy-v1' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DISPATCH_ID: qikvrt-r11-read-only-observation-dispatch-20260805-v1
+      CONTRACT_PATH: state/authorization/r11/R11_READ_ONLY_OBSERVATION_DISPATCH_V1.json
+      AUTHORITY_SOURCE_MAIN: e8a0b521e6dbd7951b256fb0ed7f363ef465de41
+      MIRROR_SOURCE_MAIN: ca43c6970774c5825a0cba9b640c749eaa9c16c6
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      R11_CARRIER_PR: '395'
+      R11_BRANCH: recovery-execution/vrtcore-relational-h3-e1-v1
+      R11_HEAD: 26a45a0af463dcd8bb1667897d1a999230375307
+      R11_TREE: 693ae135b907ee50e9bc9d3ff70b0b1662ab8072
+      R10_HEAD: 507f4f30b694df3a415194b2c2cae41a0922b6d9
+      E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
+      E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
+      E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
+      C2_COMMIT: 376e869dc3504929b8913146cb29264d3ac585f3
+      C2_BLOB: d81135af4a14c5fa3d67966761f473569c7d2689
+      C2_BYTES: '23415'
+      C2_SHA256: 3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4
+      PROXY_BRANCH: trusted/r11-read-only-observation-proxy-v1
+      PROXY_WORKFLOW: .github/workflows/qikvrt_r11_read_only_observation_proxy_v1.yml
+      EXPECTED_RECEIPT: receipts/anticipation/0005-r11-draft-shape-observation-receipt-pair.json
+
+    steps:
+      - name: Check out exact trusted proxy head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: proxy
+
+      - name: Bind Python runtime
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Verify paired promoted contract and unique execution envelope
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          PROXY_HEAD: ${{ github.event.pull_request.head.sha }}
+          PROXY_PR: ${{ github.event.pull_request.number }}
+          AUTHORITY_EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$(git -C proxy rev-parse --verify HEAD^{commit})" = "$PROXY_HEAD"
+          test "$(git -C proxy hash-object "$PROXY_WORKFLOW")" != ""
+          python3 -B - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          authority = os.environ['GITHUB_REPOSITORY']
+          mirror = os.environ['MIRROR_REPOSITORY']
+          token = os.environ['GH_API_TOKEN']
+          contract_path = os.environ['CONTRACT_PATH']
+          source_authority = os.environ['AUTHORITY_SOURCE_MAIN']
+          source_mirror = os.environ['MIRROR_SOURCE_MAIN']
+          proxy_head = os.environ['PROXY_HEAD']
+          proxy_pr = int(os.environ['PROXY_PR'])
+          event_base = os.environ['AUTHORITY_EVENT_BASE']
+          r11_head = os.environ['R11_HEAD']
+          carrier_pr = int(os.environ['R11_CARRIER_PR'])
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise urllib.error.HTTPError(req.full_url, code, 'redirect forbidden', headers, fp)
+
+          opener = urllib.request.build_opener(NoRedirect())
+
+          def api(path, *, accept=(200,), auth=True):
+              url = 'https://api.github.com' + path
+              headers = {
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qik-vrt-r11-contract-verifier/1',
+              }
+              if auth:
+                  headers['Authorization'] = 'Bearer ' + token
+              request = urllib.request.Request(url, headers=headers)
+              try:
+                  with opener.open(request, timeout=45) as response:
+                      raw = response.read(8 * 1024 * 1024 + 1)
+                      if len(raw) > 8 * 1024 * 1024:
+                          raise SystemExit('BLOCK: GitHub response exceeded bound')
+                      if response.status not in accept:
+                          raise SystemExit(f'BLOCK: unexpected GitHub status {response.status}')
+                      return response.status, json.loads(raw.decode('utf-8'))
+              except urllib.error.HTTPError as exc:
+                  if exc.code in accept:
+                      return exc.code, None
+                  detail = exc.read(4096).decode('utf-8', 'replace')
+                  raise SystemExit(f'BLOCK: GitHub GET {path} returned {exc.code}: {detail[:500]}')
+
+          def live_main(repo):
+              _, value = api(f'/repos/{repo}/git/ref/heads/main')
+              return value['object']['sha']
+
+          def require_descendant(repo, base, head):
+              _, value = api(f'/repos/{repo}/compare/{base}...{head}')
+              if value['status'] not in ('ahead', 'identical') or value['behind_by'] != 0:
+                  raise SystemExit(f'BLOCK: {repo} current main does not descend from bound source')
+
+          def content(repo, path, ref):
+              quoted = urllib.parse.quote(path, safe='/')
+              status, value = api(f'/repos/{repo}/contents/{quoted}?ref={ref}', accept=(200, 404))
+              if status == 404:
+                  return None, None
+              raw = base64.b64decode(value['content'], validate=True)
+              return raw, value['sha']
+
+          authority_main = live_main(authority)
+          mirror_main = live_main(mirror)
+          if authority_main != event_base:
+              raise SystemExit('BLOCK: Authority main moved after proxy PR opening')
+          require_descendant(authority, source_authority, authority_main)
+          require_descendant(mirror, source_mirror, mirror_main)
+
+          authority_raw, authority_blob = content(authority, contract_path, authority_main)
+          mirror_raw, mirror_blob = content(mirror, contract_path, mirror_main)
+          if authority_raw is None or mirror_raw is None:
+              raise SystemExit('BLOCK: paired R11 dispatch contract is absent')
+          if authority_raw != mirror_raw or authority_blob != mirror_blob:
+              raise SystemExit('BLOCK: paired R11 dispatch contract bytes differ')
+
+          contract = json.loads(authority_raw.decode('utf-8'))
+          if set(contract) != {
+              '_license', 'schema', 'contract_id', 'state',
+              'authorization_payload', 'authorization_payload_sha256',
+              'effect_boundary', 'completion_claims'
+          }:
+              raise SystemExit('BLOCK: dispatch contract top-level shape differs')
+          if contract['schema'] != 'qikvrt_r11_read_only_observation_dispatch_contract_v1':
+              raise SystemExit('BLOCK: dispatch contract schema differs')
+          if contract['contract_id'] != os.environ['DISPATCH_ID']:
+              raise SystemExit('BLOCK: dispatch contract id differs')
+          if contract['state'] != 'AUTHORIZED_FOR_ONE_TRUSTED_PROXY_RUN':
+              raise SystemExit('BLOCK: dispatch contract is not active')
+          canonical = json.dumps(
+              contract['authorization_payload'], ensure_ascii=False,
+              sort_keys=True, separators=(',', ':')
+          ).encode('utf-8')
+          if hashlib.sha256(canonical).hexdigest() != contract['authorization_payload_sha256']:
+              raise SystemExit('BLOCK: dispatch authorization payload digest differs')
+
+          payload = contract['authorization_payload']
+          if payload['source_mains'] != {
+              'authority': source_authority,
+              'mirror': source_mirror,
+          }:
+              raise SystemExit('BLOCK: source-main binding differs')
+          if payload['carrier'] != {
+              'repository': authority,
+              'pull_request': carrier_pr,
+              'branch': os.environ['R11_BRANCH'],
+              'head': r11_head,
+              'tree': os.environ['R11_TREE'],
+              'parent': os.environ['R10_HEAD'],
+              'must_remain_open': True,
+              'must_never_merge': True,
+          }:
+              raise SystemExit('BLOCK: R11 carrier binding differs')
+          proxy = payload['proxy']
+          if proxy['repository'] != authority or proxy['branch'] != os.environ['PROXY_BRANCH']:
+              raise SystemExit('BLOCK: proxy repository or branch differs')
+          if proxy['head'] != proxy_head or proxy['workflow_path'] != os.environ['PROXY_WORKFLOW']:
+              raise SystemExit('BLOCK: proxy exact-head binding differs')
+          observed_workflow_blob = subprocess.run(
+              ['git', '-C', 'proxy', 'hash-object', os.environ['PROXY_WORKFLOW']],
+              check=True, text=True, stdout=subprocess.PIPE,
+          ).stdout.strip()
+          workflow_raw = (pathlib.Path('proxy') / os.environ['PROXY_WORKFLOW']).read_bytes()
+          if (
+              proxy['workflow_git_blob_sha1'] != observed_workflow_blob
+              or proxy['workflow_sha256'] != hashlib.sha256(workflow_raw).hexdigest()
+              or proxy['workflow_bytes'] != len(workflow_raw)
+          ):
+              raise SystemExit('BLOCK: proxy workflow byte binding differs')
+          if payload['trigger'] != {
+              'event': 'pull_request',
+              'action': 'opened',
+              'run_attempt': 1,
+              'rerun_authorized': False,
+              'synchronize_authorized': False,
+              'reopen_authorized': False,
+              'exactly_one_run': True,
+          }:
+              raise SystemExit('BLOCK: one-shot trigger contract differs')
+          if payload['observation'] != {
+              'service': 'zenodo.org',
+              'api_origin': 'https://zenodo.org/api',
+              'authenticated_request_count': 2,
+              'allowed_methods': ['GET'],
+              'target_deposition_id': 16304099,
+              'target_record_id': 17269164,
+              'redirects_followed': False,
+              'raw_response_bytes_persisted': False,
+              'arbitrary_response_values_persisted': False,
+          }:
+              raise SystemExit('BLOCK: read-only observation contract differs')
+          if payload['artifact'] != {
+              'name_template': 'vrtcore-h3-r11-draft-shape-observation-{run_id}-1',
+              'artifact_count': 1,
+              'entry_count': 2,
+              'entries': [
+                  'release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json',
+                  '.qikvrt/vrtcore-h3-r11/draft-shape-observation.json',
+              ],
+              'retention_days': 90,
+          }:
+              raise SystemExit('BLOCK: artifact contract differs')
+          if payload['c2'] != {
+              'commit': os.environ['C2_COMMIT'],
+              'git_blob_sha1': os.environ['C2_BLOB'],
+              'bytes': int(os.environ['C2_BYTES']),
+              'sha256': os.environ['C2_SHA256'],
+              'must_remain_unchanged': True,
+          }:
+              raise SystemExit('BLOCK: C2 contract differs')
+          if payload['historical_failed_runs'] != [
+              {'run_id': 30818549721, 'conclusion': 'failure', 'artifact_count': 0},
+              {'run_id': 30935794485, 'conclusion': 'failure', 'artifact_count': 0},
+          ]:
+              raise SystemExit('BLOCK: historical R11 run binding differs')
+          if contract['effect_boundary'] != {
+              'zenodo_mutation': False,
+              'metadata_mutation': False,
+              'upload': False,
+              'publish': False,
+              'new_doi': False,
+              'repository_mutation_by_observer': False,
+              'receipt_minting_by_observer': False,
+              'ietf_mutation': False,
+              'release': False,
+              'deployment': False,
+              'terminal_result': 'OBSERVATION_RECEIPT_PERSISTED_BLOCKED',
+          }:
+              raise SystemExit('BLOCK: effect boundary differs')
+          if contract['completion_claims'] != {
+              'pass': False, 'final_pass': False, 'effect_ack_done': False,
+          }:
+              raise SystemExit('BLOCK: completion claims differ')
+
+          _, carrier = api(f'/repos/{authority}/pulls/{carrier_pr}')
+          if (
+              carrier['state'] != 'open'
+              or carrier['draft'] is not True
+              or carrier['head']['sha'] != r11_head
+              or carrier['head']['ref'] != os.environ['R11_BRANCH']
+              or carrier['base']['ref'] != 'main'
+          ):
+              raise SystemExit('BLOCK: exact R11 carrier PR is not open and bound')
+          head_query = urllib.parse.quote(f'Goldkelch:{os.environ["R11_BRANCH"]}', safe=':')
+          _, open_carriers = api(f'/repos/{authority}/pulls?state=open&head={head_query}&per_page=100')
+          if [item['number'] for item in open_carriers] != [carrier_pr]:
+              raise SystemExit('BLOCK: R11 carrier is not unique')
+
+          _, event_pr = api(f'/repos/{authority}/pulls/{proxy_pr}')
+          if (
+              event_pr['state'] != 'open'
+              or event_pr['head']['sha'] != proxy_head
+              or event_pr['head']['ref'] != os.environ['PROXY_BRANCH']
+              or event_pr['base']['sha'] != authority_main
+              or event_pr['base']['ref'] != 'main'
+          ):
+              raise SystemExit('BLOCK: trusted proxy PR binding differs')
+
+          for repo, main in ((authority, authority_main), (mirror, mirror_main)):
+              receipt_raw, _ = content(repo, os.environ['EXPECTED_RECEIPT'], main)
+              if receipt_raw is not None:
+                  raise SystemExit('BLOCK: R11 receipt pair already exists')
+
+          relevant = []
+          _, runs = api(f'/repos/{authority}/actions/runs?head_sha={r11_head}&event=push&per_page=100')
+          for run in runs['workflow_runs']:
+              if run.get('path') == '.github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml':
+                  relevant.append(run)
+          if sorted(run['id'] for run in relevant) != [30818549721, 30935794485]:
+              raise SystemExit('BLOCK: historical R11 observer run set differs')
+          for expected in payload['historical_failed_runs']:
+              run = next(item for item in relevant if item['id'] == expected['run_id'])
+              if run['conclusion'] != 'failure' or run['head_sha'] != r11_head:
+                  raise SystemExit('BLOCK: historical R11 run state differs')
+              _, artifacts = api(f'/repos/{authority}/actions/runs/{run["id"]}/artifacts')
+              if artifacts['total_count'] != 0:
+                  raise SystemExit('BLOCK: historical failed R11 run unexpectedly has artifacts')
+
+          synthetic = {
+              'ref': 'refs/heads/' + os.environ['R11_BRANCH'],
+              'before': os.environ['R10_HEAD'],
+              'after': r11_head,
+              'created': False,
+              'deleted': False,
+              'forced': False,
+              'repository': {'full_name': authority},
+              'head_commit': {'id': r11_head},
+          }
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'r11-synthetic-push.json'
+          path.write_text(json.dumps(synthetic, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'authority_main': authority_main,
+              'mirror_main': mirror_main,
+              'contract_blob': authority_blob,
+              'proxy_head': proxy_head,
+              'carrier_pr': carrier_pr,
+          }, sort_keys=True))
+          PY
+
+      - name: Check out exact immutable R11 controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 26a45a0af463dcd8bb1667897d1a999230375307
+          fetch-depth: 0
+          persist-credentials: false
+          path: controller
+
+      - name: Check out immutable E1 execution
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 53e757ebce929b40250f90a02ed2a9ec62de6217
+          fetch-depth: 0
+          persist-credentials: false
+          path: execution
+
+      - name: Verify exact controller E1 and complete static gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C controller rev-parse --verify HEAD^{commit})" = "$R11_HEAD"
+          test "$(git -C controller rev-parse --verify HEAD^{tree})" = "$R11_TREE"
+          test "$(git -C controller show -s --format=%P HEAD)" = "$R10_HEAD"
+          test "$(git -C execution rev-parse --verify HEAD^{commit})" = "$E1"
+          test "$(git -C execution show -s --format=%P HEAD)" = "$E1_PARENT"
+          test "$(git -C execution rev-parse --verify HEAD^{tree})" = "$E1_TREE"
+          test "$(git -C controller ls-remote --heads origin "refs/heads/$R11_BRANCH" | awk 'NR == 1 { print $1 }')" = "$R11_HEAD"
+          python3 -B controller/tools/qikvrt_integrity.py verify
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" \
+            python3 -B -m unittest -v controller/tests/test_vrtcore_h3_e1_recovery.py
+          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
+            --verify-basis \
+            --execution-root execution
+          make -C execution test
+          test -z "$(git -C controller status --porcelain=v1 --untracked-files=all)"
+          test -z "$(git -C execution status --porcelain=v1 --untracked-files=all)"
+
+      - name: Perform exactly two authenticated GETs and persist bounded observation
+        id: observe
+        timeout-minutes: 10
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_TOKEN"
+          test -n "$ZENODO_ACCESS_TOKEN"
+          synthetic="$RUNNER_TEMP/r11-synthetic-push.json"
+          test -s "$synthetic"
+          env \
+            GITHUB_REPOSITORY='Goldkelch/qik-vrt' \
+            GITHUB_EVENT_NAME='push' \
+            GITHUB_REF="refs/heads/$R11_BRANCH" \
+            GITHUB_REF_NAME="$R11_BRANCH" \
+            GITHUB_SHA="$R11_HEAD" \
+            GITHUB_RUN_ATTEMPT='1' \
+            GITHUB_EVENT_PATH="$synthetic" \
+            GITHUB_TOKEN="$GITHUB_TOKEN" \
+            ZENODO_ACCESS_TOKEN="$ZENODO_ACCESS_TOKEN" \
+            python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
+              --observe-draft-shape \
+              --execution-root execution \
+              --observation-output \
+                execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json \
+              --github-output "$GITHUB_OUTPUT"
+
+      - name: Upload exactly one bounded R11 observation artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vrtcore-h3-r11-draft-shape-observation-${{ github.run_id }}-1
+          retention-days: 90
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+            execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json
+
+      - name: Enforce successful observation-only terminal boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.observe.outcome }}" = "success"
+          test "${{ steps.upload.outcome }}" = "success"
+          test "${{ steps.observe.outputs.observed }}" = "true"
+          test "${{ steps.observe.outputs.receipt_persisted }}" = "true"
+          test "${{ steps.observe.outputs.read_only }}" = "true"
+          test "${{ steps.observe.outputs.request_count }}" = "2"
+          test "${{ steps.observe.outputs.zenodo_mutation }}" = "false"
+          test "${{ steps.observe.outputs.phase }}" = "record_created"
+          test "${{ steps.observe.outputs.record_id }}" = "21763614"
+          [[ "${{ steps.observe.outputs.evidence_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${{ steps.observe.outputs.evidence_bytes }}" =~ ^[1-9][0-9]{0,4}$ ]]
+          report=execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json
+          checkpoint=execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(stat -c '%a' "$report")" = "600"
+          test "$(stat -c '%s' "$checkpoint")" = "$C2_BYTES"
+          test "$(sha256sum "$checkpoint" | awk '{print $1}')" = "$C2_SHA256"
+          test "$(git -C execution hash-object "release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json")" = "$C2_BLOB"
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path(
+              'execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json'
+          ).read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_vrtcore_h3_r11_draft_shape_observation_v1'
+          assert value['read_only'] is True
+          assert value['request'] == {
+              'api_origin': 'https://zenodo.org',
+              'authenticated': True,
+              'methods': ['GET', 'GET'],
+              'request_count': 2,
+              'redirects_followed': False,
+          }
+          assert value['allowlist']['arbitrary_response_values_persisted'] is False
+          assert value['allowlist']['raw_response_bytes_persisted'] is False
+          assert value['binding']['r10_raw_log_identity_claimed'] is False
+          assert value['effect_boundary']['zenodo_mutation'] is False
+          assert value['effect_boundary']['terminal_result'] == \
+              'OBSERVATION_RECEIPT_PERSISTED_BLOCKED'
+          PY
+          git -C controller diff --exit-code -- .
+          git -C execution diff --exit-code -- .
+          test "$(git -C proxy rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          printf '%s\n' 'R11_READ_ONLY_OBSERVATION_ARTIFACT_PERSISTED=true'
