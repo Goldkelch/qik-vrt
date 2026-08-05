@@ -1,0 +1,284 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot pre-spacetime Zenodo receipt equality Authority
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/qikvrt_materialize_pre_spacetime_zenodo_receipt_equality_authority_once.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pre-spacetime-zenodo-receipt-equality-authority-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      LOCAL_MAIN: e17f6961062404fc6f6e9774f5fd2525fe0dd1ac
+      REMOTE_REPOSITORY: ingolf-lohmann/qik-vrt
+      REMOTE_MAIN: 2ec479e72abc891f3a65a3d0638a9ad9518b5d53
+      AUTHORITY_MAIN: e17f6961062404fc6f6e9774f5fd2525fe0dd1ac
+      MIRROR_MAIN: 2ec479e72abc891f3a65a3d0638a9ad9518b5d53
+      AUTHORITY_EXACT_HEAD: dbd2014c7dd5c8bdbe75f417f148063746e9c1c7
+      MIRROR_EXACT_HEAD: 73fc8997269b00092e09188b6b456ef053f23878
+      TARGET_BRANCH: evidence/pre-spacetime-zenodo-receipt-equality-authority-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_materialize_pre_spacetime_zenodo_receipt_equality_authority_once.yml
+      PUBLICATION_RECEIPT_PATH: evidence/receipts/zenodo/pre-spacetime-ontology-2026-08-05-publication.json
+      PUBLICATION_RECEIPT_BLOB: 63cc2a77d61e67ca836ca09b0f41e94a26e8d9b7
+      PUBLICATION_RECEIPT_SHA256: bc38d8beb7741447a40022da7657e5b9db074458714689b701d506eb9b574216
+      PUBLICATION_RECEIPT_BYTES: "1636"
+      INDEX_PATH: evidence/receipts/index.json
+      PRE_INDEX_BLOB: cbfed500dbfa9bfa9f9d76c0060f8d13ea47b681
+      RECEIPT_PATH: evidence/receipts/authority-mirror-equality-2026-08-05-pre-spacetime-ontology-zenodo-pr389-pr225.json
+      RECEIPT_ID: authority-mirror-equality-2026-08-05-pre-spacetime-ontology-zenodo-pr389-pr225
+      RECEIPT_SCOPE: post_publication_2026-08-05_pre_spacetime_ontology_zenodo_pr389_pr225
+      MATERIALIZED_AT: 2026-08-05T10:05:00Z
+      REQUEST_ID: qikvrt-pre-spacetime-ontology-zenodo-request-20260805-v1
+      DOI: 10.5281/zenodo.21804399
+      RECORD_ID: "21804399"
+      UPLOAD_SET_SHA256: b9d251868ad7133beaa6b283bc0970308df9e85c9896e6f45b4b597245c4721a
+    steps:
+      - name: Check out exact trusted Authority proxy head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Materialize exact reciprocal post-publication receipt candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$LOCAL_MAIN"
+          git remote add counterpart "https://github.com/$REMOTE_REPOSITORY.git"
+          git fetch --no-tags counterpart "$REMOTE_MAIN"
+          git cat-file -e "$REMOTE_MAIN^{commit}"
+
+          local_receipt_blob="$(git rev-parse "$LOCAL_MAIN:$PUBLICATION_RECEIPT_PATH")"
+          remote_receipt_blob="$(git rev-parse "$REMOTE_MAIN:$PUBLICATION_RECEIPT_PATH")"
+          test "$local_receipt_blob" = "$PUBLICATION_RECEIPT_BLOB"
+          test "$remote_receipt_blob" = "$PUBLICATION_RECEIPT_BLOB"
+          test "$local_receipt_blob" = "$remote_receipt_blob"
+          test "$(git cat-file -s "$local_receipt_blob")" = "$PUBLICATION_RECEIPT_BYTES"
+          git cat-file blob "$local_receipt_blob" > "$RUNNER_TEMP/publication-receipt.json"
+          test "$(sha256sum "$RUNNER_TEMP/publication-receipt.json" | awk '{print $1}')" = "$PUBLICATION_RECEIPT_SHA256"
+
+          local_index_blob="$(git rev-parse "$LOCAL_MAIN:$INDEX_PATH")"
+          remote_index_blob="$(git rev-parse "$REMOTE_MAIN:$INDEX_PATH")"
+          test "$local_index_blob" = "$PRE_INDEX_BLOB"
+          test "$remote_index_blob" = "$PRE_INDEX_BLOB"
+          test "$local_index_blob" = "$remote_index_blob"
+
+          python3 -B - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def canonical(value):
+              return json.dumps(
+                  value,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(',', ':'),
+              ).encode('utf-8')
+
+          authority = {
+              'repository': 'Goldkelch/qik-vrt',
+              'promotion_pull_request': 389,
+              'exact_green_head': os.environ['AUTHORITY_EXACT_HEAD'],
+              'main': os.environ['AUTHORITY_MAIN'],
+          }
+          mirror = {
+              'repository': 'ingolf-lohmann/qik-vrt',
+              'synchronization_pull_request': 225,
+              'exact_green_head': os.environ['MIRROR_EXACT_HEAD'],
+              'main': os.environ['MIRROR_MAIN'],
+          }
+          publication_path = os.environ['PUBLICATION_RECEIPT_PATH']
+          portable_paths = [publication_path]
+          portable_blob_map = {
+              publication_path: os.environ['PUBLICATION_RECEIPT_BLOB'],
+          }
+          path_set_sha256 = hashlib.sha256(canonical(portable_paths)).hexdigest()
+          blob_map_sha256 = hashlib.sha256(canonical(portable_blob_map)).hexdigest()
+          binding_payload = {
+              'receipt_id': os.environ['RECEIPT_ID'],
+              'observed_at': os.environ['MATERIALIZED_AT'],
+              'authority': authority,
+              'mirror': mirror,
+              'zenodo': {
+                  'request_id': os.environ['REQUEST_ID'],
+                  'doi': os.environ['DOI'],
+                  'record_id': int(os.environ['RECORD_ID']),
+                  'upload_set_sha256': os.environ['UPLOAD_SET_SHA256'],
+                  'publication_receipt_path': publication_path,
+                  'publication_receipt_bytes': int(os.environ['PUBLICATION_RECEIPT_BYTES']),
+                  'publication_receipt_sha256': os.environ['PUBLICATION_RECEIPT_SHA256'],
+                  'publication_receipt_git_blob_sha1': os.environ['PUBLICATION_RECEIPT_BLOB'],
+              },
+              'equality': {
+                  'portable_path_count': 1,
+                  'portable_path_set_sha256': path_set_sha256,
+                  'portable_blob_map_sha256': blob_map_sha256,
+                  'portable_payload_byte_equality_verified': True,
+                  'complete_repository_tree_equality': False,
+              },
+          }
+          binding_sha256 = hashlib.sha256(canonical(binding_payload)).hexdigest()
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_equality_evidence',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_authority_mirror_equality_receipt_v1',
+              'receipt_id': os.environ['RECEIPT_ID'],
+              'scope': os.environ['RECEIPT_SCOPE'],
+              'state': 'equality_verified_for_scoped_promotion',
+              'materialized_at': os.environ['MATERIALIZED_AT'],
+              'authority': authority,
+              'mirror': mirror,
+              'equality': {
+                  'portable_path_count': 1,
+                  'portable_path_set_sha256': path_set_sha256,
+                  'portable_blob_map_sha256': blob_map_sha256,
+                  'portable_payload_byte_equality_verified': True,
+                  'complete_repository_tree_equality': False,
+                  'scope_kind': 'portable_pre_spacetime_ontology_zenodo_publication_receipt',
+                  'portable_paths': portable_paths,
+                  'portable_blob_map': portable_blob_map,
+                  'repository_native_integrity': [
+                      'REPOSITORY_FILE_MANIFEST.json',
+                      'REPOSITORY_FILE_MANIFEST.json.sha256',
+                      'SHA256SUMS.txt',
+                  ],
+              },
+              'claims': {
+                  'authority_mirror_equality_verified': True,
+                  'authority_promotion_complete': True,
+                  'mirror_synchronization_complete': True,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+                  'zenodo_mutation_performed_by_this_receipt': False,
+                  'ietf_mutation_performed_by_this_receipt': False,
+                  'release_or_deployment_performed_by_this_receipt': False,
+              },
+              'reciprocal_repository_binding': {
+                  'authority_path': os.environ['RECEIPT_PATH'],
+                  'mirror_path': os.environ['RECEIPT_PATH'],
+                  'binding_payload': binding_payload,
+                  'binding_payload_canonicalization': "UTF-8 JSON with recursively sorted object keys and separators ',' ':'; no trailing newline",
+                  'binding_payload_sha256': binding_sha256,
+                  'persistence_method': 'identical receipt and append-only index payloads in both repositories; repository-native integrity regenerated independently; exact-head gates and expected-head promotions required',
+              },
+              'non_claims': [
+                  'complete repository tree equality',
+                  'repository main hash equality',
+                  'the two epistemic-triad JPEG figures or the additive image-evidence package are included in Zenodo record 21804399',
+                  'physical retrocausality or mutation of past events',
+                  'IETF submission or Datatracker mutation',
+                  'GitHub release creation',
+                  'deployment',
+                  'repository-wide PASS',
+                  'FINAL_PASS',
+                  'repository-wide EFFECT_ACK_DONE',
+              ],
+          }
+
+          receipt_path = Path(os.environ['RECEIPT_PATH'])
+          if receipt_path.exists():
+              raise SystemExit('BLOCK: reciprocal publication receipt already exists')
+          receipt_path.parent.mkdir(parents=True, exist_ok=True)
+          receipt_path.write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+          receipt_bytes = receipt_path.read_bytes()
+          receipt_sha256 = hashlib.sha256(receipt_bytes).hexdigest()
+          receipt_git_blob = subprocess.run(
+              ['git', 'hash-object', str(receipt_path)],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.strip()
+
+          index_path = Path(os.environ['INDEX_PATH'])
+          index = json.loads(index_path.read_text(encoding='utf-8'))
+          entries = index['equality_receipts']
+          if any(entry.get('receipt_id') == os.environ['RECEIPT_ID'] for entry in entries):
+              raise SystemExit('BLOCK: reciprocal publication receipt is already indexed')
+          entries.append({
+              'authority': {
+                  'main': os.environ['AUTHORITY_MAIN'],
+                  'pull_request': 389,
+                  'repository': 'Goldkelch/qik-vrt',
+              },
+              'file_sha256': receipt_sha256,
+              'git_blob_sha1': receipt_git_blob,
+              'mirror': {
+                  'main': os.environ['MIRROR_MAIN'],
+                  'pull_request': 225,
+                  'repository': 'ingolf-lohmann/qik-vrt',
+              },
+              'path': os.environ['RECEIPT_PATH'],
+              'receipt_id': os.environ['RECEIPT_ID'],
+              'scope': os.environ['RECEIPT_SCOPE'],
+              'source_receipt_payload_sha256': binding_sha256,
+              'state': 'equality_verified_for_scoped_promotion',
+          })
+          index_path.write_text(
+              json.dumps(index, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          index_bytes = index_path.read_bytes()
+          input_path = Path('anticipation/INPUT.json')
+          anticipation = json.loads(input_path.read_text(encoding='utf-8'))
+          for source_binding in anticipation['source_bindings']:
+              if source_binding['path'] == os.environ['INDEX_PATH']:
+                  source_binding['bytes'] = len(index_bytes)
+                  source_binding['sha256'] = hashlib.sha256(index_bytes).hexdigest()
+                  break
+          else:
+              raise SystemExit('BLOCK: anticipation index source binding absent')
+          input_path.write_text(
+              json.dumps(anticipation, ensure_ascii=False, separators=(',', ':')),
+              encoding='utf-8',
+          )
+
+          print(json.dumps({
+              'receipt_sha256': receipt_sha256,
+              'receipt_git_blob_sha1': receipt_git_blob,
+              'binding_payload_sha256': binding_sha256,
+              'portable_path_set_sha256': path_set_sha256,
+              'portable_blob_map_sha256': blob_map_sha256,
+          }, sort_keys=True))
+          PY
+
+          python3 -B tools/qikvrt_anticipation.py materialize
+          rm -f "$WORKFLOW_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$LOCAL_MAIN"
+          test "$(git ls-remote counterpart refs/heads/main | awk '{print $1}')" = "$REMOTE_MAIN"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          tree="$(git write-tree)"
+          candidate="$(printf '%s\n' 'evidence: materialize reciprocal pre-spacetime Zenodo publication receipt equality' | git commit-tree "$tree" -p "$LOCAL_MAIN")"
+          git push origin "$candidate:refs/heads/$TARGET_BRANCH"
