@@ -1,0 +1,150 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT post PR382 PR217 anticipation refresh
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_post_pr382_pr217_anticipation_refresh.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-post-pr382-pr217-anticipation-refresh-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'trusted/post-pr382-pr217-anticipation-refresh-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: trusted/post-pr382-pr217-anticipation-refresh-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Materialize ancestry-safe paired anticipation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "c19c94e2e11bc0832352214816690f5318a14e73"
+          export AUTHORITY_TREE="$(git rev-parse c19c94e2e11bc0832352214816690f5318a14e73^{tree})"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          input_path = Path("anticipation/INPUT.json")
+          value = json.loads(input_path.read_text(encoding="utf-8"))
+
+          receipt_path = Path("evidence/receipts/authority-mirror-equality-2026-08-05-pre-spacetime-ontology-pr368-pr214.json")
+          index_path = Path("evidence/receipts/index.json")
+
+          def binding(path: Path) -> dict[str, object]:
+              payload = path.read_bytes()
+              return {
+                  "path": path.as_posix(),
+                  "bytes": len(payload),
+                  "sha256": hashlib.sha256(payload).hexdigest(),
+              }
+
+          preserved = {
+              item["path"]: item
+              for item in value["source_bindings"]
+              if item["path"] in {"AI_PROGRESS.json", "AI_STATUS.md"}
+          }
+          value["source_bindings"] = [
+              preserved["AI_PROGRESS.json"],
+              preserved["AI_STATUS.md"],
+              binding(receipt_path),
+              binding(index_path),
+          ]
+
+          state_id = "post-pr382-pr217-reciprocal-receipt-promoted-r11-evidence-binding-open"
+          observation = {
+              "state_id": state_id,
+              "observed_at": "2026-08-05T06:10:35Z",
+              "classification": "TEILFORTSCHRITT",
+              "productive_chain_position": "POST_PR382_PR217_RECIPROCAL_RECEIPT_PROMOTED_R11_EVIDENCE_BINDING_OPEN",
+              "metrics": {
+                  "authority_present_corrected_candidate_archives": 6,
+                  "owner_acceptance_receipts": 1,
+                  "scoped_reciprocal_equality_receipts_materialized_on_both_mains": 4,
+                  "terminally_dispositioned_claim_subjects": 19,
+              },
+              "evidence": [
+                  "authority-git-commit:c19c94e2e11bc0832352214816690f5318a14e73",
+                  "mirror-git-commit:613988771badecdd36b02db7edcaec076734722c",
+                  "authority-pull-request:382",
+                  "mirror-pull-request:217",
+                  "authority-exact-green-head:bc595fc2254e3ca907cf6bf02cc4f99964569c3d",
+                  "mirror-exact-green-head:9bb4afde617c26df968a08e202f3cc31a3d396c7",
+                  "r11-git-commit:26a45a0af463dcd8bb1667897d1a999230375307",
+                  receipt_path.as_posix(),
+                  index_path.as_posix(),
+              ],
+          }
+          observations = [item for item in value["observations"] if item["state_id"] != state_id]
+          observations.append(observation)
+          value["observations"] = observations
+          value["observed_at"] = observation["observed_at"]
+          value["source_revision"] = "git-tree:" + os.environ["AUTHORITY_TREE"]
+          value["next_effect"] = {
+              "effect_id": "RESOLVE_AND_PERSIST_R11_DRAFT_SHAPE_OBSERVATION_RECEIPT_PAIR",
+              "anticipated_state_id": "r11-draft-shape-observation-receipt-pair-exact-head-green",
+              "description": "After exact-head promotion of the paired current-main anticipation refresh, reobserve both current mains, require ancestry from the promoted PR382 and PR217 receipt mains and preservation of the paired anticipation bytes, then resolve exactly once the existing Authority R11 push run for 26a45a0af463dcd8bb1667897d1a999230375307 under the standing Owner delegation. Download and verify the bounded read-only draft-shape observation artifact, verify the unchanged C2 SHA-256, persist receipt-only successors, run mandatory exact-head gates, and verify reciprocal synchronization. Automatic external dispatch, Zenodo mutation, publication, release, deployment, IETF action, PASS, FINAL_PASS, and EFFECT_ACK_DONE remain forbidden.",
+              "executor_capability": "qikvrt.repository.anticipation.v1",
+              "preconditions": [
+                  "AUTHORITY_MAIN_DESCENDS_FROM_C19C94E2E11BC0832352214816690F5318A14E73",
+                  "MIRROR_MAIN_DESCENDS_FROM_613988771BADECDD36B02DB7EDCAEC076734722C",
+                  "AUTHORITY_PR382_AND_MIRROR_PR217_RECIPROCAL_RECEIPT_PROMOTED_AT_VERIFIED_EXACT_HEADS",
+                  "REOBSERVE_CURRENT_AUTHORITY_AND_MIRROR_MAINS_BEFORE_R11_RESOLUTION",
+                  "PAIRED_ANTICIPATION_PROJECTION_BYTES_PRESERVED",
+                  "R11_HEAD_EQUALS_26A45A0AF463DCD8BB1667897D1A999230375307",
+                  "OWNER_STANDING_DELEGATION_AUTHORIZES_EXACTLY_ONE_READ_ONLY_R11_RESOLUTION",
+                  "RECEIPT_BLOB_0068CFFD6143C4A681E32FF78907A3B6CEADD72E_PRESERVED",
+                  "RECEIPT_INDEX_APPEND_ONLY_EQUALITY_PRESERVED",
+                  "RESOLVE_EXACT_R11_PUSH_RUN",
+                  "VERIFY_R11_ARTIFACT_AND_UNCHANGED_C2",
+                  "PERSIST_RECEIPT_ONLY_SUCCESSORS",
+                  "RUN_MANDATORY_EXACT_HEAD_GATES",
+                  "VERIFY_AUTHORITY_MIRROR_SYNCHRONIZATION",
+                  "NO_ZENODO_MUTATION",
+                  "NO_EXTERNAL_DISPATCH",
+              ],
+              "expected_receipt": "receipts/anticipation/0005-r11-draft-shape-observation-receipt-pair.json",
+          }
+          input_path.write_text(
+              json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          python3 -B tools/qikvrt_anticipation.py materialize
+          python3 -B tools/qikvrt_anticipation.py check
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          git diff --check
+      - name: Persist clean anticipation candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/qikvrt_post_pr382_pr217_anticipation_refresh.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add anticipation receipts/anticipation REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add -u .github/workflows/qikvrt_post_pr382_pr217_anticipation_refresh.yml
+          git commit -m "anticipation: bind promoted PR382 PR217 receipt mains"
+          git push origin HEAD:trusted/post-pr382-pr217-anticipation-refresh-v1
