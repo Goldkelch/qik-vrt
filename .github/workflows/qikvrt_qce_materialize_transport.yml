@@ -1,0 +1,128 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot QCE current-main materializer
+
+on:
+  push:
+    branches:
+      - "agent/qce-planck-pair-causal-emergence-2026-08-06-v1"
+    paths:
+      - ".github/workflows/qikvrt_qce_materialize_transport.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-qce-current-main-materializer-${{ github.repository }}-agent-qce-v1
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact QCE branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: "agent/qce-planck-pair-causal-emergence-2026-08-06-v1"
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify current-main ancestry and transport blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "agent/qce-planck-pair-causal-emergence-2026-08-06-v1"
+          git merge-base --is-ancestor 0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5 HEAD
+          test ! -e docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test "$(git hash-object state/transport/qce/part-00.b64)" = "23d19b2c30c7da0f75f122deae9936bbc62dd648"
+          test "$(git hash-object state/transport/qce/part-01.b64)" = "dd8778f3048a22036abae2aac7991d86926d9513"
+          test "$(git hash-object state/transport/qce/part-02.b64)" = "2aeebd92251a0a56557f0d702abd8bb082056726"
+          test "$(git hash-object state/transport/qce/part-03.b64)" = "16f92edd588de797fb1ba03d5845f5d9ae90b0ed"
+          test "$(git hash-object state/transport/qce/part-04.b64)" = "d36216934c2967e52f1951b1ab9c1ed39d375012"
+          test "$(git hash-object state/transport/qce/repair-05a.b64)" = "30c4c32270b823a625201fe33841522db256475d"
+          test "$(git hash-object state/transport/qce/repair-05b.b64)" = "cd56a6c7fde95510845bcf351a1afbca48e1d802"
+          test "$(git hash-object state/transport/qce/part-06.b64)" = "9918decdbf191153f02465832e6dd068aefa183f"
+          test "$(git hash-object state/transport/qce/part-07.b64)" = "29fe17edb3275528a11d9388769c62d3ffd0ed45"
+          test "$(git hash-object state/transport/qce/part-08.b64)" = "c096f8ceec94393bb31b3e869eaa94f39ba7c79f"
+
+      - name: Reconstruct and materialize the exact text overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("state/transport/qce/part-04.b64").read_text(encoding="ascii")
+          assert len(source) == 13999
+          repaired = source[:13873] + "E" + source[13873:]
+          assert len(repaired) == 14000
+          Path("/tmp/qce-part-04-fixed.b64").write_text(repaired, encoding="ascii")
+          PY
+          test "$(git hash-object /tmp/qce-part-04-fixed.b64)" = "50f1e8ff46b659c69edadfc9d6bfd8ae1316d79a"
+          cat \
+            state/transport/qce/part-00.b64 \
+            state/transport/qce/part-01.b64 \
+            state/transport/qce/part-02.b64 \
+            state/transport/qce/part-03.b64 \
+            /tmp/qce-part-04-fixed.b64 \
+            state/transport/qce/repair-05a.b64 \
+            state/transport/qce/repair-05b.b64 \
+            state/transport/qce/part-06.b64 \
+            state/transport/qce/part-07.b64 \
+            state/transport/qce/part-08.b64 \
+            > /tmp/qce-overlay.b64
+          test "$(wc -c < /tmp/qce-overlay.b64)" -eq 107188
+          base64 --decode /tmp/qce-overlay.b64 > /tmp/qce-text-overlay.tar.gz
+          echo "d757d1619f83d5d23209d16a1f67b90ba57ee9af6085c97af50a983a961a8271  /tmp/qce-text-overlay.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/qce-text-overlay.tar.gz -C .
+          test -f .github/workflows/qikvrt_qce_candidate.yml
+          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_Lean_Model.lean
+          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_AxiomAudit.lean
+          rm -f /tmp/qce-part-04-fixed.b64 /tmp/qce-overlay.b64 /tmp/qce-text-overlay.tar.gz
+
+      - name: Install deterministic document tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-liberation \
+            poppler-utils \
+            texlive-fonts-recommended \
+            texlive-lang-german \
+            texlive-latex-extra \
+            texlive-xetex
+
+      - name: Build and statically verify the QCE package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          bash build_qce_pdf.sh
+          python3 -B regenerate_qce_integrity.py
+          python3 -B verify_qce_package.py --static-only
+
+      - name: Remove one-shot transport before repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -r -- state/transport/qce
+          git rm -- .github/workflows/qikvrt_qce_materialize_transport.yml
+
+      - name: Regenerate and verify repository-native integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Commit the current-main QCE candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "qik-vrt-qce-materializer"
+          git config user.email "qik-vrt-qce-materializer@users.noreply.github.com"
+          git add -A
+          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
+          git commit -m "feat(qce): materialize current-main formal candidate"
+          git push origin "HEAD:refs/heads/agent/qce-planck-pair-causal-emergence-2026-08-06-v1"
