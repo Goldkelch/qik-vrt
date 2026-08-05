@@ -1,0 +1,70 @@
+{
+  "schema": "qikvrt_autonomous_self_healing_contract_v1",
+  "contract_id": "qikvrt-autonomous-self-healing-v1",
+  "authority_entrypoint": "AI",
+  "delegation_path": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
+  "controller_path": "tools/qikvrt_autonomous_self_heal.py",
+  "workflow_path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+  "execution_model": {
+    "observation": "scheduled_or_manual",
+    "mutation": "review_branch_only",
+    "promotion": "never_automatic",
+    "unchanged_semantic_fingerprint": "NOOP"
+  },
+  "allowlisted_handlers": [
+    {
+      "failure_class": "ANTICIPATION_PROJECTION_DRIFT",
+      "probe": ["python3", "-B", "tools/qikvrt_anticipation.py", "check"],
+      "repair": ["python3", "-B", "tools/qikvrt_anticipation.py", "materialize"],
+      "mutable_paths": [
+        "anticipation/current.json",
+        "anticipation/history.jsonl",
+        "anticipation/trends.json",
+        "anticipation/derivatives.json",
+        "anticipation/next-effect.json",
+        "receipts/anticipation/0001-contract-bound.json",
+        "receipts/anticipation/0002-anticipation-materialized.json"
+      ]
+    },
+    {
+      "failure_class": "REPOSITORY_NATIVE_INTEGRITY_STALE",
+      "probe": ["python3", "-B", "tools/qikvrt_integrity.py", "verify"],
+      "repair": ["python3", "-B", "tools/qikvrt_integrity.py", "generate"],
+      "mutable_paths": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt"
+      ]
+    }
+  ],
+  "mandatory_gates": [
+    ["python3", "-B", "tools/ai_runtime_bootloader.py", "--profile", "all", "--json"],
+    ["python3", "-B", "tools/qikvrt_anticipation.py", "check"],
+    ["python3", "-B", "tools/qikvrt_integrity.py", "verify"],
+    ["python3", "-B", "-m", "unittest", "-v", "tests.test_qikvrt_autonomous_self_heal"]
+  ],
+  "forbidden_effects": [
+    "automatic_merge",
+    "force_push",
+    "tag_or_release_creation",
+    "deployment",
+    "zenodo_mutation",
+    "ietf_mutation",
+    "credentialed_external_write",
+    "repository_wide_completion_claim"
+  ],
+  "candidate_contract": {
+    "branch_prefix": "automation/self-heal-",
+    "pull_request_mode": "draft",
+    "deduplicate_by": "semantic_fingerprint",
+    "no_diff": "NOOP",
+    "all_paths_must_be_allowlisted": true
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_SYNC": false,
+    "SYMMETRIC_CANONICALITY": false
+  }
+}
