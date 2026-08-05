@@ -1,0 +1,59 @@
+name: QIK-VRT pre-spacetime receipt integrity materializer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_pre_spacetime_receipt_integrity_materializer.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pre-spacetime-receipt-integrity-materializer
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Regenerate carrier-free integrity and persist clean head
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='${{ github.event.pull_request.head.ref }}'
+          carrier='.github/workflows/qikvrt_pre_spacetime_receipt_integrity_materializer.yml'
+          git rm -- "$carrier"
+          python3 -B - <<'PY'
+          from tools.qikvrt_integrity import generate, verify
+          generated = generate()
+          if not generated.ok:
+              raise SystemExit(generated.message)
+          checked = verify()
+          if not checked.ok:
+              raise SystemExit(checked.message)
+          print(generated.message)
+          print(checked.message)
+          PY
+          make test
+          git config user.name 'qik-vrt receipt materializer'
+          git config user.email 'qik-vrt-receipt-materializer@users.noreply.github.com'
+          git add -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          changed="$(git diff --cached --name-only)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 4
+          printf '%s\n' "$changed" | grep -Fx "$carrier"
+          printf '%s\n' "$changed" | grep -Fx 'REPOSITORY_FILE_MANIFEST.json'
+          printf '%s\n' "$changed" | grep -Fx 'REPOSITORY_FILE_MANIFEST.json.sha256'
+          printf '%s\n' "$changed" | grep -Fx 'SHA256SUMS.txt'
+          git commit -m 'Regenerate receipt integrity on carrier-free tree'
+          git push origin HEAD:"$branch"
