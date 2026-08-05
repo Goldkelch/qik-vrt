@@ -1,0 +1,192 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Resolve exact existing R11 draft-shape observation read only v2
+
+on:
+  push:
+    branches:
+      - recovery-execution/vrtcore-h3-r11-observation-repair-v2
+    paths:
+      - .github/workflows/qikvrt_resolve_existing_r11_observation_once_v2.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: qikvrt-vrtcore-h3-r11-read-only-resolution-v2
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      github.event.created == false &&
+      github.event.deleted == false &&
+      github.event.forced == false &&
+      github.event.before == 'e8a0b521e6dbd7951b256fb0ed7f363ef465de41' &&
+      github.event.after == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_AUTHORITY_MAIN: e8a0b521e6dbd7951b256fb0ed7f363ef465de41
+      EXPECTED_MIRROR_MAIN: ca43c6970774c5825a0cba9b640c749eaa9c16c6
+      EXPECTED_BRANCH: recovery-execution/vrtcore-h3-r11-observation-repair-v2
+      WORKFLOW_PATH: .github/workflows/qikvrt_resolve_existing_r11_observation_once_v2.yml
+      R11_HEAD: 26a45a0af463dcd8bb1667897d1a999230375307
+      R11_PARENT: 507f4f30b694df3a415194b2c2cae41a0922b6d9
+      R11_TREE: 693ae135b907ee50e9bc9d3ff70b0b1662ab8072
+      E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
+      E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
+      E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
+      C2_SHA256: 3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4
+      C2_BYTES: '23415'
+      RECORD_ID: '21763614'
+    steps:
+      - name: Check out exact one-shot carrier head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: carrier
+
+      - name: Verify current-main lease and one-path carrier boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+          test "${{ github.event.before }}" = "$EXPECTED_AUTHORITY_MAIN"
+          test "${{ github.event.after }}" = "$GITHUB_SHA"
+          test "$(git -C carrier rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git -C carrier show -s --format=%P HEAD)" = "$EXPECTED_AUTHORITY_MAIN"
+          test "$(git -C carrier ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$EXPECTED_AUTHORITY_MAIN"
+          test "$(git ls-remote --heads https://github.com/ingolf-lohmann/qik-vrt.git refs/heads/main | awk 'NR == 1 {print $1}')" = "$EXPECTED_MIRROR_MAIN"
+          expected_delta="$(printf 'A\t%s' "$WORKFLOW_PATH")"
+          observed_delta="$(git -C carrier diff --name-status --no-renames "$EXPECTED_AUTHORITY_MAIN" "$GITHUB_SHA" --)"
+          test "$observed_delta" = "$expected_delta"
+          test -z "$(git -C carrier status --porcelain=v1 --untracked-files=all)"
+
+      - name: Check out immutable R11 controller bytes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: 26a45a0af463dcd8bb1667897d1a999230375307
+          path: controller
+
+      - name: Verify exact R11 controller and focused contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C controller rev-parse --verify HEAD^{commit})" = "$R11_HEAD"
+          test "$(git -C controller show -s --format=%P HEAD)" = "$R11_PARENT"
+          test "$(git -C controller rev-parse --verify HEAD^{tree})" = "$R11_TREE"
+          python3 -B controller/tools/qikvrt_integrity.py verify
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" \
+            python3 -B -m unittest -v \
+              controller/tests/test_vrtcore_h3_e1_recovery.py
+          test -z "$(git -C controller status --porcelain=v1 --untracked-files=all)"
+
+      - name: Check out immutable E1 publication execution
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: 53e757ebce929b40250f90a02ed2a9ec62de6217
+          path: execution
+
+      - name: Verify immutable E1 basis and unchanged C2 checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C execution rev-parse --verify HEAD^{commit})" = "$E1"
+          test "$(git -C execution show -s --format=%P HEAD)" = "$E1_PARENT"
+          test "$(git -C execution rev-parse --verify HEAD^{tree})" = "$E1_TREE"
+          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
+            --verify-basis \
+            --execution-root execution
+          checkpoint=execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(sha256sum "$checkpoint" | awk '{print $1}')" = "$C2_SHA256"
+          test "$(wc -c < "$checkpoint" | tr -d '[:space:]')" = "$C2_BYTES"
+          test -z "$(git -C execution status --porcelain=v1 --untracked-files=all)"
+
+      - name: Observe exact R11 private draft shape using two Zenodo GETs only
+        id: observe
+        timeout-minutes: 10
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_TOKEN"
+          test -n "$ZENODO_ACCESS_TOKEN"
+          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
+            --observe-draft-shape \
+            --execution-root execution \
+            --observation-output execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Upload unchanged C2 and bounded R11 observation receipt
+        id: upload
+        if: steps.observe.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vrtcore-h3-r11-draft-shape-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+            execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json
+
+      - name: Enforce terminal observation-only boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.observe.outcome }}" = "success"
+          test "${{ steps.upload.outcome }}" = "success"
+          test "${{ steps.observe.outputs.observed }}" = "true"
+          test "${{ steps.observe.outputs.receipt_persisted }}" = "true"
+          test "${{ steps.observe.outputs.read_only }}" = "true"
+          test "${{ steps.observe.outputs.request_count }}" = "2"
+          test "${{ steps.observe.outputs.zenodo_mutation }}" = "false"
+          test "${{ steps.observe.outputs.phase }}" = "record_created"
+          test "${{ steps.observe.outputs.record_id }}" = "$RECORD_ID"
+          [[ "${{ steps.observe.outputs.evidence_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${{ steps.observe.outputs.evidence_bytes }}" =~ ^[1-9][0-9]{0,4}$ ]]
+          report=execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json
+          checkpoint=execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(stat -c '%a' "$report")" = "600"
+          test "$(sha256sum "$report" | awk '{print $1}')" = "${{ steps.observe.outputs.evidence_sha256 }}"
+          test "$(wc -c < "$report" | tr -d '[:space:]')" = "${{ steps.observe.outputs.evidence_bytes }}"
+          test "$(sha256sum "$checkpoint" | awk '{print $1}')" = "$C2_SHA256"
+          test "$(wc -c < "$checkpoint" | tr -d '[:space:]')" = "$C2_BYTES"
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json')
+          value = json.loads(path.read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_vrtcore_h3_r11_draft_shape_observation_v1'
+          assert value['read_only'] is True
+          assert value['request'] == {
+              'api_origin': 'https://zenodo.org',
+              'count': 2,
+              'method': 'GET',
+              'path': '/api/deposit/depositions/21763614',
+              'redirects_followed': False,
+          }
+          assert value['effect_boundary']['zenodo_mutation'] is False
+          assert value['allowlist']['arbitrary_response_values_persisted'] is False
+          assert value['allowlist']['raw_response_bytes_persisted'] is False
+          assert value['binding']['r10_raw_log_identity_claimed'] is False
+          assert value['effect_boundary']['terminal_result'] == 'OBSERVATION_RECEIPT_PERSISTED_BLOCKED'
+          PY
+          printf '%s\n' 'R11_OBSERVATION_RECEIPT_PERSISTED_BLOCKED=true'
+          test -z "$(git -C carrier status --porcelain=v1 --untracked-files=all)"
