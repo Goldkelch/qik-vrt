@@ -1,0 +1,245 @@
+name: QIK-VRT exact pre-spacetime ontology Zenodo publication
+
+on:
+  push:
+    branches:
+      - trusted/pre-spacetime-ontology-zenodo-publish-v1
+    paths:
+      - .github/workflows/qikvrt_pre_spacetime_ontology_zenodo_publish.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: qikvrt-pre-spacetime-ontology-zenodo-publication-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      REQUEST_ID: qikvrt-pre-spacetime-ontology-zenodo-request-20260805-v1
+      AUTHORIZATION_PAYLOAD_SHA256: 462f8c4cfc560c0fb48617a42eed1bdd68b8fa8a055c737260a68e1c1a310f74
+      AUTHORIZATION_COMMENT_ID: '5189550138'
+      REQUEST_PATH: release/pre-spacetime-ontology-zenodo-2026-08-05/HASH_BOUND_PUBLICATION_REQUEST.json
+      RECEIPT_PATH: release/pre-spacetime-ontology-zenodo-2026-08-05/PUBLICATION_RECEIPT.json
+      WORKFLOW_PATH: .github/workflows/qikvrt_pre_spacetime_ontology_zenodo_publish.yml
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact trusted execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind, publish, redownload, and persist receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.error, urllib.parse, urllib.request
+
+          root = pathlib.Path('.').resolve()
+          request_path = root / os.environ['REQUEST_PATH']
+          receipt_path = root / os.environ['RECEIPT_PATH']
+          workflow_path = root / os.environ['WORKFLOW_PATH']
+          request_id = os.environ['REQUEST_ID']
+          auth_digest = os.environ['AUTHORIZATION_PAYLOAD_SHA256']
+          auth_comment_id = int(os.environ['AUTHORIZATION_COMMENT_ID'])
+          token = os.environ.get('ZENODO_ACCESS_TOKEN', '')
+          gh_token = os.environ['GH_TOKEN']
+          repository = os.environ['GITHUB_REPOSITORY']
+          exact_statement = (
+              'AUTHORIZE_EXACT_ZENODO_PUBLICATION '
+              f'request_id={request_id} '
+              f'authorization_payload_sha256={auth_digest}'
+          )
+
+          def fail(message):
+              raise SystemExit('BLOCK: ' + message)
+
+          def sha256(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def canonical(value):
+              return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+          def request(method, url, *, data=None, content_type=None, authorization=True):
+              headers = {'Accept': 'application/json', 'User-Agent': 'qik-vrt-pre-spacetime-ontology-publisher/1'}
+              if authorization:
+                  headers['Authorization'] = 'Bearer ' + token
+              if content_type:
+                  headers['Content-Type'] = content_type
+              req = urllib.request.Request(url, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=90) as response:
+                      return response.status, dict(response.headers.items()), response.read(64 * 1024 * 1024)
+              except urllib.error.HTTPError as exc:
+                  body = exc.read(1024 * 1024)
+                  fail(f'HTTP {exc.code} for {method} {urllib.parse.urlsplit(url).path}: {body[:500]!r}')
+              except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                  fail(f'transport failure for {method} {urllib.parse.urlsplit(url).path}: {type(exc).__name__}')
+
+          if not token:
+              fail('ZENODO_ACCESS_TOKEN secret is absent')
+          if not request_path.is_file() or request_path.is_symlink():
+              fail('canonical hash-bound request is absent or unsafe')
+          req = json.loads(request_path.read_text(encoding='utf-8'))
+          if req.get('request_id') != request_id:
+              fail('request_id mismatch')
+          if req.get('authorization_payload_sha256') != auth_digest:
+              fail('authorization payload digest mismatch')
+          if sha256(canonical(req.get('authorization_payload'))) != auth_digest:
+              fail('authorization payload canonicalization mismatch')
+          if req.get('authorization_requirement', {}).get('required_exact_statement') != exact_statement:
+              fail('required exact authorization statement mismatch')
+          if req.get('authorization_requirement', {}).get('single_use') is not True:
+              fail('request is not single-use')
+          if receipt_path.exists():
+              fail('publication receipt already exists; refusing duplicate effect')
+
+          comments_url = f'https://api.github.com/repos/{repository}/issues/384/comments?per_page=100'
+          gh_req = urllib.request.Request(comments_url, headers={
+              'Accept': 'application/vnd.github+json',
+              'Authorization': 'Bearer ' + gh_token,
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'qik-vrt-authorization-validator/1',
+          })
+          with urllib.request.urlopen(gh_req, timeout=60) as response:
+              comments = json.load(response)
+          matches = [c for c in comments if c.get('id') == auth_comment_id]
+          if len(matches) != 1:
+              fail('exact authorization comment is absent or ambiguous')
+          comment = matches[0]
+          if comment.get('user', {}).get('login') != 'ingolf-lohmann':
+              fail('authorization principal mismatch')
+          lines = [line.strip() for line in str(comment.get('body', '')).splitlines()]
+          if exact_statement not in lines:
+              fail('exact authorization statement is not present as a complete line')
+
+          uploads = req.get('uploads')
+          if not isinstance(uploads, list) or len(uploads) != 4:
+              fail('upload set must contain exactly four files')
+          upload_projection = []
+          for item in uploads:
+              path = root / item['path']
+              data = path.read_bytes()
+              if len(data) != item['bytes'] or sha256(data) != item['sha256']:
+                  fail('upload byte binding mismatch: ' + item['path'])
+              blob = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+              if blob != item['git_blob_sha1']:
+                  fail('upload Git blob mismatch: ' + item['path'])
+              upload_projection.append({'name': item['name'], 'bytes': item['bytes'], 'sha256': item['sha256']})
+          if sha256(canonical(upload_projection)) != req['upload_set_sha256']:
+              fail('upload set digest mismatch')
+
+          metadata_path = root / req['zenodo_candidate_metadata']['path']
+          metadata_raw = json.loads(metadata_path.read_text(encoding='utf-8'))
+          metadata = {
+              'title': metadata_raw['title'],
+              'upload_type': 'publication',
+              'publication_type': 'article',
+              'description': (
+                  'Repository-reviewed, hash-bound pre-spacetime ontology article. '
+                  'The publication distinguishes persisted information from physical retrocausality.'
+              ),
+              'creators': metadata_raw['creators'],
+              'contributors': metadata_raw.get('contributors', []),
+              'language': metadata_raw['language'],
+              'license': metadata_raw['license'],
+              'keywords': metadata_raw['keywords'],
+              'version': '1.0.0',
+          }
+
+          api = 'https://zenodo.org/api'
+          status, _, body = request('POST', api + '/deposit/depositions', data=b'{}', content_type='application/json')
+          if status not in (200, 201):
+              fail('deposition creation failed')
+          deposition = json.loads(body.decode('utf-8'))
+          dep_id = deposition.get('id')
+          bucket = deposition.get('links', {}).get('bucket')
+          if not isinstance(dep_id, int) or not isinstance(bucket, str):
+              fail('Zenodo creation response lacks deposition identity')
+
+          status, _, _ = request(
+              'PUT', api + f'/deposit/depositions/{dep_id}',
+              data=canonical({'metadata': metadata}), content_type='application/json'
+          )
+          if status not in (200, 201):
+              fail('metadata update failed')
+
+          uploaded = []
+          for item in uploads:
+              data = (root / item['path']).read_bytes()
+              target = bucket.rstrip('/') + '/' + urllib.parse.quote(item['name'], safe='')
+              status, _, response_body = request('PUT', target, data=data, content_type='application/octet-stream')
+              if status not in (200, 201):
+                  fail('upload failed: ' + item['name'])
+              uploaded.append({'name': item['name'], 'bytes': len(data), 'sha256': sha256(data)})
+
+          status, _, body = request('POST', api + f'/deposit/depositions/{dep_id}/actions/publish', data=b'{}', content_type='application/json')
+          if status not in (200, 201, 202):
+              fail('publication action failed')
+          published = json.loads(body.decode('utf-8'))
+          record_id = published.get('record_id') or published.get('id')
+          doi = published.get('doi') or published.get('metadata', {}).get('doi')
+          if not isinstance(record_id, int):
+              fail('published record id is absent')
+
+          status, _, body = request('GET', api + f'/records/{record_id}', authorization=False)
+          if status != 200:
+              fail('public record retrieval failed')
+          public_record = json.loads(body.decode('utf-8'))
+          public_files = public_record.get('files', [])
+          by_name = {f.get('key'): f for f in public_files if isinstance(f, dict)}
+          redownloaded = []
+          for item in uploads:
+              public = by_name.get(item['name'])
+              if not public:
+                  fail('published file absent: ' + item['name'])
+              link = public.get('links', {}).get('self') or public.get('links', {}).get('content')
+              if not isinstance(link, str):
+                  fail('published file has no public content link: ' + item['name'])
+              status, _, data = request('GET', link, authorization=False)
+              if status != 200 or len(data) != item['bytes'] or sha256(data) != item['sha256']:
+                  fail('public redownload mismatch: ' + item['name'])
+              redownloaded.append({'name': item['name'], 'bytes': len(data), 'sha256': sha256(data)})
+
+          receipt = {
+              'schema': 'qikvrt_zenodo_publication_receipt_v1',
+              'request_id': request_id,
+              'authorization_payload_sha256': auth_digest,
+              'authorization_comment_id': auth_comment_id,
+              'execution_repository': repository,
+              'execution_head': os.environ['GITHUB_SHA'],
+              'zenodo_deposition_id': dep_id,
+              'zenodo_record_id': record_id,
+              'doi': doi,
+              'upload_set_sha256': req['upload_set_sha256'],
+              'uploaded': uploaded,
+              'public_redownloaded': redownloaded,
+              'byte_equality_established': True,
+              'publication_effect_completed': True,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          receipt_path.parent.mkdir(parents=True, exist_ok=True)
+          receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          workflow_path.unlink()
+          subprocess.run(['python3', '-B', 'tools/qikvrt_integrity.py', '--generate'], check=True)
+          subprocess.run(['python3', '-B', 'tools/qikvrt_integrity.py', '--verify'], check=True)
+          PY
+
+          git config user.name 'qikvrt-zenodo-publisher[bot]'
+          git config user.email 'qikvrt-zenodo-publisher[bot]@users.noreply.github.com'
+          git add -A -- "$RECEIPT_PATH" "$WORKFLOW_PATH" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          test "$(git diff --cached --name-only | wc -l)" -eq 5
+          git commit -m 'receipt: persist exact pre-spacetime ontology Zenodo publication'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
