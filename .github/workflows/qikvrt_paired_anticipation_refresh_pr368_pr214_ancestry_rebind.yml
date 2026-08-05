@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT ancestry-safe anticipation rebind PR380 PR218
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_paired_anticipation_refresh_pr368_pr214_ancestry_rebind.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-anticipation-ancestry-rebind-pr380-pr218-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/current-main-anticipation-refresh-pr368-pr214-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/current-main-anticipation-refresh-pr368-pr214-v2
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Replace self-invalidating main equality predicates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "7e904335cd4e87297c65038b5b8f66bae19ce1e7"
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("anticipation/INPUT.json")
+          value = json.loads(path.read_text(encoding="utf-8"))
+          effect = dict(value["next_effect"])
+          effect["description"] = "After exact-head promotion of Authority PR380 and Mirror PR218, reobserve both current mains, require ancestry from the pre-refresh mains and preservation of the paired anticipation bytes, then resolve exactly once the existing Authority R11 push run for 26a45a0af463dcd8bb1667897d1a999230375307 under the standing Owner delegation. Download and verify the bounded read-only draft-shape observation artifact, verify the unchanged C2 SHA-256, persist receipt-only successors, run mandatory exact-head gates, and verify reciprocal synchronization. Automatic external dispatch, Zenodo mutation, publication, release, deployment, IETF action, PASS, FINAL_PASS, and EFFECT_ACK_DONE remain forbidden."
+          effect["preconditions"] = [
+              "AUTHORITY_MAIN_DESCENDS_FROM_D0C0076CF1AEB6CE52BC99823EC55FDA124D2F71",
+              "MIRROR_MAIN_DESCENDS_FROM_923A508566BB27C977BDAC7E2313F4038E2A7111",
+              "AUTHORITY_PR380_AND_MIRROR_PR218_PROMOTED_AT_VERIFIED_EXACT_HEADS",
+              "REOBSERVE_CURRENT_AUTHORITY_AND_MIRROR_MAINS_BEFORE_R11_RESOLUTION",
+              "PAIRED_ANTICIPATION_PROJECTION_BYTES_PRESERVED",
+              "R11_HEAD_EQUALS_26A45A0AF463DCD8BB1667897D1A999230375307",
+              "OWNER_STANDING_DELEGATION_AUTHORIZES_EXACTLY_ONE_READ_ONLY_R11_RESOLUTION",
+              "RECEIPT_BLOB_04B30A72B3303933E2F857FD5D9AF562EEF6CEED_PRESERVED",
+              "RECEIPT_INDEX_APPEND_ONLY_EQUALITY_PRESERVED",
+              "RESOLVE_EXACT_R11_PUSH_RUN",
+              "VERIFY_R11_ARTIFACT_AND_UNCHANGED_C2",
+              "PERSIST_RECEIPT_ONLY_SUCCESSORS",
+              "RUN_MANDATORY_EXACT_HEAD_GATES",
+              "VERIFY_AUTHORITY_MIRROR_SYNCHRONIZATION",
+              "NO_ZENODO_MUTATION",
+              "NO_EXTERNAL_DISPATCH"
+          ]
+          value["next_effect"] = effect
+          path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          PY
+          python3 -B tools/qikvrt_anticipation.py materialize
+          python3 -B tools/qikvrt_anticipation.py check
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git diff --check
+      - name: Persist rebind and remove carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/qikvrt_paired_anticipation_refresh_pr368_pr214_ancestry_rebind.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add anticipation receipts/anticipation REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add -u .github/workflows/qikvrt_paired_anticipation_refresh_pr368_pr214_ancestry_rebind.yml
+          git commit -m "anticipation: replace self-invalidating main equality predicates"
+          git push origin HEAD:agent/current-main-anticipation-refresh-pr368-pr214-v2
