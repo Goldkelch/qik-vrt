@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT exact R11 read-only draft-shape observer v2
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+    paths: [.github/workflows/qikvrt_r11_read_only_observation_proxy_v2.yml]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: qikvrt-r11-read-only-observation-dispatch-20260805-v2
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.action == 'opened' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'trusted/r11-read-only-observation-proxy-v2-exact' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      AUTHORITY_SOURCE_MAIN: 121f2f611eb1a7cf903ca80325d5900aad4f7876
+      MIRROR_SOURCE_MAIN: 8cdf8e71fe5edbadae4d80c606c07bdeea3ed4bc
+      R11_BRANCH: recovery-execution/vrtcore-relational-h3-e1-v1
+      R11_HEAD: 26a45a0af463dcd8bb1667897d1a999230375307
+      R11_TREE: 693ae135b907ee50e9bc9d3ff70b0b1662ab8072
+      R10_HEAD: 507f4f30b694df3a415194b2c2cae41a0922b6d9
+      E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
+      E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
+      E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
+      C2_COMMIT: 376e869dc3504929b8913146cb29264d3ac585f3
+      C2_BLOB: d81135af4a14c5fa3d67966761f473569c7d2689
+      C2_BYTES: '23415'
+      C2_SHA256: 3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {ref: '${{ github.event.pull_request.head.sha }}', fetch-depth: 1, persist-credentials: false, path: proxy}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {ref: '${{ github.event.pull_request.base.sha }}', fetch-depth: 0, persist-credentials: false, path: authority}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {repository: ingolf-lohmann/qik-vrt, ref: main, fetch-depth: 0, persist-credentials: false, path: mirror}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {ref: 26a45a0af463dcd8bb1667897d1a999230375307, fetch-depth: 0, persist-credentials: false, path: controller}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {ref: 53e757ebce929b40250f90a02ed2a9ec62de6217, fetch-depth: 0, persist-credentials: false, path: execution}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with: {python-version: '3.12'}
+      - name: Verify paired V2 contract and consumed V1 failure
+        env: {GITHUB_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          mirror_main="$(git -C mirror rev-parse HEAD^{commit})"
+          python3 -B authority/tests/test_r11_read_only_observation_dispatch_contract_v2.py
+          python3 -B mirror/tests/test_r11_read_only_observation_dispatch_contract_v2.py
+          python3 -B authority/tools/qikvrt_r11_read_only_observation_dispatch_v2.py preflight \
+            --authority-root authority --mirror-root mirror --proxy-root proxy \
+            --event-base '${{ github.event.pull_request.base.sha }}' \
+            --mirror-main "$mirror_main" \
+            --proxy-head '${{ github.event.pull_request.head.sha }}' \
+            --proxy-pr '${{ github.event.pull_request.number }}' \
+            --synthetic-event "$RUNNER_TEMP/r11-v2-synthetic-push.json"
+      - name: Verify immutable controller, E1 and unchanged C2
+        run: |
+          set -euo pipefail
+          test "$(git -C controller rev-parse HEAD)" = "$R11_HEAD"
+          test "$(git -C controller show -s --format=%P HEAD)" = "$R10_HEAD"
+          test "$(git -C controller rev-parse HEAD^{tree})" = "$R11_TREE"
+          test "$(git -C execution rev-parse HEAD)" = "$E1"
+          test "$(git -C execution show -s --format=%P HEAD)" = "$E1_PARENT"
+          test "$(git -C execution rev-parse HEAD^{tree})" = "$E1_TREE"
+          python3 -B controller/tools/qikvrt_integrity.py verify
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" python3 -B -m unittest -v controller/tests/test_vrtcore_h3_e1_recovery.py
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" python3 -B - <<'PY'
+          from tools import qikvrt_vrtcore_h3_e1_recovery as c
+          assert c.R11_ZENODO_DEPOSITION_PATH == '/api/deposit/depositions/21763614'
+          assert c.R10_DRAFT_SHAPE_INCIDENT['record_id'] == 21763614
+          assert c.R10_DRAFT_SHAPE_INCIDENT['doi'] == '10.5281/zenodo.21763614'
+          PY
+          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py --verify-basis --execution-root execution
+          checkpoint=release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(git -C execution rev-parse "$C2_COMMIT:$checkpoint")" = "$C2_BLOB"
+          test "$(git -C execution cat-file -s "$C2_COMMIT:$checkpoint")" = "$C2_BYTES"
+          test "$(git -C execution show "$C2_COMMIT:$checkpoint" | sha256sum | awk '{print $1}')" = "$C2_SHA256"
+          make -C execution test
+      - name: Perform exactly two Zenodo GETs with bounded GitHub-GET retry
+        id: observe
+        timeout-minutes: 15
+        env:
+          GITHUB_TOKEN: '${{ github.token }}'
+          ZENODO_ACCESS_TOKEN: '${{ secrets.ZENODO_ACCESS_TOKEN }}'
+          EXPECTED_CONTROLLER_PARENT: '${{ github.event.pull_request.base.sha }}'
+        run: |
+          set -euo pipefail
+          env GITHUB_REPOSITORY='Goldkelch/qik-vrt' GITHUB_EVENT_NAME='push' \
+            GITHUB_REF="refs/heads/$R11_BRANCH" GITHUB_REF_NAME="$R11_BRANCH" \
+            GITHUB_SHA="$R11_HEAD" GITHUB_RUN_ATTEMPT='1' \
+            GITHUB_EVENT_PATH="$RUNNER_TEMP/r11-v2-synthetic-push.json" \
+            python3 -B authority/tools/qikvrt_r11_read_only_observation_dispatch_v2.py observe \
+              --controller-root controller --execution-root execution \
+              --observation-output execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json \
+              --github-output "$GITHUB_OUTPUT"
+      - name: Upload exactly one bounded R11 V2 artifact
+        id: upload
+        if: steps.observe.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vrtcore-h3-r11-draft-shape-observation-v2-${{ github.run_id }}-1
+          retention-days: 90
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+            execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json
+      - name: Enforce observation-only terminal boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          test '${{ steps.observe.outcome }}' = success
+          test '${{ steps.upload.outcome }}' = success
+          test '${{ steps.observe.outputs.request_count }}' = 2
+          test '${{ steps.observe.outputs.zenodo_mutation }}' = false
+          test '${{ steps.observe.outputs.record_id }}' = 21763614
+          python3 -B authority/tools/qikvrt_r11_read_only_observation_dispatch_v2.py verify \
+            --execution-root execution \
+            --report execution/.qikvrt/vrtcore-h3-r11/draft-shape-observation.json \
+            --checkpoint execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
+          test "$(git -C proxy rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          git -C controller diff --exit-code -- .
+          git -C execution diff --exit-code -- .
+          printf '%s\n' R11_V2_READ_ONLY_OBSERVATION_ARTIFACT_PERSISTED=true
