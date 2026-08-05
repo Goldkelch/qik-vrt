@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT current-main anticipation integrity PR382 PR217
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_current_main_anticipation_integrity_pr382_pr217.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-current-main-anticipation-integrity-pr382-pr217-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/current-main-anticipation-refresh-pr382-pr217-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/current-main-anticipation-refresh-pr382-pr217-v2
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.13'
+      - name: Verify ported projections and regenerate current-main integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git show -s --format=%P HEAD)" = "9204c027a772781de1a08d029aa675d184bb8cb9"
+          python3 -B tools/qikvrt_anticipation.py check
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git diff --check
+      - name: Persist integrity and remove carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/qikvrt_current_main_anticipation_integrity_pr382_pr217.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git add -u .github/workflows/qikvrt_current_main_anticipation_integrity_pr382_pr217.yml
+          git commit -m "integrity: bind PR382 PR217 anticipation refresh to current main"
+          git push origin HEAD:agent/current-main-anticipation-refresh-pr382-pr217-v2
