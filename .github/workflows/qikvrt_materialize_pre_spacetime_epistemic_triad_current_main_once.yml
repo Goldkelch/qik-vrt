@@ -64,7 +64,7 @@ jobs:
                   value = json.load(response)
               if value.get("encoding") != "base64" or value.get("sha") != binding["sha"]:
                   raise SystemExit(f"BLOCK: Git blob response mismatch for {path}")
-              raw = base64.b64decode(value["content"], validate=True)
+              raw = base64.b64decode(value["content"], validate=False)
               git_sha = hashlib.sha1(
                   f"blob {len(raw)}\0".encode("ascii") + raw,
                   usedforsecurity=False,
