@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT probe existing exact poster text blob
+on:
+  push:
+    branches:
+      - transport/pre-spacetime-epistemic-triad-current-main-materializer-v1
+    paths:
+      - .github/workflows/qikvrt_probe_existing_poster_text_blob_once.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_TEXT_BLOB: 1513b2bade1a1d1fd0063d911fa4dc5d4af903b7
+      EXPECTED_BYTES: '447418'
+      EXPECTED_SHA256: fe5af321bdf8f8f75bef7367c4fe49afc5239922f9477bb67bbaa14b552747e1
+      EXPECTED_GIT_BLOB_SHA1: 314d445c5d4cb1d94b84ba19282a338ea438eb32
+    steps:
+      - name: Fetch, decode and verify poster carrier
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64, hashlib, json, os, urllib.request
+          repo = os.environ['GITHUB_REPOSITORY']
+          sha = os.environ['SOURCE_TEXT_BLOB']
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/git/blobs/{sha}',
+              headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f"Bearer {os.environ['GH_API_TOKEN']}",
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qik-vrt-existing-poster-probe/1.0',
+              },
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:
+              payload = json.load(response)
+          text = base64.b64decode(''.join(payload['content'].split()), validate=True)
+          raw = base64.b64decode(b''.join(text.split()), validate=True)
+          digest = hashlib.sha256(raw).hexdigest()
+          git_sha = hashlib.sha1(f'blob {len(raw)}\0'.encode('ascii') + raw, usedforsecurity=False).hexdigest()
+          print(json.dumps({
+              'source_text_blob': sha,
+              'text_bytes': len(text),
+              'raw_bytes': len(raw),
+              'raw_sha256': digest,
+              'raw_git_blob_sha1': git_sha,
+              'jpeg_magic': raw.startswith(b'\xff\xd8\xff'),
+              'jpeg_eoi': raw.endswith(b'\xff\xd9'),
+          }, sort_keys=True))
+          if (
+              len(raw) != int(os.environ['EXPECTED_BYTES'])
+              or digest != os.environ['EXPECTED_SHA256']
+              or git_sha != os.environ['EXPECTED_GIT_BLOB_SHA1']
+          ):
+              raise SystemExit('BLOCK: existing poster text blob is not the exact poster source')
+          print('EXACT_POSTER_TEXT_BLOB_RECOVERED=true')
+          PY
