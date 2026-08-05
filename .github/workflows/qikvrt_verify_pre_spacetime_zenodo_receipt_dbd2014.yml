@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   verify:
@@ -15,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      CANDIDATE_BRANCH: candidate/pre-spacetime-ontology-zenodo-publication-receipt-v1
+      CANDIDATE_PR: '389'
       CANDIDATE_HEAD: dbd2014c7dd5c8bdbe75f417f148063746e9c1c7
       BASE_HEAD: 9eb514678b5a27e241a146788076e8aa75d366fe
     steps:
@@ -37,7 +38,7 @@ jobs:
           set -euo pipefail
           remote_head="$(python3 - <<'PY'
           import json, os, urllib.request
-          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/git/ref/heads/{os.environ['CANDIDATE_BRANCH']}"
+          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{os.environ['CANDIDATE_PR']}"
           request = urllib.request.Request(url, headers={
               'Accept': 'application/vnd.github+json',
               'Authorization': 'Bearer ' + os.environ['GH_API_TOKEN'],
@@ -45,7 +46,10 @@ jobs:
               'User-Agent': 'qik-vrt-exact-head-verifier',
           })
           with urllib.request.urlopen(request, timeout=30) as response:
-              print(json.load(response)['object']['sha'])
+              value = json.load(response)
+          if value['state'] != 'open':
+              raise SystemExit('candidate PR is not open')
+          print(value['head']['sha'])
           PY
           )"
           test "$remote_head" = "$CANDIDATE_HEAD"
