@@ -2,31 +2,60 @@
 
 ## Purpose
 
-This repository exposes a bounded, manually dispatched GitHub Actions workflow for sending a repository update to Slack:
+This repository provides a bounded GitHub Actions adapter for Slack:
 
 - Workflow: `.github/workflows/qikvrt_slack_update.yml`
-- Persisted work unit: `state/work_units/SLACK_UPDATES_TODO_2026-08-06.md`
-- Secret name: `SLACK_WEBHOOK_URL`
+- Reviewed authorization: `state/authorization/slack/SLACK_UPDATE_DISPATCH_2026-08-06_V1.json`
+- Persisted update and to-do list: `state/work_units/SLACK_UPDATES_TODO_2026-08-06.md`
 
-## Safety boundary
+The adapter reuses an existing workspace-authorized Slack incoming webhook. The webhook value remains a GitHub Actions secret and is never committed, printed, uploaded, or returned by the workflow.
 
-The workflow is intentionally inert until the repository secret `SLACK_WEBHOOK_URL` is configured. It has no schedule, no `push` or `pull_request` trigger, and no embedded credential. A missing secret causes a fail-closed exit before any external request.
+## Supported secret bindings
 
-The workflow does not merge, publish, release, deploy, mutate Zenodo, submit to the IETF, or claim `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+The adapter checks these secret names in order without disclosing their values:
 
-## Repository setup
+1. `SLACK_WEBHOOK_URL`
+2. `QIKVRT_SLACK_WEBHOOK_URL`
+3. `SLACK_INCOMING_WEBHOOK_URL`
 
-An administrator must add a Slack incoming-webhook URL as the Actions secret `SLACK_WEBHOOK_URL` in the repository settings. Do not commit the webhook URL to Git.
+The selected value must use an approved Slack incoming-webhook origin. A missing or malformed binding fails closed before any external request.
 
-After the secret exists, an authorized operator may run **QIK-VRT Slack update** from the Actions UI, supplying:
+## Execution boundary
 
-1. `summary`: the bounded update text to send.
-2. `todo_path`: the repository path of the persisted to-do list; the default points to the work unit above.
+### Pull requests
 
-## Operational status
+The `credential-probe` job checks only whether a supported, non-exported webhook binding is present. It performs no network request and does not reveal secret content.
 
-- Repository adapter: present on this branch.
-- Slack credential: not asserted by repository content.
-- External dispatch: not performed by this change.
-- Automatic schedule: absent.
+### Initial Authority promotion
+
+When the reviewed authorization is introduced on `Goldkelch/qik-vrt` `main` for the first time, the workflow may post exactly one bounded update. It verifies that the authorization file did not exist in the pre-push commit and that the request, repository, credential policy, and payload source match the reviewed contract.
+
+The identical Mirror workflow does not automatically post when introduced on Mirror `main`, preventing a duplicate effect.
+
+### Future manual posts
+
+`workflow_dispatch` remains available. It requires:
+
+- the exact stable `request_id`;
+- `effect_accepted=true`;
+- the reviewed authorization file;
+- the persisted payload source;
+- a supported secret-backed incoming webhook.
+
+## Evidence
+
+A successful dispatch creates an artifact containing:
+
+- the request ID;
+- repository, commit, workflow run, and payload SHA-256 bindings;
+- the observed Slack transport acknowledgement;
+- explicit non-claims for `PASS`, `FINAL_PASS`, and `EFFECT_ACK_DONE`.
+
+The receipt never contains the webhook URL or another credential.
+
+## Current state
+
+- Adapter candidate: persisted on the paired review branches.
+- Credential presence: to be established by the non-exporting pull-request probe.
+- External Slack dispatch: not yet performed.
 - Repository-wide completion claims: absent.
