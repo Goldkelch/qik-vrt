@@ -1,9 +1,10 @@
 {
   "authorization_scope": {
     "allowed_transports": [
-      "Slack incoming webhook"
+      "Slack incoming webhook",
+      "Slack Web API chat.postMessage with a bot token and channel ID"
     ],
-    "effect": "Post the persisted QIK-VRT update summary and to-do list to one workspace-authorized Slack incoming-webhook destination.",
+    "effect": "Post the persisted QIK-VRT update summary and to-do list to one workspace-authorized Slack destination.",
     "future_dispatch_requires_explicit_workflow_input": true,
     "primary_dispatch_repository": "Goldkelch/qik-vrt",
     "repositories": [
@@ -23,6 +24,7 @@
   "credential_disclosure": "FORBIDDEN",
   "credential_policy": "existing_github_actions_secrets_only",
   "dispatch_policy": {
+    "candidate_branch_push": "credential presence probe only; no network request",
     "manual_dispatch": "requires effect_accepted=true and matching request_id",
     "mirror_main_first_introduction": "no automatic Slack post",
     "primary_main_first_introduction": "one bounded initial Slack post",

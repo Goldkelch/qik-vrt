@@ -13,9 +13,12 @@ on:
       - "state/authorization/slack/SLACK_UPDATE_DISPATCH_2026-08-06_V1.json"
       - "state/work_units/SLACK_UPDATES_TODO_2026-08-06.md"
   push:
-    branches: [main]
+    branches:
+      - main
+      - "agent/slack-update-adapter-and-work-unit"
     paths:
       - ".github/workflows/qikvrt_slack_update.yml"
+      - "docs/operations/SLACK_INTEGRATION.md"
       - "state/authorization/slack/SLACK_UPDATE_DISPATCH_2026-08-06_V1.json"
       - "state/work_units/SLACK_UPDATES_TODO_2026-08-06.md"
   workflow_dispatch:
@@ -51,36 +54,62 @@ env:
 
 jobs:
   credential-probe:
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref != 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
       WEBHOOK_1: ${{ secrets.SLACK_WEBHOOK_URL }}
       WEBHOOK_2: ${{ secrets.QIKVRT_SLACK_WEBHOOK_URL }}
       WEBHOOK_3: ${{ secrets.SLACK_INCOMING_WEBHOOK_URL }}
+      BOT_TOKEN_1: ${{ secrets.SLACK_BOT_TOKEN }}
+      BOT_TOKEN_2: ${{ secrets.QIKVRT_SLACK_BOT_TOKEN }}
+      BOT_TOKEN_3: ${{ secrets.SLACK_API_TOKEN }}
+      CHANNEL_1: ${{ secrets.SLACK_CHANNEL_ID }}
+      CHANNEL_2: ${{ secrets.QIKVRT_SLACK_CHANNNEL_ID }}
+      CHANNEL_3: ${{ secrets.SLACK_CHANNEL }}
     steps:
-      - name: Verify a non-exported Slack webhook binding
+      - name: Verify a non-exported Slack credential binding
         shell: bash
         run: |
           set -euo pipefail
           webhook="${WEBHOOK_1:-${WEBHOOK_2:-${WEBHOOK_3:-}}}"
-          test -n "$webhook" || {
-            echo "BLOCK: no supported Slack incoming-webhook secret is available." >&2
-            exit 1
-          }
-          case "$webhook" in
-            https://hooks.slack.com/services/*|https://hooks.slack-gov.com/services/*)
-              echo "SLACK_CREDENTIAL_BINDING=INCOMING_WEBHOOK_PRESENT"
-              ;;
-            *)
-              echo "BLOCK: configured value is not an approved Slack webhook origin." >&2
+          token="${BOT_TOKEN_1:-${BOT_TOKEN_2:-${BOT_TOKEN_3:-}}}"
+          channel="${CHANNEL_1:-${CHANNEL_2:-${CHANNEL_3:-}}}"
+
+          if [[ -n "$webhook" ]]; then
+            case "$webhook" in
+              https://hooks.slack.com/services/*|https://hooks.slack-gov.com/services/*)
+                echo "SLACK_CREDENTIAL_BINDING=INCOMING_WEBHOOK_PRESENT"
+                exit 0
+                ;;
+             *)
+                echo "BLOCK: configured webhook value is not an approved Slack origin." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [[ -n "$token" || -n "$channel" ]]; then
+            [[ "$token" == xoxb-* ]] || {
+              echo "BLOCK: Slack Web API binding requires a bot token." >&2
               exit 1
-              ;;
-          esac
+            }
+            [[ "$channel" =~ ^[CGD][A-Z0-9]+$ ]] || {
+              echo "BLOCK: Slack Web API binding requires a channel or conversation ID." >&2
+              exit 1
+            }
+            echo "SLACK_CREDENTIAL_BINDING=BOT_TOKEN_AND_CHANNEL_PRESENT"
+            exit 0
+          fi
+
+          echo "BLOCK: neither a supported Slack incoming webhook nor a bot-token/channel pair is available." >&2
+          exit 1
 
   post:
     if: >-
-      (github.event_name == 'push' && github.repository == 'Goldkelch/qik-vrt') ||
+      (github.event_name == 'push' && github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.effect_accepted == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -88,6 +117,12 @@ jobs:
       WEBHOOK_1: ${{ secrets.SLACK_WEBHOOK_URL }}
       WEBHOOK_2: ${{ secrets.QIKVRT_SLACK_WEBHOOK_URL }}
       WEBHOOK_3: ${{ secrets.SLACK_INCOMING_WEBHOOK_URL }}
+      BOT_TOKEN_1: ${{ secrets.SLACK_BOT_TOKEN }}
+      BOT_TOKEN_2: ${{ secrets.QIKVRT_SLACK_BOT_TOKEN }}
+      BOT_TOKEN_3: ${{ secrets.SLACK_API_TOKEN }}
+      CHANNEL_1: ${{ secrets.SLACK_CHANNEL_ID }}
+      CHANNEL_2: ${{ secrets.QIKVRT_SLAC_CHANNEL_ID }}
+      CHANNEL_3: ${{ secrets.SLACK_CHANNEL }}
       REQUEST_ID: ${{ inputs.request_id || 'qikvrt-slack-update-2026-08-06-v1' }}
       SUMMARY: ${{ inputs.summary }}
     steps:
@@ -136,18 +171,18 @@ jobs:
           event_name = os.environ["EVENT_NAME"]
 
           if auth.get("schema") != "qikvrt_slack_update_authorization_v1":
-              raise SystemExit("BLOCK: unsupported authorization schema")
+            raise SystemExit("BLOCK: unsupported authorization schema")
           if auth.get("request_id") != request_id:
-              raise SystemExit("BLOCK: request_id mismatch")
+            raise SystemExit("BLOCK: request_id mismatch")
           scope = auth.get("authorization_scope", {})
           if repository not in scope.get("repositories", []):
               raise SystemExit("BLOCK: repository is outside authorization")
           if event_name == "push" and scope.get("primary_dispatch_repository") != repository:
               raise SystemExit("BLOCK: non-primary repository push dispatch")
           if auth.get("credential_policy") != "existing_github_actions_secrets_only":
-              raise SystemExit("BLOCK: unsupported credential policy")
+            raise SystemExit("BLOCK: unsupported credential policy")
           if auth.get("external_effect_status") != "NOT_PERFORMED":
-              raise SystemExit("BLOCK: one-shot effect is not in an unperformed state")
+            raise SystemExit("BLOCK: one-shot effect is not in an unperformed state")
 
           supplied = os.environ.get("SUMMARY", "").strip()
           persisted = Path(os.environ["TODO_PATH"]).read_text(encoding="utf-8").strip()
@@ -179,31 +214,91 @@ jobs:
         run: |
           set -euo pipefail
           webhook="${WEBHOOK_1:-${WEBHOOK_2:-${WEBHOOK_3:-}}}"
-          test -n "$webhook" || {
-            echo "BLOCK: no supported Slack incoming-webhook secret is available." >&2
+          token="${BOT_TOKEN_1:-${BOT_TOKEN_2:-${BOT_TOKEN_3:-}}}"
+          channel="${CHANNEL_1:-${CHANNEL_2:-${CHANNEL_3:-}}}"
+
+          if [[ -n "$webhook" ]]; then
+            case "$webhook" in
+              https://hooks.slack.com/services/*|https://hooks.slack-gov.com/services/*) ;;
+              *)
+                echo "BLOCK: refusing a non-Slack webhook origin." >&2
+                exit 1
+                ;;
+            esac
+            status="$(
+              curl --silent --show-error \
+                --output slack-response.txt \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header 'Content-Type: application/json' \
+                --data-binary @slack-payload.json \
+                "$webhook"
+            )"
+            [[ "$status" == "200" && "$(cat slack-response.txt)" == "ok" ]] || {
+              echo "BLOCK: Slack did not return the expected incoming-webhook acknowledgement." >&2
+              exit 1
+            }
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          Path("slack-transport-ack.json").write_text(
+              json.dumps({"method": "incoming_webhook", "ok": True}, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+            exit 0
+          fi
+
+          [[ "$token" == xoxb-* ]] || {
+            echo "BLOCK: no supported Slack bot token is available." >&2
             exit 1
           }
-          case "$webhook" in
-            https://hooks.slack.com/services/*|https://hooks.slack-gov.com/services/*) ;;
-            *)
-              echo "BLOCK: refusing a non-Slack webhook origin." >&2
-              exit 1
-              ;;
-          esac
-
+          [[ "$channel" =~ ^[CGD][A-Z0-9]+$ ]] || {
+            echo "BLOCK: no supported Slack channel or conversation ID is available." >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          payload = json.loads(Path("slack-payload.json").read_text(encoding="utf-8"))
+          payload["channel"] = os.environ["CHANNEL_1"] or os.environ["CHANNEL_2"] or os.environ["CHANNEL_3"]
+          Path("slack-api-payload.json").write_text(
+              json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          PY
           status="$(
             curl --silent --show-error \
-              --output slack-response.txt \
+              --output slack-response.json \
               --write-out '%{http_code}' \
               --request POST \
-              --header 'Content-Type: application/json' \
-              --data-binary @slack-payload.json \
-              "$webhook"
+              --header "Authorization: Bearer ${token}" \
+              --header 'Content-Type: application/json; charset=utf-8' \
+              --data-binary @slack-api-payload.json \
+              'https://slack.com/api/chat.postMessage'
           )"
-          [[ "$status" == "200" && "$(cat slack-response.txt)" == "ok" ]] || {
-            echo "BLOCK: Slack did not return the expected transport acknowledgement." >&2
+          [[ "$status" == "200" ]] || {
+            echo "BLOCK: Slack Web API returned a non-200 HTTP status." >&2
             exit 1
           }
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          response = json.loads(Path("slack-response.json").read_text(encoding="utf-8"))
+          if response.get("ok") is not True:
+              raise SystemExit("BLOCK: Slack Web API did not acknowledge chat.postMessage")
+          ack = {
+              "method": "chat.postMessage",
+              "ok": True,
+              "channel": response.get("channel"),
+              "ts": response.get("ts"),
+          }
+          Path("slack-transport-ack.json").write_text(
+              json.dumps(ack, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Materialize bounded transport receipt
         if: steps.boundary.outputs.should_send == 'true'
@@ -220,6 +315,7 @@ jobs:
           import os
           from pathlib import Path
 
+          ack = json.loads(Path("slack-transport-ack.json").read_text(encoding="utf-8"))
           receipt = {
               "schema": "qikvrt_slack_transport_receipt_v1",
               "request_id": os.environ["REQUEST_ID"],
@@ -227,7 +323,9 @@ jobs:
               "commit_sha": os.environ["COMMIT_SHA"],
               "workflow_run_id": int(os.environ["RUN_ID"]),
               "payload_sha256": Path("slack-payload.sha256").read_text(encoding="utf-8").strip(),
-              "dispatch_method": "incoming_webhook",
+              "dispatch_method": ack["method"],
+              "slack_channel": ack.get("channel"),
+              "slack_ts": ack.get("ts"),
               "observed_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
               "transport_ack": True,
               "claims": {

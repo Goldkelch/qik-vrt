@@ -13,11 +13,14 @@ Request ID: `qikvrt-slack-update-2026-08-06-v1`
 - Authority later promoted the exact R11 read-only observation successor V2; Mirror promoted the corresponding portable successor.
 - Slack support is represented by paired review candidates with:
   - a non-exporting credential-presence probe;
+  - incoming-webhook and Slack Web API transport adapters;
   - a one-shot initial Authority dispatch boundary;
   - duplicate-effect suppression on Mirror;
-  - a secret-backed incoming-webhook manual dispatch path;
+  - an explicitly accepted manual dispatch path;
   - a bounded transport-receipt artifact.
 - The reviewed authorization is persisted at `state/authorization/slack/SLACK_UPDATE_DISPATCH_2026-08-06_V1.json`.
+- Authority run `31053142194` established that none of the three supported incoming-webhook secret names was populated on that candidate head. Its post job was skipped and no external request occurred.
+- The exact Mirror head had only `QIKVRT CI` run `31053338689`; the newly introduced pull-request Slack workflow was not scheduled there. A candidate-branch push probe is therefore required.
 - No Slack credential value is committed or requested for disclosure.
 - No repository-wide `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE` is claimed.
 
@@ -25,17 +28,20 @@ Request ID: `qikvrt-slack-update-2026-08-06-v1`
 
 - [x] Persist the update summary and to-do list in both candidate branches.
 - [x] Persist the bounded Slack authorization and stable request ID.
-- [x] Extend the adapter to reuse an existing workspace-authorized incoming-webhook binding.
-- [x] Ensure the pull-request probe performs no network request and reveals no secret.
+- [x] Support an existing workspace-authorized incoming webhook.
+- [x] Support an existing Slack bot token plus channel or conversation ID.
+- [x] Ensure every candidate credential probe performs no network request and reveals no secret.
 - [x] Bind the initial external effect to first introduction on Authority `main`.
 - [x] Suppress the corresponding automatic effect on Mirror to prevent duplication.
-- [ ] Observe the Authority credential-probe result.
-- [ ] If Authority has no supported binding, observe the Mirror probe without dispatching.
+- [x] Observe the Authority incoming-webhook-only probe result.
+- [ ] Observe the dual-transport Authority credential probe.
+- [ ] Observe the dual-transport Mirror credential probe.
+- [ ] Persist an exact credential-probe observation receipt in both repositories.
 - [ ] Require repository-native integrity and every applicable exact-head gate to be terminal green.
-- [ ] Promote the exact Authority candidate only after the gate order is satisfied.
+- [ ] Promote only a candidate with an observed supported Slack binding and satisfied gate order.
 - [ ] Observe the Slack workflow run and retrieve the bounded transport receipt.
 - [ ] Persist a repository receipt successor only if the observed artifact is complete and byte-bound.
-- [ ] Promote the exact Mirror candidate without repeating the initial Slack effect.
+- [ ] Promote the paired counterpart without repeating the initial Slack effect.
 
 ## Repository follow-up
 
@@ -52,7 +58,7 @@ Request ID: `qikvrt-slack-update-2026-08-06-v1`
 
 ## Claim boundary
 
-`SLACK_CREDENTIAL_BINDING = NOT_YET_OBSERVED`
+`SLACK_CREDENTIAL_BINDING = NOT_YET_ESTABLISHED`
 
 `SLACK_EXTERNAL_DISPATCH = NOT_PERFORMED`
 
