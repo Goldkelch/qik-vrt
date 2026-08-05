@@ -1,0 +1,65 @@
+name: QIKVRT diagnostic publication receipt-pair source search v2
+
+on:
+  push:
+    branches:
+      - trusted/pre-spacetime-zenodo-publication-reciprocal-authority-v1
+    paths:
+      - .github/workflows/qikvrt_pre_spacetime_zenodo_publication_reciprocal_authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Locate generator across plain and compressed sources without self-match
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import zlib
+
+          needles = (
+              'no counterpart publication ' + 'receipt is present',
+              'test_zenodo_publication_' + 'receipt_pair',
+              'publication receipt ' + 'pair',
+              'counterpart publication ' + 'receipt',
+              'zenodo-publication-' + 'receipt-pair',
+          )
+          own = pathlib.Path('.github/workflows/qikvrt_pre_spacetime_zenodo_publication_reciprocal_authority.yml')
+          hits = 0
+          for path in sorted(pathlib.Path('.').rglob('*')):
+              if not path.is_file() or '.git' in path.parts or path == own:
+                  continue
+              data = path.read_bytes()
+              candidates = []
+              try:
+                  candidates.append(('plain', data.decode('utf-8')))
+              except UnicodeDecodeError:
+                  pass
+              if path.suffix == '.zlib':
+                  try:
+                      candidates.append(('zlib', zlib.decompress(data).decode('utf-8')))
+                  except Exception:
+                      pass
+              for kind, text in candidates:
+                  lines = text.splitlines()
+                  matching = [i for i, line in enumerate(lines) if any(n in line for n in needles)]
+                  if not matching:
+                      continue
+                  hits += 1
+                  print(f'===== {path} [{kind}] =====')
+                  emitted = set()
+                  for hit in matching:
+                      for number in range(max(0, hit - 80), min(len(lines), hit + 180)):
+                          if number in emitted:
+                              continue
+                          emitted.add(number)
+                          print(f'{number + 1:05d}: {lines[number]}')
+          if not hits:
+              raise SystemExit('BLOCK: source not found')
+          PY
