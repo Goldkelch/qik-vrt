@@ -1,0 +1,204 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT stage pre-spacetime ontology Zenodo request
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/qikvrt_stage_pre_spacetime_zenodo_request_once.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pre-spacetime-zenodo-request-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      AUTHORITY_MAIN: c19c94e2e11bc0832352214816690f5318a14e73
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      MIRROR_MAIN: 613988771badecdd36b02db7edcaec076734722c
+      BUNDLE_DIR: docs/publications/2026-08-04-pre-spacetime-ontology
+      RECEIPT_PATH: evidence/receipts/authority-mirror-equality-2026-08-05-pre-spacetime-ontology-pr368-pr214.json
+      REQUEST_PATH: release/pre-spacetime-ontology-zenodo-2026-08-05/HASH_BOUND_PUBLICATION_REQUEST.json
+      REQUEST_ID: qikvrt-pre-spacetime-ontology-zenodo-request-20260805-v1
+      TARGET_BRANCH: candidate/pre-spacetime-ontology-zenodo-request-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_stage_pre_spacetime_zenodo_request_once.yml
+    steps:
+      - name: Check out exact trusted request proxy head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Build exact non-publishing Zenodo request candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$AUTHORITY_MAIN"
+          git remote add mirror "https://github.com/$MIRROR_REPOSITORY.git"
+          git fetch --no-tags mirror "$MIRROR_MAIN"
+          git show "$MIRROR_MAIN:$RECEIPT_PATH" > "$RUNNER_TEMP/mirror-receipt.json"
+          cmp "$RECEIPT_PATH" "$RUNNER_TEMP/mirror-receipt.json"
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import subprocess
+
+          root = Path('.')
+          bundle_dir = Path(os.environ['BUNDLE_DIR'])
+          routing_path = bundle_dir / 'PUBLICATION_ROUTING.json'
+          metadata_path = bundle_dir / 'ZENODO_CANDIDATE.json'
+          receipt_path = Path(os.environ['RECEIPT_PATH'])
+          request_path = Path(os.environ['REQUEST_PATH'])
+
+          def raw_identity(path: Path) -> dict[str, object]:
+              raw = path.read_bytes()
+              prefix = f'blob {len(raw)}\0'.encode('ascii')
+              return {
+                  'path': path.as_posix(),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': hashlib.sha1(prefix + raw).hexdigest(),
+              }
+
+          routing = json.loads(routing_path.read_text(encoding='utf-8'))
+          metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+          receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+          if metadata.get('status') != 'STAGED_NOT_PUBLISHED':
+              raise SystemExit('BLOCK: Zenodo candidate status differs')
+          if metadata.get('zenodo_mutation_performed') is not False:
+              raise SystemExit('BLOCK: candidate falsely implies a Zenodo mutation')
+          if routing['routes']['zenodo']['effect_gate'] != 'EXPLICIT_HASH_BOUND_PUBLICATION_REQUEST_REQUIRED':
+              raise SystemExit('BLOCK: routing effect gate differs')
+          if receipt['receipt_id'] != 'authority-mirror-equality-2026-08-05-pre-spacetime-ontology-pr368-pr214':
+              raise SystemExit('BLOCK: reciprocal receipt identity differs')
+
+          uploads = []
+          for declared in routing['artifacts']:
+              path = bundle_dir / declared['path']
+              observed = raw_identity(path)
+              if observed['bytes'] != declared['bytes'] or observed['sha256'] != declared['sha256']:
+                  raise SystemExit('BLOCK: routed artifact identity differs: ' + path.as_posix())
+              source_blob = subprocess.check_output(
+                  ['git', 'rev-parse', f"{os.environ['AUTHORITY_MAIN']}:{path.as_posix()}"],
+                  text=True,
+              ).strip()
+              if source_blob != observed['git_blob_sha1']:
+                  raise SystemExit('BLOCK: source-main Git blob differs: ' + path.as_posix())
+              uploads.append({
+                  **observed,
+                  'name': path.name,
+              })
+
+          upload_binding = json.dumps(uploads, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          receipt_identity = raw_identity(receipt_path)
+          routing_identity = raw_identity(routing_path)
+          metadata_identity = raw_identity(metadata_path)
+          canonical_metadata = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          authorization_payload = {
+              'request_id': os.environ['REQUEST_ID'],
+              'publication_id': metadata['bundle_id'],
+              'authority_repository': 'Goldkelch/qik-vrt',
+              'authority_main': os.environ['AUTHORITY_MAIN'],
+              'mirror_repository': os.environ['MIRROR_REPOSITORY'],
+              'mirror_main': os.environ['MIRROR_MAIN'],
+              'reciprocal_receipt_sha256': receipt_identity['sha256'],
+              'routing_manifest_sha256': routing_identity['sha256'],
+              'zenodo_metadata_canonical_sha256': hashlib.sha256(canonical_metadata).hexdigest(),
+              'upload_set_sha256': hashlib.sha256(upload_binding).hexdigest(),
+              'requested_effects': [
+                  'CREATE_ZENODO_DEPOSITION',
+                  'UPLOAD_EXACT_BOUND_FILES',
+                  'PUBLISH_ZENODO_DEPOSITION',
+                  'PUBLIC_REDOWNLOAD_AND_VERIFY',
+                  'PERSIST_PUBLICATION_RECEIPT',
+              ],
+          }
+          authorization_payload_raw = json.dumps(
+              authorization_payload,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(',', ':'),
+          ).encode('utf-8')
+          authorization_payload_sha256 = hashlib.sha256(authorization_payload_raw).hexdigest()
+          exact_statement = (
+              'AUTHORIZE_EXACT_ZENODO_PUBLICATION '
+              f"request_id={os.environ['REQUEST_ID']} "
+              f'authorization_payload_sha256={authorization_payload_sha256}'
+          )
+          request = {
+              '_license': {
+                  'classification': 'machine_readable_external_effect_request',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_hash_bound_zenodo_publication_request_v1',
+              'request_id': os.environ['REQUEST_ID'],
+              'publication_id': metadata['bundle_id'],
+              'state': 'AWAITING_EXPLICIT_HASH_BOUND_PUBLICATION_AUTHORIZATION',
+              'source_binding': {
+                  'authority': {
+                      'repository': 'Goldkelch/qik-vrt',
+                      'main': os.environ['AUTHORITY_MAIN'],
+                      'promotion_pull_request': 382,
+                  },
+                  'mirror': {
+                      'repository': os.environ['MIRROR_REPOSITORY'],
+                      'main': os.environ['MIRROR_MAIN'],
+                      'promotion_pull_request': 217,
+                  },
+                  'reciprocal_equality_receipt': receipt_identity,
+              },
+              'routing_manifest': routing_identity,
+              'zenodo_candidate_metadata': {
+                  **metadata_identity,
+                  'canonical_json_sha256': hashlib.sha256(canonical_metadata).hexdigest(),
+              },
+              'uploads': uploads,
+              'upload_set_sha256': hashlib.sha256(upload_binding).hexdigest(),
+              'authorization_payload': authorization_payload,
+              'authorization_payload_canonicalization': "UTF-8 JSON with recursively sorted object keys and separators ',' ':'; no trailing newline",
+              'authorization_payload_sha256': authorization_payload_sha256,
+              'authorization_requirement': {
+                  'decision': 'AUTHORIZE_EXACT_ZENODO_PUBLICATION',
+                  'required_exact_statement': exact_statement,
+                  'status': 'NOT_PRESENT',
+                  'single_use': True,
+                  'principal_type': 'NATURAL_PERSON_OWNER',
+              },
+              'effect_boundary': {
+                  'zenodo_credentials_accessed': False,
+                  'zenodo_mutation_performed': False,
+                  'doi_created': False,
+                  'public_redownload_performed': False,
+                  'byte_equality_established': False,
+                  'publication_receipt_persisted': False,
+                  'pass': False,
+                  'final_pass': False,
+                  'effect_ack_done': False,
+              },
+          }
+          request_path.parent.mkdir(parents=True, exist_ok=True)
+          request_path.write_text(
+              json.dumps(request, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+          rm -f "$WORKFLOW_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          tree="$(git write-tree)"
+          candidate="$(printf '%s\n' 'publication: stage hash-bound pre-spacetime Zenodo request' | git commit-tree "$tree" -p "$AUTHORITY_MAIN")"
+          git push origin "$candidate:refs/heads/$TARGET_BRANCH"
