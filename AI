@@ -54,5 +54,21 @@ The bootloader reuses:
 
 It performs no network access, no installation, and no tracked-file mutation. Installation, task execution, commits, merges, releases, and publication remain separate authorized effects.
 
+REPOSITORY-NATIVE AUTONOMOUS CONTINUATION
+
+The standing natural-person authorization for bounded repository-internal continuation is persisted at:
+
+- state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json
+- state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json
+
+The executable controller and scheduled dispatcher are:
+
+- tools/qikvrt_autonomous_self_heal.py
+- .github/workflows/qikvrt_autonomous_self_heal.yml
+
+The controller may execute only contract-allowlisted deterministic repairs. It must produce a repository NOOP when the semantic fingerprint is unchanged. Any changed candidate is isolated on a base-and-fingerprint-bound review branch and opened as a draft pull request.
+
+Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed under the standing delegation only when the current base is reobserved, the candidate head is unchanged, the diff is allowlisted, no external effect occurred, every applicable exact-head gate is terminal green, and no competing writer exists. This is not a general automatic-merge authorization. Force push, release, deployment, Zenodo mutation, IETF mutation, credentialed external writes, and repository-wide completion claims remain forbidden.
+
 Do not claim PASS, DONE, synchronization, publication, deployment, merge, or symmetric canonicality without corresponding evidence.
 Freely available architecture does not automatically open-source the concrete implementation.
