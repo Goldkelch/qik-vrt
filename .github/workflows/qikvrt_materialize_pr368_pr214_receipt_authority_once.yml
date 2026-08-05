@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot PR368 PR214 reciprocal Authority receipt
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/qikvrt_materialize_pr368_pr214_receipt_authority_once.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pr368-pr214-reciprocal-authority-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      AUTHORITY_MAIN: d0c0076cf1aeb6ce52bc99823ec55fda124d2f71
+      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
+      MIRROR_MAIN: 613988771badecdd36b02db7edcaec076734722c
+      TARGET_BRANCH: evidence/pr368-pr214-reciprocal-equality-authority-v1
+      WORKFLOW_PATH: .github/workflows/qikvrt_materialize_pr368_pr214_receipt_authority_once.yml
+      RECEIPT_PATH: evidence/receipts/authority-mirror-equality-2026-08-05-pre-spacetime-ontology-pr368-pr214.json
+      INDEX_PATH: evidence/receipts/index.json
+      RECEIPT_ID: authority-mirror-equality-2026-08-05-pre-spacetime-ontology-pr368-pr214
+    steps:
+      - name: Check out exact trusted Authority proxy head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Materialize exact reciprocal Authority candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$AUTHORITY_MAIN"
+          git remote add mirror "https://github.com/$MIRROR_REPOSITORY.git"
+          git fetch --no-tags mirror "$MIRROR_MAIN"
+          git cat-file -e "$MIRROR_MAIN^{commit}"
+          git show "$MIRROR_MAIN:$RECEIPT_PATH" > "$RECEIPT_PATH"
+          git show "$MIRROR_MAIN:$INDEX_PATH" > "$INDEX_PATH"
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          receipt_path = Path(os.environ['RECEIPT_PATH'])
+          index_path = Path(os.environ['INDEX_PATH'])
+          receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+          index = json.loads(index_path.read_text(encoding='utf-8'))
+          expected = os.environ['RECEIPT_ID']
+          if receipt.get('receipt_id') != expected:
+              raise SystemExit('BLOCK: Mirror receipt id differs')
+          entries = [entry for entry in index['equality_receipts'] if entry.get('receipt_id') == expected]
+          if len(entries) != 1:
+              raise SystemExit('BLOCK: reciprocal index entry count differs')
+          if receipt['authority']['main'] != os.environ['AUTHORITY_MAIN']:
+              raise SystemExit('BLOCK: receipt Authority main differs')
+          if receipt['mirror']['main'] != '923a508566bb27c977bdac7e2313f4038e2a7111':
+              raise SystemExit('BLOCK: receipt promoted Mirror binding differs')
+          index_bytes = index_path.read_bytes()
+          input_path = Path('anticipation/INPUT.json')
+          anticipation = json.loads(input_path.read_text(encoding='utf-8'))
+          for source_binding in anticipation['source_bindings']:
+              if source_binding['path'] == os.environ['INDEX_PATH']:
+                  source_binding['bytes'] = len(index_bytes)
+                  source_binding['sha256'] = hashlib.sha256(index_bytes).hexdigest()
+                  break
+          else:
+              raise SystemExit('BLOCK: anticipation index source binding absent')
+          input_path.write_text(
+              json.dumps(anticipation, ensure_ascii=False, separators=(',', ':')),
+              encoding='utf-8',
+          )
+          PY
+          python3 -B tools/qikvrt_anticipation.py materialize
+          rm -f "$WORKFLOW_PATH"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          tree="$(git write-tree)"
+          candidate="$(printf '%s\n' 'evidence: materialize PR368↔PR214 reciprocal Authority receipt' | git commit-tree "$tree" -p "$AUTHORITY_MAIN")"
+          git push origin "$candidate:refs/heads/$TARGET_BRANCH"
