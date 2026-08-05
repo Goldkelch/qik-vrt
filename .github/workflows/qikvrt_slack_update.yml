@@ -1,0 +1,75 @@
+name: QIK-VRT Slack update
+
+on:
+  workflow_dispatch:
+    inputs:
+      summary:
+        description: "Slack summary text"
+        required: true
+        type: string
+      todo_path:
+        description: "Repository path of the persisted to-do list"
+        required: false
+        default: "state/work_units/SLACK_UPDATES_TODO_2026-08-06.md"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qik-vrt-slack-update-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require configured Slack webhook
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SLACK_WEBHOOK_URL:-}" || {
+            echo "SLACK_WEBHOOK_URL is not configured; refusing external dispatch." >&2
+            exit 1
+          }
+
+      - name: Build bounded Slack payload
+        id: payload
+        env:
+          SUMMARY: ${{ inputs.summary }}
+          TODO_PATH: ${{ inputs.todo_path }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          text = (
+              f"QIK-VRT repository update\n"
+              f"Repository: {os.environ['REPOSITORY']}\n"
+              f"Ref: {os.environ['REF_NAME']}\n"
+              f"Run: {os.environ['RUN_ID']}\n\n"
+              f"{os.environ['SUMMARY']}\n\n"
+              f"Persisted to-do list: {os.environ['TODO_PATH']}"
+          )
+          Path("slack-payload.json").write_text(
+              json.dumps({"text": text}, ensure_ascii=False),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data-binary @slack-payload.json \
+            "$SLACK_WEBHOOK_URL"
