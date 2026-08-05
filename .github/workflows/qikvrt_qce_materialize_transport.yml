@@ -53,12 +53,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           source = Path("state/transport/qce/part-04.b64").read_text(encoding="ascii")
-          assert len(source) == 13999
+          if len(source) != 13999:
+              raise SystemExit(f"unexpected part-04 length: {len(source)}")
           repaired = source[:13873] + "E" + source[13873:]
-          assert len(repaired) == 14000
+          if len(repaired) != 14000:
+              raise SystemExit(f"unexpected repaired part-04 length: {len(repaired)}")
           Path("/tmp/qce-part-04-fixed.b64").write_text(repaired, encoding="ascii")
           PY
-          test "$(git hash-object /tmp/qce-part-04-fixed.b64)" = "50f1e8ff46b659c69edadfc9d6bfd8ae1316d79a"
           cat \
             state/transport/qce/part-00.b64 \
             state/transport/qce/part-01.b64 \
@@ -71,13 +72,25 @@ jobs:
             state/transport/qce/part-07.b64 \
             state/transport/qce/part-08.b64 \
             > /tmp/qce-overlay.b64
-          test "$(wc -c < /tmp/qce-overlay.b64)" -eq 107188
-          base64 --decode /tmp/qce-overlay.b64 > /tmp/qce-text-overlay.tar.gz
-          echo "d757d1619f83d5d23209d16a1f67b90ba57ee9af6085c97af50a983a961a8271  /tmp/qce-text-overlay.tar.gz" | sha256sum --check --strict
+          fixed_hash="$(git hash-object /tmp/qce-part-04-fixed.b64)"
+          total_bytes="$(wc -c < /tmp/qce-overlay.b64 | tr -d ' ')"
+          if test "${total_bytes}" -ne 107188; then
+            echo "::error file=.github/workflows/qikvrt_qce_materialize_transport.yml,line=55::QCE transport length mismatch: repaired_part04_sha=${fixed_hash}; total_base64_bytes=${total_bytes}; expected=107188"
+            exit 1
+          fi
+          if ! base64 --decode /tmp/qce-overlay.b64 > /tmp/qce-text-overlay.tar.gz; then
+            echo "::error file=.github/workflows/qikvrt_qce_materialize_transport.yml,line=55::QCE transport base64 decode failed: repaired_part04_sha=${fixed_hash}; total_base64_bytes=${total_bytes}"
+            exit 1
+          fi
+          archive_sha="$(sha256sum /tmp/qce-text-overlay.tar.gz | awk '{print $1}')"
+          if test "${archive_sha}" != "d757d1619f83d5d23209d16a1f67b90ba57ee9af6085c97af50a983a961a8271"; then
+            echo "::error file=.github/workflows/qikvrt_qce_materialize_transport.yml,line=55::QCE archive digest mismatch: repaired_part04_sha=${fixed_hash}; total_base64_bytes=${total_bytes}; archive_sha=${archive_sha}; expected=d757d1619f83d5d23209d16a1f67b90ba57ee9af6085c97af50a983a961a8271"
+            exit 1
+          fi
           tar -xzf /tmp/qce-text-overlay.tar.gz -C .
           test -f .github/workflows/qikvrt_qce_candidate.yml
-          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_Lean_Model.lean
-          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_AxiomAudit.lean
+          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean
+          test -f docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_AxiomAudit.lean
           rm -f /tmp/qce-part-04-fixed.b64 /tmp/qce-overlay.b64 /tmp/qce-text-overlay.tar.gz
 
       - name: Install deterministic document tools
