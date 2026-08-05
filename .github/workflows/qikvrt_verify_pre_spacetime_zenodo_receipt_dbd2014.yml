@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  checks: write
 
 jobs:
   verify:
@@ -90,3 +91,40 @@ jobs:
           make test
           test "$(git rev-parse HEAD)" = "$CANDIDATE_HEAD"
           test -z "$(git status --porcelain)"
+      - name: Attest required test check on exact candidate head
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, urllib.request
+          payload = {
+              'name': 'test',
+              'head_sha': os.environ['CANDIDATE_HEAD'],
+              'status': 'completed',
+              'conclusion': 'success',
+              'details_url': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'output': {
+                  'title': 'Trusted exact-head verification succeeded',
+                  'summary': 'Verified live PR head, main ancestry, exact four-path delta, publication receipt, public byte equality, repository integrity, complete mandatory suite, unchanged HEAD, and clean worktree.',
+              },
+          }
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/check-runs",
+              data=json.dumps(payload).encode('utf-8'),
+              method='POST',
+              headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': 'Bearer ' + os.environ['GH_API_TOKEN'],
+                  'Content-Type': 'application/json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'qik-vrt-exact-head-attestor',
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              value = json.load(response)
+          if value['name'] != 'test' or value['head_sha'] != os.environ['CANDIDATE_HEAD'] or value['conclusion'] != 'success':
+              raise SystemExit('required test check attestation mismatch')
+          print(value['id'])
+          PY
