@@ -1,0 +1,131 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT materialize pre-spacetime epistemic triad current-main successor
+on:
+  push:
+    branches:
+      - transport/pre-spacetime-epistemic-triad-current-main-materializer-v1
+    paths:
+      - .github/workflows/qikvrt_materialize_pre_spacetime_epistemic_triad_current_main_once.yml
+permissions:
+  contents: write
+concurrency:
+  group: qikvrt-pre-spacetime-epistemic-triad-current-main-once
+  cancel-in-progress: false
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_MAIN: 6bfd34af48eeb0c45743a17a4cf7d3837470cdcf
+      TARGET_BRANCH: agent/pre-spacetime-epistemic-triad-v1
+      SOURCE_BLOBS_JSON: '{"docs/publications/2026-08-04-pre-spacetime-ontology/CLAIM_MATRIX.json":{"bytes":3981,"sha":"266f3fa6d245d99ad48c2d1d88d11ef116c7e88e","sha256":"b5136ba03543dcf1f5294e3f3535426a291a706f3389d862f77fd7e6d297c9c7"},"docs/publications/2026-08-04-pre-spacetime-ontology/EPISTEMIC_TRIAD_DE.md":{"bytes":5186,"sha":"c386a1496b569a87efc0abefd2eb0e757a818a98","sha256":"c881c3b0fc628ab80152c9a91644df3b24e4c50475afdf4228ab1552d2e4cf69"},"docs/publications/2026-08-04-pre-spacetime-ontology/EVIDENCE_BOUNDARY.md":{"bytes":3883,"sha":"528da892bc8e4c747369594c50d9350e78778b31","sha256":"d25cab1b0965e71f0af696e1ec2cfb019c9fcb11329e9da8bbb1983181fb8f56"},"docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_ORIGINAL_SKETCH.jpeg":{"bytes":560967,"sha":"5f16362b7dafd04cd5acaa8d0b70d5a618e2e5a3","sha256":"9e6a58dd9f803a0fbe5f97ba36472ffff336f3a92e3989c54c4a50f51cf1c143"},"docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_PROFESSIONAL_POSTER.jpeg":{"bytes":447418,"sha":"314d445c5d4cb1d94b84ba19282a338ea438eb32","sha256":"fe5af321bdf8f8f75bef7367c4fe49afc5239922f9477bb67bbaa14b552747e1"},"docs/publications/2026-08-04-pre-spacetime-ontology/NEGATIVE_AND_BOUNDARY_TESTS.json":{"bytes":3252,"sha":"2dad7b0373ad86ea60eb312d3b9e43d7eed56562","sha256":"81e8fa43bc404be39998e25edee8d1d1bd1ea6475d7b9fe6c3a3d731e9010494"},"docs/publications/2026-08-04-pre-spacetime-ontology/PUBLICATION_ROUTING.json":{"bytes":3101,"sha":"f604d66e4f2faabc3ad7be6bf3028f07d2883a34","sha256":"8e12c9ef3c8188c798016fd2ccd662f7925cbb65a476363a06d09951a798c68a"},"docs/publications/2026-08-04-pre-spacetime-ontology/README.md":{"bytes":2737,"sha":"dfd2ebd1fe72bad8258ef52fef8e6a1d7f1b15ea","sha256":"9fa1d2d41135ad9b55b8e2567c8747b4fb34555aec4cf07f5a7ff93b8880a112"},"docs/publications/2026-08-04-pre-spacetime-ontology/SOURCE_FIGURE_INDEX.json":{"bytes":2018,"sha":"cae21c3daa247a66f2038d464aba55d6514eff86","sha256":"3e6eafecc7275ff161d2b3a2d043061224a1140c02f3c2478519c21f3c826307"}}'
+      EXPECTED_PATHS_JSON: '["REPOSITORY_FILE_MANIFEST.json","REPOSITORY_FILE_MANIFEST.json.sha256","SHA256SUMS.txt","docs/publications/2026-08-04-pre-spacetime-ontology/CLAIM_MATRIX.json","docs/publications/2026-08-04-pre-spacetime-ontology/EPISTEMIC_TRIAD_DE.md","docs/publications/2026-08-04-pre-spacetime-ontology/EVIDENCE_BOUNDARY.md","docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_ORIGINAL_SKETCH.jpeg","docs/publications/2026-08-04-pre-spacetime-ontology/FIGURE_PROFESSIONAL_POSTER.jpeg","docs/publications/2026-08-04-pre-spacetime-ontology/NEGATIVE_AND_BOUNDARY_TESTS.json","docs/publications/2026-08-04-pre-spacetime-ontology/PUBLICATION_ROUTING.json","docs/publications/2026-08-04-pre-spacetime-ontology/README.md","docs/publications/2026-08-04-pre-spacetime-ontology/SOURCE_FIGURE_INDEX.json"]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_MAIN }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify immutable current-main lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git ls-remote --heads origin refs/heads/main | awk 'NR==1 {print $1}')"
+          test "$observed" = "$EXPECTED_MAIN"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN"
+          if git ls-remote --exit-code --heads origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "BLOCK: target branch already exists" >&2
+            exit 2
+          fi
+      - name: Reconstruct and verify exact source blobs
+        shell: bash
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import base64, hashlib, json, os, pathlib, urllib.request
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_API_TOKEN"]
+          sources = json.loads(os.environ["SOURCE_BLOBS_JSON"])
+          for path, binding in sorted(sources.items()):
+              url = f"https://api.github.com/repos/{repo}/git/blobs/{binding['sha']}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "qik-vrt-exact-source-materializer",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  value = json.load(response)
+              if value.get("encoding") != "base64" or value.get("sha") != binding["sha"]:
+                  raise SystemExit(f"BLOCK: Git blob response mismatch for {path}")
+              raw = base64.b64decode(value["content"], validate=True)
+              git_sha = hashlib.sha1(
+                  f"blob {len(raw)}\0".encode("ascii") + raw,
+                  usedforsecurity=False,
+              ).hexdigest()
+              if (
+                  len(raw) != binding["bytes"]
+                  or hashlib.sha256(raw).hexdigest() != binding["sha256"]
+                  or git_sha != binding["sha"]
+              ):
+                  raise SystemExit(f"BLOCK: exact source identity mismatch for {path}")
+              target = pathlib.Path(path)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(raw)
+          PY
+      - name: Generate repository-native integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Run publication discovery and complete suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_self_disclosure
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Assert exact twelve-path atomic candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, subprocess
+          expected = sorted(json.loads(os.environ["EXPECTED_PATHS_JSON"]))
+          subprocess.run(["git", "add", "--", *expected], check=True)
+          observed = sorted(subprocess.check_output(
+              ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"],
+              text=True,
+          ).splitlines())
+          if observed != expected or len(observed) != 12:
+              raise SystemExit(
+                  "BLOCK: exact twelve-path candidate mismatch\n"
+                  f"expected={expected!r}\nobserved={observed!r}"
+              )
+          untracked = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+              text=True,
+          ).splitlines()
+          unexpected = [line for line in untracked if line.startswith("?? ")]
+          if unexpected:
+              raise SystemExit(f"BLOCK: unexpected untracked paths: {unexpected!r}")
+          PY
+      - name: Create and publish single-parent candidate commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "qik-vrt repository materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "docs(publication): add exact epistemic triad figures and evidence"
+          candidate="$(git rev-parse HEAD)"
+          test "$(git show -s --format=%P "$candidate")" = "$EXPECTED_MAIN"
+          test "$(git diff --name-only "$EXPECTED_MAIN" "$candidate" | wc -l | tr -d '[:space:]')" = "12"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "CANDIDATE_HEAD=$candidate"
