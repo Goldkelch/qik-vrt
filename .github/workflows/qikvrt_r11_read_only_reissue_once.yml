@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIK-VRT R11 read-only draft-shape reissue once
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/qikvrt_r11_read_only_reissue_once.yml
+      - state/authorization/r11-read-only-reissue-20260805-v1.json
+permissions:
+  contents: read
+env:
+  EXPECTED_AUTHORITY_MAIN: e8a0b521e6dbd7951b256fb0ed7f363ef465de41
+  EXPECTED_R11_HEAD: 26a45a0af463dcd8bb1667897d1a999230375307
+  EXPECTED_C2_SHA256: 3114f282d76e453ae0aa9106a0b7481c0be8566bd6b38674922eb3e5f0bc74f4
+  EXPECTED_C2_BYTES: '23415'
+  DEPOSITION_ID: '21763614'
+  CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+jobs:
+  observe:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+      - name: Bind authorization and exact identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "${{ github.event.pull_request.base.sha }}" = "$EXPECTED_AUTHORITY_MAIN"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('candidate/state/authorization/r11-read-only-reissue-20260805-v1.json').read_text())
+          assert v['authorization_state']=='AUTHORIZED_ONCE'
+          assert v['authority_main']=='e8a0b521e6dbd7951b256fb0ed7f363ef465de41'
+          assert v['mirror_main']=='17f66b5ae7a2b1121141c6a0775da361415d58ff'
+          assert v['r11_head']=='26a45a0af463dcd8bb1667897d1a999230375307'
+          assert v['required_run_attempt']==1 and v['required_artifact_count']==1
+          assert v['target']['request_method']=='GET' and v['target']['request_count']==2
+          assert all(x is False for x in v['effect_boundary'].values())
+          PY
+          git -C candidate cat-file -e "$EXPECTED_R11_HEAD^{commit}"
+      - name: Checkout exact R11 tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: 26a45a0af463dcd8bb1667897d1a999230375307
+          path: r11
+      - name: Verify unchanged C2 bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          p='r11/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json'
+          test "$(wc -c < "$p" | tr -d '[:space:]')" = "$EXPECTED_C2_BYTES"
+          test "$(sha256sum "$p" | awk '{print $1}')" = "$EXPECTED_C2_SHA256"
+      - name: Observe private draft shape with exactly two GETs
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$ZENODO_ACCESS_TOKEN"
+          umask 077
+          mkdir evidence
+          python3 - <<'PY'
+          import hashlib,json,os,urllib.request
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self,*args): raise RuntimeError('redirect forbidden')
+          url=f"https://zenodo.org/api/deposit/depositions/{os.environ['DEPOSITION_ID']}"
+          opener=urllib.request.build_opener(NoRedirect())
+          def get():
+            req=urllib.request.Request(url,method='GET',headers={'Authorization':'Bearer '+os.environ['ZENODO_ACCESS_TOKEN'],'Accept':'application/json','User-Agent':'qik-vrt-r11-read-only-observer/2'})
+            with opener.open(req,timeout=30) as r: return r.status,json.loads(r.read().decode())
+          s1,a=get(); s2,b=get()
+          if (s1,s2)!=(200,200): raise SystemExit('non-200 observation')
+          def shape(v):
+            if not isinstance(v,dict): return {'json_type':type(v).__name__}
+            m=v.get('metadata'); l=v.get('links'); f=v.get('files')
+            return {'json_type':'object','top_level_keys':sorted(v),'metadata_json_type':type(m).__name__,'metadata_keys':sorted(m) if isinstance(m,dict) else [],'links_json_type':type(l).__name__,'links_keys':sorted(l) if isinstance(l,dict) else [],'files_json_type':type(f).__name__,'files_count':len(f) if isinstance(f,list) else None,'submitted':v.get('submitted') if isinstance(v.get('submitted'),bool) else None,'id':v.get('id') if isinstance(v.get('id'),int) else None,'record_id':v.get('record_id') if isinstance(v.get('record_id'),int) else None,'doi_present':isinstance(v.get('doi'),str) and bool(v.get('doi')),'conceptrecid_present':isinstance(v.get('conceptrecid'),str) and bool(v.get('conceptrecid'))}
+          sa,sb=shape(a),shape(b)
+          if sa!=sb: raise SystemExit('unstable response shape')
+          c2=Path('r11/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json').read_bytes()
+          receipt={'schema':'qikvrt_vrtcore_h3_r11_draft_shape_observation_v2','state':'OBSERVATION_RECEIPT_PERSISTED_BLOCKED','read_only':True,'binding':{'authority_main':os.environ['EXPECTED_AUTHORITY_MAIN'],'r11_head':os.environ['EXPECTED_R11_HEAD'],'workflow_run_id':int(os.environ['GITHUB_RUN_ID']),'workflow_run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),'candidate_head':os.environ['CANDIDATE_HEAD'],'c2_sha256':hashlib.sha256(c2).hexdigest(),'c2_bytes':len(c2)},'request':{'api_origin':'https://zenodo.org','path':'/api/deposit/depositions/'+os.environ['DEPOSITION_ID'],'method':'GET','count':2,'redirects_followed':False,'status_codes':[s1,s2]},'stable_shape':sa,'allowlist':{'raw_response_bytes_persisted':False,'arbitrary_response_values_persisted':False,'credentials_persisted':False},'effect_boundary':{'zenodo_mutation':False,'metadata_write':False,'file_upload':False,'publication':False,'receipt_only_successor_evaluation_required':True,'pass':False,'final_pass':False,'effect_ack_done':False}}
+          out=Path('evidence/draft-shape-observation.json'); out.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          binding={'artifact_name':f"vrtcore-h3-r11-draft-shape-observation-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}",'observation_path':'draft-shape-observation.json','observation_sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'observation_bytes':out.stat().st_size}
+          Path('evidence/artifact-binding.json').write_text(json.dumps(binding,sort_keys=True,indent=2)+'\n')
+          PY
+          test "$(find evidence -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" = 2
+      - name: Upload exactly one bounded artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vrtcore-h3-r11-draft-shape-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve fail-closed effect boundary
+        run: |
+          echo R11_READ_ONLY_OBSERVATION_ARTIFACT_UPLOADED=true
+          echo ZENODO_MUTATION=false
+          echo PASS=false
+          echo FINAL_PASS=false
+          echo EFFECT_ACK_DONE=false
