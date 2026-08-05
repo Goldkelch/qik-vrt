@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT R11 proxy byte probe
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+    paths:
+      - .github/workflows/qikvrt_r11_proxy_byte_probe_v1.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'trusted/r11-proxy-byte-probe-v1' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact R11 proxy head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 6b0fd669b880505d71c0d03cb60a85d08bf0c326
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Report exact workflow identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          path=.github/workflows/qikvrt_r11_read_only_observation_proxy_v1.yml
+          test -f "$path"
+          printf 'R11_PROXY_WORKFLOW_BYTES=%s\n' "$(stat -c '%s' "$path")"
+          printf 'R11_PROXY_WORKFLOW_SHA256=%s\n' "$(sha256sum "$path" | awk '{print $1}')"
+          printf 'R11_PROXY_WORKFLOW_GIT_BLOB_SHA1=%s\n' "$(git hash-object "$path")"
+          test "$(git rev-parse HEAD)" = 6b0fd669b880505d71c0d03cb60a85d08bf0c326
