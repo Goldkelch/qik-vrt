@@ -100,6 +100,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             fonts-liberation \
+            lmodern \
             poppler-utils \
             texlive-fonts-recommended \
             texlive-lang-german \
@@ -111,9 +112,23 @@ jobs:
         run: |
           set -euo pipefail
           cd docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
-          bash build_qce_pdf.sh
-          python3 -B regenerate_qce_integrity.py
-          python3 -B verify_qce_package.py --static-only
+          if ! bash build_qce_pdf.sh > /tmp/qce-pdf-build.log 2>&1; then
+            diagnostic="$(tail -n 24 /tmp/qce-pdf-build.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            echo "::error file=docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/QIK-VRT_QCE_Fachartikel_DE_2026-08-05.tex::QCE PDF build failed: ${diagnostic}"
+            exit 1
+          fi
+          if ! python3 -B regenerate_qce_integrity.py > /tmp/qce-integrity.log 2>&1; then
+            diagnostic="$(tail -n 24 /tmp/qce-integrity.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            echo "::error file=docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/regenerate_qce_integrity.py::QCE package integrity regeneration failed: ${diagnostic}"
+            exit 1
+          fi
+          if ! python3 -B verify_qce_package.py --static-only > /tmp/qce-static.log 2>&1; then
+            diagnostic="$(tail -n 32 /tmp/qce-static.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            echo "::error file=docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/verify_qce_package.py::QCE static package verification failed: ${diagnostic}"
+            exit 1
+          fi
+          cat /tmp/qce-integrity.log /tmp/qce-static.log
+          rm -f /tmp/qce-pdf-build.log /tmp/qce-integrity.log /tmp/qce-static.log
 
       - name: Remove one-shot transport before repository integrity
         shell: bash
