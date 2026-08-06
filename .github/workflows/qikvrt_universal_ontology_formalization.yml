@@ -6,25 +6,23 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "formalization/QIKVRT_Formalization_v2.0/lakefile.toml"
-      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology.lean"
-      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/**"
-      - "formalization/QIKVRT_Formalization_v2.0/universal_ontology/**"
-      - "formalization/QIKVRT_Formalization_v2.0/scripts/verify_universal_ontology.py"
-      - "formalization/QIKVRT_Formalization_v2.0/scripts/make_universal_ontology_kernel_receipt.py"
+      - "formalization/QIKVRT_Formalization_v2.0/**"
       - "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
       - "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
+      - "state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json"
       - "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
       - "tests/test_universal_ontology_claim_closure.py"
+      - "tests/test_unified_world_formula_consolidation.py"
       - ".github/workflows/qikvrt_universal_ontology_formalization.yml"
   push:
     branches-ignore: [main]
     paths:
       - "formalization/QIKVRT_Formalization_v2.0/**"
       - "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
-      - "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
+      - "state/work_units/**"
       - "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
       - "tests/test_universal_ontology_claim_closure.py"
+      - "tests/test_unified_world_formula_consolidation.py"
       - ".github/workflows/qikvrt_universal_ontology_formalization.yml"
   workflow_dispatch:
 
@@ -74,11 +72,11 @@ jobs:
         working-directory: formalization/QIKVRT_Formalization_v2.0
         run: python3 -B scripts/verify_universal_ontology.py
 
-      - name: Build universal ontology Lean library
+      - name: Build consolidated Lean library
         working-directory: formalization/QIKVRT_Formalization_v2.0
         run: lake build QIKVRTUniversalOntology
 
-      - name: Run complete axiom audit
+      - name: Run complete 32-theorem axiom audit
         working-directory: formalization/QIKVRT_Formalization_v2.0
         shell: bash
         run: |
@@ -88,8 +86,14 @@ jobs:
             > .lake/build/universal-ontology-axioms.txt 2>&1
           cat .lake/build/universal-ontology-axioms.txt
 
-      - name: Run repository boundary regression
-        run: python3 -B -m unittest -v tests.test_universal_ontology_claim_closure
+      - name: Run boundary regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_universal_ontology_claim_closure \
+            tests.test_unified_world_formula_consolidation
+          python3 -B formalization/QIKVRT_Formalization_v2.0/tests/test_world_formula_relation_kernel.py
 
       - name: Create exact-head execution-bound kernel receipt
         working-directory: formalization/QIKVRT_Formalization_v2.0
@@ -104,7 +108,7 @@ jobs:
           --run-id "${GITHUB_RUN_ID}"
           --run-attempt "${GITHUB_RUN_ATTEMPT}"
 
-      - name: Upload exact finite-model receipt bundle
+      - name: Upload exact consolidated receipt bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-universal-ontology-kernel-receipt-${{ github.run_id }}-${{ github.run_attempt }}

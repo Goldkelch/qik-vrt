@@ -1,9 +1,11 @@
 import QIKVRTUniversalOntology.Core
+import QIKVRTFormalization.WorldFormula.Relations
 
 /-!
-Top-level import for the QIK-VRT universal-ontology finite-model library.
+Top-level import for the consolidated QIK-VRT universal-ontology finite-model
+and executable world-formula relation kernel.
 
-The library is intentionally separate from the locked manuscript claim graph and
-from the EFFECT_ACK protocol model. Kernel acceptance establishes only the
-properties stated for the explicit finite model.
+Kernel acceptance establishes only the propositions stated for the explicit
+models. Physical correspondence, empirical confirmation, independent
+reproduction and scientific consensus remain separate obligations.
 -/

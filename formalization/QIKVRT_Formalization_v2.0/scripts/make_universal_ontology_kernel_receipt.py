@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create an exact-head Lean-kernel receipt for the universal-ontology model."""
+"""Create an exact-head receipt for the consolidated 32-theorem kernel."""
 from __future__ import annotations
 
 import argparse
@@ -13,9 +13,16 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = ROOT.parents[1]
-MATRIX = ROOT / "universal_ontology/CLAIM_MATRIX.json"
-CORE = ROOT / "QIKVRTUniversalOntology/Core.lean"
-AUDIT = ROOT / "QIKVRTUniversalOntology/AxiomAudit.lean"
+MATRICES = (
+    ROOT / "universal_ontology/CLAIM_MATRIX.json",
+    ROOT / "universal_ontology/WORLD_FORMULA_CLAIM_MATRIX.json",
+)
+SOURCES = (
+    ROOT / "QIKVRTUniversalOntology/Core.lean",
+    ROOT / "QIKVRTFormalization/WorldFormula/Relations.lean",
+    ROOT / "QIKVRTUniversalOntology/AxiomAudit.lean",
+    *MATRICES,
+)
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 LINE = re.compile(
     r"^'(?P<name>[^']+)' (?:does not depend on any axioms|"
@@ -51,38 +58,38 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-attempt", required=True)
     args = parser.parse_args()
-
     if HEX40.fullmatch(args.commit) is None or HEX40.fullmatch(args.tree) is None:
         raise SystemExit("BLOCK: commit or tree binding is not a lowercase SHA-1")
-    matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
-    expected = {
-        item["proof_constant"]
-        for item in matrix["claims"]
-        if item["kind"] == "FORMAL_THEOREM"
-    }
+
+    expected: set[str] = set()
+    for path in MATRICES:
+        matrix = json.loads(path.read_text(encoding="utf-8"))
+        for claim in matrix["claims"]:
+            if claim.get("kind") == "FORMAL_THEOREM":
+                expected.add(claim["proof_constant"])
+    if len(expected) != 32:
+        raise SystemExit(f"BLOCK: expected exactly 32 theorem constants, observed {len(expected)}")
+
     observed: dict[str, list[str]] = {}
-    unexpected_lines: list[str] = []
+    unexpected: list[str] = []
     for raw_line in args.axiom_output.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
             continue
         match = LINE.fullmatch(line)
         if match is None:
-            unexpected_lines.append(line)
+            unexpected.append(line)
             continue
-        name = match.group("name")
-        axioms = [
+        observed[match.group("name")] = [
             item.strip()
             for item in (match.group("axioms") or "").split(",")
             if item.strip()
         ]
-        observed[name] = axioms
-    if unexpected_lines:
-        raise SystemExit(f"BLOCK: unexpected axiom output: {unexpected_lines[:5]}")
+    if unexpected:
+        raise SystemExit(f"BLOCK: unexpected axiom output: {unexpected[:5]}")
     if set(observed) != expected:
         raise SystemExit(
-            "BLOCK: axiom report inventory differs: "
-            f"missing={sorted(expected-set(observed))} "
+            f"BLOCK: axiom inventory differs: missing={sorted(expected-set(observed))} "
             f"extra={sorted(set(observed)-expected)}"
         )
     forbidden = {
@@ -93,8 +100,6 @@ def main() -> int:
     if forbidden:
         raise SystemExit(f"BLOCK: forbidden theorem dependencies: {forbidden}")
 
-    lean_version = command(args.lean, "--version")
-    lean_githash = command(args.lean, "--githash")
     receipt = {
         "_license": {
             "classification": "machine_readable_kernel_receipt",
@@ -102,28 +107,27 @@ def main() -> int:
             "license": "CC-BY-NC-ND-4.0",
             "rights_holder": "Ingolf Lohmann",
         },
-        "schema": "qikvrt_universal_ontology_kernel_receipt_v1",
-        "state": "KERNEL_VERIFIED_FINITE_MODEL",
+        "schema": "qikvrt_universal_ontology_kernel_receipt_v2",
+        "state": "KERNEL_VERIFIED_FINITE_AND_RELATIONAL_MODELS",
         "repository": args.repository,
         "source_commit": args.commit,
         "source_tree": args.tree,
-        "workflow": {
-            "run_id": str(args.run_id),
-            "run_attempt": str(args.run_attempt),
-        },
+        "workflow": {"run_id": str(args.run_id), "run_attempt": str(args.run_attempt)},
         "runtime": {
             "toolchain": "leanprover/lean4:v4.19.0",
-            "lean_version": lean_version,
-            "lean_githash": lean_githash,
+            "lean_version": command(args.lean, "--version"),
+            "lean_githash": command(args.lean, "--githash"),
             "imports": ["Std"],
         },
-        "sources": [identity(CORE), identity(AUDIT), identity(MATRIX)],
-        "theorem_count": len(expected),
+        "sources": [identity(path) for path in SOURCES],
+        "theorem_count": 32,
         "axioms_by_theorem": observed,
         "foundational_axiom_allowlist": sorted(FOUNDATIONAL),
         "project_axioms": [],
         "scope_boundary": {
-            "finite_model_verified": True,
+            "finite_ontology_model_verified": True,
+            "world_formula_relation_model_verified": True,
+            "formal_establishment_implies_physical_qualification": False,
             "physical_correspondence": "OPEN_CANDIDATE",
             "quantum_entanglement_in_nature_proved": False,
             "empirical_confirmation": False,
@@ -131,20 +135,14 @@ def main() -> int:
             "scientific_consensus": False,
         },
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-        },
+        "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(
-        f"KERNEL_RECEIPT_CREATED theorems={len(expected)} "
-        f"commit={args.commit} tree={args.tree}"
+        f"KERNEL_RECEIPT_CREATED theorems=32 commit={args.commit} tree={args.tree}"
     )
     return 0
 

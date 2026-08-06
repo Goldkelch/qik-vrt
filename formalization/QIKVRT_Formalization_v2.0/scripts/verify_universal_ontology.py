@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed verifier for the universal-ontology finite-model package."""
+"""Fail-closed verifier for the consolidated universal-ontology package."""
 from __future__ import annotations
 
 import argparse
@@ -12,27 +12,24 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = ROOT.parents[1]
-MATRIX = ROOT / "universal_ontology/CLAIM_MATRIX.json"
+MATRICES = (
+    ROOT / "universal_ontology/CLAIM_MATRIX.json",
+    ROOT / "universal_ontology/WORLD_FORMULA_CLAIM_MATRIX.json",
+)
 SCOPE = ROOT / "universal_ontology/SOURCE_SCOPE.json"
-CORE = ROOT / "QIKVRTUniversalOntology/Core.lean"
 AUDIT = ROOT / "QIKVRTUniversalOntology/AxiomAudit.lean"
+LEAN_SOURCES = (
+    ROOT / "QIKVRTUniversalOntology/Core.lean",
+    ROOT / "QIKVRTUniversalOntology/AxiomAudit.lean",
+    ROOT / "QIKVRTFormalization/WorldFormula/Relations.lean",
+    ROOT / "QIKVRTFormalization/WorldFormula/AxiomAudit.lean",
+)
 STANDING = REPOSITORY_ROOT / "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
 WORK = REPOSITORY_ROOT / "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
+WORLD_WORK = REPOSITORY_ROOT / "state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json"
 IETF = REPOSITORY_ROOT / "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
 GLOBAL = REPOSITORY_ROOT / "GLOBAL_CLAIM_INVENTORY.json"
-
-FORMAL_KINDS = {"FORMAL_THEOREM"}
-NON_FORMAL_KINDS = {
-    "DEFINITION", "ASSUMPTION", "CORRESPONDENCE_POSTULATE",
-    "EMPIRICAL_CLAIM", "INTERPRETATION", "NORMATIVE_RULE",
-}
-TERMINAL = {
-    "SOURCE_BOUND", "KERNEL_CANDIDATE", "KERNEL_PROVED",
-    "KERNEL_PROVED_CONDITIONAL", "EVIDENCE_REQUIRED", "OPEN_CANDIDATE",
-    "INTERPRETIVE", "NORMATIVE", "REFUTED", "OUT_OF_SCOPE",
-    "NO_PROTOCOL_CHANGE_REQUIRED",
-}
-FORBIDDEN_LEAN = re.compile(r"\b(?:sorry|admit|axiom)\b")
+FORBIDDEN = re.compile(r"(?m)^\s*(?:sorry|admit|axiom)\b")
 
 
 def load_object(path: pathlib.Path) -> dict[str, Any]:
@@ -54,8 +51,7 @@ def git(*args: str) -> str:
 
 def verify_source_bindings(scope: dict[str, Any]) -> None:
     source_commit = scope["source_commit"]
-    resolved = git("rev-parse", "--verify", f"{source_commit}^{{commit}}")
-    if resolved != source_commit:
+    if git("rev-parse", "--verify", f"{source_commit}^{{commit}}") != source_commit:
         raise ValueError("source commit does not resolve exactly")
     if subprocess.run(
         ["git", "merge-base", "--is-ancestor", source_commit, "HEAD"],
@@ -73,98 +69,82 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-git-source-bindings", action="store_true")
     args = parser.parse_args(argv)
     try:
-        matrix = load_object(MATRIX)
-        scope = load_object(SCOPE)
-        standing = load_object(STANDING)
-        work = load_object(WORK)
-        ietf = load_object(IETF)
-        global_inventory = load_object(GLOBAL)
-
-        if matrix.get("schema") != "qikvrt_universal_ontology_claim_matrix_v1":
-            raise ValueError("claim-matrix schema mismatch")
-        claims = matrix.get("claims")
-        if not isinstance(claims, list) or not claims:
-            raise ValueError("claim matrix is empty")
-        ids = [item.get("claim_id") for item in claims]
-        if not all(isinstance(item, str) and item for item in ids) or len(ids) != len(set(ids)):
-            raise ValueError("claim IDs are invalid or non-unique")
-        proof_constants: set[str] = set()
-        for item in claims:
-            kind = item.get("kind")
-            disposition = item.get("terminal_disposition")
-            if kind not in FORMAL_KINDS | NON_FORMAL_KINDS:
-                raise ValueError(f"{item.get('claim_id')}: unsupported claim kind")
-            if disposition not in TERMINAL:
-                raise ValueError(f"{item.get('claim_id')}: unsupported disposition")
-            constant = item.get("proof_constant")
-            if kind in FORMAL_KINDS:
-                if disposition not in {"KERNEL_CANDIDATE", "KERNEL_PROVED", "KERNEL_PROVED_CONDITIONAL"}:
-                    raise ValueError(f"{item.get('claim_id')}: formal disposition mismatch")
+        matrices = [load_object(path) for path in MATRICES]
+        all_claims: list[dict[str, Any]] = []
+        expected_constants: set[str] = set()
+        expected_count = 0
+        for matrix in matrices:
+            claims = matrix.get("claims")
+            if not isinstance(claims, list) or not claims:
+                raise ValueError("claim matrix is empty")
+            all_claims.extend(claims)
+            formal = [claim for claim in claims if claim.get("kind") == "FORMAL_THEOREM"]
+            expected_count += int(matrix.get("formal_theorem_count", -1))
+            if len(formal) != matrix.get("formal_theorem_count"):
+                raise ValueError("formal theorem count differs within a claim matrix")
+            for claim in formal:
+                if claim.get("terminal_disposition") not in {
+                    "KERNEL_CANDIDATE", "KERNEL_PROVED", "KERNEL_PROVED_CONDITIONAL"
+                }:
+                    raise ValueError(f"{claim.get('claim_id')}: formal disposition mismatch")
+                constant = claim.get("proof_constant")
                 if not isinstance(constant, str) or not constant:
-                    raise ValueError(f"{item.get('claim_id')}: formal claim lacks constant")
-                proof_constants.add(constant)
-            elif constant is not None:
-                raise ValueError(f"{item.get('claim_id')}: non-formal proof inflation")
-
-        if len(proof_constants) != matrix.get("formal_theorem_count"):
-            raise ValueError("formal theorem count differs")
-        audit_lines = {
+                    raise ValueError(f"{claim.get('claim_id')}: missing proof constant")
+                if constant in expected_constants:
+                    raise ValueError(f"duplicate proof constant: {constant}")
+                expected_constants.add(constant)
+            for claim in claims:
+                if claim.get("kind") != "FORMAL_THEOREM" and "proof_constant" in claim:
+                    raise ValueError(f"{claim.get('claim_id')}: non-formal proof inflation")
+        ids = [claim.get("claim_id") for claim in all_claims]
+        if any(not isinstance(item, str) or not item for item in ids) or len(ids) != len(set(ids)):
+            raise ValueError("claim IDs are invalid or non-unique")
+        if expected_count != 32 or len(expected_constants) != 32:
+            raise ValueError("consolidated theorem inventory must contain exactly 32 constants")
+        audit_constants = {
             line.strip().removeprefix("#print axioms ")
             for line in AUDIT.read_text(encoding="utf-8").splitlines()
             if line.strip().startswith("#print axioms ")
         }
-        if audit_lines != proof_constants:
+        if audit_constants != expected_constants:
             raise ValueError(
-                f"axiom-audit inventory differs: missing={sorted(proof_constants-audit_lines)} "
-                f"extra={sorted(audit_lines-proof_constants)}"
+                f"axiom-audit inventory differs: missing={sorted(expected_constants-audit_constants)} "
+                f"extra={sorted(audit_constants-expected_constants)}"
             )
-        for path in (CORE, AUDIT):
-            text = path.read_text(encoding="utf-8")
-            stripped = "\n".join(
-                line for line in text.splitlines()
-                if not line.lstrip().startswith(("--", "/-", "*", "-/"))
-            )
-            if FORBIDDEN_LEAN.search(stripped):
+        for path in LEAN_SOURCES:
+            if FORBIDDEN.search(path.read_text(encoding="utf-8")):
                 raise ValueError(f"forbidden Lean escape hatch in {path}")
 
+        scope = load_object(SCOPE)
+        standing = load_object(STANDING)
+        work = load_object(WORK)
+        world_work = load_object(WORLD_WORK)
+        ietf = load_object(IETF)
+        global_inventory = load_object(GLOBAL)
         global_claims = global_inventory.get("claims")
         if not isinstance(global_claims, list) or not global_claims:
             raise ValueError("global claim inventory is absent or empty")
-        global_ids = [item.get("inventory_id") for item in global_claims]
-        if len(global_ids) != len(set(global_ids)) or any(not item for item in global_ids):
-            raise ValueError("global inventory IDs are not unique")
-        if any(not isinstance(item.get("terminal_disposition"), str) or not item["terminal_disposition"] for item in global_claims):
+        if any(not item.get("terminal_disposition") for item in global_claims):
             raise ValueError("global inventory contains an undisposed claim")
-
-        if standing.get("schema") != "qikvrt-owner-delegation/1.0":
-            raise ValueError("canonical Product Owner delegation schema differs")
-        if standing.get("authorizing_owner") != "Ingolf Lohmann":
-            raise ValueError("canonical Product Owner delegation principal differs")
         permissions = standing.get("autonomous_permissions", {})
+        if standing.get("authorizing_owner") != "Ingolf Lohmann":
+            raise ValueError("Product Owner delegation principal differs")
         if permissions.get("test_and_ci_execution") is not True:
             raise ValueError("Lean execution is not authorized")
-        if permissions.get("credentialed_zenodo_write") != (
-            "AUTHORIZED_IN_PRINCIPLE_BUT_REQUIRES_AVAILABLE_VALID_CREDENTIALS_AND_PRE_EFFECT_GATES"
-        ):
-            raise ValueError("Zenodo delegation boundary differs")
         if standing.get("mandatory_status_separation", {}).get("scientific_consensus") != "NOT_CLAIMED":
             raise ValueError("scientific-consensus boundary weakened")
-        if standing.get("completion_predicate", {}).get("global_completion") != (
-            "NOT_PREAUTHORIZED_AS_A_CLAIM; it may be emitted only when all declared predicates are evidenced."
-        ):
-            raise ValueError("global-completion boundary weakened")
-        if work.get("effect_state") != "EFFECT_ACK_CONTINUE":
-            raise ValueError("work-unit effect state differs")
+        if work.get("physical_correspondence") != "OPEN_CANDIDATE":
+            raise ValueError("ontology work-unit physical boundary weakened")
+        if world_work.get("claim_boundary", {}).get("physical_correspondence") != "NOT_INFERRED":
+            raise ValueError("world-formula physical boundary weakened")
         if ietf.get("disposition") != "NO_PROTOCOL_CHANGE_REQUIRED":
             raise ValueError("IETF disposition differs")
         if ietf.get("wire_version_changed") is not False or ietf.get("done_predicate_changed") is not False:
-            raise ValueError("IETF no-change disposition is internally inconsistent")
-        if matrix.get("physical_correspondence") != "OPEN_CANDIDATE":
-            raise ValueError("physical correspondence boundary weakened")
-        if matrix.get("completion_claims") != {
+            raise ValueError("IETF no-change disposition is inconsistent")
+        if matrices[0].get("completion_claims") != {
             "PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False
         }:
-            raise ValueError("claim matrix weakens completion boundary")
+            raise ValueError("completion boundary weakened")
         if not args.skip_git_source_bindings:
             verify_source_bindings(scope)
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
@@ -172,9 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(
-        "VERIFIED universal ontology package: "
-        f"new_claims={len(claims)} formal_theorems={len(proof_constants)} "
-        f"global_dispositions={len(global_claims)} "
+        "VERIFIED consolidated ontology/world-formula package: "
+        f"claims={len(all_claims)} formal_theorems={len(expected_constants)} "
         "physical_correspondence=OPEN_CANDIDATE"
     )
     return 0

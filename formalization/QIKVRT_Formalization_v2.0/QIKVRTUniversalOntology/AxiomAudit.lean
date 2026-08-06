@@ -1,4 +1,4 @@
-import QIKVRTUniversalOntology.Core
+import QIKVRTUniversalOntology
 
 #print axioms QIKVRT.UniversalOntology.ontologyChain_length
 #print axioms QIKVRT.UniversalOntology.ontologyChain_pairwise
@@ -25,3 +25,10 @@ import QIKVRTUniversalOntology.Core
 #print axioms QIKVRT.UniversalOntology.empirical_claim_not_kernel_promoted
 #print axioms QIKVRT.UniversalOntology.interpretation_not_kernel_promoted
 #print axioms QIKVRT.UniversalOntology.ordinaryRelease_only_done
+#print axioms QIKVRT.V2.WorldFormula.every_stage_has_a_successor
+#print axioms QIKVRT.V2.WorldFormula.closedGenerative_iff_executableWorldFormula
+#print axioms QIKVRT.V2.WorldFormula.unitArchitecture_executable
+#print axioms QIKVRT.V2.WorldFormula.physicallyQualified_implies_formallyEstablished
+#print axioms QIKVRT.V2.WorldFormula.physicallyQualified_implies_referenceBound
+#print axioms QIKVRT.V2.WorldFormula.formalDerivability_not_sufficient_for_physicalQualification
+#print axioms QIKVRT.V2.WorldFormula.ArtifactIdentity.complete_implies_sourceCommit
