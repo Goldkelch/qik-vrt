@@ -208,7 +208,7 @@ def create_qce_successor(
         integrity = work / "tools/qikvrt_integrity.py"
         if integrity.exists():
             run_capture(
-                [sys.executable, "-B", str(integrity.relative_to(work)), "write"],
+                [sys.executable, "-B", str(integrity.relative_to(work)), "generate"],
                 work,
             )
         run_capture(
