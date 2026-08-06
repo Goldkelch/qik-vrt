@@ -34,20 +34,42 @@
   ],
   "pull_request_continuation": {
     "workflow_path": ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
+    "continuation_script_path": "tools/qikvrt_autonomous_pr_continue.sh",
     "opt_in_marker": "<!-- qikvrt-autonomous-self-heal:enabled -->",
     "same_repository_only": true,
     "draft_only": true,
     "merge_current_main_before_repair": true,
     "maximum_pull_requests_per_run": 1,
     "history_rewrite": "FORBIDDEN",
+    "generated_merge_conflict_policy": {
+      "mode": "ALLOWLIST_ONLY_REGENERATE_IMMEDIATELY",
+      "temporary_resolution_side": "CURRENT_MAIN",
+      "allowed_paths": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt",
+        "docs/publications/index.html",
+        "docs/publications/index.json"
+      ],
+      "non_allowlisted_conflict": "BLOCK",
+      "post_merge_requirement": "RUN_ALL_ALLOWLISTED_SELF_HEAL_HANDLERS_BEFORE_PUSH"
+    },
+    "push_credential_policy": {
+      "default": "GITHUB_TOKEN",
+      "optional_privileged_secret_name": "QIKVRT_AUTONOMY_WORKFLOW_TOKEN",
+      "secret_value_must_not_be_logged_or_persisted": true,
+      "absence_behavior": "FALL_BACK_TO_GITHUB_TOKEN_AND_FAIL_CLOSED_ON_REJECTION"
+    },
     "post_repair_verification": [
+      "bash -n tools/qikvrt_autonomous_pr_continue.sh",
       "python3 -B tools/qikvrt_publication_overview.py check",
       "python3 -B tools/qikvrt_integrity.py verify",
-      "python3 -B -m unittest -v tests.test_qikvrt_publication_overview tests.test_qikvrt_autonomous_self_heal",
+      "python3 -B -m unittest -v tests.test_qikvrt_publication_overview tests.test_qikvrt_autonomous_self_heal tests.test_qikvrt_autonomous_pr_continuation",
       "make test"
     ],
     "external_gates": [
       "IDENTIFIED_HUMAN_PHYSICS_REVIEW_WHEN_REQUIRED",
+      "MIRROR_CROSS_REPOSITORY_CREDENTIAL_AND_AUTHORIZATION_WHEN_REQUIRED",
       "SEPARATE_EXPLICIT_ZENODO_AUTHORIZATION"
     ],
     "automatic_promotion": "HOLD_UNTIL_ALL_EXTERNAL_AND_INTERNAL_GATES"
@@ -147,13 +169,19 @@
       "verify"
     ],
     [
+      "bash",
+      "-n",
+      "tools/qikvrt_autonomous_pr_continue.sh"
+    ],
+    [
       "python3",
       "-B",
       "-m",
       "unittest",
       "-v",
       "tests.test_qikvrt_publication_overview",
-      "tests.test_qikvrt_autonomous_self_heal"
+      "tests.test_qikvrt_autonomous_self_heal",
+      "tests.test_qikvrt_autonomous_pr_continuation"
     ]
   ],
   "forbidden_effects": [
@@ -164,7 +192,7 @@
     "deployment",
     "zenodo_mutation",
     "ietf_mutation",
-    "credentialed_external_write",
+    "credentialed_external_write_outside_declared_repository_scope",
     "repository_wide_completion_claim"
   ],
   "candidate_contract": {
