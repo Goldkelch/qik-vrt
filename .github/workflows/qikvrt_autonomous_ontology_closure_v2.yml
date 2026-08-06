@@ -1,0 +1,205 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT progressing autonomous ontology closure v2
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches:
+      - qikvrt/ontology-autonomy-state
+    paths:
+      - state/ontology-autonomy/STATUS_V2.json
+  workflow_run:
+    workflows:
+      - "QIK-VRT QCE candidate verification"
+      - "QIK-VRT authenticated audio request"
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+    types: [completed]
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - ".github/workflows/qikvrt_autonomous_ontology_closure_v2.yml"
+      - ".github/workflows/qikvrt_autonomous_ontology_closure_v1_supersede.yml"
+      - "tools/qikvrt_autonomous_ontology_closure.py"
+      - "tools/qikvrt_autonomous_ontology_closure_v2.py"
+      - "tests/test_qikvrt_autonomous_ontology_closure.py"
+      - "tests/test_qikvrt_autonomous_ontology_closure_v2.py"
+      - "policy/AUTONOMOUS_ONTOLOGY_CLOSURE_V1.json"
+      - "schemas/qikvrt-autonomous-ontology-closure-v2.schema.json"
+      - "state/ontology-autonomy/QUEUE_V2.json"
+      - "state/ontology-autonomy/STATUS_V2.json"
+      - "docs/operations/AUTONOMOUS_ONTOLOGY_CLOSURE_V2.md"
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-autonomous-ontology-closure-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  one-progressing-work-unit:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.head_ref, 'agent/autonomous-ontology-closure-'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact operator state without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Load the durable V2 status projection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          STATE_BRANCH: qikvrt/ontology-autonomy-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_path='state/ontology-autonomy/STATUS_V2.json'
+          if [[ "${EVENT_NAME}" != 'pull_request' ]]; then
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${STATE_BRANCH}" >/dev/null 2>&1; then
+              encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${status_path}?ref=${STATE_BRANCH}" --jq '.content' | tr -d '\n')"
+              printf '%s' "${encoded}" | base64 --decode > "${status_path}"
+            fi
+          fi
+          cp "${status_path}" "${RUNNER_TEMP}/STATUS_V2.before.json"
+
+      - name: Verify the progressing fail-closed contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_autonomous_ontology_closure_v2.py verify --json
+          python3 -B -m unittest -v tests.test_qikvrt_autonomous_ontology_closure_v2
+
+      - name: Select the next eligible deterministic work unit
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_autonomous_ontology_closure_v2.py plan --json \
+            > "${RUNNER_TEMP}/ontology-plan-v2.json"
+          cat "${RUNNER_TEMP}/ontology-plan-v2.json"
+          state="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["state"])' "${RUNNER_TEMP}/ontology-plan-v2.json")"
+          printf 'state=%s\n' "${state}" >> "${GITHUB_OUTPUT}"
+          if [[ "${state}" == 'ELIGIBLE' ]]; then
+            echo 'eligible=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'eligible=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Execute one bounded repository work unit through the GitHub API
+        id: execute
+        if: steps.plan.outputs.eligible == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -B tools/qikvrt_autonomous_ontology_closure_v2.py apply \
+            --repository "${GITHUB_REPOSITORY}" \
+            --json | tee "${RUNNER_TEMP}/ontology-result-v2.json"
+          code="${PIPESTATUS[0]}"
+          printf 'exit_code=%s\n' "${code}" >> "${GITHUB_OUTPUT}"
+          if [[ -s "${RUNNER_TEMP}/ontology-result-v2.json" ]]; then
+            state="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("state", "BLOCK"))' "${RUNNER_TEMP}/ontology-result-v2.json" 2>/dev/null || printf BLOCK)"
+          else
+            state='BLOCK'
+          fi
+          printf 'state=%s\n' "${state}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Suppress semantically unchanged waiting observations
+        id: semantic
+        if: steps.plan.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - "${RUNNER_TEMP}/STATUS_V2.before.json" state/ontology-autonomy/STATUS_V2.json "${GITHUB_OUTPUT}" <<'PY'
+          import json
+          import pathlib
+          import shutil
+          import sys
+
+          before_path = pathlib.Path(sys.argv[1])
+          after_path = pathlib.Path(sys.argv[2])
+          output_path = pathlib.Path(sys.argv[3])
+          before = json.loads(before_path.read_text(encoding='utf-8'))
+          after = json.loads(after_path.read_text(encoding='utf-8'))
+          for value in (before, after):
+              value.pop('observed_at', None)
+              value.pop('last_run_id', None)
+          changed = before != after
+          if not changed:
+              shutil.copy2(before_path, after_path)
+          with output_path.open('a', encoding='utf-8') as output:
+              output.write(f"changed={'true' if changed else 'false'}\n")
+          PY
+
+      - name: Verify the local mutation boundary
+        if: steps.plan.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          for path in "${changed[@]}"; do
+            case "${path}" in
+              state/ontology-autonomy/STATUS_V2.json) ;;
+              *) printf 'Unexpected operator worktree mutation: %s\n' "${path}" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Persist a semantically changed durable status projection
+        if: steps.plan.outputs.eligible == 'true' && steps.semantic.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          STATE_BRANCH: qikvrt/ontology-autonomy-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_path='state/ontology-autonomy/STATUS_V2.json'
+          if [[ "${EVENT_NAME}" == 'pull_request' ]]; then
+            target_branch="${HEAD_REF}"
+          else
+            target_branch="${STATE_BRANCH}"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${target_branch}" >/dev/null 2>&1; then
+              main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                -f ref="refs/heads/${target_branch}" \
+                -f sha="${main_sha}" >/dev/null
+            fi
+          fi
+          content="$(base64 -w0 "${status_path}")"
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${status_path}?ref=${target_branch}" --jq '.sha' 2>/dev/null || true)"
+          args=(
+            --method PUT
+            "repos/${GITHUB_REPOSITORY}/contents/${status_path}"
+            -f message='Persist progressing autonomous ontology status v2'
+            -f content="${content}"
+            -f branch="${target_branch}"
+          )
+          if [[ -n "${current_sha}" ]]; then
+            args+=( -f sha="${current_sha}" )
+          fi
+          gh api "${args[@]}" >/dev/null
+
+      - name: Enforce fail-closed execution result after status persistence
+        if: steps.plan.outputs.eligible == 'true' && steps.execute.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          printf 'Autonomous ontology work unit failed closed with state %s\n' \
+            '${{ steps.execute.outputs.state }}' >&2
+          exit 1
