@@ -102,14 +102,18 @@ class AutonomousOntologyClosureV2Tests(unittest.TestCase):
         self.assertNotIn("gh pr merge", workflow)
         self.assertNotIn("ZENODO_ACCESS_TOKEN", workflow)
 
-    def test_v1_superseder_removes_the_static_executor(self):
+    def test_v1_supersession_is_verified_read_only(self):
         workflow = (
             ROOT
             / ".github/workflows/qikvrt_autonomous_ontology_closure_v1_supersede.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("qikvrt_autonomous_ontology_closure.yml", workflow)
+        self.assertIn("contents: read", workflow)
         self.assertIn("SUPERSEDED_BY_PROGRESSING_V2", workflow)
-        self.assertIn("--method DELETE", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertNotIn("--method DELETE", workflow)
+        self.assertFalse(
+            (ROOT / ".github/workflows/qikvrt_autonomous_ontology_closure.yml").exists()
+        )
 
 
 if __name__ == "__main__":
