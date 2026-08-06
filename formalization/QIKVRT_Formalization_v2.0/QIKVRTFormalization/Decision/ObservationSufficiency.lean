@@ -79,7 +79,7 @@ theorem sufficiency_factorization
   intro h
   unfold selectorOnImage
   apply sufficient
-  exact (Classical.choose_spec (observedImage observe h).property).trans rfl
+  exact Classical.choose_spec (observedImage observe h).property
 
 /-- Any two selectors that factor the correct action agree on every reachable observation. -/
 theorem selector_unique_on_reachable_image
@@ -94,10 +94,12 @@ theorem selector_unique_on_reachable_image
     apply Subtype.ext
     exact hh
   calc
-    S₁ o = S₁ (observedImage observe h) := by rw [ho]
-    _ = correct h := h₁ h
-    _ = S₂ (observedImage observe h) := (h₂ h).symm
-    _ = S₂ o := by rw [ho]
+    S₁ o = correct h := by
+      rw [← ho]
+      exact h₁ h
+    _ = S₂ o := by
+      rw [← ho]
+      exact (h₂ h).symm
 
 /--
 Impossibility theorem: if two admissible histories have the same observation but
