@@ -1,0 +1,100 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_queue",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "authority_main_binding": "REOBSERVE_AT_EXECUTION",
+  "effect_state": "EFFECT_ACK_CONTINUE",
+  "queue_id": "ONTOLOGY-CLOSURE-QUEUE-2026-08-06-V1",
+  "release_claims": {
+    "EFFECT_ACK_DONE": false,
+    "FINAL_PASS": false,
+    "PASS": false
+  },
+  "schema": "qikvrt_autonomous_ontology_closure_queue_v1",
+  "selection": "lowest-order eligible incomplete work unit",
+  "work_units": [
+    {
+      "action_class": "REPOSITORY_LOCAL_MATERIALIZATION",
+      "automatic": true,
+      "description": "Create a history-preserving successor of the current open QCE candidate and regenerate the publication overview plus repository-native integrity without changing scientific claim boundaries.",
+      "handler": "qce_publication_discovery_successor",
+      "id": "QCE-DISCOVERY-INDEX-CURRENT-V1",
+      "order": 10,
+      "required_target": "docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/README.md",
+      "source_head_policy": "REOBSERVE_CURRENT_OPEN_PR_HEAD",
+      "source_pr": 411,
+      "state": "READY",
+      "successor_branch": "automation/qce-publication-discovery-current-v1"
+    },
+    {
+      "action_class": "RECEIPT_PERSISTENCE",
+      "automatic": true,
+      "description": "Persist the exact QCE kernel receipt if it is not already present in the candidate tree.",
+      "handler": "qce_kernel_receipt_persistence",
+      "id": "QCE-KERNEL-RECEIPT-PERSISTENCE-CURRENT-V1",
+      "known_successful_run": 31060011399,
+      "order": 20,
+      "source_pr": 411,
+      "state": "WAITING_ON_PREDECESSOR"
+    },
+    {
+      "action_class": "RECEIPT_PERSISTENCE",
+      "automatic": true,
+      "description": "Verify bounded A08/A09 ASR artifacts and materialize a human acoustic-review request without promoting ASR to verbatim certification.",
+      "handler": "audio_artifact_review_request",
+      "id": "A08-A09-BOUNDED-ASR-EVIDENCE-CURRENT-V1",
+      "known_transport_run": 31058321428,
+      "order": 30,
+      "source_pr": 414,
+      "state": "WAITING_ON_PREDECESSOR"
+    },
+    {
+      "action_class": "FORMAL_MODEL_EXECUTION",
+      "automatic": true,
+      "description": "Materialize finite formal work units for Difference through Responsibility and Future without turning correspondence postulates into axioms.",
+      "handler": "materialize_unified_ontology_work_units",
+      "id": "UNIFIED-ONTOLOGY-KERNEL-PROGRAM-V1",
+      "order": 40,
+      "state": "WAITING_ON_PREDECESSOR"
+    },
+    {
+      "action_class": "EXTERNAL_SCIENCE",
+      "automatic": false,
+      "description": "Covariant microscopic dynamics, genuine physical entanglement, Page-curve-compatible recovery, QFT/Einstein limits and stable light-cone limit.",
+      "handler": null,
+      "id": "QCE-PHYSICAL-BRIDGE-O01-O05",
+      "order": 50,
+      "state": "EXTERNAL_SCIENCE_REQUIRED"
+    },
+    {
+      "action_class": "EXTERNAL_SCIENCE",
+      "automatic": false,
+      "description": "Freeze a differentiating quantitative prediction, uncertainty model and preregistered falsifier before decisive data inspection.",
+      "handler": null,
+      "id": "QCE-FALSIFIABLE-PREDICTION-O06",
+      "order": 60,
+      "state": "HUMAN_PHYSICS_DESIGN_REQUIRED"
+    },
+    {
+      "action_class": "INDEPENDENT_REPLICATION",
+      "automatic": false,
+      "description": "Obtain external measurements and organizationally independent reproduction.",
+      "handler": null,
+      "id": "QCE-EMPIRICAL-REPLICATION-O07",
+      "order": 70,
+      "state": "INDEPENDENT_ACTOR_REQUIRED"
+    },
+    {
+      "action_class": "IRREVERSIBLE_EXTERNAL_EFFECT",
+      "automatic": false,
+      "description": "Publish only exact final bytes after all applicable formal, empirical and authorization gates are satisfied.",
+      "handler": null,
+      "id": "ONTOLOGY-ZENODO-PUBLICATION-V1",
+      "order": 80,
+      "state": "EXACT_OWNER_AUTHORIZATION_REQUIRED"
+    }
+  ]
+}
