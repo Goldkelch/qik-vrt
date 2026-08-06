@@ -161,12 +161,12 @@ def require_false_claims(value: Any, label: str) -> None:
 def validate_delegation(value: Mapping[str, Any]) -> None:
     if value.get("schema") != "qikvrt_owner_autonomous_repository_continuation_v2":
         raise OrchestratorBlock("owner delegation schema mismatch")
-    if value.get("authorization_scope", {}).get("state") != "ACTIVE":
+    scope = value.get("authorization_scope", {})
+    if not isinstance(scope, Mapping) or scope.get("state") != "ACTIVE":
         raise OrchestratorBlock("owner autonomous delegation is not ACTIVE")
     allowed = set(value.get("allowed_without_reinteraction", []))
     required = {
         "read_only_repository_and_public_evidence_observation",
-        "reviewable_successor_creation",
         "semantic_fingerprint_bound_branch_creation",
         "draft_pull_request_creation_for_allowlisted_repository_internal_repairs",
         "expected_head_bound_promotion_when_all_declared_conditions_hold",
@@ -174,6 +174,11 @@ def validate_delegation(value: Mapping[str, Any]) -> None:
     }
     if not required.issubset(allowed):
         raise OrchestratorBlock("owner delegation lacks required repository-internal capabilities")
+    if (
+        scope.get("reviewable_successor_creation") is not True
+        and "reviewable_successor_creation" not in allowed
+    ):
+        raise OrchestratorBlock("owner delegation lacks reviewable successor creation")
     forbidden = set(value.get("not_authorized", []))
     required_forbidden = {
         "zenodo_create_upload_metadata_mutation_or_publication",
