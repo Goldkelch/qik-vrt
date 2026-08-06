@@ -23,6 +23,7 @@ import QIKVRTFormalization.Claims.Batch05
 import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
+import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -50,4 +51,10 @@ finite common-cause countermodel proves that structurally local two-wing
 responses alone do not establish measurement independence. Physical exclusion
 therefore still requires a separately justified QCE freedom certificate and
 physical reference/evidence binding.
+
+The hardware-witness tranche formalizes a duplex Authority/Mirror NVM model
+with an independent commit witness, fail-closed witnessless divergence,
+idempotent recovery, monotone epochs, and witness-bound Effect ACK semantics.
+Its mathematical digest is symbolic and injective; operational SHA-256 collision
+resistance remains an explicit external implementation assumption.
 -/
