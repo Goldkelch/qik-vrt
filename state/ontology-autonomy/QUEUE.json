@@ -15,6 +15,11 @@
   },
   "schema": "qikvrt_autonomous_ontology_closure_queue_v1",
   "selection": "lowest-order eligible incomplete work unit",
+  "superseded_by": {
+    "operator": "tools/qikvrt_autonomous_ontology_closure_v2.py",
+    "queue": "state/ontology-autonomy/QUEUE_V2.json",
+    "reason": "V1 had no persistent completed-work-unit ledger and could reselect its first READY item."
+  },
   "work_units": [
     {
       "action_class": "REPOSITORY_LOCAL_MATERIALIZATION",
@@ -26,7 +31,7 @@
       "required_target": "docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/README.md",
       "source_head_policy": "REOBSERVE_CURRENT_OPEN_PR_HEAD",
       "source_pr": 411,
-      "state": "READY",
+      "state": "SUPERSEDED_BY_PROGRESSING_V2",
       "successor_branch": "automation/qce-publication-discovery-current-v1"
     },
     {
