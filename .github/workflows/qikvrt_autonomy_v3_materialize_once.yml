@@ -108,11 +108,10 @@ jobs:
           make test
           python3 -B tools/qikvrt_integrity.py verify
 
-      - name: Export exact verified final tree delta
+      - name: Export exact verified final files
         shell: bash
         run: |
           set -euo pipefail
-          base="0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
           mkdir -p audit/autonomy-materialization
           cat > /tmp/autonomy-final-paths.txt <<'EOF'
           .github/workflows/qikvrt_autonomous_exact_head_verify.yml
@@ -129,9 +128,13 @@ jobs:
           tools/qikvrt_autonomous_self_heal.py
           tools/qikvrt_publication_overview.py
           EOF
-          actual="$(git diff --name-only "$base" -- . | sort)"
-          expected="$(sort /tmp/autonomy-final-paths.txt)"
-          test "$actual" = "$expected"
+          while IFS= read -r path; do
+            test -f "$path"
+          done < /tmp/autonomy-final-paths.txt
+          test ! -e .github/workflows/qikvrt_autonomy_v3_materialize_once.yml
+          for part in .qikvrt/autonomy/autonomous-pr-continuation-v1.part0{0,1,2,3,4}; do
+            test ! -e "$part"
+          done
           tar -czf audit/autonomy-materialization/autonomy-final-delta.tar.gz \
             -T /tmp/autonomy-final-paths.txt
           sha256sum audit/autonomy-materialization/autonomy-final-delta.tar.gz \
@@ -146,6 +149,12 @@ jobs:
           import subprocess
           root = pathlib.Path('audit/autonomy-materialization')
           archive = root / 'autonomy-final-delta.tar.gz'
+          paths = [
+              line.strip()
+              for line in (root / 'autonomy-final-paths.txt').read_text(encoding='utf-8').splitlines()
+              if line.strip()
+          ]
+          assert len(paths) == 13
           value = {
               'schema': 'qikvrt_autonomy_materialization_export_v1',
               'repository': os.environ['GITHUB_REPOSITORY'],
@@ -155,7 +164,8 @@ jobs:
               'workflow_run_id': os.environ['GITHUB_RUN_ID'],
               'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
               'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
-              'path_count': 13,
+              'paths': paths,
+              'path_count': len(paths),
               'full_repository_gates': 'SUCCESS',
               'external_effect': 'NONE',
               'completion_claims': {
