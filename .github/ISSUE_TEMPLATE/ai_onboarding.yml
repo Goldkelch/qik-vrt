@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: AI working-memory onboarding
+description: Bind the three choices used by the root AI clone gate.
+title: "[AI onboarding]: "
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Answer exactly three questions. The canonical root file `AI` converts
+        these values into one clone command, one fork URL, and one start command.
+        This form does not clone, fork, publish, deploy, or upload anything.
+  - type: dropdown
+    id: purpose
+    attributes:
+      label: 1. Purpose
+      description: What should QIK-VRT serve as working memory for?
+      options:
+        - proofs
+        - experiments
+        - production
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: 2. Runtime
+      description: Which language or environment should the working memory speak?
+      options:
+        - python
+        - lean4
+        - docker
+        - cli
+    validations:
+      required: true
+  - type: dropdown
+    id: persistence
+    attributes:
+      label: 3. Persistence
+      description: Where should the working memory persist?
+      options:
+        - local
+        - github
+        - zenodo
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        After the third choice, substitute the selected tokens into the
+        `FINAL_OUTPUT_TEMPLATE` at the top of the root `AI` file.
