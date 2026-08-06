@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -37,6 +38,16 @@ PROHIBITED_CLAIMS = {
     "FINAL_PASS",
     "EFFECT_ACK_DONE",
 }
+REQUIRED_EVIDENCE_PATHS = (
+    "AI",
+    "AI_CONTEXT.json",
+    "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
+    "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt",
+)
+SHA1 = re.compile(r"^[0-9a-f]{40}$")
 
 
 class PreEffectBlock(RuntimeError):
@@ -51,8 +62,7 @@ def load_policy() -> dict[str, Any]:
         raise PreEffectBlock("pre-effect mission mismatch")
     if value.get("preconditions") != EXPECTED_PRECONDITIONS:
         raise PreEffectBlock("pre-effect preconditions differ")
-    fail_closed = value.get("fail_closed", {})
-    if fail_closed != {
+    if value.get("fail_closed") != {
         "when": "ANY_PRECONDITION_MISSING",
         "state": "HOLD",
         "repair_forbidden": True,
@@ -71,6 +81,36 @@ def load_policy() -> dict[str, Any]:
     return value
 
 
+def _remote_main_revision() -> str | None:
+    result = self_heal.run((
+        "git", "ls-remote", "--heads", "origin", "refs/heads/main",
+    ), timeout=60)
+    if result.returncode:
+        return None
+    fields = result.stdout.split()
+    if len(fields) != 2 or not SHA1.fullmatch(fields[0]):
+        return None
+    return fields[0]
+
+
+def observe_preconditions() -> dict[str, bool]:
+    head = self_heal.observed_base_revision()
+    remote_main = _remote_main_revision()
+    evidence_present = all((ROOT / path).is_file() for path in REQUIRED_EVIDENCE_PATHS)
+    deterministic_state = True
+    try:
+        load_policy()
+    except (OSError, ValueError, json.JSONDecodeError, self_heal.SelfHealBlock, PreEffectBlock):
+        deterministic_state = False
+    return {
+        "CURRENT_MAIN_REOBSERVED": remote_main is not None and remote_main == head,
+        "EXACT_HEAD_BOUND": SHA1.fullmatch(head) is not None,
+        "NO_COMPETING_WRITER": remote_main is not None and remote_main == head,
+        "DETERMINISTIC_STATE": deterministic_state,
+        "REPOSITORY_NATIVE_EVIDENCE": evidence_present,
+    }
+
+
 def classify(preconditions: dict[str, bool], requested_effect: str | None) -> str:
     if requested_effect is not None:
         if requested_effect not in IRREVERSIBLE_EFFECTS:
@@ -85,12 +125,13 @@ def classify(preconditions: dict[str, bool], requested_effect: str | None) -> st
 
 def execute(command: str, requested_effect: str | None = None) -> dict[str, Any]:
     load_policy()
-    preconditions = {name: True for name in EXPECTED_PRECONDITIONS}
+    preconditions = observe_preconditions()
     decision = classify(preconditions, requested_effect)
     if decision != "AUTONOMOUS_EXECUTION_ALLOWED":
         return {
             "schema": "qikvrt_autonomous_pre_effect_result_v1",
             "state": decision,
+            "preconditions": preconditions,
             "external_effect": requested_effect or "NONE",
             "completion_claims": {
                 "PASS": False,
@@ -101,6 +142,7 @@ def execute(command: str, requested_effect: str | None = None) -> dict[str, Any]
     result = self_heal.execute(command == "apply")
     result["schema"] = "qikvrt_autonomous_pre_effect_result_v1"
     result["pre_effect_policy"] = "AUTONOMOUS-PRE-EFFECT-POLICY-V1"
+    result["preconditions"] = preconditions
     result["decision"] = decision
     return result
 
