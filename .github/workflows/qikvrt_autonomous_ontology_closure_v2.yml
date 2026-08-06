@@ -25,8 +25,10 @@ on:
       - ".github/workflows/qikvrt_autonomous_ontology_closure_v1_supersede.yml"
       - "tools/qikvrt_autonomous_ontology_closure.py"
       - "tools/qikvrt_autonomous_ontology_closure_v2.py"
+      - "tools/qikvrt_cross_origin_redirect_runner.py"
       - "tests/test_qikvrt_autonomous_ontology_closure.py"
       - "tests/test_qikvrt_autonomous_ontology_closure_v2.py"
+      - "tests/test_qikvrt_cross_origin_redirect_runner.py"
       - "policy/AUTONOMOUS_ONTOLOGY_CLOSURE_V1.json"
       - "schemas/qikvrt-autonomous-ontology-closure-v2.schema.json"
       - "state/ontology-autonomy/QUEUE_V2.json"
@@ -82,6 +84,7 @@ jobs:
           set -euo pipefail
           python3 -B tools/qikvrt_autonomous_ontology_closure_v2.py verify --json
           python3 -B -m unittest -v tests.test_qikvrt_autonomous_ontology_closure_v2
+          python3 -B -m unittest -v tests.test_qikvrt_cross_origin_redirect_runner
 
       - name: Select the next eligible deterministic work unit
         id: plan
@@ -107,7 +110,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          python3 -B tools/qikvrt_autonomous_ontology_closure_v2.py apply \
+          python3 -B tools/qikvrt_cross_origin_redirect_runner.py \
+            tools/qikvrt_autonomous_ontology_closure_v2.py apply \
             --repository "${GITHUB_REPOSITORY}" \
             --json | tee "${RUNNER_TEMP}/ontology-result-v2.json"
           code="${PIPESTATUS[0]}"
