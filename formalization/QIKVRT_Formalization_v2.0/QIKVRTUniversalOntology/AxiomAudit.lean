@@ -64,3 +64,11 @@ import QIKVRTFormalization
 #print axioms QIKVRT.V2.HardwareWitness.T20_effect_ack_is_idempotently_bound_to_witness
 #print axioms QIKVRT.V2.HardwareWitness.T21_each_successful_transaction_advances_exactly_one_epoch
 #print axioms QIKVRT.V2.HardwareWitness.T22_four_step_payload_sequences_remain_monotone
+#print axioms QIKVRT.V2.DecisionSufficiency.recoveryEquivalent_equivalence
+#print axioms QIKVRT.V2.DecisionSufficiency.observationSufficient_iff_kernelIncluded
+#print axioms QIKVRT.V2.DecisionSufficiency.sufficiency_factorization
+#print axioms QIKVRT.V2.DecisionSufficiency.selector_unique_on_reachable_image
+#print axioms QIKVRT.V2.DecisionSufficiency.impossibility_of_mixed_fiber
+#print axioms QIKVRT.V2.DecisionSufficiency.factorization_implies_sufficiency
+#print axioms QIKVRT.V2.DecisionSufficiency.sufficient_implies_reachable_fiber_constant
+#print axioms QIKVRT.V2.DecisionSufficiency.refinedObservation_enables_recovery
