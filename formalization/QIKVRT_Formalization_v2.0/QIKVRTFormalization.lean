@@ -24,6 +24,7 @@ import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
+import QIKVRTFormalization.Decision.ObservationSufficiency
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -57,4 +58,9 @@ with an independent commit witness, fail-closed witnessless divergence,
 idempotent recovery, monotone epochs, and witness-bound Effect ACK semantics.
 Its mathematical digest is symbolic and injective; operational SHA-256 collision
 resistance remains an explicit external implementation assumption.
+
+The decision-sufficiency tranche generalizes the witness theorem: evidence is
+deterministically sufficient exactly when observation fibers do not mix histories
+requiring different correct actions. Equivalently, the observation kernel must
+refine the action kernel. Authority/Mirror/Witness recovery is a specialization.
 -/
