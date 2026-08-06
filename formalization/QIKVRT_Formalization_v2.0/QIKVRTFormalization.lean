@@ -21,6 +21,7 @@ import QIKVRTFormalization.Claims.Batch02Factorization
 import QIKVRTFormalization.Claims.Batch04
 import QIKVRTFormalization.Claims.Batch05
 import QIKVRTFormalization.Claims.Completion
+import QIKVRTFormalization.WorldFormula.Relations
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -32,4 +33,12 @@ source relies on analytic or topological infrastructure not present in `Std`,
 the corresponding assumptions are explicit in the checked Lean statement.
 Empirical, interpretive, and normative claims remain outside mathematical proof
 promotion.
+
+The executable world-formula relation kernel additionally formalizes the
+round-trip stage relation, the closed-generative architecture definition,
+formal derivability, model satisfaction, interpretation/reference binding,
+operationalization, evidence, known-limit recovery, distinctive prediction,
+independent validation, dependency closure and artifact identity. Its explicit
+countermodel proves that formal establishment alone does not imply physical
+qualification.
 -/
