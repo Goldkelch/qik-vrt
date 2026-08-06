@@ -1,0 +1,50 @@
+(*
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright 2026 Ingolf Lohmann.
+*)
+
+document              = version_line, publication_line, author_line,
+                        planck_line, two_step_line, uncertainty_line,
+                        primitive_causality_line, classical_cone_line,
+                        network_line, closure_line, kernel_boundary_line,
+                        effect_state_line ;
+
+version_line          = "qce-version", space, "1", newline ;
+publication_line      = "publication-id", space, identifier, newline ;
+author_line           = "author", space, identifier, newline ;
+planck_line           = "planck-element", space, "MODEL_CANDIDATE", newline ;
+two_step_line         = "two-step", space,
+                        "FIRST_DIFFERENCE", space,
+                        "SECOND_PAIR_RELATION", newline ;
+uncertainty_line      = "uncertainty", space,
+                        "REDUCIBLE_ACCOUNTED", space,
+                        "IRREDUCIBLE_PRESERVED", newline ;
+primitive_causality_line = "primitive-causality", space,
+                        "UNRESOLVED", space,
+                        "UNCERTAINTY_PRESENT", newline ;
+classical_cone_line   = "classical-cone", space,
+                        "REQUIRES_UNCERTAINTY_ACCOUNTED", space,
+                        "REQUIRES_CLASSICAL_GEOMETRY", space,
+                        "REQUIRES_STABLE_NULL_BOUNDARY", newline ;
+network_line          = "relation-network", space,
+                        "SEED_EVENTS_2", space,
+                        "SEED_RELATIONS_1", space,
+                        "GLOBALLY_BOUND", newline ;
+closure_line          = "physical-closure", space, "OPEN_CANDIDATE", newline ;
+kernel_boundary_line  = "kernel-boundary", space,
+                        "FORMAL_MODEL_NOT_PHYSICAL_DISCOVERY", newline ;
+effect_state_line     = "effect-state", space, "EFFECT_ACK_CONTINUE", [ newline ] ;
+
+identifier            = identifier_char, { identifier_char } ;
+identifier_char       = letter | digit | "-" | "_" | "." ;
+letter                = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" |
+                        "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" |
+                        "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" |
+                        "Y" | "Z" | "a" | "b" | "c" | "d" | "e" | "f" |
+                        "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" |
+                        "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" |
+                        "w" | "x" | "y" | "z" ;
+digit                 = "0" | "1" | "2" | "3" | "4" |
+                        "5" | "6" | "7" | "8" | "9" ;
+space                 = " " ;
+newline               = "\n" ;
