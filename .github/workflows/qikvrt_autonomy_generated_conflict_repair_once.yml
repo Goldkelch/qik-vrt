@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot finalize generated-conflict autonomy repair
+
+on:
+  push:
+    branches:
+      - "agent/autonomous-generated-conflict-repair-v1"
+    paths:
+      - ".github/workflows/qikvrt_autonomy_generated_conflict_repair_once.yml"
+      - ".github/workflows/qikvrt_autonomous_pr_continuation.yml"
+      - "tests/test_qikvrt_autonomous_pr_continuation.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-autonomy-generated-conflict-repair-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: "agent/autonomous-generated-conflict-repair-v1"
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact three-path precursor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="743153173d06e5445a6b2c9bae7f2d0eaa6cbb4c"
+          test "$(git rev-parse HEAD^)" = "$base"
+          actual="$(git diff --name-only "$base" HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/qikvrt_autonomy_generated_conflict_repair_once.yml' \
+            '.github/workflows/qikvrt_autonomous_pr_continuation.yml' \
+            'tests/test_qikvrt_autonomous_pr_continuation.py' | sort)"
+          test "$actual" = "$expected"
+
+      - name: Remove one-shot carrier and bind final integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- .github/workflows/qikvrt_autonomy_generated_conflict_repair_once.yml
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run focused and complete repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_autonomous_pr_continuation \
+            tests.test_qikvrt_autonomous_self_heal \
+            tests.test_qikvrt_publication_overview
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist exact final repair tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="743153173d06e5445a6b2c9bae7f2d0eaa6cbb4c"
+          git config user.name "qik-vrt-autonomy-conflict-repair"
+          git config user.email "qik-vrt-autonomy-conflict-repair@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(autonomy): resolve handler-owned generated merge conflicts"
+          actual="$(git diff --name-only "$base" HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/qikvrt_autonomous_pr_continuation.yml' \
+            'REPOSITORY_FILE_MANIFEST.json' \
+            'REPOSITORY_FILE_MANIFEST.json.sha256' \
+            'SHA256SUMS.txt' \
+            'tests/test_qikvrt_autonomous_pr_continuation.py' | sort)"
+          test "$actual" = "$expected"
+          git push origin "HEAD:refs/heads/agent/autonomous-generated-conflict-repair-v1"
