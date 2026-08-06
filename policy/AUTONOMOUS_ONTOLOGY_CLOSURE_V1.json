@@ -1,0 +1,65 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "authority_repository": "Goldkelch/qik-vrt",
+  "automatic_action_classes": [
+    "READ_ONLY_OBSERVATION",
+    "REPOSITORY_LOCAL_MATERIALIZATION",
+    "FORMAL_MODEL_EXECUTION",
+    "EXACT_HEAD_VERIFICATION",
+    "HISTORY_PRESERVING_SUCCESSOR_CREATION",
+    "RECEIPT_PERSISTENCE",
+    "SUPERSEDED_TRANSPORT_CLOSURE",
+    "MIRROR_PORT_PREPARATION"
+  ],
+  "conditional_action_classes": {
+    "EXPECTED_HEAD_PROMOTION": "requires a separate exact-head promotion authorization object and terminal applicable gates",
+    "IETF_SUBMISSION": "requires exact revision bytes and submission-specific owner authorization",
+    "MIRROR_WRITE": "requires a configured cross-repository credential and an exact source-to-target contract",
+    "ZENODO_PUBLICATION": "requires exact artifact bytes, a completed proof bundle, an unused owner authorization and publication-specific transport"
+  },
+  "effect_state": "EFFECT_ACK_CONTINUE",
+  "execution_contract": {
+    "bounded_retry_count": 1,
+    "fixed_branch_successors": true,
+    "idempotent_noop_when_satisfied": true,
+    "never_merges_without_exact_authorization": true,
+    "one_work_unit_per_run": true,
+    "persists_status_and_blockers": true,
+    "writes_via_github_api": true
+  },
+  "forbidden_actions": [
+    "DIRECT_MAIN_WRITE",
+    "FORCE_PUSH",
+    "UNBOUNDED_RETRY",
+    "AUTOMATIC_CLAIM_INFLATION",
+    "FABRICATED_EMPIRICAL_EVIDENCE",
+    "AUTOMATIC_HUMAN_CERTIFICATION",
+    "TOKEN_OR_SECRET_DISCLOSURE",
+    "ZENODO_MUTATION_WITHOUT_EXACT_AUTHORIZATION",
+    "IETF_MUTATION_WITHOUT_EXACT_AUTHORIZATION",
+    "PASS_FROM_ACTIVITY_ALONE",
+    "FINAL_PASS_FROM_FORMAL_MODEL_ONLY",
+    "EFFECT_ACK_DONE_FROM_TRANSPORT_ACK"
+  ],
+  "mirror_repository": "ingolf-lohmann/qik-vrt",
+  "non_automatable_truth_gates": {
+    "EMPIRICAL_CORRESPONDENCE": "requires observations or experiments external to the repository",
+    "HUMAN_ACOUSTIC_REVIEW": "must be performed by a person who listens to the source audio",
+    "INDEPENDENT_REPRODUCTION": "requires an organizationally independent actor",
+    "SCIENTIFIC_CONSENSUS": "cannot be manufactured by repository activity"
+  },
+  "policy_id": "AUTONOMOUS-ONTOLOGY-CLOSURE-V1",
+  "purpose": "Execute every safely machine-decidable ontology-closure work unit without repeated chat interaction while preserving explicit human, empirical, independent-replication and irreversible-effect gates.",
+  "release_claims": {
+    "EFFECT_ACK_DONE": false,
+    "FINAL_PASS": false,
+    "PASS": false
+  },
+  "schema": "qikvrt_autonomous_ontology_closure_policy_v1",
+  "state": "ACTIVE_CANDIDATE"
+}
