@@ -40,23 +40,46 @@ jobs:
           python3 -B tools/qikvrt_autonomous_self_heal.py apply > /tmp/qikvrt-self-heal.json
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
           import json
           value = json.load(open('/tmp/qikvrt-self-heal.json', encoding='utf-8'))
+          paths = '\0'.join(value.get('changed_paths', [])).encode('utf-8')
           print(f"state={value['state']}")
           print(f"base_sha={value.get('observed_base_revision') or ''}")
           print(f"fingerprint={value.get('semantic_fingerprint') or ''}")
           print(f"candidate_id={value.get('candidate_identity') or ''}")
+          print(f"changed_paths_b64={base64.b64encode(paths).decode('ascii')}")
           PY
 
       - name: Verify repaired repository state
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
+        env:
+          CHANGED_PATHS_B64: ${{ steps.repair.outputs.changed_paths_b64 }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B tools/qikvrt_anticipation.py check
+          python3 -B tools/qikvrt_publication_overview.py check
           python3 -B tools/qikvrt_integrity.py verify
-          python3 -B -m unittest -v tests.test_qikvrt_autonomous_self_heal
-          test -z "$(git diff --name-only -- . | grep -v -E '^(anticipation/(current.json|history.jsonl|trends.json|derivatives.json|next-effect.json)|receipts/anticipation/000[12]-[^/]+\.json|REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt)$' || true)"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_publication_overview \
+            tests.test_qikvrt_autonomous_self_heal
+          python3 -B - <<'PY'
+          import base64
+          import os
+          import subprocess
+          expected = sorted(
+              path for path in base64.b64decode(os.environ['CHANGED_PATHS_B64']).decode('utf-8').split('\0')
+              if path
+          )
+          actual = sorted(
+              path for path in subprocess.check_output(
+                  ['git', 'diff', '--name-only', '--'], text=True
+              ).splitlines() if path
+          )
+          if actual != expected:
+              raise SystemExit(f'BLOCK: controller/worktree path mismatch: expected={expected}, actual={actual}')
+          PY
 
       - name: Create one base-and-fingerprint-bound draft repair PR
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
@@ -65,6 +88,7 @@ jobs:
           BASE_SHA: ${{ steps.repair.outputs.base_sha }}
           FINGERPRINT: ${{ steps.repair.outputs.fingerprint }}
           CANDIDATE_ID: ${{ steps.repair.outputs.candidate_id }}
+          CHANGED_PATHS_B64: ${{ steps.repair.outputs.changed_paths_b64 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,20 +103,29 @@ jobs:
           git config user.name "qik-vrt-autonomous-self-heal"
           git config user.email "qik-vrt-autonomous-self-heal@users.noreply.github.com"
           git switch -c "$branch"
-          git add -- \
-            anticipation/current.json \
-            anticipation/history.jsonl \
-            anticipation/trends.json \
-            anticipation/derivatives.json \
-            anticipation/next-effect.json \
-            receipts/anticipation/0001-contract-bound.json \
-            receipts/anticipation/0002-anticipation-materialized.json \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
+          python3 -B - <<'PY'
+          import base64
+          import os
+          import subprocess
+          paths = [
+              path for path in base64.b64decode(os.environ['CHANGED_PATHS_B64']).decode('utf-8').split('\0')
+              if path
+          ]
+          if not paths:
+              raise SystemExit('BLOCK: candidate has no declared changed paths')
+          subprocess.check_call(['git', 'add', '--', *paths])
+          PY
+          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
           git commit -m "fix(autonomy): apply bounded deterministic self-heal ${CANDIDATE_ID:0:16}"
           candidate_head="$(git rev-parse --verify HEAD^{commit})"
           git push origin "HEAD:refs/heads/$branch"
+          python3 -B - <<'PY' > /tmp/qikvrt-self-heal-paths.txt
+          import base64
+          import os
+          for path in base64.b64decode(os.environ['CHANGED_PATHS_B64']).decode('utf-8').split('\0'):
+              if path:
+                  print(f'- `{path}`')
+          PY
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
           Repository-native scheduled repair candidate.
 
@@ -102,7 +135,8 @@ jobs:
           - semantic fingerprint: \`$FINGERPRINT\`
           - base-and-fingerprint candidate identity: \`$CANDIDATE_ID\`
 
-          Scope is restricted to deterministic anticipation projections and repository-native integrity.
+          Exact allowlisted paths:
+          $(cat /tmp/qikvrt-self-heal-paths.txt)
 
           Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. The proposal workflow itself does not merge.
 
