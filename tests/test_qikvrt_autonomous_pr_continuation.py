@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
+import textwrap
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -44,14 +46,29 @@ class AutonomousPRContinuationTests(unittest.TestCase):
     def test_only_handler_owned_generated_conflicts_are_auto_resolved(self) -> None:
         source = CONTINUATION.read_text(encoding="utf-8")
         self.assertIn("git diff --name-only --diff-filter=U", source)
-        self.assertIn("contract['allowlisted_handlers']", source)
-        self.assertIn("handler['mutable_paths']", source)
+        self.assertIn(".allowlisted_handlers[].mutable_paths[]", source)
         self.assertIn("BLOCK: non-allowlisted merge conflicts", source)
         self.assertIn("git checkout --ours", source)
         self.assertIn("generated-output reset", source)
-        self.assertIn("git diff --name-only --diff-filter=U", source)
         self.assertNotIn("git checkout --theirs", source)
         self.assertNotIn("git merge --abort || true", source)
+
+    def test_continuation_shell_block_is_syntax_valid(self) -> None:
+        source = CONTINUATION.read_text(encoding="utf-8")
+        marker = "      - name: Continue exact draft head through deterministic repairs\n"
+        marker_index = source.index(marker)
+        run_marker = "        run: |\n"
+        start = source.index(run_marker, marker_index) + len(run_marker)
+        end = source.index("\n      - name:", start)
+        script = textwrap.dedent(source[start:end])
+        completed = subprocess.run(
+            ["bash", "-n"],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_dispatch_verifier_binds_exact_head_and_posts_a_distinct_status(self) -> None:
         source = VERIFIER.read_text(encoding="utf-8")
