@@ -1,0 +1,111 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{margin=2.3cm}
+\title{Decision Sufficiency under Partial Observability\\\large The Minimal Recovery Theorem}
+\author{Ingolf Lohmann}
+\date{6 August 2026}
+\begin{document}
+\maketitle
+
+\section*{Setup}
+Let $\mathcal H_{\rm adm}$ be the admissible history space, $C:\mathcal H_{\rm adm}\to\mathcal A$ the correct continuation/recovery action, and $Obs':\mathcal H_{\rm adm}\to\mathcal O$ the available observation. Define recovery-relevant equivalence by
+\[
+H_1\sim_R H_2\iff C(H_1)=C(H_2).
+\]
+For an observation $o$, define its admissible fiber
+\[
+K(o)=\{H\in\mathcal H_{\rm adm}\mid Obs'(H)=o\}.
+\]
+
+\section*{Exact recovery criterion}
+Deterministic recovery is justified exactly when the reachable fiber is nonempty and action-constant:
+\[
+\boxed{
+RECOVER(o)\iff K(o)\neq\varnothing\land
+\left|\{C(H)\mid H\in K(o)\}\right|=1
+}.
+\]
+If the fiber is empty or mixes more than one required action, the safe result is fail-closed:
+\[
+\boxed{
+K(o)=\varnothing\ \lor\
+\left|\{C(H)\mid H\in K(o)\}\right|>1
+\Rightarrow FAIL\_CLOSED.
+}
+\]
+Recovery does not require reconstructing a unique past. It only requires uniqueness of the correct continuation:
+\[
+Recover(o)=a\iff\forall H\in K(o):C(H)=a.
+\]
+
+\section*{Kernel normal form}
+The decisive information-sufficiency condition is
+\[
+\boxed{C=S\circ Obs_W}
+\]
+on the admissible history space. This is equivalent to fiber constancy:
+\[
+\boxed{Obs_W(H_1)=Obs_W(H_2)\Rightarrow C(H_1)=C(H_2)}.
+\]
+Writing kernels as equivalence relations induced by equality of outputs gives the compact condition
+\[
+\boxed{\ker(Obs_W)\subseteq\ker(C)}.
+\]
+
+\section*{Impossibility theorem}
+If there exist admissible histories $H_1,H_2$ with
+\[
+Obs(H_1)=Obs(H_2),\qquad C(H_1)\neq C(H_2),
+\]
+then no universally correct deterministic selector $S$ can satisfy
+\[
+C=S\circ Obs.
+\]
+Proof: a deterministic $S$ receives the same observation for both histories and must return the same action, contradicting $C(H_1)\neq C(H_2)$. Hence
+\[
+\boxed{\ker(Obs)\not\subseteq\ker(C)\Rightarrow
+\text{no universally correct deterministic recovery selector}.}
+\]
+
+\section*{Sufficiency theorem}
+If $C$ is constant on every nonempty reachable observation fiber, define
+\[
+S(o)=\text{the unique action in }\{C(H)\mid H\in K(o)\}.
+\]
+Then $S$ is well-defined on $Obs'(\mathcal H_{\rm adm})$ and
+\[
+C=S\circ Obs'.
+\]
+Moreover, any two selectors satisfying this factorization agree on the reachable observation image. Outside that image they may be defined arbitrarily or fail-closed. Therefore
+\[
+\boxed{\ker(Obs')\subseteq\ker(C)\Rightarrow
+C\text{ factors uniquely through }Obs'(\mathcal H_{\rm adm}).}
+\]
+
+\section*{Witness interpretation}
+A witness is therefore neither intrinsically a third replica nor a majority voter. It is any observation refinement $Obs_W$ carrying enough information to prevent one reachable observation fiber from mixing histories that require different actions:
+\[
+\boxed{\ker(Obs_W)\subseteq\ker(C)}.
+\]
+Authority--Mirror--Witness recovery is one specialization of this general information-sufficiency theorem.
+
+\section*{Epistemic generalization}
+\[
+\boxed{\textbf{Evidence is decision-sufficient exactly when its observation fibers do not mix the equivalence classes relevant to the correct action.}}
+\]
+This is a theorem about deterministic decision making under partial observability. It does not by itself establish physical, empirical, cryptographic, or patent claims.
+
+\section*{Lean binding}
+The repository module `QIKVRTFormalization/Decision/ObservationSufficiency.lean` formalizes recovery-relevant equivalence, kernel inclusion, impossibility of mixed fibers, factorization on the reachable image, uniqueness on that image, and refined-observation sufficiency.
+
+\vfill
+\begin{center}
+\textit{Quod erat demonstrandum -- for the stated mathematical decision-sufficiency results.}\\
+Ingolf Lohmann
+\end{center}
+\end{document}
