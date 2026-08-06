@@ -1,0 +1,182 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\geometry{margin=2.2cm}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue,citecolor=black}
+\title{Delayed Choice, Measurement Independence, and Witness-Bound State Recovery\\\large A QIK-VRT Formalization of the Superdeterminism Boundary and Authority--Mirror NVM Safety}
+\author{Ingolf Lohmann}
+\date{6 August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document separates two claims that are often conflated. First, in a two-wing delayed-choice/Bell-style setting, measurement independence excludes the measurement-dependent escape route here called a \emph{superdeterministic candidate}; however, spacelike separation and local response structure alone do not establish measurement independence. Second, an Authority--Mirror non-volatile state machine with an independent commit witness can provide deterministic, provenance-bound crash recovery and fail-closed divergence handling under an explicit finite fault model. The corresponding QIK-VRT Lean modules formalize the logical relations, while a separately executed finite-model checker exhaustively enumerates the stated bounded hardware cases. Physical non-superdeterminism, SHA-256 collision resistance, multi-fault tolerance, gate-level timing, patent novelty, and a physical chip implementation are deliberately not promoted by these results.
+\end{abstract}
+
+\section{Epistemic boundary}
+The central logical distinction is
+\[
+\text{formal derivability}\neq\text{physical qualification}.
+\]
+For the quantum-foundations tranche, let $\lambda$ denote hidden/preparation state and $a,b$ the later measurement settings. Measurement independence is represented at support level by
+\[
+J(\lambda,a,b)\iff H(\lambda)\land S(a,b),
+\]
+corresponding conceptually to the familiar probabilistic condition
+\[
+P(\lambda\mid a,b)=P(\lambda).
+\]
+The formal superdeterministic candidate is defined as failure of this independence condition. Therefore
+\[
+\boxed{\operatorname{MI}(M)\Rightarrow \neg\operatorname{SD}_{MI}(M)}.
+\]
+This implication is logically strong but conditional. It does not establish that nature satisfies measurement independence.
+
+\section{Two coupled delayed-choice wings}
+A clean time ordering is
+\begin{align*}
+t_0 &: \text{preparation},\\
+t_1 &: \text{propagation through the local apparatus},\\
+t_2 &: \text{spacelike-separated settings }a,b,\\
+t_3 &: \text{local outcomes }x=A(\lambda,a),\;y=B(\lambda,b),\\
+t_4 &: \text{later classical comparison of }P(x,y\mid a,b).
+\end{align*}
+The later comparison does not rewrite the earlier physical history. It changes which conditional statements about the recorded data are justified. Thus
+\[
+\boxed{\text{later verification}\neq\text{retroactive physical mutation}}.
+\]
+
+\section{Why two wings do not by themselves refute superdeterminism}
+The Lean model includes structurally local response functions: wing A receives no remote setting $b$, and wing B receives no remote setting $a$. Nevertheless, a finite common-cause model constrains the allowed settings by
+\[
+a=\lambda,\qquad b=\lambda.
+\]
+Hence local response structure can coexist with measurement dependence. Formally,
+\[
+\boxed{\text{local response structure}\not\Rightarrow\operatorname{MI}}.
+\]
+The non-circular QCE obligation is therefore
+\[
+\boxed{\text{primitive QCE principles}\stackrel{?}{\Longrightarrow}\operatorname{MI}}
+\]
+without inserting free choice or an equivalent independence condition as a hidden premise.
+
+\section{Authority--Mirror--Witness hardware mapping}
+The hardware analogue uses two non-volatile replica images $A_n,M_n$ and an independent witness $W_n$. A transition follows
+\[
+\text{PREPARE}\rightarrow\text{CROSS-VERIFY}\rightarrow\text{COMMIT}\rightarrow\text{ACKNOWLEDGE}.
+\]
+The witness is the persistent commit point. Conceptually,
+\[
+W_n=H\bigl(n,H(A_n),H(M_n),W_{n-1}\bigr).
+\]
+The mathematical Lean model uses a symbolic injective digest; an implementation may use SHA-256, but cryptographic collision resistance remains an external assumption.
+
+The governing principle is
+\[
+\boxed{\text{self-healing}\land\text{no self-confirmation}}.
+\]
+Neither replica may unilaterally declare itself canonical after an ambiguous divergence. A valid witness supplies the independent provenance needed to resolve the committed epoch; without that witness the safe result is HOLD.
+
+\section{Key hardware theorems}
+The Lean source names 22 properties T01--T22. The structurally strongest subset is:
+\begin{itemize}[leftmargin=*]
+\item T05: the atomic witness is the commit point;
+\item T06--T07: crash before the witness recovers the predecessor, crash after the witness recovers the successor;
+\item T10: recovery is idempotent;
+\item T12: monotone witness epochs prevent rollback;
+\item T14: mix-and-match images are rejected by witness binding;
+\item T15--T17: a divergent valid duplex without witness is ambiguous and no deterministic duplex selector can be correct for both hidden histories;
+\item T18: a witness resolves a unique certified epoch;
+\item T19--T20: Effect ACK requires stable witness binding and is idempotently witness-bound;
+\item T21--T22: each successful transaction advances one epoch and repeated successful transitions are monotone.
+\end{itemize}
+
+For T17, let the observable divergent pair be identical under two possible hidden histories $H_A$ and $H_M$. Any deterministic selector $S(A,M)$ receives the same visible input in both histories and therefore returns the same answer. It must then be wrong in at least one history. Hence no deterministic witnessless selector is universally correct.
+
+\section{Executed finite-model verification}
+A separate executable checker exhaustively enumerated the bounded model used for the hardware receipt. The observed counts were:
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Case family & Executed cases\\
+\midrule
+Crash recovery & 945\\
+Effect-ACK generation & 945\\
+Recovery idempotence & 945\\
+Single-replica reconstruction & 756\\
+Four-step payload sequences & 81\\
+Hidden-history impossibility cases & 36\\
+Witnessless ambiguity cases & 18\\
+\bottomrule
+\end{tabular}
+\end{center}
+The checker returned
+\[
+\boxed{\texttt{FINITE\_MODEL\_EXHAUSTIVE\_CHECK\_PASSED}}.
+\]
+This is exhaustive for the explicitly bounded model, not a proof of arbitrary-size or arbitrary-fault hardware.
+
+\section{Lean verification status}
+The repository contains dedicated Lean modules and axiom-audit sources for both the measurement-independence boundary and the Authority--Mirror--Witness model. The intended exact-head gate is:
+\[
+\text{exact commit/tree}\rightarrow\text{Lean 4.19 build}\rightarrow\text{axiom audit}\rightarrow\text{kernel receipt}.
+\]
+At the time this document was generated, a successful execution-bound Lean kernel receipt for the new combined tranche had not yet been observed. Therefore the correct status is
+\[
+\boxed{\text{LEAN SOURCE MATERIALIZED; KERNEL EXECUTION NOT YET ESTABLISHED}}.
+\]
+No kernel-success claim is inferred from source inspection alone.
+
+\section{Publication and protocol boundary}
+The publication boundary remains fail-closed. A Zenodo production effect requires final exact-byte artifacts, an execution-bound machine-proof bundle, repository policy compliance, valid credentials, and post-publication byte verification. Until those gates are satisfied, the correct state is candidate-only.
+
+No normative change to the QIK-VRT Effect Acknowledgement wire format, state machine, DONE predicate, security requirements, or interoperability behavior is introduced by these formalizations. Consequently, the correct IETF disposition is \texttt{NO\_PROTOCOL\_CHANGE\_REQUIRED}; submitting a new protocol revision without a normative delta would be inappropriate.
+
+\section{What is and is not established}
+Established within the specified formal or finite scope:
+\begin{itemize}[leftmargin=*]
+\item measurement independence conditionally excludes the defined measurement-dependent superdeterministic candidate;
+\item local/spacelike response structure alone is insufficient to establish measurement independence;
+\item witnessless duplex divergence has an information-theoretic ambiguity in the stated hidden-history model;
+\item an independent witness resolves a certified epoch and supports fail-closed, idempotent recovery in the modeled fault domain;
+\item the bounded executable checker passed every enumerated case listed above.
+\end{itemize}
+Not established by these results:
+\begin{itemize}[leftmargin=*]
+\item that nature satisfies measurement independence;
+\item that nature is not superdeterministic;
+\item SHA-256 collision resistance as a theorem;
+\item arbitrary multi-fault tolerance or gate-level timing correctness;
+\item a physical chip implementation;
+\item patent novelty or inventive step;
+\item PASS, FINAL\_PASS, or EFFECT\_ACK\_DONE.
+\end{itemize}
+
+\section{Conclusion}
+The common epistemic structure is
+\[
+\boxed{\text{claim}+\text{independent relation}+\text{verifiable evidence}+\text{provenance}\Rightarrow\text{justified status}}.
+\]
+Delayed comparison does not change the past; a commit witness does not create the earlier replica state. In both cases, later evidence constrains which statement about an already produced history is justified. This is the QIK-VRT principle of self-healing without self-confirmation applied consistently across quantum-foundations reasoning and fault-tolerant state recovery.
+
+\section*{Selected references}
+\begin{enumerate}[leftmargin=*]
+\item J. S. Bell, ``On the Einstein Podolsky Rosen paradox,'' \emph{Physics Physique Fizika} 1, 195--200 (1964).
+\item Y.-H. Kim, R. Yu, S. P. Kulik, Y. Shih, M. O. Scully, ``A Delayed Choice Quantum Eraser,'' \emph{Physical Review Letters} 84, 1--5 (2000), DOI: 10.1103/PhysRevLett.84.1.
+\item S. Hossenfelder and T. N. Palmer, ``Rethinking Superdeterminism,'' \emph{Frontiers in Physics} 8:139 (2020), DOI: 10.3389/fphy.2020.00139.
+\end{enumerate}
+
+\vfill
+\begin{center}
+\textit{Quod erat demonstrandum -- only for the explicitly stated formal and finite-model claims.}\\
+Ingolf Lohmann
+\end{center}
+\end{document}
