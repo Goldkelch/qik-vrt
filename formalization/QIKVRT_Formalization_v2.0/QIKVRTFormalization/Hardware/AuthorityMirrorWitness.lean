@@ -23,8 +23,7 @@ def digest : Payload → Nat
   | .p1 => 1
   | .p2 => 2
 
-theorem digest_injective : Function.Injective digest := by
-  intro a b h
+theorem digest_injective {a b : Payload} (h : digest a = digest b) : a = b := by
   cases a <;> cases b <;> simp [digest] at h ⊢
 
 structure Image where
