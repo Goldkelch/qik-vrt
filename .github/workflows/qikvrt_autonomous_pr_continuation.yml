@@ -108,11 +108,42 @@ jobs:
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
 
           merge_created=false
+          generated_conflicts_resolved=false
           if ! git merge-base --is-ancestor "$live_main" HEAD; then
-            git merge --no-ff --no-edit "$live_main"
+            set +e
+            git merge --no-ff --no-commit "$live_main"
+            merge_status=$?
+            set -e
+            if test "$merge_status" -ne 0; then
+              actual_conflicts="$(git diff --name-only --diff-filter=U | sort)"
+              test -n "$actual_conflicts"
+              allowed_conflicts="$(printf '%s\n' \
+                'REPOSITORY_FILE_MANIFEST.json' \
+                'REPOSITORY_FILE_MANIFEST.json.sha256' \
+                'SHA256SUMS.txt' \
+                'docs/publications/index.html' \
+                'docs/publications/index.json' | sort)"
+              unexpected_conflicts="$(comm -23 \
+                <(printf '%s\n' "$actual_conflicts") \
+                <(printf '%s\n' "$allowed_conflicts"))"
+              if test -n "$unexpected_conflicts"; then
+                printf 'BLOCK: non-regenerable merge conflicts:\n%s\n' "$unexpected_conflicts" >&2
+                git merge --abort || true
+                exit 1
+              fi
+              while IFS= read -r path; do
+                test -n "$path"
+                git checkout --theirs -- "$path"
+                git add -- "$path"
+              done <<< "$actual_conflicts"
+              test -z "$(git diff --name-only --diff-filter=U)"
+              generated_conflicts_resolved=true
+            fi
+            git commit --no-edit
             merge_created=true
           fi
 
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           python3 -B tools/qikvrt_autonomous_self_heal.py apply > /tmp/qikvrt-pr-self-heal.json
           cat /tmp/qikvrt-pr-self-heal.json
           python3 -B - <<'PY' > /tmp/qikvrt-pr-self-heal-paths
@@ -124,13 +155,18 @@ jobs:
               print(path)
           PY
 
+          if test "$generated_conflicts_resolved" = true; then
+            test -s /tmp/qikvrt-pr-self-heal-paths
+          fi
+
           if test -s /tmp/qikvrt-pr-self-heal-paths; then
             python3 -B tools/qikvrt_anticipation.py check
             python3 -B tools/qikvrt_publication_overview.py check
             python3 -B tools/qikvrt_integrity.py verify
             python3 -B -m unittest -v \
               tests.test_qikvrt_publication_overview \
-              tests.test_qikvrt_autonomous_self_heal
+              tests.test_qikvrt_autonomous_self_heal \
+              tests.test_qikvrt_autonomous_pr_continuation
             mapfile -t changed_paths < /tmp/qikvrt-pr-self-heal-paths
             git add -- "${changed_paths[@]}"
             test -z "$(git status --porcelain=v1 | grep '^??' || true)"
@@ -143,6 +179,8 @@ jobs:
           fi
 
           make test
+          python3 -B tools/qikvrt_publication_overview.py check
+          python3 -B tools/qikvrt_integrity.py verify
           candidate_head="$(git rev-parse --verify HEAD^{commit})"
           live_head_before_push="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           test "$live_head_before_push" = "$EXPECTED_HEAD"
@@ -178,6 +216,7 @@ jobs:
           - previous exact head: \`${EXPECTED_HEAD}\`
           - current candidate head: \`${candidate_head}\`
           - current main merged: \`${live_main}\`
+          - generated merge conflicts resolved and regenerated: \`${generated_conflicts_resolved}\`
           - external effects: none
           - next state: exact-head repository-dispatch verification
 
