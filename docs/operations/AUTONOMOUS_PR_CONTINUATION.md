@@ -29,6 +29,8 @@ the immediately reobserved SHA, and history rewriting is forbidden.
 ```text
 REOBSERVE_MAIN_AND_PR_HEAD
 → MERGE_CURRENT_MAIN_HISTORY_PRESERVING
+→ RESOLVE_ONLY_ALLOWLISTED_REGENERABLE_PROJECTION_CONFLICTS
+→ COMMIT_THE_HISTORY_PRESERVING_MERGE
 → RUN_ALLOWLISTED_SELF_HEAL_HANDLERS
 → VERIFY_PUBLICATION_OVERVIEW
 → VERIFY_REPOSITORY_NATIVE_INTEGRITY
@@ -44,6 +46,37 @@ local `docs/publications/*/README.md` that is absent from either
 `docs/publications/index.json` or `docs/publications/index.html`, adds only the
 missing index entries, and then lets repository-native integrity regeneration
 bind the changed bytes.
+
+## Generated projection merge conflicts
+
+A history-preserving merge may encounter conflicts in files that are wholly
+repository-generated projections. Such a conflict is not resolved by choosing
+an arbitrary semantic version of the underlying scientific content.
+
+The worker may temporarily select the current-main version only for this exact
+allowlist:
+
+```text
+REPOSITORY_FILE_MANIFEST.json
+REPOSITORY_FILE_MANIFEST.json.sha256
+SHA256SUMS.txt
+docs/publications/index.html
+docs/publications/index.json
+```
+
+Every other conflicted path is a hard block. The worker aborts the merge and
+performs no branch mutation.
+
+After an allowlisted temporary resolution, the worker must complete the merge
+locally, run every allowlisted deterministic self-heal handler, regenerate the
+publication overview and repository-native integrity for the combined tree,
+run the complete repository suite, and only then push the fast-forward
+successor. The temporary selected bytes are therefore never accepted as final
+evidence merely because Git could create a merge commit.
+
+This policy deliberately excludes anticipation history and all scientific
+source files. Those paths require a separate, semantics-aware reconciliation
+contract rather than an automatic side selection.
 
 ## Trigger semantics
 
