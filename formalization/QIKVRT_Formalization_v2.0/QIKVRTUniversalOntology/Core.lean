@@ -3,6 +3,8 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 Copyright 2026 Ingolf Lohmann.
 -/
 
+import Std
+
 /-!
 # Universal ontology finite-model kernel
 
@@ -19,8 +21,6 @@ do not by themselves establish that physical nature instantiates the model,
 that finite paired values are quantum-entangled particles, or that the model is
 a complete theory of the universe.
 -/
-
-import Std
 
 namespace QIKVRT.UniversalOntology
 
