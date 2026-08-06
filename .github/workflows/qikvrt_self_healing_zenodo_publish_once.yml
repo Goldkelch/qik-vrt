@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot self-healing repository Zenodo publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      publication_id:
+        description: Exact authorized publication ID
+        required: true
+        type: string
+      authorization_id:
+        description: Exact single-use owner authorization ID
+        required: true
+        type: string
+      confirm:
+        description: Exact irreversible-effect confirmation
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-zenodo-qikvrt-self-healing-repository-collective-intelligence-v1
+  cancel-in-progress: false
+
+jobs:
+  publish-once:
+    if: github.repository == 'Goldkelch/qik-vrt' && github.ref == 'refs/heads/main'
+    environment: production-zenodo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind the exact one-shot dispatch identity
+        shell: bash
+        env:
+          INPUT_PUBLICATION_ID: ${{ inputs.publication_id }}
+          INPUT_AUTHORIZATION_ID: ${{ inputs.authorization_id }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "${INPUT_PUBLICATION_ID}" = "qikvrt-self-healing-repository-collective-intelligence-v1"
+          test "${INPUT_AUTHORIZATION_ID}" = "qikvrt-self-healing-repository-collective-intelligence-v1-4fa477b9"
+          test "${INPUT_CONFIRM}" = "PUBLISH_TO_PRODUCTION_ZENODO"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "${GITHUB_REF}" = "refs/heads/main"
+
+      - name: Verify exact candidate, authorization, and committed v2 manifest
+        shell: bash
+        run: python3 -B tools/qikvrt_self_healing_zenodo_one_shot.py --check
+
+      - name: Execute exactly one hardened production publication
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          ZENODO_API_BASE: https://zenodo.org/api
+        run: >-
+          python3 -B tools/qikvrt_self_healing_zenodo_one_shot.py
+          --execute
+          --publication-id "${{ inputs.publication_id }}"
+          --authorization-id "${{ inputs.authorization_id }}"
+          --confirm "${{ inputs.confirm }}"
+
+      - name: Upload credential-free publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-self-healing-zenodo-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: release/self-healing-repository-collective-intelligence-zenodo-v1/ZENODO_PUBLICATION_EVIDENCE.json
