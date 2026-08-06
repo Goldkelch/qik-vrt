@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT supersede static ontology closure v1
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - ".github/workflows/qikvrt_autonomous_ontology_closure.yml"
+      - ".github/workflows/qikvrt_autonomous_ontology_closure_v2.yml"
+      - ".github/workflows/qikvrt_autonomous_ontology_closure_v1_supersede.yml"
+      - "state/ontology-autonomy/QUEUE.json"
+      - "state/ontology-autonomy/QUEUE_V2.json"
+      - "tools/qikvrt_autonomous_ontology_closure_v2.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-autonomous-ontology-closure-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  supersede-static-v1:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'agent/autonomous-ontology-closure-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Mark the V1 queue superseded and remove its static executor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          queue_path='state/ontology-autonomy/QUEUE.json'
+          v1_workflow='.github/workflows/qikvrt_autonomous_ontology_closure.yml'
+          temporary="${RUNNER_TEMP}/QUEUE.v1.superseded.json"
+
+          queue_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${queue_path}?ref=${HEAD_REF}" --jq '.sha')"
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${queue_path}?ref=${HEAD_REF}" --jq '.content' | tr -d '\n')"
+          printf '%s' "${encoded}" | base64 --decode > "${temporary}"
+
+          changed="$(python3 -B - "${temporary}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          value = json.loads(path.read_text(encoding='utf-8'))
+          unit = value['work_units'][0]
+          changed = unit.get('state') != 'SUPERSEDED_BY_PROGRESSING_V2'
+          unit['state'] = 'SUPERSEDED_BY_PROGRESSING_V2'
+          value['superseded_by'] = {
+              'queue': 'state/ontology-autonomy/QUEUE_V2.json',
+              'operator': 'tools/qikvrt_autonomous_ontology_closure_v2.py',
+              'reason': 'V1 had no persistent completed-work-unit ledger and could reselect its first READY item.'
+          }
+          path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print('true' if changed else 'false')
+          PY
+          )"
+
+          if [[ "${changed}" == 'true' ]]; then
+            content="$(base64 -w0 "${temporary}")"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${queue_path}" \
+              -f message='Mark static ontology queue V1 superseded by progressing V2' \
+              -f content="${content}" \
+              -f sha="${queue_sha}" \
+              -f branch="${HEAD_REF}" >/dev/null
+          fi
+
+          workflow_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${v1_workflow}?ref=${HEAD_REF}" --jq '.sha' 2>/dev/null || true)"
+          if [[ -n "${workflow_sha}" ]]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/contents/${v1_workflow}" \
+              -f message='Remove superseded static ontology executor V1' \
+              -f sha="${workflow_sha}" \
+              -f branch="${HEAD_REF}" >/dev/null
+          fi
