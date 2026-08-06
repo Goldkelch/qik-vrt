@@ -10,9 +10,11 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FORMAL = ROOT / "formalization/QIKVRT_Formalization_v2.0"
 MATRIX = FORMAL / "universal_ontology/CLAIM_MATRIX.json"
+WORLD = FORMAL / "universal_ontology/WORLD_FORMULA_CLAIM_MATRIX.json"
 SCOPE = FORMAL / "universal_ontology/SOURCE_SCOPE.json"
 CORE = FORMAL / "QIKVRTUniversalOntology/Core.lean"
 AUDIT = FORMAL / "QIKVRTUniversalOntology/AxiomAudit.lean"
+EXTENDED_AUDIT = FORMAL / "QIKVRTUniversalOntology/ExtendedAxiomAudit.lean"
 STANDING = ROOT / "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
 WORK = ROOT / "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
 IETF = ROOT / "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
@@ -23,18 +25,46 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
     def load(self, path: pathlib.Path):
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def test_formal_claims_have_unique_kernel_constants(self):
-        matrix = self.load(MATRIX)
-        formal = [c for c in matrix["claims"] if c["kind"] == "FORMAL_THEOREM"]
-        constants = [c["proof_constant"] for c in formal]
-        self.assertEqual(len(formal), matrix["formal_theorem_count"])
-        self.assertEqual(len(constants), len(set(constants)))
-        audit = {
+    @staticmethod
+    def audited_constants(path: pathlib.Path) -> set[str]:
+        return {
             line.strip().removeprefix("#print axioms ")
-            for line in AUDIT.read_text(encoding="utf-8").splitlines()
+            for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip().startswith("#print axioms ")
         }
-        self.assertEqual(set(constants), audit)
+
+    def test_formal_claims_have_unique_kernel_constants(self):
+        matrices = [self.load(MATRIX), self.load(WORLD)]
+        formal = [
+            claim
+            for matrix in matrices
+            for claim in matrix["claims"]
+            if claim["kind"] == "FORMAL_THEOREM"
+        ]
+        constants = [claim["proof_constant"] for claim in formal]
+        self.assertEqual(len(constants), 32)
+        self.assertEqual(len(constants), len(set(constants)))
+        self.assertEqual(set(constants), self.audited_constants(AUDIT))
+
+    def test_extended_audit_separates_support_tranches_from_core_receipt(self):
+        core = self.audited_constants(AUDIT)
+        extended = self.audited_constants(EXTENDED_AUDIT)
+        extra = extended - core
+        self.assertEqual(len(core), 32)
+        self.assertEqual(len(extended), 71)
+        self.assertEqual(len(extra), 39)
+        self.assertEqual(
+            sum(name.startswith("QIKVRT.V2.QuantumFoundations.") for name in extra),
+            9,
+        )
+        self.assertEqual(
+            sum(name.startswith("QIKVRT.V2.HardwareWitness.") for name in extra),
+            22,
+        )
+        self.assertEqual(
+            sum(name.startswith("QIKVRT.V2.DecisionSufficiency.") for name in extra),
+            8,
+        )
 
     def test_nonformal_claims_are_not_proof_inflated(self):
         matrix = self.load(MATRIX)
@@ -48,7 +78,7 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
         )
 
     def test_lean_has_no_escape_hatches(self):
-        for path in (CORE, AUDIT):
+        for path in (CORE, AUDIT, EXTENDED_AUDIT):
             text = path.read_text(encoding="utf-8")
             code = "\n".join(
                 line for line in text.splitlines()
@@ -110,8 +140,10 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("github.event.pull_request.head.sha", text)
         self.assertIn("lake build QIKVRTUniversalOntology", text)
+        self.assertIn("QIKVRTUniversalOntology/ExtendedAxiomAudit.lean", text)
         self.assertIn("make_universal_ontology_kernel_receipt.py", text)
         self.assertIn("UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json", text)
+        self.assertIn("universal-ontology-extended-axioms.txt", text)
 
 
 if __name__ == "__main__":

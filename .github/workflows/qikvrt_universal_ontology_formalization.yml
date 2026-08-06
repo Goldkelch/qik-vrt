@@ -76,7 +76,7 @@ jobs:
         working-directory: formalization/QIKVRT_Formalization_v2.0
         run: lake build QIKVRTUniversalOntology
 
-      - name: Run complete 32-theorem axiom audit
+      - name: Run complete 32-theorem core axiom audit
         working-directory: formalization/QIKVRT_Formalization_v2.0
         shell: bash
         run: |
@@ -85,6 +85,54 @@ jobs:
           lake env lean QIKVRTUniversalOntology/AxiomAudit.lean \
             > .lake/build/universal-ontology-axioms.txt 2>&1
           cat .lake/build/universal-ontology-axioms.txt
+
+      - name: Run extended 71-constant support-tranche axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean \
+            > .lake/build/universal-ontology-extended-axioms.txt 2>&1
+          cat .lake/build/universal-ontology-extended-axioms.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          line_re = re.compile(
+              r"^'(?P<name>[^']+)' (?:does not depend on any axioms|"
+              r"depends on axioms: \[(?P<axioms>[^]]*)\])$"
+          )
+          allowed = {"propext", "Classical.choice", "Quot.sound"}
+          observed = {}
+          unexpected = []
+          path = Path(".lake/build/universal-ontology-extended-axioms.txt")
+          for raw in path.read_text(encoding="utf-8").splitlines():
+              text = raw.strip()
+              if not text:
+                  continue
+              match = line_re.fullmatch(text)
+              if match is None:
+                  unexpected.append(text)
+                  continue
+              axioms = {
+                  item.strip()
+                  for item in (match.group("axioms") or "").split(",")
+                  if item.strip()
+              }
+              observed[match.group("name")] = axioms
+          if unexpected:
+              raise SystemExit(f"BLOCK: unexpected extended axiom output: {unexpected[:5]}")
+          if len(observed) != 71:
+              raise SystemExit(f"BLOCK: expected 71 extended audit constants, observed {len(observed)}")
+          forbidden = {
+              name: sorted(axioms - allowed)
+              for name, axioms in observed.items()
+              if axioms - allowed
+          }
+          if forbidden:
+              raise SystemExit(f"BLOCK: forbidden extended theorem dependencies: {forbidden}")
+          print("VERIFIED extended axiom audit: constants=71 project_axioms=0")
+          PY
 
       - name: Run boundary regressions
         shell: bash
@@ -117,3 +165,4 @@ jobs:
           path: |
             formalization/QIKVRT_Formalization_v2.0/.lake/build/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json
             formalization/QIKVRT_Formalization_v2.0/.lake/build/universal-ontology-axioms.txt
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/universal-ontology-extended-axioms.txt
