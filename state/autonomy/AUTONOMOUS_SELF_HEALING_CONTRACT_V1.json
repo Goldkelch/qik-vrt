@@ -40,10 +40,23 @@
     "merge_current_main_before_repair": true,
     "maximum_pull_requests_per_run": 1,
     "history_rewrite": "FORBIDDEN",
+    "generated_merge_conflict_policy": {
+      "mode": "ALLOWLIST_ONLY_REGENERATE_IMMEDIATELY",
+      "temporary_resolution_side": "CURRENT_MAIN",
+      "allowed_paths": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt",
+        "docs/publications/index.html",
+        "docs/publications/index.json"
+      ],
+      "non_allowlisted_conflict": "BLOCK",
+      "post_merge_requirement": "RUN_ALL_ALLOWLISTED_SELF_HEAL_HANDLERS_BEFORE_PUSH"
+    },
     "post_repair_verification": [
       "python3 -B tools/qikvrt_publication_overview.py check",
       "python3 -B tools/qikvrt_integrity.py verify",
-      "python3 -B -m unittest -v tests.test_qikvrt_publication_overview tests.test_qikvrt_autonomous_self_heal",
+      "python3 -B -m unittest -v tests.test_qikvrt_publication_overview tests.test_qikvrt_autonomous_self_heal tests.test_qikvrt_autonomous_pr_continuation",
       "make test"
     ],
     "external_gates": [
@@ -153,7 +166,8 @@
       "unittest",
       "-v",
       "tests.test_qikvrt_publication_overview",
-      "tests.test_qikvrt_autonomous_self_heal"
+      "tests.test_qikvrt_autonomous_self_heal",
+      "tests.test_qikvrt_autonomous_pr_continuation"
     ]
   ],
   "forbidden_effects": [
