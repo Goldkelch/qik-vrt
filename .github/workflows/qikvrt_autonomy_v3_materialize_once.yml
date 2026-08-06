@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-name: QIK-VRT one-shot persist verified autonomous capability payload
+name: QIK-VRT one-shot finalize autonomous capability integrity
 
 on:
   push:
@@ -13,67 +13,52 @@ permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-autonomy-v3-persist-${{ github.repository }}
+  group: qikvrt-autonomy-v3-finalize-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
-  persist:
+  finalize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
-      - name: Check out exact carrier branch
+      - name: Check out exact capability branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: "agent/autonomous-publication-pr-continuation-v1"
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify and decode exact capability carrier
+      - name: Verify exact payload bytes and final path set
         shell: bash
         run: |
           set -euo pipefail
           base="0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
           git merge-base --is-ancestor "$base" HEAD
-          actual="$(git diff --name-only "$base" HEAD | sort)"
-          expected="$(printf '%s\n' \
-            '.github/workflows/qikvrt_autonomy_v3_materialize_once.yml' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part00' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part01' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part02' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part03' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part04' | sort)"
-          test "$actual" = "$expected"
-          echo "0cac0e05f46e267429c749696b0fc35f17bf106dc84a50a820689cceb3eb6530  .qikvrt/autonomy/autonomous-pr-continuation-v1.part00" | sha256sum --check --strict
-          echo "b76203ca569a1ba89858bee631ca074c607b554b71199e1414e6ed04086339d9  .qikvrt/autonomy/autonomous-pr-continuation-v1.part01" | sha256sum --check --strict
-          echo "ab38d2c1edaac14d3dc8d71407b1931f8e1e0ea45aa4625bd512ca2420e8400a  .qikvrt/autonomy/autonomous-pr-continuation-v1.part02" | sha256sum --check --strict
-          echo "d71c39484f56643aa883f9f21fe437874626bb7da38f73dc3347baff386457e1  .qikvrt/autonomy/autonomous-pr-continuation-v1.part03" | sha256sum --check --strict
-          echo "97c1bdf13e7213f1d032a67fc735ab73ca618320e753c788c975c0731905d0da  .qikvrt/autonomy/autonomous-pr-continuation-v1.part04" | sha256sum --check --strict
-          cat .qikvrt/autonomy/autonomous-pr-continuation-v1.part0{0,1,2,3,4} > /tmp/autonomous-pr-continuation-v1.tar.gz.b64
-          echo "14471beaea95987085a931719db78931f4a1713d67de4397c39f1e53a77142ca  /tmp/autonomous-pr-continuation-v1.tar.gz.b64" | sha256sum --check --strict
-          base64 --decode /tmp/autonomous-pr-continuation-v1.tar.gz.b64 > /tmp/autonomous-pr-continuation-v1.tar.gz
-          echo "a2ca45ecd09983e336b8dedb8a609630487abfec269deca5ccbc38cfbad9ef84  /tmp/autonomous-pr-continuation-v1.tar.gz" | sha256sum --check --strict
-          tar -xzf /tmp/autonomous-pr-continuation-v1.tar.gz
+          echo "389e4bc20c5e7b317f7c173bf0bd28872c8c90c5e65a1e213012cd05df8e7277  .github/workflows/qikvrt_autonomous_exact_head_verify.yml" | sha256sum --check --strict
+          echo "3598a0cc9750362d5a3a263f54db54a96b9b826fc3af9338da5549fc0304387f  .github/workflows/qikvrt_autonomous_pr_continuation.yml" | sha256sum --check --strict
+          echo "7a57e369d3b0f3ec62c7bc684f2dae4e6cd372d67db2b6e72d967082bfe24219  .github/workflows/qikvrt_autonomous_self_heal.yml" | sha256sum --check --strict
+          echo "f1880b3b2578e692fc2424e33f67b5485a8a46025ab8938b21e34001bb214b8a  docs/operations/AUTONOMOUS_PR_CONTINUATION.md" | sha256sum --check --strict
+          echo "488b3a87e5bc23bfe33b2d7e706112e14100b6b85add815b15ccaae42d4655f6  state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json" | sha256sum --check --strict
+          echo "e5f3a1979ec8a0947ae41bd7d7ebdd64738500f9c2a3fe01c95150d7a3ca75b1  tests/test_qikvrt_autonomous_pr_continuation.py" | sha256sum --check --strict
+          echo "c75bd2b7f635975886b13788569f4780fbb4507f83f12f14c388d32a9912c4b3  tests/test_qikvrt_autonomous_self_heal.py" | sha256sum --check --strict
+          echo "ddb0bab5c75a5496d88f1a3795504df86ecec5c7454025a491a39ee795e74632  tests/test_qikvrt_publication_overview.py" | sha256sum --check --strict
+          echo "2a69ca9db3545a9412f6142010f52a1c494eb3c586938b2720a04691ee60a2cd  tools/qikvrt_autonomous_self_heal.py" | sha256sum --check --strict
+          echo "3bb2a04cae174527cd015a15c5d79e297e7e1897f9875f16e82e9f1342c024a5  tools/qikvrt_publication_overview.py" | sha256sum --check --strict
+          test ! -e .qikvrt/autonomy/autonomous-pr-continuation-v1.part00
+          test ! -e .qikvrt/autonomy/autonomous-pr-continuation-v1.part01
+          test ! -e .qikvrt/autonomy/autonomous-pr-continuation-v1.part02
+          test ! -e .qikvrt/autonomy/autonomous-pr-continuation-v1.part03
+          test ! -e .qikvrt/autonomy/autonomous-pr-continuation-v1.part04
 
-      - name: Retain only non-workflow payload for credential-safe push
+      - name: Generate integrity for the post-one-shot final tree
         shell: bash
         run: |
           set -euo pipefail
-          base="0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
-          git checkout "$base" -- .github/workflows/qikvrt_autonomous_self_heal.yml
-          rm -f -- \
-            .github/workflows/qikvrt_autonomous_exact_head_verify.yml \
-            .github/workflows/qikvrt_autonomous_pr_continuation.yml
-          git rm -- \
-            .qikvrt/autonomy/autonomous-pr-continuation-v1.part00 \
-            .qikvrt/autonomy/autonomous-pr-continuation-v1.part01 \
-            .qikvrt/autonomy/autonomous-pr-continuation-v1.part02 \
-            .qikvrt/autonomy/autonomous-pr-continuation-v1.part03 \
-            .qikvrt/autonomy/autonomous-pr-continuation-v1.part04
-          rmdir --ignore-fail-on-non-empty .qikvrt/autonomy .qikvrt || true
+          rm -- .github/workflows/qikvrt_autonomy_v3_materialize_once.yml
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
 
-      - name: Verify bounded stage and repository suite
+      - name: Run full final-tree verification
         shell: bash
         run: |
           set -euo pipefail
@@ -84,35 +69,30 @@ jobs:
             tests/test_qikvrt_autonomous_pr_continuation.py \
             tests/test_qikvrt_publication_overview.py
           python3 -B tools/qikvrt_publication_overview.py check
-          python3 -B -m unittest -v tests.test_qikvrt_publication_overview
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_publication_overview \
+            tests.test_qikvrt_autonomous_self_heal \
+            tests.test_qikvrt_autonomous_pr_continuation
           make test
           python3 -B tools/qikvrt_integrity.py verify
-          git add -A
-          actual="$(git diff --cached --name-only | sort)"
-          expected="$(printf '%s\n' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part00' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part01' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part02' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part03' \
-            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part04' \
-            'REPOSITORY_FILE_MANIFEST.json' \
-            'REPOSITORY_FILE_MANIFEST.json.sha256' \
-            'SHA256SUMS.txt' \
-            'docs/operations/AUTONOMOUS_PR_CONTINUATION.md' \
-            'state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json' \
-            'tests/test_qikvrt_autonomous_pr_continuation.py' \
-            'tests/test_qikvrt_autonomous_self_heal.py' \
-            'tests/test_qikvrt_publication_overview.py' \
-            'tools/qikvrt_autonomous_self_heal.py' \
-            'tools/qikvrt_publication_overview.py' | sort)"
-          test "$actual" = "$expected"
-          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
 
-      - name: Commit non-workflow capability stage
+      - name: Persist only final integrity outputs
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "qik-vrt-autonomy-capability-persistence"
-          git config user.email "qik-vrt-autonomy-capability-persistence@users.noreply.github.com"
-          git commit -m "feat(autonomy): persist verified publication and PR continuation core"
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            'REPOSITORY_FILE_MANIFEST.json' \
+            'REPOSITORY_FILE_MANIFEST.json.sha256' \
+            'SHA256SUMS.txt' | sort)"
+          test "$actual" = "$expected"
+          test "$(git status --porcelain=v1 | grep '^ D .github/workflows/qikvrt_autonomy_v3_materialize_once.yml$' | wc -l)" -eq 1
+          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
+          git config user.name "qik-vrt-autonomy-integrity-finalizer"
+          git config user.email "qik-vrt-autonomy-integrity-finalizer@users.noreply.github.com"
+          git commit -m "chore(integrity): bind autonomous capability final tree"
           git push origin "HEAD:refs/heads/agent/autonomous-publication-pr-continuation-v1"
