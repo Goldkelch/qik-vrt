@@ -109,8 +109,50 @@ jobs:
 
           merge_created=false
           if ! git merge-base --is-ancestor "$live_main" HEAD; then
-            git merge --no-ff --no-edit "$live_main"
-            merge_created=true
+            if git merge --no-ff --no-edit "$live_main"; then
+              merge_created=true
+            else
+              git diff --name-only --diff-filter=U | sort -u \
+                > /tmp/qikvrt-merge-conflicts.txt
+              test -s /tmp/qikvrt-merge-conflicts.txt
+              python3 -B - <<'PY'
+              import json
+              import pathlib
+
+              contract = json.loads(
+                  pathlib.Path(
+                      'state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json'
+                  ).read_text(encoding='utf-8')
+              )
+              allowed = {
+                  path
+                  for handler in contract['allowlisted_handlers']
+                  for path in handler['mutable_paths']
+              }
+              conflicts = {
+                  line.strip()
+                  for line in pathlib.Path(
+                      '/tmp/qikvrt-merge-conflicts.txt'
+                  ).read_text(encoding='utf-8').splitlines()
+                  if line.strip()
+              }
+              unexpected = sorted(conflicts - allowed)
+              if unexpected:
+                  raise SystemExit(
+                      'BLOCK: non-allowlisted merge conflicts: '
+                      + ', '.join(unexpected)
+                  )
+              PY
+              while IFS= read -r path; do
+                test -n "$path"
+                git checkout --ours -- "$path"
+                git add -- "$path"
+              done < /tmp/qikvrt-merge-conflicts.txt
+              test -z "$(git diff --name-only --diff-filter=U)"
+              git commit -m \
+                "merge(autonomy): integrate main into PR ${PR_NUMBER} with generated-output reset"
+              merge_created=true
+            fi
           fi
 
           python3 -B tools/qikvrt_autonomous_self_heal.py apply > /tmp/qikvrt-pr-self-heal.json
@@ -130,7 +172,8 @@ jobs:
             python3 -B tools/qikvrt_integrity.py verify
             python3 -B -m unittest -v \
               tests.test_qikvrt_publication_overview \
-              tests.test_qikvrt_autonomous_self_heal
+              tests.test_qikvrt_autonomous_self_heal \
+              tests.test_qikvrt_autonomous_pr_continuation
             mapfile -t changed_paths < /tmp/qikvrt-pr-self-heal-paths
             git add -- "${changed_paths[@]}"
             test -z "$(git status --porcelain=v1 | grep '^??' || true)"
@@ -178,6 +221,7 @@ jobs:
           - previous exact head: \`${EXPECTED_HEAD}\`
           - current candidate head: \`${candidate_head}\`
           - current main merged: \`${live_main}\`
+          - deterministic generated-output conflicts reset before regeneration: \`$([ -s /tmp/qikvrt-merge-conflicts.txt ] && tr '\n' ',' < /tmp/qikvrt-merge-conflicts.txt | sed 's/,$//' || printf 'none')\`
           - external effects: none
           - next state: exact-head repository-dispatch verification
 
