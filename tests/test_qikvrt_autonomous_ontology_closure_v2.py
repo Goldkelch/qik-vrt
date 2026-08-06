@@ -29,15 +29,31 @@ class AutonomousOntologyClosureV2Tests(unittest.TestCase):
         self.assertEqual(policy["release_claims"], expected)
         self.assertEqual(queue["release_claims"], expected)
         self.assertEqual(status["release_claims"], expected)
-        self.assertEqual(status["completed_work_units"], [])
+        unit_ids = {unit["id"] for unit in queue["work_units"]}
+        completed = status["completed_work_units"]
+        self.assertEqual(len(completed), len(set(completed)))
+        self.assertTrue(set(completed).issubset(unit_ids))
+        self.assertTrue(set(completed).issubset(status["predecessor_results"]))
         self.assertEqual(queue["effect_state"], "EFFECT_ACK_CONTINUE")
 
-    def test_first_unit_is_qce_discovery(self):
+    def test_plan_selects_first_incomplete_automatic_unit(self):
+        _policy, queue, status = operator.load_contract(ROOT)
         result = operator.plan(ROOT)
-        self.assertEqual(result["state"], "ELIGIBLE")
-        self.assertEqual(
-            result["work_unit"]["id"], "QCE-DISCOVERY-INDEX-CURRENT-V1"
+        completed = set(status["completed_work_units"])
+        expected = next(
+            (
+                unit
+                for unit in queue["work_units"]
+                if unit.get("automatic") is True and unit["id"] not in completed
+            ),
+            None,
         )
+        if expected is None:
+            self.assertEqual(result["state"], "NO_AUTOMATIC_WORK")
+            self.assertIsNone(result["work_unit"])
+        else:
+            self.assertEqual(result["state"], "ELIGIBLE")
+            self.assertEqual(result["work_unit"]["id"], expected["id"])
 
     def test_completed_unit_advances_to_qce_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:
