@@ -1,0 +1,99 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_queue",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "authority_main_binding": "REOBSERVE_AT_EXECUTION",
+  "effect_state": "EFFECT_ACK_CONTINUE",
+  "queue_id": "ONTOLOGY-CLOSURE-QUEUE-2026-08-06-V2",
+  "release_claims": {
+    "EFFECT_ACK_DONE": false,
+    "FINAL_PASS": false,
+    "PASS": false
+  },
+  "schema": "qikvrt_autonomous_ontology_closure_queue_v2",
+  "selection": "lowest-order eligible incomplete work unit whose automatic predecessors are complete",
+  "work_units": [
+    {
+      "action_class": "REPOSITORY_LOCAL_MATERIALIZATION",
+      "automatic": true,
+      "description": "Create or reuse a history-preserving successor of the current open QCE candidate and regenerate publication discovery plus repository-native integrity.",
+      "handler": "qce_publication_discovery_successor",
+      "id": "QCE-DISCOVERY-INDEX-CURRENT-V1",
+      "order": 10,
+      "required_target": "docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/README.md",
+      "source_head_policy": "REOBSERVE_CURRENT_OPEN_PR_HEAD",
+      "source_pr": 411,
+      "successor_branch": "automation/qce-publication-discovery-current-v1"
+    },
+    {
+      "action_class": "RECEIPT_PERSISTENCE",
+      "automatic": true,
+      "description": "Persist or verify the exact source-, commit-, tree-, toolchain- and run-bound QCE kernel receipt.",
+      "handler": "qce_kernel_receipt_persistence",
+      "id": "QCE-KERNEL-RECEIPT-PERSISTENCE-CURRENT-V1",
+      "known_successful_run": 31060011399,
+      "order": 20,
+      "source_pr": 411,
+      "successor_branch": "automation/qce-kernel-receipt-current-v1"
+    },
+    {
+      "action_class": "RECEIPT_PERSISTENCE",
+      "automatic": true,
+      "description": "Verify bounded A08/A09 Actions artifacts and create a digest-bound human acoustic-review request without promoting ASR to verbatim certification.",
+      "handler": "audio_artifact_review_request",
+      "id": "A08-A09-BOUNDED-ASR-EVIDENCE-CURRENT-V1",
+      "known_transport_run": 31058321428,
+      "order": 30,
+      "source_pr": 414,
+      "successor_branch": "automation/a08-a09-acoustic-review-request-v1"
+    },
+    {
+      "action_class": "FORMAL_MODEL_EXECUTION",
+      "automatic": true,
+      "description": "Materialize a finite machine-readable formalization program for Difference through Responsibility and Future plus QCE-O01 through QCE-O07.",
+      "handler": "materialize_unified_ontology_work_units",
+      "id": "UNIFIED-ONTOLOGY-KERNEL-PROGRAM-V1",
+      "order": 40,
+      "successor_branch": "automation/unified-ontology-work-units-v1"
+    },
+    {
+      "action_class": "EXTERNAL_SCIENCE",
+      "automatic": false,
+      "description": "Covariant microscopic dynamics, genuine physical entanglement, Page-curve-compatible recovery, QFT/Einstein limits and stable light-cone limit.",
+      "handler": null,
+      "id": "QCE-PHYSICAL-BRIDGE-O01-O05",
+      "order": 50,
+      "state": "EXTERNAL_SCIENCE_REQUIRED"
+    },
+    {
+      "action_class": "EXTERNAL_SCIENCE",
+      "automatic": false,
+      "description": "Freeze a differentiating quantitative prediction, uncertainty model and preregistered falsifier before decisive data inspection.",
+      "handler": null,
+      "id": "QCE-FALSIFIABLE-PREDICTION-O06",
+      "order": 60,
+      "state": "HUMAN_PHYSICS_DESIGN_REQUIRED"
+    },
+    {
+      "action_class": "INDEPENDENT_REPLICATION",
+      "automatic": false,
+      "description": "Obtain external measurements and organizationally independent reproduction.",
+      "handler": null,
+      "id": "QCE-EMPIRICAL-REPLICATION-O07",
+      "order": 70,
+      "state": "INDEPENDENT_ACTOR_REQUIRED"
+    },
+    {
+      "action_class": "IRREVERSIBLE_EXTERNAL_EFFECT",
+      "automatic": false,
+      "description": "Publish only exact final bytes after all applicable formal, empirical and authorization gates are satisfied.",
+      "handler": null,
+      "id": "ONTOLOGY-ZENODO-PUBLICATION-V1",
+      "order": 80,
+      "state": "EXACT_OWNER_AUTHORIZATION_REQUIRED"
+    }
+  ]
+}
