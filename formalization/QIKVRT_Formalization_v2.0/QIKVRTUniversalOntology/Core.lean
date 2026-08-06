@@ -56,6 +56,11 @@ def ontologyChain : List OntologyStage :=
 def OntologyPrecedes (left right : OntologyStage) : Prop :=
   ontologyRank left < ontologyRank right
 
+instance instDecidableOntologyPrecedes (left right : OntologyStage) :
+    Decidable (OntologyPrecedes left right) := by
+  unfold OntologyPrecedes
+  infer_instance
+
 theorem ontologyChain_length : ontologyChain.length = 10 := by
   decide
 
@@ -176,9 +181,18 @@ def epistemicChain : List EpistemicStage :=
 def EpistemicPrecedes (left right : EpistemicStage) : Prop :=
   epistemicRank left < epistemicRank right
 
+instance instDecidableEpistemicPrecedes (left right : EpistemicStage) :
+    Decidable (EpistemicPrecedes left right) := by
+  unfold EpistemicPrecedes
+  infer_instance
+
 def Feedback : EpistemicStage → EpistemicStage → Prop
   | .newDifference, .reality => True
   | _, _ => False
+
+instance instDecidableFeedback (left right : EpistemicStage) :
+    Decidable (Feedback left right) := by
+  cases left <;> cases right <;> simp [Feedback]
 
 theorem epistemicChain_length : epistemicChain.length = 11 := by
   decide
@@ -202,6 +216,11 @@ deriving DecidableEq, Repr, BEq
 
 def FinitePairRelated (left right : PairBit) : Prop :=
   left ≠ right
+
+instance instDecidableFinitePairRelated (left right : PairBit) :
+    Decidable (FinitePairRelated left right) := by
+  unfold FinitePairRelated
+  infer_instance
 
 theorem finitePair_exists :
     ∃ left right, FinitePairRelated left right := by
