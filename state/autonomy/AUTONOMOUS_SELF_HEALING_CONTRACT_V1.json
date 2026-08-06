@@ -32,6 +32,26 @@
     "EXACT_HEAD_GATES",
     "EXPECTED_HEAD_BOUND_PROMOTION"
   ],
+  "pull_request_continuation": {
+    "workflow_path": ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
+    "opt_in_marker": "<!-- qikvrt-autonomous-self-heal:enabled -->",
+    "same_repository_only": true,
+    "draft_only": true,
+    "merge_current_main_before_repair": true,
+    "maximum_pull_requests_per_run": 1,
+    "history_rewrite": "FORBIDDEN",
+    "post_repair_verification": [
+      "python3 -B tools/qikvrt_publication_overview.py check",
+      "python3 -B tools/qikvrt_integrity.py verify",
+      "python3 -B -m unittest -v tests.test_qikvrt_publication_overview tests.test_qikvrt_autonomous_self_heal",
+      "make test"
+    ],
+    "external_gates": [
+      "IDENTIFIED_HUMAN_PHYSICS_REVIEW_WHEN_REQUIRED",
+      "SEPARATE_EXPLICIT_ZENODO_AUTHORIZATION"
+    ],
+    "automatic_promotion": "HOLD_UNTIL_ALL_EXTERNAL_AND_INTERNAL_GATES"
+  },
   "allowlisted_handlers": [
     {
       "failure_class": "ANTICIPATION_PROJECTION_DRIFT",
@@ -47,6 +67,7 @@
         "tools/qikvrt_anticipation.py",
         "materialize"
       ],
+      "failure_signature": "projection drift:",
       "mutable_paths": [
         "anticipation/current.json",
         "anticipation/history.jsonl",
@@ -55,6 +76,26 @@
         "anticipation/next-effect.json",
         "receipts/anticipation/0001-contract-bound.json",
         "receipts/anticipation/0002-anticipation-materialized.json"
+      ]
+    },
+    {
+      "failure_class": "PUBLICATION_OVERVIEW_DRIFT",
+      "probe": [
+        "python3",
+        "-B",
+        "tools/qikvrt_publication_overview.py",
+        "check"
+      ],
+      "repair": [
+        "python3",
+        "-B",
+        "tools/qikvrt_publication_overview.py",
+        "materialize"
+      ],
+      "failure_signature": "publication overview drift:",
+      "mutable_paths": [
+        "docs/publications/index.json",
+        "docs/publications/index.html"
       ]
     },
     {
@@ -96,6 +137,12 @@
     [
       "python3",
       "-B",
+      "tools/qikvrt_publication_overview.py",
+      "check"
+    ],
+    [
+      "python3",
+      "-B",
       "tools/qikvrt_integrity.py",
       "verify"
     ],
@@ -105,6 +152,7 @@
       "-m",
       "unittest",
       "-v",
+      "tests.test_qikvrt_publication_overview",
       "tests.test_qikvrt_autonomous_self_heal"
     ]
   ],
