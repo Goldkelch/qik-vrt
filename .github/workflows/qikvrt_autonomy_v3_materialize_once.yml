@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT one-shot autonomous continuation capability materialization
+
+on:
+  push:
+    branches:
+      - "agent/autonomous-publication-pr-continuation-v1"
+    paths:
+      - ".github/workflows/qikvrt_autonomy_v3_materialize_once.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-autonomy-v3-materialize-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact capability precursor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: "agent/autonomous-publication-pr-continuation-v1"
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact two-path carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
+          actual="$(git diff --name-only HEAD^ HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/qikvrt_autonomy_v3_materialize_once.yml' \
+            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part00' \
+            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part01' \
+            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part02' \
+            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part03' \
+            '.qikvrt/autonomy/autonomous-pr-continuation-v1.part04' | sort)"
+          test "$actual" = "$expected"
+          echo "0cac0e05f46e267429c749696b0fc35f17bf106dc84a50a820689cceb3eb6530  .qikvrt/autonomy/autonomous-pr-continuation-v1.part00" | sha256sum --check --strict
+          echo "b76203ca569a1ba89858bee631ca074c607b554b71199e1414e6ed04086339d9  .qikvrt/autonomy/autonomous-pr-continuation-v1.part01" | sha256sum --check --strict
+          echo "ab38d2c1edaac14d3dc8d71407b1931f8e1e0ea45aa4625bd512ca2420e8400a  .qikvrt/autonomy/autonomous-pr-continuation-v1.part02" | sha256sum --check --strict
+          echo "d71c39484f56643aa883f9f21fe437874626bb7da38f73dc3347baff386457e1  .qikvrt/autonomy/autonomous-pr-continuation-v1.part03" | sha256sum --check --strict
+          echo "97c1bdf13e7213f1d032a67fc735ab73ca618320e753c788c975c0731905d0da  .qikvrt/autonomy/autonomous-pr-continuation-v1.part04" | sha256sum --check --strict
+          cat .qikvrt/autonomy/autonomous-pr-continuation-v1.part0{0,1,2,3,4} > /tmp/autonomous-pr-continuation-v1.tar.gz.b64
+          echo "14471beaea95987085a931719db78931f4a1713d67de4397c39f1e53a77142ca  /tmp/autonomous-pr-continuation-v1.tar.gz.b64" | sha256sum --check --strict
+          base64 --decode /tmp/autonomous-pr-continuation-v1.tar.gz.b64 > /tmp/autonomous-pr-continuation-v1.tar.gz
+          echo "a2ca45ecd09983e336b8dedb8a609630487abfec269deca5ccbc38cfbad9ef84  /tmp/autonomous-pr-continuation-v1.tar.gz" | sha256sum --check --strict
+
+      - name: Validate and extract exact capability payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import tarfile
+          expected = {
+              '.github/workflows/qikvrt_autonomous_exact_head_verify.yml',
+              '.github/workflows/qikvrt_autonomous_pr_continuation.yml',
+              '.github/workflows/qikvrt_autonomous_self_heal.yml',
+              'docs/operations/AUTONOMOUS_PR_CONTINUATION.md',
+              'state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json',
+              'tests/test_qikvrt_autonomous_pr_continuation.py',
+              'tests/test_qikvrt_autonomous_self_heal.py',
+              'tests/test_qikvrt_publication_overview.py',
+              'tools/qikvrt_autonomous_self_heal.py',
+              'tools/qikvrt_publication_overview.py',
+          }
+          with tarfile.open('/tmp/autonomous-pr-continuation-v1.tar.gz', 'r:gz') as archive:
+              members = archive.getmembers()
+              names = {member.name for member in members}
+              assert names == expected, (sorted(names), sorted(expected))
+              assert all(member.isfile() for member in members)
+              assert all(not member.name.startswith('/') and '..' not in member.name.split('/') for member in members)
+          PY
+          tar -xzf /tmp/autonomous-pr-continuation-v1.tar.gz
+          rm -- .qikvrt/autonomy/autonomous-pr-continuation-v1.part0{0,1,2,3,4}
+          rmdir --ignore-fail-on-non-empty .qikvrt/autonomy .qikvrt || true
+          git rm -- .github/workflows/qikvrt_autonomy_v3_materialize_once.yml
+
+      - name: Regenerate repository-native integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run capability and full repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/qikvrt_autonomous_self_heal.py \
+            tools/qikvrt_publication_overview.py \
+            tests/test_qikvrt_autonomous_self_heal.py \
+            tests/test_qikvrt_autonomous_pr_continuation.py \
+            tests/test_qikvrt_publication_overview.py
+          python3 -B tools/qikvrt_publication_overview.py check
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_publication_overview \
+            tests.test_qikvrt_autonomous_self_heal \
+            tests.test_qikvrt_autonomous_pr_continuation
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Commit materialized capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "qik-vrt-autonomy-capability-materializer"
+          git config user.email "qik-vrt-autonomy-capability-materializer@users.noreply.github.com"
+          git add -A
+          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
+          git commit -m "feat(autonomy): materialize publication and PR self-healing capability"
+          git push origin "HEAD:refs/heads/agent/autonomous-publication-pr-continuation-v1"
