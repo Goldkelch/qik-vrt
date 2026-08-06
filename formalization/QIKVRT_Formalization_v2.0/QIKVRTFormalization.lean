@@ -22,6 +22,7 @@ import QIKVRTFormalization.Claims.Batch04
 import QIKVRTFormalization.Claims.Batch05
 import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
+import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -41,4 +42,12 @@ operationalization, evidence, known-limit recovery, distinctive prediction,
 independent validation, dependency closure and artifact identity. Its explicit
 countermodel proves that formal establishment alone does not imply physical
 qualification.
+
+The quantum-foundations tranche additionally formalizes the exact logical
+boundary around measurement independence and superdeterminism: measurement
+independence conditionally excludes a measurement-dependent candidate, while a
+finite common-cause countermodel proves that structurally local two-wing
+responses alone do not establish measurement independence. Physical exclusion
+therefore still requires a separately justified QCE freedom certificate and
+physical reference/evidence binding.
 -/
