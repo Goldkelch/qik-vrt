@@ -1,0 +1,71 @@
+{
+  "schema": "qikvrt_autonomous_pre_effect_policy_v1",
+  "policy_id": "AUTONOMOUS-PRE-EFFECT-POLICY-V1",
+  "mission": "AUTONOMOUS_UNTIL_FIRST_IRREVERSIBLE_EXTERNAL_EFFECT",
+  "scope": "ALL_REPOSITORY_INTERNAL_REVERSIBLE_WORK",
+  "preconditions": [
+    "CURRENT_MAIN_REOBSERVED",
+    "EXACT_HEAD_BOUND",
+    "NO_COMPETING_WRITER",
+    "DETERMINISTIC_STATE",
+    "REPOSITORY_NATIVE_EVIDENCE"
+  ],
+  "autonomous_capabilities": [
+    "REOBSERVE",
+    "CLASSIFY",
+    "SELF_HEAL",
+    "MATERIALIZE",
+    "REGENERATE_INTEGRITY",
+    "RUN_EXACT_HEAD_TESTS",
+    "GENERATE_RECEIPTS",
+    "RECONCILE_CURRENT_MAIN",
+    "UPDATE_MIRROR",
+    "EXPECTED_HEAD_BOUND_PROMOTION",
+    "DEDUPLICATED_OWNER_NOTIFICATION"
+  ],
+  "first_irreversible_external_effect": [
+    "ZENODO_PUBLICATION",
+    "IETF_SUBMISSION",
+    "DOI_CREATION",
+    "PUBLIC_RELEASE",
+    "EXTERNAL_CREDENTIAL_CONSUMPTION",
+    "OTHER_NON_REVERSIBLE_EXTERNAL_STATE_CHANGE"
+  ],
+  "personal_product_owner_gate_only": [
+    "ZENODO_PUBLICATION",
+    "IETF_SUBMISSION",
+    "OTHER_IRREVERSIBLE_EXTERNAL_EFFECT"
+  ],
+  "prohibited_autonomous_effects": [
+    "ZENODO_MUTATION",
+    "IETF_MUTATION",
+    "CREDENTIAL_USE_FOR_EXTERNAL_EFFECT",
+    "SCIENTIFIC_CONFIRMATION",
+    "PHYSICAL_CORRESPONDENCE",
+    "PASS",
+    "FINAL_PASS",
+    "EFFECT_ACK_DONE"
+  ],
+  "fail_closed": {
+    "when": "ANY_PRECONDITION_MISSING",
+    "state": "HOLD",
+    "repair_forbidden": true
+  },
+  "epistemic_boundaries": {
+    "scientific_confirmation_inferable": false,
+    "physical_correspondence_inferable": false,
+    "independent_review_fabricable": false,
+    "measurement_fabricable": false
+  },
+  "owner_authorization": {
+    "authorized_by": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "state": "ACTIVE",
+    "source_issue": 439
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
