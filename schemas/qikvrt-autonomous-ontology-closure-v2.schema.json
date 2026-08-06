@@ -1,0 +1,55 @@
+{
+  "$id": "https://github.com/Goldkelch/qik-vrt/schemas/qikvrt-autonomous-ontology-closure-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "_license": {"type": "object"},
+    "authority_main_binding": {"const": "REOBSERVE_AT_EXECUTION"},
+    "effect_state": {"const": "EFFECT_ACK_CONTINUE"},
+    "queue_id": {"minLength": 1, "type": "string"},
+    "release_claims": {
+      "additionalProperties": false,
+      "properties": {
+        "EFFECT_ACK_DONE": {"const": false},
+        "FINAL_PASS": {"const": false},
+        "PASS": {"const": false}
+      },
+      "required": ["PASS", "FINAL_PASS", "EFFECT_ACK_DONE"],
+      "type": "object"
+    },
+    "schema": {"const": "qikvrt_autonomous_ontology_closure_queue_v2"},
+    "selection": {
+      "const": "lowest-order eligible incomplete work unit whose automatic predecessors are complete"
+    },
+    "work_units": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "action_class": {"minLength": 1, "type": "string"},
+          "automatic": {"type": "boolean"},
+          "description": {"minLength": 1, "type": "string"},
+          "handler": {"type": ["string", "null"]},
+          "id": {"minLength": 1, "type": "string"},
+          "order": {"minimum": 0, "type": "integer"},
+          "state": {"minLength": 1, "type": "string"}
+        },
+        "required": ["order", "id", "action_class", "automatic", "description", "handler"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "_license",
+    "schema",
+    "queue_id",
+    "authority_main_binding",
+    "selection",
+    "work_units",
+    "release_claims",
+    "effect_state"
+  ],
+  "title": "QIK-VRT progressing autonomous ontology closure queue v2",
+  "type": "object"
+}
