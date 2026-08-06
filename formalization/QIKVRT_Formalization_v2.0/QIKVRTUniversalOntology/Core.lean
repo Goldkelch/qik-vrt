@@ -192,7 +192,7 @@ def Feedback : EpistemicStage → EpistemicStage → Prop
 
 instance instDecidableFeedback (left right : EpistemicStage) :
     Decidable (Feedback left right) := by
-  cases left <;> cases right <;> simp [Feedback]
+  cases left <;> cases right <;> simp only [Feedback] <;> infer_instance
 
 theorem epistemicChain_length : epistemicChain.length = 11 := by
   decide
