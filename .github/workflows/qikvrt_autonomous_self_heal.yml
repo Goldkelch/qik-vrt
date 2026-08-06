@@ -32,12 +32,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Execute bounded repository-native repairs
+      - name: Execute bounded repository-native repairs before external effects
         id: repair
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_autonomous_self_heal.py apply > /tmp/qikvrt-self-heal.json
+          python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal.json
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
@@ -63,7 +63,8 @@ jobs:
           python3 -B tools/qikvrt_integrity.py verify
           python3 -B -m unittest -v \
             tests.test_qikvrt_publication_overview \
-            tests.test_qikvrt_autonomous_self_heal
+            tests.test_qikvrt_autonomous_self_heal \
+            tests.test_qikvrt_autonomous_pre_effect_controller
           python3 -B - <<'PY'
           import base64
           import os
@@ -127,7 +128,7 @@ jobs:
                   print(f'- `{path}`')
           PY
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
-          Repository-native scheduled repair candidate.
+          Repository-native scheduled pre-effect repair candidate.
 
           Exact bindings:
           - observed current-main base: \`$BASE_SHA\`
@@ -140,7 +141,9 @@ jobs:
 
           Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. The proposal workflow itself does not merge.
 
-          No force push, release, deployment, Zenodo or IETF mutation, credentialed external write, repository-wide PASS, FINAL_PASS, EFFECT_ACK_DONE, full synchronization, or symmetric canonicality is claimed.
+          Execution stops before Zenodo publication, IETF submission, DOI creation, public release, external credential consumption, or any other irreversible external effect and requires exact Product Owner authorization.
+
+          No force push, release, deployment, Zenodo or IETF mutation, credentialed external write, scientific confirmation, physical correspondence, repository-wide PASS, FINAL_PASS, EFFECT_ACK_DONE, full synchronization, or symmetric canonicality is claimed.
           EOF
           gh pr create \
             --draft \
