@@ -39,8 +39,8 @@ jobs:
           v1_workflow='.github/workflows/qikvrt_autonomous_ontology_closure.yml'
           temporary="${RUNNER_TEMP}/QUEUE.v1.superseded.json"
 
-          queue_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${queue_path}?ref=${HEAD_REF}" --jq '.sha')"
-          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${queue_path}?ref=${HEAD_REF}" --jq '.content' | tr -d '\n')"
+          queue_sha="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/contents/${queue_path}" -f ref="${HEAD_REF}" --jq '.sha')"
+          encoded="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/contents/${queue_path}" -f ref="${HEAD_REF}" --jq '.content' | tr -d '\n')"
           printf '%s' "${encoded}" | base64 --decode > "${temporary}"
 
           changed="$(python3 -B - "${temporary}" <<'PY'
@@ -72,7 +72,7 @@ jobs:
               -f branch="${HEAD_REF}" >/dev/null
           fi
 
-          workflow_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${v1_workflow}?ref=${HEAD_REF}" --jq '.sha' 2>/dev/null || true)"
+          workflow_sha="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/contents/${v1_workflow}" -f ref="${HEAD_REF}" --jq '.sha' 2>/dev/null || true)"
           if [[ -n "${workflow_sha}" ]]; then
             gh api --method DELETE "repos/${GITHUB_REPOSITORY}/contents/${v1_workflow}" \
               -f message='Remove superseded static ontology executor V1' \
