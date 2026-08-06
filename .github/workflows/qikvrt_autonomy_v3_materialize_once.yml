@@ -10,7 +10,7 @@ on:
       - ".github/workflows/qikvrt_autonomy_v3_materialize_once.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: qikvrt-autonomy-v3-materialize-${{ github.repository }}
@@ -26,14 +26,15 @@ jobs:
         with:
           ref: "agent/autonomous-publication-pr-continuation-v1"
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
-      - name: Verify exact two-path carrier
+      - name: Verify exact bounded carrier history
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
-          actual="$(git diff --name-only HEAD^ HEAD | sort)"
+          base="0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
+          git merge-base --is-ancestor "$base" HEAD
+          actual="$(git diff --name-only "$base" HEAD | sort)"
           expected="$(printf '%s\n' \
             '.github/workflows/qikvrt_autonomy_v3_materialize_once.yml' \
             '.qikvrt/autonomy/autonomous-pr-continuation-v1.part00' \
@@ -80,7 +81,7 @@ jobs:
           tar -xzf /tmp/autonomous-pr-continuation-v1.tar.gz
           rm -- .qikvrt/autonomy/autonomous-pr-continuation-v1.part0{0,1,2,3,4}
           rmdir --ignore-fail-on-non-empty .qikvrt/autonomy .qikvrt || true
-          git rm -- .github/workflows/qikvrt_autonomy_v3_materialize_once.yml
+          rm -- .github/workflows/qikvrt_autonomy_v3_materialize_once.yml
 
       - name: Regenerate repository-native integrity
         shell: bash
@@ -107,13 +108,73 @@ jobs:
           make test
           python3 -B tools/qikvrt_integrity.py verify
 
-      - name: Commit materialized capability
+      - name: Export exact verified final tree delta
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "qik-vrt-autonomy-capability-materializer"
-          git config user.email "qik-vrt-autonomy-capability-materializer@users.noreply.github.com"
-          git add -A
-          test -z "$(git status --porcelain=v1 | grep '^??' || true)"
-          git commit -m "feat(autonomy): materialize publication and PR self-healing capability"
-          git push origin "HEAD:refs/heads/agent/autonomous-publication-pr-continuation-v1"
+          base="0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5"
+          mkdir -p audit/autonomy-materialization
+          cat > /tmp/autonomy-final-paths.txt <<'EOF'
+          .github/workflows/qikvrt_autonomous_exact_head_verify.yml
+          .github/workflows/qikvrt_autonomous_pr_continuation.yml
+          .github/workflows/qikvrt_autonomous_self_heal.yml
+          REPOSITORY_FILE_MANIFEST.json
+          REPOSITORY_FILE_MANIFEST.json.sha256
+          SHA256SUMS.txt
+          docs/operations/AUTONOMOUS_PR_CONTINUATION.md
+          state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json
+          tests/test_qikvrt_autonomous_pr_continuation.py
+          tests/test_qikvrt_autonomous_self_heal.py
+          tests/test_qikvrt_publication_overview.py
+          tools/qikvrt_autonomous_self_heal.py
+          tools/qikvrt_publication_overview.py
+          EOF
+          actual="$(git diff --name-only "$base" -- . | sort)"
+          expected="$(sort /tmp/autonomy-final-paths.txt)"
+          test "$actual" = "$expected"
+          tar -czf audit/autonomy-materialization/autonomy-final-delta.tar.gz \
+            -T /tmp/autonomy-final-paths.txt
+          sha256sum audit/autonomy-materialization/autonomy-final-delta.tar.gz \
+            > audit/autonomy-materialization/autonomy-final-delta.tar.gz.sha256
+          cp /tmp/autonomy-final-paths.txt \
+            audit/autonomy-materialization/autonomy-final-paths.txt
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          root = pathlib.Path('audit/autonomy-materialization')
+          archive = root / 'autonomy-final-delta.tar.gz'
+          value = {
+              'schema': 'qikvrt_autonomy_materialization_export_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'base_commit': '0b2360fa0c66c86e6ee6e71798adcdaf3ac2fac5',
+              'carrier_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'carrier_tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+              'path_count': 13,
+              'full_repository_gates': 'SUCCESS',
+              'external_effect': 'NONE',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          (root / 'MATERIALIZATION_PROVENANCE.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Upload exact verified materialization export
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-autonomy-materialized-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: true
+          path: audit/autonomy-materialization/**
