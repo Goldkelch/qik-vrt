@@ -350,7 +350,7 @@ def handler_qce_receipt(
             v1.run_capture([sys.executable, "-B", str(regenerate.relative_to(work))], work)
         integrity = work / "tools/qikvrt_integrity.py"
         if integrity.exists():
-            v1.run_capture([sys.executable, "-B", str(integrity.relative_to(work)), "write"], work)
+            v1.run_capture([sys.executable, "-B", str(integrity.relative_to(work)), "generate"], work)
         changed = [
             line
             for line in v1.run_capture(["git", "diff", "--name-only", head_sha, "--"], work).splitlines()
