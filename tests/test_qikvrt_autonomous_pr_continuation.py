@@ -31,7 +31,7 @@ class AutonomousPRContinuationTests(unittest.TestCase):
 
     def test_continuation_preserves_history_and_never_merges_or_force_pushes(self) -> None:
         source = CONTINUATION.read_text(encoding="utf-8")
-        self.assertIn("git merge --no-ff --no-edit", source)
+        self.assertIn("git merge --no-ff --no-commit", source)
         self.assertIn("live_head_before_push", source)
         self.assertIn("refs/heads/${HEAD_REF}", source)
         self.assertNotIn("git push --force", source)
@@ -40,6 +40,42 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         self.assertNotIn("refs/heads/main\"", source)
         self.assertIn("make test", source)
         self.assertIn("qikvrt_autonomous_exact_head_verify", source)
+
+    def test_only_regenerable_projection_conflicts_may_be_resolved(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        policy = contract["pull_request_continuation"][
+            "generated_merge_conflict_policy"
+        ]
+        self.assertEqual(policy["mode"], "ALLOWLIST_ONLY_REGENERATE_IMMEDIATELY")
+        self.assertEqual(policy["temporary_resolution_side"], "CURRENT_MAIN")
+        self.assertEqual(policy["non_allowlisted_conflict"], "BLOCK")
+        self.assertEqual(
+            policy["allowed_paths"],
+            [
+                "REPOSITORY_FILE_MANIFEST.json",
+                "REPOSITORY_FILE_MANIFEST.json.sha256",
+                "SHA256SUMS.txt",
+                "docs/publications/index.html",
+                "docs/publications/index.json",
+            ],
+        )
+
+        source = CONTINUATION.read_text(encoding="utf-8")
+        self.assertIn("git diff --name-only --diff-filter=U", source)
+        self.assertIn("unexpected_conflicts=\"$(comm -23", source)
+        self.assertIn("BLOCK: non-regenerable merge conflicts", source)
+        self.assertIn("git merge --abort", source)
+        self.assertIn("git checkout --theirs -- \"$path\"", source)
+        self.assertIn("generated_conflicts_resolved=true", source)
+        self.assertIn("test -s /tmp/qikvrt-pr-self-heal-paths", source)
+
+        merge_position = source.index("git commit --no-edit")
+        regeneration_position = source.index(
+            "tools/qikvrt_autonomous_self_heal.py apply"
+        )
+        push_position = source.index('git push origin "HEAD:refs/heads/${HEAD_REF}"')
+        self.assertLess(merge_position, regeneration_position)
+        self.assertLess(regeneration_position, push_position)
 
     def test_dispatch_verifier_binds_exact_head_and_posts_a_distinct_status(self) -> None:
         source = VERIFIER.read_text(encoding="utf-8")
