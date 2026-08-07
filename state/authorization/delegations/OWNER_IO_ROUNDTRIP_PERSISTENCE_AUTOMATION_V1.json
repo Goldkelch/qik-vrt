@@ -1,0 +1,43 @@
+{
+  "schema": "qik-vrt.owner-authorization.v1",
+  "id": "OWNER_IO_ROUNDTRIP_PERSISTENCE_AUTOMATION_V1",
+  "status": "AUTHORIZED_FOR_IMPLEMENTATION",
+  "authorized_by": "Ingolf Lohmann (Product Owner)",
+  "authorized_at": "2026-08-07T15:53:00+02:00",
+  "source": "human input through the AI input-output interface",
+  "requirement": {
+    "statement": "Everything crossing the input-output interface, regardless of modality, shall be suitably persisted in the repositories and, at suitable granularity and where scientifically or standards-relevant, processed as candidate new knowledge through machine-verifiable evidence toward Zenodo and, where appropriate, IETF, in a fully automated manner.",
+    "scope": [
+      "text input and output",
+      "audio and other supplied artifacts",
+      "derived machine results",
+      "provenance and exact-byte/content hashes",
+      "verification receipts",
+      "publication/standards disposition decisions"
+    ],
+    "acceptance_criteria": [
+      "Every observable I/O work unit has durable repository provenance or an explicit, machine-readable reason why persistence is impossible or prohibited.",
+      "Persistence is content-addressed or otherwise exactly bindable to the originating I/O artifact and model/tool identity.",
+      "Candidate knowledge is classified at suitable granularity rather than automatically promoted as a theorem or empirical fact.",
+      "Formalizable claims enter machine-verification gates; empirical claims retain independent-evidence boundaries.",
+      "Zenodo publication is attempted only after applicable exact-artifact, rights, provenance, scientific-status and external-effect gates pass.",
+      "IETF progression is attempted only for material that is technically appropriate for Internet standardization and after applicable draft, rights, provenance and external-effect gates pass.",
+      "Automation is fail-closed: a missing credential, authorization, exact-head binding, rights clearance, verification receipt or publication precondition yields HOLD/BLOCK rather than an invented success.",
+      "Every external effect produces a durable receipt that is reobserved and bound back into repository state.",
+      "A static read of /AI alone is not treated as proof that persistence or publication occurred."
+    ]
+  },
+  "implementation_directive": {
+    "authorization": "Product Owner explicitly grants implementation permission for this requirement.",
+    "required_architecture": "INPUT -> CAPTURE -> NORMALIZE -> HASH/BIND -> PROVENANCE -> REPOSITORY PERSISTENCE -> CLASSIFY -> VERIFY -> PUBLICATION DISPOSITION -> PRE-EFFECT GATES -> AUTHORIZED EXTERNAL EFFECT -> RECEIPT -> REOBSERVE -> REPOSITORY PERSISTENCE",
+    "automation_target": "repository-native, deterministic, restartable and auditable orchestration with no dependence on chat memory as authority",
+    "external_effect_boundary": "This implementation authorization does not itself assert that Zenodo/IETF credentials or every irreversible publication authorization are currently present. Existing exact-artifact and pre-effect controls remain binding."
+  },
+  "evidence_boundary": {
+    "owner_requirement_is_repository_evidence": true,
+    "owner_requirement_is_formal_proof": false,
+    "owner_requirement_is_independent_empirical_confirmation": false,
+    "repository_persistence_is_publication": false,
+    "publication_success_requires_receipt": true
+  }
+}
