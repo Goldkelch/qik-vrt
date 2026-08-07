@@ -157,8 +157,9 @@ theorem QCMB_T12_unbound_source_cannot_be_accepted
     (unbound : receipt.sourceDigestBound = false) :
     ¬ AcceptedCMeasurementReceipt receipt := by
   intro accepted
-  rw [unbound] at accepted.sourceDigestBound
-  contradiction
+  have impossible : (false : Bool) = true :=
+    unbound.symm.trans accepted.sourceDigestBound
+  cases impossible
 
 /-- [QCMB-T13] An uncalibrated instrument fails closed. -/
 theorem QCMB_T13_uncalibrated_instrument_cannot_be_accepted
@@ -166,8 +167,9 @@ theorem QCMB_T13_uncalibrated_instrument_cannot_be_accepted
     (uncalibrated : receipt.instrumentCalibrated = false) :
     ¬ AcceptedCMeasurementReceipt receipt := by
   intro accepted
-  rw [uncalibrated] at accepted.instrumentCalibrated
-  contradiction
+  have impossible : (false : Bool) = true :=
+    uncalibrated.symm.trans accepted.instrumentCalibrated
+  cases impossible
 
 /-- [QCMB-T14] Missing independent reproduction fails closed. -/
 theorem QCMB_T14_unreproduced_receipt_cannot_be_accepted
@@ -175,8 +177,9 @@ theorem QCMB_T14_unreproduced_receipt_cannot_be_accepted
     (unreproduced : receipt.independentlyReproduced = false) :
     ¬ AcceptedCMeasurementReceipt receipt := by
   intro accepted
-  rw [unreproduced] at accepted.independentlyReproduced
-  contradiction
+  have impossible : (false : Bool) = true :=
+    unreproduced.symm.trans accepted.independentlyReproduced
+  cases impossible
 
 /-- [QCMB-T15] A measured token inconsistent with its calibration fails closed. -/
 theorem QCMB_T15_mismatched_token_cannot_be_accepted
