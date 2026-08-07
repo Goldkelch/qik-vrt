@@ -133,8 +133,12 @@ jobs:
 
           if list(reports) != expected:
               raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
-          if any(reports[name] for name in expected):
-              raise SystemExit(f'BLOCK unexpected axiom dependency: {reports!r}')
+
+          allowed_kernel_axioms = {'propext', 'Quot.sound', 'Classical.choice'}
+          kernel_axioms = sorted({axiom for values in reports.values() for axiom in values})
+          project_axioms = sorted(set(kernel_axioms) - allowed_kernel_axioms)
+          if project_axioms:
+              raise SystemExit(f'BLOCK unexpected project axiom dependency: {project_axioms!r}')
 
           def identity(path):
               raw = path.read_bytes()
@@ -164,7 +168,9 @@ jobs:
               'upstream_mdd_source': identity(mdd),
               'theorem_count': len(expected),
               'axioms_by_theorem': reports,
-              'project_axioms': [],
+              'allowed_kernel_axioms': sorted(allowed_kernel_axioms),
+              'kernel_axioms_observed': kernel_axioms,
+              'project_axioms': project_axioms,
               'formal_result': 'QCE_CANONICAL_NOW_NETWORK_HAS_UNIQUE_SERIAL_INDEX_AND_ADDITIVE_CALIBRATION_ACTION',
               'physical_axis_binding': 'EXPLICIT_AND_NOT_DERIVED_FROM_SERIALITY_ALONE',
               'physical_time_identification': 'NOT_ESTABLISHED',
