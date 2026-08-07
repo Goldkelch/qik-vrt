@@ -182,8 +182,7 @@ theorem MDD_T08_equal_calibration_action_forces_equal_dimension
     (left right : DerivedMeasurementChannel State Reading)
     (sameAction : left.calibrationAction = right.calibrationAction) :
     channelDimension left = channelDimension right := by
-  cases sameAction
-  rfl
+  exact congrArg derivedDimension sameAction
 
 /-- A full system couples the dimension-free ontology to the derived measurement layer. -/
 structure DerivedMeasurementSystem (State : Type u) (Reading : Type v) where
