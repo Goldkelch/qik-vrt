@@ -1,0 +1,274 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT expected-head promotion executor
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Optional PR number; still requires the repository promotion marker"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT Batch-003 remaining subject disposition"
+      - "QIK-VRT universal ontology finite-model verification"
+      - "QIK-VRT measurement-independence boundary verification"
+      - "QIK-VRT manuscript proof coverage"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-expected-head-promotion-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate-and-promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PROMOTION_MARKER: "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
+      REQUIRED_GATES_JSON: >-
+        ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review","QIK-VRT global claim completion"]
+    steps:
+      - name: Check out current main promotion code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Regression-test promotion decision core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_expected_head_promotion
+
+      - name: Discover one marked current-base candidate
+        id: candidate
+        env:
+          REQUESTED_PR: ${{ inputs.pr || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY' > /tmp/qikvrt-promotion-candidate.json
+          import json
+          import os
+          import subprocess
+
+          repository = os.environ['REPOSITORY']
+          marker = os.environ['PROMOTION_MARKER']
+          requested = os.environ.get('REQUESTED_PR', '').strip()
+
+          def gh_json(path):
+              raw = subprocess.check_output(['gh', 'api', path], text=True)
+              return json.loads(raw)
+
+          current_main = gh_json(f'repos/{repository}/commits/main')['sha']
+          if requested:
+              prs = [gh_json(f'repos/{repository}/pulls/{int(requested)}')]
+          else:
+              prs = gh_json(f'repos/{repository}/pulls?state=open&base=main&per_page=100')
+
+          candidates = []
+          for pr in prs:
+              if pr.get('state') != 'open' or pr.get('base', {}).get('ref') != 'main':
+                  continue
+              if pr.get('base', {}).get('sha') != current_main:
+                  continue
+              body = pr.get('body') or ''
+              marked = marker in body
+              if not marked:
+                  comments = gh_json(f"repos/{repository}/issues/{pr['number']}/comments?per_page=100")
+                  marked = any(marker in (comment.get('body') or '') for comment in comments)
+              if not marked:
+                  continue
+              candidates.append(pr)
+
+          candidates.sort(key=lambda pr: (pr.get('created_at') or '', pr['number']))
+          chosen = candidates[0] if candidates else None
+          print(json.dumps({
+              'state': 'CANDIDATE' if chosen else 'NOOP',
+              'current_main_sha': current_main,
+              'pr_number': chosen['number'] if chosen else None,
+          }, sort_keys=True))
+          PY
+          cat /tmp/qikvrt-promotion-candidate.json
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value = json.load(open('/tmp/qikvrt-promotion-candidate.json', encoding='utf-8'))
+          print(f"state={value['state']}")
+          print(f"pr={value.get('pr_number') or ''}")
+          print(f"main_sha={value['current_main_sha']}")
+          PY
+
+      - name: Materialize exact live promotion snapshot
+        if: steps.candidate.outputs.state == 'CANDIDATE'
+        id: decision
+        env:
+          PR_NUMBER: ${{ steps.candidate.outputs.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshot.json
+          import json
+          import os
+          import subprocess
+
+          repository = os.environ['REPOSITORY']
+          pr_number = int(os.environ['PR_NUMBER'])
+          required_gates = json.loads(os.environ['REQUIRED_GATES_JSON'])
+
+          def gh_json(path):
+              raw = subprocess.check_output(['gh', 'api', path], text=True)
+              return json.loads(raw)
+
+          pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
+          current_main = gh_json(f'repos/{repository}/commits/main')['sha']
+          head = pr['head']['sha']
+          runs = gh_json(
+              f'repos/{repository}/actions/runs?head_sha={head}&event=pull_request&per_page=100'
+          ).get('workflow_runs', [])
+          workflow_runs = [
+              {
+                  'name': run.get('name'),
+                  'status': run.get('status'),
+                  'conclusion': run.get('conclusion'),
+                  'run_number': run.get('run_number'),
+              }
+              for run in runs
+          ]
+
+          candidate_files = {
+              item['filename']
+              for item in gh_json(f'repos/{repository}/pulls/{pr_number}/files?per_page=100')
+          }
+          overlaps = []
+          for other in gh_json(f'repos/{repository}/pulls?state=open&base=main&per_page=100'):
+              if other['number'] == pr_number:
+                  continue
+              if other.get('base', {}).get('sha') != current_main:
+                  continue
+              if other.get('head', {}).get('sha') == head:
+                  # Trusted verification proxies share the exact candidate head
+                  # and are not independent writers.
+                  continue
+              other_files = {
+                  item['filename']
+                  for item in gh_json(
+                      f"repos/{repository}/pulls/{other['number']}/files?per_page=100"
+                  )
+              }
+              common = sorted(candidate_files & other_files)
+              if common:
+                  overlaps.append({'pr_number': other['number'], 'paths': common})
+
+          print(json.dumps({
+              'pr_number': pr_number,
+              'current_main_sha': current_main,
+              'base_sha': pr['base']['sha'],
+              'expected_head_sha': head,
+              'current_head_sha': head,
+              'draft': bool(pr.get('draft')),
+              'mergeable': pr.get('mergeable') is True,
+              'external_effect': 'NONE',
+              'required_gates': required_gates,
+              'workflow_runs': workflow_runs,
+              'competing_writer_overlaps': overlaps,
+          }, sort_keys=True))
+          PY
+
+          set +e
+          python3 -B tools/qikvrt_expected_head_promotion.py evaluate \
+            --input /tmp/qikvrt-promotion-snapshot.json \
+            > /tmp/qikvrt-promotion-decision.json
+          rc=$?
+          set -e
+          cat /tmp/qikvrt-promotion-decision.json
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value = json.load(open('/tmp/qikvrt-promotion-decision.json', encoding='utf-8'))
+          print(f"state={value['state']}")
+          print(f"head={value.get('expected_head_sha') or ''}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          PY
+          if [ "$rc" -ne 0 ]; then
+            exit 0
+          fi
+
+      - name: Reobserve and promote exact unchanged head
+        if: steps.decision.outputs.state == 'PROMOTABLE'
+        env:
+          PR_NUMBER: ${{ steps.candidate.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
+          EXPECTED_BASE: ${{ steps.candidate.outputs.main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
+          merged="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
+          test "$merged" = "false"
+          test "$current_main" = "$EXPECTED_BASE"
+          test "$current_base" = "$EXPECTED_BASE"
+          test "$current_head" = "$EXPECTED_HEAD"
+
+          # Draft-to-ready is reversible repository metadata. The actual merge
+          # remains bound by REST to EXPECTED_HEAD and fails closed on head drift.
+          if [ "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)" = "true" ]; then
+            gh pr ready "$PR_NUMBER" --repo "$REPOSITORY"
+          fi
+
+          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$current_main" = "$EXPECTED_BASE"
+          test "$current_head" = "$EXPECTED_HEAD"
+
+          gh api \
+            --method PUT \
+            "repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -f merge_method=merge \
+            -f sha="$EXPECTED_HEAD" \
+            > /tmp/qikvrt-promotion-merge.json
+          cat /tmp/qikvrt-promotion-merge.json
+          test "$(python3 -c 'import json; print(str(json.load(open("/tmp/qikvrt-promotion-merge.json"))["merged"]).lower())')" = "true"
+
+          promoted_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          test "$promoted_main" != "$EXPECTED_BASE"
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body "Expected-head promotion completed by repository-native executor. Source head: \`$EXPECTED_HEAD\`; previous main: \`$EXPECTED_BASE\`; promoted main: \`$promoted_main\`. No Zenodo/IETF/release/PASS/FINAL_PASS/EFFECT_ACK_DONE effect is implied."
+
+      - name: Persist bounded decision summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## QIK-VRT expected-head promotion"
+            echo
+            if [ -f /tmp/qikvrt-promotion-decision.json ]; then
+              echo '```json'
+              cat /tmp/qikvrt-promotion-decision.json
+              echo '```'
+            elif [ -f /tmp/qikvrt-promotion-candidate.json ]; then
+              echo '```json'
+              cat /tmp/qikvrt-promotion-candidate.json
+              echo '```'
+            else
+              echo "No promotion snapshot was materialized."
+            fi
+            echo
+            echo "External effects remain fail-closed."
+          } >> "$GITHUB_STEP_SUMMARY"
