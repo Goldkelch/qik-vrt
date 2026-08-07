@@ -1,0 +1,59 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "AI_IO_ROUND_TRIP_AUTOPUBLISH_V1",
+  "created_at": "2026-08-07T15:25:00+02:00",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "authority_base_commit": "e1f8f8243c56ee728b3f64b27453473c77d24230",
+  "product_owner": "Ingolf Lohmann",
+  "product_owner_approval": "IMPLEMENTATION_APPROVED",
+  "requirement": "Persist every conforming input/output event and automatically route sufficiently granular, connectable, appropriately machine-proved new knowledge to Zenodo and, where a normative protocol/interoperability delta exists, to IETF.",
+  "implemented_paths": [
+    "AI",
+    "AI_CONTEXT.json",
+    "docs/AI_IO_ROUND_TRIP_AUTOPUBLISH.md",
+    "policy/AI_IO_ROUND_TRIP_AUTOPUBLISH_V1.json",
+    "state/authorization/delegations/OWNER_AI_IO_ROUND_TRIP_AUTOPUBLISH_V1.json",
+    "tools/qikvrt_io_round_trip.py",
+    "tools/qikvrt_io_zenodo_authorize.py",
+    ".github/workflows/qikvrt_io_round_trip_autopublish.yml",
+    "tests/test_ai_io_round_trip_autopublish.py"
+  ],
+  "reused_existing_authorities": [
+    "tools/qikvrt_zenodo_publish.py",
+    "tools/qikvrt_zenodo_machine_proof.py",
+    "policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md",
+    "docs/EFFECT_ACK_RELEASE_AUTOMATION.md",
+    "external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml"
+  ],
+  "acceptance_state": {
+    "universal_conforming_io_receipt_contract": "IMPLEMENTED_CANDIDATE",
+    "content_addressed_non_secret_payload_persistence": "IMPLEMENTED_CANDIDATE",
+    "rights_or_secret_digest_only_fallback": "IMPLEMENTED_CANDIDATE",
+    "claim_granularity_and_connectivity_router": "IMPLEMENTED_CANDIDATE",
+    "machine_proof_required_before_publication": "IMPLEMENTED_CANDIDATE",
+    "standing_product_owner_single_use_authorization_derivation": "IMPLEMENTED_CANDIDATE",
+    "automatic_zenodo_control_derivation": "IMPLEMENTED_CANDIDATE",
+    "automatic_zenodo_execution_from_committed_main_with_secure_credentials": "IMPLEMENTED_CANDIDATE",
+    "automatic_zenodo_post_effect_evidence_successor": "IMPLEMENTED_CANDIDATE",
+    "conditional_ietf_routing": "IMPLEMENTED_CANDIDATE",
+    "generic_exact_ietf_datatracker_submission_adapter": "OPEN_DETERMINISTIC_BLOCKER",
+    "platform_level_interception_of_clients_that_do_not_execute_qikvrt_capture": "OUTSIDE_REPOSITORY_CONTROL"
+  },
+  "first_deterministic_blocker": "The current repository has no generic exact-artifact IETF Datatracker production submitter comparable to tools/qikvrt_zenodo_publish.py. The official IETF submission process may require author authentication or email confirmation; therefore the workflow preserves an exact IETF candidate and fails closed rather than inventing a completed submission.",
+  "minimal_safe_continuation": [
+    "run exact-head repository-native materialization and CI for this candidate",
+    "promote only if applicable gates are terminal green",
+    "implement and verify an exact Datatracker submission adapter using a secure authenticated author capability and post-submission reobservation",
+    "add that adapter to the same publication queue without weakening the standing exact-artifact authorization contract"
+  ],
+  "external_effects_this_work_unit": {
+    "zenodo_publication": false,
+    "ietf_submission": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_ACCEPTANCE_CRITERION": false
+  }
+}
