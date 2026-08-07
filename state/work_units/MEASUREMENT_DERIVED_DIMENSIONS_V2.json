@@ -1,0 +1,49 @@
+{
+  "schema": "qikvrt_measurement_derived_dimensions_work_unit_v2",
+  "work_unit_id": "MEASUREMENT_DERIVED_DIMENSIONS_V2",
+  "repository": "Goldkelch/qik-vrt",
+  "authority_base": "8a7e94c08eebd6d385a144a0d1df9c473de667b2",
+  "branch": "agent/measurement-derived-dimensions-v2",
+  "purpose": "Strengthen the measurement-induced dimension separation result by deriving a unique dimension signature from an admissible additive calibration action rather than storing dimension as an independent channel label.",
+  "formal_target": {
+    "source": "docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean",
+    "axiom_audit": "docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensionsAxiomAudit.lean",
+    "toolchain": "leanprover/lean4:v4.19.0",
+    "theorem_count": 11,
+    "required_project_axioms": [],
+    "result_if_verified": "ADMISSIBLE_CALIBRATION_ACTION_UNIQUELY_DETERMINES_DIMENSION_SIGNATURE"
+  },
+  "model_contract": {
+    "premetric_ontology_fields": ["distinguishable", "causal"],
+    "measurement_dimension_field": "ABSENT",
+    "calibration_generators": 7,
+    "admissibility": [
+      "zero calibration has zero response",
+      "integer calibration composition is additive per generator"
+    ],
+    "dimension_derivation": "response of each calibration generator at unit step 1",
+    "uniqueness_gate": "any signature agreeing with all seven basis responses equals the derived signature"
+  },
+  "scientific_boundary": {
+    "nature_fundamentally_dimensionless": "NOT_INFERRED",
+    "qce_supplies_physical_calibration_action": "NOT_ESTABLISHED",
+    "si_derived": false,
+    "c_physical_value_derived": false,
+    "hbar_derived": false,
+    "G_derived": false,
+    "einstein_limit_derived": false,
+    "physical_correspondence": "NOT_INFERRED",
+    "empirical_confirmation": "NOT_INFERRED"
+  },
+  "external_effects": {
+    "zenodo": "NONE",
+    "ietf": "NONE",
+    "release_tag": "NONE",
+    "deployment": "NONE"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
