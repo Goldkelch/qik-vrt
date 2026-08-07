@@ -1,0 +1,130 @@
+{
+  "schema": "qikvrt_universal_io_knowledge_publication_pipeline_v1",
+  "version": "1.0",
+  "status": "PRODUCT_OWNER_AUTHORIZED_IMPLEMENTATION_CANDIDATE",
+  "product_owner": "Ingolf Lohmann",
+  "acceptance_criterion": {
+    "all_interface_io_is_persisted": true,
+    "all_modalities": true,
+    "durable_repository_receipt_required": true,
+    "machine_proof_when_formalizable": true,
+    "knowledge_candidate_classification_required": true,
+    "zenodo_publication_when_eligible_and_authorized": true,
+    "ietf_submission_when_protocol_relevant_eligible_and_authorized": true,
+    "automation_required": true
+  },
+  "pipeline": [
+    "CAPTURE",
+    "NORMALIZE",
+    "CONTENT_ADDRESS",
+    "ATTRIBUTE",
+    "PERSIST",
+    "REOBSERVE_EXACT_BYTES",
+    "CLASSIFY_EPISTEMIC_STATUS",
+    "EXTRACT_KNOWLEDGE_CANDIDATES",
+    "PROVE_OR_MARK_NONFORMALIZABLE",
+    "CHECK_GRANULARITY",
+    "CHECK_CONNECTIVITY",
+    "CHECK_RIGHTS_PRIVACY_SECURITY",
+    "CHECK_SCIENTIFIC_STATUS",
+    "BUILD_PUBLICATION_CANDIDATE",
+    "REOBSERVE_EXACT_HEAD",
+    "RUN_APPLICABLE_GATES",
+    "REQUEST_OR_CONSUME_SEPARATE_EXTERNAL_EFFECT_AUTHORIZATION",
+    "PUBLISH_ZENODO_IF_ELIGIBLE",
+    "SUBMIT_IETF_IF_PROTOCOL_RELEVANT_AND_ELIGIBLE",
+    "REOBSERVE_EXTERNAL_EFFECT",
+    "PERSIST_EFFECT_RECEIPT"
+  ],
+  "capture": {
+    "scope": "EVERY_INPUT_AND_OUTPUT_CROSSING_THE_QIKVRT_INTERFACE_ADAPTER",
+    "modalities": [
+      "text",
+      "audio",
+      "image",
+      "video",
+      "document",
+      "code",
+      "structured_data",
+      "tool_call",
+      "tool_result",
+      "metadata",
+      "derived_artifact"
+    ],
+    "minimum_receipt_fields": [
+      "event_id",
+      "direction",
+      "timestamp",
+      "modality",
+      "sha256",
+      "byte_length",
+      "actor_class",
+      "epistemic_type",
+      "source_binding",
+      "retention_class"
+    ],
+    "raw_secret_material_must_not_be_committed": true,
+    "private_or_rights_restricted_payloads_may_use_content_addressed_private_storage_with_repository_receipt": true
+  },
+  "knowledge_candidate": {
+    "newness_is_not_assumed": true,
+    "required_statuses": [
+      "NOT_A_KNOWLEDGE_CANDIDATE",
+      "DUPLICATE_OR_ALREADY_KNOWN",
+      "CLAIM_ONLY",
+      "FORMALIZABLE_CANDIDATE",
+      "FORMALLY_PROVED_MODEL_RELATIVE",
+      "EMPIRICALLY_TESTABLE",
+      "EMPIRICALLY_SUPPORTED",
+      "PUBLICATION_ELIGIBLE",
+      "PROTOCOL_STANDARDIZATION_ELIGIBLE"
+    ],
+    "formal_proof_boundary": "A_MACHINE_PROOF_ESTABLISHES_ONLY_THE_SPECIFIED_FORMAL_STATEMENT_UNDER_ITS_DECLARED_ASSUMPTIONS",
+    "empirical_boundary": "FORMAL_PROOF_DOES_NOT_BY_ITSELF_ESTABLISH_PHYSICAL_CORRESPONDENCE_OR_SCIENTIFIC_CONSENSUS"
+  },
+  "publication": {
+    "zenodo": {
+      "default_effect": "DISABLED",
+      "eligibility_requires": [
+        "stable_exact_bytes",
+        "provenance_receipt",
+        "rights_clearance",
+        "scientific_status_receipt",
+        "granularity_acceptance",
+        "connectivity_acceptance",
+        "applicable_tests_green",
+        "separate_external_effect_authorization"
+      ]
+    },
+    "ietf": {
+      "default_effect": "DISABLED",
+      "only_if_protocol_relevant": true,
+      "eligibility_requires": [
+        "standards_relevance",
+        "draft_materialization",
+        "reference_and_ipr_checks",
+        "applicable_tests_green",
+        "separate_external_effect_authorization"
+      ]
+    }
+  },
+  "automation": {
+    "manual_copy_from_chat_is_nonconforming": true,
+    "adapter_must_invoke_capture_automatically": true,
+    "repository_native_controller_must_resume_from_persisted_state": true,
+    "idempotency": "CONTENT_HASH_PLUS_EVENT_ID",
+    "semantic_noop_required": true,
+    "fail_closed_on_missing_evidence": true,
+    "irreversible_effects_require_exact_authorization": true
+  },
+  "nonclaims": {
+    "every_io_event_is_new_scientific_knowledge": false,
+    "every_io_event_must_be_public": false,
+    "every_formalizable_claim_is_true_of_nature": false,
+    "zenodo_publication_without_authorization": false,
+    "ietf_submission_without_authorization": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  }
+}
