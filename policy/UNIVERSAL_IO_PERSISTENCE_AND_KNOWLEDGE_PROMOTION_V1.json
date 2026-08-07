@@ -1,0 +1,69 @@
+{
+  "schema": "qikvrt_universal_io_persistence_and_knowledge_promotion_v1",
+  "status": "implementation_candidate",
+  "product_owner_authorization": {
+    "statement": "Freigabe zur Implementierung erteilt",
+    "scope": "Implement the acceptance criterion that every input/output interface event of any modality is durably and auditably persisted, then evaluated at suitable granularity and connectivity for machine-checkable new knowledge and publication routing.",
+    "external_effect_note": "This implementation authorization does not by itself assert that any concrete Zenodo or IETF production effect has already occurred."
+  },
+  "acceptance_criteria": {
+    "capture": [
+      "Every semantically relevant input and output crossing an artificial-cognitive input/output interface MUST produce a repository-addressable work-unit receipt.",
+      "Capture is modality-neutral: text, audio, image, video, binary attachment, structured data, tool result, generated artifact and mixed-modal bundles are covered.",
+      "Exact bytes MUST be content-addressed when bytes are available. If bytes cannot be stored directly in Git, the repository MUST persist an immutable digest, byte length, media type, provenance, retention location or transport reference, and an explicit availability state; a filename or chat-memory reference alone is insufficient.",
+      "Human, artificial-cognitive, hybrid and unresolved contribution origins MUST remain distinguishable.",
+      "No user-visible task may be treated as durably complete until its required repository work-unit receipt exists or a fail-closed persistence blocker is explicitly surfaced."
+    ],
+    "granularity_and_connectivity": [
+      "Captured material MUST be segmented only at a granularity that preserves semantic context and provenance.",
+      "Each segment MUST be linked to antecedent inputs, derived outputs, repository objects, claims, tests, proofs, measurements and publication candidates where applicable.",
+      "Deduplication MUST be content-addressed and MUST preserve lineage rather than deleting historical provenance."
+    ],
+    "knowledge_promotion": [
+      "Each persisted work unit MUST be classified as transport/context, attributed claim, derived result, formalizable proposition, machine-checked theorem/result, empirical observation, protocol delta, publication candidate, or unresolved.",
+      "Formalizable claims MAY be promoted to machine-checked knowledge only after explicit assumptions, exact source bindings, executable verification and a receipt are present.",
+      "Machine-checked derivability MUST NOT be represented as empirical confirmation or scientific consensus.",
+      "A failed or inapplicable proof MUST remain visible as an unresolved or rejected candidate and MUST NOT be silently dropped."
+    ],
+    "routing": [
+      "Repository persistence is mandatory for every covered work unit.",
+      "Zenodo routing MUST be evaluated automatically for stable, citable, sufficiently connected research artifacts or machine-checked knowledge packages.",
+      "IETF routing MUST be evaluated automatically only when an implementable interoperability, protocol, wire-format, state-machine, registry, security or operational delta exists.",
+      "Destination suitability MUST be decided from machine-readable evidence, not title or modality.",
+      "External publication effects remain fail-closed on the repository's applicable exact-byte, credential, rights, scientific-status and effect-authorization gates."
+    ],
+    "automation": [
+      "The normal path MUST require no repeated human request to persist, classify, connect, verify or route already-authorized work.",
+      "The pipeline MUST be idempotent, exact-head-bound, content-addressed and resumable.",
+      "A semantic NOOP MUST not create duplicate history noise.",
+      "Human intervention is reserved for genuinely non-machine-decidable truth, rights, credential or consequential-effect gates."
+    ]
+  },
+  "required_receipt_fields": [
+    "work_unit_id",
+    "timestamp",
+    "direction",
+    "modality",
+    "media_type",
+    "sha256",
+    "byte_length",
+    "source_or_generator",
+    "human_attribution",
+    "model_or_tool_identity",
+    "antecedents",
+    "derived_objects",
+    "claim_classification",
+    "verification_state",
+    "repository_binding",
+    "zenodo_disposition",
+    "ietf_disposition",
+    "effect_state"
+  ],
+  "fail_closed_invariants": [
+    "CHAT_MEMORY_IS_NOT_REPOSITORY_PERSISTENCE",
+    "FILENAME_IS_NOT_BYTE_IDENTITY",
+    "FORMAL_PROOF_IS_NOT_EMPIRICAL_CONFIRMATION",
+    "PUBLICATION_ROUTING_IS_NOT_PUBLICATION_EFFECT",
+    "NO_PASS_DONE_EQUALITY_OR_EFFECT_ACK_DONE_WITHOUT_CORRESPONDING_EVIDENCE"
+  ]
+}
