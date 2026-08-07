@@ -1,0 +1,74 @@
+{
+  "schema": "qikvrt_io_roundtrip_autonomous_publication_v1",
+  "contract_id": "IO-ROUNDTRIP-AUTONOMOUS-PUBLICATION-V1",
+  "state": "ACTIVE_IMPLEMENTATION_CANDIDATE",
+  "product_owner_authorization": {
+    "role": "Product Owner",
+    "name": "Ingolf Lohmann",
+    "authorized_at": "2026-08-07T15:25:00+02:00",
+    "scope": "IMPLEMENT_END_TO_END_IO_PERSISTENCE_AND_AUTONOMOUS_PUBLICATION_PIPELINE"
+  },
+  "invariant": "EVERY_INPUT_OUTPUT_ENVELOPE_IS_PERSISTED_BEFORE_DERIVED_EXTERNAL_PUBLICATION",
+  "accepted_modalities": [
+    "text",
+    "audio",
+    "image",
+    "video",
+    "binary",
+    "structured_data",
+    "tool_call",
+    "tool_result",
+    "repository_event",
+    "external_reference",
+    "other"
+  ],
+  "pipeline": [
+    "CAPTURE",
+    "CONTENT_ADDRESS",
+    "PERSIST_REPOSITORY_ENVELOPE",
+    "CLASSIFY_EPISTEMIC_STATUS",
+    "DETERMINE_GRANULARITY",
+    "DETERMINE_CONNECTABILITY",
+    "REQUIRE_MACHINE_PROOF_RECEIPT_FOR_NEW_KNOWLEDGE",
+    "QUEUE_PUBLICATION_CANDIDATE",
+    "ZENODO_PUBLISH_WHEN_AUTHORIZED_AND_CONFIGURED",
+    "IETF_SUBMIT_WHEN_APPLICABLE_AUTHORIZED_AND_CONFIGURED",
+    "PERSIST_EFFECT_RECEIPTS"
+  ],
+  "publication_eligibility": {
+    "new_knowledge_requires_machine_proof_receipt": true,
+    "zenodo_requires": [
+      "ELIGIBLE_GRANULARITY",
+      "CONNECTABLE",
+      "MACHINE_PROOF_RECEIPT",
+      "EXACT_ARTIFACT_BINDING",
+      "EXTERNAL_EFFECT_AUTHORIZATION",
+      "CONFIGURED_PUBLISHER"
+    ],
+    "ietf_requires": [
+      "ZENODO_ELIGIBLE_OR_INDEPENDENTLY_ARCHIVAL",
+      "IETF_APPLICABLE",
+      "INTERNET_DRAFT_BYTES_BOUND",
+      "EXTERNAL_EFFECT_AUTHORIZATION",
+      "CONFIGURED_SUBMITTER"
+    ]
+  },
+  "fail_closed": {
+    "missing_proof": "PERSIST_ONLY_NOT_PUBLICATION_ELIGIBLE",
+    "missing_authorization": "QUEUE_ONLY_NO_EXTERNAL_EFFECT",
+    "missing_publisher": "QUEUE_ONLY_NO_EXTERNAL_EFFECT",
+    "effect_failure": "PERSIST_FAILED_EFFECT_RECEIPT_AND_HOLD"
+  },
+  "epistemic_boundaries": [
+    "MACHINE_PROOF_IS_MODEL_RELATIVE",
+    "FORMAL_PROOF_DOES_NOT_IMPLY_EMPIRICAL_CONFIRMATION",
+    "OWNER_ASSERTION_DOES_NOT_IMPLY_SCIENTIFIC_CONSENSUS",
+    "PUBLICATION_DOES_NOT_IMPLY_TRUTH"
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "REPOSITORY_WIDE_COMPLETION": false
+  }
+}
