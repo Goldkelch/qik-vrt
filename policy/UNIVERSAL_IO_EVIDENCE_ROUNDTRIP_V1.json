@@ -1,0 +1,70 @@
+{
+  "schema": "qikvrt_universal_io_evidence_roundtrip_v1",
+  "version": 1,
+  "status": "PRODUCT_OWNER_AUTHORIZED_IMPLEMENTATION_CANDIDATE",
+  "product_owner": "Ingolf Lohmann",
+  "requirement": "Every semantically relevant item crossing an input/output interface, independent of modality or payload kind, is durably represented in a repository-bound work unit. At suitable granularity and only when epistemically and publication-wise connectable, a derived claim is machine-checked and advanced to a Zenodo publication candidate and, when protocol-standardization relevance exists, to an IETF Internet-Draft candidate. The repository-side path is automated and fail-closed.",
+  "scope": {
+    "input_kinds": ["text", "audio", "image", "file", "structured_data", "tool_result", "repository_observation", "model_output", "human_decision", "external_reference", "other"],
+    "output_kinds": ["text", "audio", "image", "file", "structured_data", "tool_request", "tool_result", "repository_mutation", "publication_candidate", "other"],
+    "semantic_relevance_rule": "Persist every interface event needed to reconstruct the work, provenance, decision, claim, or external effect. Transport-noise bytes MAY be normalized only under an explicitly versioned normalization rule while retaining a digest of the observed payload where technically available.",
+    "raw_sensitive_payload_rule": "Do not publish raw private, secret, credential, personal, copyrighted, or otherwise restricted payload merely to satisfy persistence. Persist a content-addressed/redacted evidence envelope when full bytes cannot lawfully or safely be stored."
+  },
+  "required_work_unit_fields": [
+    "schema", "work_unit_id", "observed_at", "direction", "kind", "provenance", "payload_binding", "epistemic_class", "persistence", "derivation", "publication"
+  ],
+  "pipeline": [
+    "OBSERVE_INTERFACE_EVENT",
+    "NORMALIZE_WITH_VERSIONED_RULE_OR_BIND_EXACT_BYTES",
+    "HASH_AND_PROVENANCE_BIND",
+    "PERSIST_REPOSITORY_WORK_UNIT",
+    "CLASSIFY_EPISTEMIC_STATUS",
+    "DETECT_DERIVABLE_CLAIMS",
+    "SELECT_SUITABLE_GRANULARITY",
+    "MACHINE_CHECK_WHEN_FORMALIZABLE",
+    "EMIT_EXECUTION_BOUND_PROOF_RECEIPT",
+    "CLASSIFY_PUBLICATION_CONNECTABILITY",
+    "BUILD_ZENODO_CANDIDATE_WHEN_ELIGIBLE",
+    "BUILD_IETF_CANDIDATE_WHEN_PROTOCOL_RELEVANT",
+    "REQUIRE_SEPARATE_EXTERNAL_EFFECT_AUTHORIZATION",
+    "VERIFY_EXTERNAL_EFFECT",
+    "PERSIST_EFFECT_RECEIPT",
+    "REOBSERVE_AND_CLOSE_LOOP"
+  ],
+  "epistemic_classes": [
+    "FORMAL_THEOREM_CANDIDATE",
+    "FORMAL_CONDITIONAL_CANDIDATE",
+    "EMPIRICAL_CLAIM",
+    "INTERPRETIVE_CLAIM",
+    "NORMATIVE_CLAIM",
+    "PROVENANCE_ONLY",
+    "UNRESOLVED"
+  ],
+  "machine_proof_rule": {
+    "formalizable": "Machine proof means proof/checking inside the declared formal system against exact source/toolchain bindings.",
+    "non_formalizable": "Do not fabricate a theorem. Persist evidence, epistemic classification, verification method and unresolved remainder instead.",
+    "empirical_boundary": "Formal derivability does not imply physical correspondence or empirical confirmation."
+  },
+  "publication_rule": {
+    "zenodo_candidate": "Eligible only after repository persistence, exact artifact binding, rights/license checks, claim granularity selection and required proof/evidence receipts.",
+    "ietf_candidate": "Eligible only when the result has protocol, interoperability, architecture, operational or standards-track/research-group relevance suitable for IETF-style publication.",
+    "external_effect": "Candidate generation is automatable; production Zenodo/IETF mutation remains a separately authorized and verified external effect unless a narrower standing authorization explicitly permits it."
+  },
+  "fail_closed_invariants": [
+    "REPAIR_NOT_IMPLY_BUILD",
+    "BUILD_NOT_IMPLY_KERNEL_RECEIPT",
+    "AUTHORITY_PROMOTION_NOT_IMPLY_AUTHORITY_MIRROR_EQUALITY",
+    "ZENODO_TRANSPORT_NOT_IMPLY_EFFECT_ACK_DONE",
+    "PERSISTENCE_NOT_IMPLY_TRUTH",
+    "FORMAL_PROOF_NOT_IMPLY_EMPIRICAL_CORRESPONDENCE",
+    "CANDIDATE_NOT_IMPLY_PUBLICATION"
+  ],
+  "automation_acceptance_criteria": {
+    "repository_capture": "A conforming client emits a work-unit envelope for every semantically relevant I/O event.",
+    "repository_gate": "CI validates every newly persisted work unit and rejects malformed or proof-inflating records.",
+    "claim_router": "Eligible claims are deterministically routed to proof/evidence and publication-candidate stages.",
+    "effect_boundary": "No production external mutation occurs without applicable authorization and post-effect receipt.",
+    "idempotency": "Identical normalized events produce stable content fingerprints and MUST NOT create semantic-noise loops.",
+    "reconstruction": "A later conforming client can reconstruct the work/decision/proof/publication state from repository evidence without relying on chat memory."
+  }
+}
