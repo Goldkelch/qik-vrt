@@ -64,7 +64,8 @@ jobs:
           python3 -B -m unittest -v \
             tests.test_qikvrt_publication_overview \
             tests.test_qikvrt_autonomous_self_heal \
-            tests.test_qikvrt_autonomous_pre_effect_controller
+            tests.test_qikvrt_autonomous_pre_effect_controller \
+            tests.test_qikvrt_expected_head_promotion
           python3 -B - <<'PY'
           import base64
           import os
@@ -128,6 +129,8 @@ jobs:
                   print(f'- `{path}`')
           PY
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
+          <!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->
+
           Repository-native scheduled pre-effect repair candidate.
 
           Exact bindings:
@@ -139,9 +142,9 @@ jobs:
           Exact allowlisted paths:
           $(cat /tmp/qikvrt-self-heal-paths.txt)
 
-          Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. The proposal workflow itself does not merge.
+          Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. This proposal workflow never merges; the separate expected-head promotion executor may merge only the exact reobserved head after independently rechecking those conditions.
 
-          Execution stops before Zenodo publication, IETF submission, DOI creation, public release, external credential consumption, or any other irreversible external effect and requires exact Product Owner authorization.
+          Execution stops before Zenodo publication, IETF submission, DOI creation, public release, external credential consumption, or any other irreversible external effect and requires the separately persisted exact external-effect authorization contract.
 
           No force push, release, deployment, Zenodo or IETF mutation, credentialed external write, scientific confirmation, physical correspondence, repository-wide PASS, FINAL_PASS, EFFECT_ACK_DONE, full synchronization, or symmetric canonicality is claimed.
           EOF
