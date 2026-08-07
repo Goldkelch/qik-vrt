@@ -1,0 +1,232 @@
+name: QIK-VRT QCE null calibration ratio proof
+
+on:
+  pull_request:
+    paths:
+      - 'docs/publications/2026-08-07-qce-null-calibration-ratio/**'
+      - 'docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+      - 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+      - 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+      - 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+      - 'state/work_units/QCE_NULL_CALIBRATION_RATIO_V1.json'
+      - '.github/workflows/qikvrt_qce_null_calibration_ratio.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-qce-null-calibration-ratio:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Lean 4.19 and verify upstream QCE package
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test: false
+
+      - name: Run actions/setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Compile exact upstream modules and QNCR bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          elan default leanprover/lean4:v4.19.0
+          module_dir="$RUNNER_TEMP/qikvrt-qncr-modules"
+          mkdir -p "$module_dir"
+          qce='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qca='docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+          qncr='docs/publications/2026-08-07-qce-null-calibration-ratio/QCENullCalibrationRatio.lean'
+          lean -E hasSorry -o "$module_dir/VRTCore_QCE_Model.olean" "$qce"
+          lean -E hasSorry -o "$module_dir/MeasurementDerivedDimensions.olean" "$mdd"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENowSerialization.olean" "$qns"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCECausalAxisBridge.olean" "$qca"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENullCalibrationRatio.olean" "$qncr"
+          echo "QNCR_MODULE_DIR=$module_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact eighteen-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit='docs/publications/2026-08-07-qce-null-calibration-ratio/QCENullCalibrationRatioAxiomAudit.lean'
+          LEAN_PATH="$QNCR_MODULE_DIR" lean -E hasSorry "$audit" \
+            | tee docs/publications/2026-08-07-qce-null-calibration-ratio/QNCR_AXIOM_OUTPUT.txt
+
+      - name: Validate inventory and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          folder = root / 'docs/publications/2026-08-07-qce-null-calibration-ratio'
+          source = folder / 'QCENullCalibrationRatio.lean'
+          audit = folder / 'QCENullCalibrationRatioAxiomAudit.lean'
+          output = folder / 'QNCR_AXIOM_OUTPUT.txt'
+          qce = root / 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd = root / 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns = root / 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qca = root / 'docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+
+          prefix = 'QIKVRT.V2.Physics.QCENullCalibrationRatio.'
+          expected = [prefix + name for name in [
+              'QNCR_T01_normalized_and_si_share_causal_evidence',
+              'QNCR_T02_normalized_and_si_calibrations_are_distinct',
+              'QNCR_T03_representation_has_stable_null_boundary',
+              'QNCR_T04_representation_has_speed_dimension',
+              'QNCR_T05_reencoding_preserves_causal_evidence',
+              'QNCR_T06_reencoding_preserves_speed_dimension',
+              'QNCR_T07_normalized_calibration_has_unit_time',
+              'QNCR_T08_si_calibration_has_unit_time',
+              'QNCR_T09_normalized_c_token_is_one',
+              'QNCR_T10_si_like_c_token_is_299792458',
+              'QNCR_T11_fixed_reading_determines_c_token',
+              'QNCR_T12_fixed_reading_token_is_unique',
+              'QNCR_T13_normalized_to_si_conversion_factors',
+              'QNCR_T14_normalized_to_si_preserves_unit_time',
+              'QNCR_T15_time_preserving_conversion_keeps_unit_time',
+              'QNCR_T16_one_scalar_determines_c_token',
+              'QNCR_T17_same_causal_evidence_allows_distinct_c_tokens',
+              'QNCR_T18_unit_time_calibration_has_unique_c_token',
+          ]]
+
+          source_text = source.read_text(encoding='utf-8')
+          forbidden = re.compile(r'(?m)^\s*(axiom|opaque\s+axiom|theorem\s+[^\n]*:=\s*by\s+sorry\b)')
+          if forbidden.search(source_text):
+              raise SystemExit('BLOCK forbidden project proof escape in QNCR source')
+
+          text = output.read_text(encoding='utf-8')
+          pat = re.compile(
+              r"'([^']+)' "
+              r"(?:does not depend on any axioms|depends on axioms:\s*\[([^\]]*)\])",
+              re.MULTILINE,
+          )
+          reports = {}
+          cursor = 0
+          for match in pat.finditer(text):
+              residual = text[cursor:match.start()]
+              if residual.strip():
+                  raise SystemExit(
+                      f'BLOCK unexpected axiom output segment: {residual!r}'
+                  )
+              name = match.group(1)
+              axioms = [
+                  item.strip()
+                  for item in (match.group(2) or '').split(',')
+                  if item.strip()
+              ]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+              cursor = match.end()
+          if text[cursor:].strip():
+              raise SystemExit(
+                  f'BLOCK unexpected trailing axiom output: {text[cursor:]!r}'
+              )
+
+          if list(reports) != expected:
+              raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
+
+          allowed_kernel_axioms = {'propext', 'Quot.sound', 'Classical.choice'}
+          kernel_axioms = sorted({axiom for values in reports.values() for axiom in values})
+          project_axioms = sorted(set(kernel_axioms) - allowed_kernel_axioms)
+          if project_axioms:
+              raise SystemExit(f'BLOCK unexpected project axiom dependency: {project_axioms!r}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': str(path),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': subprocess.check_output(
+                      ['git', 'hash-object', str(path)], text=True
+                  ).strip(),
+              }
+
+          receipt = {
+              'schema': 'qikvrt_qce_null_calibration_ratio_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': subprocess.check_output(['lean', '--version'], text=True).strip(),
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'upstream_qce_source': identity(qce),
+              'upstream_mdd_source': identity(mdd),
+              'upstream_qns_source': identity(qns),
+              'upstream_qca_source': identity(qca),
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'allowed_kernel_axioms': sorted(allowed_kernel_axioms),
+              'kernel_axioms_observed': kernel_axioms,
+              'project_axioms': project_axioms,
+              'formal_result': 'FIXED_UNIT_TIME_LEAVES_ONE_SCALAR_C_TOKEN_WHILE_IDENTICAL_QCE_NULL_EVIDENCE_DOES_NOT_FIX_ITS_NUMERICAL_VALUE',
+              'speed_dimension': 'L_T_NEG_ONE_FROM_QCA',
+              'normalized_c_token': 1,
+              'si_like_c_token': 299792458,
+              'si_like_token_status': 'EXPLICIT_CALIBRATION_EXAMPLE_NOT_QCE_DERIVATION',
+              'physical_c_value_derived': False,
+              'si_second_derived': False,
+              'si_metre_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'physical_correspondence': 'NOT_INFERRED',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          (folder / 'QNCR_KERNEL_RECEIPT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload QNCR exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-qce-null-calibration-ratio-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-qce-null-calibration-ratio/QNCR_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-qce-null-calibration-ratio/QNCR_KERNEL_RECEIPT.json
