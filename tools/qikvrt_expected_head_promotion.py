@@ -16,7 +16,7 @@ import pathlib
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
-PROMOTION_MARKER = "<!-- qikvrt-expected-head-promotion:enabled -->"
+PROMOTION_MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 SUCCESS_CONCLUSIONS = {"success"}
 NON_ADVERSE_CONCLUSIONS = {"success", "skipped"}
 
@@ -123,9 +123,6 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         if run.get("conclusion") not in SUCCESS_CONCLUSIONS:
             return _blocked(snapshot, "REQUIRED_EXACT_HEAD_GATE_NOT_GREEN", f"required workflow is not successful: {gate}={run.get('conclusion')}")
 
-    # All other workflows observed for this exact head must also be terminal and
-    # non-adverse. Explicitly skipped conditionals are neutral; cancellation,
-    # action_required, failure, stale, or active execution remains fail-closed.
     for name, run in sorted(latest.items()):
         if name in required:
             continue
