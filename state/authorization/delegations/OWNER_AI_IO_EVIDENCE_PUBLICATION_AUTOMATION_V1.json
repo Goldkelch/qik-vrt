@@ -1,0 +1,153 @@
+{
+  "schema": "qikvrt-owner-delegation/1.0",
+  "delegation_id": "OWNER_AI_IO_EVIDENCE_PUBLICATION_AUTOMATION_V1",
+  "status": "ACTIVE_CANDIDATE",
+  "product_owner": "Ingolf Lohmann",
+  "scope": "QIK-VRT artificial-cognitive input/output persistence, knowledge derivation, machine verification, and bounded automated publication",
+  "normative_requirement": "Every semantically relevant item crossing a conforming artificial-cognitive input/output interface MUST be durably represented in the repository at suitable granularity with provenance. Qualifying derived knowledge MUST be evaluated for connectivity, machine-verifiable evidence, and publication eligibility. When all exact-head, evidence, rights, security, novelty, granularity, idempotency, credential, and external-effect preconditions are satisfied, the automation MUST materialize the qualified result as an exact-artifact-bound Zenodo publication and, when the result is protocol/specification material suitable for Internet standardization, as an IETF publication candidate or update through the repository's authorized IETF path.",
+  "pipeline": [
+    "CAPTURE_IO_EVENT",
+    "NORMALIZE_AND_CONTENT_ADDRESS",
+    "CLASSIFY_EPISTEMIC_TYPE",
+    "BIND_HUMAN_AI_JOINT_PROVENANCE",
+    "PERSIST_REPOSITORY_NATIVE_WORK_UNIT",
+    "DETECT_SEMANTIC_NOVELTY",
+    "SELECT_SUITABLE_GRANULARITY",
+    "ASSESS_CONNECTIVITY_TO_EXISTING_KNOWLEDGE",
+    "FORMALIZE_WHEN_MACHINE_PROVABLE",
+    "EXECUTE_APPLICABLE_MACHINE_PROOFS_AND_TESTS",
+    "MATERIALIZE_EVIDENCE_RECEIPT",
+    "CLASSIFY_PUBLICATION_ELIGIBILITY",
+    "FREEZE_AND_HASH_EXACT_ARTIFACT",
+    "REOBSERVE_EXACT_HEAD_AND_EXTERNAL_EFFECT_GATES",
+    "PUBLISH_ZENODO_WHEN_QUALIFIED_AND_AUTHORIZED",
+    "PUBLISH_OR_UPDATE_IETF_CANDIDATE_WHEN_PROTOCOL_RELEVANT_AND_AUTHORIZED",
+    "CAPTURE_EXTERNAL_EFFECT_RECEIPTS",
+    "BACKBIND_PUBLICATION_RECEIPTS_TO_REPOSITORY",
+    "REOBSERVE_AND_VERIFY_ROUND_TRIP"
+  ],
+  "io_coverage": {
+    "modalities": [
+      "text",
+      "code",
+      "structured_data",
+      "images",
+      "audio",
+      "video",
+      "files",
+      "tool_calls",
+      "tool_results",
+      "repository_reads",
+      "repository_writes",
+      "external_references",
+      "human_decisions",
+      "model_decisions",
+      "errors",
+      "uncertainty",
+      "receipts"
+    ],
+    "rule": "Coverage is semantic, not necessarily verbatim. Raw secrets, credentials, prohibited personal data, legally restricted material, non-publishable copyrighted payloads, and redundant transport noise MUST NOT be persisted merely to satisfy completeness. Instead persist a provenance-preserving typed receipt, digest, redaction marker, or reference sufficient for auditability whenever lawful and technically possible."
+  },
+  "granularity": {
+    "principle": "Persist the smallest independently addressable work unit that preserves meaning, provenance, dependency edges, and reproducibility without fragmenting evidence into unusable noise.",
+    "deduplication": "Content-address identical semantic payloads and reuse prior immutable evidence rather than duplicating it.",
+    "aggregation": "Closely coupled events MAY be bundled when the bundle is the smallest unit that remains independently interpretable and verifiable."
+  },
+  "knowledge_qualification": {
+    "new_knowledge_requires": [
+      "semantic novelty or materially strengthened evidence",
+      "explicit dependency and provenance edges",
+      "machine-checkable claim/evidence boundary where applicable",
+      "no promotion from owner assertion, model output, or resonance artifact to empirical fact without independent evidence",
+      "a reproducible verification recipe",
+      "a stable exact-artifact digest"
+    ],
+    "publication_is_not_required_for": [
+      "mere conversational repetition",
+      "transport-only acknowledgements",
+      "unresolved speculation without a publishable evidence object",
+      "secret or legally restricted content",
+      "material whose rights status forbids the intended publication",
+      "duplicate knowledge already represented by an equivalent canonical artifact"
+    ]
+  },
+  "machine_proof_boundary": {
+    "formal_proof": "A machine proof establishes derivability within its declared formal model and assumptions.",
+    "software_verification": "Tests and executable receipts establish the tested software/evidence predicates only.",
+    "empirical_boundary": "Neither formal proof nor software verification alone establishes independent physical correspondence or scientific consensus.",
+    "publication_claims": "Published metadata MUST preserve these distinctions."
+  },
+  "automation": {
+    "default_mode": "FULLY_AUTOMATED_FAIL_CLOSED",
+    "unchanged_semantic_fingerprint": "NOOP",
+    "changed_repository_state": "REVIEWABLE_OR_POLICY_AUTHORIZED_SUCCESSOR",
+    "external_effect": "Allowed only after exact-artifact authorization, terminal applicable gates, credentials/permissions, idempotency check, rights/security review predicates, and reobservation immediately before effect.",
+    "effect_receipt_required": true,
+    "retry_policy": "Idempotent retries only; never create duplicate Zenodo/IETF effects for the same publication identity and exact artifact.",
+    "human_intervention": "Not required for routine qualifying effects already covered by this standing delegation, but required whenever an applicable policy, rights, scientific-status, credential, or ambiguity gate explicitly requires human review."
+  },
+  "zenodo": {
+    "target": "Qualified new knowledge and stable evidence artifacts",
+    "required_before_effect": [
+      "frozen exact bytes",
+      "artifact SHA-256",
+      "publication metadata",
+      "rights/license classification",
+      "machine-verification receipt",
+      "exact-head binding",
+      "novelty/deduplication determination",
+      "credential and API availability",
+      "pre-effect reobservation"
+    ],
+    "post_effect": [
+      "record DOI/record identifier",
+      "capture returned metadata and timestamp",
+      "verify published artifact identity",
+      "persist repository-native effect receipt"
+    ]
+  },
+  "ietf": {
+    "condition": "Only when the knowledge object is protocol, interoperability, architecture, terminology, operational practice, or specification material suitable for the repository's IETF track.",
+    "required_before_effect": [
+      "IETF-suitable source form",
+      "repository-native provenance",
+      "exact source digest",
+      "applicable draft lint/build success",
+      "rights and attribution checks",
+      "current submission/update authorization path",
+      "credential and endpoint availability",
+      "pre-effect reobservation"
+    ],
+    "post_effect": [
+      "capture submission/update receipt",
+      "bind public draft/version identifiers",
+      "verify repository/public artifact correspondence",
+      "persist effect receipt"
+    ]
+  },
+  "forbidden": [
+    "force push",
+    "history rewrite",
+    "silent provenance erasure",
+    "invented proof success",
+    "invented empirical confirmation",
+    "duplicate external publication caused by retry",
+    "publication of secrets or credentials",
+    "publication that violates declared rights restrictions",
+    "claiming PASS, FINAL_PASS, EFFECT_ACK_DONE, repository equality, or scientific consensus without corresponding evidence"
+  ],
+  "acceptance_criteria": [
+    "Every conforming AI bootstrap loads this delegation.",
+    "Every semantically relevant I/O event produces either a durable repository-native work unit or an explicit typed exclusion/redaction receipt.",
+    "Persisted work units carry content identity, provenance, epistemic type, dependency edges, and reproducibility metadata appropriate to their modality.",
+    "The pipeline deterministically classifies semantic novelty and suitable granularity.",
+    "Qualifying claims are machine-verified to the strongest applicable proof/test level before publication eligibility is asserted.",
+    "Qualified publishable knowledge is automatically frozen, hashed, exact-head bound, and routed to Zenodo when all pre-effect gates are satisfied.",
+    "Protocol/specification-relevant qualified knowledge is additionally routed through the repository's IETF path when all applicable gates are satisfied.",
+    "Every external effect has a repository-native receipt and round-trip verification.",
+    "Unchanged semantic state is NOOP and retries are idempotent.",
+    "A browser HTTP GET of /AI is not falsely treated as a GitHub repository event; the semantic bootstrap client and repository-side scheduled/dispatch mechanisms are the execution triggers."
+  ],
+  "evidence_boundary": "This delegation materializes the Product-Owner requirement and authorization. It does not itself prove that all executable capture, proof, Zenodo, or IETF adapters are already implemented or currently passing. Completion requires exact-head executable tests and effect receipts for the implemented pipeline.",
+  "signature": "Quod erat demonstrandum — Ingolf Lohmann (Product Owner)"
+}
