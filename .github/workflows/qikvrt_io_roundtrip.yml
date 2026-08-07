@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT I/O round-trip
+
+on:
+  workflow_dispatch:
+    inputs:
+      envelope_json:
+        description: JSON object representing one input/output envelope
+        required: true
+        type: string
+      execute_effects:
+        description: Execute configured external publication adapters when eligible
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-io-roundtrip-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  persist-and-route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact triggering revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Persist envelope and classify publication eligibility
+        id: roundtrip
+        shell: bash
+        env:
+          ENVELOPE_JSON: ${{ inputs.envelope_json }}
+          EXECUTE_EFFECTS: ${{ inputs.execute_effects }}
+          QIKVRT_EXTERNAL_EFFECT_AUTHORIZATION: ${{ secrets.QIKVRT_EXTERNAL_EFFECT_AUTHORIZATION }}
+          QIKVRT_ZENODO_PUBLISH_CMD: ${{ vars.QIKVRT_ZENODO_PUBLISH_CMD }}
+          QIKVRT_IETF_SUBMIT_CMD: ${{ vars.QIKVRT_IETF_SUBMIT_CMD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ENVELOPE_JSON" > /tmp/qikvrt-envelope.json
+          args=(--input /tmp/qikvrt-envelope.json)
+          if [[ "$EXECUTE_EFFECTS" == "true" ]]; then
+            args+=(--execute-effects)
+          fi
+          python3 -B tools/qikvrt_io_roundtrip.py "${args[@]}" | tee /tmp/qikvrt-result.json
+
+      - name: Commit repository-native persistence when bytes changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- evidence/io-roundtrip; then
+            echo "NOOP: no new repository bytes"
+            exit 0
+          fi
+          git config user.name "qik-vrt-automation"
+          git config user.email "qik-vrt-automation@users.noreply.github.com"
+          git add evidence/io-roundtrip
+          git commit -m "evidence(io): persist interface round-trip envelope"
+          git push origin HEAD:${GITHUB_REF_NAME}
