@@ -1,0 +1,94 @@
+name: QIK-VRT Round Trip final byte freeze
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_round_trip_final_byte_freeze.yml'
+      - 'state/work_units/ROUND_TRIP_FINAL_BYTE_FREEZE_V1.json'
+      - 'tests/test_round_trip_final_byte_freeze.py'
+      - 'docs/publications/2026-08-07-universum-als-round-trip/**'
+      - 'evidence/receipts/corpus-correction-temporal-precedence-current.json'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-round-trip-final-byte-freeze:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          printf 'ROUND_TRIP_FREEZE_HEAD=%s\n' "$head" >> "$GITHUB_ENV"
+          printf 'ROUND_TRIP_FREEZE_TREE=%s\n' "$tree" >> "$GITHUB_ENV"
+
+      - name: Run focused byte-freeze regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_round_trip_final_byte_freeze
+
+      - name: Emit exact-head receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('.')
+          freeze = root / 'state/work_units/ROUND_TRIP_FINAL_BYTE_FREEZE_V1.json'
+          raw = freeze.read_bytes()
+          receipt = {
+              'schema': 'qikvrt_round_trip_final_byte_freeze_exact_head_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_head': os.environ['ROUND_TRIP_FREEZE_HEAD'],
+              'source_tree': os.environ['ROUND_TRIP_FREEZE_TREE'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'freeze_work_unit_sha256': hashlib.sha256(raw).hexdigest(),
+              'focused_regression': 'SUCCESS',
+              'primary_publication_bytes_frozen': True,
+              'zenodo_upload_bundle_frozen': False,
+              'exact_artifact_zenodo_authorization_established': False,
+              'zenodo_effect_executed': False,
+              'physical_correspondence': 'NOT_ESTABLISHED',
+              'empirical_confirmation': 'NOT_INFERRED',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          (root / '.qikvrt/evidence/ROUND_TRIP_FINAL_BYTE_FREEZE_EXACT_HEAD_RECEIPT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          PY
+
+      - name: Upload exact-head receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-round-trip-final-byte-freeze-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: .qikvrt/evidence/ROUND_TRIP_FINAL_BYTE_FREEZE_EXACT_HEAD_RECEIPT.json
