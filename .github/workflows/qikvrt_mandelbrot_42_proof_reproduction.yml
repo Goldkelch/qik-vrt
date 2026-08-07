@@ -100,6 +100,19 @@ jobs:
           lean_version="$(lake env lean --version)"
           baseline=""
 
+          run_checked() {
+            label="$1"
+            outfile="$2"
+            shift 2
+            echo "RUN $label"
+            if ! "$@" > "$outfile" 2>&1; then
+              echo "BLOCK $label"
+              cat "$outfile"
+              return 1
+            fi
+            echo "SUCCESS $label"
+          }
+
           for i in $(seq 1 42); do
             loop="$(printf '%02d' "$i")"
             out="$root/loop-$loop"
@@ -110,16 +123,21 @@ jobs:
             lake build QIKVRTFormalization
             lake build QIKVRTUniversalOntology
 
-            lake env lean QIKVRTUniversalOntology/AxiomAudit.lean \
-              > "$out/core-axioms.txt" 2>&1
-            lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean \
-              > "$out/extended-axioms.txt" 2>&1
-            lake env lean QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean \
-              > "$out/measurement-independence-axioms.txt" 2>&1
-            lake env lean QIKVRTFormalization/Hardware/AxiomAudit.lean \
-              > "$out/hardware-axioms.txt" 2>&1
-            python3 -B scripts/audit_lean_axioms.py \
-              > "$out/repository-axiom-policy.txt" 2>&1
+            run_checked "loop_${loop}_core_axiom_audit" \
+              "$out/core-axioms.txt" \
+              lake env lean QIKVRTUniversalOntology/AxiomAudit.lean
+            run_checked "loop_${loop}_extended_axiom_audit" \
+              "$out/extended-axioms.txt" \
+              lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean
+            run_checked "loop_${loop}_measurement_independence_axiom_audit" \
+              "$out/measurement-independence-axioms.txt" \
+              lake env lean QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean
+            run_checked "loop_${loop}_hardware_axiom_audit" \
+              "$out/hardware-axioms.txt" \
+              lake env lean QIKVRTFormalization/Hardware/AxiomAudit.lean
+            run_checked "loop_${loop}_repository_axiom_policy" \
+              "$out/repository-axiom-policy.txt" \
+              python3 -B scripts/audit_lean_axioms.py
 
             LOOP_DIR="$out" HEAD_SHA="$HEAD_SHA" TREE_SHA="$TREE_SHA" LEAN_VERSION="$lean_version" \
               python3 - <<'PY'
@@ -299,10 +317,11 @@ jobs:
           PY
 
       - name: Upload 42-loop evidence bundle
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-mandelbrot-42-proof-reproduction-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             formalization/QIKVRT_Formalization_v2.0/.lake/mandelbrot-42/**
