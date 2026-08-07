@@ -2,15 +2,17 @@
 
 ## Product-Owner requirement
 
-Every artifact crossing a QIK-VRT input/output interface, independent of modality, MUST obtain a durable repository receipt. Where an artifact contains a suitably granular, attributable and non-duplicate work result or new knowledge claim, the system MUST classify its evidence, run machine-verifiable gates, and deterministically route eligible stable bytes to Zenodo and, for protocol/interoperability results, to an IETF publication path.
+Every artifact crossing a QIK-VRT input/output interface, independent of modality, MUST obtain both a durable repository receipt and a reconstructible exact-payload binding. Where policy permits the bytes, the repository stores them as a content-addressed object. Sensitive or rights-restricted bytes instead require an explicit privacy-preserving object reference plus the exact SHA-256; a bare digest is not accepted.
+
+Where an artifact contains a suitably granular, attributable and non-duplicate work result or new knowledge claim, the system MUST classify its evidence, run machine-verifiable gates, and deterministically route eligible stable bytes to Zenodo and, for protocol/interoperability results, to an IETF publication path.
 
 The target operating mode is fully automatic after ingress. Human copy/paste is not part of the steady-state pipeline.
 
 ## Normative chain
 
-`CAPTURE -> CONTENT_ADDRESS -> PERSIST_RECEIPT -> PROVENANCE_BIND -> GRANULARIZE -> NOVELTY_CLASSIFY -> PROOF_CLASSIFY -> VERIFY -> PUBLICATION_ROUTE -> EFFECT_GATE -> PUBLISH_OR_RETAIN -> REOBSERVE_EFFECT -> PERSIST_EFFECT_RECEIPT`
+`CAPTURE -> CONTENT_ADDRESS -> PERSIST_PAYLOAD_OR_BOUND_REFERENCE -> PERSIST_RECEIPT -> PROVENANCE_BIND -> GRANULARIZE -> NOVELTY_CLASSIFY -> PROOF_CLASSIFY -> VERIFY -> PUBLICATION_ROUTE -> EFFECT_GATE -> PUBLISH_OR_RETAIN -> REOBSERVE_EFFECT -> PERSIST_EFFECT_RECEIPT`
 
-No stage may silently discard an event. A duplicate or non-publishable event still receives an append-only receipt; it simply does not create publication noise.
+No stage may silently discard an event. A duplicate or non-publishable event still receives an append-only receipt and retains the same content-addressed payload binding; it simply does not create publication noise.
 
 ## Evidence classes
 
@@ -22,7 +24,16 @@ The canonical scientific boundary remains:
 
 ## Payload handling
 
-Text may be persisted as repository content or as a content-addressed artifact. Binary and multimodal payloads may be stored as content-addressed artifacts. Sensitive or rights-restricted bytes use a digest-and-metadata receipt unless policy explicitly permits storing the bytes. In every case, the exact payload digest and provenance remain reconstructible.
+The ingress accepts exactly one of:
+
+- `payload_text`, persisted as its exact UTF-8 bytes;
+- `payload_json`, persisted in canonical JSON form;
+- `payload_base64`, decoded and persisted as exact binary bytes;
+- `payload_sha256` together with a non-empty `payload_reference` for sensitive, rights-restricted or externally retained bytes.
+
+Inline payloads are bounded to 16 MiB in this first implementation. Exact bytes are stored under `state/io_round_trip/payloads/sha256/<prefix>/<sha256>.bin`; repeat occurrences reuse the same immutable object. Receipts record the path, byte count, digest source and storage mode. A hash without bytes or a bound external reference fails closed.
+
+This is payload persistence, not a rights decision. Publication still requires independent license, privacy, scientific-status and effect gates.
 
 ## Zenodo route
 
@@ -38,7 +49,7 @@ IETF routing is narrower. Only `NEW_PROTOCOL_RESULT` artifacts with protocol/int
 
 `tools/qikvrt_io_round_trip.py` is the repository-native ingress materializer. Every conforming human-machine interface, agent adapter, API bridge, audio/image ingestion path and repository bot MUST invoke it (or a byte-equivalent implementation of the same policy) for each logical input and output event.
 
-The repository workflow `.github/workflows/qikvrt_io_round_trip.yml` provides a GitHub-native dispatch path and automatically commits newly generated receipts to its bounded branch. Platform-level interfaces outside this repository remain responsible for forwarding their events into this ingress path; a static GitHub repository cannot intercept traffic that a host platform never sends to it.
+The repository workflow `.github/workflows/qikvrt_io_round_trip.yml` provides a GitHub-native dispatch path and automatically commits newly generated payload objects and receipts to its bounded branch. Platform-level interfaces outside this repository remain responsible for forwarding their events into this ingress path; a static GitHub repository cannot intercept traffic that a host platform never sends to it.
 
 ## Fail-closed semantics
 
