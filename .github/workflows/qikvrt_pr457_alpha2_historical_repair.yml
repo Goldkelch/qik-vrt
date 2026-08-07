@@ -20,7 +20,7 @@ jobs:
   repair:
     if: github.repository == 'Goldkelch/qik-vrt'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,66 +29,210 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Execute exact-head repair and full repository gates
+      - name: Patch historical closure, verify fixed bytes, and persist
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode <<'PAYLOAD' | gzip --decompress > "$RUNNER_TEMP/qikvrt-pr457-repair.py"
-          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
-          PAYLOAD
-          python3 -B "$RUNNER_TEMP/qikvrt-pr457-repair.py"
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          expected_archive_sha256="500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689"
+
+          python3 -B - <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"BLOCK: expected exactly one replacement in {path}: {count}"
+                  )
+              path.write_text(
+                  text.replace(old, new, 1),
+                  encoding="utf-8",
+                  newline="\n",
+              )
+
+          package = Path(
+              "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py"
+          )
+          exclusion_anchor = (
+              '    "formalization/QIKVRT_Formalization_v2.0/tests/'
+              'test_quantum_classical_runtime_article.py",\n'
+              '}\n'
+          )
+          post_alpha2_paths = (
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Decision/ObservationSufficiency.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AuthorityMirrorWitness.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AxiomAudit.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/MeasurementIndependence.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/WorldFormula/AxiomAudit.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/WorldFormula/Relations.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/AxiomAudit.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/Core.lean",
+              "formalization/QIKVRT_Formalization_v2.0/QIKVRTUniversalOntology/ExtendedAxiomAudit.lean",
+              "formalization/QIKVRT_Formalization_v2.0/evidence/AUTHORITY_MIRROR_NVM_FINITE_MODEL_RECEIPT.json",
+              "formalization/QIKVRT_Formalization_v2.0/scripts/make_universal_ontology_kernel_receipt.py",
+              "formalization/QIKVRT_Formalization_v2.0/scripts/verify_authority_mirror_nvm_finite.py",
+              "formalization/QIKVRT_Formalization_v2.0/scripts/verify_universal_ontology.py",
+              "formalization/QIKVRT_Formalization_v2.0/tests/test_world_formula_relation_kernel.py",
+              "formalization/QIKVRT_Formalization_v2.0/universal_ontology/CLAIM_MATRIX.json",
+              "formalization/QIKVRT_Formalization_v2.0/universal_ontology/README.md",
+              "formalization/QIKVRT_Formalization_v2.0/universal_ontology/SOURCE_SCOPE.json",
+              "formalization/QIKVRT_Formalization_v2.0/universal_ontology/WORLD_FORMULA_CLAIM_MATRIX.json",
+          )
+          exclusion_replacement = exclusion_anchor[:-2] + "".join(
+              f'    "{value}",\n' for value in post_alpha2_paths
+          ) + "}\n"
+          replace_once(package, exclusion_anchor, exclusion_replacement)
+
+          package_lake_anchor = (
+              '        "formalization/QIKVRT_Formalization_v2.0/'
+              'QIKVRTFormalization.lean",\n'
+          )
+          package_lake_replacement = (
+              '        "formalization/QIKVRT_Formalization_v2.0/lakefile.toml",\n'
+              + package_lake_anchor
+          )
+          replace_once(package, package_lake_anchor, package_lake_replacement)
+
+          freeze = Path("tools/qikvrt_freeze_alpha2_status.py")
+          freeze_lake_anchor = (
+              '    "formalization/QIKVRT_Formalization_v2.0/'
+              'QIKVRTFormalization.lean",\n'
+          )
+          freeze_lake_replacement = (
+              '    "formalization/QIKVRT_Formalization_v2.0/lakefile.toml",\n'
+              + freeze_lake_anchor
+          )
+          replace_once(freeze, freeze_lake_anchor, freeze_lake_replacement)
+
+          test = Path("tests/test_formalization_v2_release_workflow.py")
+          replace_once(
+              test,
+              'ZERO64 = "0" * 64\n',
+              'ZERO64 = "0" * 64\n'
+              'ALPHA2_ARCHIVE_SHA256 = '
+              '"500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689"\n',
+          )
+          replace_once(
+              test,
+              '    def test_package_is_reproducible_and_has_exact_provenance(self) -> None:\n'
+              '        with tempfile.TemporaryDirectory(\n',
+              '    def test_package_is_reproducible_and_has_exact_provenance(self) -> None:\n'
+              '        self.assertEqual(sha256(ARCHIVE), ALPHA2_ARCHIVE_SHA256)\n'
+              '        with tempfile.TemporaryDirectory(\n',
+          )
+
+          workflow = Path(".github/workflows/qikvrt_batch04_integrity.yml")
+          replace_once(
+              workflow,
+              '      - name: Rebuild deterministic formalization release bundle when present\n',
+              '      - name: Rebuild immutable Alpha-2 formalization release bundle when present\n',
+          )
+          replace_once(
+              workflow,
+              '          python3 "$script" \\\n',
+              '          python3 -B tools/qikvrt_freeze_alpha2_status.py generate\n'
+              '          python3 "$script" \\\n',
+          )
+          replace_once(
+              workflow,
+              '            --zenodo-checksums "$sums"\n'
+              "          python3 - <<'PY'\n",
+              '            --zenodo-checksums "$sums"\n'
+              '          python3 -B tools/qikvrt_freeze_alpha2_status.py check\n'
+              "          python3 - <<'PY'\n",
+          )
+          replace_once(
+              workflow,
+              '            release/formalization-v2-alpha2-zenodo.json \\\n',
+              '            release/formalization-v2-alpha2-zenodo.json \\\n'
+              '            release/formalization-v2/alpha2-frozen \\\n',
+          )
+
+          Path(
+              ".github/workflows/qikvrt_pr457_alpha2_historical_repair.yml"
+          ).unlink()
+          PY
+
+          python3 -B tools/qikvrt_freeze_alpha2_status.py generate
+          (
+            cd formalization/QIKVRT_Formalization_v2.0
+            python3 scripts/materialize_completion.py
+            python3 scripts/render_completion_proof_map.py
+            python3 scripts/render_completion_verification_report.py
+            python3 scripts/materialize_completion_proof_manifest.py
+            python3 scripts/materialize_completion.py --check
+            python3 scripts/render_completion_proof_map.py --check
+            python3 scripts/render_completion_verification_report.py --check
+            python3 scripts/materialize_completion_proof_manifest.py --check
+            python3 scripts/validate_completion_claim_graph.py
+          )
+          python3 -B formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py \
+            --repository-root . \
+            --output release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
+            --zenodo-checksums release/formalization-v2/ZENODO_SHA256SUMS-alpha.2
+          python3 -B tools/qikvrt_freeze_alpha2_status.py check
+          actual_archive_sha256="$(sha256sum release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip | awk '{print $1}')"
+          test "$actual_archive_sha256" = "$expected_archive_sha256"
+          python3 -B tests/test_formalization_v2_release_workflow.py
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 tools/qikvrt_integrity.py verify
+          python3 -B tools/qikvrt_freeze_alpha2_status.py check
+
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/${GITHUB_REF_NAME}" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head" != "$source_head" ]; then
+            echo "BLOCK: PR head advanced during exact-head repair" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head=$remote_head" >&2
+            exit 2
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            .github/workflows/qikvrt_batch04_integrity.yml \
+            .github/workflows/qikvrt_pr457_alpha2_historical_repair.yml \
+            formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py \
+            tools/qikvrt_freeze_alpha2_status.py \
+            tests/test_formalization_v2_release_workflow.py \
+            release/formalization-v2/alpha2-frozen \
+            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
+            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip.sha256 \
+            release/formalization-v2/ZENODO_SHA256SUMS-alpha.2 \
+            formalization/QIKVRT_Formalization_v2.0/claims/TEX_ENVIRONMENTS.json \
+            formalization/QIKVRT_Formalization_v2.0/claims/APPENDIX_MATRIX.json \
+            formalization/QIKVRT_Formalization_v2.0/claims/CLAIM_GRAPH.json \
+            formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
+            formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
+            formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'BLOCK: repair produced no staged change' >&2
+            exit 3
+          fi
+          git commit -m 'fix(ci): preserve immutable Alpha-2 release identity'
+
+          remote_head_after_commit="$(
+            git ls-remote --heads origin "refs/heads/${GITHUB_REF_NAME}" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [ "$remote_head_after_commit" != "$source_head" ]; then
+            echo "BLOCK: PR head advanced before repair persistence" >&2
+            echo "source_head=$source_head" >&2
+            echo "remote_head_after_commit=$remote_head_after_commit" >&2
+            exit 2
+          fi
+          git push origin "HEAD:${GITHUB_REF_NAME}"
