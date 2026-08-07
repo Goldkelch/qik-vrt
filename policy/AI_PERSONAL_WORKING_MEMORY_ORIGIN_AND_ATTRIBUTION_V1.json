@@ -1,0 +1,245 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_ai_personal_working_memory_origin_and_attribution_v1",
+  "policy_id": "AI-PERSONAL-WORKING-MEMORY-ORIGIN-AND-ATTRIBUTION-V1",
+  "version": "1.0",
+  "effective_date": "2026-08-07",
+  "canonical_entrypoint": "AI",
+  "human_contract": "docs/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION.md",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "authority_base_commit": "8a7e94c08eebd6d385a144a0d1df9c473de667b2",
+  "purpose": "Enable an artificial-cognitive system to establish a personal QIK-VRT working-memory origin with no more than three human questions while preserving separable human and artificial-cognitive contribution provenance.",
+  "repository_evidence_overrides_chat_memory": true,
+  "max_human_questions": 3,
+  "fourth_question": "FORBIDDEN",
+  "already_answered_rule": "REUSE_EQUIVALENT_ANSWER_AND_DO_NOT_REASK",
+  "questions": [
+    {
+      "id": "QUESTION_1_HUMAN_ATTRIBUTION_ID",
+      "order": 1,
+      "ask_only_if_missing": true,
+      "prompt_de": "Unter welcher stabilen Kennung, beispielsweise Name oder Pseudonym, sollen deine menschlichen Beiträge im Provenienznachweis geführt werden?",
+      "answer_contract": {
+        "type": "string",
+        "required": true,
+        "minimum_length": 1,
+        "maximum_length": 200,
+        "email_required": false,
+        "secrets_forbidden": true
+      }
+    },
+    {
+      "id": "QUESTION_2_PERSONAL_ORIGIN",
+      "order": 2,
+      "ask_only_if_missing": true,
+      "prompt_de": "Welche persönliche Zielkonfiguration soll verwendet werden: LOCAL_ONLY oder eine konkrete PRIVATE_ORIGIN- beziehungsweise PUBLIC_ORIGIN-URL?",
+      "answer_contract": {
+        "type": "object",
+        "required": true,
+        "required_fields": [
+          "mode"
+        ],
+        "mode_enum": [
+          "LOCAL_ONLY",
+          "PRIVATE_ORIGIN",
+          "PUBLIC_ORIGIN"
+        ],
+        "origin_url_required_for": [
+          "PRIVATE_ORIGIN",
+          "PUBLIC_ORIGIN"
+        ],
+        "origin_url_forbidden_for": [
+          "LOCAL_ONLY"
+        ],
+        "credentials_forbidden": true
+      }
+    },
+    {
+      "id": "QUESTION_3_EVIDENCE_RETENTION",
+      "order": 3,
+      "ask_only_if_missing": true,
+      "prompt_de": "Welche Nachweistiefe soll gelten: METADATA_ONLY, REDACTED_EVIDENCE oder FULL_TRANSCRIPT?",
+      "answer_contract": {
+        "type": "enum",
+        "required": true,
+        "allowed": [
+          "METADATA_ONLY",
+          "REDACTED_EVIDENCE",
+          "FULL_TRANSCRIPT"
+        ],
+        "default_when_explicit_default_is_permitted": "METADATA_ONLY",
+        "secrets_forbidden_in_all_modes": true,
+        "full_transcript_requires_rights_privacy_and_confidentiality_clearance": true
+      }
+    }
+  ],
+  "missing_or_ambiguous_answer": {
+    "state": "HOLD",
+    "reading_allowed": true,
+    "local_plan_allowed": true,
+    "commit_allowed": false,
+    "remote_creation_allowed": false,
+    "push_allowed": false,
+    "additional_human_question_allowed": false
+  },
+  "artificial_cognitive_self_identification": {
+    "consumes_human_question": false,
+    "unknown_value": "UNAVAILABLE",
+    "fabrication_forbidden": true,
+    "required_fields": [
+      "provider",
+      "system_family",
+      "model_or_build",
+      "session_or_run_id",
+      "tools_and_adapters",
+      "observed_at",
+      "source_repository",
+      "source_ref",
+      "source_commit",
+      "identity_and_observation_limits"
+    ]
+  },
+  "personal_working_memory": {
+    "canonical_source_remote": {
+      "name": "upstream",
+      "url": "https://github.com/Goldkelch/qik-vrt.git"
+    },
+    "personal_remote": {
+      "name": "origin",
+      "selected_by": "QUESTION_2_PERSONAL_ORIGIN",
+      "canonicality_inferred": false
+    },
+    "modes": {
+      "LOCAL_ONLY": {
+        "network_effect": false,
+        "remote_required": false
+      },
+      "PRIVATE_ORIGIN": {
+        "network_effect": true,
+        "remote_required": true,
+        "explicit_authorization_required": true
+      },
+      "PUBLIC_ORIGIN": {
+        "network_effect": true,
+        "remote_required": true,
+        "explicit_authorization_required": true
+      }
+    },
+    "initial_branch_pattern": "work/<WORK_UNIT_ID>",
+    "external_effects_environment_default": "QIKVRT_EXTERNAL_EFFECTS=disabled",
+    "silent_account_repository_remote_or_ref_creation": "FORBIDDEN"
+  },
+  "contribution_provenance": {
+    "record_path_pattern": "state/work_units/<WORK_UNIT_ID>.json",
+    "actor_classes": [
+      "HUMAN",
+      "ARTIFICIAL_COGNITIVE_SYSTEM",
+      "JOINT_WITH_SEPARABLE_COMPONENTS",
+      "UNRESOLVED"
+    ],
+    "unresolved_may_be_reclassified_as_human_without_evidence": false,
+    "human_acceptance_changes_origin_classification": false,
+    "required_fields": [
+      "schema",
+      "work_unit_id",
+      "created_at",
+      "source_repository",
+      "source_ref",
+      "source_commit",
+      "source_tree",
+      "human_actor",
+      "artificial_cognitive_actor",
+      "human_contributions",
+      "artificial_cognitive_contributions",
+      "joint_components",
+      "unresolved_origin",
+      "inputs",
+      "outputs",
+      "git_history",
+      "verification",
+      "human_decision",
+      "external_effects",
+      "release_claims"
+    ],
+    "human_contribution_examples": [
+      "purpose",
+      "constraints",
+      "source facts",
+      "measurements supplied by the human",
+      "decisions",
+      "approvals",
+      "manual edits"
+    ],
+    "artificial_cognitive_contribution_examples": [
+      "analysis",
+      "drafting",
+      "generated text or code",
+      "transformations",
+      "tool actions",
+      "tests",
+      "verification summaries"
+    ],
+    "commit_trailers": [
+      "QIKVRT-Human-Actor",
+      "QIKVRT-AI-Actor",
+      "QIKVRT-Contribution-Record",
+      "QIKVRT-Human-Decision"
+    ],
+    "git_trailers_replace_work_unit_record": false,
+    "platform_identity_proves_natural_person_or_model_identity": false
+  },
+  "history_invariants": {
+    "force_push": "FORBIDDEN_FOR_AUDIT_PATH",
+    "history_rewrite": "FORBIDDEN_FOR_AUDIT_PATH",
+    "silent_origin_reclassification": "FORBIDDEN",
+    "correction_method": "NEW_PROVENANCE_BOUND_COMMIT",
+    "separate_commits_for_separable_contributions": "PREFERRED",
+    "inputs_outputs_and_decisions_must_be_hash_bound": true
+  },
+  "data_minimization": {
+    "default_retention": "METADATA_ONLY",
+    "raw_transcript_required": false,
+    "secrets_in_repository": false,
+    "unnecessary_personal_data": false,
+    "redaction_must_preserve_digest_and_reason": true
+  },
+  "effect_boundary": {
+    "clone": "SEPARATELY_AUTHORIZED_EFFECT",
+    "fork_or_repository_creation": "SEPARATELY_AUTHORIZED_EXTERNAL_EFFECT",
+    "push": "SEPARATELY_AUTHORIZED_EXTERNAL_EFFECT",
+    "pull_request": "SEPARATELY_AUTHORIZED_EXTERNAL_EFFECT",
+    "release_deployment_zenodo_ietf": "NOT_AUTHORIZED_BY_THIS_POLICY"
+  },
+  "legal_boundary": {
+    "eu_ai_act": "Regulation (EU) 2024/1689",
+    "general_application_date": "2026-08-02_WITH_EXCEPTIONS",
+    "article_50_transparency_application_date": "2026-08-02",
+    "articles_relevant_to_documentation_or_logging_when_applicable": [
+      11,
+      12,
+      18,
+      50,
+      113
+    ],
+    "role_risk_and_context_specific_analysis_required": true,
+    "universal_git_requirement_inferred": false,
+    "universal_per_change_human_ai_labelling_requirement_inferred": false,
+    "legal_compliance_inferred": false,
+    "legal_advice": false,
+    "other_jurisdictions_require_bound_source_review": true,
+    "official_sources": [
+      "https://eur-lex.europa.eu/eli/reg/2024/1689/oj/deu",
+      "https://digital-strategy.ec.europa.eu/de/faqs/transparency-obligations-under-article-50-ai-act"
+    ]
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
