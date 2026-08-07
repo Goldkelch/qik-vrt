@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate I/O policy and route machine-proved claims
+      - name: Route machine-proved connected claims
         shell: bash
         run: |
           set -euo pipefail
@@ -54,8 +54,7 @@ jobs:
           import json
           import pathlib
           import subprocess
-          root = pathlib.Path('.')
-          queue = root / 'state/publication_queue'
+          queue = pathlib.Path('state/publication_queue')
           if not queue.is_dir():
               raise SystemExit(0)
           for path in sorted(queue.glob('*.json')):
@@ -65,19 +64,15 @@ jobs:
               control = value.get('zenodo_candidate_control_path')
               if not control:
                   raise SystemExit(f'BLOCK: {path} lacks zenodo_candidate_control_path')
-              subprocess.check_call([
-                  'python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py',
-                  '--candidate', control,
-              ])
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py', '--candidate', control])
           PY
 
-      - name: Verify repository before proposing generated controls
+      - name: Verify generated controls before proposal
         shell: bash
         run: |
           set -euo pipefail
           python3 -B -m py_compile tools/qikvrt_io_round_trip.py tools/qikvrt_io_zenodo_authorize.py
           python3 -B -m unittest -v tests.test_ai_io_round_trip_autopublish
-          python3 -B tools/qikvrt_integrity.py verify || true
 
       - name: Open one reviewable generated-controls PR when bytes changed
         env:
@@ -90,8 +85,7 @@ jobs:
             exit 0
           fi
           base="$(git rev-parse HEAD)"
-          fingerprint="$(git diff --binary; git ls-files --others --exclude-standard | sort | xargs -r sha256sum)"
-          fingerprint="$(printf '%s' "$fingerprint" | sha256sum | cut -d' ' -f1)"
+          fingerprint="$( (git diff --binary; git ls-files --others --exclude-standard | sort | xargs -r sha256sum) | sha256sum | cut -d' ' -f1 )"
           branch="automation/io-round-trip-${base:0:8}-${fingerprint:0:12}"
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
             exit 0
@@ -99,10 +93,9 @@ jobs:
           git config user.name "qik-vrt-io-round-trip"
           git config user.email "qik-vrt-io-round-trip@users.noreply.github.com"
           git switch -c "$branch"
-          git add -- state/io_events state/io_claims state/publication_queue artifacts/io release external/ietf 2>/dev/null || true
-          git add -- policy/AI_IO_ROUND_TRIP_AUTOPUBLISH_V1.json state/authorization/delegations/OWNER_AI_IO_ROUND_TRIP_AUTOPUBLISH_V1.json tools/qikvrt_io_round_trip.py tools/qikvrt_io_zenodo_authorize.py .github/workflows/qikvrt_io_round_trip_autopublish.yml tests/test_ai_io_round_trip_autopublish.py docs/AI_IO_ROUND_TRIP_AUTOPUBLISH.md AI AI_CONTEXT.json 2>/dev/null || true
+          git add -A -- state/io_events state/io_claims state/publication_queue artifacts/io release external/ietf 2>/dev/null || true
           if git diff --cached --quiet; then
-            echo "No allowlisted staged delta"
+            echo "No generated I/O/publication delta"
             exit 0
           fi
           git commit -m "chore(io): materialize proof/publication round-trip ${fingerprint:0:12}"
@@ -110,7 +103,7 @@ jobs:
           git push origin "HEAD:refs/heads/$branch"
           gh pr create --draft --base main --head "$branch" \
             --title "I/O round trip: ${fingerprint:0:12}" \
-            --body "Autonomously materialized QIK-VRT I/O/proof/publication controls. Base: \`$base\`. Head: \`$head\`. Semantic fingerprint: \`$fingerprint\`. External publication is not claimed by this PR; exact-head gates and the existing promotion controller remain mandatory."
+            --body "Autonomously materialized QIK-VRT I/O/proof/publication controls. Base: \`$base\`. Head: \`$head\`. Semantic fingerprint: \`$fingerprint\`. Repository-native integrity materialization and all exact-head gates remain mandatory before promotion. No external publication is claimed by this PR."
 
   zenodo-effect:
     needs: classify-and-prepare
@@ -156,16 +149,9 @@ jobs:
               if not manifest or not authorization:
                   raise SystemExit(f'BLOCK: {control_path} lacks exact output control paths')
               if not pathlib.Path(manifest).is_file() or not pathlib.Path(authorization).is_file():
-                  # Preparation must first become committed repository truth.
                   continue
-              subprocess.check_call([
-                  'python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py',
-                  '--candidate', str(control_path), '--check',
-              ])
-              subprocess.check_call([
-                  'python3', '-B', 'tools/qikvrt_zenodo_publish.py',
-                  '--manifest', manifest,
-              ])
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py', '--candidate', str(control_path), '--check'])
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_zenodo_publish.py', '--manifest', manifest])
           PY
 
       - name: Preserve post-effect evidence as a reviewable successor
@@ -202,7 +188,7 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Validate normative IETF routing state
+      - name: Fail closed until exact Datatracker submit capability is repository-bound
         shell: bash
         run: |
           set -euo pipefail
@@ -212,6 +198,7 @@ jobs:
           queue = pathlib.Path('state/publication_queue')
           if not queue.is_dir():
               raise SystemExit(0)
+          pending = []
           for path in sorted(queue.glob('*.json')):
               value = json.loads(path.read_text(encoding='utf-8'))
               if value.get('route') != 'ZENODO_AND_IETF_READY':
@@ -219,8 +206,9 @@ jobs:
               candidate = value.get('ietf_candidate_path')
               if not candidate or not pathlib.Path(candidate).is_file():
                   raise SystemExit(f'BLOCK: {path} lacks an exact IETF candidate')
-              # Datatracker posting still requires its own exact submission adapter.
-              # Keeping the queue item durable prevents loss while that external
-              # capability is unavailable or requires human-author confirmation.
-              print(f'IETF_REVIEW_REQUIRED={candidate}')
+              pending.append(candidate)
+          if pending:
+              print('IETF_EXTERNAL_EFFECT_ADAPTER=PENDING_REPOSITORY_BOUND_IMPLEMENTATION')
+              for candidate in pending:
+                  print(f'IETF_REVIEW_REQUIRED={candidate}')
           PY
