@@ -153,6 +153,23 @@ jobs:
               '            release/formalization-v2-alpha2-zenodo.json \\\n'
               '            release/formalization-v2/alpha2-frozen \\\n',
           )
+          integrity_anchor = (
+              '      - name: Regenerate and verify repository integrity\n'
+          )
+          overview_step = (
+              '      - name: Refresh publication overview coverage\n'
+              '        shell: bash\n'
+              '        run: |\n'
+              '          set -euo pipefail\n'
+              '          python3 -B tools/qikvrt_publication_overview.py materialize --json\n'
+              '          python3 -B tools/qikvrt_publication_overview.py check --json\n'
+              '          python3 -B -m unittest -v tests.test_qikvrt_publication_overview\n'
+          )
+          replace_once(
+              workflow,
+              integrity_anchor,
+              overview_step + integrity_anchor,
+          )
 
           Path(
               ".github/workflows/qikvrt_pr457_alpha2_historical_repair.yml"
@@ -172,6 +189,9 @@ jobs:
             python3 scripts/materialize_completion_proof_manifest.py --check
             python3 scripts/validate_completion_claim_graph.py
           )
+          python3 -B tools/qikvrt_publication_overview.py materialize --json
+          python3 -B tools/qikvrt_publication_overview.py check --json
+          python3 -B -m unittest -v tests.test_qikvrt_publication_overview
           python3 -B formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py \
             --repository-root . \
             --output release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.2.zip \
@@ -185,6 +205,7 @@ jobs:
           make test
           python3 tools/qikvrt_integrity.py verify
           python3 -B tools/qikvrt_freeze_alpha2_status.py check
+          python3 -B tools/qikvrt_publication_overview.py check --json
 
           remote_head="$(
             git ls-remote --heads origin "refs/heads/${GITHUB_REF_NAME}" |
@@ -215,6 +236,8 @@ jobs:
             formalization/QIKVRT_Formalization_v2.0/MANUSCRIPT_PROOF_MAP.md \
             formalization/QIKVRT_Formalization_v2.0/VERIFICATION_REPORT.md \
             formalization/QIKVRT_Formalization_v2.0/proofs/PROOF_OBJECT_MANIFEST.json \
+            docs/publications/index.json \
+            docs/publications/index.html \
             REPOSITORY_FILE_MANIFEST.json \
             REPOSITORY_FILE_MANIFEST.json.sha256 \
             SHA256SUMS.txt
