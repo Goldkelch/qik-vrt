@@ -1,7 +1,5 @@
 import QCECausalAxisBridge
 
-set_option pp.width 1000
-
 #print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T01_time_binding_satisfies_succession
 #print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T02_succession_agreement_selects_time_axis
 #print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T03_length_binding_satisfies_separation
