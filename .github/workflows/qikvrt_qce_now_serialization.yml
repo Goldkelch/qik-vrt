@@ -1,0 +1,198 @@
+name: QIK-VRT QCE now serialization proof
+
+on:
+  pull_request:
+    paths:
+      - 'docs/publications/2026-08-07-qce-now-serialization/**'
+      - 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+      - 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+      - 'state/work_units/QCE_NOW_SERIALIZATION_V1.json'
+      - '.github/workflows/qikvrt_qce_now_serialization.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-qce-now-serialization:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Lean 4.19 and verify upstream QCE package
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test: false
+
+      - name: Run actions/setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Compile exact upstream modules and QNS bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          module_dir="$RUNNER_TEMP/qikvrt-qns-modules"
+          mkdir -p "$module_dir"
+          qce='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          lean -E hasSorry -o "$module_dir/VRTCore_QCE_Model.olean" "$qce"
+          lean -E hasSorry -o "$module_dir/MeasurementDerivedDimensions.olean" "$mdd"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENowSerialization.olean" "$qns"
+          echo "QNS_MODULE_DIR=$module_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact eighteen-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit='docs/publications/2026-08-07-qce-now-serialization/QCENowSerializationAxiomAudit.lean'
+          LEAN_PATH="$QNS_MODULE_DIR" lean -E hasSorry "$audit" \
+            | tee docs/publications/2026-08-07-qce-now-serialization/QNS_AXIOM_OUTPUT.txt
+
+      - name: Validate inventory and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          folder = root / 'docs/publications/2026-08-07-qce-now-serialization'
+          source = folder / 'QCENowSerialization.lean'
+          audit = folder / 'QCENowSerializationAxiomAudit.lean'
+          output = folder / 'QNS_AXIOM_OUTPUT.txt'
+          qce = root / 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd = root / 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+
+          prefix = 'QIKVRT.V2.Physics.QCENowSerialization.'
+          expected = [prefix + name for name in [
+              'QNS_T01_iterated_relation_count',
+              'QNS_T02_iterated_event_count',
+              'QNS_T03_iterated_extension_preserves_global_binding',
+              'QNS_T04_canonical_relation_count',
+              'QNS_T05_canonical_event_count',
+              'QNS_T06_now_index_recovers_step',
+              'QNS_T07_canonical_now_is_injective',
+              'QNS_T08_canonical_now_has_unique_index',
+              'QNS_T09_extension_advances_now_index',
+              'QNS_T10_serial_calibration_zero',
+              'QNS_T11_serial_calibration_is_additive',
+              'QNS_T12_bound_axis_carries_serial_response',
+              'QNS_T13_unbound_axis_has_zero_response',
+              'QNS_T14_length_binding_derives_length_dimension',
+              'QNS_T15_time_binding_derives_time_dimension',
+              'QNS_T16_length_and_time_bindings_are_dimensionally_distinct',
+              'QNS_T17_seriality_alone_does_not_select_physical_axis',
+              'QNS_T18_axis_rebinding_preserves_qce_network',
+          ]]
+
+          source_text = source.read_text(encoding='utf-8')
+          forbidden = re.compile(r'(?m)^\s*(axiom|opaque\s+axiom|theorem\s+[^\n]*:=\s*by\s+sorry\b)')
+          if forbidden.search(source_text):
+              raise SystemExit('BLOCK forbidden project proof escape in QNS source')
+
+          pat = re.compile(r"^'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])$")
+          reports = {}
+          for line in output.read_text(encoding='utf-8').splitlines():
+              if not line.strip():
+                  continue
+              match = pat.fullmatch(line.strip())
+              if match is None:
+                  raise SystemExit(f'BLOCK unexpected axiom output: {line!r}')
+              name = match.group(1)
+              axioms = [x.strip() for x in (match.group(2) or '').split(',') if x.strip()]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+
+          if list(reports) != expected:
+              raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
+          if any(reports[name] for name in expected):
+              raise SystemExit(f'BLOCK unexpected axiom dependency: {reports!r}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              git_blob = subprocess.check_output(
+                  ['git', 'hash-object', str(path)], text=True
+              ).strip()
+              return {
+                  'path': str(path),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': git_blob,
+              }
+
+          lean_version = subprocess.check_output(['lean', '--version'], text=True).strip()
+          receipt = {
+              'schema': 'qikvrt_qce_now_serialization_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': lean_version,
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'upstream_qce_source': identity(qce),
+              'upstream_mdd_source': identity(mdd),
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'project_axioms': [],
+              'formal_result': 'QCE_CANONICAL_NOW_NETWORK_HAS_UNIQUE_SERIAL_INDEX_AND_ADDITIVE_CALIBRATION_ACTION',
+              'physical_axis_binding': 'EXPLICIT_AND_NOT_DERIVED_FROM_SERIALITY_ALONE',
+              'physical_time_identification': 'NOT_ESTABLISHED',
+              'physical_length_identification': 'NOT_ESTABLISHED',
+              'si_second_derived': False,
+              'si_metre_derived': False,
+              'c_physical_value_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'physical_correspondence': 'NOT_INFERRED',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          receipt_path = folder / 'QNS_KERNEL_RECEIPT.json'
+          receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload QNS exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-qce-now-serialization-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-qce-now-serialization/QNS_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-qce-now-serialization/QNS_KERNEL_RECEIPT.json
