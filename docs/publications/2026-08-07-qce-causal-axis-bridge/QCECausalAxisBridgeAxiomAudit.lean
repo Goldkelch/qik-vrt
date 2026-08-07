@@ -1,0 +1,20 @@
+import QCECausalAxisBridge
+
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T01_time_binding_satisfies_succession
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T02_succession_agreement_selects_time_axis
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T03_length_binding_satisfies_separation
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T04_separation_agreement_selects_length_axis
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T05_axis_binding_extensionality
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T06_temporal_binding_is_unique
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T07_spatial_binding_is_unique
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T08_admissible_cone_has_stable_null_boundary
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T09_evidence_selects_time_binding
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T10_evidence_selects_length_binding
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T11_selected_axes_are_distinct
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T12_null_calibration_derives_speed_dimension
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T13_speed_dimension_is_unique
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T14_evidence_derives_speed_dimension
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T15_seriality_alone_does_not_select_axis
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T16_current_qce_cone_candidate_remains_open
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T17_complete_finite_evidence_has_stable_null_boundary
+#print axioms QIKVRT.V2.Physics.QCECausalAxisBridge.QCA_T18_complete_finite_evidence_derives_speed_dimension
