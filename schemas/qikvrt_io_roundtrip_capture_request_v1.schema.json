@@ -1,0 +1,506 @@
+{
+  "$defs": {
+    "actor": {
+      "properties": {
+        "attribution_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_or_run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attribution_id",
+        "role"
+      ],
+      "type": "object"
+    },
+    "actors": {
+      "additionalProperties": false,
+      "properties": {
+        "artificial_cognitive_system": {
+          "$ref": "#/$defs/actor"
+        },
+        "human": {
+          "$ref": "#/$defs/actor"
+        }
+      },
+      "required": [
+        "human",
+        "artificial_cognitive_system"
+      ],
+      "type": "object"
+    },
+    "authorization": {
+      "additionalProperties": false,
+      "properties": {
+        "external_effects_default": {
+          "const": "FORBIDDEN"
+        },
+        "owner_authorization_id": {
+          "const": "OWNER_IO_ROUNDTRIP_PERSISTENCE_AUTOMATION_V1"
+        },
+        "persistence_confirmation": {
+          "const": "PERSIST_QIKVRT_IO_METADATA"
+        },
+        "repository_continuation_delegation_id": {
+          "const": "OWNER-AUTONOMOUS-REPOSITORY-CONTINUATION-V2"
+        }
+      },
+      "required": [
+        "owner_authorization_id",
+        "repository_continuation_delegation_id",
+        "persistence_confirmation",
+        "external_effects_default"
+      ],
+      "type": "object"
+    },
+    "candidateKnowledge": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "$ref": "#/$defs/safeId"
+        },
+        "epistemic_class": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_event_ids": {
+          "items": {
+            "$ref": "#/$defs/safeId"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "verification_state": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "summary",
+        "epistemic_class",
+        "verification_state",
+        "source_event_ids"
+      ],
+      "type": "object"
+    },
+    "contentBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "normalization": {
+          "enum": [
+            "NONE",
+            "UTF8_LF"
+          ]
+        },
+        "raw_content_absence_reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "raw_content_persisted": {
+          "const": false
+        },
+        "scope": {
+          "enum": [
+            "APPLICATION_VISIBLE_UTF8",
+            "TOOL_VISIBLE_BYTES",
+            "PREPARED_ASSISTANT_MARKDOWN"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "transport_exact_bytes_available": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "normalization",
+        "bytes",
+        "sha256",
+        "transport_exact_bytes_available",
+        "raw_content_persisted",
+        "raw_content_absence_reason"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "content_binding": {
+          "$ref": "#/$defs/contentBinding"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "epistemic_class": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "event_id": {
+          "$ref": "#/$defs/safeId"
+        },
+        "external_references": {
+          "items": {
+            "$ref": "#/$defs/externalReference"
+          },
+          "type": "array"
+        },
+        "media_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "purpose": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "retention_until": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant",
+            "tool",
+            "system"
+          ]
+        },
+        "semantic_projection": {
+          "type": "object"
+        },
+        "sequence": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "sequence",
+        "role",
+        "created_at",
+        "purpose",
+        "consent_id",
+        "retention_until",
+        "media_type",
+        "content_binding",
+        "semantic_projection",
+        "external_references",
+        "epistemic_class"
+      ],
+      "type": "object"
+    },
+    "externalReference": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence_status": {
+          "enum": [
+            "REFERENCE_ONLY",
+            "TRANSPORT_CONTEXT_ONLY",
+            "HASH_BOUND_SOURCE"
+          ]
+        },
+        "relation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "retrieval_state": {
+          "enum": [
+            "NOT_RETRIEVED",
+            "RETRIEVED_HASH_BOUND"
+          ]
+        },
+        "uri": {
+          "pattern": "^(https://|urn:)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri",
+        "relation",
+        "retrieval_state",
+        "evidence_status",
+        "content_digest"
+      ],
+      "type": "object"
+    },
+    "falseReleaseClaims": {
+      "additionalProperties": false,
+      "properties": {
+        "EFFECT_ACK_DONE": {
+          "const": false
+        },
+        "FINAL_PASS": {
+          "const": false
+        },
+        "PASS": {
+          "const": false
+        }
+      },
+      "required": [
+        "PASS",
+        "FINAL_PASS",
+        "EFFECT_ACK_DONE"
+      ],
+      "type": "object"
+    },
+    "integrationGap": {
+      "additionalProperties": false,
+      "properties": {
+        "gap_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "required_closure": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "gap_id",
+        "state",
+        "reason",
+        "required_closure"
+      ],
+      "type": "object"
+    },
+    "license": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "copyright": {
+          "const": "Copyright 2026 Ingolf Lohmann"
+        },
+        "license": {
+          "const": "CC-BY-NC-ND-4.0"
+        },
+        "rights_holder": {
+          "const": "Ingolf Lohmann"
+        }
+      },
+      "required": [
+        "classification",
+        "copyright",
+        "license",
+        "rights_holder"
+      ],
+      "type": "object"
+    },
+    "publicationDisposition": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_knowledge": {
+          "items": {
+            "$ref": "#/$defs/candidateKnowledge"
+          },
+          "type": "array"
+        },
+        "ietf": {
+          "$ref": "#/$defs/targetDisposition"
+        },
+        "zenodo": {
+          "$ref": "#/$defs/targetDisposition"
+        }
+      },
+      "required": [
+        "candidate_knowledge",
+        "zenodo",
+        "ietf"
+      ],
+      "type": "object"
+    },
+    "safeId": {
+      "maxLength": 160,
+      "minLength": 8,
+      "pattern": "^[A-Za-z0-9._=-]+$",
+      "type": "string"
+    },
+    "sha1": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "ref": {
+          "pattern": "^refs/heads/[A-Za-z0-9._/-]+$",
+          "type": "string"
+        },
+        "repository": {
+          "const": "Goldkelch/qik-vrt"
+        },
+        "tree": {
+          "$ref": "#/$defs/sha1"
+        }
+      },
+      "required": [
+        "repository",
+        "ref",
+        "commit",
+        "tree"
+      ],
+      "type": "object"
+    },
+    "targetDisposition": {
+      "additionalProperties": false,
+      "properties": {
+        "external_effect_authorized": {
+          "const": false
+        },
+        "external_effect_executed": {
+          "const": false
+        },
+        "next_gate": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "HOLD",
+            "BLOCK",
+            "NOT_APPLICABLE",
+            "CANDIDATE_PENDING_PROOF"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "reason_codes",
+        "next_gate",
+        "external_effect_authorized",
+        "external_effect_executed"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/schemas/qikvrt_io_roundtrip_capture_request_v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Metadata-only, provenance-bound request for repository-native I/O capture, verification and fail-closed publication disposition.",
+  "properties": {
+    "_license": {
+      "$ref": "#/$defs/license"
+    },
+    "actors": {
+      "$ref": "#/$defs/actors"
+    },
+    "authorization": {
+      "$ref": "#/$defs/authorization"
+    },
+    "conversation_id": {
+      "$ref": "#/$defs/safeId"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/event"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "integration_gaps": {
+      "items": {
+        "$ref": "#/$defs/integrationGap"
+      },
+      "type": "array"
+    },
+    "publication_disposition": {
+      "$ref": "#/$defs/publicationDisposition"
+    },
+    "release_claims": {
+      "$ref": "#/$defs/falseReleaseClaims"
+    },
+    "request_id": {
+      "$ref": "#/$defs/safeId"
+    },
+    "retention_mode": {
+      "const": "METADATA_ONLY"
+    },
+    "schema": {
+      "const": "qikvrt_io_roundtrip_capture_request_v1"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "work_unit_id": {
+      "$ref": "#/$defs/safeId"
+    }
+  },
+  "required": [
+    "_license",
+    "schema",
+    "request_id",
+    "work_unit_id",
+    "conversation_id",
+    "created_at",
+    "retention_mode",
+    "source",
+    "authorization",
+    "actors",
+    "events",
+    "publication_disposition",
+    "integration_gaps",
+    "release_claims"
+  ],
+  "title": "QIK-VRT I/O round-trip capture request v1",
+  "type": "object"
+}
