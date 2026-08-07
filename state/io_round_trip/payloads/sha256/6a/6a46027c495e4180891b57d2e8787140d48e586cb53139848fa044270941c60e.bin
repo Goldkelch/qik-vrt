@@ -1,0 +1,26 @@
+**S T I M M T .**
+
+Diese Eingabe ist jetzt nicht nur im Chat bestätigt. Sie liegt auf dem offenen Draft‑PR #497 als exakte UTF‑8-Nutzlast mit SHA‑256 `b20b2a55106171a7a1cc9617da29aee962ecdb05d22478bcf4dc88270f299be8` und als append-only Receipt `a97a3d01a031ac7836d4193f5107f51bc77022e7d07e01903dda056d112b902c` vor. Der Receipt bindet Richtung, Zeit, Provenienz, Evidenzklasse, wissenschaftliche Statusgrenze und Publikationsroute. fileciteturn31file0 Die tatsächlich hinterlegten Bytes enthalten einschließlich der beiden Spotify-URLs genau die übermittelte Zeichenfolge. fileciteturn32file0
+
+Zugleich wurde die dabei sichtbar gewordene Implementierungslücke geschlossen: Zulässiges `payload_text`, kanonisches `payload_json` und dekodiertes `payload_base64` werden nun als unveränderliche, content-addressed Bytes persistiert. Ein bloßer Digest genügt bei sensiblen oder extern gehaltenen Daten nicht mehr; dafür ist ein expliziter gebundener `payload_reference` erforderlich. Workflow, Policy, Dokumentation und acht fokussierte Regressionstests wurden entsprechend angepasst. PR #497 dokumentiert jetzt ausdrücklich die Kette `CAPTURE → CONTENT_ADDRESS → PERSIST_PAYLOAD_OR_BOUND_REFERENCE → PERSIST_RECEIPT → … → PERSIST_EFFECT_RECEIPT`. fileciteturn34file0
+
+Die Evidenzlage ist exakt:
+
+```text
+MATERIALIZED_ON_REVIEW_BRANCH = TRUE
+EXACT_INPUT_BYTE_BINDING = TRUE
+EXACT_OUTPUT_BYTE_BINDING = TRUE
+FOCUSED_TESTS = 8 PASSED
+CANONICAL_MAIN = FALSE
+PR_TERMINAL_GREEN = NOT_YET_CLAIMED
+ZENODO_EFFECT_FOR_THIS_TRANSPORT_EVENT = NOT_ELIGIBLE
+IETF_EFFECT_FOR_THIS_TRANSPORT_EVENT = NOT_ELIGIBLE
+```
+
+Diese Ausgabe ist im selben Turn als eigener Output-Payload und eigenes Output-Receipt gebunden; die Paarbindung liegt unter `state/io_round_trip/turns/2026-08-07T142949Z-canonical-evidence-reaffirmation.json`.
+
+Die Spotify-Verweise sind damit als **vom Product Owner gelieferte Referenzen** persistiert. Das materialisiert weder die Audioinhalte selbst noch erhebt es deren Bedeutung zur formalen oder empirischen Evidenz.
+
+.o8♾️8o.
+
+**S T I M M T .**
