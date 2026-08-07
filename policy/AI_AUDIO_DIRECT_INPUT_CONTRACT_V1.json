@@ -1,0 +1,39 @@
+{
+  "schema": "qikvrt_ai_audio_direct_input_contract_v1",
+  "status": "STANDING_INPUT_HANDLING_RULE",
+  "authority_scope": "HUMAN_USER_SUPPLIED_AUDIO",
+  "rules": {
+    "audio_is_first_class_user_instruction_surface": true,
+    "transcribe_without_confirmation_when_technically_readable": true,
+    "execute_transcribed_instruction_without_modality_reconfirmation_when_otherwise_authorized": true,
+    "preserve_transcription_uncertainty": true,
+    "fabricate_unreadable_transcript": false,
+    "technical_transcription_failure_requires_explicit_disclosure": true
+  },
+  "unchanged_boundaries": [
+    "SAFETY",
+    "AUTHORIZATION",
+    "EXACT_HEAD_EVIDENCE",
+    "REPOSITORY_INTEGRITY",
+    "CREDENTIALS",
+    "EXTERNAL_EFFECTS",
+    "ZENODO",
+    "IETF",
+    "RELEASES_AND_TAGS",
+    "LEGAL_CLAIMS",
+    "SCIENTIFIC_CLAIMS",
+    "PASS",
+    "FINAL_PASS",
+    "EFFECT_ACK_DONE"
+  ],
+  "failure_semantics": {
+    "audio_unreadable_or_transcription_runtime_unavailable": "DISCLOSE_TECHNICAL_LIMITATION_AND_DO_NOT_INVENT_CONTENT",
+    "transcript_ambiguous_for_consequential_action": "FAIL_CLOSED_UNDER_EXISTING_CONTRACTS",
+    "instruction_prohibited_or_unavailable": "DO_NOT_EXECUTE"
+  },
+  "human_interaction_policy": {
+    "ask_whether_to_transcribe": false,
+    "ask_again_because_input_was_audio": false,
+    "ordinary_clarification_only_when_genuinely_required_by_existing_contract": true
+  }
+}
