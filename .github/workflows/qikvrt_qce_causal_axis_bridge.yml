@@ -122,19 +122,34 @@ jobs:
           if forbidden.search(source_text):
               raise SystemExit('BLOCK forbidden project proof escape in QCA source')
 
-          pat = re.compile(r"^'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])$")
+          text = output.read_text(encoding='utf-8')
+          pat = re.compile(
+              r"'([^']+)' "
+              r"(?:does not depend on any axioms|depends on axioms:\s*\[([^\]]*)\])",
+              re.MULTILINE,
+          )
           reports = {}
-          for line in output.read_text(encoding='utf-8').splitlines():
-              if not line.strip():
-                  continue
-              match = pat.fullmatch(line.strip())
-              if match is None:
-                  raise SystemExit(f'BLOCK unexpected axiom output: {line!r}')
+          cursor = 0
+          for match in pat.finditer(text):
+              residual = text[cursor:match.start()]
+              if residual.strip():
+                  raise SystemExit(
+                      f'BLOCK unexpected axiom output segment: {residual!r}'
+                  )
               name = match.group(1)
-              axioms = [x.strip() for x in (match.group(2) or '').split(',') if x.strip()]
+              axioms = [
+                  item.strip()
+                  for item in (match.group(2) or '').split(',')
+                  if item.strip()
+              ]
               if name in reports:
                   raise SystemExit(f'BLOCK duplicate theorem report: {name}')
               reports[name] = axioms
+              cursor = match.end()
+          if text[cursor:].strip():
+              raise SystemExit(
+                  f'BLOCK unexpected trailing axiom output: {text[cursor:]!r}'
+              )
 
           if list(reports) != expected:
               raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
