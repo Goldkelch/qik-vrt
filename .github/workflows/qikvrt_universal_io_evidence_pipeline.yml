@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT universal I/O evidence pipeline
+
+on:
+  pull_request:
+    paths:
+      - AI
+      - docs/requirements/UNIVERSAL_IO_PERSISTENCE_AND_PUBLICATION_V1.json
+      - state/authorization/delegations/OWNER_UNIVERSAL_IO_PIPELINE_IMPLEMENTATION_V1.json
+      - tools/qikvrt_io_evidence_pipeline.py
+      - tests/test_universal_io_evidence_pipeline.py
+      - .github/workflows/qikvrt_universal_io_evidence_pipeline.yml
+  repository_dispatch:
+    types: [qikvrt_io_event]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-universal-io-${{ github.event_name }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run universal I/O regression tests
+        run: python3 -B -m unittest tests.test_universal_io_evidence_pipeline
+      - name: Verify requirement JSON
+        run: python3 -m json.tool docs/requirements/UNIVERSAL_IO_PERSISTENCE_AND_PUBLICATION_V1.json >/dev/null
+
+  persist-dispatched-event:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Materialize dispatched event
+        env:
+          QIKVRT_EVENT_JSON: ${{ toJson(github.event.client_payload.event) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$QIKVRT_EVENT_JSON"
+          printf '%s\n' "$QIKVRT_EVENT_JSON" > "$RUNNER_TEMP/io-event.json"
+          python3 -B tools/qikvrt_io_evidence_pipeline.py capture \
+            --event "$RUNNER_TEMP/io-event.json" > "$RUNNER_TEMP/capture.json"
+          receipt="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["receipt"])' "$RUNNER_TEMP/capture.json")"
+          python3 -B tools/qikvrt_io_evidence_pipeline.py verify --receipt "$receipt"
+          set +e
+          python3 -B tools/qikvrt_io_evidence_pipeline.py route --receipt "$receipt" > "$RUNNER_TEMP/route.json"
+          route_status=$?
+          set -e
+          printf 'QIKVRT_ROUTE_STATUS=%s\n' "$route_status" >> "$GITHUB_ENV"
+          printf 'QIKVRT_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
+      - name: Regenerate repository integrity
+        run: python3 -B tools/qikvrt_integrity.py generate
+      - name: Persist evidence on isolated review branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/io-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'qik-vrt-io-evidence[bot]'
+          git config user.email 'qik-vrt-io-evidence[bot]@users.noreply.github.com'
+          git add -- "$QIKVRT_RECEIPT" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'evidence: persist universal I/O event receipt'
+          git push -u origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title 'Evidence: persist universal I/O event receipt' \
+            --body "Automated repository persistence for a QIK-VRT I/O event. The receipt is content-addressed and fail-closed. Publication routing status: ${QIKVRT_ROUTE_STATUS}. No scientific validation, Zenodo publication, IETF acceptance, PASS, FINAL_PASS, or EFFECT_ACK_DONE is inferred by this PR."
+      - name: Preserve routing decision
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-io-route-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/capture.json
+            ${{ runner.temp }}/route.json
+
+# Publication effects are intentionally not executed in this workflow.
+# A receipt that routes to ZENODO/IETF is the machine-verifiable handoff to the
+# repository's target-specific, exact-head-bound publication workflows. Those
+# workflows remain responsible for credentials, one-shot effect authorization,
+# rights, target validation and effect receipts.
