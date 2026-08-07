@@ -1,4 +1,4 @@
-import QIKVRTFormalization.Physics.MeasurementInducedDimensions
+import MeasurementInducedDimensions
 
 #print axioms QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T01_length_and_time_labels_are_distinct
 #print axioms QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T02_relabel_preserves_operational_map

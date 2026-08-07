@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT measurement-induced dimensions candidate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/publications/2026-08-07-measurement-induced-dimensions/**"
+      - "state/work_units/MEASUREMENT_INDUCED_DIMENSIONS_V1.json"
+      - ".github/workflows/qikvrt_measurement_induced_dimensions.yml"
+  push:
+    branches: [agent/measurement-induced-dimensions-v1]
+    paths:
+      - "docs/publications/2026-08-07-measurement-induced-dimensions/**"
+      - "state/work_units/MEASUREMENT_INDUCED_DIMENSIONS_V1.json"
+      - ".github/workflows/qikvrt_measurement_induced_dimensions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mid-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-measurement-induced-dimensions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: docs/publications/2026-08-07-measurement-induced-dimensions
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          head="$(git -C ../../.. rev-parse HEAD)"
+          tree="$(git -C ../../.. rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-07-measurement-induced-dimensions
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Kernel-check exact MID source
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean -E hasSorry MeasurementInducedDimensions.lean
+
+      - name: Run exact seven-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean -E hasSorry MeasurementInducedDimensionsAxiomAudit.lean \
+            | tee MID_AXIOM_OUTPUT.txt
+
+      - name: Validate audit and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          source = root / 'MeasurementInducedDimensions.lean'
+          audit = root / 'MeasurementInducedDimensionsAxiomAudit.lean'
+          output = root / 'MID_AXIOM_OUTPUT.txt'
+
+          expected = [
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T01_length_and_time_labels_are_distinct',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T02_relabel_preserves_operational_map',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T03_same_operational_map_allows_distinct_dimensions',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T04_dimension_relabel_preserves_premetric_ontology',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T05_dimension_not_determined_by_premetric_ontology',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T06_speed_numeral_reencoding_preserves_causal_boundary',
+              'QIKVRT.V2.Physics.MeasurementInducedDimensions.MID_T07_same_boundary_allows_c_299792458_or_1',
+          ]
+          pat = re.compile(r"^'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])$")
+          reports = {}
+          for line in output.read_text(encoding='utf-8').splitlines():
+              if not line.strip():
+                  continue
+              match = pat.fullmatch(line.strip())
+              if match is None:
+                  raise SystemExit(f'BLOCK unexpected axiom output: {line!r}')
+              name = match.group(1)
+              axioms = [x.strip() for x in (match.group(2) or '').split(',') if x.strip()]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+
+          if list(reports) != expected:
+              raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
+          if any(reports[name] for name in expected):
+              raise SystemExit(f'BLOCK unexpected axiom dependency: {reports!r}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': path.name,
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+              }
+
+          lean_version = subprocess.check_output(['lake', 'env', 'lean', '--version'], text=True).strip()
+          receipt = {
+              'schema': 'qikvrt_measurement_induced_dimensions_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': lean_version,
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'project_axioms': [],
+              'formal_result': 'PREMETRIC_ONTOLOGY_DOES_NOT_UNIQUELY_DETERMINE_DIMENSION_LABELS_OR_SPEED_NUMERAL',
+              'physical_correspondence': 'NOT_INFERRED',
+              'nature_fundamentally_dimensionless': 'NOT_INFERRED',
+              'c_physical_value_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'completion_claims': {'PASS': False, 'FINAL_PASS': False, 'EFFECT_ACK_DONE': False},
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          (root / 'MID_KERNEL_RECEIPT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload MID exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-measurement-induced-dimensions-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-measurement-induced-dimensions/MID_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-measurement-induced-dimensions/MID_KERNEL_RECEIPT.json

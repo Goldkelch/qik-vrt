@@ -5,17 +5,17 @@ import Std
 
 This module formalizes a deliberately premetric finite model contract.
 
-The ontic layer contains only distinguishability and a causal relation.  Physical
-dimension labels are introduced only by a measurement channel.  The theorems below
+The ontic layer contains only distinguishability and a causal relation. Physical
+dimension labels are introduced only by a measurement channel. The theorems below
 show that the same premetric ontology and the same operational observation/calibration
-maps can carry distinct dimension labels.  They also show that the same causal boundary
-can be represented with different numerical tokens for the invariant propagation speed
+maps can carry distinct dimension labels. They also show that the same causal boundary
+can be represented with different numerical tokens for an invariant propagation speed
 (e.g. `299792458` in the SI metre/second convention or `1` in a normalized convention).
 
-This establishes a representation-layer non-uniqueness theorem.  It does **not** prove
-that nature is fundamentally dimensionless, derive the SI, derive `c`, `hbar` or `G`,
-or establish the physical QCE correspondence.  Those require additional correspondence,
-normalization and dynamics theorems.
+This establishes a representation-layer non-uniqueness theorem. It does **not** prove
+that nature is fundamentally dimensionless, derive the SI, derive the physical value
+of `c`, `hbar` or `G`, or establish the physical QCE correspondence. Those require
+additional correspondence, normalization and dynamics theorems.
 -/
 
 namespace QIKVRT
@@ -55,10 +55,7 @@ theorem MID_T01_length_and_time_labels_are_distinct :
     lengthDimension ≠ timeDimension := by
   decide
 
-/--
-A measurement channel adds an observation map, a calibration map and a dimension
-signature to a premetric state carrier.
--/
+/-- A measurement channel adds operational maps and a dimension signature. -/
 structure MeasurementChannel (State : Type u) (Reading : Type v) where
   observe : State → Reading
   calibrate : Reading → Reading
@@ -75,7 +72,7 @@ def relabelDimension
     (dimension : DimensionSignature) : MeasurementChannel State Reading :=
   { channel with dimension := dimension }
 
-/-- [MID-T02] Dimension relabeling leaves observation and calibration byte-for-byte typed-identical. -/
+/-- [MID-T02] Dimension relabeling leaves observation and calibration unchanged. -/
 theorem MID_T02_relabel_preserves_operational_map
     (channel : MeasurementChannel State Reading)
     (leftDimension rightDimension : DimensionSignature) :
@@ -86,7 +83,7 @@ theorem MID_T02_relabel_preserves_operational_map
 
 /--
 [MID-T03] The same operational observation/calibration maps admit distinct length and
-time labels.  Therefore the label is not determined by those maps alone.
+time labels. Therefore the label is not determined by those maps alone.
 -/
 theorem MID_T03_same_operational_map_allows_distinct_dimensions
     (channel : MeasurementChannel State Reading) :
@@ -125,9 +122,8 @@ theorem MID_T04_dimension_relabel_preserves_premetric_ontology
 
 /--
 [MID-T05] Explicit countermodel to dimension-from-premetric-ontology uniqueness:
-for any premetric ontology and any fixed operational maps, there are two measurement
-systems with the same premetric projection and the same operational map but distinct
-dimension labels.
+for any premetric ontology and fixed operational maps, there are two measurement
+systems with the same premetric projection and operational map but distinct dimensions.
 -/
 theorem MID_T05_dimension_not_determined_by_premetric_ontology
     (ontology : PremetricOntology State)
@@ -149,22 +145,19 @@ theorem MID_T05_dimension_not_determined_by_premetric_ontology
       base lengthDimension timeDimension
   · exact MID_T01_length_and_time_labels_are_distinct
 
-/--
-A metric representation of one premetric causal boundary.  `speedNumeral` is a
-representation token, not part of the boundary relation itself.
--/
+/-- A metric representation of one premetric causal boundary. -/
 structure MetricCausalRepresentation (State : Type u) (Reading : Type v) where
   boundary : State → State → Prop
   spaceReading : State → Reading
   timeReading : State → Reading
   speedNumeral : Reading
 
-/-- Equality of the causal boundary while ignoring metric labels and numerical encoding. -/
+/-- Equality of the causal boundary while ignoring metric numerical encoding. -/
 def sameCausalBoundary
     (left right : MetricCausalRepresentation State Reading) : Prop :=
   left.boundary = right.boundary
 
-/-- Change only the displayed numerical token for the invariant propagation speed. -/
+/-- Change only the displayed numerical token for propagation speed. -/
 def reencodeSpeedNumeral
     (representation : MetricCausalRepresentation State Reading)
     (speedNumeral : Reading) : MetricCausalRepresentation State Reading :=
@@ -180,9 +173,8 @@ theorem MID_T06_speed_numeral_reencoding_preserves_causal_boundary
   rfl
 
 /--
-[MID-T07] The same causal boundary can carry the SI numeral `299792458` or the
-normalized numeral `1`.  This is a representation theorem only; it does not derive the
-physical value of the speed of light.
+[MID-T07] The same causal boundary can carry the SI numeral `299792458` or normalized
+numeral `1`. This is a representation theorem only; it does not derive physical `c`.
 -/
 theorem MID_T07_same_boundary_allows_c_299792458_or_1
     (representation : MetricCausalRepresentation State Nat) :
@@ -194,7 +186,7 @@ theorem MID_T07_same_boundary_allows_c_299792458_or_1
   constructor
   · exact MID_T06_speed_numeral_reencoding_preserves_causal_boundary
       representation 299792458 1
-  · decide
+  · simp [reencodeSpeedNumeral]
 
 end MeasurementInducedDimensions
 end Physics
