@@ -1,0 +1,41 @@
+name: QIK-VRT IO Evidence Publication Round Trip
+
+on:
+  pull_request:
+    paths:
+      - AI
+      - docs/IO_EVIDENCE_PUBLICATION_ROUNDTRIP.md
+      - policy/IO_EVIDENCE_PUBLICATION_ROUNDTRIP_V1.json
+      - tools/qikvrt_io_roundtrip.py
+      - tests/test_io_evidence_publication_roundtrip.py
+      - state/io_roundtrip/**
+      - state/authorization/delegations/OWNER_IO_EVIDENCE_PUBLICATION_ROUNDTRIP_V1.json
+      - .github/workflows/qikvrt_io_roundtrip.yml
+  push:
+    branches: [main]
+    paths:
+      - AI
+      - docs/IO_EVIDENCE_PUBLICATION_ROUNDTRIP.md
+      - policy/IO_EVIDENCE_PUBLICATION_ROUNDTRIP_V1.json
+      - tools/qikvrt_io_roundtrip.py
+      - tests/test_io_evidence_publication_roundtrip.py
+      - state/io_roundtrip/**
+      - state/authorization/delegations/OWNER_IO_EVIDENCE_PUBLICATION_ROUNDTRIP_V1.json
+      - .github/workflows/qikvrt_io_roundtrip.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify machine-readable contract
+        run: python3 -B tools/qikvrt_io_roundtrip.py verify
+      - name: Run IO round-trip regression tests
+        run: python3 -B -m unittest tests.test_io_evidence_publication_roundtrip
+      - name: Compile controller
+        run: python3 -B -m py_compile tools/qikvrt_io_roundtrip.py
