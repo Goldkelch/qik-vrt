@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT Round Trip prepublication return
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_round_trip_prepublication_return.yml'
+      - 'state/work_units/ROUND_TRIP_PREPUBLICATION_RETURN_V1.json'
+      - 'release/round-trip-canonical-publication-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json'
+      - 'docs/publications/2026-08-07-universum-als-round-trip/**'
+      - 'policy/qikvrt-prepublication-return-receipt-v2.schema.json'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-round-trip-prepublication-return:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          printf 'ROUND_TRIP_RETURN_HEAD=%s\n' "$head" >> "$GITHUB_ENV"
+          printf 'ROUND_TRIP_RETURN_TREE=%s\n' "$tree" >> "$GITHUB_ENV"
+
+      - name: Generate and validate deterministic v2 return receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/evidence
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path('.')
+          work = json.loads((root / 'state/work_units/ROUND_TRIP_PREPUBLICATION_RETURN_V1.json').read_text(encoding='utf-8'))
+          schema = json.loads((root / 'policy/qikvrt-prepublication-return-receipt-v2.schema.json').read_text(encoding='utf-8'))
+          if schema.get('properties', {}).get('schema', {}).get('const') != 'qikvrt_prepublication_return_receipt_v2':
+              raise SystemExit('BLOCK active prepublication return schema differs')
+          if work.get('schema') != 'qikvrt_round_trip_prepublication_return_v1':
+              raise SystemExit('BLOCK Round Trip return work-unit schema differs')
+          if work.get('publication_state', {}).get('primary_publication_bytes_frozen') is not True:
+              raise SystemExit('BLOCK primary publication bytes are not frozen')
+          if work.get('return_evidence', {}).get('candidate_returned_to_owner') is not True:
+              raise SystemExit('BLOCK owner return event is absent')
+          if work.get('return_evidence', {}).get('content_changed_after_freeze') is not False:
+              raise SystemExit('BLOCK candidate changed after freeze')
+
+          def git_blob(path):
+              return subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+
+          candidate_files = []
+          for item in work['primary_publication_files']:
+              path = root / item['path']
+              raw = path.read_bytes()
+              observed = {
+                  'path': item['path'],
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': git_blob(path),
+              }
+              if observed['sha256'] != item['sha256'] or observed['git_blob_sha1'] != item['git_blob_sha1']:
+                  raise SystemExit('BLOCK frozen candidate identity drift: ' + item['path'])
+              candidate_files.append(observed)
+
+          returned = work['return_evidence']
+          receipt = {
+              '_license': {
+                  'classification': 'machine_readable_prepublication_return_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_prepublication_return_receipt_v2',
+              'publication_id': work['publication_id'],
+              'content_changed': False,
+              'original_files': [],
+              'candidate_files': candidate_files,
+              'changed_claim_ids': [],
+              'change_reasons': [],
+              'change_notice_path': None,
+              'return': {
+                  'candidate_returned_to_owner': True,
+                  'owner_name': 'Ingolf Lohmann',
+                  'owner_type': 'NATURAL_PERSON',
+                  'return_channel': returned['return_channel'],
+                  'returned_at': returned['returned_at'],
+                  'visible_change_notice_returned': False,
+              },
+          }
+          rendered = json.dumps(receipt, sort_keys=True, separators=(',', ':')) + '\n'
+          out = root / '.qikvrt/evidence/ROUND_TRIP_PREPUBLICATION_RETURN_RECEIPT.json'
+          out.write_text(rendered, encoding='utf-8')
+
+          committed = root / work['receipt']['path']
+          if committed.exists() and committed.read_bytes() != rendered.encode('utf-8'):
+              raise SystemExit('BLOCK committed prepublication return receipt differs from deterministic reconstruction')
+
+          summary = {
+              'schema': 'qikvrt_round_trip_prepublication_return_exact_head_receipt_v1',
+              'source_head': __import__('os').environ['ROUND_TRIP_RETURN_HEAD'],
+              'source_tree': __import__('os').environ['ROUND_TRIP_RETURN_TREE'],
+              'publication_id': work['publication_id'],
+              'candidate_file_count': len(candidate_files),
+              'prepublication_return_sha256': hashlib.sha256(rendered.encode('utf-8')).hexdigest(),
+              'owner_return_comment_id': returned['github_comment_id'],
+              'physical_correspondence': 'NOT_ESTABLISHED',
+              'empirical_confirmation': 'NOT_INFERRED',
+              'zenodo_authorization': 'NOT_ESTABLISHED',
+              'zenodo_effect': 'NOT_EXECUTED',
+              'completion_claims': {'PASS': False, 'FINAL_PASS': False, 'EFFECT_ACK_DONE': False},
+          }
+          (root / '.qikvrt/evidence/ROUND_TRIP_PREPUBLICATION_RETURN_EXACT_HEAD_RECEIPT.json').write_text(
+              json.dumps(summary, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps({'candidate_files': candidate_files, 'receipt_sha256': summary['prepublication_return_sha256']}, sort_keys=True))
+          PY
+
+      - name: Upload deterministic prepublication return evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-round-trip-prepublication-return-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            .qikvrt/evidence/ROUND_TRIP_PREPUBLICATION_RETURN_RECEIPT.json
+            .qikvrt/evidence/ROUND_TRIP_PREPUBLICATION_RETURN_EXACT_HEAD_RECEIPT.json
