@@ -20,6 +20,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = ROOT / "policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json"
+ADAPTATION_POLICY_PATH = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
+ADAPTATION_MATRIX_PATH = ROOT / "state/interface_adaptation/EVALUATION_MATRIX.json"
 
 
 class BootBlock(RuntimeError):
@@ -112,6 +114,51 @@ def load_bootstrap_corpus() -> dict[str, Any]:
     return corpus
 
 
+def load_interface_adaptation() -> tuple[dict[str, Any], dict[str, Any]]:
+    policy = load_json_object(
+        ADAPTATION_POLICY_PATH, str(ADAPTATION_POLICY_PATH.relative_to(ROOT))
+    )
+    matrix = load_json_object(
+        ADAPTATION_MATRIX_PATH, str(ADAPTATION_MATRIX_PATH.relative_to(ROOT))
+    )
+    if policy.get("schema") != "qikvrt_human_machine_interface_adaptation_v1":
+        raise BootBlock("human-machine interface adaptation policy schema drift")
+    if policy.get("reuse_before_create") is not True:
+        raise BootBlock("human-machine interface adaptation must enforce REUSE_BEFORE_CREATE")
+    if policy.get("adaptation_mode") != "MEASURE_CACHE_RANK_PROPOSE_REVIEW":
+        raise BootBlock("human-machine interface adaptation mode drift")
+    never_optimize_by = policy.get("never_optimize_by")
+    mandatory_prohibitions = {
+        "skipping mandatory gates",
+        "weakening exact-head binding",
+        "dropping provenance",
+        "persisting secrets",
+        "treating cached output as proof authority",
+        "performing external effects without authorization",
+    }
+    if not isinstance(never_optimize_by, list) or not mandatory_prohibitions.issubset(set(never_optimize_by)):
+        raise BootBlock("adaptive optimization is missing mandatory safety prohibitions")
+    cache_layers = policy.get("cache_layers")
+    if not isinstance(cache_layers, list) or len(cache_layers) < 4:
+        raise BootBlock("adaptive optimization cache hierarchy is incomplete")
+    cache_ids = {item.get("id") for item in cache_layers if isinstance(item, dict)}
+    if cache_ids != {"L0_SESSION", "L1_PERSONAL_WORKING_MEMORY", "L2_RUNTIME_TOOLCHAIN", "L3_DERIVED_KNOWLEDGE"}:
+        raise BootBlock("adaptive optimization cache hierarchy drift")
+    matrix_contract = policy.get("evaluation_matrix")
+    if not isinstance(matrix_contract, dict):
+        raise BootBlock("adaptive optimization lacks evaluation matrix contract")
+    if matrix_contract.get("path") != str(ADAPTATION_MATRIX_PATH.relative_to(ROOT)):
+        raise BootBlock("adaptive optimization evaluation matrix path drift")
+    if matrix.get("schema") != "qikvrt_human_machine_interface_evaluation_matrix_v1":
+        raise BootBlock("human-machine interface evaluation matrix schema drift")
+    selection = matrix.get("selection")
+    if not isinstance(selection, dict) or selection.get("quality_regression_allowed") is not False:
+        raise BootBlock("evaluation matrix must fail closed on quality regression")
+    if selection.get("mandatory_gate_reduction_allowed") is not False:
+        raise BootBlock("evaluation matrix must not optimize by reducing mandatory gates")
+    return policy, matrix
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit one JSON document")
@@ -125,7 +172,7 @@ def main() -> int:
     args = parser.parse_args()
 
     report: dict[str, Any] = {
-        "schema": "qikvrt-ai-runtime-boot/1.1",
+        "schema": "qikvrt-ai-runtime-boot/1.2",
         "repository_root": str(ROOT),
         "task": args.task,
         "state": "RUNNING",
@@ -134,19 +181,22 @@ def main() -> int:
             "read AI and AI_CONTEXT.json",
             "load personal-origin and contribution-attribution contract",
             "load supplied bootstrap knowledge corpus with epistemic boundaries",
+            "load adaptive human-machine interface cache and evaluation contracts",
             "verify repository identity and Git ref",
             "verify handoff and required repository evidence",
             "verify integrity authorities",
             "verify declared tool/cache contracts",
             "check runtime profile without hidden installation",
-            "hand control to the authorized task executor",
-            "persist verified improvements through reviewed repository changes",
+            "hand control to the authorized task executor using fastest verified reusable path",
+            "measure reusable interaction and runtime evidence",
+            "persist reviewed improvements through repository changes",
         ],
     }
 
     try:
         context = load_context()
         corpus = load_bootstrap_corpus()
+        adaptation_policy, adaptation_matrix = load_interface_adaptation()
         artifacts = corpus["source_artifacts"]
         untranscribed = [item for item in artifacts if item.get("content_status") == "UNTRANSCRIBED"]
         report["context_id"] = context.get("context_id", "unknown")
@@ -159,6 +209,15 @@ def main() -> int:
             "epistemic_partition": corpus.get("epistemic_partition", []),
             "scientific_boundaries": corpus.get("scientific_boundaries", {}),
         }
+        report["interface_adaptation"] = {
+            "mode": adaptation_policy.get("adaptation_mode"),
+            "default_state": adaptation_policy.get("default_state"),
+            "cache_layers": [item.get("id") for item in adaptation_policy.get("cache_layers", [])],
+            "routing": adaptation_policy.get("adaptive_routing", {}).get("strategy"),
+            "matrix_state": adaptation_matrix.get("state"),
+            "matrix_rows": len(adaptation_matrix.get("rows", [])),
+            "minimum_observations_before_preference": adaptation_policy.get("evaluation_matrix", {}).get("minimum_observations_before_preference"),
+        }
         report["repository"] = git_value("config", "--get", "remote.origin.url")
         report["git_ref"] = git_value("rev-parse", "--abbrev-ref", "HEAD")
         report["git_commit"] = git_value("rev-parse", "HEAD")
@@ -169,6 +228,16 @@ def main() -> int:
                 "command": ["internal", str(CORPUS_PATH.relative_to(ROOT))],
                 "exit_code": 0,
                 "stdout": f"artifacts={len(artifacts)} untranscribed_audio={len(untranscribed)}",
+                "stderr": "",
+                "state": "PASS",
+            }
+        )
+        report["gates"].append(
+            {
+                "name": "human machine interface adaptation",
+                "command": ["internal", str(ADAPTATION_POLICY_PATH.relative_to(ROOT))],
+                "exit_code": 0,
+                "stdout": f"mode={adaptation_policy.get('adaptation_mode')} matrix_rows={len(adaptation_matrix.get('rows', []))}",
                 "stderr": "",
                 "state": "PASS",
             }
@@ -211,7 +280,7 @@ def main() -> int:
         report["next_action"] = (
             "Install explicitly accepted missing runtime components, then rerun the bootloader."
             if has_continue
-            else "Execute the authorized task with corpus claim boundaries; persist improvements only through tests, integrity, review, and merge."
+            else "Execute the authorized task using the fastest previously verified path; record comparable performance evidence and persist only reviewed improvements."
         )
     except BootBlock as exc:
         report["state"] = "BLOCK"
@@ -229,6 +298,11 @@ def main() -> int:
         if corpus_report:
             print(f"KNOWLEDGE_CORPUS_ARTIFACTS={corpus_report.get('artifact_count', 0)}")
             print(f"KNOWLEDGE_CORPUS_UNTRANSCRIBED_AUDIO={corpus_report.get('untranscribed_audio_count', 0)}")
+        adaptation_report = report.get("interface_adaptation", {})
+        if adaptation_report:
+            print(f"INTERFACE_ADAPTATION_MODE={adaptation_report.get('mode', 'unavailable')}")
+            print(f"INTERFACE_ADAPTATION_MATRIX_ROWS={adaptation_report.get('matrix_rows', 0)}")
+            print(f"INTERFACE_ADAPTATION_ROUTING={adaptation_report.get('routing', 'unavailable')}")
         for gate in report["gates"]:
             print(f"GATE_{gate['name'].upper().replace(' ', '_')}={gate['state']}")
         if "blocker" in report:
