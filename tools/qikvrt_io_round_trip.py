@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 """QIK-VRT universal I/O round-trip materializer.
 
-The controller is intentionally repository-local and stdlib-only. It accepts one
-JSON envelope, creates an append-only content-addressed receipt, classifies the
-knowledge/evidence/publication route, and emits a machine-readable result.
-External publication is delegated to separately credentialed effect workers.
+The controller is repository-local and stdlib-only. It accepts one JSON
+envelope, persists exact permitted payload bytes (or an explicit bound external
+reference for digest-only/sensitive payloads), creates an append-only
+content-addressed receipt, classifies evidence/publication routing, and emits a
+machine-readable result. External publication is delegated to separately
+credentialed effect workers.
 """
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from datetime import datetime, timezone
 
 SCHEMA = "qik-vrt.io-round-trip-receipt.v1"
 POLICY = "policy/IO_ROUND_TRIP_AUTOPUBLICATION_V1.json"
+MAX_PAYLOAD_BYTES = 16 * 1024 * 1024
 ALLOWED_DIRECTIONS = {"input", "output"}
 ALLOWED_PROOF = {
     "FORMALLY_PROVED",
@@ -37,10 +42,14 @@ ALLOWED_KNOWLEDGE = {
     "NEW_PROTOCOL_RESULT",
     "UNRESOLVED",
 }
+PAYLOAD_FIELDS = ("payload_sha256", "payload_text", "payload_json", "payload_base64")
 
 
 def canonical_json(value: Any) -> bytes:
-    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    ).encode("utf-8")
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -48,7 +57,12 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def now_utc() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def repository_root(start: Path) -> Path:
@@ -62,7 +76,7 @@ def read_envelope(path: str | None) -> dict[str, Any]:
     if path:
         raw = Path(path).read_bytes()
     else:
-        raw = os.read(0, 16 * 1024 * 1024)
+        raw = os.read(0, MAX_PAYLOAD_BYTES * 2)
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -72,18 +86,73 @@ def read_envelope(path: str | None) -> dict[str, Any]:
     return value
 
 
+def _validate_digest(raw: Any) -> str:
+    digest = str(raw).lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise SystemExit("payload_sha256 must be a 64-hex SHA-256")
+    return digest
+
+
+def payload_material(
+    envelope: dict[str, Any],
+) -> tuple[str, str, bytes | None, Any | None]:
+    present = [field for field in PAYLOAD_FIELDS if field in envelope]
+    if len(present) != 1:
+        raise SystemExit(
+            "exactly one of payload_sha256, payload_text, payload_json, "
+            "or payload_base64 is required"
+        )
+
+    field = present[0]
+    if field == "payload_sha256":
+        digest = _validate_digest(envelope[field])
+        reference = envelope.get("payload_reference")
+        if reference in (None, "", {}, []):
+            raise SystemExit(
+                "digest-only payload_sha256 requires a non-empty payload_reference"
+            )
+        try:
+            canonical_json(reference)
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(
+                "payload_reference must be canonical-JSON serializable"
+            ) from exc
+        return digest, "declared", None, reference
+
+    if field == "payload_text":
+        value = envelope[field]
+        if not isinstance(value, str):
+            raise SystemExit("payload_text must be a string")
+        data = value.encode("utf-8")
+        source = "payload_text"
+    elif field == "payload_json":
+        try:
+            data = canonical_json(envelope[field])
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(
+                "payload_json must be canonical-JSON serializable"
+            ) from exc
+        source = "payload_json"
+    else:
+        value = envelope[field]
+        if not isinstance(value, str):
+            raise SystemExit("payload_base64 must be a base64 string")
+        try:
+            data = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise SystemExit("payload_base64 is not valid canonical base64") from exc
+        source = "payload_base64"
+
+    if len(data) > MAX_PAYLOAD_BYTES:
+        raise SystemExit(
+            f"inline payload exceeds the {MAX_PAYLOAD_BYTES}-byte repository ingress bound"
+        )
+    return sha256_bytes(data), source, data, None
+
+
 def payload_digest(envelope: dict[str, Any]) -> tuple[str, str]:
-    if "payload_sha256" in envelope:
-        digest = str(envelope["payload_sha256"]).lower()
-        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-            raise SystemExit("payload_sha256 must be a lowercase/uppercase 64-hex SHA-256")
-        return digest, "declared"
-    if "payload_text" in envelope:
-        data = str(envelope["payload_text"]).encode("utf-8")
-        return sha256_bytes(data), "payload_text"
-    if "payload_json" in envelope:
-        return sha256_bytes(canonical_json(envelope["payload_json"])), "payload_json"
-    raise SystemExit("one of payload_sha256, payload_text, or payload_json is required")
+    digest, source, _, _ = payload_material(envelope)
+    return digest, source
 
 
 def semantic_fingerprint(envelope: dict[str, Any], digest: str) -> str:
@@ -114,22 +183,92 @@ def existing_semantic_fingerprints(root: Path) -> set[str]:
     return found
 
 
-def publication_route(knowledge_class: str, proof_status: str, duplicate: bool, envelope: dict[str, Any]) -> dict[str, Any]:
+def publication_route(
+    knowledge_class: str,
+    proof_status: str,
+    duplicate: bool,
+    envelope: dict[str, Any],
+) -> dict[str, Any]:
     if duplicate or knowledge_class in {"TRANSPORT_ONLY", "DUPLICATE", "UNRESOLVED"}:
-        return {"zenodo": "NOT_ELIGIBLE", "ietf": "NOT_ELIGIBLE", "reason": "duplicate_or_non_publishable_class"}
+        return {
+            "zenodo": "NOT_ELIGIBLE",
+            "ietf": "NOT_ELIGIBLE",
+            "reason": "duplicate_or_non_publishable_class",
+        }
 
     stable = bool(envelope.get("stable_bytes", False))
     rights = bool(envelope.get("rights_clear", False))
     verified = proof_status not in {"UNPROVED_CLAIM"}
     suitable = bool(envelope.get("publication_granularity_suitable", False))
     significant = bool(envelope.get("novelty_or_version_significance", False))
-    zenodo = "READY" if all((stable, rights, verified, suitable, significant)) else "HOLD"
+    zenodo = (
+        "READY"
+        if all((stable, rights, verified, suitable, significant))
+        else "HOLD"
+    )
 
-    protocol = knowledge_class == "NEW_PROTOCOL_RESULT" and bool(envelope.get("protocol_or_interoperability_relevance", False))
+    protocol = knowledge_class == "NEW_PROTOCOL_RESULT" and bool(
+        envelope.get("protocol_or_interoperability_relevance", False)
+    )
     ietf_format = bool(envelope.get("ietf_format_valid", False))
     rationale = bool(envelope.get("ietf_submission_rationale", False))
-    ietf = "READY" if all((protocol, ietf_format, rights, verified, rationale)) else ("HOLD" if protocol else "NOT_ELIGIBLE")
-    return {"zenodo": zenodo, "ietf": ietf, "reason": "deterministic_policy_evaluation"}
+    ietf = (
+        "READY"
+        if all((protocol, ietf_format, rights, verified, rationale))
+        else ("HOLD" if protocol else "NOT_ELIGIBLE")
+    )
+    return {
+        "zenodo": zenodo,
+        "ietf": ietf,
+        "reason": "deterministic_policy_evaluation",
+    }
+
+
+def persist_payload(
+    root: Path,
+    digest: str,
+    digest_source: str,
+    data: bytes | None,
+    reference: Any | None,
+) -> dict[str, Any]:
+    if data is None:
+        return {
+            "mode": "EXTERNAL_BOUND_REFERENCE",
+            "repository_path": None,
+            "persisted_bytes": False,
+            "bytes": None,
+            "sha256": digest,
+            "digest_source": digest_source,
+            "reference": reference,
+        }
+
+    if sha256_bytes(data) != digest:
+        raise SystemExit("payload digest changed before repository persistence")
+    payload_dir = (
+        root
+        / "state"
+        / "io_round_trip"
+        / "payloads"
+        / "sha256"
+        / digest[:2]
+    )
+    payload_dir.mkdir(parents=True, exist_ok=True)
+    path = payload_dir / f"{digest}.bin"
+    if path.exists():
+        prior = path.read_bytes()
+        if prior != data:
+            raise SystemExit(f"append-only payload collision at {path}")
+    else:
+        path.write_bytes(data)
+    return {
+        "mode": "REPOSITORY_CONTENT_ADDRESSED_BYTES",
+        "repository_path": path.relative_to(root).as_posix(),
+        "persisted_bytes": True,
+        "bytes": len(data),
+        "sha256": digest,
+        "digest_source": digest_source,
+        "reference": None,
+    }
 
 
 def materialize(root: Path, envelope: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
@@ -144,7 +283,8 @@ def materialize(root: Path, envelope: dict[str, Any]) -> tuple[Path, dict[str, A
     if proof_status not in ALLOWED_PROOF:
         raise SystemExit(f"unsupported proof_status: {proof_status}")
 
-    digest, digest_source = payload_digest(envelope)
+    digest, digest_source, data, reference = payload_material(envelope)
+    storage = persist_payload(root, digest, digest_source, data, reference)
     fingerprint = semantic_fingerprint(envelope, digest)
     duplicate = fingerprint in existing_semantic_fingerprints(root)
     effective_class = "DUPLICATE" if duplicate else knowledge_class
@@ -165,24 +305,36 @@ def materialize(root: Path, envelope: dict[str, Any]) -> tuple[Path, dict[str, A
         "media_type": str(envelope.get("media_type", "application/octet-stream")),
         "payload_sha256": digest,
         "payload_digest_source": digest_source,
+        "payload_storage": storage,
         "semantic_fingerprint": fingerprint,
         "provenance": provenance,
         "claim_scope": envelope.get("claim_scope"),
         "knowledge_class": effective_class,
         "proof_status": proof_status,
-        "scientific_status_boundary": "EXECUTABLE_WORLD_FORMULA_ARCHITECTURE_CLAIM != FULLY_EMPIRICALLY_ESTABLISHED_DESCRIPTION_OF_NATURE",
+        "scientific_status_boundary": (
+            "EXECUTABLE_WORLD_FORMULA_ARCHITECTURE_CLAIM != "
+            "FULLY_EMPIRICALLY_ESTABLISHED_DESCRIPTION_OF_NATURE"
+        ),
         "publication_route": route,
         "external_effect": {
             "performed_by_this_controller": False,
-            "worker_required": route["zenodo"] == "READY" or route["ietf"] == "READY",
-            "status": "QUEUED_FOR_EFFECT_WORKER" if route["zenodo"] == "READY" or route["ietf"] == "READY" else "NO_EXTERNAL_EFFECT"
+            "worker_required": (
+                route["zenodo"] == "READY" or route["ietf"] == "READY"
+            ),
+            "status": (
+                "QUEUED_FOR_EFFECT_WORKER"
+                if route["zenodo"] == "READY" or route["ietf"] == "READY"
+                else "NO_EXTERNAL_EFFECT"
+            ),
         },
     }
     receipt["receipt_sha256"] = sha256_bytes(canonical_json(receipt))
 
     out_dir = root / "state" / "io_round_trip" / "receipts"
     out_dir.mkdir(parents=True, exist_ok=True)
-    safe_event = "".join(c if c.isalnum() or c in "-_." else "_" for c in event_id)[:80]
+    safe_event = "".join(
+        c if c.isalnum() or c in "-_." else "_" for c in event_id
+    )[:80]
     path = out_dir / f"{receipt['receipt_sha256'][:16]}-{safe_event}.json"
     if path.exists():
         prior = path.read_bytes()
@@ -198,22 +350,34 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--envelope", help="JSON envelope file; stdin when omitted")
     parser.add_argument("--root", help="repository root override")
-    parser.add_argument("--json", action="store_true", help="emit compact machine-readable result")
+    parser.add_argument(
+        "--json", action="store_true", help="emit compact machine-readable result"
+    )
     args = parser.parse_args()
 
-    root = Path(args.root).resolve() if args.root else repository_root(Path.cwd().resolve())
-    envelope = read_envelope(args.envelope)
-    path, receipt = materialize(root, envelope)
+    root = (
+        Path(args.root).resolve()
+        if args.root
+        else repository_root(Path.cwd().resolve())
+    )
+    path, receipt = materialize(root, read_envelope(args.envelope))
     result = {
         "status": "CONTINUE",
         "receipt": str(path.relative_to(root)),
         "receipt_sha256": receipt["receipt_sha256"],
+        "payload_storage": receipt["payload_storage"],
         "knowledge_class": receipt["knowledge_class"],
         "proof_status": receipt["proof_status"],
         "publication_route": receipt["publication_route"],
         "external_effect": receipt["external_effect"],
     }
-    print(json.dumps(result, sort_keys=True, separators=(",", ":") if args.json else None))
+    print(
+        json.dumps(
+            result,
+            sort_keys=True,
+            separators=(",", ":") if args.json else None,
+        )
+    )
     return 0
 
 
