@@ -1,0 +1,143 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT Mandelbrot 42-loop proof reproduction
+
+on:
+  push:
+    branches: [agent/mandelbrot-42-proof-loops-v1]
+    paths:
+      - ".github/workflows/qikvrt_mandelbrot_42_proof_reproduction.yml"
+      - "state/work_units/MANDELBROT_42_PROOF_REPRODUCTION_V1.json"
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_mandelbrot_42_proof_reproduction.yml"
+      - "state/work_units/MANDELBROT_42_PROOF_REPRODUCTION_V1.json"
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mandelbrot-42-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-42-loop-reproduction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Execute 42 clean proof reproductions
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          root=".lake/mandelbrot-42"
+          rm -rf "$root"
+          mkdir -p "$root"
+          lean_version="$(lake env lean --version)"
+          baseline=""
+
+          for i in $(seq 1 42); do
+            n="$(printf '%02d' "$i")"
+            out="$root/loop-$n"
+            mkdir -p "$out"
+            echo "=== MANDELBROT-42 LOOP $n / 42 ==="
+
+            rm -rf .lake/build
+            lake build
+            lake env lean QIKVRTUniversalOntology/AxiomAudit.lean > "$out/core.txt" 2>&1
+            lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean > "$out/extended.txt" 2>&1
+            lake env lean QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean > "$out/measurement.txt" 2>&1
+            lake env lean QIKVRTFormalization/Hardware/AxiomAudit.lean > "$out/hardware.txt" 2>&1
+            python3 -B scripts/audit_lean_axioms.py > "$out/policy.txt" 2>&1
+
+            LOOP_DIR="$out" HEAD_SHA="$HEAD_SHA" TREE_SHA="$TREE_SHA" LEAN_VERSION="$lean_version" python3 - <<'PY'
+          import hashlib, json, os, pathlib, re
+          d = pathlib.Path(os.environ['LOOP_DIR'])
+          pat = re.compile(r"^'(?P<n>[^']+)' (?:does not depend on any axioms|depends on axioms: \[(?P<a>[^]]*)\])$")
+          allowed = {'propext', 'Classical.choice', 'Quot.sound'}
+          specs = [('core.txt',32,False),('extended.txt',71,False),('measurement.txt',9,True),('hardware.txt',22,False)]
+          payload = []
+          for name, count, zero in specs:
+              raw = (d/name).read_bytes(); payload.append(raw)
+              reports = {}
+              for line in raw.decode().splitlines():
+                  if not line.strip(): continue
+                  m = pat.fullmatch(line.strip())
+                  if not m: raise SystemExit(f'BLOCK unexpected {name} output: {line}')
+                  axioms = {x.strip() for x in (m.group('a') or '').split(',') if x.strip()}
+                  reports[m.group('n')] = axioms
+              if len(reports) != count: raise SystemExit(f'BLOCK {name} report count {len(reports)} != {count}')
+              if any(a-allowed for a in reports.values()): raise SystemExit(f'BLOCK forbidden axiom in {name}')
+              if zero and any(reports.values()): raise SystemExit(f'BLOCK nonempty axiom dependency in {name}')
+          policy=(d/'policy.txt').read_bytes(); payload.append(policy)
+          if b'PASS axiom audit:' not in policy: raise SystemExit('BLOCK repository axiom policy')
+          h=hashlib.sha256()
+          for v in [os.environ['HEAD_SHA'].encode(),os.environ['TREE_SHA'].encode(),os.environ['LEAN_VERSION'].encode(),*payload]:
+              h.update(len(v).to_bytes(8,'big')); h.update(v)
+          fp=h.hexdigest()
+          receipt={'loop':int(d.name[-2:]),'source_commit':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],'lean_version':os.environ['LEAN_VERSION'],'evidence_fingerprint_sha256':fp,'physical_correspondence':'NOT_INFERRED','empirical_confirmation':'NOT_INFERRED','PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False}
+          (d/'LOOP_RECEIPT.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(fp)
+          PY
+
+            fp="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["evidence_fingerprint_sha256"])' "$out/LOOP_RECEIPT.json")"
+            if [ -z "$baseline" ]; then baseline="$fp"; else test "$fp" = "$baseline"; fi
+            echo "LOOP $n VERIFIED fingerprint=$fp"
+          done
+
+          LOOP_ROOT="$root" HEAD_SHA="$HEAD_SHA" TREE_SHA="$TREE_SHA" python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root=pathlib.Path(os.environ['LOOP_ROOT'])
+          rs=[json.loads(p.read_text()) for p in sorted(root.glob('loop-*/LOOP_RECEIPT.json'))]
+          if len(rs)!=42: raise SystemExit(f'BLOCK completed loops {len(rs)} != 42')
+          fps={r['evidence_fingerprint_sha256'] for r in rs}
+          if len(fps)!=1: raise SystemExit('BLOCK fingerprint divergence')
+          receipt={'schema':'qikvrt_mandelbrot_42_proof_reproduction_receipt_v1','repository':os.environ['GITHUB_REPOSITORY'],'source_commit':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],'workflow_run_id':os.environ['GITHUB_RUN_ID'],'workflow_run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'requested_loops':42,'completed_loops':42,'unique_evidence_fingerprints':1,'evidence_fingerprint_sha256':next(iter(fps)),'formal_reproduction_result':'FORTY_TWO_IDENTICAL_FORMAL_REPRODUCTIONS','physical_correspondence':'NOT_INFERRED','empirical_confirmation':'NOT_INFERRED','scientific_consensus':'NOT_INFERRED','completion_claims':{'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False}}
+          canonical=json.dumps(receipt,sort_keys=True,separators=(',',':')).encode();receipt['receipt_payload_sha256']=hashlib.sha256(canonical).hexdigest()
+          (root/'MANDELBROT_42_PROOF_REPRODUCTION_RECEIPT.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(receipt,sort_keys=True,indent=2))
+          PY
+
+      - name: Upload 42-loop evidence bundle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mandelbrot-42-proof-reproduction-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: formalization/QIKVRT_Formalization_v2.0/.lake/mandelbrot-42/**
