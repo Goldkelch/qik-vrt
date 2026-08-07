@@ -6,7 +6,7 @@
 This tool persists provenance receipts for conforming I/O events and derives
 reviewable publication-queue receipts for already machine-proved, connectable
 new-knowledge claims. It performs no Zenodo or IETF network mutation itself;
-those effects remain delegated to the existing exact-artifact effect tools.
+those effects remain delegated to the exact-artifact effect tools.
 """
 from __future__ import annotations
 
@@ -15,9 +15,7 @@ import datetime as dt
 import hashlib
 import json
 import pathlib
-import shutil
 import subprocess
-import sys
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -63,10 +61,7 @@ def policy() -> dict[str, Any]:
 
 
 def git_head() -> str:
-    completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
-    )
+    completed = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if completed.returncode:
         raise IORoundTripBlock("cannot resolve Git HEAD")
     value = completed.stdout.strip()
@@ -88,11 +83,9 @@ def safe_name(raw: str) -> str:
 
 def persist_event(args: argparse.Namespace) -> dict[str, Any]:
     p = policy()
-    allowed_directions = set(p["capture"]["directions"])
-    allowed_modes = set(p["capture"]["persistence_modes"])
-    if args.direction not in allowed_directions:
+    if args.direction not in set(p["capture"]["directions"]):
         raise IORoundTripBlock("unsupported I/O direction")
-    if args.persistence_mode not in allowed_modes:
+    if args.persistence_mode not in set(p["capture"]["persistence_modes"]):
         raise IORoundTripBlock("unsupported persistence mode")
     if sum(value is not None for value in (args.text, args.file)) != 1:
         raise IORoundTripBlock("exactly one of --text or --file is required")
@@ -156,8 +149,7 @@ def valid_sha256(value: Any) -> bool:
 
 def validate_claim(path: pathlib.Path, p: dict[str, Any]) -> dict[str, Any]:
     claim = load_json(path)
-    required = set(p["connectivity"]["required_fields"])
-    missing = required - set(claim)
+    missing = set(p["connectivity"]["required_fields"]) - set(claim)
     if missing:
         raise IORoundTripBlock(f"{path.relative_to(ROOT)} missing connectivity fields: {sorted(missing)}")
     if not isinstance(claim.get("source_event_ids"), list) or not claim["source_event_ids"]:
@@ -179,8 +171,13 @@ def route_claim(path: pathlib.Path, claim: dict[str, Any], apply: bool) -> dict[
         return {"claim": claim.get("claim_id"), "route": "HOLD", "reason": "connectivity_or_rights_gate"}
     if claim.get("exact_head_gates_terminal_green") is not True:
         return {"claim": claim.get("claim_id"), "route": "HOLD", "reason": "exact_head_gates"}
+    control_path = claim.get("zenodo_candidate_control_path")
+    if not isinstance(control_path, str) or not control_path:
+        return {"claim": claim.get("claim_id"), "route": "HOLD", "reason": "zenodo_candidate_control_missing"}
 
     ietf = claim.get("ietf_relevance") in {"NORMATIVE_PROTOCOL_DELTA", "INTEROPERABILITY_SPEC_DELTA"}
+    if ietf and not isinstance(claim.get("ietf_candidate_path"), str):
+        return {"claim": claim.get("claim_id"), "route": "HOLD", "reason": "ietf_candidate_missing"}
     route = "ZENODO_AND_IETF_READY" if ietf else "ZENODO_READY"
     queue = {
         "schema": "qikvrt_io_publication_queue_v1",
@@ -190,6 +187,7 @@ def route_claim(path: pathlib.Path, claim: dict[str, Any], apply: bool) -> dict[
         "source_claim_sha256": digest(path.read_bytes()),
         "source_event_ids": claim["source_event_ids"],
         "machine_proof": claim["machine_proof"],
+        "zenodo_candidate_control_path": control_path,
         "publication_manifest_path": claim.get("publication_manifest_path"),
         "ietf_candidate_path": claim.get("ietf_candidate_path") if ietf else None,
         "effect_authorization": "DERIVE_ONLY_AFTER_FINAL_BYTES_AND_PREPUBLICATION_RETURN",
