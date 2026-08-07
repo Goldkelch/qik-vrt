@@ -1,0 +1,33 @@
+name: QIKVRT corpus correction temporal precedence
+
+on:
+  pull_request:
+    paths:
+      - 'tools/qikvrt_corpus_status_temporal_precedence.py'
+      - 'tests/test_corpus_status_temporal_precedence.py'
+      - 'evidence/receipts/corpus-correction-temporal-precedence-current.json'
+      - '.github/workflows/qikvrt_corpus_status_temporal_precedence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Materialize temporal-precedence receipt
+        run: python3 -B tools/qikvrt_corpus_status_temporal_precedence.py --materialize
+      - name: Verify deterministic receipt
+        run: python3 -B tools/qikvrt_corpus_status_temporal_precedence.py --check
+      - name: Run focused regression
+        run: python3 -B -m unittest tests.test_corpus_status_temporal_precedence
+      - name: Verify repository integrity
+        run: python3 -B tools/qikvrt_integrity.py verify
