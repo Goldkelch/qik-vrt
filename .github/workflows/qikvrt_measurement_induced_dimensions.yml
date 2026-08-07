@@ -66,13 +66,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          lake env lean -E hasSorry MeasurementInducedDimensions.lean
+          module_dir=.lake/build/mid-modules
+          mkdir -p "$module_dir"
+          lake env lean -E hasSorry \
+            -o "$module_dir/MeasurementInducedDimensions.olean" \
+            MeasurementInducedDimensions.lean
 
       - name: Run exact seven-theorem axiom audit
         shell: bash
         run: |
           set -euo pipefail
-          lake env lean -E hasSorry MeasurementInducedDimensionsAxiomAudit.lean \
+          module_dir=.lake/build/mid-modules
+          LEAN_PATH="$module_dir" lake env lean -E hasSorry \
+            MeasurementInducedDimensionsAxiomAudit.lean \
             | tee MID_AXIOM_OUTPUT.txt
 
       - name: Validate audit and create exact-head receipt
