@@ -87,7 +87,9 @@ def test_materialize_is_append_only(tmp_path):
     first_path, first = MODULE.materialize(tmp_path, envelope)
     second_path, second = MODULE.materialize(tmp_path, envelope)
     assert first_path.exists()
-    assert first["receipt_sha256"] == second["receipt_sha256"]
+    assert second_path.exists()
+    assert first["receipt_sha256"] != second["receipt_sha256"]
+    assert first["knowledge_class"] == "NEW_FORMAL_RESULT"
     assert second["knowledge_class"] == "DUPLICATE"
     receipts = list((tmp_path / "state" / "io_round_trip" / "receipts").glob("*.json"))
     assert len(receipts) == 2
