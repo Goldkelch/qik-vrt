@@ -1,0 +1,268 @@
+name: QIK-VRT QCE causal-axis evidence selection proof
+
+on:
+  pull_request:
+    paths:
+      - 'docs/publications/2026-08-07-qce-causal-axis-selection/**'
+      - 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+      - 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+      - 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+      - 'state/work_units/QCE_CAUSAL_AXIS_SELECTION_V1.json'
+      - '.github/workflows/qikvrt_qce_causal_axis_selection.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-qce-causal-axis-selection:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head, tree, and upstream source blobs
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          qce_path='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd_path='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns_path='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qce_blob="$(git rev-parse "HEAD:$qce_path")"
+          mdd_blob="$(git rev-parse "HEAD:$mdd_path")"
+          qns_blob="$(git rev-parse "HEAD:$qns_path")"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          test "$qce_blob" = 'f0f8945f5422caa99b8b4aa888832cdaeb757f75'
+          test "$mdd_blob" = '930aae64123afd90e07474d9891a5e2c3da8eadf'
+          test "$qns_blob" = 'abc5ba8ac8ae89601fa9dc1ab141ec1fb450d2f8'
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "qce_blob=$qce_blob" >> "$GITHUB_OUTPUT"
+          echo "mdd_blob=$mdd_blob" >> "$GITHUB_OUTPUT"
+          echo "qns_blob=$qns_blob" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Lean 4.19 and verify upstream QCE package
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test: false
+
+      - name: Run actions/setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Compile exact upstream modules and CAS bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          elan default leanprover/lean4:v4.19.0
+          module_dir="$RUNNER_TEMP/qikvrt-cas-modules"
+          mkdir -p "$module_dir"
+          qce='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          cas='docs/publications/2026-08-07-qce-causal-axis-selection/QCECausalAxisSelection.lean'
+          lean -E hasSorry -o "$module_dir/VRTCore_QCE_Model.olean" "$qce"
+          lean -E hasSorry -o "$module_dir/MeasurementDerivedDimensions.olean" "$mdd"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENowSerialization.olean" "$qns"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCECausalAxisSelection.olean" "$cas"
+          echo "CAS_MODULE_DIR=$module_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact sixteen-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit='docs/publications/2026-08-07-qce-causal-axis-selection/QCECausalAxisSelectionAxiomAudit.lean'
+          LEAN_PATH="$CAS_MODULE_DIR" lean -E hasSorry "$audit" \
+            | tee docs/publications/2026-08-07-qce-causal-axis-selection/CAS_AXIOM_OUTPUT.txt
+
+      - name: Validate inventory and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+          QCE_BLOB: ${{ steps.binding.outputs.qce_blob }}
+          MDD_BLOB: ${{ steps.binding.outputs.mdd_blob }}
+          QNS_BLOB: ${{ steps.binding.outputs.qns_blob }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          folder = root / 'docs/publications/2026-08-07-qce-causal-axis-selection'
+          source = folder / 'QCECausalAxisSelection.lean'
+          audit = folder / 'QCECausalAxisSelectionAxiomAudit.lean'
+          output = folder / 'CAS_AXIOM_OUTPUT.txt'
+          qce = root / 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd = root / 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns = root / 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+
+          prefix = 'QIKVRT.V2.Physics.QCECausalAxisSelection.'
+          expected = [prefix + name for name in [
+              'CAS_T01_canonical_time_axis_tracks_qce_seriality',
+              'CAS_T02_canonical_tracking_axis_is_unique',
+              'CAS_T03_canonical_evidence_is_resolvable',
+              'CAS_T04_certificates_over_same_evidence_agree',
+              'CAS_T05_certified_binding_carries_qce_serial_response',
+              'CAS_T06_canonical_certificate_derives_time_dimension',
+              'CAS_T07_ambiguous_length_axis_tracks_qce_seriality',
+              'CAS_T08_ambiguous_time_axis_tracks_qce_seriality',
+              'CAS_T09_length_time_evidence_is_ambiguous',
+              'CAS_T10_ambiguous_evidence_fails_closed',
+              'CAS_T11_absent_evidence_has_no_candidate',
+              'CAS_T12_absent_evidence_fails_closed',
+              'CAS_T13_same_qce_network_allows_resolved_and_ambiguous_evidence',
+              'CAS_T14_evidence_replacement_preserves_qce_network',
+              'CAS_T15_current_qce_cone_candidate_remains_open',
+              'CAS_T16_current_qce_empirical_correspondence_remains_open',
+          ]]
+
+          source_text = source.read_text(encoding='utf-8')
+          forbidden = re.compile(
+              r'(?m)^\s*(axiom|opaque\s+axiom|theorem\s+[^\n]*:=\s*by\s+sorry\b)'
+          )
+          if forbidden.search(source_text):
+              raise SystemExit('BLOCK forbidden project proof escape in CAS source')
+
+          pat = re.compile(
+              r"^'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])$"
+          )
+          reports = {}
+          for line in output.read_text(encoding='utf-8').splitlines():
+              if not line.strip():
+                  continue
+              match = pat.fullmatch(line.strip())
+              if match is None:
+                  raise SystemExit(f'BLOCK unexpected axiom output: {line!r}')
+              name = match.group(1)
+              axioms = [
+                  item.strip()
+                  for item in (match.group(2) or '').split(',')
+                  if item.strip()
+              ]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+
+          if list(reports) != expected:
+              raise SystemExit(
+                  f'BLOCK theorem inventory differs: {list(reports)!r}'
+              )
+
+          allowed_kernel_axioms = {'propext', 'Quot.sound', 'Classical.choice'}
+          kernel_axioms = sorted({
+              axiom for values in reports.values() for axiom in values
+          })
+          project_axioms = sorted(set(kernel_axioms) - allowed_kernel_axioms)
+          if project_axioms:
+              raise SystemExit(
+                  f'BLOCK unexpected project axiom dependency: {project_axioms!r}'
+              )
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': str(path),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': subprocess.check_output(
+                      ['git', 'hash-object', str(path)], text=True
+                  ).strip(),
+              }
+
+          observed = {
+              'qce': identity(qce),
+              'mdd': identity(mdd),
+              'qns': identity(qns),
+          }
+          if observed['qce']['git_blob_sha1'] != os.environ['QCE_BLOB']:
+              raise SystemExit('BLOCK QCE source blob changed after binding')
+          if observed['mdd']['git_blob_sha1'] != os.environ['MDD_BLOB']:
+              raise SystemExit('BLOCK MDD source blob changed after binding')
+          if observed['qns']['git_blob_sha1'] != os.environ['QNS_BLOB']:
+              raise SystemExit('BLOCK QNS source blob changed after binding')
+
+          receipt = {
+              'schema': 'qikvrt_qce_causal_axis_selection_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': subprocess.check_output(
+                  ['lean', '--version'], text=True
+              ).strip(),
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'upstream_qce_source': observed['qce'],
+              'upstream_mdd_source': observed['mdd'],
+              'upstream_qns_source': observed['qns'],
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'allowed_kernel_axioms': sorted(allowed_kernel_axioms),
+              'kernel_axioms_observed': kernel_axioms,
+              'project_axioms': project_axioms,
+              'formal_result': (
+                  'UNIQUE_CAUSAL_TRACE_EVIDENCE_CERTIFIES_ONE_AXIS_'
+                  'AND_ABSENCE_OR_AMBIGUITY_FAILS_CLOSED'
+              ),
+              'canonical_temporal_evidence': (
+                  'EXPLICIT_MODEL_WITNESS_NOT_PHYSICAL_IDENTIFICATION'
+              ),
+              'qce_serial_network_alone_selects_physical_axis': False,
+              'current_qce_cone_candidate_closed': False,
+              'physical_axis_identification': 'NOT_ESTABLISHED',
+              'si_second_derived': False,
+              'si_metre_derived': False,
+              'c_physical_value_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'einstein_limit_derived': False,
+              'universal_stress_energy_coupling_derived': False,
+              'physical_correspondence': 'NOT_INFERRED',
+              'empirical_confirmation': 'NOT_INFERRED',
+              'next_required_bridge': (
+                  'NONCIRCULAR_QCE_OR_MEASUREMENT_EVIDENCE_'
+                  'THAT_UNIQUELY_SUPPLIES_THE_CAUSAL_AXIS_TRACE'
+              ),
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(
+              receipt, sort_keys=True, separators=(',', ':')
+          ).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          receipt_path = folder / 'CAS_KERNEL_RECEIPT.json'
+          receipt_path.write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload CAS exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-qce-causal-axis-selection-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-qce-causal-axis-selection/CAS_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-qce-causal-axis-selection/CAS_KERNEL_RECEIPT.json
