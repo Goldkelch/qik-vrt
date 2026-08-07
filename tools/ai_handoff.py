@@ -35,6 +35,7 @@ SUPPORTED_CONTEXT_SCHEMAS = frozenset(
         "qikvrt-ai-context/1.0",
         "qikvrt-ai-context/1.2",
         "qikvrt-ai-context/1.3",
+        "qikvrt-ai-context/1.4",
     }
 )
 
