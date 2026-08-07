@@ -1,0 +1,161 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "authority_repository": "Goldkelch/qik-vrt",
+  "canonical_entrypoint": "AI",
+  "capture_contract": {
+    "application_visible_binding": "SHA-256 and byte count over the exact application-visible UTF-8 or tool-visible byte sequence before repository projection.",
+    "default_retention": "METADATA_ONLY",
+    "disposition_pattern": "state/io_roundtrip/dispositions/<REQUEST_ID>.json",
+    "event_chain": "append-only, SHA-256 linked, sequential and tamper-evident",
+    "event_roles": [
+      "user",
+      "assistant",
+      "tool",
+      "system"
+    ],
+    "network_transport_bytes": "Do not claim capture of opaque network framing or provider-internal state that the client cannot observe.",
+    "raw_transcript_required": false,
+    "receipt_pattern": "evidence/receipts/io-roundtrip-<REQUEST_ID>.json",
+    "request_pattern": "requests/io/<REQUEST_ID>.json",
+    "unavailable_exact_bytes": "Persist scope, digest availability state and a concrete reason; never invent an exact transport digest.",
+    "work_unit_pattern": "state/work_units/<WORK_UNIT_ID>.json"
+  },
+  "client_conformance": {
+    "before_user_return": [
+      "enumerate every application-visible input, output and relevant tool artifact",
+      "construct a metadata-minimized capture request",
+      "invoke the capture controller under an authorized repository mutation path",
+      "verify the resulting request, event chain, receipt, disposition and work unit",
+      "bind the resulting files to a Git commit and review branch",
+      "reobserve repository-native integrity and exact-head CI"
+    ],
+    "chat_memory_is_authority": false,
+    "missing_host_hook_result": "BLOCK or explicit machine-readable persistence-unavailable reason; never a fabricated persistence success.",
+    "missing_host_hook_state": "OPEN_EXTERNAL_INTEGRATION_BOUNDARY",
+    "static_ai_page_read_is_capture": false
+  },
+  "controller": "tools/qikvrt_io_roundtrip.py",
+  "effective_date": "2026-08-07",
+  "epistemic_classification": {
+    "empirical_claim_requires_independent_evidence": true,
+    "formal_claim_requires_kernel_receipt": true,
+    "normative_and_interpretative_claims_must_remain_labelled": true,
+    "owner_assertion_is_formal_proof": false,
+    "reference_uri_is_retrieved_evidence": false,
+    "repository_presence_is_empirical_confirmation": false,
+    "required_for_every_candidate": [
+      "stable claim identifier",
+      "bounded summary",
+      "source event identifiers",
+      "epistemic class",
+      "verification state"
+    ]
+  },
+  "external_effect_boundary": {
+    "force_push_or_history_rewrite": "FORBIDDEN",
+    "ietf_submission": "NOT_AUTHORIZED_BY_THIS_POLICY",
+    "merge": "NOT_AUTHORIZED_BY_THIS_POLICY",
+    "release_or_deployment": "NOT_AUTHORIZED_BY_THIS_POLICY",
+    "repository_candidate_files": "AUTHORIZED_UNDER_EXISTING_REVIEW_BRANCH_DELEGATION",
+    "zenodo_mutation": "NOT_AUTHORIZED_BY_THIS_POLICY"
+  },
+  "human_contract": "docs/IO_ROUNDTRIP_PERSISTENCE_AUTOMATION.md",
+  "modality_routing": {
+    "audio_semantics": ".github/workflows/qikvrt_audio_request.yml with exact source hash, ASR_DRAFT status and human acoustic review before VERBATIM_VERIFIED",
+    "encrypted_full_interaction_when_separately_authorized": "tools/qikvrt_interaction_archive.py append",
+    "external_uri": "Persist the URI and retrieval status. A URI is REFERENCE_ONLY until retrieved, byte-hashed and epistemically classified.",
+    "opaque_binary_or_large_artifact": "src/qikvrt_api_handler.py ingest -> verify -> stage",
+    "text_and_structured_events": "tools/qikvrt_io_roundtrip.py"
+  },
+  "objective": "Everything visible to a conforming input-output client is represented by an exactly bindable repository work unit or by a machine-readable reason why exact capture is unavailable, prohibited, or outside the client boundary.",
+  "owner_authorization": "state/authorization/delegations/OWNER_IO_ROUNDTRIP_PERSISTENCE_AUTOMATION_V1.json",
+  "policy_id": "IO-ROUNDTRIP-PERSISTENCE-AUTOMATION-V1",
+  "publication_disposition": {
+    "allowed_states": [
+      "HOLD",
+      "BLOCK",
+      "NOT_APPLICABLE",
+      "CANDIDATE_PENDING_PROOF"
+    ],
+    "ietf": {
+      "applicability_rule": "Only a concrete Internet protocol, interoperability or standards delta may become an IETF candidate.",
+      "automatic_routing": true,
+      "automatic_submission": false,
+      "required_before_effect": [
+        "technical appropriateness classified",
+        "draft source and rendered bytes bound",
+        "rights and provenance cleared",
+        "exact-artifact submission authorization present",
+        "Datatracker effect receipt reobserved"
+      ]
+    },
+    "zenodo": {
+      "automatic_production_mutation": false,
+      "automatic_routing": true,
+      "required_before_effect": [
+        "exact candidate bytes frozen",
+        "rights and provenance cleared",
+        "machine proof bundle complete",
+        "candidate-specific return receipt present",
+        "single-use exact-artifact authorization present",
+        "credential and pre-effect gates reobserved"
+      ]
+    }
+  },
+  "release_claims": {
+    "EFFECT_ACK_DONE": false,
+    "FINAL_PASS": false,
+    "PASS": false
+  },
+  "repository_continuation_delegation": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
+  "request_schema": "schemas/qikvrt_io_roundtrip_capture_request_v1.schema.json",
+  "required_architecture": [
+    "INPUT",
+    "CAPTURE",
+    "NORMALIZE",
+    "HASH_BIND",
+    "PROVENANCE",
+    "REPOSITORY_PERSISTENCE",
+    "CLASSIFY",
+    "VERIFY",
+    "PUBLICATION_DISPOSITION",
+    "PRE_EFFECT_GATES",
+    "AUTHORIZED_EXTERNAL_EFFECT",
+    "RECEIPT",
+    "REOBSERVE",
+    "REPOSITORY_PERSISTENCE"
+  ],
+  "reuse_before_create": {
+    "interaction_archive": "tools/qikvrt_interaction_archive.py",
+    "opaque_artifact_ingest_and_effect_receipts": "src/qikvrt_api_handler.py",
+    "repository_integrity": "tools/qikvrt_integrity.py",
+    "rule": "The controller orchestrates existing authorities and must not establish a competing archive, effect engine, integrity authority or publication path.",
+    "runtime_bootstrap": "tools/ai_runtime_bootloader.py",
+    "zenodo_machine_proof": "tools/qikvrt_zenodo_machine_proof.py"
+  },
+  "schema": "qikvrt_io_roundtrip_persistence_automation_v1",
+  "state_machine": {
+    "failure_state": "EFFECT_ACK_BLOCK",
+    "initial": "OBSERVED_UNMATERIALIZED",
+    "success_claim_without_git_integrity_and_exact_head_ci": "FORBIDDEN",
+    "transitions": [
+      "OBSERVED_UNMATERIALIZED -> REQUEST_BOUND",
+      "REQUEST_BOUND -> EVENTS_APPENDED",
+      "EVENTS_APPENDED -> DISPOSITION_MATERIALIZED",
+      "DISPOSITION_MATERIALIZED -> RECEIPT_MATERIALIZED",
+      "RECEIPT_MATERIALIZED -> WORK_UNIT_MATERIALIZED",
+      "WORK_UNIT_MATERIALIZED -> GIT_BOUND",
+      "GIT_BOUND -> EXACT_HEAD_VERIFIED",
+      "EXACT_HEAD_VERIFIED -> EFFECT_ACK_CONTINUE",
+      "EFFECT_ACK_CONTINUE -> separately authorized publication path when applicable"
+    ]
+  },
+  "status": "IMPLEMENTATION_CANDIDATE",
+  "version": "1.0",
+  "workflow": ".github/workflows/qikvrt_io_roundtrip.yml"
+}

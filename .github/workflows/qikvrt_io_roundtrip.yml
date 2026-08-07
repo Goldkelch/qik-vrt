@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIK-VRT I/O round-trip persistence
+
+on:
+  pull_request:
+    paths:
+      - "tools/qikvrt_io_roundtrip.py"
+      - "tools/qikvrt_interaction_archive.py"
+      - "src/qikvrt_api_handler.py"
+      - "tests/test_qikvrt_io_roundtrip.py"
+      - "requests/io/**"
+      - "state/interaction_archive/io-roundtrip/**"
+      - "state/io_roundtrip/dispositions/**"
+      - "state/work_units/IO-*.json"
+      - "evidence/receipts/io-roundtrip-*.json"
+      - "policy/IO_ROUNDTRIP_PERSISTENCE_AUTOMATION_V1.json"
+      - "schemas/qikvrt_io_roundtrip_capture_request_v1.schema.json"
+      - "docs/IO_ROUNDTRIP_PERSISTENCE_AUTOMATION.md"
+      - ".github/workflows/qikvrt_io_roundtrip.yml"
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: "Tracked request below requests/io/"
+        required: true
+        default: "requests/io/request.json"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-io-roundtrip-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile the controller and focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            tools/qikvrt_io_roundtrip.py \
+            tests/test_qikvrt_io_roundtrip.py
+
+      - name: Run metadata-only round-trip contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_io_roundtrip
+
+      - name: Verify every tracked I/O request and receipt
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          requests=(requests/io/*.json)
+          for request in "${requests[@]}"; do
+            python3 -B tools/qikvrt_io_roundtrip.py verify \
+              --repository-root . \
+              --request "${request}"
+          done
+          if [[ -d state/interaction_archive/io-roundtrip ]]; then
+            python3 -B tools/qikvrt_interaction_archive.py verify \
+              --archive-root state/interaction_archive/io-roundtrip
+          fi
+
+      - name: Verify the explicitly dispatched request
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          REQUEST_PATH: ${{ inputs.request_path }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${REQUEST_PATH}" =~ ^requests/io/[A-Za-z0-9._=-]+\.json$ ]]; then
+            echo "BLOCK: request path is outside requests/io/" >&2
+            exit 2
+          fi
+          test -f "${REQUEST_PATH}"
+          python3 -B tools/qikvrt_io_roundtrip.py verify \
+            --repository-root . \
+            --request "${REQUEST_PATH}"
+
+      - name: Preserve fail-closed effect boundary
+        shell: bash
+        run: |
+          {
+            echo "## QIK-VRT I/O round-trip"
+            echo
+            echo "- Scope: metadata-only capture and verification"
+            echo "- Repository mutation: none in this workflow"
+            echo "- Zenodo effect: not executed"
+            echo "- IETF effect: not executed"
+            echo "- Release claim: EFFECT_ACK_CONTINUE pending exact-head repository gates"
+          } >> "${GITHUB_STEP_SUMMARY}"
