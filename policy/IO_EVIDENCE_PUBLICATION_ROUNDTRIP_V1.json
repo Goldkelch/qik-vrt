@@ -1,0 +1,76 @@
+{
+  "schema": "qikvrt-io-evidence-publication-roundtrip/1.0",
+  "policy_id": "IO_EVIDENCE_PUBLICATION_ROUNDTRIP_V1",
+  "status": "PRODUCT_OWNER_APPROVED_FOR_IMPLEMENTATION",
+  "owner": "Ingolf Lohmann",
+  "canonical_entrypoint": "AI",
+  "requirement": "Every semantically relevant item crossing an artificial-cognitive input/output boundary MUST be represented by a provenance-bound repository work unit. Eligible novel knowledge MUST proceed through machine-verification and publication-routing gates toward Zenodo and, when standards-relevant, IETF without relying on chat memory.",
+  "scope": {
+    "modalities": ["TEXT", "AUDIO", "IMAGE", "VIDEO", "FILE", "STRUCTURED_DATA", "TOOL_INPUT", "TOOL_OUTPUT", "MODEL_INPUT", "MODEL_OUTPUT", "HUMAN_DECISION", "EXTERNAL_OBSERVATION"],
+    "directions": ["INGRESS", "EGRESS", "INTERNAL_TOOL_BOUNDARY"],
+    "semantic_relevance_rule": "Persist the content or a cryptographically bound, reconstructable and policy-compliant representation sufficient for provenance, audit and verification.",
+    "secrets_rule": "Secrets, credentials and prohibited sensitive payloads MUST NOT be committed; persist only redacted metadata and cryptographic binding where policy permits.",
+    "raw_binary_rule": "Large or rights-restricted binaries MAY be retained outside Git only when the repository contains a content hash, provenance, storage class and retrieval/effect status sufficient to reconstruct the evidence relation."
+  },
+  "event_record": {
+    "path_pattern": "state/io_roundtrip/events/<EVENT_SHA256>.json",
+    "append_only": true,
+    "required_fields": ["schema", "event_id", "timestamp", "direction", "modality", "actor", "source", "payload_sha256", "payload_retention", "provenance", "epistemic_class", "verification_state", "publication_state"],
+    "payload_retention_values": ["INLINE", "REPOSITORY_ARTIFACT", "EXTERNAL_CONTENT_ADDRESSED", "REDACTED_METADATA_ONLY"],
+    "epistemic_classes": ["HUMAN_ASSERTION", "MODEL_OUTPUT", "TOOL_OBSERVATION", "FORMAL_CLAIM", "FORMAL_PROOF", "EMPIRICAL_OBSERVATION", "DERIVED_RESULT", "PUBLICATION_METADATA", "UNRESOLVED"],
+    "verification_states": ["UNVERIFIED", "STRUCTURALLY_VERIFIED", "MACHINE_PROVED_MODEL_RELATIVE", "EMPIRICALLY_BOUND", "BLOCKED"]
+  },
+  "knowledge_granularity": {
+    "unit": "One independently attributable and independently verifiable claim or tightly coupled claim set.",
+    "deduplication": "Content-address by normalized claim bytes plus provenance and declared assumptions.",
+    "novelty": "Novelty is a routing predicate, not a truth predicate. A candidate MUST be compared with repository-local prior art and declared external prior-art evidence before publication eligibility is asserted.",
+    "aggregation": "Multiple events MAY be aggregated into one publication candidate only when assumptions, provenance and verification remain separable."
+  },
+  "machine_proof_gate": {
+    "required_for_formal_claims": true,
+    "accepted_evidence": ["LEAN_KERNEL_RECEIPT", "DETERMINISTIC_EXECUTION_RECEIPT", "SCHEMA_AND_INTEGRITY_RECEIPT"],
+    "model_relative_boundary": "Kernel acceptance proves derivability inside the formalized model and does not by itself prove physical correspondence.",
+    "fail_closed": true,
+    "no_placeholder_proofs": true
+  },
+  "publication_router": {
+    "candidate_path_pattern": "state/io_roundtrip/publication_candidates/<CANDIDATE_SHA256>.json",
+    "zenodo": {
+      "eligible_when": ["NOVELTY_REVIEW_COMPLETE", "PROVENANCE_COMPLETE", "RIGHTS_CLEAR", "MACHINE_VERIFICATION_COMPLETE", "SCIENTIFIC_STATUS_BOUNDARY_PRESERVED", "EXACT_BYTES_FROZEN"],
+      "effect": "AUTOMATED_AFTER_EFFECT_AUTHORIZATION_AND_CREDENTIAL_GATES",
+      "receipt_required": true
+    },
+    "ietf": {
+      "eligible_when": ["ZENODO_OR_EQUIVALENT_ARCHIVAL_CANDIDATE_READY", "INTEROPERABILITY_OR_PROTOCOL_RELEVANCE_TRUE", "IETF_FORMAT_AND_IPR_GATES_GREEN"],
+      "effect": "AUTOMATED_AFTER_EFFECT_AUTHORIZATION_AND_CREDENTIAL_GATES",
+      "receipt_required": true
+    },
+    "not_every_event_is_publication": true,
+    "reason": "Persistence is universal within policy scope; publication requires suitable granularity, novelty, verification, rights, scientific-status and destination relevance."
+  },
+  "automation": {
+    "human_manual_copy_step_required": false,
+    "chat_memory_required": false,
+    "pipeline": ["CAPTURE", "HASH", "PERSIST", "CLASSIFY", "DEDUPLICATE", "EXTRACT_CLAIMS", "VERIFY", "PROVE_WHEN_FORMAL", "ASSESS_NOVELTY", "ASSESS_RIGHTS", "ASSESS_SCIENTIFIC_STATUS", "FREEZE_BYTES", "ROUTE_ZENODO", "ROUTE_IETF_IF_RELEVANT", "REOBSERVE_EXTERNAL_EFFECT", "PERSIST_RECEIPT"],
+    "repository_internal_steps": "AUTOMATIC_WHEN_WRITABLE_AND_EXACT_HEAD_VERIFIED",
+    "external_effect_steps": "AUTOMATIC_ONLY_AFTER_STANDING_OR_SINGLE_USE_AUTHORIZATION, CREDENTIAL, EXACT_ARTIFACT AND PRE_EFFECT GATES",
+    "noop_rule": "Semantically duplicate input/output MUST reuse the existing event or claim identity and MUST NOT create publication noise."
+  },
+  "acceptance_criteria": {
+    "all_in_scope_io_persisted_or_content_bound": true,
+    "provenance_reconstructable": true,
+    "claim_granularity_machine_readable": true,
+    "formal_claims_require_machine_verification": true,
+    "eligible_new_knowledge_routes_to_zenodo": true,
+    "standards_relevant_knowledge_routes_to_ietf": true,
+    "external_effects_are_receipted": true,
+    "pipeline_requires_no_manual_copy_paste": true,
+    "scientific_status_overclaim_forbidden": true
+  },
+  "release_claims": {
+    "IMPLEMENTATION_COMPLETE": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
