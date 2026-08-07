@@ -26,7 +26,7 @@ on:
 permissions:
   actions: read
   contents: write
-  issues: read
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -77,27 +77,44 @@ jobs:
               raw = subprocess.check_output(['gh', 'api', path], text=True)
               return json.loads(raw)
 
+          def gh_pages(path):
+              raw = subprocess.check_output(
+                  ['gh', 'api', '--paginate', '--slurp', path], text=True
+              )
+              pages = json.loads(raw)
+              result = []
+              for page in pages:
+                  if isinstance(page, list):
+                      result.extend(page)
+                  else:
+                      result.append(page)
+              return result
+
           current_main = gh_json(f'repos/{repository}/commits/main')['sha']
           if requested:
               prs = [gh_json(f'repos/{repository}/pulls/{int(requested)}')]
           else:
-              prs = gh_json(f'repos/{repository}/pulls?state=open&base=main&per_page=100')
+              prs = gh_pages(f'repos/{repository}/pulls?state=open&base=main&per_page=100')
 
           candidates = []
           for pr in prs:
               if pr.get('state') != 'open' or pr.get('base', {}).get('ref') != 'main':
                   continue
+              # A stale-base PR is not a current writer and cannot be promoted.
               if pr.get('base', {}).get('sha') != current_main:
                   continue
               body = pr.get('body') or ''
               marked = marker in body
               if not marked:
-                  comments = gh_json(f"repos/{repository}/issues/{pr['number']}/comments?per_page=100")
+                  comments = gh_pages(
+                      f"repos/{repository}/issues/{pr['number']}/comments?per_page=100"
+                  )
                   marked = any(marker in (comment.get('body') or '') for comment in comments)
               if not marked:
                   continue
               candidates.append(pr)
 
+          # Serialize by the oldest explicitly marked current-base candidate.
           candidates.sort(key=lambda pr: (pr.get('created_at') or '', pr['number']))
           chosen = candidates[0] if candidates else None
           print(json.dumps({
@@ -136,12 +153,36 @@ jobs:
               raw = subprocess.check_output(['gh', 'api', path], text=True)
               return json.loads(raw)
 
+          def gh_pages(path):
+              raw = subprocess.check_output(
+                  ['gh', 'api', '--paginate', '--slurp', path], text=True
+              )
+              pages = json.loads(raw)
+              result = []
+              for page in pages:
+                  if isinstance(page, list):
+                      result.extend(page)
+                  else:
+                      result.append(page)
+              return result
+
+          def gh_run_pages(path):
+              raw = subprocess.check_output(
+                  ['gh', 'api', '--paginate', '--slurp', path], text=True
+              )
+              pages = json.loads(raw)
+              runs = []
+              for page in pages:
+                  if isinstance(page, dict):
+                      runs.extend(page.get('workflow_runs', []))
+              return runs
+
           pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
           current_main = gh_json(f'repos/{repository}/commits/main')['sha']
           head = pr['head']['sha']
-          runs = gh_json(
+          runs = gh_run_pages(
               f'repos/{repository}/actions/runs?head_sha={head}&event=pull_request&per_page=100'
-          ).get('workflow_runs', [])
+          )
           workflow_runs = [
               {
                   'name': run.get('name'),
@@ -154,12 +195,14 @@ jobs:
 
           candidate_files = {
               item['filename']
-              for item in gh_json(f'repos/{repository}/pulls/{pr_number}/files?per_page=100')
+              for item in gh_pages(f'repos/{repository}/pulls/{pr_number}/files?per_page=100')
           }
           overlaps = []
-          for other in gh_json(f'repos/{repository}/pulls?state=open&base=main&per_page=100'):
+          for other in gh_pages(f'repos/{repository}/pulls?state=open&base=main&per_page=100'):
               if other['number'] == pr_number:
                   continue
+              # Old-base PRs cannot write the current main without first
+              # reconciling their base, so they are not current competing writers.
               if other.get('base', {}).get('sha') != current_main:
                   continue
               if other.get('head', {}).get('sha') == head:
@@ -168,7 +211,7 @@ jobs:
                   continue
               other_files = {
                   item['filename']
-                  for item in gh_json(
+                  for item in gh_pages(
                       f"repos/{repository}/pulls/{other['number']}/files?per_page=100"
                   )
               }
@@ -209,7 +252,7 @@ jobs:
             exit 0
           fi
 
-      - name: Reobserve and promote exact unchanged head
+      - name: Reobserve exact unchanged head and advance one promotion phase
         if: steps.decision.outputs.state == 'PROMOTABLE'
         env:
           PR_NUMBER: ${{ steps.candidate.outputs.pr }}
@@ -222,20 +265,29 @@ jobs:
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
           current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
           merged="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
+          draft="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)"
           test "$merged" = "false"
           test "$current_main" = "$EXPECTED_BASE"
           test "$current_base" = "$EXPECTED_BASE"
           test "$current_head" = "$EXPECTED_HEAD"
 
-          # Draft-to-ready is reversible repository metadata. The actual merge
-          # remains bound by REST to EXPECTED_HEAD and fails closed on head drift.
-          if [ "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)" = "true" ]; then
+          if [ "$draft" = "true" ]; then
+            # Phase 1 only. ready_for_review may itself register new checks, so
+            # this run MUST NOT merge. A later workflow_run/schedule cycle will
+            # rebuild the exact-head gate snapshot before Phase 2.
             gh pr ready "$PR_NUMBER" --repo "$REPOSITORY"
+            echo "READY_RECLASSIFIED_REOBSERVATION_REQUIRED" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
+          # Phase 2: candidate was already Ready before this run and all gates
+          # were freshly re-evaluated above. Rebind head/base immediately before
+          # the irreversible repository-history transition.
           current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
           test "$current_main" = "$EXPECTED_BASE"
+          test "$current_base" = "$EXPECTED_BASE"
           test "$current_head" = "$EXPECTED_HEAD"
 
           gh api \
