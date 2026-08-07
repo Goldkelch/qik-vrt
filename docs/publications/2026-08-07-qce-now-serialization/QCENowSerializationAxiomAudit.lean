@@ -1,0 +1,20 @@
+import QCENowSerialization
+
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T01_iterated_relation_count
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T02_iterated_event_count
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T03_iterated_extension_preserves_global_binding
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T04_canonical_relation_count
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T05_canonical_event_count
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T06_now_index_recovers_step
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T07_canonical_now_is_injective
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T08_canonical_now_has_unique_index
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T09_extension_advances_now_index
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T10_serial_calibration_zero
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T11_serial_calibration_is_additive
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T12_bound_axis_carries_serial_response
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T13_unbound_axis_has_zero_response
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T14_length_binding_derives_length_dimension
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T15_time_binding_derives_time_dimension
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T16_length_and_time_bindings_are_dimensionally_distinct
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T17_seriality_alone_does_not_select_physical_axis
+#print axioms QIKVRT.V2.Physics.QCENowSerialization.QNS_T18_axis_rebinding_preserves_qce_network

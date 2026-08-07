@@ -1,0 +1,237 @@
+name: QIK-VRT c measurement binding proof
+
+on:
+  pull_request:
+    paths:
+      - 'docs/publications/2026-08-07-qce-c-measurement-binding/**'
+      - 'docs/publications/2026-08-07-qce-null-calibration-ratio/QCENullCalibrationRatio.lean'
+      - 'docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+      - 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+      - 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+      - 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+      - 'state/work_units/QCE_C_MEASUREMENT_BINDING_V1.json'
+      - '.github/workflows/qikvrt_qce_c_measurement_binding.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-qce-c-measurement-binding:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Lean 4.19 and verify upstream QCE package
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test: false
+
+      - name: Run actions/setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Compile exact upstream modules and QCMB bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          elan default leanprover/lean4:v4.19.0
+          module_dir="$RUNNER_TEMP/qikvrt-qcmb-modules"
+          mkdir -p "$module_dir"
+          qce='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qca='docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+          qncr='docs/publications/2026-08-07-qce-null-calibration-ratio/QCENullCalibrationRatio.lean'
+          qcmb='docs/publications/2026-08-07-qce-c-measurement-binding/QCECMeasurementBinding.lean'
+          lean -E hasSorry -o "$module_dir/VRTCore_QCE_Model.olean" "$qce"
+          lean -E hasSorry -o "$module_dir/MeasurementDerivedDimensions.olean" "$mdd"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENowSerialization.olean" "$qns"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCECausalAxisBridge.olean" "$qca"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENullCalibrationRatio.olean" "$qncr"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCECMeasurementBinding.olean" "$qcmb"
+          echo "QCMB_MODULE_DIR=$module_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact eighteen-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit='docs/publications/2026-08-07-qce-c-measurement-binding/QCECMeasurementBindingAxiomAudit.lean'
+          LEAN_PATH="$QCMB_MODULE_DIR" lean -E hasSorry "$audit" \
+            | tee docs/publications/2026-08-07-qce-c-measurement-binding/QCMB_AXIOM_OUTPUT.txt
+
+      - name: Validate inventory and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          folder = root / 'docs/publications/2026-08-07-qce-c-measurement-binding'
+          source = folder / 'QCECMeasurementBinding.lean'
+          audit = folder / 'QCECMeasurementBindingAxiomAudit.lean'
+          output = folder / 'QCMB_AXIOM_OUTPUT.txt'
+          qce = root / 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd = root / 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns = root / 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qca = root / 'docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+          qncr = root / 'docs/publications/2026-08-07-qce-null-calibration-ratio/QCENullCalibrationRatio.lean'
+
+          prefix = 'QIKVRT.V2.Physics.QCECMeasurementBinding.'
+          expected = [prefix + name for name in [
+              'QCMB_T01_acceptance_requires_source_binding',
+              'QCMB_T02_acceptance_requires_instrument_calibration',
+              'QCMB_T03_acceptance_requires_null_observable_binding',
+              'QCMB_T04_acceptance_requires_unit_convention',
+              'QCMB_T05_acceptance_requires_uncertainty_binding',
+              'QCMB_T06_acceptance_requires_independent_reproduction',
+              'QCMB_T07_acceptance_requires_unit_time',
+              'QCMB_T08_acceptance_binds_measured_token',
+              'QCMB_T09_acceptance_yields_fixed_unit_time_reading',
+              'QCMB_T10_accepted_measurement_token_is_unique',
+              'QCMB_T11_same_calibration_forces_same_accepted_token',
+              'QCMB_T12_unbound_source_cannot_be_accepted',
+              'QCMB_T13_uncalibrated_instrument_cannot_be_accepted',
+              'QCMB_T14_unreproduced_receipt_cannot_be_accepted',
+              'QCMB_T15_mismatched_token_cannot_be_accepted',
+              'QCMB_T16_current_repository_candidate_is_not_accepted',
+              'QCMB_T17_complete_finite_si_like_receipt_is_accepted',
+              'QCMB_T18_complete_finite_si_like_token_is_299792458',
+          ]]
+
+          source_text = source.read_text(encoding='utf-8')
+          forbidden = re.compile(r'(?m)^\s*(axiom|opaque\s+axiom|theorem\s+[^\n]*:=\s*by\s+sorry\b)')
+          if forbidden.search(source_text):
+              raise SystemExit('BLOCK forbidden project proof escape in QCMB source')
+
+          text = output.read_text(encoding='utf-8')
+          pat = re.compile(
+              r"'([^']+)' "
+              r"(?:does not depend on any axioms|depends on axioms:\s*\[([^\]]*)\])",
+              re.MULTILINE,
+          )
+          reports = {}
+          cursor = 0
+          for match in pat.finditer(text):
+              residual = text[cursor:match.start()]
+              if residual.strip():
+                  raise SystemExit(
+                      f'BLOCK unexpected axiom output segment: {residual!r}'
+                  )
+              name = match.group(1)
+              axioms = [
+                  item.strip()
+                  for item in (match.group(2) or '').split(',')
+                  if item.strip()
+              ]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+              cursor = match.end()
+          if text[cursor:].strip():
+              raise SystemExit(
+                  f'BLOCK unexpected trailing axiom output: {text[cursor:]!r}'
+              )
+
+          if list(reports) != expected:
+              raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
+
+          allowed_kernel_axioms = {'propext', 'Quot.sound', 'Classical.choice'}
+          kernel_axioms = sorted({axiom for values in reports.values() for axiom in values})
+          project_axioms = sorted(set(kernel_axioms) - allowed_kernel_axioms)
+          if project_axioms:
+              raise SystemExit(f'BLOCK unexpected project axiom dependency: {project_axioms!r}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': str(path),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': subprocess.check_output(
+                      ['git', 'hash-object', str(path)], text=True
+                  ).strip(),
+              }
+
+          receipt = {
+              'schema': 'qikvrt_qce_c_measurement_binding_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': subprocess.check_output(['lean', '--version'], text=True).strip(),
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'upstream_qce_source': identity(qce),
+              'upstream_mdd_source': identity(mdd),
+              'upstream_qns_source': identity(qns),
+              'upstream_qca_source': identity(qca),
+              'upstream_qncr_source': identity(qncr),
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'allowed_kernel_axioms': sorted(allowed_kernel_axioms),
+              'kernel_axioms_observed': kernel_axioms,
+              'project_axioms': project_axioms,
+              'formal_result': 'ACCEPTED_SOURCE_CALIBRATION_UNCERTAINTY_AND_REPRODUCTION_BOUND_MEASUREMENT_RECEIPT_UNIQUELY_BINDS_C_TOKEN',
+              'current_repository_measurement_receipt': 'NOT_ACCEPTED',
+              'complete_finite_si_like_receipt': 'MODEL_SATISFIABILITY_ONLY',
+              'actual_external_measurement_bytes_ingested': False,
+              'physical_c_value_empirically_bound': False,
+              'si_second_derived': False,
+              'si_metre_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'physical_correspondence': 'NOT_INFERRED',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          (folder / 'QCMB_KERNEL_RECEIPT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload QCMB exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-qce-c-measurement-binding-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-qce-c-measurement-binding/QCMB_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-qce-c-measurement-binding/QCMB_KERNEL_RECEIPT.json
