@@ -1,13 +1,15 @@
 {
   "schema": "qik-vrt.io-round-trip-autopublication.v1",
   "version": 1,
+  "implementation_revision": 2,
   "status": "PRODUCT_OWNER_APPROVED_IMPLEMENTATION_CANDIDATE",
   "owner": "Ingolf Lohmann",
   "scope": "all input/output interface artifacts independent of modality or MIME type",
-  "invariant": "EVERY_IO_EVENT_MUST_HAVE_DURABLE_REPOSITORY_RECEIPT",
+  "invariant": "EVERY_IO_EVENT_MUST_HAVE_DURABLE_REPOSITORY_RECEIPT_AND_RECONSTRUCTIBLE_PAYLOAD_BINDING",
   "pipeline": [
     "CAPTURE",
     "CONTENT_ADDRESS",
+    "PERSIST_PAYLOAD_OR_BOUND_REFERENCE",
     "PERSIST_RECEIPT",
     "PROVENANCE_BIND",
     "GRANULARIZE",
@@ -26,21 +28,36 @@
       "direction",
       "timestamp",
       "media_type",
-      "payload_sha256",
+      "exactly_one_payload_binding",
       "provenance"
     ],
-    "directions": ["input", "output"],
+    "directions": [
+      "input",
+      "output"
+    ],
+    "payload_binding_fields": [
+      "payload_text",
+      "payload_json",
+      "payload_base64",
+      "payload_sha256 plus payload_reference"
+    ],
     "payload_storage": {
-      "text": "repository content or content-addressed repository artifact",
-      "binary": "content-addressed artifact or privacy-preserving external object reference plus exact digest",
-      "sensitive": "digest-and-metadata receipt unless explicit policy authorizes bytes"
+      "permitted_inline_text_json_binary": "exact content-addressed repository bytes plus SHA-256",
+      "sensitive_or_rights_restricted": "explicit privacy-preserving external object reference plus exact SHA-256",
+      "digest_only": "forbidden without a non-empty reconstructible payload_reference",
+      "append_only": true
     },
+    "inline_payload_limit_bytes": 16777216,
     "fail_closed": true
   },
   "granularity": {
     "unit": "smallest independently attributable and independently testable knowledge/work unit",
-    "deduplicate_by": ["payload_sha256", "semantic_fingerprint"],
-    "append_only_receipts": true
+    "deduplicate_by": [
+      "payload_sha256",
+      "semantic_fingerprint"
+    ],
+    "append_only_receipts": true,
+    "content_addressed_payload_reuse": true
   },
   "knowledge_classification": {
     "classes": [
@@ -90,7 +107,9 @@
       ]
     },
     "ietf": {
-      "eligible_classes": ["NEW_PROTOCOL_RESULT"],
+      "eligible_classes": [
+        "NEW_PROTOCOL_RESULT"
+      ],
       "requires": [
         "protocol_or_interoperability_relevance",
         "ietf_format_valid",
@@ -106,12 +125,14 @@
     "manual_copy_paste_required": false,
     "publication_effects": "automatic only when all configured effect gates and credentials are satisfied",
     "missing_credentials_or_external_service": "persist BLOCKED_EXTERNAL_EFFECT receipt and retry through scheduled continuation",
-    "semantic_noop": "persist receipt; do not publish duplicate noise"
+    "semantic_noop": "persist receipt and exact payload binding; do not publish duplicate noise"
   },
   "scientific_boundary": "EXECUTABLE_WORLD_FORMULA_ARCHITECTURE_CLAIM != FULLY_EMPIRICALLY_ESTABLISHED_DESCRIPTION_OF_NATURE",
   "acceptance_criteria": [
     "no I/O event is silently dropped",
     "every event receives a content-addressed durable receipt",
+    "permitted inline payload bytes are persisted exactly and content-addressed",
+    "digest-only or sensitive payloads require an explicit reconstructible external reference",
     "provenance remains attributable",
     "duplicates do not create publication noise",
     "new knowledge is never called proved without a declared machine-verifiable evidence class",
