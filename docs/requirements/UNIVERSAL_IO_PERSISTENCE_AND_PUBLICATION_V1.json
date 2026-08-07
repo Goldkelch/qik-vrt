@@ -1,0 +1,92 @@
+{
+  "schema": "qikvrt_universal_io_persistence_and_publication_requirement_v1",
+  "requirement_id": "QIKVRT-UNIVERSAL-IO-PERSISTENCE-PUBLICATION-V1",
+  "title": "Universal I/O persistence, proof and automated publication",
+  "product_owner": "Ingolf Lohmann",
+  "canonical_entrypoint": "https://github.com/Goldkelch/qik-vrt/blob/main/AI",
+  "acceptance_criterion": "Every semantically relevant ingress or egress crossing a QIK-VRT human-machine or machine-machine interface is durably represented by repository evidence at suitable granularity. New knowledge candidates are automatically classified, connected to prior evidence, machine-checked within their declared proof scope, and routed to Zenodo and, when standards-relevant, to the IETF publication path once all effect gates are satisfied.",
+  "scope": {
+    "modalities": ["text", "audio", "image", "video", "file", "tool_call", "tool_result", "code", "structured_data", "external_reference", "control_event", "other"],
+    "directions": ["INPUT", "OUTPUT"],
+    "interfaces": ["human_machine", "machine_machine", "repository_tool", "external_service"],
+    "semantic_relevance_default": true
+  },
+  "persistence": {
+    "repository_evidence_required": true,
+    "content_addressing": "sha256",
+    "append_only_receipts": true,
+    "required_fields": [
+      "event_id",
+      "observed_at",
+      "direction",
+      "modality",
+      "interface",
+      "payload_sha256",
+      "payload_bytes",
+      "provenance",
+      "rights",
+      "privacy",
+      "epistemic_type",
+      "parent_evidence"
+    ],
+    "payload_policy": "Persist exact payload bytes when repository policy and rights permit. Otherwise persist a cryptographic digest, stable locator when available, policy reason, and sufficient provenance to audit the omission.",
+    "no_chat_memory_as_authority": true
+  },
+  "knowledge_candidate_gate": {
+    "automatic": true,
+    "required": [
+      "novelty_assessment",
+      "granularity_assessment",
+      "connectivity_assessment",
+      "provenance_complete",
+      "rights_clear",
+      "scientific_status_explicit",
+      "machine_check_receipt"
+    ],
+    "proof_semantics": "Machine proof certifies only the declared formal, computational, provenance or consistency predicate. It does not by itself establish empirical correspondence, physical truth or scientific consensus.",
+    "states": ["NOT_A_KNOWLEDGE_CANDIDATE", "CANDIDATE", "MACHINE_CHECKED", "BLOCKED"]
+  },
+  "publication_routing": {
+    "automatic_after_all_gates": true,
+    "zenodo": {
+      "eligible_when": ["MACHINE_CHECKED", "stable_granularity", "rights_clear", "publication_authorized", "exact_head_verified"],
+      "effect_receipt_required": true
+    },
+    "ietf": {
+      "eligible_when": ["MACHINE_CHECKED", "standards_relevance=true", "ietf_materialization_valid", "rights_clear", "publication_authorized", "exact_head_verified"],
+      "effect_receipt_required": true,
+      "note": "IETF routing means preparation/submission through the repository's IETF path when technically and procedurally applicable; it does not imply IETF acceptance or consensus."
+    }
+  },
+  "automation": {
+    "capture": "mandatory",
+    "classification": "mandatory",
+    "proof_selection": "mandatory",
+    "publication_dispatch": "automatic_when_authorized_and_gated",
+    "fail_closed": true,
+    "blocked_path_must_emit_receipt": true,
+    "manual_copy_paste_not_required_for_conforming_adapters": true
+  },
+  "boundaries": {
+    "repository_persistence_not_publication": true,
+    "machine_check_not_scientific_validation": true,
+    "zenodo_deposit_not_scientific_consensus": true,
+    "ietf_submission_not_ietf_acceptance": true,
+    "no_publication_without_effect_authorization": true,
+    "no_raw_sensitive_payload_publication_by_default": true
+  },
+  "implementation": {
+    "controller": "tools/qikvrt_io_evidence_pipeline.py",
+    "workflow": ".github/workflows/qikvrt_universal_io_evidence_pipeline.yml",
+    "regression_test": "tests/test_universal_io_evidence_pipeline.py",
+    "receipt_root": "evidence/io-events",
+    "implementation_authorization": "state/authorization/delegations/OWNER_UNIVERSAL_IO_PIPELINE_IMPLEMENTATION_V1.json"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "SCIENTIFIC_VALIDATION": false,
+    "PUBLICATION_COMPLETE": false
+  }
+}
