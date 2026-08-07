@@ -30,6 +30,7 @@ PATHS = (
     "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
     "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
     "formalization/QIKVRT_Formalization_v2.0/scripts/audit_lean_axioms.py",
+    "formalization/QIKVRT_Formalization_v2.0/lakefile.toml",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Claims/AxiomAuditAll.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
