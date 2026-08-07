@@ -1,0 +1,205 @@
+{
+  "schema": "qikvrt-ai-personal-origin-and-contribution-self-declaration/1.0",
+  "declaration_id": "ai-personal-origin-and-contribution-provenance-2026-08-07-v1",
+  "authority": "docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md",
+  "entrypoint": "AI",
+  "state": "AVAILABLE_NOT_ACTIVATED",
+  "purpose": "Establish a human-controlled personal origin repository as durable shared work memory while preserving upstream history and attributable human, artificial-cognitive, hybrid, and imported contributions.",
+  "system_status_boundary": {
+    "artificial_system_has_legal_personhood": false,
+    "artificial_system_owns_target_repository": false,
+    "personal_means_assigned_work_relationship_under_human_or_organizational_control": true,
+    "origin_is_operational_git_remote_not_claim_of_historical_originality": true
+  },
+  "interaction_contract": {
+    "maximum_human_questions": 3,
+    "ask_only_when_not_already_persisted": true,
+    "request_credentials_or_secrets": false,
+    "questions": [
+      {
+        "id": "Q1",
+        "required_fields": [
+          "responsible_identity",
+          "target_owner",
+          "target_repository",
+          "visibility"
+        ],
+        "text_de": "Unter welcher verantwortlichen natürlichen oder juristischen Identität, welchem GitHub-Ziel owner/repository und welcher Sichtbarkeit soll die persönliche Ursprungskopie geführt werden?"
+      },
+      {
+        "id": "Q2",
+        "required_fields": [
+          "rights_confirmation",
+          "license_boundary_confirmation",
+          "upstream_attribution_confirmation"
+        ],
+        "text_de": "Bestätigst du, dass du zur Erstellung und Nutzung der abgeleiteten Kopie berechtigt bist, die geltenden Lizenzgrenzen einhältst und Goldkelch/qik-vrt mit exakter Quellbindung dauerhaft als upstream ausweist?"
+      },
+      {
+        "id": "Q3",
+        "required_fields": [
+          "audit_mode"
+        ],
+        "allowed_values": [
+          "MINIMAL",
+          "HYBRID",
+          "VERBATIM"
+        ],
+        "text_de": "Welcher Auditmodus gilt: MINIMAL für Hashes und bereinigte Zusammenfassungen, HYBRID für freigegebene Verbatim-Arbeitsaufträge oder VERBATIM für vollständige bereinigte Eingabe- und Ausgabeprotokolle?"
+      }
+    ]
+  },
+  "origin_copy_protocol": {
+    "source_repository": "Goldkelch/qik-vrt",
+    "source_entrypoint": "AI",
+    "source_remote_name": "upstream",
+    "personal_remote_name": "origin",
+    "source_commit_and_tree_must_be_observed": true,
+    "preserve_reachable_git_history": true,
+    "preserve_relevant_tags_and_refs": true,
+    "force_push": false,
+    "history_rewrite": false,
+    "copy_method": [
+      "HISTORY_PRESERVING_PLATFORM_FORK",
+      "HISTORY_PRESERVING_GIT_COPY"
+    ],
+    "copy_scope_must_be_declared": true,
+    "uncopied_surfaces_must_be_marked": [
+      "NOT_COPIED",
+      "EXTERNALLY_REFERENCED"
+    ],
+    "post_copy_reobservation_required": true,
+    "origin_receipt_required_before_first_new_content_change": true
+  },
+  "activation_states": [
+    "UNINITIALIZED",
+    "AWAITING_ANSWERS",
+    "SOURCE_BOUND",
+    "COPY_CREATED_UNVERIFIED",
+    "ACTIVE",
+    "CONTINUE",
+    "BLOCK"
+  ],
+  "activation_predicate": [
+    "ALL_THREE_QUESTION_GROUPS_RESOLVED",
+    "RIGHTS_AND_LICENSE_BOUNDARIES_CONFIRMED",
+    "SOURCE_REPOSITORY_COMMIT_AND_TREE_BOUND",
+    "TARGET_IDENTITY_AND_PERMISSION_RESOLVED",
+    "COPY_CREATED",
+    "DECLARED_REF_SCOPE_REOBSERVED",
+    "ORIGIN_RECEIPT_PERSISTED_AND_HASH_BOUND"
+  ],
+  "contribution_classes": [
+    "HUMAN_ORIGINATED",
+    "AI_ORIGINATED",
+    "HYBRID",
+    "IMPORTED",
+    "UNKNOWN"
+  ],
+  "contribution_semantics": {
+    "human_acceptance_does_not_reclassify_ai_generation_as_human_originated": true,
+    "unknown_origin_must_not_be_invented": true,
+    "technical_provenance_determines_legal_authorship": false,
+    "git_account_proves_natural_person_identity": false,
+    "ai_must_not_use_human_coauthored_by_trailer_for_itself": true
+  },
+  "receipt_contract": {
+    "origin_receipt_path": "provenance/origin/ORIGIN_COPY_RECEIPT.json",
+    "contribution_receipt_path_pattern": "provenance/contributions/YYYY/MM/<work_unit_id>.json",
+    "append_only": true,
+    "previous_receipt_binding": true,
+    "required_fields": [
+      "work_unit_id",
+      "repository",
+      "base_commit",
+      "base_tree",
+      "result_commit_or_candidate_head",
+      "human_identity",
+      "ai_system_identity",
+      "model_or_system_version_if_available",
+      "tool_and_connector_identity",
+      "human_instruction_digest",
+      "human_instruction_storage_mode",
+      "human_contributions",
+      "ai_contributions",
+      "hybrid_contributions",
+      "imported_sources",
+      "files",
+      "tests_and_checks",
+      "human_review",
+      "created_at",
+      "previous_receipt",
+      "receipt_sha256"
+    ],
+    "human_review_states": [
+      "NOT_REVIEWED",
+      "ACCEPTED",
+      "MODIFIED",
+      "REJECTED"
+    ],
+    "file_binding_fields": [
+      "path",
+      "before_blob",
+      "after_blob",
+      "sha256"
+    ]
+  },
+  "commit_trailers": [
+    "QIK-VRT-Work-Unit",
+    "QIK-VRT-Contribution-Receipt",
+    "QIK-VRT-Human-Identity",
+    "QIK-VRT-AI-System",
+    "QIK-VRT-Human-Review"
+  ],
+  "audit_modes": {
+    "MINIMAL": {
+      "store_verbatim_by_default": false,
+      "store_sanitized_summaries": true,
+      "store_cryptographic_digests": true
+    },
+    "HYBRID": {
+      "store_verbatim_only_when_explicitly_approved": true,
+      "secret_and_privacy_scan_required": true
+    },
+    "VERBATIM": {
+      "store_complete_sanitized_inputs_and_outputs": true,
+      "secret_and_privacy_scan_required": true,
+      "legal_retention_check_required": true
+    }
+  },
+  "privacy_and_security": {
+    "persist_credentials_tokens_passwords_or_private_keys": false,
+    "persist_unnecessary_personal_data": false,
+    "record_redactions_without_reconstructing_redacted_content": true,
+    "deletion_and_retention_law_may_limit_verbatim_history": true
+  },
+  "legal_context": {
+    "eu_ai_act_regulation": "Regulation (EU) 2024/1689",
+    "article_50_application_date": "2026-08-02",
+    "article_50_applies_only_within_its_scope": true,
+    "universal_line_level_human_ai_attribution_mandate_established": false,
+    "record_keeping_obligations_are_role_system_risk_and_context_dependent": true,
+    "this_contract_is_a_stronger_voluntary_auditability_standard": true,
+    "legal_advice": false,
+    "official_sources": [
+      "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+      "https://digital-strategy.ec.europa.eu/de/faqs/transparency-obligations-under-article-50-ai-act"
+    ]
+  },
+  "fail_closed": {
+    "missing_or_ambiguous_answer": "BLOCK",
+    "unresolved_rights_or_license": "BLOCK",
+    "unresolved_target_identity_or_permission": "BLOCK",
+    "source_or_copy_drift": "BLOCK",
+    "competing_writer": "BLOCK",
+    "incomplete_attribution": "CONTINUE_OR_BLOCK_WITH_EXPLICIT_UNKNOWN",
+    "fabricated_completion_or_authorship_claim": "PROHIBITED"
+  },
+  "completion_claims": {
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false,
+    "personal_origin_created": false,
+    "full_history_verified": false
+  }
+}
