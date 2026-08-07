@@ -1,0 +1,45 @@
+name: QIK-VRT I/O Round Trip
+
+on:
+  pull_request:
+    paths:
+      - 'tools/qikvrt_io_roundtrip.py'
+      - 'tests/test_qikvrt_io_roundtrip.py'
+      - 'policy/IO_ROUNDTRIP_PERSISTENCE_AND_PUBLICATION_V1.json'
+      - 'docs/requirements/IO_ROUNDTRIP_PERSISTENCE_AND_PUBLICATION_V1.md'
+      - '.github/workflows/qikvrt_io_roundtrip.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Unit tests
+        run: python3 -B -m unittest tests.test_qikvrt_io_roundtrip
+      - name: Receipt integrity
+        run: python3 -B tools/qikvrt_io_roundtrip.py check
+      - name: Validate policy JSON
+        run: python3 -m json.tool policy/IO_ROUNDTRIP_PERSISTENCE_AND_PUBLICATION_V1.json >/dev/null
+
+  publication-dispatch-gate:
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed unless exact external-effect adapter is separately authorized
+        run: |
+          echo 'Repository verification complete.'
+          echo 'Zenodo/IETF mutation is intentionally not performed by this generic workflow.'
+          echo 'Exact-artifact target authorization + credentialed adapter + post-effect reconciliation are mandatory.'

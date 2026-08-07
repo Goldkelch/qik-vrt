@@ -1,0 +1,68 @@
+{
+  "schema": "qik-vrt.io-roundtrip-persistence-publication.v1",
+  "version": 1,
+  "status": "implementation_candidate",
+  "default_retention": "commitment_and_metadata",
+  "raw_payload_default": "deny",
+  "required_receipt_fields": [
+    "event_id",
+    "direction",
+    "media_type",
+    "observed_at_utc",
+    "origin",
+    "payload_sha256",
+    "payload_size_bytes",
+    "retention",
+    "provenance_status",
+    "knowledge_state",
+    "publication"
+  ],
+  "knowledge_states": [
+    "TRACE_ONLY",
+    "KNOWLEDGE_CANDIDATE",
+    "PROVED_KNOWLEDGE_CANDIDATE",
+    "PUBLICATION_READY",
+    "PUBLISHED"
+  ],
+  "publication_targets": {
+    "zenodo": {
+      "enabled": true,
+      "requires": [
+        "exact_artifact_binding",
+        "proof_or_evidence_receipt",
+        "provenance_complete",
+        "rights_clear",
+        "scientific_status_explicit",
+        "granularity_suitable",
+        "connectivity_suitable",
+        "target_authorized",
+        "credentials_available"
+      ]
+    },
+    "ietf": {
+      "enabled": true,
+      "requires": [
+        "protocol_or_specification_applicable",
+        "exact_artifact_binding",
+        "proof_or_evidence_receipt",
+        "provenance_complete",
+        "rights_clear",
+        "scientific_status_explicit",
+        "granularity_suitable",
+        "connectivity_suitable",
+        "target_authorized",
+        "credentials_available"
+      ]
+    }
+  },
+  "fail_closed": true,
+  "idempotency_key": "sha256(canonical_event_receipt_without_observation_time)",
+  "external_effect_authorization": "exact_artifact_and_target_specific",
+  "forbidden_inference": [
+    "persistence_implies_truth",
+    "formal_proof_implies_empirical_correspondence",
+    "publication_attempt_implies_publication",
+    "draft_doi_implies_published",
+    "local_internet_draft_implies_ietf_publication"
+  ]
+}
