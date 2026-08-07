@@ -186,7 +186,8 @@ theorem MID_T07_same_boundary_allows_c_299792458_or_1
   constructor
   · exact MID_T06_speed_numeral_reencoding_preserves_causal_boundary
       representation 299792458 1
-  · simp [reencodeSpeedNumeral]
+  · change (299792458 : Nat) ≠ 1
+    decide
 
 end MeasurementInducedDimensions
 end Physics
