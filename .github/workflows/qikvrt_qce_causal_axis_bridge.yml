@@ -1,0 +1,211 @@
+name: QIK-VRT QCE causal-axis bridge proof
+
+on:
+  pull_request:
+    paths:
+      - 'docs/publications/2026-08-07-qce-causal-axis-bridge/**'
+      - 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+      - 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+      - 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+      - 'state/work_units/QCE_CAUSAL_AXIS_BRIDGE_V1.json'
+      - '.github/workflows/qikvrt_qce_causal_axis_bridge.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-qce-causal-axis-bridge:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Lean 4.19 and verify upstream QCE package
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence
+          test: false
+
+      - name: Run actions/setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Compile exact upstream modules and QCA bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          elan default leanprover/lean4:v4.19.0
+          module_dir="$RUNNER_TEMP/qikvrt-qca-modules"
+          mkdir -p "$module_dir"
+          qce='docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd='docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns='docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+          qca='docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridge.lean'
+          lean -E hasSorry -o "$module_dir/VRTCore_QCE_Model.olean" "$qce"
+          lean -E hasSorry -o "$module_dir/MeasurementDerivedDimensions.olean" "$mdd"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCENowSerialization.olean" "$qns"
+          LEAN_PATH="$module_dir" lean -E hasSorry \
+            -o "$module_dir/QCECausalAxisBridge.olean" "$qca"
+          echo "QCA_MODULE_DIR=$module_dir" >> "$GITHUB_ENV"
+
+      - name: Run exact eighteen-theorem axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit='docs/publications/2026-08-07-qce-causal-axis-bridge/QCECausalAxisBridgeAxiomAudit.lean'
+          LEAN_PATH="$QCA_MODULE_DIR" lean -E hasSorry "$audit" \
+            | tee docs/publications/2026-08-07-qce-causal-axis-bridge/QCA_AXIOM_OUTPUT.txt
+
+      - name: Validate inventory and create exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          folder = root / 'docs/publications/2026-08-07-qce-causal-axis-bridge'
+          source = folder / 'QCECausalAxisBridge.lean'
+          audit = folder / 'QCECausalAxisBridgeAxiomAudit.lean'
+          output = folder / 'QCA_AXIOM_OUTPUT.txt'
+          qce = root / 'docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence/VRTCore_QCE_Model.lean'
+          mdd = root / 'docs/publications/2026-08-07-measurement-derived-dimensions/MeasurementDerivedDimensions.lean'
+          qns = root / 'docs/publications/2026-08-07-qce-now-serialization/QCENowSerialization.lean'
+
+          prefix = 'QIKVRT.V2.Physics.QCECausalAxisBridge.'
+          expected = [prefix + name for name in [
+              'QCA_T01_time_binding_satisfies_succession',
+              'QCA_T02_succession_agreement_selects_time_axis',
+              'QCA_T03_length_binding_satisfies_separation',
+              'QCA_T04_separation_agreement_selects_length_axis',
+              'QCA_T05_axis_binding_extensionality',
+              'QCA_T06_temporal_binding_is_unique',
+              'QCA_T07_spatial_binding_is_unique',
+              'QCA_T08_admissible_cone_has_stable_null_boundary',
+              'QCA_T09_evidence_selects_time_binding',
+              'QCA_T10_evidence_selects_length_binding',
+              'QCA_T11_selected_axes_are_distinct',
+              'QCA_T12_null_calibration_derives_speed_dimension',
+              'QCA_T13_speed_dimension_is_unique',
+              'QCA_T14_evidence_derives_speed_dimension',
+              'QCA_T15_seriality_alone_does_not_select_axis',
+              'QCA_T16_current_qce_cone_candidate_remains_open',
+              'QCA_T17_complete_finite_evidence_has_stable_null_boundary',
+              'QCA_T18_complete_finite_evidence_derives_speed_dimension',
+          ]]
+
+          source_text = source.read_text(encoding='utf-8')
+          forbidden = re.compile(r'(?m)^\s*(axiom|opaque\s+axiom|theorem\s+[^\n]*:=\s*by\s+sorry\b)')
+          if forbidden.search(source_text):
+              raise SystemExit('BLOCK forbidden project proof escape in QCA source')
+
+          pat = re.compile(r"^'([^']+)' (?:does not depend on any axioms|depends on axioms:\s*\[([^]]*)\])$")
+          reports = {}
+          for line in output.read_text(encoding='utf-8').splitlines():
+              if not line.strip():
+                  continue
+              match = pat.fullmatch(line.strip())
+              if match is None:
+                  raise SystemExit(f'BLOCK unexpected axiom output: {line!r}')
+              name = match.group(1)
+              axioms = [x.strip() for x in (match.group(2) or '').split(',') if x.strip()]
+              if name in reports:
+                  raise SystemExit(f'BLOCK duplicate theorem report: {name}')
+              reports[name] = axioms
+
+          if list(reports) != expected:
+              raise SystemExit(f'BLOCK theorem inventory differs: {list(reports)!r}')
+
+          allowed_kernel_axioms = {'propext', 'Quot.sound', 'Classical.choice'}
+          kernel_axioms = sorted({axiom for values in reports.values() for axiom in values})
+          project_axioms = sorted(set(kernel_axioms) - allowed_kernel_axioms)
+          if project_axioms:
+              raise SystemExit(f'BLOCK unexpected project axiom dependency: {project_axioms!r}')
+
+          def identity(path):
+              raw = path.read_bytes()
+              return {
+                  'path': str(path),
+                  'bytes': len(raw),
+                  'sha256': hashlib.sha256(raw).hexdigest(),
+                  'git_blob_sha1': subprocess.check_output(
+                      ['git', 'hash-object', str(path)], text=True
+                  ).strip(),
+              }
+
+          receipt = {
+              'schema': 'qikvrt_qce_causal_axis_bridge_kernel_receipt_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_commit': os.environ['HEAD_SHA'],
+              'source_tree': os.environ['TREE_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'lean_version': subprocess.check_output(['lean', '--version'], text=True).strip(),
+              'source': identity(source),
+              'axiom_audit_source': identity(audit),
+              'axiom_output': identity(output),
+              'upstream_qce_source': identity(qce),
+              'upstream_mdd_source': identity(mdd),
+              'upstream_qns_source': identity(qns),
+              'theorem_count': len(expected),
+              'axioms_by_theorem': reports,
+              'allowed_kernel_axioms': sorted(allowed_kernel_axioms),
+              'kernel_axioms_observed': kernel_axioms,
+              'project_axioms': project_axioms,
+              'formal_result': 'OPERATIONAL_SUCCESSION_AND_SEPARATION_CRITERIA_UNIQUELY_SELECT_TIME_AND_LENGTH_AXES_AND_DERIVE_SPEED_DIMENSION',
+              'operational_axis_criteria': 'EXPLICIT_CORRESPONDENCE_PREMISES',
+              'stable_null_boundary': 'CONDITIONAL_ON_ADMISSIBLE_CONE_WITNESS',
+              'current_qce_cone_candidate': 'NOT_ADMISSIBLE',
+              'speed_dimension_derived': 'L_T_NEG_ONE',
+              'c_physical_value_derived': False,
+              'si_second_derived': False,
+              'si_metre_derived': False,
+              'hbar_derived': False,
+              'G_derived': False,
+              'physical_correspondence': 'NOT_INFERRED',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()
+          receipt['receipt_payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          (folder / 'QCA_KERNEL_RECEIPT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Upload QCA exact-head evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-qce-causal-axis-bridge-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            docs/publications/2026-08-07-qce-causal-axis-bridge/QCA_AXIOM_OUTPUT.txt
+            docs/publications/2026-08-07-qce-causal-axis-bridge/QCA_KERNEL_RECEIPT.json
