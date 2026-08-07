@@ -47,30 +47,58 @@ def capture(args: argparse.Namespace) -> int:
     policy = load_policy()
     raw = sys.stdin.buffer.read()
     payload_hash = sha256_bytes(raw)
-    inline_allowed = args.retention == "INLINE" and len(raw) <= args.inline_limit
-    event_core: dict[str, Any] = {
+    retention = args.retention
+    inline_payload: str | None = None
+    if retention == "INLINE" and len(raw) <= args.inline_limit:
+        try:
+            inline_payload = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            retention = "REPOSITORY_ARTIFACT"
+
+    identity = {
+        "schema": "qikvrt-io-event-identity/1.0",
+        "direction": args.direction,
+        "modality": args.modality,
+        "actor": args.actor,
+        "source": args.source,
+        "payload_sha256": payload_hash,
+        "payload_retention": retention,
+        "work_unit": args.work_unit,
+        "parent_event": args.parent_event,
+        "epistemic_class": args.epistemic_class,
+    }
+    event_id = sha256_bytes(canonical_json(identity))
+    event: dict[str, Any] = {
         "schema": "qikvrt-io-event/1.0",
+        "event_id": event_id,
         "timestamp": args.timestamp or dt.datetime.now(dt.timezone.utc).isoformat(),
         "direction": args.direction,
         "modality": args.modality,
         "actor": args.actor,
         "source": args.source,
         "payload_sha256": payload_hash,
-        "payload_retention": args.retention,
+        "payload_retention": retention,
         "provenance": {"work_unit": args.work_unit, "parent_event": args.parent_event},
         "epistemic_class": args.epistemic_class,
         "verification_state": "UNVERIFIED",
         "publication_state": "NOT_ASSESSED",
     }
-    if inline_allowed:
-        try:
-            event_core["payload_utf8"] = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            event_core["payload_retention"] = "REPOSITORY_ARTIFACT"
-    event_id = sha256_bytes(canonical_json(event_core))
-    event = dict(event_core, event_id=event_id)
+    if inline_payload is not None:
+        event["payload_utf8"] = inline_payload
+
     path = EVENT_DIR / f"{event_id}.json"
-    result = atomic_create(path, json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n")
+    if path.exists():
+        prior = json.loads(path.read_text(encoding="utf-8"))
+        prior_comparable = {k: prior.get(k) for k in event if k != "timestamp"}
+        event_comparable = {k: event.get(k) for k in event if k != "timestamp"}
+        if prior_comparable != event_comparable:
+            raise SystemExit(f"BLOCK: semantic event identity collision at {path}")
+        result = "NOOP"
+    else:
+        result = atomic_create(
+            path,
+            json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n",
+        )
     print(json.dumps({"state": result, "event_id": event_id, "path": str(path.relative_to(ROOT)), "policy": policy["policy_id"]}, sort_keys=True))
     return 0
 
