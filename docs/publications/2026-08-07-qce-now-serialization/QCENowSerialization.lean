@@ -104,8 +104,10 @@ theorem QNS_T06_now_index_recovers_step (step : Nat) :
   simp [nowIndex, QNS_T04_canonical_relation_count]
 
 /-- [QNS-T07] Distinct serial steps cannot generate the same canonical now-state. -/
-theorem QNS_T07_canonical_now_is_injective : Function.Injective canonicalNow := by
-  intro left right sameNetwork
+theorem QNS_T07_canonical_now_is_injective
+    (left right : Nat)
+    (sameNetwork : canonicalNow left = canonicalNow right) :
+    left = right := by
   have sameIndex := congrArg nowIndex sameNetwork
   simpa only [QNS_T06_now_index_recovers_step] using sameIndex
 
@@ -117,18 +119,21 @@ def InCanonicalNowSet (network : RelationNetwork) : Prop :=
 theorem QNS_T08_canonical_now_has_unique_index
     (network : RelationNetwork)
     (member : InCanonicalNowSet network) :
-    ∃! step, canonicalNow step = network := by
-  rcases member with ⟨step, rfl⟩
-  refine ⟨step, rfl, ?_⟩
-  intro candidate sameNetwork
-  exact QNS_T07_canonical_now_is_injective sameNetwork
+    ∃ step,
+      canonicalNow step = network ∧
+      ∀ candidate, canonicalNow candidate = network → candidate = step := by
+  rcases member with ⟨step, hStep⟩
+  refine ⟨step, hStep, ?_⟩
+  intro candidate hCandidate
+  apply QNS_T07_canonical_now_is_injective candidate step
+  calc
+    canonicalNow candidate = network := hCandidate
+    _ = canonicalNow step := hStep.symm
 
 /-- [QNS-T09] One further QCE extension advances the recovered index by one. -/
 theorem QNS_T09_extension_advances_now_index (step : Nat) :
     nowIndex (extendNetwork (canonicalNow step)) = Nat.succ step := by
-  unfold nowIndex
-  simp [extendNetwork, QNS_T04_canonical_relation_count]
-  omega
+  simp [nowIndex, extendNetwork, QNS_T04_canonical_relation_count]
 
 /-- Abstract signed calibration response of the serial coordinate. -/
 structure SerialCalibrationAction where
