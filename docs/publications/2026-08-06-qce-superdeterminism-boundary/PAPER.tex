@@ -1,0 +1,146 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{margin=2.5cm}
+\title{QCE, Measurement Independence, Delayed Choice and the Formal Boundary of Superdeterminism}
+\author{Ingolf Lohmann}
+\date{6 August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note separates three claims that are often conflated in discussions of delayed-choice experiments and superdeterminism: (i) later measurement choice does not imply a physical rewriting of an already registered past; (ii) measurement independence excludes the measurement-dependent escape route usually called superdeterminism in Bell reasoning; and (iii) spacelike separation and local response structure do not by themselves establish measurement independence.  The QIK-VRT Lean formalization contains a finite common-cause countermodel for (iii) and a conditional kernel theorem for (ii).  Consequently, a physically relevant QCE exclusion of superdeterminism still requires an independently justified derivation and empirical/reference binding of measurement independence.
+\end{abstract}
+
+\section{Epistemic claim boundary}
+Let $\lambda$ denote a hidden preparation state and $a,b$ the two measurement settings.  The standard Bell-style measurement-independence condition is
+\[
+P(\lambda\mid a,b)=P(\lambda).
+\]
+At support level this is represented by factorization of jointly admissible hidden-state/setting triples:
+\[
+J(\lambda,a,b)\iff H(\lambda)\land S(a,b).
+\]
+The QIK-VRT kernel calls this predicate \texttt{MeasurementIndependent}.
+
+A measurement-dependent Bell escape route is represented by
+\[
+\neg\operatorname{MeasurementIndependent}(M).
+\]
+The formal proxy \texttt{SuperdeterministicCandidate} is intentionally restricted to that dimension; it is not claimed to encode every philosophical use of ``superdeterminism''.
+
+\section{Conditional exclusion theorem}
+By definition,
+\[
+\operatorname{MeasurementIndependent}(M)
+\Longrightarrow
+\neg\operatorname{SuperdeterministicCandidate}(M).
+\]
+The Lean theorem is
+\begin{verbatim}
+measurementIndependence_excludes_superdeterministicCandidate
+\end{verbatim}
+and has the type
+\[
+\forall M,\; MI(M)\to\neg SD_{MI}(M).
+\]
+This theorem is logically exact but conditional.  It does not establish $MI$ for nature.
+
+\section{Why delayed choice and spacelike separation are insufficient}
+The formal two-wing model gives each wing only its local setting:
+\[
+A=A(\lambda,a),\qquad B=B(\lambda,b).
+\]
+Therefore changing $b$ cannot directly change the response function on wing A, and changing $a$ cannot directly change the response function on wing B.  This captures the relevant structural locality at the response stage.
+
+Nevertheless define a finite common-cause model with a hidden bit $\lambda\in\{0,1\}$ and admissibility
+\[
+J(\lambda,a,b)\iff(a=\lambda)\land(b=\lambda),
+\]
+while every hidden value and every setting pair are individually admissible.  Then local response structure holds, but support factorization fails.  In Lean this is the theorem
+\begin{verbatim}
+localResponseStructure_not_sufficient_for_measurementIndependence
+\end{verbatim}
+with the accompanying theorem
+\begin{verbatim}
+commonCauseModel_not_measurementIndependent.
+\end{verbatim}
+Thus spacelike separation of the two setting events rules out direct signal exchange between the wings at choice time, but not a common past cause correlating $\lambda,a,b$.
+
+\section{Delayed-choice interpretation}
+The original delayed-choice quantum-eraser literature reports correlations sorted according to a later measurement basis.  Standard quantum mechanics does not require the later basis choice to rewrite a previously registered local event.  Operationally, the later comparison changes which conditional correlation is evaluated, not the historical detector record itself.
+
+The QIK-VRT epistemic reading is therefore
+\[
+\text{later verification}\neq\text{past mutation},
+\]
+while
+\[
+\text{later verification}=\text{new evidence constraining justified classification}.
+\]
+
+\section{The QCE proof obligation}
+The substantial QCE claim would have to establish the first implication in
+\[
+\boxed{
+QCE\text{-axioms}
+\Longrightarrow MI
+\Longrightarrow \neg SD_{MI}
+}.
+\]
+The second implication is kernel-formalized.  The first is not licensed merely by delayed choice, locality of the response signatures, or the experimenters' assertion of free choice.
+
+The Lean structure \texttt{QCEFreedomCertificate} therefore records the outstanding obligation.  Given such a certificate, Lean proves
+\begin{verbatim}
+qceFreedomCertificate_excludes_superdeterministicCandidate.
+\end{verbatim}
+Promoting the certificate from a formal assumption to a physical claim requires an interpretation/reference map and evidence, in accordance with the existing QIK-VRT world-formula relation kernel.
+
+\section{Scientific interpretation}
+The result establishes two kernel-level facts:
+\begin{enumerate}
+\item measurement independence is sufficient to exclude the formal measurement-dependent superdeterministic candidate;
+\item local two-wing response structure is not sufficient to derive measurement independence.
+\end{enumerate}
+It does not establish that nature satisfies measurement independence, and therefore does not by itself establish that nature is non-superdeterministic.
+
+This is consistent with the standard Bell-theorem literature, which explicitly identifies measurement independence as a supplementary assumption and superdeterminism as one route that rejects it.
+
+\section{Sources}
+\begin{itemize}
+\item Stanford Encyclopedia of Philosophy, ``Bell's Theorem'', \url{https://plato.stanford.edu/entries/bell-theorem/}.
+\item Y.-H. Kim et al., ``Delayed `Choice' Quantum Eraser'', Phys. Rev. Lett. 84, 1 (2000), DOI: \url{https://doi.org/10.1103/PhysRevLett.84.1}.
+\item R. Chaves, G. B. Lemos, J. Pienaar, ``Causal Modeling the Delayed-Choice Experiment'', Phys. Rev. Lett. 120, 190401 (2018), DOI: \url{https://doi.org/10.1103/PhysRevLett.120.190401}.
+\item The BIG Bell Test Collaboration, ``Challenging local realism with human choices'', Nature 557, 212--216 (2018), DOI: \url{https://doi.org/10.1038/s41586-018-0085-3}.
+\item S. Hossenfelder and T. N. Palmer, ``Rethinking Superdeterminism'', arXiv:1912.06462.
+\item QIK-VRT pre-spacetime ontology publication receipt, DOI: \url{https://doi.org/10.5281/zenodo.21804399}.
+\end{itemize}
+
+\section{Repository bindings}
+The formal module is
+\begin{verbatim}
+formalization/QIKVRT_Formalization_v2.0/
+QIKVRTFormalization/QuantumFoundations/MeasurementIndependence.lean
+\end{verbatim}
+with a dedicated \texttt{AxiomAudit.lean}.  A successful Lean 4.19 execution-bound receipt is required before any theorem is described as kernel-verified for the final publication candidate.
+
+\section{Conclusion}
+The strongest currently justified statement is
+\[
+\boxed{MI\Rightarrow\neg SD_{MI}}
+\]
+combined with the finite countermodel
+\[
+\boxed{\text{local response structure}\not\Rightarrow MI}.
+\]
+Therefore a non-circular QCE proof against superdeterminism must derive measurement independence from deeper QCE premises rather than assume it under the name of free choice.
+
+\bigskip
+\noindent\textit{Quod erat demonstrandum---for the formal logical boundary.}
+
+\noindent Ingolf Lohmann
+\end{document}

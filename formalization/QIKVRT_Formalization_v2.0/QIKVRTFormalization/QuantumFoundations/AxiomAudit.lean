@@ -1,0 +1,17 @@
+import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
+
+/-!
+Axiom audit for the measurement-independence / superdeterminism boundary.
+Every theorem listed here is intended to be checked by Lean 4.19 with no
+undeclared axioms.
+-/
+
+#print axioms QIKVRT.V2.QuantumFoundations.measurementIndependence_excludes_superdeterministicCandidate
+#print axioms QIKVRT.V2.QuantumFoundations.superdeterministicCandidate_implies_measurementDependence
+#print axioms QIKVRT.V2.QuantumFoundations.responseA_remoteSettingInsensitive
+#print axioms QIKVRT.V2.QuantumFoundations.responseB_remoteSettingInsensitive
+#print axioms QIKVRT.V2.QuantumFoundations.commonCauseModel_not_measurementIndependent
+#print axioms QIKVRT.V2.QuantumFoundations.commonCauseModel_superdeterministicCandidate
+#print axioms QIKVRT.V2.QuantumFoundations.localResponseStructure_not_sufficient_for_measurementIndependence
+#print axioms QIKVRT.V2.QuantumFoundations.qceFreedomCertificate_excludes_superdeterministicCandidate
+#print axioms QIKVRT.V2.QuantumFoundations.superdeterminism_boundary_summary

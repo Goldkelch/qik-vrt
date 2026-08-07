@@ -1,0 +1,35 @@
+import QIKVRTUniversalOntology
+import QIKVRTFormalization
+
+#print axioms QIKVRT.UniversalOntology.ontologyChain_length
+#print axioms QIKVRT.UniversalOntology.ontologyChain_pairwise
+#print axioms QIKVRT.UniversalOntology.difference_precedes_information
+#print axioms QIKVRT.UniversalOntology.information_precedes_relation
+#print axioms QIKVRT.UniversalOntology.relation_precedes_causality
+#print axioms QIKVRT.UniversalOntology.causality_precedes_spacetime
+#print axioms QIKVRT.UniversalOntology.spacetime_precedes_matter
+#print axioms QIKVRT.UniversalOntology.matter_precedes_life
+#print axioms QIKVRT.UniversalOntology.life_precedes_cognition
+#print axioms QIKVRT.UniversalOntology.cognition_precedes_responsibility
+#print axioms QIKVRT.UniversalOntology.responsibility_precedes_future
+#print axioms QIKVRT.UniversalOntology.difference_precedes_future
+#print axioms QIKVRT.UniversalOntology.ontologyPrecedes_irrefl
+#print axioms QIKVRT.UniversalOntology.ontologyPrecedes_trans
+#print axioms QIKVRT.UniversalOntology.information_preserves_difference
+#print axioms QIKVRT.UniversalOntology.causalModel_is_relational
+#print axioms QIKVRT.UniversalOntology.epistemicChain_length
+#print axioms QIKVRT.UniversalOntology.epistemicChain_pairwise
+#print axioms QIKVRT.UniversalOntology.reality_precedes_newDifference
+#print axioms QIKVRT.UniversalOntology.epistemic_roundTrip_closes
+#print axioms QIKVRT.UniversalOntology.finitePair_exists
+#print axioms QIKVRT.UniversalOntology.finitePair_symmetric
+#print axioms QIKVRT.UniversalOntology.empirical_claim_not_kernel_promoted
+#print axioms QIKVRT.UniversalOntology.interpretation_not_kernel_promoted
+#print axioms QIKVRT.UniversalOntology.ordinaryRelease_only_done
+#print axioms QIKVRT.V2.WorldFormula.every_stage_has_a_successor
+#print axioms QIKVRT.V2.WorldFormula.closedGenerative_iff_executableWorldFormula
+#print axioms QIKVRT.V2.WorldFormula.unitArchitecture_executable
+#print axioms QIKVRT.V2.WorldFormula.physicallyQualified_implies_formallyEstablished
+#print axioms QIKVRT.V2.WorldFormula.physicallyQualified_implies_referenceBound
+#print axioms QIKVRT.V2.WorldFormula.formalDerivability_not_sufficient_for_physicalQualification
+#print axioms QIKVRT.V2.WorldFormula.ArtifactIdentity.complete_implies_sourceCommit

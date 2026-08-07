@@ -1,0 +1,162 @@
+name: QIK-VRT universal ontology shell-only fallback
+
+on:
+  push:
+    branches:
+      - agent/universal-ontology-claim-closure-2026-08-06-v1
+    paths:
+      - ".github/workflows/qikvrt_universal_ontology_shell_fallback.yml"
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
+      - "state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json"
+      - "state/work_units/UNIFIED_ONTOLOGY_WORLD_FORMULA_CONSOLIDATION_V1.json"
+      - "tests/test_universal_ontology_claim_closure.py"
+      - "tests/test_unified_world_formula_consolidation.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-universal-ontology-shell-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-shell-verification:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      LEAN_VERSION: "4.19.0"
+      LEAN_ARCHIVE_URL: "https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst"
+    steps:
+      - name: Check out exact commit without marketplace actions
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          cd "$GITHUB_WORKSPACE"
+          git init
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$actual" = "$GITHUB_SHA"
+          test "${#actual}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$actual" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Install exact official Lean release without marketplace actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/lean-${LEAN_VERSION}-linux.tar.zst"
+          install_root="$RUNNER_TEMP/lean-${LEAN_VERSION}"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --connect-timeout 20 --output "$archive" "$LEAN_ARCHIVE_URL"
+          test "$(stat -c '%s' "$archive")" -gt 300000000
+          mkdir -p "$install_root"
+          tar --zstd -xf "$archive" -C "$install_root" --strip-components=1
+          test -x "$install_root/bin/lean"
+          test -x "$install_root/bin/lake"
+          echo "$install_root/bin" >> "$GITHUB_PATH"
+
+      - name: Bind Lean and Lake versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          lean --version | tee "$RUNNER_TEMP/lean-version.txt"
+          lake --version | tee "$RUNNER_TEMP/lake-version.txt"
+          grep -F "version ${LEAN_VERSION}" "$RUNNER_TEMP/lean-version.txt"
+
+      - name: Verify source scope and claim boundaries
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/verify_universal_ontology.py
+
+      - name: Build exact consolidated Lean target
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake build QIKVRTUniversalOntology
+
+      - name: Run complete combined axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lake/build
+          lake env lean QIKVRTUniversalOntology/AxiomAudit.lean \
+            > .lake/build/universal-ontology-axioms.txt 2>&1
+          cat .lake/build/universal-ontology-axioms.txt
+
+      - name: Enforce repository-wide theorem dependency policies
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/audit_lean_axioms.py
+
+      - name: Run formalization boundary regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_universal_ontology_claim_closure \
+            tests.test_unified_world_formula_consolidation
+          python3 -B formalization/QIKVRT_Formalization_v2.0/tests/test_world_formula_relation_kernel.py
+
+      - name: Create and validate exact-head execution receipt
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=".lake/build/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json"
+          python3 -B scripts/make_universal_ontology_kernel_receipt.py \
+            --lean "$(command -v lean)" \
+            --axiom-output .lake/build/universal-ontology-axioms.txt \
+            --output "$output" \
+            --repository "$GITHUB_REPOSITORY" \
+            --commit "${{ steps.binding.outputs.head }}" \
+            --tree "${{ steps.binding.outputs.tree }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          python3 - "$output" "${{ steps.binding.outputs.head }}" "${{ steps.binding.outputs.tree }}" <<'PY'
+          import json
+          import pathlib
+          import sys
+          path = pathlib.Path(sys.argv[1])
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          assert receipt["source_commit"] == sys.argv[2]
+          assert receipt["source_tree"] == sys.argv[3]
+          assert receipt["theorem_count"] == 32
+          assert receipt["project_axioms"] == []
+          assert receipt["scope_boundary"]["physical_correspondence"] == "OPEN_CANDIDATE"
+          assert receipt["completion_claims"] == {
+              "PASS": False,
+              "FINAL_PASS": False,
+              "EFFECT_ACK_DONE": False,
+          }
+          print("EXACT_HEAD_RECEIPT_VALIDATED")
+          PY
+          sha256sum "$output"
+          cat "$output"
+
+      - name: Record non-effect boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "LEAN_VERIFICATION_WORKFLOW_ONLY=true"
+            echo "GITHUB_MUTATION=NONE"
+            echo "ZENODO_MUTATION=NONE"
+            echo "IETF_MUTATION=NONE"
+            echo "PASS_CLAIMED=false"
+            echo "FINAL_PASS_CLAIMED=false"
+            echo "EFFECT_ACK_DONE_CLAIMED=false"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -2,9 +2,16 @@ name: QIKVRT live status watch
 
 on:
   pull_request:
+    paths:
+      - ".github/workflows/qikvrt_live_status_watch.yml"
   issue_comment:
     types: [created]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to observe"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -13,24 +20,27 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: false
+  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   watch:
     if: >-
-      github.event_name != 'issue_comment' ||
-      (github.event.issue.pull_request && contains(github.event.comment.body, '/qikvrt-status-watch'))
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/qikvrt-status-watch'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 5
     steps:
-      - name: Observe every repository workflow, job, and step transition serially
+      - name: Observe repository workflow, job, and step transitions serially
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number || github.event.issue.number }}
           WATCH_WORKFLOW: QIKVRT live status watch
           MARKER: '<!-- qikvrt-live-status-watch -->'
+          MAX_CYCLES: "12"
         run: |
           set -euo pipefail
           pr="$EVENT_PR"
@@ -101,13 +111,13 @@ jobs:
             signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
 
             if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT live repository runtime
+              update_status "## QIKVRT bounded repository runtime observation
 
           **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
 
           - Repository: \`$REPOSITORY\`
           - Branch: \`$branch\`
-          - Observation cycle: \`$cycle\`
+          - Observation cycle: \`$cycle/$MAX_CYCLES\`
           - Observed at: \`$now\`
           - Active external runs: \`$active_count\`
 
@@ -123,10 +133,12 @@ jobs:
           |---|---|---|---|
           $step_rows
 
-          A new progress graphic is emitted for every detected workflow, job, or step transition. The next observation starts only after this frame has been persisted, followed by a five-second pause."
+          Observation is opt-in and bounded so the watcher cannot monopolize a runner while the observed jobs wait behind it. A new explicit invocation supersedes any older invocation for the same pull request."
               state_signature="$signature"
             fi
 
-            if [ "$active_count" -eq 0 ]; then break; fi
+            if [ "$active_count" -eq 0 ] || [ "$cycle" -ge "$MAX_CYCLES" ]; then
+              break
+            fi
             sleep 5
           done

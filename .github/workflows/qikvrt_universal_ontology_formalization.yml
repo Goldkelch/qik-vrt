@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT universal ontology finite-model verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
+      - "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
+      - "state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json"
+      - "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
+      - "tests/test_universal_ontology_claim_closure.py"
+      - "tests/test_unified_world_formula_consolidation.py"
+      - ".github/workflows/qikvrt_universal_ontology_formalization.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZATION_AND_PUBLICATION_DELEGATION_V1.json"
+      - "state/work_units/**"
+      - "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
+      - "tests/test_universal_ontology_claim_closure.py"
+      - "tests/test_unified_world_formula_consolidation.py"
+      - ".github/workflows/qikvrt_universal_ontology_formalization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-universal-ontology-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-finite-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact commit and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$expected"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "${#actual}" -eq 40
+          test "${#tree}" -eq 40
+          echo "head=$actual" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify source scope and claim boundaries
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: python3 -B scripts/verify_universal_ontology.py
+
+      - name: Build consolidated Lean library
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: lake build QIKVRTUniversalOntology
+
+      - name: Run complete 32-theorem core axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lake/build
+          lake env lean QIKVRTUniversalOntology/AxiomAudit.lean \
+            > .lake/build/universal-ontology-axioms.txt 2>&1
+          cat .lake/build/universal-ontology-axioms.txt
+
+      - name: Run extended 71-constant support-tranche axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          lake env lean QIKVRTUniversalOntology/ExtendedAxiomAudit.lean \
+            > .lake/build/universal-ontology-extended-axioms.txt 2>&1
+          cat .lake/build/universal-ontology-extended-axioms.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          line_re = re.compile(
+              r"^'(?P<name>[^']+)' (?:does not depend on any axioms|"
+              r"depends on axioms: \[(?P<axioms>[^]]*)\])$"
+          )
+          allowed = {"propext", "Classical.choice", "Quot.sound"}
+          observed = {}
+          unexpected = []
+          path = Path(".lake/build/universal-ontology-extended-axioms.txt")
+          for raw in path.read_text(encoding="utf-8").splitlines():
+              text = raw.strip()
+              if not text:
+                  continue
+              match = line_re.fullmatch(text)
+              if match is None:
+                  unexpected.append(text)
+                  continue
+              axioms = {
+                  item.strip()
+                  for item in (match.group("axioms") or "").split(",")
+                  if item.strip()
+              }
+              observed[match.group("name")] = axioms
+          if unexpected:
+              raise SystemExit(f"BLOCK: unexpected extended axiom output: {unexpected[:5]}")
+          if len(observed) != 71:
+              raise SystemExit(f"BLOCK: expected 71 extended audit constants, observed {len(observed)}")
+          forbidden = {
+              name: sorted(axioms - allowed)
+              for name, axioms in observed.items()
+              if axioms - allowed
+          }
+          if forbidden:
+              raise SystemExit(f"BLOCK: forbidden extended theorem dependencies: {forbidden}")
+          print("VERIFIED extended axiom audit: constants=71 project_axioms=0")
+          PY
+
+      - name: Run boundary regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_universal_ontology_claim_closure \
+            tests.test_unified_world_formula_consolidation
+          python3 -B formalization/QIKVRT_Formalization_v2.0/tests/test_world_formula_relation_kernel.py
+
+      - name: Create exact-head execution-bound kernel receipt
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: >-
+          python3 -B scripts/make_universal_ontology_kernel_receipt.py
+          --lean "$(lake env which lean)"
+          --axiom-output .lake/build/universal-ontology-axioms.txt
+          --output .lake/build/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json
+          --repository "${GITHUB_REPOSITORY}"
+          --commit "${{ steps.binding.outputs.head }}"
+          --tree "${{ steps.binding.outputs.tree }}"
+          --run-id "${GITHUB_RUN_ID}"
+          --run-attempt "${GITHUB_RUN_ATTEMPT}"
+
+      - name: Upload exact consolidated receipt bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-universal-ontology-kernel-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/universal-ontology-axioms.txt
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/universal-ontology-extended-axioms.txt

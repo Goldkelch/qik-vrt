@@ -34,6 +34,18 @@ MANUSCRIPT_EXPECTED = {
     "QIKVRT.V2.WeightedConnectability.MAT001_checked",
     "QIKVRT.V2.WeightedConnectability.MAT002_checked",
 }
+WORLD_FORMULA_AUDIT_SOURCE = (
+    ROOT / "QIKVRTFormalization" / "WorldFormula" / "AxiomAudit.lean"
+)
+WORLD_FORMULA_EXPECTED = {
+    "QIKVRT.V2.WorldFormula.every_stage_has_a_successor",
+    "QIKVRT.V2.WorldFormula.closedGenerative_iff_executableWorldFormula",
+    "QIKVRT.V2.WorldFormula.unitArchitecture_executable",
+    "QIKVRT.V2.WorldFormula.physicallyQualified_implies_formallyEstablished",
+    "QIKVRT.V2.WorldFormula.physicallyQualified_implies_referenceBound",
+    "QIKVRT.V2.WorldFormula.formalDerivability_not_sufficient_for_physicalQualification",
+    "QIKVRT.V2.WorldFormula.ArtifactIdentity.complete_implies_sourceCommit",
+}
 EFFECT_ACK_AUDIT_SOURCE = ROOT / "QIKVRTEffectAck" / "AxiomAudit.lean"
 EFFECT_ACK_MATRIX = ROOT / "effect_ack" / "DRAFT01_CLAIM_MATRIX.json"
 FOUNDATIONAL_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
@@ -125,18 +137,36 @@ def effect_ack_policy() -> dict[str, set[str]]:
     return policy
 
 
+def validate_world_formula_audit_source() -> None:
+    expected_lines = {f"#print axioms {name}" for name in WORLD_FORMULA_EXPECTED}
+    actual_lines = {
+        line.strip()
+        for line in WORLD_FORMULA_AUDIT_SOURCE.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("#print axioms ")
+    }
+    if actual_lines != expected_lines:
+        missing = sorted(expected_lines - actual_lines)
+        extra = sorted(actual_lines - expected_lines)
+        raise ValueError(
+            f"world-formula audit drift; missing={missing}, extra={extra}"
+        )
+
+
 def main() -> int:
     try:
         effect_policy = effect_ack_policy()
+        validate_world_formula_audit_source()
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"ERROR: invalid EFFECT_ACK axiom policy: {exc}", file=sys.stderr)
+        print(f"ERROR: invalid axiom policy: {exc}", file=sys.stderr)
         return 1
     manuscript_policy = {
         name: set(FOUNDATIONAL_AXIOMS) for name in MANUSCRIPT_EXPECTED
     }
+    world_formula_policy = {name: set() for name in WORLD_FORMULA_EXPECTED}
     audits = (
         (MANUSCRIPT_AUDIT_SOURCE, manuscript_policy, False),
         (EFFECT_ACK_AUDIT_SOURCE, effect_policy, True),
+        (WORLD_FORMULA_AUDIT_SOURCE, world_formula_policy, True),
     )
     seen: set[str] = set()
     violations: list[str] = []
@@ -192,7 +222,8 @@ def main() -> int:
 
     print(
         f"PASS axiom audit: {len(expected)} checked theorems; "
-        f"{len(effect_policy)} EFFECT_ACK constants use per-claim policies"
+        f"{len(effect_policy)} EFFECT_ACK constants use per-claim policies; "
+        f"{len(world_formula_policy)} world-formula theorems are axiom-free"
     )
     return 0
 

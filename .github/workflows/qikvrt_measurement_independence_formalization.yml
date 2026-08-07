@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT measurement-independence boundary verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "docs/publications/2026-08-06-qce-superdeterminism-boundary/**"
+      - ".github/workflows/qikvrt_measurement_independence_formalization.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/**"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "docs/publications/2026-08-06-qce-superdeterminism-boundary/**"
+      - ".github/workflows/qikvrt_measurement_independence_formalization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-measurement-independence-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact commit and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$expected"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "head=$actual" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - name: Build checked formalization
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        run: lake build QIKVRTFormalization
+
+      - name: Execute measurement-independence axiom audit
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .lake/build
+          lake env lean QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean \
+            > .lake/build/measurement-independence-axioms.txt 2>&1
+          cat .lake/build/measurement-independence-axioms.txt
+          if grep -E "depends on axioms:" .lake/build/measurement-independence-axioms.txt; then
+            echo "unexpected axiom dependency" >&2
+            exit 1
+          fi
+
+      - name: Create exact-head verification receipt
+        working-directory: formalization/QIKVRT_Formalization_v2.0
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          out = pathlib.Path('.lake/build/measurement-independence-axioms.txt')
+          data = out.read_bytes()
+          lean = subprocess.check_output(['lake','env','lean','--version'], text=True).strip()
+          receipt = {
+            'schema': 'qikvrt_measurement_independence_kernel_receipt_v1',
+            'repository': os.environ['GITHUB_REPOSITORY'],
+            'source_commit': os.environ['HEAD_SHA'],
+            'source_tree': os.environ['TREE_SHA'],
+            'lean_version': lean,
+            'axiom_audit_sha256': hashlib.sha256(data).hexdigest(),
+            'theorem_scope': 9,
+            'formal_claim': 'Measurement independence excludes the defined measurement-dependent candidate; local response structure alone is insufficient.',
+            'physical_correspondence': 'NOT_ESTABLISHED',
+            'superdeterminism_in_nature': 'NOT_ESTABLISHED',
+            'pass': False,
+            'final_pass': False,
+            'effect_ack_done': False,
+          }
+          pathlib.Path('.lake/build/MEASUREMENT_INDEPENDENCE_KERNEL_RECEIPT.json').write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Upload exact-head receipt bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-measurement-independence-kernel-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/MEASUREMENT_INDEPENDENCE_KERNEL_RECEIPT.json
+            formalization/QIKVRT_Formalization_v2.0/.lake/build/measurement-independence-axioms.txt

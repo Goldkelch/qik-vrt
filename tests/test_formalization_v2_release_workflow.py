@@ -62,6 +62,7 @@ ALPHA2_DONE = (
 )
 ZERO40 = "0" * 40
 ZERO64 = "0" * 64
+ALPHA2_ARCHIVE_SHA256 = "500087f6aeee41787959cfc8902852503e2182019ae4f3e88f115e94a1f5e689"
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -235,6 +236,7 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
         self.assertNotIn("ZENODO_SHA256SUMS", actual)
 
     def test_package_is_reproducible_and_has_exact_provenance(self) -> None:
+        self.assertEqual(sha256(ARCHIVE), ALPHA2_ARCHIVE_SHA256)
         with tempfile.TemporaryDirectory(
             prefix="qikvrt-alpha2-package-test-"
         ) as raw:
