@@ -1,0 +1,123 @@
+{
+  "schema": "qik-vrt.io-round-trip-autopublication.v1",
+  "version": 1,
+  "status": "PRODUCT_OWNER_APPROVED_IMPLEMENTATION_CANDIDATE",
+  "owner": "Ingolf Lohmann",
+  "scope": "all input/output interface artifacts independent of modality or MIME type",
+  "invariant": "EVERY_IO_EVENT_MUST_HAVE_DURABLE_REPOSITORY_RECEIPT",
+  "pipeline": [
+    "CAPTURE",
+    "CONTENT_ADDRESS",
+    "PERSIST_RECEIPT",
+    "PROVENANCE_BIND",
+    "GRANULARIZE",
+    "NOVELTY_CLASSIFY",
+    "PROOF_CLASSIFY",
+    "VERIFY",
+    "PUBLICATION_ROUTE",
+    "EFFECT_GATE",
+    "PUBLISH_OR_RETAIN",
+    "REOBSERVE_EFFECT",
+    "PERSIST_EFFECT_RECEIPT"
+  ],
+  "capture": {
+    "required_fields": [
+      "event_id",
+      "direction",
+      "timestamp",
+      "media_type",
+      "payload_sha256",
+      "provenance"
+    ],
+    "directions": ["input", "output"],
+    "payload_storage": {
+      "text": "repository content or content-addressed repository artifact",
+      "binary": "content-addressed artifact or privacy-preserving external object reference plus exact digest",
+      "sensitive": "digest-and-metadata receipt unless explicit policy authorizes bytes"
+    },
+    "fail_closed": true
+  },
+  "granularity": {
+    "unit": "smallest independently attributable and independently testable knowledge/work unit",
+    "deduplicate_by": ["payload_sha256", "semantic_fingerprint"],
+    "append_only_receipts": true
+  },
+  "knowledge_classification": {
+    "classes": [
+      "TRANSPORT_ONLY",
+      "DUPLICATE",
+      "WORK_RESULT",
+      "NEW_CLAIM",
+      "NEW_FORMAL_RESULT",
+      "NEW_EMPIRICAL_RESULT",
+      "NEW_PROTOCOL_RESULT",
+      "UNRESOLVED"
+    ],
+    "new_knowledge_requires": [
+      "non_duplicate",
+      "explicit_claim_scope",
+      "provenance",
+      "machine_checkable_evidence_or_explicit_unproved_status"
+    ]
+  },
+  "proof": {
+    "allowed_status": [
+      "FORMALLY_PROVED",
+      "MACHINE_VERIFIED_DERIVATION",
+      "EMPIRICALLY_SUPPORTED",
+      "TEST_VERIFIED_IMPLEMENTATION",
+      "UNPROVED_CLAIM",
+      "NOT_APPLICABLE"
+    ],
+    "rule": "publication metadata MUST state the exact proof/evidence class and MUST NOT promote a model-relative proof to empirical confirmation"
+  },
+  "publication": {
+    "zenodo": {
+      "eligible_classes": [
+        "WORK_RESULT",
+        "NEW_CLAIM",
+        "NEW_FORMAL_RESULT",
+        "NEW_EMPIRICAL_RESULT",
+        "NEW_PROTOCOL_RESULT"
+      ],
+      "requires": [
+        "stable_bytes",
+        "license_and_rights_clear",
+        "scientific_status_explicit",
+        "machine_verification_terminal",
+        "publication_granularity_suitable",
+        "novelty_or_version_significance"
+      ]
+    },
+    "ietf": {
+      "eligible_classes": ["NEW_PROTOCOL_RESULT"],
+      "requires": [
+        "protocol_or_interoperability_relevance",
+        "ietf_format_valid",
+        "rights_clear",
+        "machine_verification_terminal",
+        "standards_track_or_independent_submission_rationale"
+      ]
+    }
+  },
+  "automation": {
+    "mode": "FULLY_AUTOMATIC_AFTER_INGRESS",
+    "human_questions_required": 0,
+    "manual_copy_paste_required": false,
+    "publication_effects": "automatic only when all configured effect gates and credentials are satisfied",
+    "missing_credentials_or_external_service": "persist BLOCKED_EXTERNAL_EFFECT receipt and retry through scheduled continuation",
+    "semantic_noop": "persist receipt; do not publish duplicate noise"
+  },
+  "scientific_boundary": "EXECUTABLE_WORLD_FORMULA_ARCHITECTURE_CLAIM != FULLY_EMPIRICALLY_ESTABLISHED_DESCRIPTION_OF_NATURE",
+  "acceptance_criteria": [
+    "no I/O event is silently dropped",
+    "every event receives a content-addressed durable receipt",
+    "provenance remains attributable",
+    "duplicates do not create publication noise",
+    "new knowledge is never called proved without a declared machine-verifiable evidence class",
+    "Zenodo routing is deterministic for eligible stable artifacts",
+    "IETF routing occurs only for protocol/interoperability results",
+    "external-effect failures remain retryable and auditable",
+    "effect acknowledgement is reobserved and persisted"
+  ]
+}
