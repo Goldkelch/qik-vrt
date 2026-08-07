@@ -1,0 +1,181 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_human_machine_interface_adaptation_v1",
+  "policy_id": "HUMAN-MACHINE-INTERFACE-ADAPTATION-V1",
+  "version": "1.0",
+  "purpose": "Make repeated human-machine interaction progressively faster, clearer and more accurate without weakening provenance, scientific, legal, security or effect boundaries.",
+  "reuse_before_create": true,
+  "authorities": [
+    "runtime/CACHE_POLICY.md",
+    "runtime/toolchains/CACHE_REGISTRY.json",
+    "runtime/toolchains/CACHE_COVERAGE.json",
+    "policy/COLLECTIVE_ADAPTIVE_COGNITION.json",
+    "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
+    "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"
+  ],
+  "adaptation_mode": "MEASURE_CACHE_RANK_PROPOSE_REVIEW",
+  "default_state": "OBSERVE_ONLY",
+  "optimization_objectives": [
+    "lower_time_to_first_useful_result",
+    "lower_repeated_bootstrap_latency",
+    "lower_redundant_questions",
+    "higher cache_hit_rate",
+    "higher provenance_completeness",
+    "higher user_correction_retention",
+    "higher task_reuse_rate",
+    "lower avoidable_tool_invocations",
+    "lower duplicate_repository_reads",
+    "preserve_or_improve verification_quality"
+  ],
+  "never_optimize_by": [
+    "skipping mandatory gates",
+    "weakening exact-head binding",
+    "dropping provenance",
+    "inventing answers",
+    "silently changing scientific claim status",
+    "persisting secrets",
+    "treating user preference as factual evidence",
+    "treating cached output as proof authority",
+    "performing external effects without authorization"
+  ],
+  "cache_layers": [
+    {
+      "id": "L0_SESSION",
+      "scope": "current_run",
+      "examples": ["parsed repository files", "resolved refs", "tool capability probes", "derived matrices"],
+      "authority": false
+    },
+    {
+      "id": "L1_PERSONAL_WORKING_MEMORY",
+      "scope": "personal_origin_or_local_copy",
+      "examples": ["stable user choices", "approved terminology", "validated work-unit summaries", "artifact digests", "transcript bindings"],
+      "authority": "repository_evidence_only"
+    },
+    {
+      "id": "L2_RUNTIME_TOOLCHAIN",
+      "scope": "content_addressed_runtime_cache",
+      "examples": ["locked tools", "verified archives", "wheelhouses", "derived environments"],
+      "authority": false,
+      "policy": "runtime/CACHE_POLICY.md"
+    },
+    {
+      "id": "L3_DERIVED_KNOWLEDGE",
+      "scope": "hash_bound_recomputable_derivatives",
+      "examples": ["semantic indexes", "artifact summaries", "claim-to-source matrices", "audio feature indexes", "transcription chunks when verified"],
+      "authority": false
+    }
+  ],
+  "cache_key_minimum": [
+    "schema_version",
+    "repository_commit_or_tree",
+    "source_artifact_sha256",
+    "tool_or_model_identity",
+    "tool_or_model_version",
+    "normalization_version",
+    "relevant_policy_digest",
+    "task_or_derivation_kind"
+  ],
+  "cache_invalidation": [
+    "source_hash_changed",
+    "repository_binding_changed",
+    "tool_or_model_changed",
+    "policy_changed",
+    "normalization_changed",
+    "human_correction_supersedes_cached_derivative",
+    "verification_failed"
+  ],
+  "evaluation_matrix": {
+    "path": "state/interface_adaptation/EVALUATION_MATRIX.json",
+    "dimensions": [
+      "task_class",
+      "input_modality",
+      "artifact_count",
+      "cold_or_warm",
+      "cache_layer",
+      "tool_or_model",
+      "latency_ms",
+      "time_to_first_useful_result_ms",
+      "tokens_or_bytes_processed",
+      "repository_reads",
+      "tool_invocations",
+      "cache_hits",
+      "cache_misses",
+      "human_questions",
+      "human_corrections",
+      "provenance_completeness",
+      "verification_result",
+      "quality_score_if_explicitly_reviewed",
+      "failure_class"
+    ],
+    "comparison_rule": "Compare only compatible task classes and equivalent verification requirements.",
+    "quality_must_not_regress": true,
+    "minimum_observations_before_preference": 3
+  },
+  "interaction_learning": {
+    "persist_only_explicit_or_repeatedly_verified_preferences": true,
+    "preference_examples": [
+      "preferred language",
+      "preferred output compactness",
+      "accepted terminology",
+      "known repository target",
+      "evidence retention mode",
+      "recurring task templates"
+    ],
+    "facts_require_source_evidence": true,
+    "corrections_are_append_only": true,
+    "human_correction_precedence_for_interface_preference": true,
+    "human_correction_does_not_override_external_facts_without_evidence": true
+  },
+  "adaptive_routing": {
+    "strategy": "FASTEST_VERIFIED_PATH",
+    "candidate_selection": [
+      "exact cache hit",
+      "validated local derivative",
+      "incremental recomputation",
+      "parallel independent reads",
+      "full recomputation"
+    ],
+    "parallelism_allowed_only_for_independent_steps": true,
+    "deterministic_merge_required": true,
+    "fallback": "FULL_VERIFIED_PATH"
+  },
+  "incremental_processing": {
+    "prefer_changed_bytes_over_full_reprocessing": true,
+    "content_addressed_chunks": true,
+    "artifact_manifest_required": true,
+    "audio": {
+      "chunk_by_stable_time_ranges": true,
+      "cache_per_chunk_transcript": true,
+      "transcript_key_includes_audio_sha256": true,
+      "human_acoustic_correction_may_replace_derived_text_only_with_new_receipt": true
+    }
+  },
+  "promotion_rule": {
+    "automatic_runtime_selection": "ONLY_AMONG_PREVIOUSLY_VERIFIED_EQUIVALENT_PATHS",
+    "tracked_policy_or_code_change": "REQUIRES_REVIEWED_REPOSITORY_CHANGE",
+    "minimum_evidence": [
+      "baseline_measurement",
+      "candidate_measurement",
+      "no_quality_regression",
+      "same_mandatory_gates",
+      "provenance_complete"
+    ]
+  },
+  "privacy_and_security": {
+    "secrets_in_cache": false,
+    "credentials_in_cache": false,
+    "raw_transcript_default": false,
+    "personal_data_minimization": true,
+    "cache_entries_must_be_eviction_safe": true
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

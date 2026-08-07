@@ -1,0 +1,34 @@
+{
+  "schema": "qikvrt_user_supplied_audio_transcription_request_v1",
+  "request_id": "USER-SUPPLIED-AUDIO-TRANSCRIPTION-2026-08-07-V1",
+  "requested_by": "Ingolf Lohmann",
+  "language_hint": "de",
+  "transcription_target": "ASR_DRAFT_THEN_HUMAN_ACOUSTIC_REVIEW",
+  "raw_audio_publication": false,
+  "repository_native_transcription_source": {
+    "branch": "audio-transport/20260806-cognition-ontology-audio-v1",
+    "workflow": ".github/workflows/qikvrt_audio_request.yml",
+    "tool": "tools/offline-audio-transcription",
+    "transport_rule": "Provide audio bytes locally to the offline/browser transcription surface or another reviewed private transport; do not infer transcript from filename."
+  },
+  "engine_preference": {
+    "reference": "https://github.com/openai/whisper",
+    "license": "MIT",
+    "model_identity_and_sha256_required": true
+  },
+  "recordings": [
+    {"id":"AUDIO-01","filename":"Auflösung …! q.e.d. Ingolf Lohmann(3).m4a","bytes":706703,"sha256":"e58b124fe449b339fc187edb904036084b3be6a598fadfe017c99d4c9bd9c686","state":"BOUND_PENDING_ASR"},
+    {"id":"AUDIO-02","filename":"Eselsbrücken und Ähnliches q.e.d. Ingolf Lohmann(3).m4a","bytes":378420,"sha256":"18ffa450ad9afdcc8614d3a8f9180c68e536af5d6e3bfeb08cac13e4d08e33ca","state":"BOUND_PENDING_ASR"},
+    {"id":"AUDIO-03","filename":"Von Softwarearchitektur zur Weltformel! q.e.d. Ingolf Lohmann.m4a","bytes":3938357,"sha256":"7d6e065a028510d23d888a855a80ce20a6cca01e7b8be6edd17dd6d580524e6d","state":"BOUND_PENDING_ASR"},
+    {"id":"AUDIO-04","filename":"Die Informatikwelt …! q.e.d. Ingolf Lohmann.m4a","bytes":947285,"sha256":"6c3620e4c23ac497068580e8fd91df327af21442d4c1fb06d623de2bace6a1ef","state":"BOUND_PENDING_ASR"},
+    {"id":"AUDIO-05","filename":"Das Universum als Round Trip! q.e.d. Ingolf Lohmann(1).m4a","bytes":7207307,"sha256":"2577cc2a1edd65658d650b08c171fe04b3537ea4b7a71be04c88f751b15d26a0","state":"BOUND_PENDING_ASR"},
+    {"id":"AUDIO-06","filename":"Das ist Transzendenz! q.e.d. Ingolf Lohmann .m4a","bytes":727598,"sha256":"eb070875441887e92aecd6fd9eafc5e55e2c3b8b3f19a6c19765d755022fc635","state":"BOUND_PENDING_ASR"}
+  ],
+  "state_machine": ["BOUND_PENDING_ASR","ASR_DRAFT","HUMAN_ACOUSTIC_REVIEW_PENDING","VERBATIM_VERIFIED"],
+  "fail_closed_rules": [
+    "no spoken claim may be promoted before ASR_DRAFT exists",
+    "ASR_DRAFT is machine-derived and may contain errors",
+    "VERBATIM_VERIFIED requires explicit human acoustic confirmation against the exact audio digest",
+    "a text manuscript with a similar title is contextual evidence only and is not a substitute transcript"
+  ]
+}

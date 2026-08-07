@@ -1,0 +1,55 @@
+{
+  "schema": "qikvrt_third_party_hmi_interop_registry_v1",
+  "version": "1.0",
+  "rule": "Reference and adapt through stable interfaces first. Vendoring or copying requires an exact source revision, compatible license review, preservation of notices, and a separately reviewed change.",
+  "default_vendored": false,
+  "components": [
+    {
+      "name": "OpenAI Whisper",
+      "repository": "https://github.com/openai/whisper",
+      "purpose": "speech-to-text and audio transcription reference",
+      "license_observed": "MIT",
+      "integration": "OPTIONAL_ADAPTER_OR_REFERENCE",
+      "vendored": false
+    },
+    {
+      "name": "Model Context Protocol",
+      "repository": "https://github.com/modelcontextprotocol/modelcontextprotocol",
+      "purpose": "tool and context interoperability",
+      "license_observed": "PROJECT_IN_TRANSITION_APACHE_2_0_WITH_LEGACY_MIT_AND_CC_BY_4_0_DOCUMENTATION_SCOPES",
+      "integration": "INTERFACE_REFERENCE_ONLY_UNTIL_COMPONENT_LEVEL_LICENSE_IS_BOUND",
+      "vendored": false
+    },
+    {
+      "name": "OpenTelemetry Specification",
+      "repository": "https://github.com/open-telemetry/opentelemetry-specification",
+      "purpose": "portable traces metrics logs and provenance observability",
+      "license_observed": "Apache-2.0",
+      "integration": "OPTIONAL_ADAPTER_OR_REFERENCE",
+      "vendored": false
+    },
+    {
+      "name": "Yjs",
+      "repository": "https://github.com/yjs/yjs",
+      "purpose": "optional CRDT collaborative state",
+      "license_observed": "MIT",
+      "integration": "OPTIONAL_ADAPTER_OR_REFERENCE",
+      "vendored": false
+    },
+    {
+      "name": "Playwright",
+      "repository": "https://github.com/microsoft/playwright",
+      "purpose": "human-machine interface and accessibility regression testing",
+      "license_observed": "Apache-2.0",
+      "integration": "OPTIONAL_TEST_ADAPTER_OR_REFERENCE",
+      "vendored": false
+    }
+  ],
+  "prohibitions": [
+    "do_not_copy_code_from_reference_projects_without_exact_license_and_notice_review",
+    "do_not_assume_repository_license_applies_identically_to_every_subcomponent",
+    "do_not_remove_copyright_or_notice_files",
+    "do_not_relicense_third_party_code_by_placing_it_under_qik_vrt_headers",
+    "do_not_treat_reference_as_runtime_dependency_until_toolchain_and_supply_chain_gates_are satisfied"
+  ]
+}
