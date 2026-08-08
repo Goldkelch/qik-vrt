@@ -2,6 +2,13 @@
 
 *Wann reicht Evidenz für eine eindeutige Entscheidung?*
 
+*Geltungsstatus:*
+
+Dieses Dokument beschreibt den formalen Entscheidungsgrundsatz auf dem
+explizit definierten Raum zulässiger Histories. Es beansprucht damit weder
+eine physische Hardwaregarantie noch Kollisionsfreiheit von SHA-256,
+empirische Bestätigung, `PASS`, `FINAL_PASS` oder `EFFECT_ACK_DONE`.
+
 Die entscheidende Idee ist sehr einfach:
 
 Wir müssen die Vergangenheit nicht vollständig rekonstruieren.
@@ -301,6 +308,52 @@ AUF DEM ERREICHBAREN BILD
 ```
 
 Außerhalb des tatsächlich erreichbaren Beobachtungsbildes kann der Selektor beliebig definiert werden oder konsequent `FAIL_CLOSED` liefern.
+
+──────────
+
+*11. DELAYED CHOICE: SPÄTERE PRÜFUNG IST KEINE VERGANGENHEITSÄNDERUNG*
+
+Auch bei Delayed-Choice-Szenarien gilt auf epistemischer Ebene:
+
+```text
+SPÄTERE PRÜFUNG
+IST NICHT
+VERGANGENHEIT UMSCHREIBEN.
+```
+
+Sie liefert zusätzliche Information und verkleinert damit die Menge der mit
+allen Beobachtungen vereinbaren Erklärungen. Das ist eine epistemische
+Verengung des Hypothesenraums, keine physikalische Veränderung des früheren
+Ereignisses.
+
+──────────
+
+*12. AUSGEFÜHRTER ENDLICHER MODELLCHECK*
+
+Für den ausdrücklich begrenzten endlichen Modellraum wurden vollständig
+geprüft:
+
+```text
+Crash-Recovery:              945 Fälle
+Effect-ACK:                  945 Fälle
+Recovery-Idempotenz:         945 Fälle
+Single-Replica-Recovery:     756 Fälle
+Vier-Schritt-Sequenzen:       81 Fälle
+Hidden-History-Fälle:         36 Fälle
+Witnesslose Mehrdeutigkeiten: 18 Fälle
+```
+
+Der dokumentierte Checker lieferte:
+
+```text
+FINITE_MODEL_EXHAUSTIVE_CHECK_PASSED
+```
+
+Das bedeutet ausschließlich: Alle Zustände und Übergänge des definierten
+endlichen Modells wurden gegen die angegebenen Eigenschaften geprüft. Es
+bedeutet nicht den Beweis für beliebig viele Fehler oder Systeme, jede
+physische Chipimplementierung, fehlerfreie Hardware, Kollisionsfreiheit von
+SHA-256 oder jede denkbare reale Ausführung.
 
 ──────────
 
