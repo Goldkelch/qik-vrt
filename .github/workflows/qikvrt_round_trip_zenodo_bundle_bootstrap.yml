@@ -34,24 +34,61 @@ jobs:
           def dump(p,v): p.write_text(json.dumps(v,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
           def ident(p):
               d=p.read_bytes(); return {'bytes':len(d),'sha256':hashlib.sha256(d).hexdigest(),'git_blob_sha1':hashlib.sha1(b'blob '+str(len(d)).encode()+bytes([0])+d).hexdigest()}
+          def apply_ident(d,i):
+              for k in ('bytes','sha256','git_blob_sha1'):
+                  if k in d: d[k]=i[k]
           mp=release/'MACHINE_PROOF_BUNDLE.json'; m=json.loads(mp.read_text())
           canonical_claim_matrix='release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json'
+          promoted_rel='release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_KERNEL_RECEIPTS.json'
           for artifact in m['artifacts']:
               if artifact.get('kind')=='CLAIM_MATRIX' and artifact.get('path')!=canonical_claim_matrix:
                   artifact['kind']='EVIDENCE'
+          promoted_path=root/promoted_rel
+          promoted=json.loads(promoted_path.read_text())
+          if promoted.get('schema')!='qikvrt_promoted_formal_kernel_receipt_bindings_v1': raise SystemExit('unexpected promoted receipt aggregate schema')
+          if promoted.get('exact_head')!='d43175421f3a5b33dc18bf36686d61c8c00b396b': raise SystemExit('promoted receipt aggregate exact head differs')
+          if promoted.get('exact_tree')!='9e606990a00bb09b423d8d13d1b1f16be24d92d8': raise SystemExit('promoted receipt aggregate exact tree differs')
+          receipts=promoted.get('receipts')
+          if not isinstance(receipts,list) or len(receipts)!=6: raise SystemExit('promoted receipt aggregate must bind six receipts')
+          expected_runs={31198329827,31198328765,31198328608,31198330222,31198330259,31198331122}
+          if {x.get('workflow_run_id') for x in receipts}!=expected_runs: raise SystemExit('promoted receipt workflow set differs')
+          theorems=[]
+          for receipt in receipts:
+              ts=receipt.get('theorems')
+              if not isinstance(ts,list) or len(ts)!=receipt.get('theorem_count'): raise SystemExit('promoted receipt theorem inventory differs')
+              theorems.extend(ts)
+          if len(theorems)!=99 or len(set(theorems))!=99: raise SystemExit('promoted theorem union must contain exactly 99 unique theorems')
+          source_publication_id=promoted.pop('publication_id',None)
+          if source_publication_id!='qikvrt-round-trip-retrospective-proof-v1': raise SystemExit('unexpected promoted receipt source publication id')
+          promoted['source_publication_id']=source_publication_id
+          promoted['scope_id']=m['publication_id']
+          promoted['state']='KERNEL_VERIFIED'
+          promoted['workflow']={'conclusion':'success','exact_head_bound':True,'exact_head':promoted['exact_head'],'exact_tree':promoted['exact_tree'],'run_ids':sorted(expected_runs)}
+          promoted['theorems']=theorems
+          dump(promoted_path,promoted); pi=ident(promoted_path)
+          old_promoted={}
+          for artifact in m['artifacts']:
+              if artifact.get('path')==promoted_rel:
+                  old_promoted={'sha256':artifact['sha256'],'git_blob_sha1':artifact['git_blob_sha1']}
+                  apply_ident(artifact,pi)
+          if not old_promoted: raise SystemExit('promoted receipt aggregate is not bound as a machine-proof artifact')
           m['candidate']['files'][0]['bytes']=18120; m['candidate']['files'][1]['bytes']=5150; dump(mp,m); mi=ident(mp)
           rp=release/'BUNDLE_FREEZE_RECEIPT.json'; r=json.loads(rp.read_text()); r['primary_files'][0]['bytes']=18120; r['primary_files'][1]['bytes']=5150
           for e in r['upload_fileset']['entries']:
               if e['path']==m['candidate']['files'][0]['path']: e['bytes']=18120
               if e['path']==m['candidate']['files'][1]['path']: e['bytes']=5150
-              if e['path']=='release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': e.update(mi)
+              if e['path']==promoted_rel: apply_ident(e,pi)
+              if e['path']=='release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': apply_ident(e,mi)
           r['machine_proof_bundle'].update(mi)
           material=[{'name':e['name'],'path':e['path'],'sha256':e['sha256'],'git_blob_sha1':e['git_blob_sha1']} for e in r['upload_fileset']['entries']]
           r['upload_fileset']['aggregate_sha256']=hashlib.sha256(json.dumps(material,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(); dump(rp,r); ri=ident(rp)
           wp=root/'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json'; w=json.loads(wp.read_text()); w['primary_files'][0]['bytes']=18120; w['primary_files'][1]['bytes']=5150
-          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256']}
+          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
           def rep(v):
-              if isinstance(v,dict): return {k:rep(x) for k,x in v.items()}
+              if isinstance(v,dict):
+                  out={k:rep(x) for k,x in v.items()}
+                  if out.get('path')==promoted_rel: apply_ident(out,pi)
+                  return out
               if isinstance(v,list): return [rep(x) for x in v]
               return repl.get(v,v)
           dump(wp,rep(w))
