@@ -63,6 +63,21 @@ jobs:
                   else:
                       normalized.append(ref)
               claim['source_refs']=normalized
+              preferred=('source_refs','evidence_refs') if claim.get('classification')=='SOURCE_BOUND' else ('evidence_refs','source_refs')
+              seen=set()
+              for field in preferred:
+                  kept=[]
+                  for ref in claim.get(field,[]):
+                      frag=fragment(ref)
+                      if frag in seen:
+                          continue
+                      seen.add(frag)
+                      kept.append(ref)
+                  claim[field]=kept
+              if claim.get('classification')=='SOURCE_BOUND' and not claim.get('source_refs'):
+                  raise SystemExit('source-bound claim lost its source during duplicate normalization')
+              if claim.get('classification')=='EMPIRICALLY_EVIDENCED' and not claim.get('evidence_refs'):
+                  raise SystemExit('empirical claim lost its evidence during duplicate normalization')
           cm_path=root/canonical_claim_matrix
           cm=json.loads(cm_path.read_text())
           bundle_claims={x['claim_id']:x for x in m['claims']}
