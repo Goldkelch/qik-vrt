@@ -40,9 +40,25 @@ jobs:
           mp=release/'MACHINE_PROOF_BUNDLE.json'; m=json.loads(mp.read_text())
           canonical_claim_matrix='release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json'
           promoted_rel='release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_KERNEL_RECEIPTS.json'
+          return_rel='release/round-trip-canonical-publication-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json'
           for artifact in m['artifacts']:
               if artifact.get('kind')=='CLAIM_MATRIX' and artifact.get('path')!=canonical_claim_matrix:
                   artifact['kind']='EVIDENCE'
+          candidate_paths={x['path'] for x in m['candidate']['files']}
+          if not any(x.get('path')==return_rel for x in m['artifacts']): raise SystemExit('prepublication return receipt is not a bound artifact')
+          returned=json.loads((root/return_rel).read_text())
+          returned_paths={x.get('path') for x in returned.get('candidate_files',[])}
+          if candidate_paths-returned_paths: raise SystemExit('prepublication return receipt does not bind every candidate file')
+          for claim in m['claims']:
+              normalized=[]
+              for ref in claim.get('source_refs',[]):
+                  base,sep,fragment=ref.partition('#')
+                  if base in candidate_paths:
+                      if not sep or not fragment: raise SystemExit('candidate source reference lacks exact fragment')
+                      normalized.append(return_rel+'#'+base)
+                  else:
+                      normalized.append(ref)
+              claim['source_refs']=normalized
           promoted_path=root/promoted_rel
           promoted=json.loads(promoted_path.read_text())
           if promoted.get('schema')!='qikvrt_promoted_formal_kernel_receipt_bindings_v1': raise SystemExit('unexpected promoted receipt aggregate schema')
