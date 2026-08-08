@@ -1,0 +1,122 @@
+name: QIKVRT Round Trip Zenodo bundle bootstrap
+
+on:
+  push:
+    branches:
+      - publication/round-trip-zenodo-upload-bundle-freeze-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-round-trip-zenodo-bundle-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact bootstrap head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify current-main-bound bootstrap ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=12842e8df99553260774d53517522b2b5539c8a8
+          test "$(git rev-parse HEAD^)" = "$BASE"
+          test "$(git rev-parse HEAD^{tree})" != "e8bdc99712bf0eca1a94ece6e34b20059076d280"
+          changed="$(git diff --name-only "$BASE" HEAD)"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml|.qikvrt/materialize/round-trip-zenodo-bundle/*) ;;
+              *) echo "unexpected bootstrap delta: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+
+      - name: Reconstruct exact candidate overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-00.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-01.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-02.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-03.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-04.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-05.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-06.b64 \
+            .qikvrt/materialize/round-trip-zenodo-bundle/part-07.b64 \
+            | base64 --decode > /tmp/qikvrt-round-trip-bundle.tar.xz
+          echo "6867808f741bb9c35165f0f29561d14c382e08df31e0d623ec66bf331c28a73d  /tmp/qikvrt-round-trip-bundle.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/qikvrt-round-trip-bundle.tar.xz -C .
+          rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
+          rm -f .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml
+
+      - name: Verify exact candidate Git blob identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/qikvrt_round_trip_zenodo_bundle_freeze.yml': '527dd8a8514452409d777a985abf68ff897088ad',
+              'release/round-trip-canonical-publication-zenodo-v1/BOUNDARY_TEST_REPORT.json': '54c55521e433d7e5b49625e222143551c23b4166',
+              'release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json': 'e4ecb2fffffc7fe8674bba6285898e85cd0c96a7',
+              'release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json': 'c1d7a078be08f40a3340243e367b27025bd8ea6d',
+              'release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': 'b68291cadf7ff253f258e5df0aad38a8c23845f1',
+              'release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_KERNEL_RECEIPTS.json': '2798420b03185cd24db01079f883129928e72579',
+              'release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_SOURCE_BINDINGS.json': '77cdca617e71ce906e2d4558b099c7a1706e1652',
+              'release/round-trip-canonical-publication-zenodo-v1/RETROSPECTIVE_SOURCE_CONSTITUENTS.json': 'b5a45b3c05cef25f58e3c84beb247e2b2f725f4e',
+              'release/round-trip-canonical-publication-zenodo-v1/ZENODO_FILESET.md': '2801cdabb721c4cb2657f27a9420ff221020fa27',
+              'release/round-trip-canonical-publication-zenodo-v1/ZENODO_LICENSE_NOTICE.md': '8de33cb66813667e40eb049996a4f539bce103c5',
+              'release/round-trip-canonical-publication-zenodo-v1/ZENODO_METADATA.json': '948ea1e20b161f71ba3576645ab21f9073cfdaa6',
+              'release/round-trip-canonical-publication-zenodo-v1/ZENODO_SHA256SUMS': '665809096b6c7e9d0dcaa2e72bf457f0929367bd',
+              'release/round-trip-canonical-publication-zenodo-v1/ZENODO_TARGET_RECORD.json': '5c32701436b1da12acd3933bc01de3530022b291',
+              'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json': '26e241cfa1aa5c4041c41b1eb6f04707de00afaf',
+              'tests/test_round_trip_zenodo_bundle_freeze.py': '58f90f67d4d2f38aa3406cd8120f7386aaf15bff',
+              'tools/qikvrt_round_trip_zenodo_bundle_freeze.py': '35d52c2d3bdeca6995741107a1087e0b47ae7276',
+          }
+          for path, wanted in expected.items():
+              actual = subprocess.check_output(['git', 'hash-object', path], text=True).strip()
+              if actual != wanted:
+                  raise SystemExit(f'blob mismatch {path}: {actual} != {wanted}')
+          print(f'exact overlay blobs verified: {len(expected)}')
+          PY
+
+      - name: Run existing Zenodo machine-proof v2 validator through bounded freeze checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_round_trip_zenodo_bundle_freeze.py --check --json
+
+      - name: Regenerate and verify Authority-native integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+
+      - name: Persist exact generated successor
+        shell: bash
+        env:
+          EXPECTED_BASE: 12842e8df99553260774d53517522b2b5539c8a8
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py verify
+          git add -A
+          test -n "$(git diff --cached --name-only)"
+          git config user.name 'qikvrt-bundle-freeze-bot'
+          git config user.email 'qikvrt-bundle-freeze-bot@users.noreply.github.com'
+          git commit -m 'Freeze exact Round Trip Zenodo upload bundle and metadata'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
