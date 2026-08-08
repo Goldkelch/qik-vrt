@@ -7,12 +7,17 @@ on:
       - agent/pypdf-6.15.0-runtime-contract-v1
     paths:
       - .github/workflows/_materialize_pypdf_6150_successor.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/_materialize_pypdf_6150_successor.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: materialize-pypdf-6150-successor
+  group: materialize-pypdf-6150-successor-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +28,7 @@ jobs:
       - name: Checkout exact branch head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
