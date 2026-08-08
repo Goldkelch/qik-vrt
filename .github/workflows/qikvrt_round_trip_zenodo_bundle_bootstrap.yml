@@ -56,7 +56,7 @@ jobs:
           returned_publication_id=returned.get('publication_id')
           if returned_publication_id!='qikvrt-round-trip-canonical-publication-v1': raise SystemExit('unexpected returned publication identity: '+repr(returned_publication_id))
           bundle_publication_id=m.get('publication_id')
-          if bundle_publication_id not in {returned_publication_id,'qikvrt-round-trip-canonical-publication-zenodo-v1'}:
+          if bundle_publication_id not in {returned_publication_id,'qikvrt-round-trip-canonical-publication-zenodo-v1','qikvrt-round-trip-retrospective-proof-v1'}:
               raise SystemExit('unexpected bundle publication identity: '+repr(bundle_publication_id))
           m['publication_id']=returned_publication_id
           for claim in m['claims']:
