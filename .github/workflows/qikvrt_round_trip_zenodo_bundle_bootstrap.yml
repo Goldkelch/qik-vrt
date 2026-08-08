@@ -55,30 +55,21 @@ jobs:
           git cat-file blob cc13b5530051ea7b7fe0eceae5558cd93f44611d > docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md
           rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
           rm -f .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml
-      - name: Diagnose and run existing v2 gate
+      - name: Run existing machine-proof v2 validator directly
         shell: bash
         run: |
           set -euo pipefail
-          sha256sum tools/qikvrt_round_trip_zenodo_bundle_freeze.py
-          grep -n "verify_identity(root / path\|def main" tools/qikvrt_round_trip_zenodo_bundle_freeze.py || true
           python3 - <<'PY'
           from pathlib import Path
           import json
-          for path in sorted(Path('.').rglob('*.json')):
-              if '.git' in path.parts: continue
-              try: value=json.loads(path.read_text())
-              except Exception: continue
-              def walk(v,where=''):
-                  if isinstance(v,dict):
-                      for k,x in v.items(): walk(x,where+'/'+k)
-                  elif isinstance(v,list):
-                      for i,x in enumerate(v): walk(x,where+f'/{i}')
-                  elif isinstance(v,int) and v in (18361,6788,6550): print('DEBUG_NUMERIC_STALE',v,path,where)
-              walk(value)
-          m=json.load(open('release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json')); r=json.load(open('release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json')); p=json.load(open('release/round-trip-canonical-publication-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json'))
-          print('DEBUG_MACHINE_CANDIDATE_BYTES',[x['bytes'] for x in m['candidate']['files']]); print('DEBUG_RECEIPT_PRIMARY_BYTES',[x['bytes'] for x in r['primary_files']]); print('DEBUG_PREPUBLICATION_BYTES',[x['bytes'] for x in p['candidate_files']])
+          from tools import qikvrt_zenodo_machine_proof as proof
+          release=Path('release/round-trip-canonical-publication-zenodo-v1')
+          receipt=json.loads((release/'BUNDLE_FREEZE_RECEIPT.json').read_text())
+          paths=[entry['path'] for entry in receipt['upload_fileset']['entries']]
+          result=proof.validate_bundle(Path('.'), release/'MACHINE_PROOF_BUNDLE.json', upload_paths=paths)
+          print(json.dumps(result,sort_keys=True))
+          if result.get('machine_proof_complete') is not True: raise SystemExit('machine proof incomplete')
           PY
-          python3 -B tools/qikvrt_round_trip_zenodo_bundle_freeze.py --check --json
       - name: Regenerate and verify Authority-native integrity
         run: |
           python3 -B tools/qikvrt_integrity.py generate
