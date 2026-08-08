@@ -4,8 +4,21 @@
 from __future__ import annotations
 import importlib.metadata as metadata
 from pathlib import Path
+import sys
 import tempfile
+import types
 import pypdf
+
+# xml2rfc 3.34.0 declares dict2xml only in its tests extra, while walkpdf
+# imports it at module load. This smoke exercises only walkpdf.pyobj's pypdf
+# surface, so keep the renderer lock unchanged and fail closed if the unrelated
+# XML-serialization helper is ever reached by this path.
+dict2xml_shim = types.ModuleType("dict2xml")
+def _unexpected_dict2xml(*args: object, **kwargs: object) -> object:
+    raise RuntimeError("dict2xml test shim must not be used by walkpdf.pyobj")
+dict2xml_shim.dict2xml = _unexpected_dict2xml
+sys.modules.setdefault("dict2xml", dict2xml_shim)
+
 from xml2rfc import walkpdf
 
 def main() -> int:
@@ -25,7 +38,7 @@ def main() -> int:
     pages = document.get("Page")
     if not isinstance(pages, list) or len(pages) != 1:
         raise SystemExit("FAIL: xml2rfc.walkpdf did not inspect exactly one page")
-    print("PASS: pypdf 6.15.0 metadata/license and xml2rfc 3.34.0 walkpdf compatibility surface verified")
+    print("PASS: pypdf 6.15.0 metadata/license and xml2rfc 3.34.0 walkpdf.pyobj compatibility surface verified")
     return 0
 
 if __name__ == "__main__":
