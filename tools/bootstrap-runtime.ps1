@@ -329,7 +329,7 @@ function Test-IetfProfile {
     if (-not (Test-PythonRendererExact -Path $CachedPython -Prefix @())) { Stop-Block "installed renderer is not bound to Python $PythonRendererVersion" }
     if (-not (Test-LockedEnvironmentExact $CachedPython)) { Stop-Block 'installed renderer does not contain exactly the locked package set' }
     if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package xml2rfc -Version $Xml2rfcVersion)) { Stop-Block "installed xml2rfc metadata is not exactly $Xml2rfcVersion" }
-    if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package pypdf -Version '6.14.2')) { Stop-Block 'installed pypdf metadata is not exactly 6.14.2' }
+    if (-not (Test-PythonPackageExact -Path $CachedPython -Prefix @() -Package pypdf -Version '6.15.0')) { Stop-Block 'installed pypdf metadata is not exactly 6.15.0' }
     if (-not (Test-Xml2rfcCommandExact $CachedXml2rfc)) { Stop-Block 'installed xml2rfc command failed its exact-version execution check' }
     $lockHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Xml2rfcLock).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $CompleteMarker -Encoding ASCII -Value @(

@@ -314,7 +314,7 @@ check_ietf_profile() {
     python_is_renderer_exact "$CACHED_PYTHON" || fail "installed renderer is not bound to Python $PYTHON_RENDERER_VERSION"
     locked_environment_is_exact "$CACHED_PYTHON" || fail "installed renderer does not contain exactly the locked package set"
     xml2rfc_metadata_is_exact "$CACHED_PYTHON" || fail "installed xml2rfc metadata is not exactly $XML2RFC_VERSION"
-    python_package_is_exact "$CACHED_PYTHON" pypdf 6.14.2 || fail "installed pypdf metadata is not exactly 6.14.2"
+    python_package_is_exact "$CACHED_PYTHON" pypdf 6.15.0 || fail "installed pypdf metadata is not exactly 6.15.0"
     xml2rfc_cli_is_exact "$CACHED_XML2RFC" || fail "installed xml2rfc command failed its exact-version execution check"
     lock_sha=$(hash_file "$XML2RFC_LOCK")
     {
