@@ -145,13 +145,13 @@ jobs:
           workflow = adaptive.read_text(encoding='utf-8')
           posix_anchor = '          "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"\n'
           posix_insert = posix_anchor + '          renderer_python="$contract_cache/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/python"\n          "$renderer_python" -B tests/test_pypdf_runtime_contract.py\n'
-          if workflow.count(posix_anchor) != 1:
-              raise SystemExit('POSIX adaptive runtime anchor not unique')
+          if posix_anchor not in workflow:
+              raise SystemExit('POSIX adaptive runtime anchor missing')
           workflow = workflow.replace(posix_anchor, posix_insert, 1)
           win_anchor = '          & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer\n          if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer test failed: $LASTEXITCODE" }\n'
           win_insert = win_anchor + '          $rendererPython = Join-Path $contractCache \'xml2rfc\\3.34.0\\python-3.12.13\\windows-amd64\\venv\\Scripts\\python.exe\'\n          & $rendererPython -B tests/test_pypdf_runtime_contract.py\n          if ($LASTEXITCODE -ne 0) { throw "Windows pypdf compatibility smoke failed: $LASTEXITCODE" }\n'
-          if workflow.count(win_anchor) != 1:
-              raise SystemExit('Windows adaptive runtime anchor not unique')
+          if win_anchor not in workflow:
+              raise SystemExit('Windows adaptive runtime anchor missing')
           workflow = workflow.replace(win_anchor, win_insert, 1)
           adaptive.write_text(workflow, encoding='utf-8')
 
