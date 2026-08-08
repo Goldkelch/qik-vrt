@@ -6,6 +6,16 @@ This publication tranche combines three deliberately separated layers:
 2. **General decision-sufficiency theorem:** deterministic recovery from partial observation is possible exactly when every reachable observation fiber is constant with respect to the correct action, equivalently `ker(Obs') ⊆ ker(C)`. The selector is unique only on the reachable observation image.
 3. **Authority/Mirror/Witness specialization:** an independent commit witness refines the observable state so that the correct recovery action becomes fiber-constant under the stated finite fault model.
 
+## Orientation and normative translation
+
+The [German minimal recovery orientation](WHATSAPP_DECISION_SUFFICIENCY_DE.md)
+states the decision-sufficiency theorem together with the bounded finite-model
+scope. The [evidence-sufficiency imperative](../../articles/a015_evidence_sufficiency_imperative.md)
+is its deliberately non-overclaiming, cross-domain normative translation. It
+does not itself define a domain's correct action, prove Kantian ethics, legal
+compliance, medical correctness, scientific truth, or authorize an external
+effect.
+
 ## Main formal normal form
 
 `RecoveryEquivalent h1 h2 :⇔ C(h1) = C(h2)`
