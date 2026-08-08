@@ -57,6 +57,8 @@ jobs:
             | base64 --decode > /tmp/qikvrt-round-trip-bundle.tar.xz
           echo "13ab053988c57e45533119450f28115a734c4c3f3e74b33134848524c9290065  /tmp/qikvrt-round-trip-bundle.tar.xz" | sha256sum -c -
           tar -xJf /tmp/qikvrt-round-trip-bundle.tar.xz -C .
+          git cat-file blob e1ed265239aa5e1436055279069c7e21525a13fe > docs/publications/2026-08-07-universum-als-round-trip/DAS_UNIVERSUM_ALS_ROUND_TRIP_DE.md
+          git cat-file blob cc13b5530051ea7b7fe0eceae5558cd93f44611d > docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md
           rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
           rm -f .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml
 
@@ -67,6 +69,8 @@ jobs:
           python3 - <<'PY'
           import subprocess
           expected = {
+              'docs/publications/2026-08-07-universum-als-round-trip/DAS_UNIVERSUM_ALS_ROUND_TRIP_DE.md': 'e1ed265239aa5e1436055279069c7e21525a13fe',
+              'docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md': 'cc13b5530051ea7b7fe0eceae5558cd93f44611d',
               '.github/workflows/qikvrt_round_trip_zenodo_bundle_freeze.yml': '527dd8a8514452409d777a985abf68ff897088ad',
               'release/round-trip-canonical-publication-zenodo-v1/BOUNDARY_TEST_REPORT.json': '54c55521e433d7e5b49625e222143551c23b4166',
               'release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json': 'e4ecb2fffffc7fe8674bba6285898e85cd0c96a7',
