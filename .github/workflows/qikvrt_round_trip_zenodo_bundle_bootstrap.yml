@@ -53,6 +53,12 @@ jobs:
           returned=json.loads((root/return_rel).read_text())
           returned_paths={x.get('path') for x in returned.get('candidate_files',[])}
           if candidate_paths-returned_paths: raise SystemExit('prepublication return receipt does not bind every candidate file')
+          returned_publication_id=returned.get('publication_id')
+          if returned_publication_id!='qikvrt-round-trip-canonical-publication-v1': raise SystemExit('unexpected returned publication identity: '+repr(returned_publication_id))
+          bundle_publication_id=m.get('publication_id')
+          if bundle_publication_id not in {returned_publication_id,'qikvrt-round-trip-canonical-publication-zenodo-v1'}:
+              raise SystemExit('unexpected bundle publication identity: '+repr(bundle_publication_id))
+          m['publication_id']=returned_publication_id
           for claim in m['claims']:
               normalized=[]
               for ref in claim.get('source_refs',[]):
@@ -83,7 +89,8 @@ jobs:
           bundle_claims={x['claim_id']:x for x in m['claims']}
           matrix_claims={x['claim_id']:x for x in cm.get('claims',[])}
           if set(bundle_claims)!=set(matrix_claims): raise SystemExit('claim matrix and machine bundle claim IDs differ')
-          if cm.get('publication_id')!=m['publication_id'] or cm.get('claim_count')!=len(bundle_claims): raise SystemExit('claim matrix top-level projection differs')
+          if cm.get('publication_id') not in {bundle_publication_id,returned_publication_id} or cm.get('claim_count')!=len(bundle_claims): raise SystemExit('claim matrix top-level projection differs')
+          cm['publication_id']=returned_publication_id
           for claim_id,mc in matrix_claims.items():
               bc=bundle_claims[claim_id]
               if mc.get('statement')!=bc['statement'] or mc.get('classification')!=bc['classification']: raise SystemExit('claim matrix semantic projection differs for '+claim_id)
@@ -135,7 +142,7 @@ jobs:
               if e['path']==promoted_rel: apply_ident(e,pi)
               if e['path']=='release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': apply_ident(e,mi)
           r['machine_proof_bundle'].update(mi)
-          scalar_repl={old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
+          scalar_repl={old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1'],bundle_publication_id:returned_publication_id}
           def scalar_rep(v):
               if isinstance(v,dict): return {k:scalar_rep(x) for k,x in v.items()}
               if isinstance(v,list): return [scalar_rep(x) for x in v]
@@ -144,7 +151,7 @@ jobs:
           material=[{'name':e['name'],'path':e['path'],'sha256':e['sha256'],'git_blob_sha1':e['git_blob_sha1']} for e in r['upload_fileset']['entries']]
           r['upload_fileset']['aggregate_sha256']=hashlib.sha256(json.dumps(material,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(); dump(rp,r); ri=ident(rp)
           wp=root/'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json'; w=json.loads(wp.read_text()); w['primary_files'][0]['bytes']=18120; w['primary_files'][1]['bytes']=5150
-          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256'],old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
+          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256'],old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1'],bundle_publication_id:returned_publication_id}
           def rep(v):
               if isinstance(v,dict):
                   out={k:rep(x) for k,x in v.items()}
