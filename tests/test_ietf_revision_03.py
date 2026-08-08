@@ -25,6 +25,7 @@ from test_ietf_revision_02 import (
     canonical_element,
     done_conjuncts,
     field_names,
+    normalize_revision_02_html_for_historical_pypdf,
     normalized,
     section,
     state_names,
@@ -544,8 +545,16 @@ class IETFRevision03Tests(unittest.TestCase):
             run_renderer(xml2rfc, rendered_txt, cache, "text")
             run_renderer(xml2rfc, rendered_html, cache, "html")
             self.assertEqual(rendered_txt.read_bytes(), REVISION_03_TXT.read_bytes())
+            normalized_html = normalize_revision_02_html_for_historical_pypdf(
+                rendered_html.read_bytes()
+            )
             self.assertEqual(
-                rendered_html.read_bytes(), REVISION_03_HTML.read_bytes()
+                normalized_html,
+                REVISION_03_HTML.read_bytes(),
+                (
+                    "fresh offline HTML render differs from the committed Draft-03 "
+                    "artifact beyond the exact pypdf generator-version line"
+                ),
             )
 
 
