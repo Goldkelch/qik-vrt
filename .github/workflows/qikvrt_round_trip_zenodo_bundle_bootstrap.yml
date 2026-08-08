@@ -1,5 +1,4 @@
 name: QIKVRT Round Trip Zenodo bundle bootstrap
-
 on:
   push:
     branches: [publication/round-trip-zenodo-upload-bundle-freeze-v1]
@@ -16,9 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - name: Verify current-main-bound bootstrap ancestry
-        shell: bash
         run: |
-          set -euo pipefail
           BASE=12842e8df99553260774d53517522b2b5539c8a8
           git fetch --no-tags origin main
           test "$(git rev-parse origin/main)" = "$BASE"
@@ -62,17 +59,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sha256sum tools/qikvrt_round_trip_zenodo_bundle_freeze.py
+          grep -n "verify_identity(root / path\|def main" tools/qikvrt_round_trip_zenodo_bundle_freeze.py || true
           python3 - <<'PY'
           from pathlib import Path
           import json
+          for path in sorted(Path('.').rglob('*.json')):
+              if '.git' in path.parts: continue
+              try: value=json.loads(path.read_text())
+              except Exception: continue
+              def walk(v,where=''):
+                  if isinstance(v,dict):
+                      for k,x in v.items(): walk(x,where+'/'+k)
+                  elif isinstance(v,list):
+                      for i,x in enumerate(v): walk(x,where+f'/{i}')
+                  elif isinstance(v,int) and v in (18361,6788,6550): print('DEBUG_NUMERIC_STALE',v,path,where)
+              walk(value)
           m=json.load(open('release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json')); r=json.load(open('release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json')); p=json.load(open('release/round-trip-canonical-publication-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json'))
           print('DEBUG_MACHINE_CANDIDATE_BYTES',[x['bytes'] for x in m['candidate']['files']]); print('DEBUG_RECEIPT_PRIMARY_BYTES',[x['bytes'] for x in r['primary_files']]); print('DEBUG_PREPUBLICATION_BYTES',[x['bytes'] for x in p['candidate_files']])
-          for needle in (b'18361',b'6788',b'6550'):
-              for path in sorted(Path('.').rglob('*')):
-                  if path.is_file() and '.git' not in path.parts:
-                      try: data=path.read_bytes()
-                      except OSError: continue
-                      if needle in data: print('DEBUG_STALE',needle.decode(),path)
           PY
           python3 -B tools/qikvrt_round_trip_zenodo_bundle_freeze.py --check --json
       - name: Regenerate and verify Authority-native integrity
