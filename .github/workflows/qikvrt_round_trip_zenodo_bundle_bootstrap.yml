@@ -36,7 +36,7 @@ jobs:
           test -n "$changed"
           while IFS= read -r path; do
             case "$path" in
-              .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml|.qikvrt/materialize/round-trip-zenodo-bundle/*) ;;
+              .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml|.qikvrt/materialize/round-trip-zenodo-bundle/*|REPOSITORY_FILE_MANIFEST.json|REPOSITORY_FILE_MANIFEST.json.sha256|SHA256SUMS.txt) ;;
               *) echo "unexpected bootstrap delta: $path" >&2; exit 1 ;;
             esac
           done <<< "$changed"
