@@ -39,6 +39,10 @@ PUBLICATION_RECEIPT = (
     / "draft-lohmann-qikvrt-effect-ack-02.PUBLICATION_RECEIPT.json"
 )
 RENDER_REQUIREMENTS = ROOT / "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"
+REVISION_02_HISTORICAL_REQUIREMENTS_SHA256 = (
+    "b4ccc08893df21f15badb47668fc7d756a854d6ac0cba3cb8255cceeb476a44f"
+)
+REVISION_02_HISTORICAL_PYPDF = "6.14.2"
 OLD_VECTOR_PATH = REVISION_02_ROOT / "test-vectors/effect-ack-v1"
 REVISION_02_DOCUMENT_DATE = "2026-07-31"
 EXPECTED_ARCHIVAL_DATE_WARNING = re.compile(
@@ -275,6 +279,40 @@ XML2RFC: Path | None = None
 def identity(path: Path) -> tuple[int, str]:
     payload = path.read_bytes()
     return len(payload), hashlib.sha256(payload).hexdigest()
+
+
+def locked_requirement_version(package: str) -> str:
+    """Read one exact package version from the current renderer lock."""
+    prefix = f"{package}=="
+    versions: list[str] = []
+    for raw in RENDER_REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.startswith(prefix):
+            versions.append(line[len(prefix) :].split()[0].rstrip("\\"))
+    if len(versions) != 1 or not versions[0]:
+        raise AssertionError(
+            f"requirements do not declare exactly one {package} version"
+        )
+    return versions[0]
+
+
+def normalize_revision_02_html_for_historical_pypdf(payload: bytes) -> bytes:
+    """Normalize only the renderer's pypdf generator line to frozen -02."""
+    locked_pypdf = locked_requirement_version("pypdf")
+    if locked_pypdf == REVISION_02_HISTORICAL_PYPDF:
+        return payload
+
+    current_line = f"    pypdf {locked_pypdf}\n".encode("utf-8")
+    historical_line = f"    pypdf {REVISION_02_HISTORICAL_PYPDF}\n".encode("utf-8")
+    if payload.count(current_line) != 1:
+        raise AssertionError(
+            "fresh HTML does not contain exactly one locked pypdf generator line"
+        )
+    if payload.count(historical_line) != 0:
+        raise AssertionError(
+            "fresh HTML unexpectedly contains the historical pypdf generator line"
+        )
+    return payload.replace(current_line, historical_line, 1)
 
 
 def canonical_element(value: ET.Element) -> str:
@@ -532,8 +570,7 @@ class IETFRevision02CandidateTests(unittest.TestCase):
         self.assertIsInstance(updated, str)
         self.assertRegex(updated, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         updated_parsed = datetime.datetime.fromisoformat(
-            updated.replace("Z", "+00:00")
-        )
+            updated.replace("Z", "+00:00"))
         self.assertEqual(updated_parsed.utcoffset(), datetime.timedelta(0))
         self.assertGreaterEqual(updated_parsed, parsed)
 
@@ -588,9 +625,7 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 "requirements_path": (
                     "runtime/toolchains/requirements-xml2rfc-3.34.0.txt"
                 ),
-                "requirements_sha256": hashlib.sha256(
-                    RENDER_REQUIREMENTS.read_bytes()
-                ).hexdigest(),
+                "requirements_sha256": REVISION_02_HISTORICAL_REQUIREMENTS_SHA256,
                 "network_access": False,
                 "configuration_files_skipped": True,
                 "isolated_cache": True,
@@ -1068,13 +1103,22 @@ class IETFRevision02CandidateTests(unittest.TestCase):
                 REVISION_02_TXT.read_bytes(),
                 "fresh offline TXT render differs from the committed artifact",
             )
+            normalized_html = normalize_revision_02_html_for_historical_pypdf(
+                rendered_html.read_bytes()
+            )
             self.assertEqual(
-                rendered_html.read_bytes(),
+                normalized_html,
                 REVISION_02_HTML.read_bytes(),
-                "fresh offline HTML render differs from the committed artifact",
+                (
+                    "fresh offline HTML render differs from the committed artifact "
+                    "beyond the exact pypdf generator-version line"
+                ),
             )
             self.assertEqual(identity(rendered_txt), identity(REVISION_02_TXT))
-            self.assertEqual(identity(rendered_html), identity(REVISION_02_HTML))
+            self.assertEqual(
+                (len(normalized_html), hashlib.sha256(normalized_html).hexdigest()),
+                identity(REVISION_02_HTML),
+            )
 
     def test_truth_boundaries_remain_explicit_without_completion_claims(self) -> None:
         representations = {

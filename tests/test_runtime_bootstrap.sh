@@ -47,6 +47,15 @@ fail() {
     exit 1
 }
 
+hash_file() {
+    "$PYTHON" - "$1" <<'PY'
+import hashlib
+import pathlib
+import sys
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+}
+
 SUCCESS_CACHE="$SCRATCH/success"
 sh "$BOOTSTRAP" --install --accept-third-party \
     --archive-file "$SOURCE_ARCHIVE" --cache-dir "$SUCCESS_CACHE" >/dev/null
@@ -69,3 +78,13 @@ set -e
     fail "failed final verification retained a staging directory"
 
 printf '%s\n' "PASS: POSIX GitHub CLI staging cleanup and final-verification rollback"
+
+
+# pypdf-contract-cross-file-consistency-v1
+req_pypdf=$(awk -F '[=[:space:]]+' '$1 == "pypdf" {print $2}' "$ROOT/runtime/toolchains/requirements-xml2rfc-3.34.0.txt")
+[ "$req_pypdf" = "6.15.0" ] || fail "requirements pypdf contract is not 6.15.0"
+lock_pypdf=$(awk -F '\t' '$1 == "pypdf" {print $2}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")
+[ "$lock_pypdf" = "$req_pypdf" ] || fail "TOOLCHAIN pypdf contract differs from requirements"
+req_sha=$(hash_file "$ROOT/runtime/toolchains/requirements-xml2rfc-3.34.0.txt")
+lock_req_sha=$(awk -F '\t' '$1 == "xml2rfc" && $2 == "3.34.0" {print $5}' "$ROOT/runtime/toolchains/TOOLCHAIN.lock.tsv")
+[ "$lock_req_sha" = "$req_sha" ] || fail "TOOLCHAIN requirements digest differs from exact requirements bytes"

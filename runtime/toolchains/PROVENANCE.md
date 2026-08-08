@@ -54,10 +54,10 @@ committed or cached by these scripts.
   `THIRD_PARTY_NOTICES.md`.
 
 `requirements-xml2rfc-3.34.0.txt` records all 19 exact packages, including
-`pypdf==6.14.2`, and the SHA-256 values of the PyPI wheels selected by CPython
+`pypdf==6.15.0`, and the SHA-256 values of the PyPI wheels selected by CPython
 3.12.13 on the three x64 runner families. Source distributions are excluded.
 The lock file itself has SHA-256
-`18d213a57ee9005adaf0906c8287a04af1692f15a651c3b9c8e5cfdcebb1fd2c`,
+`cd8473b443cc337670f0eec920913f2cabe07d38d497eaff2d140319b393b565`,
 also recorded in `TOOLCHAIN.lock.tsv`.
 
 The hosted CI toolcache currently supplies the exact CPython 3.12.13 runtime
@@ -93,7 +93,7 @@ manager, or an independently managed formal toolchain:
 | Profile | Required contract | Automatic installation |
 |---|---|---|
 | `core` | a compiler that accepts the strict ANSI-C90 probe | no |
-| `ietf` | CPython 3.12.13 x64, `xml2rfc==3.34.0`, and pypdf 6.14.2 from hash-locked wheels | fresh locked environment, with consent |
+| `ietf` | CPython 3.12.13 x64, `xml2rfc==3.34.0`, and pypdf 6.15.0 from hash-locked wheels | fresh locked environment, with consent |
 | `formal` | Python 3.12.x, pytest 9.1.1, Node 24.x, Zod 4.4.3, Lean 4.19.0 and Lake | no |
 | `audio` | Node 24.x, sherpa-onnx-node 1.13.4, FFmpeg and matching FFprobe | no |
 | `publication` | XeLaTeX and Poppler (`pdfinfo`, `pdftotext`, and `pdftoppm`) with reported versions | Poppler only in the guarded Ubuntu 24.04 manuscript workflow; XeLaTeX remains operator-managed |
