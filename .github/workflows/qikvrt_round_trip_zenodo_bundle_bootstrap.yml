@@ -2,26 +2,19 @@ name: QIKVRT Round Trip Zenodo bundle bootstrap
 
 on:
   push:
-    branches:
-      - publication/round-trip-zenodo-upload-bundle-freeze-v1
+    branches: [publication/round-trip-zenodo-upload-bundle-freeze-v1]
   workflow_dispatch:
-
-permissions:
-  contents: write
-
+permissions: {contents: write}
 concurrency:
   group: qikvrt-round-trip-zenodo-bundle-bootstrap-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
   materialize:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout exact bootstrap head
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
       - name: Verify current-main-bound bootstrap ancestry
         shell: bash
         run: |
@@ -39,7 +32,7 @@ jobs:
           tar -xJf /tmp/qikvrt-round-trip-bundle.tar.xz -C .
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib, json
+          import hashlib,json
           root=Path('.'); release=root/'release/round-trip-canonical-publication-zenodo-v1'
           def dump(p,v): p.write_text(json.dumps(v,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
           def ident(p):
@@ -65,27 +58,29 @@ jobs:
           git cat-file blob cc13b5530051ea7b7fe0eceae5558cd93f44611d > docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md
           rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
           rm -f .github/workflows/qikvrt_round_trip_zenodo_bundle_bootstrap.yml
-      - name: Run existing Zenodo machine-proof v2 validator through bounded freeze checker
+      - name: Diagnose and run existing v2 gate
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          from pathlib import Path
           import json
           m=json.load(open('release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json')); r=json.load(open('release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json')); p=json.load(open('release/round-trip-canonical-publication-zenodo-v1/PREPUBLICATION_RETURN_RECEIPT.json'))
           print('DEBUG_MACHINE_CANDIDATE_BYTES',[x['bytes'] for x in m['candidate']['files']]); print('DEBUG_RECEIPT_PRIMARY_BYTES',[x['bytes'] for x in r['primary_files']]); print('DEBUG_PREPUBLICATION_BYTES',[x['bytes'] for x in p['candidate_files']])
+          for needle in (b'18361',b'6788',b'6550'):
+              for path in sorted(Path('.').rglob('*')):
+                  if path.is_file() and '.git' not in path.parts:
+                      try: data=path.read_bytes()
+                      except OSError: continue
+                      if needle in data: print('DEBUG_STALE',needle.decode(),path)
           PY
           python3 -B tools/qikvrt_round_trip_zenodo_bundle_freeze.py --check --json
       - name: Regenerate and verify Authority-native integrity
-        shell: bash
         run: |
-          set -euo pipefail
           python3 -B tools/qikvrt_integrity.py generate
           python3 -B tools/qikvrt_integrity.py verify
       - name: Run complete repository gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          make test
+        run: make test
       - name: Persist exact generated successor
         shell: bash
         run: |
