@@ -47,6 +47,15 @@ fail() {
     exit 1
 }
 
+hash_file() {
+    "$PYTHON" - "$1" <<'PY'
+import hashlib
+import pathlib
+import sys
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+}
+
 SUCCESS_CACHE="$SCRATCH/success"
 sh "$BOOTSTRAP" --install --accept-third-party \
     --archive-file "$SOURCE_ARCHIVE" --cache-dir "$SUCCESS_CACHE" >/dev/null
