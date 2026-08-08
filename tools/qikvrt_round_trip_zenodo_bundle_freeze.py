@@ -360,7 +360,7 @@ def verify_formal_bindings() -> dict[str, Any]:
 
 def verify_claim_matrix() -> dict[str, Any]:
     matrix, raw = load_json(CLAIM_MATRIX)
-    require_equal(matrix.get("publication_id"), "qikvrt-round-trip-retrospective-proof-v1", "claim matrix publication_id")
+    require_equal(matrix.get("publication_id"), "qikvrt-round-trip-canonical-publication-v1", "claim matrix publication_id")
     claims = matrix.get("claims")
     require_equal(matrix.get("claim_count"), EXPECTED_COUNTS["publication_claims"], "publication claim count")
     if not isinstance(claims, list) or len(claims) != 12:
@@ -504,7 +504,7 @@ def check() -> dict[str, Any]:
     bundle, bundle_raw = load_json(PROOF_BUNDLE)
 
     require_equal(work_unit.get("work_unit_id"), "ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1", "work unit id")
-    require_equal(receipt.get("publication_id"), "qikvrt-round-trip-retrospective-proof-v1", "freeze publication_id")
+    require_equal(receipt.get("publication_id"), "qikvrt-round-trip-canonical-publication-v1", "freeze publication_id")
     require_equal(bundle.get("publication_id"), receipt.get("publication_id"), "proof publication_id")
     base = verify_git_base(work_unit)
     primary = verify_primary_files(receipt)
