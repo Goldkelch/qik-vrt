@@ -170,6 +170,8 @@ jobs:
           esac
           renderer="$contract_cache/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/xml2rfc"
           "$QIKVRT_PYTHON" -B tests/test_ietf_offline_render.py --xml2rfc "$renderer"
+          renderer_python="$contract_cache/xml2rfc/3.34.0/python-3.12.13/$renderer_platform/venv/bin/python"
+          "$renderer_python" -B tests/test_pypdf_runtime_contract.py
           "$QIKVRT_PYTHON" -B tests/test_ietf_revision_02.py --xml2rfc "$renderer"
           "$QIKVRT_PYTHON" -B tests/test_ietf_revision_03.py --xml2rfc "$renderer"
 
@@ -205,6 +207,9 @@ jobs:
           $renderer = Join-Path $contractCache 'xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\xml2rfc.exe'
           & $env:QIKVRT_PYTHON -B tests/test_ietf_offline_render.py --xml2rfc $renderer
           if ($LASTEXITCODE -ne 0) { throw "Windows offline renderer test failed: $LASTEXITCODE" }
+          $rendererPython = Join-Path $contractCache 'xml2rfc\3.34.0\python-3.12.13\windows-amd64\venv\Scripts\python.exe'
+          & $rendererPython -B tests/test_pypdf_runtime_contract.py
+          if ($LASTEXITCODE -ne 0) { throw "Windows pypdf compatibility smoke failed: $LASTEXITCODE" }
           & $env:QIKVRT_PYTHON -B tests/test_ietf_revision_02.py --xml2rfc $renderer
           if ($LASTEXITCODE -ne 0) { throw "IETF revision-02 invariant test failed: $LASTEXITCODE" }
           & $env:QIKVRT_PYTHON -B tests/test_ietf_revision_03.py --xml2rfc $renderer
