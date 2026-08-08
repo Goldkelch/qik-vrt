@@ -37,6 +37,10 @@ jobs:
           def apply_ident(d,i):
               for k in ('bytes','sha256','git_blob_sha1'):
                   if k in d: d[k]=i[k]
+          def fragment(ref):
+              base,sep,frag=ref.partition('#')
+              if not sep or not frag: raise SystemExit('claim reference lacks exact fragment: '+ref)
+              return frag
           mp=release/'MACHINE_PROOF_BUNDLE.json'; m=json.loads(mp.read_text())
           canonical_claim_matrix='release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json'
           promoted_rel='release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_KERNEL_RECEIPTS.json'
@@ -52,13 +56,32 @@ jobs:
           for claim in m['claims']:
               normalized=[]
               for ref in claim.get('source_refs',[]):
-                  base,sep,fragment=ref.partition('#')
+                  base,sep,frag=ref.partition('#')
                   if base in candidate_paths:
-                      if not sep or not fragment: raise SystemExit('candidate source reference lacks exact fragment')
+                      if not sep or not frag: raise SystemExit('candidate source reference lacks exact fragment')
                       normalized.append(return_rel+'#'+base)
                   else:
                       normalized.append(ref)
               claim['source_refs']=normalized
+          cm_path=root/canonical_claim_matrix
+          cm=json.loads(cm_path.read_text())
+          bundle_claims={x['claim_id']:x for x in m['claims']}
+          matrix_claims={x['claim_id']:x for x in cm.get('claims',[])}
+          if set(bundle_claims)!=set(matrix_claims): raise SystemExit('claim matrix and machine bundle claim IDs differ')
+          if cm.get('publication_id')!=m['publication_id'] or cm.get('claim_count')!=len(bundle_claims): raise SystemExit('claim matrix top-level projection differs')
+          for claim_id,mc in matrix_claims.items():
+              bc=bundle_claims[claim_id]
+              if mc.get('statement')!=bc['statement'] or mc.get('classification')!=bc['classification']: raise SystemExit('claim matrix semantic projection differs for '+claim_id)
+              mc['boundary']=bc['scope']
+              mc['proof_refs']=[fragment(x) for x in bc['proof_refs']]
+              mc['sources']=[fragment(x) for x in (*bc['evidence_refs'],*bc['source_refs'])]
+          dump(cm_path,cm); ci=ident(cm_path)
+          old_cm={}
+          for artifact in m['artifacts']:
+              if artifact.get('path')==canonical_claim_matrix:
+                  old_cm={'sha256':artifact['sha256'],'git_blob_sha1':artifact['git_blob_sha1']}
+                  apply_ident(artifact,ci)
+          if not old_cm: raise SystemExit('canonical claim matrix is not a bound artifact')
           promoted_path=root/promoted_rel
           promoted=json.loads(promoted_path.read_text())
           if promoted.get('schema')!='qikvrt_promoted_formal_kernel_receipt_bindings_v1': raise SystemExit('unexpected promoted receipt aggregate schema')
@@ -93,16 +116,24 @@ jobs:
           for e in r['upload_fileset']['entries']:
               if e['path']==m['candidate']['files'][0]['path']: e['bytes']=18120
               if e['path']==m['candidate']['files'][1]['path']: e['bytes']=5150
+              if e['path']==canonical_claim_matrix: apply_ident(e,ci)
               if e['path']==promoted_rel: apply_ident(e,pi)
               if e['path']=='release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': apply_ident(e,mi)
           r['machine_proof_bundle'].update(mi)
+          scalar_repl={old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
+          def scalar_rep(v):
+              if isinstance(v,dict): return {k:scalar_rep(x) for k,x in v.items()}
+              if isinstance(v,list): return [scalar_rep(x) for x in v]
+              return scalar_repl.get(v,v)
+          r=scalar_rep(r)
           material=[{'name':e['name'],'path':e['path'],'sha256':e['sha256'],'git_blob_sha1':e['git_blob_sha1']} for e in r['upload_fileset']['entries']]
           r['upload_fileset']['aggregate_sha256']=hashlib.sha256(json.dumps(material,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(); dump(rp,r); ri=ident(rp)
           wp=root/'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json'; w=json.loads(wp.read_text()); w['primary_files'][0]['bytes']=18120; w['primary_files'][1]['bytes']=5150
-          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
+          repl={'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077':mi['sha256'],'69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989':ri['sha256'],'5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352':r['upload_fileset']['aggregate_sha256'],old_cm['sha256']:ci['sha256'],old_cm['git_blob_sha1']:ci['git_blob_sha1'],old_promoted['sha256']:pi['sha256'],old_promoted['git_blob_sha1']:pi['git_blob_sha1']}
           def rep(v):
               if isinstance(v,dict):
                   out={k:rep(x) for k,x in v.items()}
+                  if out.get('path')==canonical_claim_matrix: apply_ident(out,ci)
                   if out.get('path')==promoted_rel: apply_ident(out,pi)
                   return out
               if isinstance(v,list): return [rep(x) for x in v]
@@ -123,14 +154,6 @@ jobs:
           from tools import qikvrt_zenodo_machine_proof as proof
           release=Path('release/round-trip-canonical-publication-zenodo-v1')
           receipt=json.loads((release/'BUNDLE_FREEZE_RECEIPT.json').read_text())
-          bundle=json.loads((release/'MACHINE_PROOF_BUNDLE.json').read_text())
-          print('DEBUG_ARTIFACT_INVENTORY',json.dumps([{'kind':x.get('kind'),'path':x.get('path'),'bytes':x.get('bytes'),'sha256':x.get('sha256'),'git_blob_sha1':x.get('git_blob_sha1')} for x in bundle.get('artifacts',[])],sort_keys=True))
-          print('DEBUG_CANDIDATE_FILES',json.dumps(bundle.get('candidate',{}).get('files',[]),sort_keys=True))
-          print('DEBUG_FORMAL_CLAIM_PROOF_REFS',json.dumps([{'claim_id':x.get('claim_id'),'classification':x.get('classification'),'proof_refs':x.get('proof_refs')} for x in bundle.get('claims',[]) if x.get('classification')=='FORMAL_PROVED'],sort_keys=True))
-          promoted=release/'PROMOTED_FORMAL_KERNEL_RECEIPTS.json'
-          if promoted.exists():
-              promoted_value=json.loads(promoted.read_text())
-              print('DEBUG_PROMOTED_FORMAL_KERNEL_RECEIPTS',json.dumps(promoted_value,sort_keys=True))
           paths=[entry['path'] for entry in receipt['upload_fileset']['entries']]
           result=proof.validate_bundle(Path('.'), release/'MACHINE_PROOF_BUNDLE.json', upload_paths=paths)
           print(json.dumps(result,sort_keys=True))
