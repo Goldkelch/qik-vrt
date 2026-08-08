@@ -34,7 +34,12 @@ jobs:
           def dump(p,v): p.write_text(json.dumps(v,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
           def ident(p):
               d=p.read_bytes(); return {'bytes':len(d),'sha256':hashlib.sha256(d).hexdigest(),'git_blob_sha1':hashlib.sha1(b'blob '+str(len(d)).encode()+bytes([0])+d).hexdigest()}
-          mp=release/'MACHINE_PROOF_BUNDLE.json'; m=json.loads(mp.read_text()); m['candidate']['files'][0]['bytes']=18120; m['candidate']['files'][1]['bytes']=5150; dump(mp,m); mi=ident(mp)
+          mp=release/'MACHINE_PROOF_BUNDLE.json'; m=json.loads(mp.read_text())
+          canonical_claim_matrix='release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json'
+          for artifact in m['artifacts']:
+              if artifact.get('kind')=='CLAIM_MATRIX' and artifact.get('path')!=canonical_claim_matrix:
+                  artifact['kind']='EVIDENCE'
+          m['candidate']['files'][0]['bytes']=18120; m['candidate']['files'][1]['bytes']=5150; dump(mp,m); mi=ident(mp)
           rp=release/'BUNDLE_FREEZE_RECEIPT.json'; r=json.loads(rp.read_text()); r['primary_files'][0]['bytes']=18120; r['primary_files'][1]['bytes']=5150
           for e in r['upload_fileset']['entries']:
               if e['path']==m['candidate']['files'][0]['path']: e['bytes']=18120
