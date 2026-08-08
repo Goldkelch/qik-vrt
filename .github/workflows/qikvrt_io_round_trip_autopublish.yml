@@ -1,0 +1,214 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIK-VRT I/O round-trip autopublish
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - "state/io_events/**"
+      - "state/io_claims/**"
+      - "state/publication_queue/**"
+      - "release/**"
+      - "external/ietf/**"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-io-round-trip-autopublish
+  cancel-in-progress: false
+
+jobs:
+  classify-and-prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact current main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Route machine-proved connected claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_io_round_trip.py sweep --apply
+
+      - name: Derive exact Zenodo controls for ready queue entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          queue = pathlib.Path('state/publication_queue')
+          if not queue.is_dir():
+              raise SystemExit(0)
+          for path in sorted(queue.glob('*.json')):
+              value = json.loads(path.read_text(encoding='utf-8'))
+              if value.get('route') not in {'ZENODO_READY', 'ZENODO_AND_IETF_READY'}:
+                  continue
+              control = value.get('zenodo_candidate_control_path')
+              if not control:
+                  raise SystemExit(f'BLOCK: {path} lacks zenodo_candidate_control_path')
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py', '--candidate', control])
+          PY
+
+      - name: Verify generated controls before proposal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile tools/qikvrt_io_round_trip.py tools/qikvrt_io_zenodo_authorize.py
+          python3 -B -m unittest -v tests.test_ai_io_round_trip_autopublish
+
+      - name: Open one reviewable generated-controls PR when bytes changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -z "$(git status --porcelain=v1 --untracked-files=all)"; then
+            echo "I/O round trip is a semantic NOOP"
+            exit 0
+          fi
+          base="$(git rev-parse HEAD)"
+          fingerprint="$( (git diff --binary; git ls-files --others --exclude-standard | sort | xargs -r sha256sum) | sha256sum | cut -d' ' -f1 )"
+          branch="automation/io-round-trip-${base:0:8}-${fingerprint:0:12}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          git config user.name "qik-vrt-io-round-trip"
+          git config user.email "qik-vrt-io-round-trip@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A -- state/io_events state/io_claims state/publication_queue artifacts/io release external/ietf 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No generated I/O/publication delta"
+            exit 0
+          fi
+          git commit -m "chore(io): materialize proof/publication round-trip ${fingerprint:0:12}"
+          head="$(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "I/O round trip: ${fingerprint:0:12}" \
+            --body "Autonomously materialized QIK-VRT I/O/proof/publication controls. Base: \`$base\`. Head: \`$head\`. Semantic fingerprint: \`$fingerprint\`. Repository-native integrity materialization and all exact-head gates remain mandatory before promotion. No external publication is claimed by this PR."
+
+  zenodo-effect:
+    needs: classify-and-prepare
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: zenodo-production
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact current main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Execute only committed exact-authorized Zenodo manifests
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          queue = pathlib.Path('state/publication_queue')
+          if not queue.is_dir():
+              raise SystemExit(0)
+          for path in sorted(queue.glob('*.json')):
+              value = json.loads(path.read_text(encoding='utf-8'))
+              if value.get('route') not in {'ZENODO_READY', 'ZENODO_AND_IETF_READY'}:
+                  continue
+              control_path = pathlib.Path(value['zenodo_candidate_control_path'])
+              control = json.loads(control_path.read_text(encoding='utf-8'))
+              manifest = control.get('manifest_path')
+              authorization = control.get('authorization_path')
+              if not manifest or not authorization:
+                  raise SystemExit(f'BLOCK: {control_path} lacks exact output control paths')
+              if not pathlib.Path(manifest).is_file() or not pathlib.Path(authorization).is_file():
+                  continue
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_io_zenodo_authorize.py', '--candidate', str(control_path), '--check'])
+              subprocess.check_call(['python3', '-B', 'tools/qikvrt_zenodo_publish.py', '--manifest', manifest])
+          PY
+
+      - name: Preserve post-effect evidence as a reviewable successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -z "$(git status --porcelain=v1 --untracked-files=all)"; then
+            exit 0
+          fi
+          base="$(git rev-parse HEAD)"
+          branch="automation/io-post-effect-${base:0:12}-${GITHUB_RUN_ID}"
+          git config user.name "qik-vrt-io-round-trip"
+          git config user.email "qik-vrt-io-round-trip@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- release state/publication_queue
+          git commit -m "evidence(io): persist post-effect publication receipts"
+          head="$(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Evidence: I/O round-trip post-effect receipts" \
+            --body "Post-effect Zenodo evidence generated from exact-authorized manifests. Base: \`$base\`; head: \`$head\`. Repository promotion remains exact-head-gated."
+
+  ietf-routing:
+    needs: classify-and-prepare
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact current main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fail closed until exact Datatracker submit capability is repository-bound
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import pathlib
+          queue = pathlib.Path('state/publication_queue')
+          if not queue.is_dir():
+              raise SystemExit(0)
+          pending = []
+          for path in sorted(queue.glob('*.json')):
+              value = json.loads(path.read_text(encoding='utf-8'))
+              if value.get('route') != 'ZENODO_AND_IETF_READY':
+                  continue
+              candidate = value.get('ietf_candidate_path')
+              if not candidate or not pathlib.Path(candidate).is_file():
+                  raise SystemExit(f'BLOCK: {path} lacks an exact IETF candidate')
+              pending.append(candidate)
+          if pending:
+              print('IETF_EXTERNAL_EFFECT_ADAPTER=PENDING_REPOSITORY_BOUND_IMPLEMENTATION')
+              for candidate in pending:
+                  print(f'IETF_REVIEW_REQUIRED={candidate}')
+          PY
