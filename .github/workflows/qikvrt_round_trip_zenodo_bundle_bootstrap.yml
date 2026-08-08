@@ -65,6 +65,9 @@ jobs:
           from tools import qikvrt_zenodo_machine_proof as proof
           release=Path('release/round-trip-canonical-publication-zenodo-v1')
           receipt=json.loads((release/'BUNDLE_FREEZE_RECEIPT.json').read_text())
+          bundle=json.loads((release/'MACHINE_PROOF_BUNDLE.json').read_text())
+          print('DEBUG_ARTIFACT_INVENTORY',json.dumps([{'kind':x.get('kind'),'path':x.get('path'),'bytes':x.get('bytes'),'sha256':x.get('sha256'),'git_blob_sha1':x.get('git_blob_sha1')} for x in bundle.get('artifacts',[])],sort_keys=True))
+          print('DEBUG_CANDIDATE_FILES',json.dumps(bundle.get('candidate',{}).get('files',[]),sort_keys=True))
           paths=[entry['path'] for entry in receipt['upload_fileset']['entries']]
           result=proof.validate_bundle(Path('.'), release/'MACHINE_PROOF_BUNDLE.json', upload_paths=paths)
           print(json.dumps(result,sort_keys=True))
