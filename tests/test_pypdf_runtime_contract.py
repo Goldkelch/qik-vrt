@@ -8,6 +8,7 @@ import sys
 import tempfile
 import types
 import pypdf
+from pypdf.generic import ContentStream
 
 # xml2rfc 3.34.0 declares dict2xml only in its tests extra, while walkpdf
 # imports it at module load. This smoke exercises only walkpdf.pyobj's pypdf
@@ -29,7 +30,12 @@ def main() -> int:
     if "BSD-3-Clause" not in expression:
         raise SystemExit(f"FAIL: unexpected pypdf license metadata: {expression!r}")
     writer = pypdf.PdfWriter()
-    writer.add_blank_page(width=72, height=72)
+    page = writer.add_blank_page(width=72, height=72)
+    # walkpdf.pyobj exercises layout-mode text extraction, which requires a
+    # real /Contents entry. Keep the fixture semantically blank while attaching
+    # an empty content stream through pypdf's page API rather than weakening the
+    # compatibility check or adding a runtime dependency.
+    page.replace_contents(ContentStream(None, writer))
     with tempfile.TemporaryDirectory(prefix="qikvrt-pypdf-compat-") as temporary:
         pdf = Path(temporary) / "smoke.pdf"
         with pdf.open("wb") as handle:
