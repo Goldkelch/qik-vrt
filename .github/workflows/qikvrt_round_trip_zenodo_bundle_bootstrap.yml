@@ -70,23 +70,36 @@ jobs:
               return {
                   'bytes': len(data),
                   'sha256': hashlib.sha256(data).hexdigest(),
-                  'git_blob_sha1': hashlib.sha1(b'blob ' + str(len(data)).encode() + bytes([0]) + data).hexdigest(),
+                  'git_blob_sha1': hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
               }
+          primary_paths = [
+              'docs/publications/2026-08-07-universum-als-round-trip/DAS_UNIVERSUM_ALS_ROUND_TRIP_DE.md',
+              'docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md',
+          ]
+          primary_expected = [
+              ('dc58e50161b22826152dd251db836f06f85235a470e0253aeefa1b0a380787fe', 'e1ed265239aa5e1436055279069c7e21525a13fe'),
+              ('e5fd9c53a0bf6c84471d9b26d0c3c06019977aa6b2367913006fa9560a3c948f', 'cc13b5530051ea7b7fe0eceae5558cd93f44611d'),
+          ]
+          primary_identities = []
+          for path, (want_sha256, want_blob) in zip(primary_paths, primary_expected):
+              got = identity(root / path)
+              if got['sha256'] != want_sha256 or got['git_blob_sha1'] != want_blob:
+                  raise SystemExit(f'primary identity drift: {path}: {got}')
+              primary_identities.append(got)
           machine_path = release / 'MACHINE_PROOF_BUNDLE.json'
           machine = json.loads(machine_path.read_text())
-          machine['candidate']['files'][0]['bytes'] = 18120
-          machine['candidate']['files'][1]['bytes'] = 5150
+          for item, got in zip(machine['candidate']['files'], primary_identities):
+              item.update(got)
           dump(machine_path, machine)
           machine_identity = identity(machine_path)
           receipt_path = release / 'BUNDLE_FREEZE_RECEIPT.json'
           receipt = json.loads(receipt_path.read_text())
-          receipt['primary_files'][0]['bytes'] = 18120
-          receipt['primary_files'][1]['bytes'] = 5150
+          for item, got in zip(receipt['primary_files'], primary_identities):
+              item.update(got)
+          by_path = dict(zip(primary_paths, primary_identities))
           for entry in receipt['upload_fileset']['entries']:
-              if entry['path'] == machine['candidate']['files'][0]['path']:
-                  entry['bytes'] = 18120
-              if entry['path'] == machine['candidate']['files'][1]['path']:
-                  entry['bytes'] = 5150
+              if entry['path'] in by_path:
+                  entry.update(by_path[entry['path']])
               if entry['path'] == 'release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json':
                   entry.update(machine_identity)
           receipt['machine_proof_bundle'].update(machine_identity)
@@ -101,21 +114,14 @@ jobs:
           receipt_identity = identity(receipt_path)
           work_path = root / 'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json'
           work = json.loads(work_path.read_text())
-          work['primary_files'][0]['bytes'] = 18120
-          work['primary_files'][1]['bytes'] = 5150
-          replacements = {
-              'ebd3afa345b819771d0d577f5dda68ad9bfa6414d2ea7613eb9573d25cc14077': machine_identity['sha256'],
-              '69e7a7d80c32adb0d211a0363871203067350253e47357da4b49449b07e94989': receipt_identity['sha256'],
-              '5316e740648f87b5903b994f4e77a1c22127cb12245801382852a8bf69b85352': receipt['upload_fileset']['aggregate_sha256'],
-          }
-          def replace(value):
-              if isinstance(value, dict):
-                  return {k: replace(v) for k, v in value.items()}
-              if isinstance(value, list):
-                  return [replace(v) for v in value]
-              return replacements.get(value, value)
-          dump(work_path, replace(work))
+          for item, got in zip(work['primary_files'], primary_identities):
+              item.update(got)
+          work['generated_candidate']['machine_proof_bundle'].update(machine_identity)
+          work['generated_candidate']['bundle_freeze_receipt'].update(receipt_identity)
+          work['generated_candidate']['upload_fileset_aggregate_sha256'] = receipt['upload_fileset']['aggregate_sha256']
+          dump(work_path, work)
           PY
+          # Restore the two byte-frozen primary publication files from their immutable Git blobs.
           git cat-file blob e1ed265239aa5e1436055279069c7e21525a13fe > docs/publications/2026-08-07-universum-als-round-trip/DAS_UNIVERSUM_ALS_ROUND_TRIP_DE.md
           git cat-file blob cc13b5530051ea7b7fe0eceae5558cd93f44611d > docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md
           rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
@@ -132,9 +138,9 @@ jobs:
               'docs/publications/2026-08-07-universum-als-round-trip/ROUND_TRIP_PROMOTED_FORMAL_RESULTS_V1.md': 'cc13b5530051ea7b7fe0eceae5558cd93f44611d',
               '.github/workflows/qikvrt_round_trip_zenodo_bundle_freeze.yml': '527dd8a8514452409d777a985abf68ff897088ad',
               'release/round-trip-canonical-publication-zenodo-v1/BOUNDARY_TEST_REPORT.json': '54c55521e433d7e5b49625e222143551c23b4166',
-              'release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json': '534fa3cdff79ed196dbadde059ac2829cdba955b',
+              'release/round-trip-canonical-publication-zenodo-v1/BUNDLE_FREEZE_RECEIPT.json': 'c44e76236888b185f0e01dc7ba516e39b47bee54',
               'release/round-trip-canonical-publication-zenodo-v1/CLAIM_MATRIX.json': 'c1d7a078be08f40a3340243e367b27025bd8ea6d',
-              'release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': '1705ad678cfe88c4b1a98ea4118b42091048bb91',
+              'release/round-trip-canonical-publication-zenodo-v1/MACHINE_PROOF_BUNDLE.json': 'a82130b710be796f33b9cb8a972f4f188dc50792',
               'release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_KERNEL_RECEIPTS.json': '2798420b03185cd24db01079f883129928e72579',
               'release/round-trip-canonical-publication-zenodo-v1/PROMOTED_FORMAL_SOURCE_BINDINGS.json': '77cdca617e71ce906e2d4558b099c7a1706e1652',
               'release/round-trip-canonical-publication-zenodo-v1/RETROSPECTIVE_SOURCE_CONSTITUENTS.json': 'b5a45b3c05cef25f58e3c84beb247e2b2f725f4e',
@@ -143,7 +149,7 @@ jobs:
               'release/round-trip-canonical-publication-zenodo-v1/ZENODO_METADATA.json': '948ea1e20b161f71ba3576645ab21f9073cfdaa6',
               'release/round-trip-canonical-publication-zenodo-v1/ZENODO_SHA256SUMS': '665809096b6c7e9d0dcaa2e72bf457f0929367bd',
               'release/round-trip-canonical-publication-zenodo-v1/ZENODO_TARGET_RECORD.json': '5c32701436b1da12acd3933bc01de3530022b291',
-              'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json': 'dccd09989a6a6375b16dcf0721f2f71edbb36ff5',
+              'state/work_units/ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1.json': 'ab7d377c4bd780702ff6010290c174b8b8ba9e38',
               'tests/test_round_trip_zenodo_bundle_freeze.py': '58f90f67d4d2f38aa3406cd8120f7386aaf15bff',
               'tools/qikvrt_round_trip_zenodo_bundle_freeze.py': '35d52c2d3bdeca6995741107a1087e0b47ae7276',
           }
