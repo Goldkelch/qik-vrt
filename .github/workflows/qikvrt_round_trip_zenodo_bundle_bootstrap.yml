@@ -27,7 +27,8 @@ jobs:
         run: |
           set -euo pipefail
           BASE=12842e8df99553260774d53517522b2b5539c8a8
-          test "$(git rev-parse HEAD^)" = "$BASE"
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git rev-parse "$BASE^{tree}")" = "e8bdc99712bf0eca1a94ece6e34b20059076d280"
           test "$(git rev-parse HEAD^{tree})" != "e8bdc99712bf0eca1a94ece6e34b20059076d280"
           changed="$(git diff --name-only "$BASE" HEAD)"
           test -n "$changed"
@@ -52,6 +53,7 @@ jobs:
             .qikvrt/materialize/round-trip-zenodo-bundle/part-06.b64 \
             .qikvrt/materialize/round-trip-zenodo-bundle/part-07.b64 \
             | base64 --decode > /tmp/qikvrt-round-trip-bundle.tar.xz
+          sha256sum /tmp/qikvrt-round-trip-bundle.tar.xz
           echo "6867808f741bb9c35165f0f29561d14c382e08df31e0d623ec66bf331c28a73d  /tmp/qikvrt-round-trip-bundle.tar.xz" | sha256sum -c -
           tar -xJf /tmp/qikvrt-round-trip-bundle.tar.xz -C .
           rm -rf .qikvrt/materialize/round-trip-zenodo-bundle
