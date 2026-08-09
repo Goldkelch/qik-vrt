@@ -28,6 +28,15 @@ class RoundTripZenodoBundleFreezeTests(unittest.TestCase):
         self.assertNotIn("requests.", text)
         self.assertFalse((ROOT / "tools/qikvrt_round_trip_zenodo_publish.py").exists())
 
+    def test_checker_accepts_only_bound_authority_or_mirror_lineage(self) -> None:
+        text = TOOL.read_text(encoding="utf-8")
+        self.assertIn('"AUTHORITY_SUCCESSOR"', text)
+        self.assertIn('"MIRROR_PORT"', text)
+        self.assertIn("git_is_ancestor(CURRENT_AUTHORITY)", text)
+        self.assertIn("git_is_ancestor(CURRENT_MIRROR)", text)
+        self.assertIn("bound Mirror port checkpoint tree differs", text)
+        self.assertIn("descends from neither the bound Authority successor", text)
+
     def test_frozen_primary_files_and_effect_boundary(self) -> None:
         work = self.load(WORK_UNIT)
         receipt = self.load(RELEASE / "BUNDLE_FREEZE_RECEIPT.json")
