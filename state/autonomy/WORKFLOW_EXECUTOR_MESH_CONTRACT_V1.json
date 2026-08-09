@@ -1,0 +1,119 @@
+{
+  "schema": "qikvrt_workflow_executor_mesh_contract_v1",
+  "contract_id": "qikvrt-workflow-executor-mesh-v1",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "entrypoint": "AI",
+    "self_healing_contract_path": "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+  },
+  "executor": {
+    "controller_path": "tools/qikvrt_workflow_executor.py",
+    "workflow_path": ".github/workflows/qikvrt_workflow_executor.yml",
+    "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+    "monitor_workflow_path": ".github/workflows/qikvrt_live_status_watch.yml",
+    "observation_mode": "REPOSITORY_NATIVE_EXACT_HEAD_BOUND",
+    "stateful_writes": "ACTION_ARTIFACTS_ONLY",
+    "single_writer_order": [
+      "AUTHORITY",
+      "MIRROR",
+      "MESH_NODE"
+    ]
+  },
+  "workflow_inventory": {
+    "root": ".github/workflows",
+    "recognize": [
+      "ADDED_FILE",
+      "REMOVED_FILE",
+      "BLOB_CHANGE"
+    ],
+    "binding": [
+      "WORKFLOW_PATH",
+      "WORKFLOW_BLOB",
+      "EXACT_HEAD",
+      "EXACT_TREE"
+    ],
+    "baseline": "PREVIOUS_EXECUTOR_SNAPSHOT_ARTIFACT_WHEN_AVAILABLE"
+  },
+  "dispatch_policy": {
+    "enabled": true,
+    "dispatch_ref": "main",
+    "required_conditions": [
+      "CURRENT_MAIN_HEAD_REOBSERVED",
+      "CURRENT_MAIN_TREE_REOBSERVED",
+      "WORKFLOW_IS_EXACT_TREE_MEMBER",
+      "NO_COMPETING_WRITER",
+      "NO_EQUIVALENT_EXACT_HEAD_RUN",
+      "NO_EXTERNAL_OR_IRREVERSIBLE_EFFECT"
+    ],
+    "terminal_or_active_exact_run_suppresses_duplicate_dispatch": true,
+    "rerun": "ONLY_REPOSITORY_DECLARED_TRANSIENT_FAILURE",
+    "writer_workflow_names": [
+      "QIK-VRT autonomous bounded self-heal",
+      "QIK-VRT autonomous draft-PR continuation",
+      "QIK-VRT expected-head promotion executor"
+    ],
+    "authorized_workflows": [
+      {
+        "workflow_id": "qikvrt_workflow_executor_watchdog.yml",
+        "workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "workflow_name": "QIKVRT workflow executor watchdog",
+        "allowed_events": [
+          "workflow_dispatch"
+        ],
+        "external_effect": "NONE",
+        "is_writer": false,
+        "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-"
+      }
+    ]
+  },
+  "boundaries": {
+    "direct_repository_mutation": "FORBIDDEN",
+    "watchdog_terminality_is_gate_success": false,
+    "action_required_is_trusted_execution": false,
+    "zero_job_is_trusted_execution": false,
+    "external_or_irreversible_effect_requires_separate_exact_authorization": true,
+    "forbidden_effects": [
+      "force_push",
+      "unconditional_automatic_merge",
+      "release",
+      "deployment",
+      "zenodo_mutation",
+      "doi_mutation",
+      "ietf_mutation",
+      "credentialed_external_write"
+    ]
+  },
+  "mesh_node_split_acceptance": {
+    "applies_to": "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW",
+    "queue_root": "registry/node_request_queue",
+    "registration_request_field": "workflow_executor_continuity",
+    "continuity_declaration_schema": "qikvrt_workflow_executor_mesh_continuity_declaration_v1",
+    "receipt_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json",
+    "receipt_schema": "qikvrt_workflow_executor_mesh_node_receipt_v1",
+    "required_acceptance_tests": [
+      "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+      "tests/test_seed_workflows.py"
+    ],
+    "connection_order": [
+      "AUTHORITY_CONTRACT_BOUND",
+      "NODE_RECEIPT_DECLARED",
+      "NODE_STRUCTURAL_ACCEPTANCE",
+      "SEED_QUEUE_ACCEPTANCE",
+      "WATCHDOG_OBSERVATION"
+    ],
+    "structural_acceptance_does_not_claim": [
+      "PASS",
+      "FINAL_PASS",
+      "EFFECT_ACK_DONE",
+      "AUTHORITY_MIRROR_EQUALITY",
+      "EXTERNAL_EFFECT"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "EXTERNAL_EFFECT": false
+  }
+}
