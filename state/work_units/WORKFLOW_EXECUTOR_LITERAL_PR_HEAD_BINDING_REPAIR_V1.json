@@ -1,0 +1,82 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_workflow_executor_literal_pr_head_binding_repair_v1",
+  "work_unit_id": "WORKFLOW_EXECUTOR_LITERAL_PR_HEAD_BINDING_REPAIR_V1",
+  "title": "Bind the workflow-executor watchdog receipt to the literal pull-request head",
+  "repository": "Goldkelch/qik-vrt",
+  "pull_request": 568,
+  "owner_disposition": {
+    "decision": "HOLD",
+    "reason": "LITERAL_PR_HEAD_RECEIPT_BINDING_REQUIRED",
+    "received_at": "2026-08-09T18:14:34Z",
+    "authorized_repository_effect": "ONE_HISTORY_PRESERVING_REPAIR_COMMIT",
+    "mark_ready_authorized": false,
+    "promotion_authorized": false,
+    "external_effect_authorized": false
+  },
+  "observed_authority": {
+    "pull_request_head": "26d4d4a8d3efb464b6e32de7275df9bfbced9dab",
+    "pull_request_tree": "ae242e7a9c63dab7e879afbefb6e30487c999891",
+    "base_main": "9659ecc301850955d64d7ffdb13d3d17b88fa4cb",
+    "synthetic_merge_checked_out_by_prior_watchdog": "93f5353c3f09d77b4b9236ea50587a697c47850c"
+  },
+  "defect": {
+    "state": "CONFIRMED",
+    "checkout_ref_was_explicit": false,
+    "receipt_bound_literal_pull_request_head": false,
+    "prior_expect_head_was_derived_from_checked_out_head": true,
+    "fail_closed_literal_head_comparison_was_present": false
+  },
+  "repair_scope": {
+    "checkout_ref": "${{ github.event.pull_request.head.sha || github.sha }}",
+    "expected_head_source": "${{ github.event.pull_request.head.sha || github.sha }}",
+    "fail_closed_comparison": "test \"$head\" = \"$EXPECTED_HEAD\"",
+    "snapshot_argument": "--expect-head \"$EXPECTED_HEAD\"",
+    "python_version": "3.12",
+    "single_writer_order_changed": false,
+    "tamper_guard_changed": false,
+    "promotion_path_changed": false,
+    "external_effect_path_added": false
+  },
+  "regression_test": {
+    "path": "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+    "method": "test_watchdog_binds_the_literal_pull_request_head",
+    "guards": [
+      "EXPLICIT_LITERAL_PR_HEAD_CHECKOUT",
+      "EVENT_HEAD_ENVIRONMENT_BINDING",
+      "FAIL_CLOSED_HEAD_EQUALITY",
+      "SNAPSHOT_EXPECTS_EVENT_HEAD",
+      "TAUTOLOGICAL_LOCAL_HEAD_EXPECTATION_FORBIDDEN"
+    ]
+  },
+  "integrity_projection_paths": [
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt"
+  ],
+  "required_post_commit_reobservation": [
+    "RESULTING_EXACT_PR_HEAD",
+    "CURRENT_BASE_MAIN",
+    "DRAFT_MERGEABILITY_REVIEW_AND_COMMENT_STATE",
+    "EVERY_APPLICABLE_EXACT_HEAD_WORKFLOW",
+    "REPLACEMENT_WATCHDOG_ARTIFACT_HEAD_AND_TREE"
+  ],
+  "effect_boundary": {
+    "pull_request_marked_ready": false,
+    "pull_request_merged": false,
+    "promotion_executed": false,
+    "publication_executed": false,
+    "deployment_executed": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

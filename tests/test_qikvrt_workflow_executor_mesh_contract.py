@@ -202,6 +202,15 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)
 
+    def test_watchdog_binds_the_literal_pull_request_head(self) -> None:
+        watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
+        exact_event_head = "${{ github.event.pull_request.head.sha || github.sha }}"
+        self.assertIn(f"ref: {exact_event_head}", watchdog)
+        self.assertIn(f"EXPECTED_HEAD: {exact_event_head}", watchdog)
+        self.assertIn('test "$head" = "$EXPECTED_HEAD"', watchdog)
+        self.assertIn('snapshot --expect-head "$EXPECTED_HEAD"', watchdog)
+        self.assertNotIn('snapshot --expect-head "$head"', watchdog)
+
 
 if __name__ == "__main__":
     unittest.main()
