@@ -1,0 +1,178 @@
+{
+  "schema": "qikvrt_ai_io_round_trip_autopublish_v1",
+  "policy_id": "AI-IO-ROUND-TRIP-AUTOPUBLISH-V1",
+  "version": "1.0",
+  "effective_date": "2026-08-07",
+  "canonical_entrypoint": "AI",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "authority_base_commit": "e1f8f8243c56ee728b3f64b27453473c77d24230",
+  "requirement": "Every item crossing a conforming QIK-VRT human-machine input/output boundary, regardless of modality, must receive a repository-bound persistence receipt. At suitable granularity and connectivity, new knowledge must proceed through machine proof, Zenodo publication, and IETF only when a normative interoperability or protocol delta exists.",
+  "capture": {
+    "mandatory": true,
+    "directions": [
+      "HUMAN_INPUT",
+      "AI_OUTPUT",
+      "TOOL_INPUT",
+      "TOOL_OUTPUT",
+      "ATTACHMENT_INPUT",
+      "AUDIO_INPUT",
+      "IMAGE_INPUT",
+      "DOCUMENT_INPUT",
+      "RETRIEVED_SOURCE_INPUT",
+      "DECISION",
+      "REVIEW",
+      "EXTERNAL_EFFECT_REQUEST",
+      "EXTERNAL_EFFECT_RESULT"
+    ],
+    "receipt_path_pattern": "state/io_events/<YYYY-MM-DD>/<event_id>.json",
+    "content_path_pattern": "artifacts/io/<sha256>/<safe_name>",
+    "required_identity": [
+      "event_id",
+      "correlation_id",
+      "direction",
+      "media_type",
+      "actor_class",
+      "observed_at",
+      "repository",
+      "git_commit",
+      "byte_count",
+      "sha256",
+      "persistence_mode",
+      "provenance"
+    ],
+    "persistence_modes": [
+      "EXACT_BYTES",
+      "REDACTED_BYTES_WITH_ORIGINAL_DIGEST",
+      "DIGEST_ONLY_SECRET_OR_RIGHTS_BOUND"
+    ],
+    "secret_rule": "Secrets, credentials, private keys and equivalent authentication material MUST NOT be persisted as raw bytes; persist only a digest, type and redaction reason.",
+    "rights_rule": "Where rights, privacy or confidentiality prohibit raw persistence, the receipt and exact digest remain mandatory and the absent bytes must be explicitly classified.",
+    "silent_drop": "FORBIDDEN"
+  },
+  "granularity": {
+    "levels": ["EVENT", "WORK_UNIT", "CLAIM", "PROOF_BUNDLE", "PUBLICATION_BUNDLE"],
+    "rule": "Preserve atomic events, then aggregate only through explicit membership lists and hashes; aggregation must never erase the underlying event receipts.",
+    "minimum_publishable_level": "CLAIM"
+  },
+  "connectivity": {
+    "required_for_new_knowledge": true,
+    "required_fields": [
+      "claim_id",
+      "normalized_claim",
+      "claim_kind",
+      "assumptions",
+      "scope",
+      "dependencies",
+      "source_event_ids",
+      "evidence_refs",
+      "related_existing_claim_ids",
+      "novelty_basis"
+    ],
+    "rule": "A candidate is connectable only when its dependencies, provenance, assumptions, scope and relation to existing repository knowledge are machine-resolvable."
+  },
+  "knowledge_states": [
+    "OBSERVATION_ONLY",
+    "EXISTING_KNOWLEDGE_RESTATEMENT",
+    "NEW_KNOWLEDGE_CANDIDATE",
+    "PROOF_PENDING",
+    "MACHINE_PROVED_NEW_KNOWLEDGE",
+    "PUBLICATION_READY",
+    "PUBLISHED_ZENODO",
+    "IETF_REVIEW_REQUIRED",
+    "IETF_SUBMITTED",
+    "HOLD"
+  ],
+  "machine_proof": {
+    "mandatory_before_publication": true,
+    "accepted_proof_classes": [
+      "LEAN_KERNEL_PROOF",
+      "REPRODUCIBLE_COMPUTATIONAL_PROOF",
+      "EVIDENCE_BOUND_CORRESPONDENCE_TEST"
+    ],
+    "proof_bundle_policy": "policy/ZENODO_MACHINE_PROOF_BEFORE_PUBLICATION.md",
+    "proof_validator": "tools/qikvrt_zenodo_machine_proof.py",
+    "formal_boundary": "A formal proof establishes the stated consequence inside the bound formal model; empirical correspondence requires separately bound evidence when the claim kind requires it.",
+    "no_proof_no_publication": true
+  },
+  "publication_routing": {
+    "zenodo": {
+      "required_when": [
+        "state == MACHINE_PROVED_NEW_KNOWLEDGE",
+        "connectable == true",
+        "rights_clear == true",
+        "exact_head_gates_terminal_green == true"
+      ],
+      "generic_publisher": "tools/qikvrt_zenodo_publish.py",
+      "production_repository": "Goldkelch/qik-vrt",
+      "publication_effect": "AUTOMATIC_WHEN_EXACT_SINGLE_USE_AUTHORIZATION_AND_SECURE_CREDENTIALS_EXIST",
+      "post_effect": "Public metadata, DOI and every uploaded byte must be reobserved and bound in repository evidence before PUBLISHED_ZENODO is claimed."
+    },
+    "ietf": {
+      "required_when": [
+        "ietf_relevance in {NORMATIVE_PROTOCOL_DELTA, INTEROPERABILITY_SPEC_DELTA}"
+      ],
+      "not_required_for": [
+        "purely scientific claims without a normative protocol delta",
+        "personal statements",
+        "music or resonance references",
+        "repository-internal implementation details without interoperability impact"
+      ],
+      "required_pre_effect": [
+        "exact XML candidate",
+        "deterministic TXT render",
+        "deterministic HTML render or documented renderer boundary",
+        "IETF provenance receipt",
+        "exact-head gates",
+        "single-use effect authorization",
+        "secure submission credential availability"
+      ],
+      "post_effect": "Reobserve Datatracker state and persist the submission/publication receipt."
+    }
+  },
+  "standing_authorization_derivation": {
+    "delegation": "state/authorization/delegations/OWNER_AI_IO_ROUND_TRIP_AUTOPUBLISH_V1.json",
+    "purpose": "Permit the repository automation to derive a candidate-specific single-use exact-artifact authorization only after final bytes, metadata, machine proof and prepublication return receipt are frozen.",
+    "derived_authorization_must_bind": [
+      "natural-person principal",
+      "repository",
+      "source_head",
+      "publication_id",
+      "candidate_return_receipt_sha256",
+      "canonical_metadata_sha256",
+      "machine_proof_sha256",
+      "every upload path and digest",
+      "single-use nonce",
+      "authorized_at after prepublication return"
+    ],
+    "credentials_in_repository": false,
+    "preauthorization_of_unknown_bytes_as_exact_bytes": false
+  },
+  "automation": {
+    "capture_command": "python3 -B tools/qikvrt_io_round_trip.py capture",
+    "sweep_command": "python3 -B tools/qikvrt_io_round_trip.py sweep",
+    "workflow": ".github/workflows/qikvrt_io_round_trip_autopublish.yml",
+    "schedule": "hourly",
+    "semantic_noop_required": true,
+    "history_rewrite": false,
+    "force_push": false,
+    "bypass_machine_proof": false,
+    "bypass_external_effect_gates": false
+  },
+  "acceptance_criteria": {
+    "all_conforming_io_has_persistence_receipt": true,
+    "raw_secret_persistence_forbidden": true,
+    "claim_aggregation_preserves_event_membership": true,
+    "new_knowledge_requires_machine_proof": true,
+    "machine_proved_connectable_new_knowledge_routes_to_zenodo": true,
+    "normative_interoperability_delta_routes_to_ietf": true,
+    "external_effect_requires_exact_single_use_authorization": true,
+    "post_effect_reobservation_required": true,
+    "no_repeated_product_owner_interaction_after_standing_delegation": true
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "REPOSITORY_WIDE_COMPLETION": false
+  }
+}
