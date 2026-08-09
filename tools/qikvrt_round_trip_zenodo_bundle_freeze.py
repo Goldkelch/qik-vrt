@@ -249,6 +249,29 @@ def verify_identity(record: Mapping[str, Any], where: str) -> dict[str, Any]:
     return {"path": path.relative_to(ROOT).as_posix(), **observed}
 
 
+def git_is_ancestor(commit: str) -> bool:
+    completed = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def git_tree(commit: str) -> str | None:
+    completed = subprocess.run(
+        ["git", "rev-parse", f"{commit}^{{tree}}"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else None
+
+
 def verify_git_base(work_unit: Mapping[str, Any]) -> dict[str, Any]:
     source = work_unit.get("source_base")
     if not isinstance(source, dict):
@@ -273,10 +296,13 @@ def verify_git_base(work_unit: Mapping[str, Any]) -> dict[str, Any]:
 
     observed: dict[str, Any] = {
         "repository_is_git_worktree": False,
+        "repository_lineage": None,
         "authority_base_is_ancestor": None,
         "authority_base_tree_matches": None,
         "current_authority_is_ancestor": None,
         "pr542_source_is_ancestor": None,
+        "mirror_checkpoint_is_ancestor": None,
+        "mirror_checkpoint_tree_matches": None,
     }
     probe = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
@@ -289,76 +315,54 @@ def verify_git_base(work_unit: Mapping[str, Any]) -> dict[str, Any]:
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         return observed
     observed["repository_is_git_worktree"] = True
-    ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", EXPECTED_AUTHORITY, "HEAD"],
-        cwd=ROOT,
-        check=False,
-    )
-    observed["authority_base_is_ancestor"] = ancestor.returncode == 0
-    if ancestor.returncode != 0:
-        fail("candidate HEAD does not descend from the bound Authority base")
-    tree = subprocess.run(
-        ["git", "rev-parse", f"{EXPECTED_AUTHORITY}^{{tree}}"],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if tree.returncode != 0:
-        fail("bound Authority base commit is unavailable in local Git history")
-    observed_tree = tree.stdout.strip()
-    observed["authority_base_tree_matches"] = observed_tree == EXPECTED_AUTHORITY_TREE
-    if observed_tree != EXPECTED_AUTHORITY_TREE:
-        fail("bound Authority base tree differs")
+    current_authority_is_ancestor = git_is_ancestor(CURRENT_AUTHORITY)
+    mirror_checkpoint_is_ancestor = git_is_ancestor(CURRENT_MIRROR)
+    observed["current_authority_is_ancestor"] = current_authority_is_ancestor
+    observed["mirror_checkpoint_is_ancestor"] = mirror_checkpoint_is_ancestor
 
-    current_tree = subprocess.run(
-        ["git", "rev-parse", f"{CURRENT_AUTHORITY}^{{tree}}"],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if current_tree.returncode != 0 or current_tree.stdout.strip() != CURRENT_AUTHORITY_TREE:
-        fail("current Authority successor base tree differs")
+    if current_authority_is_ancestor:
+        observed["repository_lineage"] = "AUTHORITY_SUCCESSOR"
+        authority_base_is_ancestor = git_is_ancestor(EXPECTED_AUTHORITY)
+        observed["authority_base_is_ancestor"] = authority_base_is_ancestor
+        if not authority_base_is_ancestor:
+            fail("candidate HEAD does not descend from the bound Authority base")
+        observed_tree = git_tree(EXPECTED_AUTHORITY)
+        if observed_tree is None:
+            fail("bound Authority base commit is unavailable in local Git history")
+        observed["authority_base_tree_matches"] = observed_tree == EXPECTED_AUTHORITY_TREE
+        if observed_tree != EXPECTED_AUTHORITY_TREE:
+            fail("bound Authority base tree differs")
+        if git_tree(CURRENT_AUTHORITY) != CURRENT_AUTHORITY_TREE:
+            fail("current Authority successor base tree differs")
+        if git_tree(PR542_SOURCE) != PR542_SOURCE_TREE:
+            fail("PR #542 source tree differs")
 
-    source_tree = subprocess.run(
-        ["git", "rev-parse", f"{PR542_SOURCE}^{{tree}}"],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if source_tree.returncode != 0 or source_tree.stdout.strip() != PR542_SOURCE_TREE:
-        fail("PR #542 source tree differs")
+        source_is_ancestor = git_is_ancestor(PR542_SOURCE)
+        observed["pr542_source_is_ancestor"] = source_is_ancestor
+        merge_head = ROOT / ".git" / "MERGE_HEAD"
+        pending_source = (
+            merge_head.read_text(encoding="ascii").strip()
+            if merge_head.is_file()
+            else None
+        )
+        if not source_is_ancestor and pending_source != PR542_SOURCE:
+            fail("candidate is not the bound history-preserving PR #542 successor")
+        return observed
 
-    current_ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", CURRENT_AUTHORITY, "HEAD"],
-        cwd=ROOT,
-        check=False,
-    )
-    source_ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", PR542_SOURCE, "HEAD"],
-        cwd=ROOT,
-        check=False,
-    )
-    observed["current_authority_is_ancestor"] = current_ancestor.returncode == 0
-    observed["pr542_source_is_ancestor"] = source_ancestor.returncode == 0
+    if mirror_checkpoint_is_ancestor:
+        observed["repository_lineage"] = "MIRROR_PORT"
+        observed_mirror_tree = git_tree(CURRENT_MIRROR)
+        observed["mirror_checkpoint_tree_matches"] = (
+            observed_mirror_tree == CURRENT_MIRROR_TREE
+        )
+        if observed_mirror_tree != CURRENT_MIRROR_TREE:
+            fail("bound Mirror port checkpoint tree differs")
+        return observed
 
-    merge_head = ROOT / ".git" / "MERGE_HEAD"
-    pending_source = merge_head.read_text(encoding="ascii").strip() if merge_head.is_file() else None
-    pending_two_parent_merge = (
-        current_ancestor.returncode == 0
-        and source_ancestor.returncode != 0
-        and pending_source == PR542_SOURCE
+    fail(
+        "candidate HEAD descends from neither the bound Authority successor "
+        "base nor the bound Mirror port checkpoint"
     )
-    if current_ancestor.returncode != 0 or (
-        source_ancestor.returncode != 0 and not pending_two_parent_merge
-    ):
-        fail("candidate is not the bound history-preserving PR #542 successor")
-    return observed
 
 
 def verify_metadata() -> dict[str, Any]:
