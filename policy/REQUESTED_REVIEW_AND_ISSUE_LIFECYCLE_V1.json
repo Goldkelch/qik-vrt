@@ -1,0 +1,115 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_governance",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_requested_review_and_issue_lifecycle_policy_v1",
+  "policy_id": "QIKVRT-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1",
+  "status": "ACTIVE",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "owner_delegation": "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+  "human_contract": "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
+  "review_lifecycle": {
+    "requested_review_default": "EXECUTE_IMMEDIATELY",
+    "deliberate_queueing_without_evidenced_blocker": "FORBIDDEN",
+    "required_reobservation": [
+      "CURRENT_BASE_HEAD_AND_TREE",
+      "EXACT_CANDIDATE_HEAD_AND_TREE",
+      "CHANGED_PATHS_AND_DIFF",
+      "COMMENTS_REVIEWS_AND_UNRESOLVED_THREADS",
+      "APPLICABLE_EXACT_HEAD_GATES",
+      "COMPETING_WRITERS_AND_SUPERSESSION"
+    ],
+    "required_substantive_dispositions": [
+      "APPROVE",
+      "REQUEST_CHANGES",
+      "COMMENT_WITH_BLOCKER"
+    ],
+    "binding_fields": [
+      "repository",
+      "pull_request",
+      "base_sha",
+      "head_sha",
+      "tree_sha",
+      "reviewed_scope",
+      "findings",
+      "platform_review_state"
+    ],
+    "repeat_request_in_place_of_review": "FORBIDDEN_WHEN_REVIEW_BYTES_ARE_AVAILABLE",
+    "account_identity_rule": {
+      "impersonation": "FORBIDDEN",
+      "natural_person_control_does_not_change_api_signer": true,
+      "platform_state_must_be_reported_exactly": true,
+      "product_owner_disposition_may_be_recorded_when_account_level_approve_is_rejected": true,
+      "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true
+    }
+  },
+  "issue_lifecycle": {
+    "unclassified_open_issue": "FORBIDDEN",
+    "allowed_dispositions": [
+      "EXECUTE_NOW",
+      "CLARIFICATION_REQUIRED",
+      "BLOCKED_WITH_NEXT_ACTION",
+      "CLOSE_COMPLETED",
+      "CLOSE_NOT_PLANNED",
+      "CLOSE_INVALID_OR_UNSUPPORTED"
+    ],
+    "execute_now_rule": "When clear supported and technically actionable begin or resume the smallest bounded work unit.",
+    "clarification_rule": "Ask only the minimum bounded question whose answer is required for safe execution and record the missing field or decision.",
+    "blocked_rule": "A blocker requires a deterministic failure class evidence references retry condition and one next technically possible action.",
+    "close_completed_rule": "Close only when completion or canonical supersession is evidenced.",
+    "close_not_planned_rule": "Close with an explicit supported-scope or authorization reason.",
+    "close_invalid_rule": "Close when the request is not reproducible not traceable internally contradictory untrue or technically unsupported and record the reason.",
+    "age_alone_is_not_a_close_reason": true,
+    "broadness_alone_is_not_a_wait_reason": true,
+    "closure_is_reversible": true,
+    "discussion_and_provenance_must_be_preserved": true,
+    "closure_may_not_hide_a_real_unresolved_defect": true
+  },
+  "issue_agent_integration": {
+    "system_prompt": "scripts/issue_agent/infer.py",
+    "status_materializer": "scripts/issue_agent/finalize.py",
+    "bundle_validator": "scripts/issue_agent/validate.py",
+    "required_status_fields": [
+      "issue_disposition",
+      "next_action",
+      "disposition_reason",
+      "no_false_pass"
+    ]
+  },
+  "standing_internal_authority": {
+    "substantive_review_execution": true,
+    "review_findings_persistence": true,
+    "issue_triage": true,
+    "deterministic_issue_work": true,
+    "bounded_clarification": true,
+    "evidence_bound_issue_closure": true,
+    "requires_repeated_chat_authorization": false
+  },
+  "mandatory_boundaries": {
+    "github_platform_protections_may_be_bypassed": false,
+    "merge_or_promotion_implicitly_authorized": false,
+    "external_publication_or_submission_authorized": false,
+    "force_push_or_history_rewrite_authorized": false,
+    "fabricated_review_or_evidence_authorized": false,
+    "scientific_confirmation_inferred_from_review_or_issue_disposition": false
+  },
+  "notification_rule": "Notify only on a new or changed disposition blocker resolution head or scope change completed work unit issue closure or promotion readiness.",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_AUTHORITY_MIRROR_SYNCHRONIZATION": false
+  }
+}
