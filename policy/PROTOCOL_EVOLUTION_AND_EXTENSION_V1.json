@@ -1,0 +1,152 @@
+{
+  "_license": {
+    "classification": "machine_readable_protocol_governance",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_protocol_evolution_and_extension_policy_v1",
+  "policy_id": "QIKVRT-PROTOCOL-EVOLUTION-AND-EXTENSION-V1",
+  "status": "ACTIVE",
+  "owner_delegation": "state/authorization/delegations/OWNER_PROTOCOL_EVOLUTION_AND_EXTENSION_V1.json",
+  "human_contract": "docs/PROTOCOL_EVOLUTION_AND_EXTENSION.md",
+  "change_envelope_schema": "schemas/qikvrt_protocol_change_envelope_v1.schema.json",
+  "current_effect_ack_core": {
+    "summary": "external/ietf/EFFECT_ACK_PROTOCOL_SUMMARY.json",
+    "reference_implementation": "src/qikvrt_effect_ack.py",
+    "conformance_test": "tests/test_effect_ack_conformance.py",
+    "schema": "qikvrt_responsibility_protocol_v1",
+    "states": [
+      "EFFECT_NACK",
+      "EFFECT_ACK_CONTINUE",
+      "EFFECT_ACK_DONE",
+      "EFFECT_ACK_ISOLATE",
+      "EFFECT_ACK_BLOCK"
+    ],
+    "ordinary_release_predicate": "state == EFFECT_ACK_DONE",
+    "state_set_mutated_by_this_policy": false
+  },
+  "protocol_change_classes": {
+    "NO_PROTOCOL_CHANGE_REQUIRED": {
+      "normative_delta": false,
+      "wire_change": false,
+      "external_submission": false
+    },
+    "NON_NORMATIVE_CLARIFICATION": {
+      "normative_delta": false,
+      "wire_change": false,
+      "external_submission": false
+    },
+    "COMPATIBLE_EXTENSION_PROFILE": {
+      "normative_delta": true,
+      "backward_compatibility_required": true,
+      "unknown_critical_extension_behavior": "FAIL_CLOSED"
+    },
+    "NEW_QIKVRT_PROTOCOL": {
+      "normative_delta": true,
+      "independent_namespace_and_version_required": true,
+      "effect_ack_composition_required_when_consequential": true
+    },
+    "EXTERNAL_PROTOCOL_EXTENSION_CANDIDATE": {
+      "normative_delta": true,
+      "official_or_private_experimental_extension_mechanism_required": true,
+      "third_party_authority_assumed": false
+    },
+    "MAJOR_EFFECT_ACK_REVISION_CANDIDATE": {
+      "normative_delta": true,
+      "major_version_required": true,
+      "migration_and_dual_read_evidence_required": true,
+      "five_state_baseline_may_change_without_separate_review": false
+    },
+    "REJECT_OR_DEFER": {
+      "normative_delta": false,
+      "reason_required": true,
+      "external_submission": false
+    }
+  },
+  "effect_ack_extension_model": {
+    "default_strategy": "ORTHOGONAL_VERSIONED_EXTENSION_ENVELOPE_OR_PROFILE",
+    "core_states_remain_closed_by_default": true,
+    "extension_planes": [
+      "AUTHORIZATION",
+      "EXECUTION",
+      "OBSERVATION",
+      "RECEIPT",
+      "CONSUMPTION",
+      "RECOVERY"
+    ],
+    "recommended_bound_fields": [
+      "effect_class",
+      "target_identity",
+      "artifact_identity",
+      "authorization_reference",
+      "idempotency_key",
+      "execution_reference",
+      "observation_reference",
+      "receipt_reference",
+      "consumption_reference",
+      "recovery_reference"
+    ],
+    "done_rule": "An extension may add required evidence predicates but may not make EFFECT_ACK_DONE easier to reach than the core contract.",
+    "unknown_noncritical_extension_behavior": "IGNORE_BUT_PRESERVE",
+    "unknown_critical_extension_behavior": "EFFECT_ACK_BLOCK"
+  },
+  "required_change_envelope_sections": [
+    "source_binding",
+    "problem_statement",
+    "reuse_analysis",
+    "change_class",
+    "affected_protocols",
+    "normative_delta",
+    "versioning_and_compatibility",
+    "wire_and_state_machine_impact",
+    "security_privacy_rights_and_abuse_impact",
+    "interoperability_impact",
+    "migration_rollback_and_deprecation",
+    "conformance_tests",
+    "formal_and_implementation_evidence",
+    "external_registry_or_standards_disposition",
+    "authorization_and_effect_boundary",
+    "completion_claims"
+  ],
+  "gate_order": [
+    "REOBSERVE_CURRENT_MAIN_HEAD_AND_TREE",
+    "ESTABLISH_SINGLE_WRITER_OR_EXPLICIT_STACK",
+    "REUSE_EXISTING_COMPONENTS_OR_DOCUMENT_TECHNICAL_INSUFFICIENCY",
+    "CLASSIFY_NORMATIVE_DELTA_AND_CHANGE_CLASS",
+    "BIND_VERSION_WIRE_STATE_SECURITY_RIGHTS_AND_INTEROPERABILITY_IMPACTS",
+    "IMPLEMENT_SCHEMA_CONFORMANCE_AND_ADVERSARIAL_TESTS",
+    "ADD_FORMAL_MODEL_OR_EXPLICIT_NOT_APPLICABLE_DISPOSITION",
+    "REGENERATE_REPOSITORY_NATIVE_INTEGRITY",
+    "REQUIRE_ALL_APPLICABLE_EXACT_HEAD_GATES_TERMINAL",
+    "REVIEW_AND_PROMOTE_SEPARATELY",
+    "EVALUATE_ANY_EXTERNAL_SUBMISSION_OR_ACTIVATION_AS_A_NEW_EXACT_EFFECT"
+  ],
+  "third_party_protocol_rule": {
+    "use_official_extension_point_first": true,
+    "private_or_experimental_use_must_be_labeled": true,
+    "registered_codepoint_or_namespace_may_not_be_claimed_before_assignment": true,
+    "upstream_compatibility_and_rights_review_required": true
+  },
+  "external_effect_boundary": {
+    "repository_internal_design_and_candidate_work_authorized": true,
+    "ietf_submission_or_update_authorized": false,
+    "iana_or_other_registry_request_authorized": false,
+    "zenodo_publication_authorized": false,
+    "release_or_deployment_authorized": false,
+    "credentialed_external_write_authorized": false
+  },
+  "scientific_boundary": {
+    "formal_protocol_proof_is_model_relative": true,
+    "conformance_is_not_global_interoperability": true,
+    "repository_acceptance_is_not_standardization_consensus": true,
+    "physical_correspondence": "NOT_ESTABLISHED"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "IETF_SUBMISSION": false
+  }
+}
