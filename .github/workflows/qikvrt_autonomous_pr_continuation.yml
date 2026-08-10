@@ -34,11 +34,149 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  continue-one-opted-in-draft:
+  select-independent-drafts:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       OPT_IN_MARKER: "<!-- qikvrt-autonomous-self-heal:enabled -->"
+    outputs:
+      count: ${{ steps.select.outputs.count }}
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Check out current main orchestration code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Select bounded path-independent opted-in draft PRs
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import datetime as dt
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          marker = os.environ['OPT_IN_MARKER']
+          repository = os.environ['GITHUB_REPOSITORY']
+
+          def gh_pages(path):
+              raw = subprocess.check_output(
+                  ['gh', 'api', '--paginate', '--slurp', path], text=True
+              )
+              pages = json.loads(raw)
+              result = []
+              for page in pages:
+                  if isinstance(page, list):
+                      result.extend(page)
+                  else:
+                      result.append(page)
+              return result
+
+          candidates = []
+          for pr in gh_pages(f'repos/{repository}/pulls?state=open&per_page=100'):
+              head_repo = ((pr.get('head') or {}).get('repo') or {}).get('full_name')
+              if pr.get('draft') is not True or head_repo != repository:
+                  continue
+              if pr.get('base', {}).get('ref') != 'main':
+                  continue
+              if marker not in (pr.get('body') or ''):
+                  continue
+              paths = sorted({
+                  item['filename']
+                  for item in gh_pages(
+                      f"repos/{repository}/pulls/{pr['number']}/files?per_page=100"
+                  )
+              })
+              updated = dt.datetime.fromisoformat(
+                  pr['updated_at'].replace('Z', '+00:00')
+              )
+              binding = {
+                  'number': int(pr['number']),
+                  'head_ref': pr['head']['ref'],
+                  'head_sha': pr['head']['sha'],
+                  'base_ref': pr['base']['ref'],
+                  'base_sha': pr['base']['sha'],
+                  'paths': paths,
+              }
+              signature = hashlib.sha256(
+                  json.dumps(binding, sort_keys=True, separators=(',', ':')).encode()
+              ).hexdigest()
+              candidates.append({
+                  'id': f"pr:{pr['number']}",
+                  'lane': 'AUTHORITY_CANDIDATE',
+                  'state': 'READY',
+                  'changed_paths': paths,
+                  'dependencies': [],
+                  'last_progress_epoch': int(updated.timestamp()),
+                  'state_signature': signature,
+                  'matrix': {
+                      'pr_number': int(pr['number']),
+                      'head_ref': pr['head']['ref'],
+                      'head_sha': pr['head']['sha'],
+                      'base_ref': pr['base']['ref'],
+                      'base_sha': pr['base']['sha'],
+                  },
+              })
+          candidates.sort(key=lambda item: (item['last_progress_epoch'], item['id']))
+          Path('/tmp/qikvrt-work-plan-input.json').write_text(
+              json.dumps({
+                  'work_items': [
+                      {key: value for key, value in item.items() if key != 'matrix'}
+                      for item in candidates
+                  ],
+                  'leases': [],
+              }, sort_keys=True),
+              encoding='utf-8',
+          )
+          Path('/tmp/qikvrt-work-plan-candidates.json').write_text(
+              json.dumps(candidates, sort_keys=True), encoding='utf-8'
+          )
+          PY
+
+          python3 -B tools/qikvrt_workflow_executor.py plan-work \
+            --input /tmp/qikvrt-work-plan-input.json \
+            --now-epoch "$(date +%s)" \
+            --json > /tmp/qikvrt-work-plan.json
+          cat /tmp/qikvrt-work-plan.json
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          plan = json.load(open('/tmp/qikvrt-work-plan.json', encoding='utf-8'))
+          candidates = json.load(
+              open('/tmp/qikvrt-work-plan-candidates.json', encoding='utf-8')
+          )
+          selected = set(plan['selected_ids'])
+          include = [item['matrix'] for item in candidates if item['id'] in selected]
+          print(f"count={len(include)}")
+          print('matrix=' + json.dumps({'include': include}, separators=(',', ':')))
+          PY
+
+      - name: Confirm no runnable independent component is a strict NOOP
+        if: steps.select.outputs.count == '0'
+        run: echo 'No opted-in same-repository draft PR is currently runnable.'
+
+  continue-opted-in-drafts:
+    needs: select-independent-drafts
+    if: needs.select-independent-drafts.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.select-independent-drafts.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - name: Check out current main with history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -52,53 +190,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Select one exact opted-in same-repository draft PR
-        id: select
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-            > /tmp/qikvrt-open-pr-pages.json
-          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import os
-          pages = json.load(open('/tmp/qikvrt-open-pr-pages.json', encoding='utf-8'))
-          marker = os.environ['OPT_IN_MARKER']
-          repo = os.environ['GITHUB_REPOSITORY']
-          candidates = []
-          for page in pages:
-              for pr in page:
-                  head_repo = ((pr.get('head') or {}).get('repo') or {}).get('full_name')
-                  if pr.get('draft') is not True or head_repo != repo:
-                      continue
-                  if marker not in (pr.get('body') or ''):
-                      continue
-                  candidates.append(pr)
-          candidates.sort(key=lambda item: int(item['number']))
-          if not candidates:
-              print('found=false')
-          else:
-              pr = candidates[0]
-              print('found=true')
-              print(f"pr_number={pr['number']}")
-              print(f"head_ref={pr['head']['ref']}")
-              print(f"head_sha={pr['head']['sha']}")
-              print(f"base_ref={pr['base']['ref']}")
-              print(f"base_sha={pr['base']['sha']}")
-          PY
-
       - name: Continue exact draft head through deterministic repairs
-        if: steps.select.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.select.outputs.pr_number }}
-          HEAD_REF: ${{ steps.select.outputs.head_ref }}
-          EXPECTED_HEAD: ${{ steps.select.outputs.head_sha }}
-          BASE_REF: ${{ steps.select.outputs.base_ref }}
-          OBSERVED_BASE: ${{ steps.select.outputs.base_sha }}
+          PR_NUMBER: ${{ matrix.pr_number }}
+          HEAD_REF: ${{ matrix.head_ref }}
+          EXPECTED_HEAD: ${{ matrix.head_sha }}
+          BASE_REF: ${{ matrix.base_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -227,7 +325,3 @@ jobs:
           Human scientific review and any separately authorized publication effect remain independent downstream gates. No repository-wide PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed.
           EOF
           gh pr comment "$PR_NUMBER" --body-file /tmp/qikvrt-autonomous-pr-comment.md
-
-      - name: Confirm no eligible work is a strict NOOP
-        if: steps.select.outputs.found != 'true'
-        run: echo 'No opted-in same-repository draft PR requires continuation.'

@@ -159,6 +159,67 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def evaluate_candidate_queue(document: Mapping[str, Any]) -> dict[str, Any]:
+    """Evaluate every fair-ordered candidate and select at most one writer.
+
+    A blocked or malformed candidate is quarantined in its own decision row;
+    it cannot head-of-line block a later promotable candidate. Promotion itself
+    remains serialized because only the first promotable row is selected.
+    """
+
+    if not isinstance(document, Mapping):
+        raise PromotionBlock("candidate queue must be an object")
+    raw_candidates = document.get("candidates")
+    if not isinstance(raw_candidates, list):
+        raise PromotionBlock("candidate queue must contain a candidates list")
+    candidates: list[Mapping[str, Any]] = []
+    seen: set[int] = set()
+    for index, raw in enumerate(raw_candidates):
+        if not isinstance(raw, Mapping):
+            raise PromotionBlock(f"candidate queue row {index} must be an object")
+        pr_number = raw.get("pr_number")
+        progress = raw.get("last_progress_epoch")
+        if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
+            raise PromotionBlock(f"candidate queue row {index} has an invalid PR number")
+        if pr_number in seen:
+            raise PromotionBlock(f"candidate queue repeats PR {pr_number}")
+        if isinstance(progress, bool) or not isinstance(progress, int) or progress < 0:
+            raise PromotionBlock(f"candidate queue row {index} has an invalid progress epoch")
+        seen.add(pr_number)
+        candidates.append(raw)
+    candidates.sort(key=lambda item: (item["last_progress_epoch"], item["pr_number"]))
+
+    decisions: list[dict[str, Any]] = []
+    selected: dict[str, Any] | None = None
+    for candidate in candidates:
+        try:
+            decision = evaluate_promotion(candidate)
+        except (PromotionBlock, ValueError) as exc:
+            decision = _blocked(candidate, "INVALID_PROMOTION_SNAPSHOT", str(exc))
+        decisions.append(decision)
+        if selected is None and decision["state"] == "PROMOTABLE":
+            selected = decision
+
+    return {
+        "schema": "qikvrt_expected_head_promotion_queue_decision_v1",
+        "state": "PROMOTABLE" if selected else ("BLOCK" if decisions else "NOOP"),
+        "first_blocker": None if selected else (
+            decisions[0]["first_blocker"] if decisions else "NO_MARKED_CURRENT_BASE_CANDIDATE"
+        ),
+        "selected_pr_number": selected.get("pr_number") if selected else None,
+        "selected_head_sha": selected.get("expected_head_sha") if selected else None,
+        "candidate_count": len(candidates),
+        "decisions": decisions,
+        "external_effect": "NONE",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "AUTHORITY_MIRROR_EQUALITY": False,
+        },
+    }
+
+
 def _load_snapshot(path: str) -> Mapping[str, Any]:
     if path == "-":
         value = json.load(sys.stdin)
@@ -171,11 +232,16 @@ def _load_snapshot(path: str) -> Mapping[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("evaluate",))
+    parser.add_argument("command", choices=("evaluate", "evaluate-queue"))
     parser.add_argument("--input", default="-", help="snapshot JSON file or - for stdin")
     args = parser.parse_args(argv)
     try:
-        result = evaluate_promotion(_load_snapshot(args.input))
+        value = _load_snapshot(args.input)
+        result = (
+            evaluate_promotion(value)
+            if args.command == "evaluate"
+            else evaluate_candidate_queue(value)
+        )
     except (OSError, ValueError, json.JSONDecodeError, PromotionBlock) as exc:
         result = {
             "schema": "qikvrt_expected_head_promotion_decision_v1",

@@ -15,7 +15,18 @@ VERIFIER = ROOT / ".github/workflows/qikvrt_autonomous_exact_head_verify.yml"
 
 
 class AutonomousPRContinuationTests(unittest.TestCase):
-    def test_contract_is_opt_in_same_repo_draft_and_one_at_a_time(self) -> None:
+    @staticmethod
+    def shell_block(source: str, step_name: str) -> str:
+        marker = f"      - name: {step_name}\n"
+        marker_index = source.index(marker)
+        run_marker = "        run: |\n"
+        start = source.index(run_marker, marker_index) + len(run_marker)
+        end = source.find("\n      - name:", start)
+        if end == -1:
+            end = len(source)
+        return textwrap.dedent(source[start:end])
+
+    def test_contract_is_opt_in_same_repo_draft_and_path_independent(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         value = contract["pull_request_continuation"]
         self.assertEqual(
@@ -24,7 +35,10 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         )
         self.assertTrue(value["same_repository_only"])
         self.assertTrue(value["draft_only"])
-        self.assertEqual(value["maximum_pull_requests_per_run"], 1)
+        self.assertEqual(value["maximum_pull_requests_per_run"], 4)
+        self.assertEqual(value["parallelism"], "PATH_DISJOINT_CONFLICT_COMPONENTS")
+        self.assertFalse(value["blocked_candidate_stalls_independent_component"])
+        self.assertFalse(value["generated_projection_overlap_alone_defines_conflict"])
         self.assertEqual(value["history_rewrite"], "FORBIDDEN")
         self.assertEqual(
             value["automatic_promotion"],
@@ -42,6 +56,10 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         self.assertNotIn("refs/heads/main\"", source)
         self.assertIn("make test", source)
         self.assertIn("qikvrt_autonomous_exact_head_verify", source)
+        self.assertIn("plan-work", source)
+        self.assertIn("max-parallel: 4", source)
+        self.assertIn("fail-fast: false", source)
+        self.assertIn("fromJSON(needs.select-independent-drafts.outputs.matrix)", source)
 
     def test_only_handler_owned_generated_conflicts_are_auto_resolved(self) -> None:
         source = CONTINUATION.read_text(encoding="utf-8")
@@ -55,12 +73,25 @@ class AutonomousPRContinuationTests(unittest.TestCase):
 
     def test_continuation_shell_block_is_syntax_valid(self) -> None:
         source = CONTINUATION.read_text(encoding="utf-8")
-        marker = "      - name: Continue exact draft head through deterministic repairs\n"
-        marker_index = source.index(marker)
-        run_marker = "        run: |\n"
-        start = source.index(run_marker, marker_index) + len(run_marker)
-        end = source.index("\n      - name:", start)
-        script = textwrap.dedent(source[start:end])
+        script = self.shell_block(
+            source,
+            "Continue exact draft head through deterministic repairs",
+        )
+        completed = subprocess.run(
+            ["bash", "-n"],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_independent_selection_shell_block_is_syntax_valid(self) -> None:
+        source = CONTINUATION.read_text(encoding="utf-8")
+        script = self.shell_block(
+            source,
+            "Select bounded path-independent opted-in draft PRs",
+        )
         completed = subprocess.run(
             ["bash", "-n"],
             input=script,

@@ -122,6 +122,18 @@ BOOT SEQUENCE
 
 Installation, task execution, commits, merges, releases, and publication remain separate authorized effects.
 
+For an authorized GitHub publication, validate the repository-owned capability
+before any remote effect or effect journal:
+
+   python3 -B tools/qikvrt_github_publish_runtime.py offline-check --json
+
+Then run the effect-free authenticated preflight documented in
+`docs/GITHUB_PUBLISH_RUNTIME.md`. Missing CLI, credential, permission, remote
+identity, clean-head, or transport capability is reported before a push. The
+repository owns the exact tool, checks, helper configuration and redacted
+receipt; caller identity and credentials remain external and must never be
+committed or cached.
+
 4. Execute the collective-cognition/audio bootstrap extension:
 
    python3 -B tools/ai_collective_bootstrap_extension.py

@@ -107,6 +107,45 @@ Verified tool archives, wheelhouses, package stores, and build products MAY be r
 
 A cold cache and a warm cache MUST preserve the same correctness semantics. Missing cache content may reduce throughput; it must not remove reproducible capability while the locked upstream material remains available.
 
+## Deadlock-preventive workflow orchestration
+
+Every workflow in the exact Git tree MUST declare a repository-scoped
+`concurrency` group and an explicit `cancel-in-progress` policy. Every job MUST
+declare `timeout-minutes` in the closed interval 1 through 360. Job `needs`
+edges and `workflow_run` edges MUST form directed acyclic graphs. The workflow
+executor snapshot audits these properties from exact Git blobs, so an
+unbounded or cyclic workflow cannot produce a valid structural receipt.
+
+Repository work is acquired in the single total lane order declared by
+`state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json`. A work item that is
+waiting, blocked, or complete MUST NOT retain a live lease. Leases are bound to
+one owner, one exact conflict scope, one state signature, and a caller-supplied
+observation epoch; they expire after at most 900 seconds. Renewal without a
+changed state signature is quarantined. These rules remove hold-and-wait and
+circular-wait from the repository scheduler model, while explicit job bounds
+remove an indefinitely retained execution slot.
+
+`AUTHORITY_CANDIDATE` work MAY run in up to four path-disjoint conflict
+components. The three generated integrity projections do not create a semantic
+conflict by themselves because every candidate regenerates and verifies them
+before integration. Actual semantic path overlap, an active scope-bound lease,
+or a serialized lane remains exclusive. A blocked component and a rejected
+dependency cycle MUST NOT stall an independent component. Selection is stable
+by oldest progress epoch and then work ID, preventing a permanently blocked
+lowest-numbered pull request from starving unrelated work.
+
+Authority promotion, Mirror porting and promotion, mesh-node connection, and
+external effects remain serialized. Mirror work requires a completed Authority
+dependency. The three intentional cross-workflow Reserve/Finalize concurrency
+groups are enumerated in the contract; any other duplicated group blocks the
+topology audit.
+
+This is a deadlock-prevention guarantee for repository-controlled scheduling
+under the declared finite timeout and lease assumptions. It does not assert
+that GitHub, a network, a runner, or another external service can never become
+unavailable. Such unavailability is a bounded or fail-closed blocker and never
+authorizes an integrity, promotion, publication, or completion claim.
+
 ## Terminal semantics
 
 `PASS` is scope-bound and requires referenced evidence. Terminal `PASS` is forbidden while any required gate remains pending, running, failed, blocked, or unverified. A concrete repairable failure remains an active persistence run; the client continues repair rather than returning explanatory prose as a substitute for execution.

@@ -1,0 +1,175 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_github_publish_runtime_contract_v1",
+  "state": "ACTIVE",
+  "purpose": "Make GitHub publication readiness reconstructible, early, bounded, and independent of any one AI session or host image.",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "default_branch": "main",
+    "mirror_repository": "ingolf-lohmann/qik-vrt",
+    "integration_order": [
+      "AUTHORITY_BRANCH",
+      "AUTHORITY_DRAFT_PULL_REQUEST",
+      "AUTHORITY_REVIEWED_PROMOTION",
+      "MIRROR_PORT",
+      "MIRROR_REVIEWED_PROMOTION"
+    ],
+    "mirror_before_authority_promotion": "FORBIDDEN"
+  },
+  "repository_owned": {
+    "contract": "state/autonomy/GITHUB_PUBLISH_RUNTIME_CONTRACT_V1.json",
+    "runtime": "tools/qikvrt_github_publish_runtime.py",
+    "bootstrap_posix": "tools/bootstrap-gh.sh",
+    "bootstrap_windows": "tools/bootstrap-gh.ps1",
+    "toolchain_lock": "runtime/toolchains/TOOLCHAIN.lock.tsv",
+    "cache_registry": "runtime/toolchains/CACHE_REGISTRY.json",
+    "workflow": ".github/workflows/qikvrt_github_publish_runtime.yml",
+    "tests": "tests/test_qikvrt_github_publish_runtime.py",
+    "documentation": "docs/GITHUB_PUBLISH_RUNTIME.md",
+    "publisher": "tools/qikvrt_cicd_publish.py"
+  },
+  "toolchain": {
+    "component": "gh",
+    "exact_version": "2.96.0",
+    "platforms": [
+      "linux-amd64",
+      "linux-arm64",
+      "macOS-amd64",
+      "macOS-arm64",
+      "windows-amd64",
+      "windows-arm64"
+    ],
+    "download_requires_explicit_third_party_consent": true,
+    "archive_sha256_required": true,
+    "fresh_extraction_byte_comparison_required": true,
+    "system_cli_may_satisfy_contract_only_at_exact_version": true,
+    "cache_contains_credentials": false
+  },
+  "authentication": {
+    "credentials_are_external_capability": true,
+    "credentials_may_be_committed": false,
+    "credentials_may_be_cached": false,
+    "credentials_may_appear_in_receipts": false,
+    "credentials_may_appear_in_logs": false,
+    "credentials_may_be_fabricated": false,
+    "supported_caller_owned_sources": [
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "GH_SECURE_CREDENTIAL_STORE",
+      "GITHUB_ACTIONS_EPHEMERAL_TOKEN",
+      "CONNECTED_GITHUB_APP"
+    ],
+    "repository_local_git_helper": "EXACT_LOCKED_GH_AUTH_GIT_CREDENTIAL",
+    "repository_local_git_helper_contains_secret": false,
+    "interactive_login_command": "python3 -B tools/qikvrt_github_publish_runtime.py login --install --accept-third-party"
+  },
+  "capability_states": [
+    "REPOSITORY_READY",
+    "READY",
+    "CLI_REQUIRED",
+    "CREDENTIAL_REQUIRED",
+    "PERMISSION_REQUIRED",
+    "REMOTE_MISMATCH",
+    "DIRTY_WORKTREE",
+    "BLOCK"
+  ],
+  "preflight": {
+    "effect_free": true,
+    "must_precede_publication_journal_preparation": true,
+    "checks": [
+      "REPOSITORY_OWNED_CONTRACT",
+      "EXACT_GH_TOOLCHAIN",
+      "BOUND_LOCAL_REPOSITORY",
+      "EXACT_LOCAL_HEAD",
+      "CLEAN_WORKTREE_WHEN_REQUIRED",
+      "SELECTED_REMOTE_IDENTITY",
+      "AUTHENTICATED_GITHUB_IDENTITY",
+      "REPOSITORY_PUSH_PERMISSION",
+      "EXACT_REMOTE_BASE_HEAD",
+      "EFFECT_FREE_GIT_TRANSPORT_PROBE"
+    ],
+    "network_allowed_in_prepare": true,
+    "network_allowed_in_offline_check": false,
+    "mutation_allowed_in_prepare": [
+      "VERIFIED_TOOL_CACHE_INSTALL_WITH_EXPLICIT_CONSENT",
+      "REPOSITORY_LOCAL_SECRET_FREE_GIT_HELPER_CONFIGURATION",
+      "IGNORED_REDACTED_RECEIPT_WRITE"
+    ],
+    "remote_mutation_allowed_in_prepare": false
+  },
+  "transports": {
+    "LOCAL_EXACT_GH": {
+      "repository_owned_preflight": true,
+      "credential_owner": "CALLER",
+      "draft_pr_supported": true
+    },
+    "GITHUB_ACTIONS": {
+      "repository_owned_preflight": true,
+      "credential_owner": "GITHUB_ACTIONS",
+      "credential_lifetime": "WORKFLOW_JOB",
+      "write_permission_is_job_scoped": true,
+      "prepare_performs_remote_mutation": false
+    },
+    "CONNECTED_GITHUB_APP": {
+      "repository_owned_preflight_and_receipt_semantics": true,
+      "credential_owner": "HOST_SESSION",
+      "credential_export_to_repository": false,
+      "git_data_api_branch_upload_supported": true,
+      "draft_pr_supported": true
+    }
+  },
+  "publication": {
+    "default_review_object": "DRAFT_PULL_REQUEST",
+    "authorized_effects_require_current_human_or_persisted_scope": true,
+    "branch_upload_requires_non_force_expected_base": true,
+    "post_effect_verification": [
+      "REMOTE_BRANCH_HEAD_EQUALS_INTENDED_HEAD",
+      "DRAFT_PULL_REQUEST_HEAD_EQUALS_REMOTE_BRANCH_HEAD",
+      "DRAFT_PULL_REQUEST_BASE_EQUALS_SELECTED_AUTHORITY_BASE"
+    ],
+    "forbidden_without_separate_authorization": [
+      "MERGE",
+      "FORCE_PUSH",
+      "RELEASE",
+      "DEPLOYMENT",
+      "ZENODO_MUTATION",
+      "DOI_MUTATION",
+      "IETF_MUTATION",
+      "MIRROR_PORT",
+      "MIRROR_PROMOTION"
+    ]
+  },
+  "deadlock_and_parallelism": {
+    "prepare_holds_remote_writer_lease": false,
+    "waiting_for_credentials_holds_writer_lease": false,
+    "waiting_for_review_holds_writer_lease": false,
+    "branch_namespace_isolated_per_work_unit": true,
+    "shared_authority_promotion_lane": "SERIAL_EXPECTED_HEAD",
+    "independent_candidate_branches_may_run_in_parallel": true,
+    "stale_or_blocked_candidate_stalls_independent_candidate": false
+  },
+  "receipts": {
+    "schema": "qikvrt_github_publish_runtime_receipt_v1",
+    "default_local_path": ".qikvrt/evidence/GITHUB_PUBLISH_RUNTIME_RECEIPT.json",
+    "default_local_path_is_tracked": false,
+    "mode": "0600",
+    "redaction_required": true,
+    "credential_material_forbidden": true,
+    "ready_receipt_is_publication_proof": false,
+    "ready_receipt_is_authorization": false
+  },
+  "claim_boundaries": {
+    "repository_ready_means_authenticated": false,
+    "authenticated_means_push_permitted": false,
+    "push_permitted_means_effect_executed": false,
+    "branch_uploaded_means_pull_request_created": false,
+    "draft_pull_request_means_merged": false,
+    "authority_draft_pull_request_means_mirror_equal": false
+  }
+}

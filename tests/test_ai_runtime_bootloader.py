@@ -52,6 +52,7 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
             "tools/qikvrt_integrity.py",
             "tools/qikvrt_tool_cache.py",
             "tools/bootstrap-runtime.sh",
+            "tools/qikvrt_github_publish_runtime.py",
         ):
             self.assertIn(authority, boot["reused_authorities"])
 
@@ -96,6 +97,7 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertIn("tools/qikvrt_integrity.py", source)
         self.assertIn("tools/qikvrt_tool_cache.py", source)
         self.assertIn("tools/bootstrap-runtime.sh", source)
+        self.assertIn("tools/qikvrt_github_publish_runtime.py", source)
         self.assertIn('report["state"] = "BLOCK"', source)
         self.assertNotIn("shell=True", source)
 
