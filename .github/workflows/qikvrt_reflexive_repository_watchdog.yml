@@ -102,7 +102,11 @@ jobs:
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
           printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
           if test "$EVENT_NAME" = pull_request; then
-            printf '%s\n' PULL_REQUEST > "$root/observation-scope.txt"
+            if test "${{ github.event.pull_request.base.ref }}" = main; then
+              printf '%s\n' PULL_REQUEST_MAIN > "$root/observation-scope.txt"
+            else
+              printf '%s\n' PULL_REQUEST_STACKED > "$root/observation-scope.txt"
+            fi
           else
             printf '%s\n' MAIN > "$root/observation-scope.txt"
           fi

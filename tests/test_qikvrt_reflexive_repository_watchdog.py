@@ -127,8 +127,12 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertTrue(gatewatch["enabled"])
         self.assertEqual(gatewatch["observation_freshness_seconds"], 900)
         self.assertEqual(
-            gatewatch["required_workflow_names_by_scope"]["PULL_REQUEST"],
+            gatewatch["required_workflow_names_by_scope"]["PULL_REQUEST_MAIN"],
             ["QIKVRT CI", "QIKVRT repository evidence materialization"],
+        )
+        self.assertEqual(
+            gatewatch["required_workflow_names_by_scope"]["PULL_REQUEST_STACKED"],
+            ["QIKVRT CI"],
         )
         self.assertTrue(gatewatch["node_liveness"]["artifact_only_materialization"])
         self.assertEqual(
@@ -230,7 +234,7 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
                     ]
                 }
             },
-            scope="PULL_REQUEST",
+            scope="PULL_REQUEST_MAIN",
         )
         self.assertEqual(value["state"], "PREEMPTIVE_HOLD_EXECUTED_GATE_FAILURE")
         self.assertEqual(value["first_blocker"], "TRUSTED_GATE_EXECUTED_FAILURE")
@@ -261,13 +265,45 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
                     ]
                 }
             },
-            scope="PULL_REQUEST",
+            scope="PULL_REQUEST_MAIN",
         )
         self.assertEqual(value["state"], "PREEMPTIVE_HOLD_REQUIRED_GATE_EVIDENCE")
         self.assertEqual(
             value["first_blocker"],
             "REQUIRED_TRUSTED_GATE_EVIDENCE_MISSING_OR_UNTRUSTED",
         )
+
+    def test_stacked_pull_request_requires_only_gates_its_base_can_trigger(self) -> None:
+        value = self.analyze(
+            [
+                run(
+                    71,
+                    "QIKVRT CI",
+                    "completed",
+                    "2026-08-10T17:58:00Z",
+                    "2026-08-10T17:59:00Z",
+                    "success",
+                )
+            ],
+            {
+                "jobs_by_run": {
+                    "71": [
+                        {
+                            "id": 710,
+                            "name": "verified job",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+                }
+            },
+            scope="PULL_REQUEST_STACKED",
+        )
+        gates = {gate["name"]: gate for gate in value["gatewatch"]["gates"]}
+        self.assertEqual(value["gatewatch"]["required_workflow_names"], ["QIKVRT CI"])
+        self.assertEqual(gates["QIKVRT CI"]["state"], "SUCCESS")
+        self.assertEqual(gates["QIKVRT repository evidence materialization"]["state"], "NOT_OBSERVED")
+        self.assertFalse(value["gatewatch"]["required_evidence_gaps"])
 
     def test_overdue_renewal_is_a_read_only_liveness_hold(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

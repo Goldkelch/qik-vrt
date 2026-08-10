@@ -31,9 +31,13 @@ The Gatewatch classifies each declared trusted workflow as `SUCCESS`,
 `FAILED`, `MISSING`, `ACTIVE`, `UNTRUSTED`, `NOT_OBSERVED`, or
 `NOT_APPLICABLE`. A terminal execution failure is a deterministic `HOLD`; a
 required pull-request gate that is missing or lacks executed job evidence is
-also a `HOLD`. Main observations distinguish an optional scheduled gate from a
-missing pull-request gate, so a missing main-only run is never silently
-invented as a successful verification.
+also a `HOLD`. The contract distinguishes a pull request against `main` from
+a stacked pull request: only the former requires the evidence-materialization
+workflow, because that workflow is configured to trigger only for `main`-base
+pull requests. A stacked successor therefore still requires exact-head CI but
+never treats an impossible materializer run as proof. Main observations
+distinguish an optional scheduled gate from a missing pull-request gate, so a
+missing main-only run is never silently invented as a successful verification.
 
 For repository nodes that carry the onboarding records, the same observation
 parses all three exact-tree inputs:

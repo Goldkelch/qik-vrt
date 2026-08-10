@@ -27,7 +27,7 @@ ACTIVE_STATUSES = frozenset({"queued", "in_progress", "waiting", "requested", "p
 WAITING_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
 UNTRUSTED_CONCLUSIONS = frozenset({"action_required", "startup_failure"})
 EXECUTED_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out"})
-GATEWATCH_SCOPES = frozenset({"MAIN", "PULL_REQUEST"})
+GATEWATCH_SCOPES = frozenset({"MAIN", "PULL_REQUEST_MAIN", "PULL_REQUEST_STACKED"})
 GATEWATCH_STATES = frozenset(
     {
         "SUCCESS",
