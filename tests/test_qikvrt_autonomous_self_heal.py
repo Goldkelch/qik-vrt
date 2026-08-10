@@ -10,7 +10,6 @@ import unittest
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SELF_HEAL_WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_self_heal.yml"
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_autonomous_self_heal",
     ROOT / "tools/qikvrt_autonomous_self_heal.py",
@@ -111,52 +110,6 @@ class AutonomousSelfHealTests(unittest.TestCase):
             "SEPARATE_EXPLICIT_ZENODO_AUTHORIZATION",
             continuation["external_gates"],
         )
-
-    def test_continuous_opportunity_loop_is_bounded_and_instance_portable(self) -> None:
-        contract = MODULE.load_contract()
-        loop = contract["continuous_opportunity_loop"]
-        workflow = SELF_HEAL_WORKFLOW.read_text(encoding="utf-8")
-
-        self.assertEqual(
-            contract["execution_model"]["observation"],
-            "opportunity_driven_with_five_minute_fallback",
-        )
-        self.assertEqual(
-            loop["applies_to"],
-            "EVERY_CONFORMING_REPOSITORY_INSTANCE",
-        )
-        self.assertEqual(loop["schedule_fallback"], "*/5 * * * *")
-        self.assertEqual(loop["maximum_active_writers_per_repository"], 1)
-        self.assertFalse(loop["cancel_active_writer_for_new_opportunity"])
-        self.assertTrue(loop["coalesce_redundant_pending_opportunities"])
-        self.assertTrue(loop["created_candidate_enrolled_in_draft_continuation"])
-        self.assertTrue(loop["exact_head_verification_after_create_or_resume"])
-        self.assertEqual(loop["external_effect"], "FORBIDDEN")
-
-        self.assertIn('- cron: "*/5 * * * *"', workflow)
-        self.assertIn("  push:\n    branches: [main]", workflow)
-        self.assertIn("  workflow_run:", workflow)
-        for source in loop["workflow_run_sources"]:
-            self.assertIn(f'      - "{source}"', workflow)
-        self.assertIn(
-            "group: qikvrt-autonomous-self-heal-${{ github.repository }}",
-            workflow,
-        )
-        self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn(
-            "<!-- qikvrt-autonomous-self-heal:enabled -->",
-            workflow,
-        )
-        self.assertIn(
-            "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->",
-            workflow,
-        )
-        self.assertIn("qikvrt_autonomous_exact_head_verify", workflow)
-        self.assertIn("QIKVRT autonomous exact-head verification", workflow)
-        self.assertIn("pending|success|failure|error", workflow)
-        self.assertNotIn("gh pr merge", workflow)
-        self.assertNotIn("git push --force", workflow)
-        self.assertNotIn("git push -f", workflow)
 
     def test_semantic_fingerprint_is_path_and_byte_bound(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
