@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           python3 -B -m unittest -v tests.test_qikvrt_expected_head_promotion
 
-      - name: Discover one marked current-base candidate
+      - name: Discover every marked current-base candidate
         id: candidate
         env:
           REQUESTED_PR: ${{ inputs.pr || '' }}
@@ -65,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-candidate.json
+          import datetime as dt
           import json
           import os
           import subprocess
@@ -114,13 +115,18 @@ jobs:
                   continue
               candidates.append(pr)
 
-          # Serialize by the oldest explicitly marked current-base candidate.
-          candidates.sort(key=lambda pr: (pr.get('created_at') or '', pr['number']))
-          chosen = candidates[0] if candidates else None
+          rows = []
+          for pr in candidates:
+              updated = dt.datetime.fromisoformat(pr['updated_at'].replace('Z', '+00:00'))
+              rows.append({
+                  'pr_number': int(pr['number']),
+                  'last_progress_epoch': int(updated.timestamp()),
+              })
+          rows.sort(key=lambda row: (row['last_progress_epoch'], row['pr_number']))
           print(json.dumps({
-              'state': 'CANDIDATE' if chosen else 'NOOP',
+              'state': 'CANDIDATES' if rows else 'NOOP',
               'current_main_sha': current_main,
-              'pr_number': chosen['number'] if chosen else None,
+              'candidates': rows,
           }, sort_keys=True))
           PY
           cat /tmp/qikvrt-promotion-candidate.json
@@ -128,26 +134,30 @@ jobs:
           import json
           value = json.load(open('/tmp/qikvrt-promotion-candidate.json', encoding='utf-8'))
           print(f"state={value['state']}")
-          print(f"pr={value.get('pr_number') or ''}")
           print(f"main_sha={value['current_main_sha']}")
           PY
 
-      - name: Materialize exact live promotion snapshot
-        if: steps.candidate.outputs.state == 'CANDIDATE'
+      - name: Materialize and evaluate every exact live promotion snapshot
+        if: steps.candidate.outputs.state == 'CANDIDATES'
         id: decision
-        env:
-          PR_NUMBER: ${{ steps.candidate.outputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshot.json
+          python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshots.json
           import json
           import os
           import subprocess
 
           repository = os.environ['REPOSITORY']
-          pr_number = int(os.environ['PR_NUMBER'])
           required_gates = json.loads(os.environ['REQUIRED_GATES_JSON'])
+          discovery = json.load(
+              open('/tmp/qikvrt-promotion-candidate.json', encoding='utf-8')
+          )
+          generated_projections = {
+              'REPOSITORY_FILE_MANIFEST.json',
+              'REPOSITORY_FILE_MANIFEST.json.sha256',
+              'SHA256SUMS.txt',
+          }
 
           def gh_json(path):
               raw = subprocess.check_output(['gh', 'api', path], text=True)
@@ -177,66 +187,74 @@ jobs:
                       runs.extend(page.get('workflow_runs', []))
               return runs
 
-          pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
           current_main = gh_json(f'repos/{repository}/commits/main')['sha']
-          head = pr['head']['sha']
-          runs = gh_run_pages(
-              f'repos/{repository}/actions/runs?head_sha={head}&event=pull_request&per_page=100'
-          )
-          workflow_runs = [
-              {
-                  'name': run.get('name'),
-                  'status': run.get('status'),
-                  'conclusion': run.get('conclusion'),
-                  'run_number': run.get('run_number'),
-              }
-              for run in runs
-          ]
+          open_prs = gh_pages(f'repos/{repository}/pulls?state=open&base=main&per_page=100')
+          file_cache = {}
 
-          candidate_files = {
-              item['filename']
-              for item in gh_pages(f'repos/{repository}/pulls/{pr_number}/files?per_page=100')
-          }
-          overlaps = []
-          for other in gh_pages(f'repos/{repository}/pulls?state=open&base=main&per_page=100'):
-              if other['number'] == pr_number:
-                  continue
-              # Old-base PRs cannot write the current main without first
-              # reconciling their base, so they are not current competing writers.
-              if other.get('base', {}).get('sha') != current_main:
-                  continue
-              if other.get('head', {}).get('sha') == head:
-                  # Trusted verification proxies share the exact candidate head
-                  # and are not independent writers.
-                  continue
-              other_files = {
-                  item['filename']
-                  for item in gh_pages(
-                      f"repos/{repository}/pulls/{other['number']}/files?per_page=100"
+          def files(pr_number):
+              if pr_number not in file_cache:
+                  file_cache[pr_number] = {
+                      item['filename']
+                      for item in gh_pages(
+                          f'repos/{repository}/pulls/{pr_number}/files?per_page=100'
+                      )
+                  }
+              return file_cache[pr_number]
+
+          snapshots = []
+          for row in discovery['candidates']:
+              pr_number = int(row['pr_number'])
+              pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
+              head = pr['head']['sha']
+              runs = gh_run_pages(
+                  f'repos/{repository}/actions/runs?head_sha={head}&event=pull_request&per_page=100'
+              )
+              workflow_runs = [
+                  {
+                      'name': run.get('name'),
+                      'status': run.get('status'),
+                      'conclusion': run.get('conclusion'),
+                      'run_number': run.get('run_number'),
+                  }
+                  for run in runs
+              ]
+              candidate_files = files(pr_number)
+              overlaps = []
+              for other in open_prs:
+                  if other['number'] == pr_number:
+                      continue
+                  # Stale-base PRs cannot currently write main. Exact-head
+                  # verification proxies are observations, not competing writers.
+                  if other.get('base', {}).get('sha') != current_main:
+                      continue
+                  if other.get('head', {}).get('sha') == head:
+                      continue
+                  common = sorted(
+                      (candidate_files & files(other['number'])) - generated_projections
                   )
-              }
-              common = sorted(candidate_files & other_files)
-              if common:
-                  overlaps.append({'pr_number': other['number'], 'paths': common})
+                  if common:
+                      overlaps.append({'pr_number': other['number'], 'paths': common})
+              snapshots.append({
+                  'pr_number': pr_number,
+                  'last_progress_epoch': int(row['last_progress_epoch']),
+                  'current_main_sha': current_main,
+                  'base_sha': pr['base']['sha'],
+                  'expected_head_sha': head,
+                  'current_head_sha': head,
+                  'draft': bool(pr.get('draft')),
+                  'mergeable': pr.get('mergeable') is True,
+                  'external_effect': 'NONE',
+                  'required_gates': required_gates,
+                  'workflow_runs': workflow_runs,
+                  'competing_writer_overlaps': overlaps,
+              })
 
-          print(json.dumps({
-              'pr_number': pr_number,
-              'current_main_sha': current_main,
-              'base_sha': pr['base']['sha'],
-              'expected_head_sha': head,
-              'current_head_sha': head,
-              'draft': bool(pr.get('draft')),
-              'mergeable': pr.get('mergeable') is True,
-              'external_effect': 'NONE',
-              'required_gates': required_gates,
-              'workflow_runs': workflow_runs,
-              'competing_writer_overlaps': overlaps,
-          }, sort_keys=True))
+          print(json.dumps({'candidates': snapshots}, sort_keys=True))
           PY
 
           set +e
-          python3 -B tools/qikvrt_expected_head_promotion.py evaluate \
-            --input /tmp/qikvrt-promotion-snapshot.json \
+          python3 -B tools/qikvrt_expected_head_promotion.py evaluate-queue \
+            --input /tmp/qikvrt-promotion-snapshots.json \
             > /tmp/qikvrt-promotion-decision.json
           rc=$?
           set -e
@@ -245,7 +263,8 @@ jobs:
           import json
           value = json.load(open('/tmp/qikvrt-promotion-decision.json', encoding='utf-8'))
           print(f"state={value['state']}")
-          print(f"head={value.get('expected_head_sha') or ''}")
+          print(f"pr={value.get('selected_pr_number') or ''}")
+          print(f"head={value.get('selected_head_sha') or ''}")
           print(f"blocker={value.get('first_blocker') or ''}")
           PY
           if [ "$rc" -ne 0 ]; then
@@ -255,7 +274,7 @@ jobs:
       - name: Reobserve exact unchanged head and advance one promotion phase
         if: steps.decision.outputs.state == 'PROMOTABLE'
         env:
-          PR_NUMBER: ${{ steps.candidate.outputs.pr }}
+          PR_NUMBER: ${{ steps.decision.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
           EXPECTED_BASE: ${{ steps.candidate.outputs.main_sha }}
         shell: bash

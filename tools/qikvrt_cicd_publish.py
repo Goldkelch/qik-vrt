@@ -20,6 +20,7 @@ if ROOT_STR not in sys.path:
     sys.path.insert(0, ROOT_STR)
 
 from tools import qikvrt_initial_acceptance_gate as effect_authorization
+from tools import qikvrt_github_publish_runtime as github_publish_runtime
 from tools import qikvrt_integrity
 from tools import qikvrt_runtime_logger as qlog
 from tools.qikvrt_subprocess import run_bounded
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--github-release", action="store_true")
     parser.add_argument("--github-repository", default="", metavar="OWNER/REPO")
     parser.add_argument("--github-remote", default="origin")
+    parser.add_argument("--github-base", default="main")
     parser.add_argument("--github-branch", default="main")
     parser.add_argument("--github-tag", default="qikvrt-current")
     parser.add_argument("--release-title", default="QIK-VRT release")
@@ -93,7 +95,7 @@ def _asset_descriptor(raw: str) -> dict[str, Any]:
 
 def validate_args(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
-    for name in ("github_remote", "github_branch", "github_tag"):
+    for name in ("github_remote", "github_base", "github_branch", "github_tag"):
         value = getattr(args, name)
         if not SAFE_REF.fullmatch(value) or ".." in value or value.endswith("/"):
             errors.append(f"unsafe {name.replace('_', '-')} value")
@@ -151,6 +153,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "default_is_non_effectful": args.mode in {"dry-run", "plan"},
         "github_repository": args.github_repository or "NONE",
         "github_remote": args.github_remote,
+        "github_base": args.github_base,
         "github_branch": args.github_branch,
         "github_tag": args.github_tag,
         "zenodo_integration_supported": False,
@@ -201,25 +204,38 @@ def _redact(text: str) -> str:
 
 
 def _run(command: list[str], timeout: int = 180) -> dict[str, Any]:
+    actual_command = command
+    if command and command[0] == "gh":
+        state, gh_path, _steps, reason = github_publish_runtime.resolve_exact_gh(
+            install=False, accept_third_party=False
+        )
+        if state != "READY" or gh_path is None:
+            return {
+                "command": command,
+                "returncode": 20 if state == "CLI_REQUIRED" else 1,
+                "stdout": "",
+                "stderr": _redact(reason),
+            }
+        actual_command = [str(gh_path), *command[1:]]
     try:
         process = run_bounded(
-            command,
+            actual_command,
             cwd=ROOT,
             timeout=timeout,
             max_output_bytes=2 * 1024 * 1024,
         )
     except (OSError, RuntimeError, ValueError) as exc:
-        return {"command": command, "returncode": 1, "stdout": "", "stderr": str(exc)}
+        return {"command": actual_command, "returncode": 1, "stdout": "", "stderr": str(exc)}
     if process.timed_out or process.output_limit_exceeded:
         reason = "command timed out" if process.timed_out else "command output limit exceeded"
         return {
-            "command": command,
+            "command": actual_command,
             "returncode": 1,
             "stdout": _redact(process.stdout or ""),
             "stderr": reason + "\n" + _redact(process.stderr or ""),
         }
     return {
-        "command": command,
+        "command": actual_command,
         "returncode": process.returncode,
         "stdout": _redact(process.stdout or ""),
         "stderr": _redact(process.stderr or ""),
@@ -384,6 +400,22 @@ def execute_plan(
         ["git", "status", "--porcelain"],
         ["git", "remote", "get-url", "--push", plan["github_remote"]],
     ]
+    if plan["actions"]:
+        preflights.append([
+            sys.executable,
+            "-B",
+            "tools/qikvrt_github_publish_runtime.py",
+            "prepare",
+            "--repository",
+            plan["github_repository"],
+            "--remote",
+            plan["github_remote"],
+            "--base",
+            plan.get("github_base", "main"),
+            "--configure-local-git",
+            "--require-clean",
+            "--json",
+        ])
     if any(action["effect"] == "github_release" for action in plan["actions"]):
         preflights.extend((["gh", "--version"], ["gh", "auth", "status"]))
     local_head = ""
@@ -392,6 +424,8 @@ def execute_plan(
         result = _run(command)
         steps.append(result)
         if result["returncode"] != 0:
+            if any(part.endswith("qikvrt_github_publish_runtime.py") for part in command):
+                return 20, steps, "repository-owned GitHub publication capability preflight failed"
             return 20, steps, "publication preflight failed"
         if command[1:] == ["status", "--porcelain"] and result["stdout"].strip():
             return 20, steps, "tracked and untracked source changes must be committed before publication"
@@ -632,24 +666,33 @@ def evidence_payload(
 
 def _atomic_write_json(path: pathlib.Path, payload: dict[str, Any]) -> None:
     root = ROOT.resolve()
-    candidate_parent = path.parent
-    cursor = candidate_parent
-    while cursor != root.parent:
+    candidate = path if path.is_absolute() else ROOT / path
+    try:
+        lexical_relative = candidate.relative_to(ROOT)
+    except ValueError as exc:
+        raise ValueError(f"evidence path escapes repository root: {path}") from exc
+    if not lexical_relative.parts or any(
+        part in {"", ".", ".."} for part in lexical_relative.parts
+    ):
+        raise ValueError(f"unsafe evidence path: {path}")
+    cursor = candidate.parent
+    while True:
         if cursor.is_symlink():
             raise ValueError(f"evidence path contains a symlink: {cursor}")
         if cursor == root:
             break
-        cursor = cursor.parent
-    if cursor != root:
-        raise ValueError(f"evidence path escapes repository root: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
+        parent = cursor.parent
+        if parent == cursor:
+            raise ValueError(f"evidence path escapes repository root: {path}")
+        cursor = parent
+    candidate.parent.mkdir(parents=True, exist_ok=True)
     try:
-        path.parent.resolve().relative_to(root)
+        candidate.parent.resolve().relative_to(root)
     except ValueError as exc:
         raise ValueError(f"evidence path escapes repository root: {path}") from exc
-    if path.is_symlink():
+    if candidate.is_symlink():
         raise ValueError(f"evidence path must not be a symlink: {path}")
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    temporary = candidate.with_name(candidate.name + f".{os.getpid()}.tmp")
     try:
         with temporary.open("x", encoding="utf-8", newline="\n") as handle:
             os.fchmod(handle.fileno(), 0o600)
@@ -657,8 +700,8 @@ def _atomic_write_json(path: pathlib.Path, payload: dict[str, Any]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
+        os.replace(temporary, candidate)
+        directory_descriptor = os.open(candidate.parent, os.O_RDONLY)
         try:
             os.fsync(directory_descriptor)
         finally:

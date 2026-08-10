@@ -1,0 +1,115 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_workflow_orchestration_deadlock_prevention_v1",
+  "work_unit_id": "WORKFLOW_ORCHESTRATION_DEADLOCK_PREVENTION_V1",
+  "title": "Acyclic bounded orchestration for independent repository work",
+  "repository": "Goldkelch/qik-vrt",
+  "created_at": "2026-08-10T18:08:06Z",
+  "instruction": {
+    "actor": "Ingolf Lohmann",
+    "language": "de",
+    "text": "Sorge dafür, dass sämtliche Workflows so ineinandergreifen, dass Deadlocks unmöglich werden, parallele Entwicklungs- und Arbeitsaufträge unabhängig voneinander ablaufen können, ohne sich gegenseitig schlecht zu beeinflussen, und schlussendlich aufgrund der sauberen Struktur und selbsterhaltenden Eigenschaften des Repositories immer wieder in das Repository erfolgreich integriert werden können.",
+    "sha256": "1ba85f1983b152b8dbe009f02b5b17d746fa380d5e2b81c22a7b744a9eaf7592"
+  },
+  "implementation_actor": {
+    "kind": "artificial_cognitive_client",
+    "provider": "OpenAI",
+    "model_family": "GPT-5",
+    "exact_build_disclosed": false
+  },
+  "observed_authority": {
+    "base_main_commit": "670da64af4d7830cd583182908a59d74d976a451",
+    "base_main_tree": "a7c3458e9a17ed71e88e88e40100d6d1a4ecac27",
+    "entrypoint": "AI",
+    "effect_boundary": "REPOSITORY_INTERNAL_DRAFT_SUCCESSOR_ONLY"
+  },
+  "orchestration_model": {
+    "state": "CANDIDATE",
+    "mode": "ACYCLIC_LEASED_CONFLICT_COMPONENTS",
+    "scope": "EVERY_WORKFLOW_IN_EXACT_TREE",
+    "maximum_parallel_independent_candidates": 4,
+    "fairness": [
+      "LAST_PROGRESS_EPOCH_ASC",
+      "WORK_ID_ASC"
+    ],
+    "deadlock_prevention_invariants": [
+      "EVERY_WORKFLOW_HAS_EXPLICIT_CONCURRENCY_AND_CANCEL_POLICY",
+      "EVERY_JOB_HAS_FINITE_TIMEOUT",
+      "JOB_NEEDS_AND_WORKFLOW_RUN_GRAPHS_ARE_ACYCLIC",
+      "ALL_SERIAL_LANES_HAVE_ONE_TOTAL_ORDER",
+      "WAITING_WORK_NEVER_RETAINS_A_LEASE",
+      "LEASES_ARE_OWNER_SCOPE_STATE_AND_EPOCH_BOUND",
+      "LEASES_EXPIRE_WITHIN_900_SECONDS",
+      "DEPENDENCY_CYCLES_ARE_QUARANTINED_PER_COMPONENT",
+      "BLOCKED_COMPONENTS_DO_NOT_STALL_INDEPENDENT_COMPONENTS",
+      "MIRROR_WORK_REQUIRES_COMPLETED_AUTHORITY_WORK"
+    ],
+    "generated_projection_paths": [
+      "REPOSITORY_FILE_MANIFEST.json",
+      "REPOSITORY_FILE_MANIFEST.json.sha256",
+      "SHA256SUMS.txt"
+    ],
+    "generated_projection_overlap_alone_defines_conflict": false
+  },
+  "implementation_paths": [
+    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
+    "tools/qikvrt_workflow_executor.py",
+    "tools/qikvrt_expected_head_promotion.py",
+    ".github/workflows/qikvrt_autonomous_pr_continuation.yml",
+    ".github/workflows/qikvrt_expected_head_promotion.yml",
+    ".github/workflows",
+    "Makefile",
+    "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+    "tests/test_qikvrt_autonomous_pr_continuation.py",
+    "tests/test_qikvrt_expected_head_promotion.py",
+    "docs/HUMAN_MACHINE_PROGRESS_STANDARD.md"
+  ],
+  "verification": {
+    "state": "LOCAL_GATES_COMPLETE_PENDING_EXACT_COMMIT_AND_REMOTE_VERIFICATION",
+    "local_observation": {
+      "observed_at": "2026-08-10T18:56:44Z",
+      "current_authority_main_commit": "2b736441fb514a98972ce0a82790ebe01b36bcce",
+      "current_authority_main_tree": "05c6af302cf89e946b5378f1dc3a1930e10c17ef",
+      "previous_authority_main_commit": "8c4845af39b33895ae40c0861b257488f9875a0b",
+      "authority_head_drift_tree_changed": false,
+      "full_make_test_exit_code": 0,
+      "workflow_topology_state": "ACYCLIC_BOUNDED",
+      "workflow_count": 67,
+      "job_count": 81,
+      "shared_serial_lane_count": 3,
+      "orchestration_watchdog_seed_tests": 68,
+      "repository_manifest_classified_entries": 3640,
+      "repository_manifest_immutable_digests": 3631,
+      "git_diff_check_exit_code": 0
+    },
+    "required": [
+      "EXACT_TREE_WORKFLOW_TOPOLOGY_AUDIT",
+      "FOCUSED_ORCHESTRATION_REGRESSION_TESTS",
+      "FULL_MAKE_TEST",
+      "CANONICAL_INTEGRITY_VERIFY",
+      "GIT_DIFF_CHECK",
+      "CURRENT_MAIN_REOBSERVATION"
+    ]
+  },
+  "claim_boundary": {
+    "repository_scheduler_deadlock_prevention": "CONDITIONAL_ON_DECLARED_FINITE_TIMEOUT_AND_LEASE_ASSUMPTIONS",
+    "external_platform_termination_guaranteed": false,
+    "external_platform_failure_disposition": "BOUNDED_OR_FAIL_CLOSED",
+    "external_effect_authorized": false,
+    "mirror_port_before_authority_promotion_authorized": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "EXTERNAL_EFFECT": false
+  }
+}

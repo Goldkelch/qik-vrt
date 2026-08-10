@@ -13,6 +13,8 @@
     "monitor_workflow_path": ".github/workflows/qikvrt_live_status_watch.yml",
     "observation_mode": "REPOSITORY_NATIVE_EXACT_HEAD_BOUND",
     "stateful_writes": "ACTION_ARTIFACTS_ONLY",
+    "orchestration_mode": "ACYCLIC_LEASED_CONFLICT_COMPONENTS",
+    "maximum_parallel_independent_candidates": 4,
     "single_writer_order": [
       "AUTHORITY",
       "MIRROR",
@@ -65,6 +67,117 @@
         "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-"
       }
     ]
+  },
+  "orchestration": {
+    "scope": "EVERY_WORKFLOW_IN_EXACT_TREE",
+    "topology": {
+      "every_workflow_requires_concurrency": true,
+      "every_concurrency_group_requires_cancel_policy": true,
+      "every_job_requires_timeout_minutes": true,
+      "maximum_job_timeout_minutes": 360,
+      "job_needs_graph_must_be_acyclic": true,
+      "workflow_run_graph_must_be_acyclic": true,
+      "undeclared_shared_concurrency_group": "BLOCK",
+      "shared_serial_lanes": [
+        {
+          "group": "qikvrt-effect-ack-release-${{ github.repository }}",
+          "workflow_paths": [
+            ".github/workflows/qikvrt_zenodo_reserve.yml",
+            ".github/workflows/qikvrt_effect_ack_finalize.yml"
+          ],
+          "order": "RESERVE_THEN_FINALIZE",
+          "wait_while_holding_lane": false
+        },
+        {
+          "group": "qikvrt-formalization-v2-alpha2-${{ github.repository }}",
+          "workflow_paths": [
+            ".github/workflows/qikvrt_formalization_v2_zenodo.yml",
+            ".github/workflows/qikvrt_formalization_v2_zenodo_finalize.yml"
+          ],
+          "order": "RESERVE_THEN_FINALIZE",
+          "wait_while_holding_lane": false
+        },
+        {
+          "group": "qikvrt-status-report-${{ github.repository }}",
+          "workflow_paths": [
+            ".github/workflows/qikvrt_status_report_reserve.yml",
+            ".github/workflows/qikvrt_status_report_finalize.yml"
+          ],
+          "order": "RESERVE_THEN_FINALIZE",
+          "wait_while_holding_lane": false
+        }
+      ]
+    },
+    "work_queue": {
+      "lanes": [
+        "AUTHORITY_CANDIDATE",
+        "AUTHORITY_PROMOTION",
+        "MIRROR_PORT",
+        "MIRROR_PROMOTION",
+        "MESH_NODE",
+        "EXTERNAL_EFFECT"
+      ],
+      "lane_order": [
+        "AUTHORITY_CANDIDATE",
+        "AUTHORITY_PROMOTION",
+        "MIRROR_PORT",
+        "MIRROR_PROMOTION",
+        "MESH_NODE",
+        "EXTERNAL_EFFECT"
+      ],
+      "parallel_lanes": [
+        "AUTHORITY_CANDIDATE"
+      ],
+      "serialized_lanes": [
+        "AUTHORITY_PROMOTION",
+        "MIRROR_PORT",
+        "MIRROR_PROMOTION",
+        "MESH_NODE",
+        "EXTERNAL_EFFECT"
+      ],
+      "maximum_parallel_candidates": 4,
+      "fairness_order": [
+        "LAST_PROGRESS_EPOCH_ASC",
+        "WORK_ID_ASC"
+      ],
+      "generated_projection_paths": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt"
+      ],
+      "semantic_path_overlap_defines_conflict": true,
+      "generated_projection_overlap_alone_defines_conflict": false,
+      "blocked_candidate_stalls_independent_component": false,
+      "dependency_cycle_policy": "REJECT_CYCLE_AND_CONTINUE_INDEPENDENT_COMPONENTS",
+      "hold_lease_while_waiting": false,
+      "mirror_requires_completed_authority_dependency": true,
+      "planner_command": "python3 -B tools/qikvrt_workflow_executor.py plan-work",
+      "work_item_required_fields": [
+        "id",
+        "lane",
+        "state",
+        "changed_paths",
+        "dependencies",
+        "last_progress_epoch",
+        "state_signature"
+      ],
+      "lease_required_fields": [
+        "id",
+        "owner_id",
+        "conflict_paths",
+        "acquired_epoch",
+        "expires_epoch",
+        "generation",
+        "state_signature"
+      ],
+      "lease": {
+        "duration_seconds": 900,
+        "caller_supplies_observation_epoch": true,
+        "expired_lease_blocks_work": false,
+        "renewal_requires_state_signature_change": true,
+        "owner_and_conflict_scope_binding_required": true
+      }
+    }
   },
   "reflexive_deadlock_prevention": {
     "enabled": true,
