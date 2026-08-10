@@ -5,11 +5,21 @@ name: QIK-VRT autonomous bounded self-heal
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/5 * * * *"
+  push:
+    branches: [main]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIK-VRT expected-head promotion executor"
+    branches: [main]
+    types: [completed]
 
 permissions:
   contents: write
   pull-requests: write
+  statuses: write
 
 concurrency:
   group: qikvrt-autonomous-self-heal-${{ github.repository }}
@@ -32,12 +42,22 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Verify continuous auto-repair opportunity contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_continuous_auto_repair_opportunity
+
       - name: Execute bounded repository-native repairs before external effects
         id: repair
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal.json
+          rc=$?
+          set -e
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
@@ -50,6 +70,16 @@ jobs:
           print(f"candidate_id={value.get('candidate_identity') or ''}")
           print(f"changed_paths_b64={base64.b64encode(paths).decode('ascii')}")
           PY
+          exit "$rc"
+
+      - name: Preserve autonomous pre-effect controller receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-self-heal-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-self-heal.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Verify repaired repository state
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
@@ -64,6 +94,7 @@ jobs:
           python3 -B -m unittest -v \
             tests.test_qikvrt_publication_overview \
             tests.test_qikvrt_autonomous_self_heal \
+            tests.test_qikvrt_continuous_auto_repair_opportunity \
             tests.test_qikvrt_autonomous_pre_effect_controller \
             tests.test_qikvrt_expected_head_promotion
           python3 -B - <<'PY'
@@ -83,7 +114,7 @@ jobs:
               raise SystemExit(f'BLOCK: controller/worktree path mismatch: expected={expected}, actual={actual}')
           PY
 
-      - name: Create one base-and-fingerprint-bound draft repair PR
+      - name: Create or resume one base-and-fingerprint-bound draft repair PR
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,9 +130,73 @@ jobs:
           test -n "$CANDIDATE_ID"
           test "$(git rev-parse --verify HEAD^{commit})" = "$BASE_SHA"
           branch="automation/self-heal-${CANDIDATE_ID:0:24}"
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+
+          dispatch_exact_head_verification() {
+            local pr_number="$1"
+            local head_ref="$2"
+            local head_sha="$3"
+            local base_sha="$4"
+            local status_state
+            status_state="$(
+              gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}/statuses?per_page=100" \
+                --jq '[.[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // empty'
+            )"
+            case "$status_state" in
+              pending|success|failure|error)
+                echo "Exact-head verification already recorded as ${status_state} for ${head_sha}."
+                return 0
+                ;;
+            esac
+
+            python3 -B - "$pr_number" "$head_ref" "$head_sha" "$base_sha" <<'PY' \
+              > /tmp/qikvrt-self-heal-dispatch.json
+          import json
+          import os
+          import sys
+          pr_number, head_ref, head_sha, base_sha = sys.argv[1:]
+          print(json.dumps({
+              'event_type': 'qikvrt_autonomous_exact_head_verify',
+              'client_payload': {
+                  'repository': os.environ['GITHUB_REPOSITORY'],
+                  'pull_request': int(pr_number),
+                  'head_ref': head_ref,
+                  'head_sha': head_sha,
+                  'source_head_sha': head_sha,
+                  'base_sha': base_sha,
+              },
+          }, sort_keys=True))
+          PY
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+              --input /tmp/qikvrt-self-heal-dispatch.json
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${head_sha}" \
+              -f state=pending \
+              -f context='QIKVRT autonomous exact-head verification' \
+              -f description='Opportunity-driven exact-head verification is queued' \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          }
+
+          existing_head="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" \
+              --jq '.object.sha' 2>/dev/null || true
+          )"
+          if test -n "$existing_head"; then
+            pr_number="$(
+              gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=10" \
+                --jq '.[0].number // empty'
+            )"
+            if test -z "$pr_number"; then
+              echo "BLOCK: deterministic candidate branch exists without an open PR; preserve explicit lifecycle disposition" >&2
+              exit 2
+            fi
+            live_pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")"
+            test "$(jq -r '.head.sha' <<<"$live_pr")" = "$existing_head"
+            existing_body="$(jq -r '.body // ""' <<<"$live_pr")"
+            grep -F "observed current-main base: \`$BASE_SHA\`" <<<"$existing_body" >/dev/null
+            grep -F "semantic fingerprint: \`$FINGERPRINT\`" <<<"$existing_body" >/dev/null
+            dispatch_exact_head_verification "$pr_number" "$branch" "$existing_head" "$BASE_SHA"
             exit 0
           fi
+
           git config user.name "qik-vrt-autonomous-self-heal"
           git config user.email "qik-vrt-autonomous-self-heal@users.noreply.github.com"
           git switch -c "$branch"
@@ -129,9 +224,10 @@ jobs:
                   print(f'- `{path}`')
           PY
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
+          <!-- qikvrt-autonomous-self-heal:enabled -->
           <!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->
 
-          Repository-native scheduled pre-effect repair candidate.
+          Repository-native opportunity-driven pre-effect repair candidate.
 
           Exact bindings:
           - observed current-main base: \`$BASE_SHA\`
@@ -141,6 +237,8 @@ jobs:
 
           Exact allowlisted paths:
           $(cat /tmp/qikvrt-self-heal-paths.txt)
+
+          The candidate is enrolled in deterministic draft continuation and exact-head repository-dispatch verification. Opportunity signals are coalesced by repository; an existing active or terminal verification status is never duplicated.
 
           Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. This proposal workflow never merges; the separate expected-head promotion executor may merge only the exact reobserved head after independently rechecking those conditions.
 
@@ -154,6 +252,12 @@ jobs:
             --head "$branch" \
             --title "fix(autonomy): bounded deterministic self-heal ${CANDIDATE_ID:0:16}" \
             --body-file /tmp/qikvrt-self-heal-pr.md
+          pr_number="$(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=10" \
+              --jq '.[0].number // empty'
+          )"
+          test -n "$pr_number"
+          dispatch_exact_head_verification "$pr_number" "$branch" "$candidate_head" "$BASE_SHA"
 
       - name: Assert unchanged state is a repository NOOP
         if: steps.repair.outputs.state == 'NOOP'

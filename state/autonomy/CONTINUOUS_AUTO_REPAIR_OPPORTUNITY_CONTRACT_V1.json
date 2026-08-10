@@ -1,0 +1,77 @@
+{
+  "schema": "qikvrt_continuous_auto_repair_opportunity_contract_v1",
+  "contract_id": "qikvrt-continuous-auto-repair-opportunity-v1",
+  "extends": "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
+  "authority_entrypoint": "AI",
+  "workflow_path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+  "verification_workflow_path": ".github/workflows/qikvrt_continuous_auto_repair_opportunity.yml",
+  "test_path": "tests/test_qikvrt_continuous_auto_repair_opportunity.py",
+  "precedence": {
+    "scope": "WORKFLOW_TRIGGER_AND_OPPORTUNITY_ADMISSION_ONLY",
+    "base_contract_remains_authoritative_for_repair_handlers_and_effect_boundary": true,
+    "observation_override": "opportunity_driven_with_five_minute_fallback"
+  },
+  "applicability": {
+    "repository_instances": "EVERY_CONFORMING_REPOSITORY_INSTANCE",
+    "authority_mirror_order": "AUTHORITY_THEN_MIRROR",
+    "portable_paths_must_remain_byte_identical": true,
+    "local_instance_identity_remains_distinct": true
+  },
+  "opportunities": {
+    "authorized_ai_boot": "ONE_BOUNDED_REPAIR_PASS_AFTER_BOOT_READINESS",
+    "repository_events": [
+      "CURRENT_MAIN_PUSH",
+      "QIKVRT_CI_COMPLETED_ON_MAIN",
+      "REPOSITORY_EVIDENCE_MATERIALIZATION_COMPLETED_ON_MAIN",
+      "EXPECTED_HEAD_PROMOTION_COMPLETED_ON_MAIN",
+      "MANUAL_DISPATCH"
+    ],
+    "workflow_run_sources": [
+      "QIKVRT CI",
+      "QIKVRT repository evidence materialization",
+      "QIK-VRT expected-head promotion executor"
+    ],
+    "workflow_run_branch": "main",
+    "schedule_fallback": "*/5 * * * *",
+    "busy_polling": "FORBIDDEN"
+  },
+  "serialization": {
+    "maximum_active_writers_per_repository": 1,
+    "cancel_active_writer_for_new_opportunity": false,
+    "coalesce_redundant_pending_opportunities": true,
+    "unchanged_semantic_fingerprint": "NOOP",
+    "closed_candidate_branch_is_reopened_automatically": false
+  },
+  "candidate_continuation": {
+    "create_or_resume_open_draft": true,
+    "draft_opt_in_marker": "<!-- qikvrt-autonomous-self-heal:enabled -->",
+    "expected_head_promotion_marker": "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->",
+    "exact_head_verification_after_create_or_resume": true,
+    "duplicate_exact_head_verification_when_status_exists": "FORBIDDEN",
+    "terminal_or_active_statuses": [
+      "pending",
+      "success",
+      "failure",
+      "error"
+    ],
+    "proposal_workflow_may_merge": false
+  },
+  "effect_boundary": {
+    "external_effect": "FORBIDDEN",
+    "unconditional_merge": "FORBIDDEN",
+    "force_push": "FORBIDDEN",
+    "history_rewrite": "FORBIDDEN",
+    "release": "FORBIDDEN",
+    "deployment": "FORBIDDEN",
+    "zenodo_or_doi_mutation": "FORBIDDEN",
+    "ietf_mutation": "FORBIDDEN",
+    "credential_disclosure": "FORBIDDEN"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_SYNCHRONIZATION": false,
+    "SYMMETRIC_CANONICALITY": false
+  }
+}
