@@ -28,6 +28,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      - name: Set up pinned Node.js runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22
+        with:
+          node-version: "24"
+
       - name: Validate one-shot publication authorization
         shell: bash
         run: |

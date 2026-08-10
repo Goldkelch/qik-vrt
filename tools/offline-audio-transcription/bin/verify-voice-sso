@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+"use strict";
+
+const path = require("node:path");
+const { validateCommand } = require("../src/voice-sso.cjs");
+const {
+  consumeNonce,
+  readHeadPolicy,
+  readPrivateJson,
+  resolveWorktreeTarget,
+} = require("../src/voice-sso-runtime.cjs");
+
+function usage() {
+  process.stderr.write(
+    "Usage: verify-voice-sso --session PRIVATE_SESSION.json --command PRIVATE_COMMAND.json --nonce-ledger PRIVATE_LEDGER.json\n",
+  );
+}
+
+function parseArguments(argv) {
+  const options = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const key = argv[index];
+    const value = argv[index + 1];
+    if (!key || !value || !key.startsWith("--")) throw new Error("arguments must be key/value pairs");
+    const name = key.slice(2);
+    if (!new Set(["session", "command", "nonce-ledger"]).has(name) || options[name]) {
+      throw new Error(`invalid or repeated option: ${key}`);
+    }
+    options[name] = value;
+  }
+  for (const name of ["session", "command", "nonce-ledger"]) {
+    if (!options[name]) throw new Error(`missing --${name}`);
+  }
+  return options;
+}
+
+try {
+  const options = parseArguments(process.argv.slice(2));
+  const target = resolveWorktreeTarget(path.resolve(__dirname, "../../.."));
+  const expectedTarget = {
+    repository: target.repository,
+    ref: target.ref,
+    head: target.head,
+    tree: target.tree,
+  };
+  const session = readPrivateJson(options.session, target.repo_root, "voice SSO session");
+  const command = readPrivateJson(options.command, target.repo_root, "voice SSO command");
+  const policy = readHeadPolicy(target);
+  const now = new Date();
+  const result = consumeNonce(
+    options["nonce-ledger"],
+    target.repo_root,
+    command,
+    (consumedNonces) => {
+      const validated = validateCommand(command, session, policy, expectedTarget, consumedNonces, now);
+      const reobserved = resolveWorktreeTarget(target.repo_root);
+      for (const field of ["repository", "ref", "head", "tree"]) {
+        if (reobserved[field] !== expectedTarget[field]) throw new Error(`Git target drifted before nonce consumption: ${field}`);
+      }
+      return validated;
+    },
+    now,
+  );
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+} catch (error) {
+  process.stderr.write(`BLOCK: ${error.message}\n`);
+  usage();
+  process.exitCode = 2;
+}
