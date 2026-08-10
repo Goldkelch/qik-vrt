@@ -26,7 +26,8 @@
     "protocol evolution policy",
     "protocol change envelope schema",
     "human-readable governance contract",
-    "Effect ACK summary governance binding"
+    "Effect ACK summary governance binding",
+    "focused governance regression tests"
   ],
   "explicit_non_scope": [
     "Effect ACK state-set mutation",
@@ -38,8 +39,29 @@
     "credential use",
     "merge or promotion"
   ],
-  "state": "CANDIDATE_MATERIALIZATION",
-  "next_required_operation": "REGENERATE_REPOSITORY_NATIVE_INTEGRITY_THEN_RUN_ALL_APPLICABLE_EXACT_HEAD_GATES_AND_REVIEW",
+  "materialization_history": {
+    "semantic_source_head": "945c890dfd2c6527b0daf1d93f2e892ef3bccc90",
+    "semantic_source_tree": "f0e22ad40d1b2deac46a0dd7aeabc0fb79d30990",
+    "repository_native_integrity_successor": "fe412d7a7c1f2d821bdb401cca2a127ad858b4d8",
+    "repository_native_integrity_tree": "36fafc0d249a10fcb8ad0ef338c88588077b5a6a",
+    "trusted_zero_tree_reobservation_head": "13a3c5daa92525a8df675ce7ff8bb10ea4834988",
+    "materializer_run": 31344144373,
+    "classified_entries": 3630,
+    "immutable_digests": 3621,
+    "full_repository_gates_on_regenerated_worktree": "SUCCESS",
+    "proxy_pull_request": 570,
+    "proxy_disposition": "CLOSED_WITHOUT_MERGE_AFTER_SOURCE_FAST_FORWARD"
+  },
+  "verification_requirements": {
+    "focused_regression_test": "tests/test_protocol_evolution_and_extension.py",
+    "repository_native_integrity": "REQUIRED_ON_EVERY_NEW_EXACT_HEAD",
+    "complete_repository_suite": "REQUIRED",
+    "all_applicable_exact_head_gates": "TERMINAL_REQUIRED",
+    "review": "REQUIRED",
+    "parent_stack_resolution": "REQUIRED_BEFORE_PROMOTION"
+  },
+  "state": "GOVERNANCE_CANDIDATE_AWAITING_PARENT_RESOLUTION_AND_REVIEW",
+  "next_required_operation": "MATERIALIZE_CURRENT_EXACT_SOURCE_IF_NEEDED_THEN_REQUIRE_TERMINAL_GATES_AND_REVIEW_AFTER_PARENT_PR568_RESOLUTION",
   "single_writer": {
     "protocol_governance_writer": "agent/protocol-evolution-and-extension-v1",
     "relationship_to_pr568": "EXPLICIT_STACK",
@@ -55,6 +77,7 @@
   "completion_claims": {
     "PASS": false,
     "FINAL_PASS": false,
-    "EFFECT_ACK_DONE": false
+    "EFFECT_ACK_DONE": false,
+    "STANDARDIZATION_CONSENSUS": false
   }
 }
