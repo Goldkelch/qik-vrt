@@ -11,5 +11,15 @@
     "contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
     "acceptance_test_path": "tests/test_qikvrt_workflow_executor_mesh_contract.py",
     "seed_validation": "EXACT_NODE_CONTINUITY_RECEIPT_REQUIRED"
+  },
+  "reflexive_watchdog_acceptance": {
+    "required_for_authority_mirror_and_future_nodes": true,
+    "contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "workflow_path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    "controller_path": "tools/qikvrt_reflexive_repository_watchdog.py",
+    "acceptance_test_path": "tests/test_qikvrt_reflexive_repository_watchdog.py",
+    "maximum_observation_interval": "PT5M",
+    "admission_policy": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
+    "seed_validation": "EXACT_REFLEXIVE_WATCHDOG_CONTRACT_REQUIRED"
   }
 }

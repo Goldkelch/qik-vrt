@@ -66,6 +66,85 @@
       }
     ]
   },
+  "reflexive_deadlock_prevention": {
+    "enabled": true,
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "controller_path": "tools/qikvrt_reflexive_repository_watchdog.py",
+    "workflow_path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    "acceptance_test_path": "tests/test_qikvrt_reflexive_repository_watchdog.py",
+    "documentation_path": "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md",
+    "work_unit_path": "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json",
+    "observation_cadence": "PT5M",
+    "platform_minimum_schedule": "GITHUB_ACTIONS_FIVE_MINUTES",
+    "event_triggers": [
+      "SCHEDULE",
+      "WORKFLOW_RUN_REQUESTED",
+      "WORKFLOW_RUN_IN_PROGRESS",
+      "WORKFLOW_RUN_COMPLETED",
+      "PUSH_MAIN",
+      "PULL_REQUEST",
+      "WORKFLOW_DISPATCH"
+    ],
+    "observer_workflow_names": [
+      "QIKVRT reflexive repository watchdog",
+      "QIKVRT workflow executor watchdog",
+      "QIKVRT workflow executor",
+      "QIKVRT live status watch"
+    ],
+    "writer_lease_seconds": 1200,
+    "queue_lease_seconds": 600,
+    "progress_lease_seconds": 900,
+    "max_simultaneous_active_writers": 1,
+    "max_queued_productive_runs": 2,
+    "admission_policy": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
+    "observer_run_policy": "CANCEL_SUPERSEDED_OBSERVER_ONLY",
+    "progress_evidence": [
+      "EXACT_HEAD_AND_TREE",
+      "WORKFLOW_STATUS_TRANSITION",
+      "JOB_COUNT_AND_STATE",
+      "EXECUTED_FAILURE_COUNT",
+      "PREVIOUS_REFLEXIVE_RECEIPT_FINGERPRINT"
+    ],
+    "prevention_states": [
+      "PREEMPTIVE_HOLD_COMPETING_WRITERS",
+      "PREEMPTIVE_HOLD_STALE_WRITER_LEASE",
+      "PREEMPTIVE_HOLD_NO_PROGRESS_TRANSITION",
+      "PREEMPTIVE_HOLD_QUEUE_PRESSURE",
+      "UNTRUSTED_EXECUTION_GAP",
+      "SAFE_PROGRESS",
+      "QUIESCENT_OBSERVATION"
+    ],
+    "read_only_mitigations": [
+      "SERIALIZE_TO_ONE_EXPECTED_HEAD_WRITER",
+      "COALESCE_SUPERSEDED_OBSERVER_RUNS",
+      "PRESERVE_EXACT_HEAD_RECEIPT",
+      "REOBSERVE_JOBS_AND_STEPS",
+      "RECOMMEND_HOLD_BEFORE_NEW_WRITER"
+    ],
+    "forbidden_mitigations": [
+      "AUTOMATIC_PRODUCTIVE_WRITER_CANCELLATION",
+      "DIRECT_REPOSITORY_MUTATION",
+      "UNCONDITIONAL_MERGE",
+      "FORCE_PUSH",
+      "RELEASE",
+      "DEPLOYMENT",
+      "ZENODO_MUTATION",
+      "DOI_MUTATION",
+      "IETF_MUTATION"
+    ],
+    "interpretation_boundaries": {
+      "watchdog_terminality_is_gate_success": false,
+      "no_active_runner_is_pipeline_empty": false,
+      "action_required_is_trusted_execution": false,
+      "zero_job_is_trusted_execution": false,
+      "deadlock_freedom_proved": false,
+      "universal_relational_database_superiority_proved": false
+    }
+  },
   "boundaries": {
     "direct_repository_mutation": "FORBIDDEN",
     "watchdog_terminality_is_gate_success": false,

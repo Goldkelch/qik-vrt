@@ -1,0 +1,69 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_reflexive_repository_watchdog_work_unit_v1",
+  "work_unit_id": "REFLEXIVE_REPOSITORY_WATCHDOG_V1",
+  "title": "Make the adaptive repository monitor a reflexive pre-deadlock watchdog in every instance",
+  "repository": "Goldkelch/qik-vrt",
+  "authority_base": "670da64af4d7830cd583182908a59d74d976a451",
+  "owner_instruction": {
+    "language": "de",
+    "utf8_sha256": "5c04dcfdab717f908ea5c0eed3287aeba3db04dd9d92fc287a51fde69ff70ba1",
+    "received_at": "2026-08-10T19:58:38+02:00",
+    "decision": "IMPLEMENT_REPOSITORY_INTERNAL_PRE_DEADLOCK_WATCHDOG"
+  },
+  "requirement": {
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "maximum_observation_interval": "PT5M",
+    "reflexive": true,
+    "prevention_before_cycle": true,
+    "single_writer_admission": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
+    "stale_writer_replacement": "FORBIDDEN_UNTIL_EXACT_STALL_REOBSERVATION",
+    "observer_coalescing": "CANCEL_SUPERSEDED_OBSERVER_ONLY"
+  },
+  "implementation_paths": [
+    ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+    "tools/qikvrt_reflexive_repository_watchdog.py",
+    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "registry/NODE_DISCOVERY_POLICY.json",
+    "tests/test_qikvrt_reflexive_repository_watchdog.py",
+    "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
+  ],
+  "architectural_comparison": {
+    "owner_assertion": "INNOVATION_AND_IMPROVEMENT_OVER_CONVENTIONAL_RELATIONAL_DATABASES",
+    "bounded_interpretation": "VERSIONED_CROSS_REPOSITORY_PRE_DEADLOCK_ADMISSION_AND_PROVENANCE",
+    "not_claimed": [
+      "RELATIONAL_DATABASES_HAVE_NO_DEADLOCK_MANAGEMENT",
+      "UNIVERSAL_PERFORMANCE_SUPERIORITY",
+      "EXHAUSTIVE_NOVELTY_SEARCH",
+      "GLOBAL_DEADLOCK_FREEDOM_PROOF"
+    ]
+  },
+  "effect_boundary": {
+    "authority_branch_and_draft_pr_only": true,
+    "mirror_port_before_authority_promotion": false,
+    "productive_writer_cancellation": false,
+    "merge": false,
+    "release": false,
+    "deployment": false,
+    "zenodo": false,
+    "ietf": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "DEADLOCK_FREEDOM_PROVED": false
+  }
+}
