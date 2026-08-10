@@ -13,6 +13,12 @@ on:
       - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
       - "QIKVRT live status watch"
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT Batch-003 remaining subject disposition"
+      - "QIKVRT adaptive runtime"
     types: [requested, in_progress, completed]
   push:
     branches: [main]
@@ -25,7 +31,12 @@ on:
       - "tools/qikvrt_workflow_executor.py"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "registry/NODE_DISCOVERY_POLICY.json"
+      - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
+      - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
+      - "qikvrt/runtime/onboarding/NODE_HEALTH.json"
       - "tests/test_qikvrt_reflexive_repository_watchdog.py"
+      - "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
+      - "state/work_units/CONTINUOUS_GATEWATCH_NODE_LIVENESS_V1.json"
   pull_request:
     paths:
       - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
@@ -33,9 +44,13 @@ on:
       - "tools/qikvrt_reflexive_repository_watchdog.py"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "registry/NODE_DISCOVERY_POLICY.json"
+      - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
+      - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
+      - "qikvrt/runtime/onboarding/NODE_HEALTH.json"
       - "tests/test_qikvrt_reflexive_repository_watchdog.py"
       - "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
       - "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json"
+      - "state/work_units/CONTINUOUS_GATEWATCH_NODE_LIVENESS_V1.json"
 
 permissions:
   actions: read
@@ -86,6 +101,15 @@ jobs:
           test "$live_head" = "$EXPECTED_HEAD"
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
           printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
+          if test "$EVENT_NAME" = pull_request; then
+            printf '%s\n' PULL_REQUEST > "$root/observation-scope.txt"
+          else
+            printf '%s\n' MAIN > "$root/observation-scope.txt"
+          fi
+          authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          test "$authority_repository" != null
+          gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
+            > "$root/observed-authority-main-head.txt"
           gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
             > "$root/current-runs.json"
 
@@ -129,6 +153,7 @@ jobs:
           root=.qikvrt/reflexive-repository-watchdog
           head="$(cat "$root/observed-head.txt")"
           tree="$(cat "$root/observed-tree.txt")"
+          scope="$(cat "$root/observation-scope.txt")"
           now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           args=(
             analyze
@@ -138,6 +163,9 @@ jobs:
             --expect-tree "$tree"
             --repository "$REPOSITORY"
             --now "$now"
+            --observation-scope "$scope"
+            --node-liveness-dir qikvrt/runtime/onboarding
+            --authority-head-file "$root/observed-authority-main-head.txt"
             --json
           )
           if test -s "$root/previous-receipt.json"; then
@@ -145,6 +173,7 @@ jobs:
           fi
           python3 -B tools/qikvrt_reflexive_repository_watchdog.py "${args[@]}" \
             > "$root/reflexive-watchdog-receipt.json"
+          cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"
           jq '{state, disposition, first_blocker, productive_edge, semantic_fingerprint}' \
             "$root/reflexive-watchdog-receipt.json"
 

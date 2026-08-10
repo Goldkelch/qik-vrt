@@ -1,0 +1,80 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_continuous_gatewatch_node_liveness_work_unit_v1",
+  "work_unit_id": "CONTINUOUS_GATEWATCH_NODE_LIVENESS_V1",
+  "title": "Materialize a continuous exact-head Gatewatch on every repository node",
+  "repository": "Goldkelch/qik-vrt",
+  "authority_base": "ae6776c9ff96bdb55b273d20669e59270c8e34fa",
+  "authority_dependency": {
+    "pull_request": 586,
+    "required_state": "PROMOTED_BEFORE_MIRROR_PORT",
+    "reason": "The portable workflow-orchestration predecessor is the sole current Authority writer."
+  },
+  "owner_instruction": {
+    "language": "de",
+    "utf8_sha256": "dae482e0b8841dac0390fead7c275db5089bcec9a883ad40dc683042a6e05c4d",
+    "received_at": "2026-08-10T22:02:02Z",
+    "decision": "IMPLEMENT_CONTINUOUS_ARTIFACT_ONLY_EXACT_HEAD_GATEWATCH"
+  },
+  "requirement": {
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "observation_cadence": "PT5M",
+    "trusted_workflow_gate_matrix": true,
+    "terminal_executed_gate_failure": "PREEMPTIVE_HOLD",
+    "required_pull_request_gate_without_trusted_job_evidence": "PREEMPTIVE_HOLD",
+    "same_head_and_tree_receipt_freshness_seconds": 900,
+    "node_liveness": [
+      "SEED_ACCEPTANCE_STATUS_EXACT_AUTHORITY_HEAD",
+      "NODE_REGISTRATION_RENEWAL_NOT_OVERDUE",
+      "NODE_HEALTH_NOT_EXPIRED"
+    ],
+    "all_records_absent_on_non_node_authority": "NOT_APPLICABLE",
+    "partial_or_malformed_node_record_set": "PREEMPTIVE_HOLD"
+  },
+  "implementation_paths": [
+    ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    "tools/qikvrt_reflexive_repository_watchdog.py",
+    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "registry/NODE_DISCOVERY_POLICY.json",
+    "tests/test_qikvrt_reflexive_repository_watchdog.py",
+    "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
+  ],
+  "materialization": {
+    "state": "GITHUB_ACTION_ARTIFACTS_ONLY",
+    "receipt_paths": [
+      "reflexive-watchdog-receipt.json",
+      "gatewatch-receipt.json"
+    ],
+    "exact_head_and_tree_binding_required": true,
+    "cross_repository_authority_head_read_only": true
+  },
+  "effect_boundary": {
+    "authority_first": true,
+    "mirror_port_before_authority_promotion": false,
+    "repository_commits_by_scheduled_observer": false,
+    "productive_writer_dispatch": false,
+    "productive_writer_cancellation": false,
+    "merge": false,
+    "release": false,
+    "deployment": false,
+    "zenodo": false,
+    "ietf": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "DEADLOCK_FREEDOM_PROVED": false
+  }
+}

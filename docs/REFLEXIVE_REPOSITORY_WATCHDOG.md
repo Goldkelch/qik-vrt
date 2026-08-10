@@ -1,4 +1,4 @@
-# Reflexive repository watchdog and pre-deadlock admission
+# Reflexive repository Gatewatch and pre-deadlock admission
 
 The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance every five minutes and at relevant workflow transitions. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
 
@@ -17,6 +17,44 @@ The watchdog treats repository activity as a resource-allocation graph:
 - no active runner is not interpreted as `PIPELINE_EMPTY`.
 
 The first deterministic response is admission control, not destructive recovery: keep one expected-head-bound writer, coalesce only superseded observer runs, preserve an exact-head receipt, and stop before another writer is introduced. The watchdog never cancels a productive writer, mutates a ref, merges a pull request, or performs a release, deployment, Zenodo, DOI, or IETF effect.
+
+## Continuous exact-head Gatewatch
+
+Every scheduled or event-driven observation materializes an artifact-only
+`reflexive-watchdog-receipt.json` and the identically bound
+`gatewatch-receipt.json`. Both records contain the literal observed head and
+tree, a trusted-workflow matrix, node-liveness observations, and the prior
+receipt binding. A receipt from another head or tree is discarded rather than
+being used as fresh evidence.
+
+The Gatewatch classifies each declared trusted workflow as `SUCCESS`,
+`FAILED`, `MISSING`, `ACTIVE`, `UNTRUSTED`, `NOT_OBSERVED`, or
+`NOT_APPLICABLE`. A terminal execution failure is a deterministic `HOLD`; a
+required pull-request gate that is missing or lacks executed job evidence is
+also a `HOLD`. Main observations distinguish an optional scheduled gate from a
+missing pull-request gate, so a missing main-only run is never silently
+invented as a successful verification.
+
+For repository nodes that carry the onboarding records, the same observation
+parses all three exact-tree inputs:
+
+- `SEED_ACCEPTANCE_STATUS.json` must bind the currently reobserved Authority
+  `main` head;
+- `NODE_REGISTRATION_RENEWAL.json` must not be overdue;
+- `NODE_HEALTH.json` must not be expired.
+
+An Authority instance without all three node-local records is explicitly
+`NOT_APPLICABLE`; a partial record set, malformed record, stale seed
+acceptance, overdue renewal, or expired health becomes a read-only `HOLD`.
+Records approaching expiry remain visible as `EXPIRING` without a fabricated
+renewal. The observer also detects a missed continuous observation only when a
+previous receipt is bound to the same head and tree and exceeds the declared
+fifteen-minute freshness bound.
+
+The workflow remains five-minute, exact-head-bound, and read-only. It fetches
+the current Authority head only for comparison, materializes Action artifacts
+only, and never writes a repository liveness record, dispatches a productive
+workflow, or treats its own terminality as gate success.
 
 ## Reflexivity
 

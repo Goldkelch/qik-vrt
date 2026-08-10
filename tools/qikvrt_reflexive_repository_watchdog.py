@@ -27,6 +27,18 @@ ACTIVE_STATUSES = frozenset({"queued", "in_progress", "waiting", "requested", "p
 WAITING_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
 UNTRUSTED_CONCLUSIONS = frozenset({"action_required", "startup_failure"})
 EXECUTED_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out"})
+GATEWATCH_SCOPES = frozenset({"MAIN", "PULL_REQUEST"})
+GATEWATCH_STATES = frozenset(
+    {
+        "SUCCESS",
+        "FAILED",
+        "MISSING",
+        "ACTIVE",
+        "UNTRUSTED",
+        "NOT_OBSERVED",
+        "NOT_APPLICABLE",
+    }
+)
 
 
 class ReflexiveWatchdogBlock(RuntimeError):
@@ -59,6 +71,30 @@ def _positive_int(value: Any, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ReflexiveWatchdogBlock(f"{label} must be a positive integer")
     return value
+
+
+def _string_list(value: Any, label: str, *, allow_empty: bool = False) -> list[str]:
+    if not isinstance(value, list) or (not value and not allow_empty):
+        raise ReflexiveWatchdogBlock(f"{label} must be a {'possibly empty ' if allow_empty else 'non-empty '}list")
+    if any(not isinstance(item, str) or not item for item in value):
+        raise ReflexiveWatchdogBlock(f"{label} must contain non-empty strings")
+    if len(set(value)) != len(value):
+        raise ReflexiveWatchdogBlock(f"{label} must not contain duplicates")
+    return list(value)
+
+
+def _relative_path(value: Any, label: str) -> Path:
+    path = Path(_string(value, label))
+    if path.is_absolute() or ".." in path.parts:
+        raise ReflexiveWatchdogBlock(f"{label} must be a repository-relative path")
+    return path
+
+
+def _head_sha(value: Any, label: str) -> str:
+    text = _string(value, label)
+    if len(text) != 40 or any(character not in "0123456789abcdef" for character in text):
+        raise ReflexiveWatchdogBlock(f"{label} must be a lowercase forty-character Git SHA")
+    return text
 
 
 def _timestamp(value: Any, label: str) -> datetime:
@@ -103,6 +139,54 @@ def load_contract(root: Path = ROOT) -> dict[str, Any]:
         "max_queued_productive_runs",
     ):
         _positive_int(prevention.get(key), f"reflexive deadlock prevention.{key}")
+    gatewatch = _mapping(prevention.get("gatewatch"), "reflexive gatewatch profile")
+    if gatewatch.get("enabled") is not True:
+        raise ReflexiveWatchdogBlock("reflexive gatewatch profile is not enabled")
+    _string(gatewatch.get("receipt_path"), "reflexive gatewatch receipt path")
+    _positive_int(
+        gatewatch.get("observation_freshness_seconds"),
+        "reflexive gatewatch observation freshness",
+    )
+    observed_names = _string_list(
+        gatewatch.get("observed_workflow_names"),
+        "reflexive gatewatch observed workflow names",
+    )
+    if set(_string_list(gatewatch.get("gate_states"), "reflexive gatewatch states")) != GATEWATCH_STATES:
+        raise ReflexiveWatchdogBlock("reflexive gatewatch states do not match the controller")
+    required_by_scope = _mapping(
+        gatewatch.get("required_workflow_names_by_scope"),
+        "reflexive gatewatch required workflow names by scope",
+    )
+    if set(required_by_scope) != GATEWATCH_SCOPES:
+        raise ReflexiveWatchdogBlock("reflexive gatewatch scopes are incomplete")
+    for scope in sorted(GATEWATCH_SCOPES):
+        required = _string_list(
+            required_by_scope.get(scope),
+            f"reflexive gatewatch required workflow names for {scope}",
+            allow_empty=True,
+        )
+        if any(item not in observed_names for item in required):
+            raise ReflexiveWatchdogBlock(
+                f"reflexive gatewatch required workflow for {scope} is not observed"
+            )
+    liveness = _mapping(gatewatch.get("node_liveness"), "reflexive gatewatch node liveness")
+    if liveness.get("enabled") is not True:
+        raise ReflexiveWatchdogBlock("reflexive gatewatch node liveness is not enabled")
+    records_root = _relative_path(liveness.get("records_root"), "node liveness records root")
+    for key in ("seed_acceptance_path", "renewal_path", "health_path"):
+        record_path = _relative_path(liveness.get(key), f"node liveness {key}")
+        if record_path.parent != records_root:
+            raise ReflexiveWatchdogBlock(f"node liveness {key} is outside the records root")
+    _string(liveness.get("authority_repository"), "node liveness authority repository")
+    _positive_int(liveness.get("warning_seconds"), "node liveness warning seconds")
+    if liveness.get("all_records_absent_state") != "NOT_APPLICABLE":
+        raise ReflexiveWatchdogBlock("node liveness all-records-absent state must be NOT_APPLICABLE")
+    if liveness.get("expired_or_overdue_disposition") != "HOLD":
+        raise ReflexiveWatchdogBlock("node liveness expired-or-overdue disposition must be HOLD")
+    if liveness.get("authority_head_mismatch_disposition") != "HOLD":
+        raise ReflexiveWatchdogBlock("node liveness authority-head-mismatch disposition must be HOLD")
+    if liveness.get("artifact_only_materialization") is not True:
+        raise ReflexiveWatchdogBlock("node liveness materialization must remain artifact-only")
     return contract
 
 
@@ -234,6 +318,290 @@ def _normalize_run(run: Mapping[str, Any], jobs: Sequence[Mapping[str, Any]]) ->
     }
 
 
+def _latest_by_exact_name(
+    runs: Sequence[Mapping[str, Any]], name: str
+) -> Mapping[str, Any] | None:
+    candidates = [run for run in runs if run.get("name") == name]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (_run_created_time(item), _run_id(item)))
+
+
+def _gate_state_for_run(
+    run: Mapping[str, Any] | None,
+    jobs_by_run: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    if run is None:
+        return {
+            "state": "MISSING" if required else "NOT_OBSERVED",
+            "reason": "NO_EXACT_HEAD_RUN" if required else "NO_EXACT_HEAD_RUN_NOT_REQUIRED",
+            "run": None,
+        }
+    run_id = _run_id(run)
+    jobs = list(jobs_by_run.get(run_id, []))
+    summary = _job_summary(jobs)
+    status = run.get("status")
+    conclusion = run.get("conclusion")
+    state: str
+    reason: str
+    if status in ACTIVE_STATUSES:
+        state = "ACTIVE"
+        reason = "RUN_NOT_TERMINAL"
+    elif status != "completed":
+        state = "UNTRUSTED"
+        reason = "UNRECOGNIZED_RUN_STATUS"
+    elif conclusion in EXECUTED_FAILURE_CONCLUSIONS or summary["executed_failures"]:
+        state = "FAILED"
+        reason = "EXECUTED_FAILURE"
+    elif conclusion == "success" and summary["total"] and summary["success"] and not summary["other_terminal"]:
+        state = "SUCCESS"
+        reason = "TERMINAL_SUCCESS_WITH_EXECUTED_JOB_EVIDENCE"
+    elif conclusion in UNTRUSTED_CONCLUSIONS:
+        state = "UNTRUSTED"
+        reason = "ACTION_REQUIRED_OR_STARTUP_FAILURE"
+    elif not jobs:
+        state = "UNTRUSTED"
+        reason = "ZERO_JOB_TERMINAL_RUN"
+    else:
+        state = "UNTRUSTED"
+        reason = "TERMINAL_RUN_LACKS_TRUSTED_SUCCESS_EVIDENCE"
+    return {
+        "state": state,
+        "reason": reason,
+        "run": {
+            "id": run_id,
+            "status": status,
+            "conclusion": conclusion,
+            "created_at": _iso(_run_created_time(run)),
+            "updated_at": _iso(_run_transition_time(run)),
+            "jobs": summary,
+        },
+    }
+
+
+def _gatewatch_observation(
+    contract: Mapping[str, Any],
+    runs: Sequence[Mapping[str, Any]],
+    jobs_by_run: Mapping[str, Sequence[Mapping[str, Any]]],
+    scope: str,
+) -> dict[str, Any]:
+    if scope not in GATEWATCH_SCOPES:
+        raise ReflexiveWatchdogBlock(f"gatewatch observation scope is invalid: {scope}")
+    prevention = _mapping(contract["reflexive_deadlock_prevention"], "reflexive prevention")
+    profile = _mapping(prevention["gatewatch"], "reflexive gatewatch profile")
+    observed_names = _string_list(
+        profile["observed_workflow_names"], "reflexive gatewatch observed workflow names"
+    )
+    required_by_scope = _mapping(
+        profile["required_workflow_names_by_scope"],
+        "reflexive gatewatch required workflow names by scope",
+    )
+    required_names = set(
+        _string_list(
+            required_by_scope[scope],
+            f"reflexive gatewatch required workflow names for {scope}",
+            allow_empty=True,
+        )
+    )
+    gates = []
+    for name in observed_names:
+        gate = _gate_state_for_run(
+            _latest_by_exact_name(runs, name), jobs_by_run, required=name in required_names
+        )
+        if gate["state"] not in GATEWATCH_STATES:
+            raise ReflexiveWatchdogBlock("gatewatch produced an undeclared gate state")
+        gates.append({"name": name, "required": name in required_names, **gate})
+    failures = [gate for gate in gates if gate["state"] == "FAILED"]
+    required_gaps = [
+        gate
+        for gate in gates
+        if gate["required"] and gate["state"] in {"MISSING", "UNTRUSTED"}
+    ]
+    active_required = [gate for gate in gates if gate["required"] and gate["state"] == "ACTIVE"]
+    return {
+        "schema": "qikvrt_exact_head_trusted_gate_matrix_v1",
+        "scope": scope,
+        "required_workflow_names": sorted(required_names),
+        "gates": gates,
+        "executed_failures": failures,
+        "required_evidence_gaps": required_gaps,
+        "active_required_gates": active_required,
+    }
+
+
+def _record_bytes(path: Path, label: str) -> tuple[Mapping[str, Any] | None, dict[str, Any]]:
+    if not path.exists():
+        return None, {"path": path.as_posix(), "present": False}
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, {
+            "path": path.as_posix(),
+            "present": True,
+            "state": "INVALID",
+            "reason": f"MALFORMED_{label.upper()}_RECORD",
+        }
+    if not isinstance(value, Mapping):
+        return None, {
+            "path": path.as_posix(),
+            "present": True,
+            "state": "INVALID",
+            "reason": f"MALFORMED_{label.upper()}_RECORD",
+        }
+    return value, {
+        "path": path.as_posix(),
+        "present": True,
+        "content_sha256": sha256_bytes(raw),
+    }
+
+
+def _node_liveness_observation(
+    contract: Mapping[str, Any],
+    *,
+    root: Path,
+    directory: Path | None,
+    authority_head: str | None,
+    now: datetime,
+) -> dict[str, Any]:
+    prevention = _mapping(contract["reflexive_deadlock_prevention"], "reflexive prevention")
+    profile = _mapping(
+        _mapping(prevention["gatewatch"], "reflexive gatewatch profile")["node_liveness"],
+        "reflexive gatewatch node liveness",
+    )
+    records_root = directory if directory is not None else root / _relative_path(
+        profile["records_root"], "node liveness records root"
+    )
+    paths = {
+        "seed_acceptance": records_root / Path(profile["seed_acceptance_path"]).name,
+        "renewal": records_root / Path(profile["renewal_path"]).name,
+        "health": records_root / Path(profile["health_path"]).name,
+    }
+    loaded = {name: _record_bytes(path, name) for name, path in paths.items()}
+    records = {name: dict(metadata) for name, (_, metadata) in loaded.items()}
+    present_count = sum(1 for value in records.values() if value["present"])
+    if present_count == 0:
+        for value in records.values():
+            value["state"] = "NOT_APPLICABLE"
+            value["reason"] = "NO_NODE_LOCAL_LIVENESS_RECORDS"
+        return {
+            "schema": "qikvrt_node_liveness_gatewatch_v1",
+            "state": "NOT_APPLICABLE",
+            "records_root": records_root.as_posix(),
+            "authority_head": authority_head,
+            "records": records,
+            "blocking_records": [],
+        }
+    if present_count != len(records):
+        for value in records.values():
+            if not value["present"]:
+                value["state"] = "MISSING"
+                value["reason"] = "PARTIAL_NODE_LIVENESS_RECORD_SET"
+        return {
+            "schema": "qikvrt_node_liveness_gatewatch_v1",
+            "state": "HOLD",
+            "records_root": records_root.as_posix(),
+            "authority_head": authority_head,
+            "records": records,
+            "blocking_records": [
+                {"record": name, "reason": value.get("reason")}
+                for name, value in records.items()
+                if value.get("state") in {"MISSING", "INVALID"}
+            ],
+        }
+
+    invalid = [
+        {"record": name, "reason": metadata.get("reason", "MALFORMED_NODE_LIVENESS_RECORD")}
+        for name, (document, metadata) in loaded.items()
+        if document is None
+    ]
+    if invalid:
+        return {
+            "schema": "qikvrt_node_liveness_gatewatch_v1",
+            "state": "HOLD",
+            "records_root": records_root.as_posix(),
+            "authority_head": authority_head,
+            "records": records,
+            "blocking_records": invalid,
+        }
+
+    acceptance, _ = loaded["seed_acceptance"]
+    renewal, _ = loaded["renewal"]
+    health, _ = loaded["health"]
+    acceptance_metadata = records["seed_acceptance"]
+    renewal_metadata = records["renewal"]
+    health_metadata = records["health"]
+    assert acceptance is not None and renewal is not None and health is not None
+    warning_seconds = _positive_int(profile["warning_seconds"], "node liveness warning seconds")
+    blocking: list[dict[str, str]] = []
+
+    if authority_head is None:
+        acceptance_metadata["state"] = "UNTRUSTED"
+        acceptance_metadata["reason"] = "AUTHORITY_HEAD_UNOBSERVED"
+        blocking.append({"record": "seed_acceptance", "reason": "AUTHORITY_HEAD_UNOBSERVED"})
+    else:
+        observed = acceptance.get("observed_authority_commit")
+        if observed == authority_head:
+            acceptance_metadata["state"] = "FRESH"
+            acceptance_metadata["reason"] = "AUTHORITY_HEAD_EXACTLY_BOUND"
+        else:
+            acceptance_metadata["state"] = "STALE"
+            acceptance_metadata["reason"] = "SEED_ACCEPTANCE_AUTHORITY_HEAD_STALE"
+            acceptance_metadata["observed_authority_commit"] = observed
+            blocking.append(
+                {"record": "seed_acceptance", "reason": "SEED_ACCEPTANCE_AUTHORITY_HEAD_STALE"}
+            )
+
+    try:
+        due = _timestamp(renewal.get("next_renewal_due_utc"), "node renewal due")
+        renewal_metadata["next_renewal_due_utc"] = _iso(due)
+        seconds = int((due - now).total_seconds())
+        if seconds <= 0:
+            renewal_metadata["state"] = "OVERDUE"
+            renewal_metadata["reason"] = "NODE_REGISTRATION_RENEWAL_OVERDUE"
+            blocking.append({"record": "renewal", "reason": "NODE_REGISTRATION_RENEWAL_OVERDUE"})
+        elif seconds <= warning_seconds:
+            renewal_metadata["state"] = "EXPIRING"
+            renewal_metadata["reason"] = "NODE_REGISTRATION_RENEWAL_DUE_SOON"
+        else:
+            renewal_metadata["state"] = "FRESH"
+            renewal_metadata["reason"] = "NODE_REGISTRATION_RENEWAL_CURRENT"
+    except ReflexiveWatchdogBlock:
+        renewal_metadata["state"] = "INVALID"
+        renewal_metadata["reason"] = "MALFORMED_RENEWAL_DUE"
+        blocking.append({"record": "renewal", "reason": "MALFORMED_RENEWAL_DUE"})
+
+    try:
+        expires = _timestamp(health.get("expires_utc"), "node health expiry")
+        health_metadata["expires_utc"] = _iso(expires)
+        seconds = int((expires - now).total_seconds())
+        if seconds <= 0:
+            health_metadata["state"] = "EXPIRED"
+            health_metadata["reason"] = "NODE_HEALTH_EXPIRED"
+            blocking.append({"record": "health", "reason": "NODE_HEALTH_EXPIRED"})
+        elif seconds <= warning_seconds:
+            health_metadata["state"] = "EXPIRING"
+            health_metadata["reason"] = "NODE_HEALTH_EXPIRING_SOON"
+        else:
+            health_metadata["state"] = "FRESH"
+            health_metadata["reason"] = "NODE_HEALTH_CURRENT"
+    except ReflexiveWatchdogBlock:
+        health_metadata["state"] = "INVALID"
+        health_metadata["reason"] = "MALFORMED_HEALTH_EXPIRY"
+        blocking.append({"record": "health", "reason": "MALFORMED_HEALTH_EXPIRY"})
+
+    return {
+        "schema": "qikvrt_node_liveness_gatewatch_v1",
+        "state": "HOLD" if blocking else "OBSERVE",
+        "records_root": records_root.as_posix(),
+        "authority_head": authority_head,
+        "records": records,
+        "blocking_records": blocking,
+    }
+
+
 def _resource_graph(
     active_writers: Sequence[Mapping[str, Any]],
     waiting_productive: Sequence[Mapping[str, Any]],
@@ -273,8 +641,13 @@ def analyze(
     now: datetime,
     baseline: Mapping[str, Any] | None = None,
     root: Path = ROOT,
+    observation_scope: str = "MAIN",
+    node_liveness_dir: Path | None = None,
+    authority_head: str | None = None,
 ) -> dict[str, Any]:
     contract = load_contract(root)
+    if authority_head is not None:
+        authority_head = _head_sha(authority_head, "authority head observation")
     prevention = _mapping(contract["reflexive_deadlock_prevention"], "reflexive prevention")
     writer_names = set(
         _mapping(contract["dispatch_policy"], "dispatch policy").get("writer_workflow_names", [])
@@ -349,14 +722,32 @@ def analyze(
                 }
             )
 
+    gatewatch = _gatewatch_observation(contract, runs, jobs_by_run, observation_scope)
+    liveness = _node_liveness_observation(
+        contract,
+        root=root,
+        directory=node_liveness_dir,
+        authority_head=authority_head,
+        now=now,
+    )
+
     progress_material = [item for item in normalized if item["name"] not in observer_names]
     progress_fingerprint = sha256_bytes(canonical_json_bytes(progress_material))
     baseline_same = False
+    baseline_binding_same = False
     baseline_age = None
     if baseline is not None:
         previous_fingerprint = baseline.get("progress_fingerprint")
         previous_observed = baseline.get("observed_at")
-        if isinstance(previous_fingerprint, str) and isinstance(previous_observed, str):
+        previous_head = baseline.get("head_sha")
+        previous_tree = baseline.get("tree_sha")
+        if (
+            isinstance(previous_fingerprint, str)
+            and isinstance(previous_observed, str)
+            and previous_head == expected_head
+            and previous_tree == expected_tree
+        ):
+            baseline_binding_same = True
             baseline_same = previous_fingerprint == progress_fingerprint
             baseline_age = _age_seconds(now, _timestamp(previous_observed, "baseline observed_at"))
 
@@ -390,6 +781,40 @@ def analyze(
         disposition = "HOLD"
         productive_edge = "COALESCE_OBSERVERS_AND_PRESERVE_WRITER_SERIALIZATION"
         safe_continuation = "Cancel only superseded observer runs; do not add another productive writer."
+    elif gatewatch["executed_failures"]:
+        state = "PREEMPTIVE_HOLD_EXECUTED_GATE_FAILURE"
+        blocker = "TRUSTED_GATE_EXECUTED_FAILURE"
+        disposition = "HOLD"
+        productive_edge = "REPAIR_OR_REOBSERVE_FIRST_FAILED_TRUSTED_GATE"
+        safe_continuation = "Do not infer a terminal gate success; retain the exact failed run and job evidence."
+    elif liveness["blocking_records"]:
+        first_liveness_blocker = liveness["blocking_records"][0]
+        state = "PREEMPTIVE_HOLD_NODE_LIVENESS"
+        blocker = first_liveness_blocker["reason"]
+        disposition = "HOLD"
+        productive_edge = "RENEW_OR_REOBSERVE_FIRST_BLOCKING_NODE_LIVENESS_RECORD"
+        safe_continuation = "Keep the gatewatch read-only; do not fabricate a liveness renewal or acceptance record."
+    elif gatewatch["required_evidence_gaps"]:
+        state = "PREEMPTIVE_HOLD_REQUIRED_GATE_EVIDENCE"
+        blocker = "REQUIRED_TRUSTED_GATE_EVIDENCE_MISSING_OR_UNTRUSTED"
+        disposition = "HOLD"
+        productive_edge = "OBTAIN_TRUSTED_EXACT_HEAD_REQUIRED_GATE_EVIDENCE"
+        safe_continuation = "Wait for an exact-head required gate with executed trusted job evidence."
+    elif (
+        baseline_binding_same
+        and baseline_age is not None
+        and baseline_age >= _positive_int(
+            _mapping(prevention["gatewatch"], "reflexive gatewatch profile")[
+                "observation_freshness_seconds"
+            ],
+            "reflexive gatewatch observation freshness",
+        )
+    ):
+        state = "PREEMPTIVE_HOLD_OBSERVATION_CADENCE_BREACH"
+        blocker = "EXACT_HEAD_GATEWATCH_RECEIPT_EXCEEDED_FRESHNESS_BOUND"
+        disposition = "HOLD"
+        productive_edge = "REESTABLISH_EXACT_HEAD_FIVE_MINUTE_GATEWATCH_RECEIPT"
+        safe_continuation = "Do not infer a continuous observer tick from an old receipt; reobserve the exact head."
     elif untrusted:
         state = "UNTRUSTED_EXECUTION_GAP"
         blocker = "LATEST_TERMINAL_RUN_LACKS_TRUSTED_JOB_EVIDENCE"
@@ -419,6 +844,7 @@ def analyze(
         "progress_fingerprint": progress_fingerprint,
         "baseline": {
             "available": baseline is not None,
+            "same_head_and_tree": baseline_binding_same,
             "same_progress_fingerprint": baseline_same,
             "age_seconds": baseline_age,
         },
@@ -436,12 +862,24 @@ def analyze(
             "untrusted_terminal_runs": untrusted,
             "runs": normalized,
         },
+        "gatewatch": {
+            **gatewatch,
+            "observation_freshness_seconds": _positive_int(
+                _mapping(prevention["gatewatch"], "reflexive gatewatch profile")[
+                    "observation_freshness_seconds"
+                ],
+                "reflexive gatewatch observation freshness",
+            ),
+            "node_liveness": liveness,
+        },
         "resource_graph": resource_graph,
         "boundaries": {
             "watchdog_terminality_is_gate_success": False,
             "no_active_runner_is_pipeline_empty": False,
             "action_required_is_trusted_execution": False,
             "zero_job_is_trusted_execution": False,
+            "gatewatch_terminality_is_gate_success": False,
+            "liveness_record_observation_mutates_repository": False,
             "automatic_writer_cancellation": False,
             "repository_mutation": False,
             "external_effect": False,
@@ -487,6 +925,9 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--expect-tree", required=True)
     analyze_parser.add_argument("--repository", required=True)
     analyze_parser.add_argument("--now", required=True)
+    analyze_parser.add_argument("--observation-scope", choices=sorted(GATEWATCH_SCOPES), default="MAIN")
+    analyze_parser.add_argument("--node-liveness-dir", type=Path)
+    analyze_parser.add_argument("--authority-head-file", type=Path)
     analyze_parser.add_argument("--json", action="store_true")
     check_parser = subcommands.add_parser("check-contract")
     check_parser.add_argument("--json", action="store_true")
@@ -512,6 +953,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline = _read_json(arguments.baseline, "baseline") if arguments.baseline else None
             if baseline is not None and not isinstance(baseline, Mapping):
                 raise ReflexiveWatchdogBlock("baseline must be an object")
+            authority_head = None
+            if arguments.authority_head_file is not None:
+                try:
+                    authority_head = arguments.authority_head_file.read_text(encoding="utf-8").strip()
+                except (OSError, UnicodeError) as exc:
+                    raise ReflexiveWatchdogBlock(f"cannot load authority head observation: {exc}") from exc
+                authority_head = _head_sha(authority_head, "authority head observation")
             value = analyze(
                 runs,
                 jobs,
@@ -520,6 +968,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 repository=arguments.repository,
                 now=_timestamp(arguments.now, "observation time"),
                 baseline=baseline,
+                observation_scope=arguments.observation_scope,
+                node_liveness_dir=arguments.node_liveness_dir,
+                authority_head=authority_head,
             )
         if arguments.json:
             print(canonical_json_bytes(value).decode("utf-8"), end="")
