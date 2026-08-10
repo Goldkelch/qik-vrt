@@ -90,3 +90,18 @@ node src/materialize-request.cjs --help
 
 Für eine inhaltliche Freigabe ist zusätzlich eine menschliche Gegenprüfung am
 Original erforderlich.
+
+## Product-Owner Voice SSO
+
+The same offline, privacy-first boundary can carry a Product Owner voice SSO
+session. The repository contains only the signed, short-lived session and
+command verification protocol; recordings, voice templates and embeddings stay
+inside the Product Owner-controlled local verifier. See
+[`docs/PRODUCT_OWNER_VOICE_SSO.md`](../../docs/PRODUCT_OWNER_VOICE_SSO.md).
+
+The Product Owner may use a successful live voice session as the general SSO
+interaction key for commands. Each command is still signed and bound to the
+exact repository ref/head/tree, embedded canonical parameters, a single-use
+nonce and expiry so that the command can be verified without treating an ASR
+transcript as a biometric credential. Session, command and replay-ledger state
+remain outside the Git worktree.

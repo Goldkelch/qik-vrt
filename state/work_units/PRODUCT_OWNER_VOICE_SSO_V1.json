@@ -1,0 +1,60 @@
+{
+  "schema": "qikvrt_product_owner_voice_sso_work_unit_v1",
+  "work_unit_id": "PRODUCT-OWNER-VOICE-SSO-V1",
+  "created_at": "2026-08-10T17:00:00+02:00",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "refs/heads/main",
+  "source_commit": "fdf83b0c6f1059843ecf08842b40f4843ea8c7eb",
+  "source_tree": "7c834f434b0477a9f574f581a5bf7cb829b428c8",
+  "human_actor": {
+    "actor_class": "HUMAN",
+    "identifier": "Ingolf Lohmann",
+    "role": "PRODUCT_OWNER",
+    "contribution": "Voice recognition shall be a permissible biometric Product Owner single-sign-on general key for issuing commands."
+  },
+  "artificial_cognitive_actor": {
+    "actor_class": "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "identifier": "OpenAI Codex",
+    "contribution": [
+      "reused the existing offline audio toolchain",
+      "defined signed short-lived voice SSO sessions and exact-ref/head/tree command envelopes",
+      "kept raw audio and voice templates outside the repository",
+      "implemented signature, liveness, durable nonce, expiry, embedded-parameter, repository and exact-target checks",
+      "added positive and negative regression tests"
+    ]
+  },
+  "outputs": [
+    "policy/PRODUCT_OWNER_VOICE_SSO_V1.json",
+    "schemas/qikvrt_voice_sso_command.schema.json",
+    "docs/PRODUCT_OWNER_VOICE_SSO.md",
+    "tools/offline-audio-transcription/src/voice-sso.cjs",
+    "tools/offline-audio-transcription/src/voice-sso-runtime.cjs",
+    "tools/offline-audio-transcription/bin/verify-voice-sso",
+    "tools/offline-audio-transcription/tests/voice-sso.test.cjs"
+  ],
+  "security_and_privacy_boundaries": {
+    "voice_biometric_is_product_owner_sso_interaction_key": true,
+    "raw_audio_in_repository": false,
+    "voice_template_in_repository": false,
+    "asr_draft_is_biometric_authority": false,
+    "external_effect_gate_bypass": false,
+    "force_push_or_history_rewrite": false
+  },
+  "verification": {
+    "focused_command": "cd tools/offline-audio-transcription && npm test",
+    "focused_result": "PASS: 18 Node tests, including five Voice SSO positive, negative and cross-process replay contract tests",
+    "repository_test": "PASS: make test completed with the Voice SSO contract included",
+    "integrity": "PASS: qikvrt_integrity.py generate and verify on the candidate worktree",
+    "exact_head_ci": "PENDING"
+  },
+  "human_decision": "PRODUCT_OWNER_AUTHORIZED_IMPLEMENTATION_PENDING_REVIEW",
+  "external_effects": {
+    "occurred": false,
+    "authorized": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

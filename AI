@@ -59,6 +59,32 @@ All six recordings are `BOUND_PENDING_ASR`. Their filenames are not transcripts.
 
 The existing repository-native audio transport/transcription implementation on `audio-transport/20260806-cognition-ontology-audio-v1`, including `.github/workflows/qikvrt_audio_request.yml` and `tools/offline-audio-transcription`, is the preferred reuse source. Raw audio must not be published merely to make transcription convenient.
 
+PRODUCT OWNER VOICE SINGLE SIGN-ON
+
+Read and apply:
+
+- docs/PRODUCT_OWNER_VOICE_SSO.md
+- policy/PRODUCT_OWNER_VOICE_SSO_V1.json
+- schemas/qikvrt_voice_sso_command.schema.json
+
+Product Owner Ingolf Lohmann authorizes a successful local biometric voice
+session as the Product Owner's single-sign-on interaction key for all Product
+Owner commands. The repository validates a revocable, signed local-verifier
+session and a short-lived exact-command envelope. Voice templates, embeddings,
+raw audio and mutable authentication state remain private and must not enter
+Git, Actions artifacts, logs or ordinary caches. `ASR_DRAFT` alone is never a
+voice-identity result.
+
+The command envelope binds repository, exact ref, exact head, exact tree, canonical
+operation, embedded canonical parameters and parameter digest, session digest,
+nonce and expiry. The verifier derives repository/ref/head/tree and policy from
+the current Git worktree and requires a durable private nonce ledger. A
+successful voice SSO command supplies Product Owner identity and intent through
+that channel; it does not weaken independent repository integrity,
+exact-artifact, single-use or post-effect gates. The initial policy has no
+active issuer until the Product Owner completes private local enrollment and
+registers a reviewed public key.
+
 HUMAN–MACHINE COLLECTIVE COGNITION
 
 Read and apply:

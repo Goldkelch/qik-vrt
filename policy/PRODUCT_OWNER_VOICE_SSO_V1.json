@@ -1,0 +1,99 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt-product-owner-voice-sso-policy/1.0",
+  "policy_id": "PRODUCT-OWNER-VOICE-SSO-V1",
+  "version": "1.0",
+  "product_owner": {
+    "id": "Ingolf Lohmann",
+    "role": "PRODUCT_OWNER"
+  },
+  "voice_sso": {
+    "primary_factor": "VOICE_BIOMETRIC_SSO",
+    "semantic": "A successful local biometric voice session is the Product Owner single-sign-on interaction key for all Product Owner commands. The remote repository verifies a signed, revocable local-verifier assertion; this is a transport-verifiability mechanism, not a second user interaction factor.",
+    "session_max_seconds": 900,
+    "command_max_seconds": 120,
+    "allow_all_product_owner_commands": true,
+    "allow_external_effect_command_authorization": true,
+    "external_effect_gate_resolution": "INDEPENDENT_EXECUTOR_REQUIRED",
+    "effect_classification": {
+      "default": "EXTERNAL_EFFECT",
+      "operations": {
+        "CREATE_REVIEW_BRANCH": "REPOSITORY_MUTATION",
+        "DEPLOY": "EXTERNAL_EFFECT",
+        "IETF_SUBMISSION": "EXTERNAL_EFFECT",
+        "OPEN_DRAFT_PR": "EXTERNAL_EFFECT",
+        "READ_REPOSITORY": "READ_ONLY",
+        "RELEASE": "EXTERNAL_EFFECT",
+        "UPDATE_DRAFT_PR": "EXTERNAL_EFFECT",
+        "ZENODO_PUBLICATION": "EXTERNAL_EFFECT"
+      }
+    },
+    "required_local_verifier_evidence": [
+      "DYNAMIC_CHALLENGE_BOUND",
+      "SPEAKER_MATCH",
+      "PRESENTATION_LIVENESS",
+      "PRIVATE_ENROLLMENT_TEMPLATE",
+      "SIGNATURE_BY_REGISTERED_LOCAL_VERIFIER_KEY"
+    ]
+  },
+  "registered_issuers": [],
+  "enrollment": {
+    "state": "PENDING_LOCAL_ENROLLMENT",
+    "activation_requires": [
+      "A_PRODUCT_OWNER_CONTROLLED_LOCAL_VERIFIER",
+      "A_NON_EXPORTABLE_OR_OTHERWISE_PROTECTED_PRIVATE_SIGNING_KEY",
+      "A_REVIEWED_PUBLIC_KEY_REGISTRATION_CHANGE",
+      "A_LOCAL_ENROLLMENT_RECEIPT_WITHOUT_RAW_AUDIO_OR_TEMPLATE"
+    ],
+    "revocation": "A later reviewed policy change marks the issuer state REVOKED; new voice SSO sessions then fail closed."
+  },
+  "privacy": {
+    "raw_audio_in_repository": false,
+    "voice_template_in_repository": false,
+    "voice_template_in_github_actions_artifact": false,
+    "transcript_is_sufficient_biometric_proof": false,
+    "allowed_repository_evidence": [
+      "OPAQUE_ENROLLMENT_ID",
+      "AUDIO_SHA256",
+      "CHALLENGE_SHA256",
+      "VERIFIER_AND_MODEL_VERSION",
+      "MATCH_AND_LIVENESS_VERDICTS",
+      "SIGNED_COMMAND_RECEIPT"
+    ]
+  },
+  "command_boundary": {
+    "required_binding": [
+      "REPOSITORY",
+      "EXACT_REF",
+      "EXACT_HEAD",
+      "EXACT_TREE",
+      "CANONICAL_OPERATION_AND_PARAMETERS_DIGEST",
+      "EMBEDDED_CANONICAL_PARAMETERS",
+      "SESSION_DIGEST",
+      "SINGLE_USE_NONCE",
+      "SHORT_EXPIRY"
+    ],
+    "head_or_tree_drift": "INVALIDATES_COMMAND",
+    "ordinary_repository_actions": "VOICE_SSO_IDENTITY_AND_INTENT_VERIFIED_REPOSITORY_GATES_PENDING",
+    "external_effects": "VOICE_SSO_MAY_ISSUE_THE_PRODUCT_OWNER_AUTHORIZATION_BUT_THE_VERIFIER_REPORTS_EXTERNAL_EFFECT_GATES_PENDING_AND_DOES_NOT_BYPASS_EXISTING_EXACT_ARTIFACT_SINGLE_USE_AND_POST_EFFECT_GATES",
+    "prohibited_actions_remain_prohibited": [
+      "FORCE_PUSH",
+      "HISTORY_REWRITE",
+      "UNCONDITIONAL_AUTOMATIC_MERGE"
+    ]
+  },
+  "collective_observer_boundary": {
+    "collective_adaptive_cognition_person_identity_verified": false,
+    "meaning": "This Product Owner-specific voice SSO policy does not convert collective observer identifiers into person-identity or independence proof."
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
