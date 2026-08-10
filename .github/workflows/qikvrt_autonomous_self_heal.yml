@@ -5,18 +5,61 @@ name: QIK-VRT autonomous bounded self-heal
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/5 * * * *"
+  push:
+    branches: [main]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+    types: [completed]
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_autonomous_self_heal.yml"
+      - "tests/test_qikvrt_continuous_auto_repair.py"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
-  group: qikvrt-autonomous-self-heal-${{ github.repository }}
+  group: qikvrt-autonomous-self-heal-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: false
 
 jobs:
+  validate-continuous-opportunity-contract:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify continuous opportunistic auto-repair contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_continuous_auto_repair
+
   observe-repair-propose:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.head_branch == 'main')
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -32,12 +75,22 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Verify continuous opportunistic auto-repair contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_continuous_auto_repair
+
       - name: Execute bounded repository-native repairs before external effects
         id: repair
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal.json
+          rc=$?
+          set -e
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
@@ -50,6 +103,16 @@ jobs:
           print(f"candidate_id={value.get('candidate_identity') or ''}")
           print(f"changed_paths_b64={base64.b64encode(paths).decode('ascii')}")
           PY
+          exit "$rc"
+
+      - name: Preserve autonomous pre-effect controller receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-self-heal-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-self-heal.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Verify repaired repository state
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
@@ -65,7 +128,8 @@ jobs:
             tests.test_qikvrt_publication_overview \
             tests.test_qikvrt_autonomous_self_heal \
             tests.test_qikvrt_autonomous_pre_effect_controller \
-            tests.test_qikvrt_expected_head_promotion
+            tests.test_qikvrt_expected_head_promotion \
+            tests.test_qikvrt_continuous_auto_repair
           python3 -B - <<'PY'
           import base64
           import os
@@ -131,7 +195,7 @@ jobs:
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
           <!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->
 
-          Repository-native scheduled pre-effect repair candidate.
+          Repository-native opportunistic pre-effect repair candidate.
 
           Exact bindings:
           - observed current-main base: \`$BASE_SHA\`
