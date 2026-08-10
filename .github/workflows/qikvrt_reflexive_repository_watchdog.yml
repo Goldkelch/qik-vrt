@@ -89,21 +89,11 @@ jobs:
           gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
             > "$root/current-runs.json"
 
+          # The analyzer considers every returned run. Fetch the matching jobs for
+          # every one of those runs so missing observation data is never confused
+          # with a genuine terminal zero-job execution.
           mapfile -t run_ids < <(
-            jq -r '
-              [
-                .workflow_runs[]
-                | select(
-                    .status == "queued" or
-                    .status == "in_progress" or
-                    .status == "waiting" or
-                    .status == "requested" or
-                    .status == "pending"
-                  )
-              ] + .workflow_runs[0:20]
-              | unique_by(.id)
-              | .[].id
-            ' "$root/current-runs.json"
+            jq -r '.workflow_runs[].id' "$root/current-runs.json"
           )
           for run_id in "${run_ids[@]}"; do
             gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
