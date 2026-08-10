@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT workflow executor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - "AI"
+      - "Makefile"
+      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+      - "tools/qikvrt_workflow_executor.py"
+      - "tools/qikvrt_seed_common.py"
+      - ".github/workflows/qikvrt_workflow_executor.yml"
+      - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+      - ".github/workflows/qikvrt_live_status_watch.yml"
+      - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+      - "tests/test_seed_workflows.py"
+      - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
+      - "registry/NODE_DISCOVERY_POLICY.json"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: qikvrt-workflow-executor-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  observe-plan-and-dispatch-one-safe-watchdog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact current Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Reobserve exact Authority head and bounded workflow-run baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/workflow-executor
+          local_head="$(git rev-parse --verify HEAD^{commit})"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$local_head" = "$live_head"
+          printf '%s\n' "$live_head" > .qikvrt/workflow-executor/observed-main-head.txt
+          git rev-parse --verify HEAD^{tree} > .qikvrt/workflow-executor/observed-main-tree.txt
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
+            > .qikvrt/workflow-executor/current-runs.json
+
+          previous_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '.workflow_runs[0].id // empty' 2>/dev/null || true)"
+          if test -n "$previous_run"; then
+            previous_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty' 2>/dev/null || true)"
+            if test -n "$previous_artifact"; then
+              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
+                > .qikvrt/workflow-executor/previous-snapshot.zip
+              unzip -p .qikvrt/workflow-executor/previous-snapshot.zip workflow-executor-snapshot.json \
+                > .qikvrt/workflow-executor/previous-snapshot.json || true
+            fi
+          fi
+
+      - name: Build exact-head dispatch plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
+          args=(plan --runs-file .qikvrt/workflow-executor/current-runs.json --expect-head "$head" --ref main --json)
+          if test -s .qikvrt/workflow-executor/previous-snapshot.json; then
+            args+=(--baseline .qikvrt/workflow-executor/previous-snapshot.json)
+          fi
+          python3 -B tools/qikvrt_workflow_executor.py "${args[@]}" \
+            > .qikvrt/workflow-executor/dispatch-plan.json
+          jq '.observed' .qikvrt/workflow-executor/dispatch-plan.json \
+            > .qikvrt/workflow-executor/workflow-executor-snapshot.json
+
+      - name: Dispatch only a newly eligible no-effect exact-head watchdog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          plan=.qikvrt/workflow-executor/dispatch-plan.json
+          head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
+          tree="$(cat .qikvrt/workflow-executor/observed-main-tree.txt)"
+          count="$(jq '[.candidates[] | select(.disposition == "DISPATCH")] | length' "$plan")"
+          test "$count" -le 1
+          : > .qikvrt/workflow-executor/dispatched-runs.jsonl
+          while IFS=$'\t' read -r workflow_id workflow_name; do
+            test -n "$workflow_id"
+            refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            test "$refreshed_head" = "$head"
+            dispatched_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
+              -f ref=main
+            run_id=""
+            for _ in $(seq 1 12); do
+              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
+                | jq -r --arg head "$head" --arg started "$dispatched_at" \
+                  '[.workflow_runs[] | select(.head_sha == $head and .created_at >= $started)][0].id // empty')"
+              test -n "$run_id" && break
+              sleep 5
+            done
+            test -n "$run_id"
+            printf '{"workflow_id":"%s","workflow_name":"%s","ref":"main","head_sha":"%s","tree_sha":"%s","run_id":%s}\n' \
+              "$workflow_id" "$workflow_name" "$head" "$tree" "$run_id" \
+              >> .qikvrt/workflow-executor/dispatched-runs.jsonl
+          done < <(jq -r '.candidates[] | select(.disposition == "DISPATCH") | [.workflow_id, .workflow_name] | @tsv' "$plan")
+
+      - name: Preserve exact-head plan and dispatch receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-workflow-executor-snapshot-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          path: .qikvrt/workflow-executor
