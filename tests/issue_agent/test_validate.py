@@ -8,6 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.issue_agent.infer import SYSTEM_PROMPT
+from scripts.issue_agent.promote import promote
 from scripts.issue_agent.validate import validate
 
 
@@ -21,11 +22,13 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         (directory / "ANSWER.md").write_text(
             "## Issue disposition\n\nEXECUTE_NOW\n\n"
             "## Disposition reason\n\nThe request is clear and actionable.\n\n"
-            "## Required next action\n\nExecute the smallest bounded work unit.\n",
+            "## Required next action\n\nExecute the smallest bounded work unit.\n\n"
+            "## Gate result\n\nCONTINUE\n",
             encoding="utf-8",
         )
         (directory / "STATUS.json").write_text(json.dumps({
             "status": "CONTINUE",
+            "model_inference_completed": True,
             "issue_disposition": "EXECUTE_NOW",
             "disposition_reason": "The request is clear and actionable.",
             "next_action": "Execute the smallest bounded work unit.",
@@ -76,6 +79,76 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
                 "closure_recommended": True,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
+            validate(directory)
+
+    def test_execute_now_remains_nonterminal_after_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            promote(directory)
+            status = json.loads((directory / "STATUS.json").read_text(encoding="utf-8"))
+            self.assertEqual(status["status"], "CONTINUE")
+            self.assertFalse(status["automatic_merge"])
+            self.assertFalse(status["automatic_issue_close"])
+            self.assertFalse(status["mirror_sync_required"])
+            self.assertFalse(status["common_tag_required"])
+            validate(directory)
+
+    def test_blocked_disposition_is_persisted_without_model_inference(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            (directory / "ANSWER.md").write_text(
+                "## Issue disposition\n\nBLOCKED_WITH_NEXT_ACTION\n\n"
+                "## Disposition reason\n\nMODEL_INFERENCE_UNAVAILABLE\n\n"
+                "## Required next action\n\nRetry when trusted inference is available.\n\n"
+                "## Gate result\n\nBLOCK\n",
+                encoding="utf-8",
+            )
+            status_path = directory / "STATUS.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status.update({
+                "model_inference_completed": False,
+                "issue_disposition": "BLOCKED_WITH_NEXT_ACTION",
+                "disposition_reason": "MODEL_INFERENCE_UNAVAILABLE",
+                "next_action": "Retry when trusted inference is available.",
+                "closure_recommended": False,
+            })
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            promote(directory)
+            promoted = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(promoted["status"], "BLOCK")
+            self.assertFalse(promoted["automatic_merge"])
+            self.assertFalse(promoted["automatic_issue_close"])
+            validate(directory)
+
+    def test_terminal_closure_alone_promotes_to_done(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            (directory / "ANSWER.md").write_text(
+                "## Issue disposition\n\nCLOSE_COMPLETED\n\n"
+                "## Disposition reason\n\nThe canonical successor fully evidences completion.\n\n"
+                "## Required next action\n\nNONE\n\n"
+                "## Gate result\n\nCONTINUE\n",
+                encoding="utf-8",
+            )
+            status_path = directory / "STATUS.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status.update({
+                "issue_disposition": "CLOSE_COMPLETED",
+                "disposition_reason": "The canonical successor fully evidences completion.",
+                "next_action": "NONE",
+                "closure_recommended": True,
+            })
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            promote(directory)
+            promoted = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(promoted["status"], "DONE")
+            self.assertTrue(promoted["automatic_merge"])
+            self.assertTrue(promoted["automatic_issue_close"])
+            self.assertTrue(promoted["mirror_sync_required"])
+            self.assertTrue(promoted["common_tag_required"])
             validate(directory)
 
     def test_policy_and_owner_delegation_are_active_and_fail_closed(self):
