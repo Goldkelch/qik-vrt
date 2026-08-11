@@ -1,0 +1,303 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish canonical Round Trip bundle to Zenodo
+
+on:
+  push:
+    branches:
+      - publication/round-trip-canonical-v1-8db8780b
+    paths:
+      - .github/workflows/qikvrt_round_trip_zenodo_publish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-round-trip-canonical-zenodo-v1-8db8780b
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      EXPECTED_BRANCH: publication/round-trip-canonical-v1-8db8780b
+      EXPECTED_PARENT: 7c3916888257c05e8066490b5f06f43eacad84cd
+      MANIFEST_PATH: release/round-trip-canonical-publication-zenodo-authorization-v2/publish-request.json
+      EVIDENCE_PATH: release/round-trip-canonical-publication-zenodo-authorization-v2/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out exact execution head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact one-shot execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_REPOSITORY" = "Goldkelch/qik-vrt"
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          if event.get("forced") is not False:
+              raise SystemExit("BLOCK: publication branch push was forced")
+          if event.get("before") != os.environ["EXPECTED_PARENT"]:
+              raise SystemExit("BLOCK: publication push before SHA differs")
+          if event.get("after") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: publication push after SHA differs")
+          if event.get("ref") != "refs/heads/" + os.environ["EXPECTED_BRANCH"]:
+              raise SystemExit("BLOCK: publication push ref differs")
+          PY
+          expected_delta="$(
+            printf '%s\n' \
+              'A	.github/workflows/qikvrt_round_trip_zenodo_publish.yml' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt'
+          )"
+          observed_delta="$(
+            git diff \
+              --name-status \
+              --no-renames \
+              "$EXPECTED_PARENT" \
+              "$GITHUB_SHA" \
+              --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_branch="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          remote_main="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_branch" = "$GITHUB_SHA"
+          test "$remote_main" = "$EXPECTED_PARENT"
+          python3 -B tools/qikvrt_tool_cache.py verify
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$GITHUB_SHA" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root,
+              manifest_path,
+              manifest,
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["GITHUB_SHA"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if len(manifest["files"]) != 54:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          if sum(item["size"] for item in manifest["files"]) != 66147275:
+              raise SystemExit("BLOCK: exact Zenodo upload byte count differs")
+
+          authorization = manifest["owner_authorization"]
+          expected = {
+              "authorization_id": (
+                  "qikvrt-round-trip-canonical-publication-v1-"
+                  "8db8780bff6644b6"
+              ),
+              "publication_id": "qikvrt-round-trip-canonical-publication-v1",
+              "statement_sha256": (
+                  "dcf71859b211e5276402444246d45a9c690a4bd4c2de7175d4b7725687b6ca85"
+              ),
+              "return_sha256": (
+                  "2bcaedc6181ced96fb23c0bf11d30c80f3023b1cf1a62972f328cbb38f383ef7"
+              ),
+              "metadata_sha256": (
+                  "d94f461db7cd34b5a310ac62bca84e0c425da457f34e08352e39d9051f4d9696"
+              ),
+              "proof_sha256": (
+                  "699988db45621010549b6b98b45d1fdb62fb4005308c7e1262f203e675f68135"
+              ),
+              "consumption_ref": (
+                  "refs/tags/qikvrt-zenodo-auth/"
+                  "bfe0b0fd2135638b1bc67622d29114d94e9ef4485880e6444b69f7d3910eb762"
+              ),
+          }
+          observed = {
+              "authorization_id": authorization["authorization_id"],
+              "publication_id": authorization["publication_id"],
+              "statement_sha256": authorization["authorization_event"][
+                  "statement_sha256"
+              ],
+              "return_sha256": authorization["candidate_return_receipt"][
+                  "sha256"
+              ],
+              "metadata_sha256": authorization["canonical_metadata_sha256"],
+              "proof_sha256": authorization["machine_proof"]["sha256"],
+              "consumption_ref": authorization["remote_consumption_ref"],
+          }
+          if observed != expected:
+              raise SystemExit("BLOCK: exact owner authorization binding differs")
+          if manifest["machine_proof"]["sha256"] != expected["proof_sha256"]:
+              raise SystemExit("BLOCK: normalized machine proof digest differs")
+          print("ROUND_TRIP_ZENODO_EXECUTION_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_round_trip_zenodo_bundle_freeze.py --check --json
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gates before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recheck exact boundary immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          remote_branch="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          remote_main="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_branch" = "$GITHUB_SHA"
+          test "$remote_main" = "$EXPECTED_PARENT"
+
+      - name: Consume authorization and publish exact files
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 60
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          python3 -B tools/qikvrt_zenodo_publish.py \
+            --manifest "$MANIFEST_PATH"
+          status=$?
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist published or recovery receipt
+        id: persist
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state="$(
+            python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          value = json.loads(Path(os.environ["EVIDENCE_PATH"]).read_text())
+          state = value.get("state")
+          if state not in {
+              "published",
+              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
+          }:
+              raise SystemExit("BLOCK: publication evidence state differs")
+          print(state)
+          PY
+          )"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B - <<'PY'
+          import os
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              os.environ["EVIDENCE_PATH"],
+          }
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+              ]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if not item:
+                  continue
+              observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: post-publication repository delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email \
+            'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EVIDENCE_PATH"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if test "$state" = "published"; then
+            message='zenodo: persist canonical Round Trip publication'
+          else
+            message='zenodo: persist canonical Round Trip recovery receipt'
+          fi
+          git commit -m "$message"
+          remote_branch="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_branch" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$EXPECTED_BRANCH"
+          printf '%s\n' 'persisted=true' >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+      - name: Upload publication recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: round-trip-canonical-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            release/round-trip-canonical-publication-zenodo-authorization-v2/zenodo-publication.json
+
+      - name: Enforce publication and persistence result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+          test "${{ steps.persist.outputs.persisted }}" = "true"
+          test "${{ steps.persist.outputs.state }}" = "published"
