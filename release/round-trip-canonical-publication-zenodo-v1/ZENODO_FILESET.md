@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Exakter Zenodo-v2-Dateisatz — DAS UNIVERSUM ALS ROUND TRIP
 
-Publication ID: `qikvrt-round-trip-retrospective-proof-v1`
+Publication ID: `qikvrt-round-trip-canonical-publication-v1`
 
 Authority checkpoint: `12842e8df99553260774d53517522b2b5539c8a8` / tree `e8bdc99712bf0eca1a94ece6e34b20059076d280`
 

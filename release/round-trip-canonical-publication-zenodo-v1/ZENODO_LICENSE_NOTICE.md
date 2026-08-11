@@ -5,7 +5,7 @@ Copyright 2026 Ingolf Lohmann.
 
 # Zenodo-Rechte- und Lizenzhinweis
 
-Publication ID: `qikvrt-round-trip-retrospective-proof-v1`
+Publication ID: `qikvrt-round-trip-canonical-publication-v1`
 
 Der eingefrorene Upload-Dateisatz wird ausdrücklich unter
 **Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
