@@ -3,11 +3,16 @@
 """Regression contracts for the Round Trip Zenodo bundle freeze."""
 from __future__ import annotations
 
+import copy
 import json
 import pathlib
 import subprocess
 import sys
 import unittest
+from collections.abc import Callable
+from typing import Any
+
+from tools import qikvrt_round_trip_zenodo_bundle_freeze as freeze
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools/qikvrt_round_trip_zenodo_bundle_freeze.py"
@@ -79,6 +84,55 @@ class RoundTripZenodoBundleFreezeTests(unittest.TestCase):
         self.assertEqual(claims["claim_count"], 12)
         self.assertEqual(sum(c["classification"] == "FORMAL_PROVED" for c in claims["claims"]), 6)
         self.assertEqual(sum(c["classification"] == "OPEN" for c in claims["claims"]), 2)
+
+    def test_publication_identity_controls_are_canonical_and_fail_closed(self) -> None:
+        target = self.load(RELEASE / "ZENODO_TARGET_RECORD.json")
+        retrospective = self.load(RELEASE / "RETROSPECTIVE_SOURCE_CONSTITUENTS.json")
+        formal_sources = self.load(RELEASE / "PROMOTED_FORMAL_SOURCE_BINDINGS.json")
+        formal_receipts = self.load(RELEASE / "PROMOTED_FORMAL_KERNEL_RECEIPTS.json")
+        boundary = self.load(RELEASE / "BOUNDARY_TEST_REPORT.json")
+        fileset_text = (RELEASE / "ZENODO_FILESET.md").read_text(encoding="utf-8")
+        license_text = (RELEASE / "ZENODO_LICENSE_NOTICE.md").read_text(encoding="utf-8")
+        values = (
+            target,
+            retrospective,
+            formal_sources,
+            formal_receipts,
+            boundary,
+            fileset_text,
+            license_text,
+        )
+        freeze.verify_publication_identity_values(*values)
+
+        def assert_blocked(mutate: Callable[[list[Any]], None]) -> None:
+            broken = list(copy.deepcopy(values))
+            mutate(broken)
+            with self.assertRaises(freeze.FreezeError):
+                freeze.verify_publication_identity_values(*broken)
+
+        old_id = freeze.RETROSPECTIVE_SOURCE_PUBLICATION_ID
+        for index in (0, 1, 2, 4):
+            assert_blocked(
+                lambda broken, index=index: broken[index].__setitem__(
+                    "publication_id", old_id
+                )
+            )
+        for index in (5, 6):
+            assert_blocked(
+                lambda broken, index=index: broken.__setitem__(
+                    index,
+                    broken[index].replace(
+                        freeze.CANONICAL_PUBLICATION_ID,
+                        old_id,
+                        1,
+                    ),
+                )
+            )
+        assert_blocked(
+            lambda broken: broken[3].__setitem__(
+                "source_publication_id", freeze.CANONICAL_PUBLICATION_ID
+            )
+        )
 
     def test_metadata_target_and_fileset_are_fail_closed(self) -> None:
         metadata = self.load(RELEASE / "ZENODO_METADATA.json")
