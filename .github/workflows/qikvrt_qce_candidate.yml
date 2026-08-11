@@ -66,11 +66,16 @@ jobs:
         run: lake build
 
       - name: Run fail-closed package verification and axiom audit
-        run: >-
-          python3 -B verify_qce_package.py
-          --lean "$(command -v lean)"
-          --axiom-output qce-axiom-output.txt
-          > qce-verification.json
+        run: |
+          set -euo pipefail
+          qce_tmpdir="$(mktemp -d)"
+          python3 -B verify_qce_package.py \
+            --lean "$(command -v lean)" \
+            --axiom-output "$qce_tmpdir/qce-axiom-output.txt" \
+            > "$qce_tmpdir/qce-verification.json"
+          mv "$qce_tmpdir/qce-axiom-output.txt" qce-axiom-output.txt
+          mv "$qce_tmpdir/qce-verification.json" qce-verification.json
+          rmdir "$qce_tmpdir"
 
       - name: Create exact-head execution-bound kernel receipt
         run: >-

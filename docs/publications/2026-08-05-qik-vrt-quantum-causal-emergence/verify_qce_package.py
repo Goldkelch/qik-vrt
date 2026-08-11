@@ -129,15 +129,103 @@ def check_json_files() -> None:
     for name in (
         "CLAIM_MATRIX.json",
         "SOURCE_EVIDENCE_BINDINGS.json",
-        "KERNEL_RECEIPT_TEMPLATE.json",
         "MACHINE_PROOF_BUNDLE.json",
         "ZENODO_METADATA.json",
         "MANIFEST.json",
     ):
         json.loads((ROOT / name).read_text(encoding="utf-8"))
-    receipt = json.loads((ROOT / "KERNEL_RECEIPT_TEMPLATE.json").read_text())
-    require(receipt["state"] == "NOT_EXECUTED", "template must not impersonate an executed receipt")
-    require(receipt["completion_claims"] == {"EFFECT_ACK_DONE": False, "FINAL_PASS": False, "PASS": False}, "template completion claims changed")
+    template = ROOT / "KERNEL_RECEIPT_TEMPLATE.json"
+    executed = ROOT / "QCE_KERNEL_RECEIPT.json"
+    require(template.is_file() or executed.is_file(), "a receipt template or executed receipt is required")
+    if template.is_file():
+        receipt = json.loads(template.read_text(encoding="utf-8"))
+        require(receipt["state"] == "NOT_EXECUTED", "template must not impersonate an executed receipt")
+        require(receipt["completion_claims"] == {"EFFECT_ACK_DONE": False, "FINAL_PASS": False, "PASS": False}, "template completion claims changed")
+    if executed.is_file():
+        check_persisted_execution(executed)
+
+
+def sha256(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_persisted_execution(receipt_path: pathlib.Path) -> None:
+    """Fail closed when an executed QCE receipt is included in the package."""
+    check_executed_receipt(receipt_path)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    binding = receipt["source_binding"]
+    execution = receipt["kernel_execution"]
+    require(binding["candidate_path"] == "docs/publications/2026-08-05-qik-vrt-quantum-causal-emergence", "receipt candidate path mismatch")
+    require(binding["model_sha256"] == sha256(MODEL), "receipt model binding mismatch")
+    require(binding["axiom_audit_sha256"] == sha256(AUDIT), "receipt axiom-audit binding mismatch")
+
+    axiom_output = ROOT / "qce-axiom-output.txt"
+    verification = ROOT / "qce-verification.json"
+    provenance = ROOT / "QCE_KERNEL_ARTIFACT_PROVENANCE.json"
+    require(axiom_output.is_file(), "executed receipt lacks qce-axiom-output.txt")
+    require(verification.is_file(), "executed receipt lacks qce-verification.json")
+    require(provenance.is_file(), "executed receipt lacks artifact provenance")
+    require(execution["axiom_output_sha256"] == sha256(axiom_output), "receipt axiom-output binding mismatch")
+    require(execution["verification_output_sha256"] == sha256(verification), "receipt verification-output binding mismatch")
+    verification_data = json.loads(verification.read_text(encoding="utf-8"))
+    require(verification_data.get("result") == "FORMAL_MODEL_VERIFIED", "persisted verification result is not formal-model verified")
+    require(verification_data.get("theorem_sources") == 36, "persisted verification theorem count mismatch")
+    require(verification_data.get("physical_correspondence") == "OPEN_CANDIDATE", "persisted verification promoted physical correspondence")
+
+    provenance_data = json.loads(provenance.read_text(encoding="utf-8"))
+    require(provenance_data.get("schema") == "qikvrt-qce-exact-kernel-artifact-provenance/1.0", "artifact provenance schema mismatch")
+    artifact_files = {entry["name"]: entry for entry in provenance_data["artifact"]["files"]}
+    for name, path in {
+        "QCE_KERNEL_RECEIPT.json": receipt_path,
+        "qce-axiom-output.txt": axiom_output,
+        "qce-verification.json": verification,
+    }.items():
+        entry = artifact_files.get(name)
+        require(entry is not None, f"artifact provenance lacks {name}")
+        require(entry["bytes"] == path.stat().st_size, f"artifact provenance byte count mismatch: {name}")
+        require(entry["sha256"] == sha256(path), f"artifact provenance hash mismatch: {name}")
+
+
+def check_persisted_claim_bindings() -> None:
+    receipt_path = ROOT / "QCE_KERNEL_RECEIPT.json"
+    if not receipt_path.is_file():
+        return
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    expected = {
+        "artifact_provenance": "QCE_KERNEL_ARTIFACT_PROVENANCE.json",
+        "axiom_output": "qce-axiom-output.txt",
+        "kernel_receipt": "QCE_KERNEL_RECEIPT.json",
+        "run_attempt": int(receipt["workflow_binding"]["run_attempt"]),
+        "source_commit": receipt["source_binding"]["commit"],
+        "source_tree": receipt["source_binding"]["tree"],
+        "verification": "qce-verification.json",
+        "workflow_run_id": int(receipt["workflow_binding"]["run_id"]),
+    }
+    matrix = json.loads((ROOT / "CLAIM_MATRIX.json").read_text(encoding="utf-8"))
+    require(matrix["formal_execution"].get("lean_executed_for_this_candidate") is True, "claim matrix does not record executed QCE core")
+    for key, value in expected.items():
+        require(matrix["formal_execution"].get(key) == value, f"claim-matrix formal execution mismatch: {key}")
+    for claim in matrix["claims"]:
+        if claim.get("kind") == "formal-proved":
+            require(claim.get("receipt_binding") == expected, f"claim receipt binding mismatch: {claim.get('id')}")
+    bundle = json.loads((ROOT / "MACHINE_PROOF_BUNDLE.json").read_text(encoding="utf-8"))
+    require(bundle["formalization"].get("status") == "KERNEL_ACCEPTED_FINITE_MODEL", "machine proof bundle does not record kernel acceptance")
+    require(bundle.get("receipt") == {**expected, "required_before_zenodo_publication": True}, "machine proof receipt binding mismatch")
+
+
+def check_manifest() -> None:
+    manifest = json.loads((ROOT / "MANIFEST.json").read_text(encoding="utf-8"))
+    files = [path for path in sorted(ROOT.iterdir()) if path.is_file() and path.name not in {"MANIFEST.json", "SHA256SUMS"}]
+    records = {entry["path"]: entry for entry in manifest["files"]}
+    expected_names = [path.name for path in files]
+    require(sorted(records) == expected_names, "manifest file inventory mismatch")
+    require(manifest["file_count_excluding_manifest_and_checksum"] == len(files), "manifest file count mismatch")
+    for path in files:
+        record = records[path.name]
+        require(record["bytes"] == path.stat().st_size, f"manifest byte count mismatch: {path.name}")
+        require(record["sha256"] == sha256(path), f"manifest hash mismatch: {path.name}")
+    expected_execution = "EXECUTED_RECEIPT_PRESENT" if (ROOT / "QCE_KERNEL_RECEIPT.json").is_file() else "PENDING_REPOSITORY_RUN"
+    require(manifest["kernel_execution"] == expected_execution, "manifest kernel execution status mismatch")
 
 
 def check_pdf() -> dict[str, object]:
@@ -179,10 +267,12 @@ def check_sha256sums() -> int:
         seen.add(relative)
         target = ROOT / relative
         require(target.is_file(), f"checksummed file missing: {relative}")
-        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        actual = sha256(target)
         require(actual == expected, f"checksum mismatch: {relative}")
         entries += 1
     require(entries >= 20, f"checksum inventory unexpectedly small: {entries}")
+    expected_paths = {path.name for path in ROOT.iterdir() if path.is_file() and path.name != "SHA256SUMS"}
+    require(seen == expected_paths, "SHA256SUMS is not the exact package file set")
     return entries
 
 
@@ -204,6 +294,8 @@ def main() -> int:
     theorem_names = check_source_shape()
     check_reference_and_tests()
     check_json_files()
+    check_persisted_claim_bindings()
+    check_manifest()
     pdf = check_pdf()
     checksums = check_sha256sums()
 

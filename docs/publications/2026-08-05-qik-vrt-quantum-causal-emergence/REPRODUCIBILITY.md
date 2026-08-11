@@ -43,6 +43,20 @@ python3 -B make_qce_kernel_receipt.py \
 Das erzeugte Receipt ist nur für die exakten Sourcebytes, den gebundenen
 Commit/Tree und die ausgewiesene Lean-Version gültig.
 
+## Persistierte Ausführungsevidenz
+
+Der in diesem Paket enthaltene Receipt stammt aus dem erfolgreichen Lauf
+`QIK-VRT QCE candidate verification` mit Run-ID `31467654213`. Seine
+Provenienz, die drei Artefaktdateien und ihre Hashes sind in
+`QCE_KERNEL_ARTIFACT_PROVENANCE.json` gebunden. Die lokale Paketbindung wird
+ohne erneuten Lean-Lauf geprüft durch:
+
+```text
+python3 -B verify_qce_package.py \
+  --static-only \
+  --executed-receipt QCE_KERNEL_RECEIPT.json
+```
+
 ## PDF
 
 ```text
@@ -55,5 +69,6 @@ pdftotext QIK-VRT_QCE_Fachartikel_DE_2026-08-05.pdf -
 
 Vor einer Zenodo-Veröffentlichung müssen `MANIFEST.json`, `SHA256SUMS` und
 `MACHINE_PROOF_BUNDLE.json` unter Einschluss des tatsächlich ausgeführten
-`QCE_KERNEL_RECEIPT.json` neu erzeugt werden. Das Receipt-Template ist dann zu
-entfernen.
+`QCE_KERNEL_RECEIPT.json`, des Axiom-Audit-Outputs, des Verifikationsoutputs
+und der Artefaktprovenienz neu erzeugt werden. Ein unverbindliches
+Receipt-Template gehört nicht in ein ausgeführtes Zenodo-Fileset.

@@ -27,7 +27,10 @@ ausdrücklicher Owner-Autorisierung materialisiert werden.
 - `test_validate_qce_instance.py`
 - `verify_qce_package.py`
 - `make_qce_kernel_receipt.py`
-- `QCE_KERNEL_RECEIPT.json` - erst nach tatsächlicher Ausführung
+- `QCE_KERNEL_RECEIPT.json`
+- `QCE_KERNEL_ARTIFACT_PROVENANCE.json`
+- `qce-axiom-output.txt`
+- `qce-verification.json`
 - `CLAIM_MATRIX.json`
 - `SOURCE_EVIDENCE_BINDINGS.json`
 - `FORMALIZATION_ROADMAP.md`
@@ -45,8 +48,8 @@ ausdrücklicher Owner-Autorisierung materialisiert werden.
 - temporäre LaTeX-Hilfsdateien
 - nicht gebundene Workflow-Logs
 - lokale Caches
-- das noch nicht ausgeführte `KERNEL_RECEIPT_TEMPLATE.json`, sobald ein echtes
-  Receipt vorliegt
+- ein etwaig erzeugtes `KERNEL_RECEIPT_TEMPLATE.json`; dieses Paket enthält
+  stattdessen ausschließlich das ausgeführte Receipt
 - Zugangstoken, Zenodo-Secrets und GitHub-Credentials
 
 `ZENODO_UPLOAD = NOT_EXECUTED`
