@@ -23,9 +23,9 @@
 \usepackage{lmodern}
 \ifPDFTeX\else
   % xetex/luatex font selection
-  \setmainfont[]{Liberation Serif}
-  \setsansfont[]{Liberation Sans}
-  \setmonofont[]{Liberation Mono}
+  \setmainfont[]{DejaVu Serif}
+  \setsansfont[]{DejaVu Sans}
+  \setmonofont[]{DejaVu Sans Mono}
 \fi
 % Use upquote if available, for straight quotes in verbatim environments
 \IfFileExists{upquote.sty}{\usepackage{upquote}}{}
@@ -67,7 +67,7 @@
 \babelprovide[main,import]{ngerman}
 \ifPDFTeX
 \else
-\babelfont{rm}[]{Liberation Serif}
+\babelfont{rm}[]{DejaVu Serif}
 \fi
 % get rid of language-specific shorthands (see #6817):
 \let\LanguageShortHands\languageshorthands
@@ -1087,18 +1087,21 @@ Lean-Quellkandidat, Validatoren, Workflow, Claim-Matrix,
 Quellenbindungen, Zenodo-Metadaten und Prüfsummen werden gemeinsam
 bereitgestellt.
 
-Der neue Lean-Quellkandidat wurde in dieser Ausführungsumgebung noch
-nicht mit Lean 4.19.0 kernelgeprüft. Deshalb enthält das Paket
-ausschließlich ein \texttt{KERNEL\_RECEIPT\_TEMPLATE.json} mit dem
-Status \texttt{NOT\_EXECUTED}. Ein späterer erfolgreicher
-GitHub-Actions-Lauf muss dieses Template durch ein exakt gebundenes
-Ausführungsreceipt ersetzen.
+Der QCE-Quellkern wurde mit Lean 4.19.0 kernelgeprüft. Das Paket enthält
+das exakt gebundene Receipt, den Axiom-Audit-Output, den
+Verifikationsoutput und die Artefaktprovenienz aus dem erfolgreichen
+GitHub-Actions-Lauf \texttt{31467654213}. Der Receipt bindet den
+Verifikations-Carrier-Commit
+\texttt{225675ae2145aec709103f843cd26fd6893b39ba} und dessen Tree
+\texttt{94eafdc41f42c3c5107275212351c323653dcb35}; der Paketprüfer
+bestätigt die Gleichheit der gebundenen Modell- und Axiom-Audit-Bytes
+mit dem vorliegenden Paket.
 
 Die physikalische Korrespondenz bleibt unabhängig davon offen.
 
-\texttt{FORMAL\_SOURCE\ =\ PREPARED}
+\texttt{FORMAL\_SOURCE\ =\ EXECUTED\_BYTES\_BOUND}
 
-\texttt{LEAN\_EXECUTION\ =\ PENDING\_REPOSITORY\_RUN}
+\texttt{LEAN\_EXECUTION\ =\ EXECUTED\_RECEIPT\_PRESENT}
 
 \texttt{PHYSICAL\_CORRESPONDENCE\ =\ OPEN\_CANDIDATE}
 
