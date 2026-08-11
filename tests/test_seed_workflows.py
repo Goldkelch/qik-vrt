@@ -343,6 +343,21 @@ class SeedWorkflowTests(unittest.TestCase):
             read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")["schema"],
         )
 
+    def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        workflow = (
+            repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("push:\n    branches: [main]", workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+        self.assertIn('actual_head="$(git rev-parse --verify HEAD^{commit})"', workflow)
+        self.assertIn('test "$actual_head" = "$EXPECTED_HEAD"', workflow)
+        self.assertIn('actual_tree="$(git show -s --format=%T HEAD)"', workflow)
+        self.assertIn("dashboard-exact-head-binding.json", workflow)
+        self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
+        self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
+        self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         for workflow in sorted((repository / ".github/workflows").glob("qikvrt_seed_*.yml")):
