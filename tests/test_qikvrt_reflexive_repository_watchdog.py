@@ -180,6 +180,8 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("contents: read", workflow)
         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)
         self.assertIn("qikvrt-reflexive-repository-watchdog-", workflow)
+        self.assertIn("jq -r '.workflow_runs[].id'", workflow)
+        self.assertNotIn(".workflow_runs[0:20]", workflow)
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
         self.assertNotIn("issues/comments", workflow)
