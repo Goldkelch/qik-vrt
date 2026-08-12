@@ -6,7 +6,7 @@
     "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
     "classification": "json_non_source"
   },
-  "schema": "qikvrt_effect_ack_protocol_summary_v24",
+  "schema": "qikvrt_effect_ack_protocol_summary_v25",
   "transport_ack": "Technical arrival.",
   "effect_ack": "Responsible permission for further effect.",
   "states": [
@@ -19,5 +19,15 @@
   "responsibility_protocol_required": true,
   "canonical_json_required": true,
   "hashing_rule": "Deterministic content only; volatile timestamps excluded from protocol_hash.",
-  "security_purpose": "Prevent received-equals-released fallacy, ungated downstream effect and false DONE claims."
+  "security_purpose": "Prevent received-equals-released fallacy, ungated downstream effect and false DONE claims.",
+  "protocol_evolution": {
+    "owner_delegation": "state/authorization/delegations/OWNER_PROTOCOL_EVOLUTION_AND_EXTENSION_V1.json",
+    "policy": "policy/PROTOCOL_EVOLUTION_AND_EXTENSION_V1.json",
+    "change_envelope_schema": "schemas/qikvrt_protocol_change_envelope_v1.schema.json",
+    "default_strategy": "ORTHOGONAL_VERSIONED_EXTENSION_ENVELOPE_OR_PROFILE",
+    "core_state_set_preserved_by_default": true,
+    "extensions_may_only_strengthen_done_predicates": true,
+    "no_protocol_change_required_remains_valid_until_normative_delta": true,
+    "ietf_submission_or_update_authorized": false
+  }
 }

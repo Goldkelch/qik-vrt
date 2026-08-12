@@ -1,0 +1,527 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/schemas/qikvrt_protocol_change_envelope_v1.schema.json",
+  "title": "QIK-VRT Protocol Change Envelope v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "change_id",
+    "title",
+    "repository",
+    "source_binding",
+    "change_class",
+    "problem_statement",
+    "reuse_analysis",
+    "affected_protocols",
+    "normative_delta",
+    "versioning_and_compatibility",
+    "impact",
+    "migration_rollback_and_deprecation",
+    "verification",
+    "external_disposition",
+    "effect_boundary",
+    "completion_claims"
+  ],
+  "properties": {
+    "schema": {
+      "const": "qikvrt_protocol_change_envelope_v1"
+    },
+    "change_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9._:-]{7,127}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[^/]+/[^/]+$"
+    },
+    "source_binding": {
+      "type": "object",
+      "required": [
+        "commit",
+        "tree"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "base_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "change_class": {
+      "enum": [
+        "NO_PROTOCOL_CHANGE_REQUIRED",
+        "NON_NORMATIVE_CLARIFICATION",
+        "COMPATIBLE_EXTENSION_PROFILE",
+        "NEW_QIKVRT_PROTOCOL",
+        "EXTERNAL_PROTOCOL_EXTENSION_CANDIDATE",
+        "MAJOR_EFFECT_ACK_REVISION_CANDIDATE",
+        "REJECT_OR_DEFER"
+      ]
+    },
+    "problem_statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "reuse_analysis": {
+      "type": "object",
+      "required": [
+        "existing_components",
+        "selected_path"
+      ],
+      "properties": {
+        "existing_components": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 128
+        },
+        "technical_insufficiency": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 128
+        },
+        "selected_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "affected_protocols": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "authority",
+          "current_version",
+          "extension_mechanism"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authority": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "extension_mechanism": {
+            "enum": [
+              "CORE_REVISION",
+              "VERSIONED_PROFILE",
+              "REGISTERED_EXTENSION_POINT",
+              "PRIVATE_OR_EXPERIMENTAL_USE",
+              "NEW_INDEPENDENT_PROTOCOL",
+              "NONE"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "normative_delta": {
+      "type": "object",
+      "required": [
+        "established",
+        "summary",
+        "additions",
+        "removals"
+      ],
+      "properties": {
+        "established": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "additions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256
+        },
+        "removals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "versioning_and_compatibility": {
+      "type": "object",
+      "required": [
+        "backward_compatible",
+        "versioning_action",
+        "unknown_critical_extension_behavior"
+      ],
+      "properties": {
+        "backward_compatible": {
+          "type": "boolean"
+        },
+        "versioning_action": {
+          "enum": [
+            "NONE",
+            "PATCH",
+            "MINOR",
+            "MAJOR",
+            "NEW_PROTOCOL_VERSION"
+          ]
+        },
+        "unknown_noncritical_extension_behavior": {
+          "enum": [
+            "IGNORE_BUT_PRESERVE",
+            "REJECT",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "unknown_critical_extension_behavior": {
+          "const": "FAIL_CLOSED"
+        }
+      },
+      "additionalProperties": false
+    },
+    "impact": {
+      "type": "object",
+      "required": [
+        "wire",
+        "state_machine",
+        "security",
+        "privacy",
+        "rights",
+        "interoperability",
+        "abuse_cases"
+      ],
+      "properties": {
+        "wire": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state_machine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "security": {
+          "type": "string",
+          "minLength": 1
+        },
+        "privacy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rights": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interoperability": {
+          "type": "string",
+          "minLength": 1
+        },
+        "abuse_cases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 128
+        }
+      },
+      "additionalProperties": false
+    },
+    "migration_rollback_and_deprecation": {
+      "type": "object",
+      "required": [
+        "migration",
+        "rollback",
+        "deprecation"
+      ],
+      "properties": {
+        "migration": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rollback": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deprecation": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "required": [
+        "conformance_tests",
+        "interoperability_tests",
+        "adversarial_tests",
+        "formal_evidence",
+        "implementation_evidence"
+      ],
+      "properties": {
+        "conformance_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256
+        },
+        "interoperability_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256
+        },
+        "adversarial_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256
+        },
+        "formal_evidence": {
+          "type": "object",
+          "required": [
+            "state",
+            "references"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "REQUIRED",
+                "PROVIDED",
+                "NOT_APPLICABLE_WITH_REASON",
+                "OPEN"
+              ]
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 128
+            }
+          },
+          "additionalProperties": false
+        },
+        "implementation_evidence": {
+          "type": "object",
+          "required": [
+            "state",
+            "references"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "REQUIRED",
+                "PROVIDED",
+                "NOT_APPLICABLE_WITH_REASON",
+                "OPEN"
+              ]
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 128
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "external_disposition": {
+      "type": "object",
+      "required": [
+        "ietf",
+        "iana_or_registry",
+        "other_upstream"
+      ],
+      "properties": {
+        "ietf": {
+          "enum": [
+            "NO_PROTOCOL_CHANGE_REQUIRED",
+            "LOCAL_CANDIDATE_ONLY",
+            "EXACT_SUBMISSION_AUTHORIZATION_REQUIRED"
+          ]
+        },
+        "iana_or_registry": {
+          "enum": [
+            "NOT_APPLICABLE",
+            "UNASSIGNED_PRIVATE_OR_EXPERIMENTAL",
+            "EXACT_REGISTRATION_AUTHORIZATION_REQUIRED"
+          ]
+        },
+        "other_upstream": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "effect_boundary": {
+      "type": "object",
+      "required": [
+        "repository_internal_only",
+        "external_effect_authorized",
+        "credential_use_authorized",
+        "promotion_authorized"
+      ],
+      "properties": {
+        "repository_internal_only": {
+          "const": true
+        },
+        "external_effect_authorized": {
+          "const": false
+        },
+        "credential_use_authorized": {
+          "const": false
+        },
+        "promotion_authorized": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "completion_claims": {
+      "type": "object",
+      "required": [
+        "PASS",
+        "FINAL_PASS",
+        "EFFECT_ACK_DONE",
+        "STANDARDIZATION_CONSENSUS"
+      ],
+      "properties": {
+        "PASS": {
+          "const": false
+        },
+        "FINAL_PASS": {
+          "const": false
+        },
+        "EFFECT_ACK_DONE": {
+          "const": false
+        },
+        "STANDARDIZATION_CONSENSUS": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "change_class": {
+            "const": "NO_PROTOCOL_CHANGE_REQUIRED"
+          }
+        },
+        "required": [
+          "change_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "normative_delta": {
+            "properties": {
+              "established": {
+                "const": false
+              }
+            },
+            "required": [
+              "established"
+            ]
+          },
+          "versioning_and_compatibility": {
+            "properties": {
+              "versioning_action": {
+                "const": "NONE"
+              }
+            },
+            "required": [
+              "versioning_action"
+            ]
+          },
+          "external_disposition": {
+            "properties": {
+              "ietf": {
+                "const": "NO_PROTOCOL_CHANGE_REQUIRED"
+              }
+            },
+            "required": [
+              "ietf"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "change_class": {
+            "enum": [
+              "COMPATIBLE_EXTENSION_PROFILE",
+              "NEW_QIKVRT_PROTOCOL",
+              "EXTERNAL_PROTOCOL_EXTENSION_CANDIDATE",
+              "MAJOR_EFFECT_ACK_REVISION_CANDIDATE"
+            ]
+          }
+        },
+        "required": [
+          "change_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "normative_delta": {
+            "properties": {
+              "established": {
+                "const": true
+              }
+            },
+            "required": [
+              "established"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
