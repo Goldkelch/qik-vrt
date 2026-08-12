@@ -25,6 +25,12 @@ The rendered PDF was built twice using pdfLaTeX with
 fresh extraction of the exact compressed archive produced a byte-identical PDF.
 The visual-rendering receipt records the page-level check.
 
+`ARXIV_LOCAL_COMPATIBILITY_VALIDATION.json` adds a fresh archive-level
+preflight: the archive has only the two declared members, no unsafe paths or
+links, no external source dependencies, and a clean two-pass pdfLaTeX rebuild.
+It records local compatibility evidence only; it is not an arXiv service
+receipt.
+
 ## Submission boundary
 
 The author has released the Zenodo/arXiv/IETF publication work in the shared

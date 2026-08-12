@@ -26,6 +26,38 @@ RELEASE_REL = RELEASE.relative_to(ROOT).as_posix()
 PUBLICATION_ID = "qikvrt-observer-relative-retrocausality-current-synthesis-v2"
 DIRECTIVE = "Zenodo, arXiv und IETF, Veröffentlichung freigegeben."
 
+# The frozen candidate is the public data plane only.  The package directory
+# also contains the private-to-the-publication-chain control plane: draft
+# metadata, return/authorization drafts, gate reports and the materializer
+# itself.  Those files are evidence for preparation, not research content, and
+# must never be silently carried into the exact Zenodo upload set.
+BASE = "docs/publications/2026-08-12-observer-relative-retrocausality"
+NON_UPLOAD_CONTROL_PATHS = frozenset(
+    {
+        f"{BASE}/PDF_RENDER_VALIDATION.json",
+        f"{BASE}/SHA256SUMS",
+        "state/work_units/OBSERVER_RELATIVE_RETROCAUSALITY_CURRENT_SYNTHESIS_V2.json",
+        f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json",
+        f"{RELEASE_REL}/FINALIZATION_CHECKLIST.md",
+        f"{RELEASE_REL}/FROZEN_UPLOAD_CANDIDATE.json",
+        f"{RELEASE_REL}/MACHINE_PROOF_BUNDLE_DRAFT.json",
+        f"{RELEASE_REL}/OWNER_ZENODO_AUTHORIZATION_DRAFT.json",
+        f"{RELEASE_REL}/PREPUBLICATION_RETURN_RECEIPT_DRAFT.json",
+        f"{RELEASE_REL}/PRODUCTION_GATE_STATUS.json",
+        f"{RELEASE_REL}/PUBLISH_REQUEST_DRAFT.json",
+        f"{RELEASE_REL}/RETURN_TO_OWNER_MESSAGE.md",
+        f"{RELEASE_REL}/SHA256SUMS",
+        f"{RELEASE_REL}/WORKFLOW_DISPATCH_PLAN.md",
+        f"{RELEASE_REL}/ZENODO_FILESET.md",
+        f"{RELEASE_REL}/ZENODO_METADATA_DRAFT.json",
+        f"{RELEASE_REL}/assemble_successor_package.py",
+        "policy/zenodo-machine-proof-policy-v2.json",
+        "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
+        "policy/qikvrt-prepublication-return-receipt-v2.schema.json",
+    }
+)
+CONTROL_NAME_MARKERS = ("_DRAFT", "FINALIZATION", "GATE_STATUS", "FILESET")
+
 
 def _raw(path: pathlib.Path) -> bytes:
     if not path.is_file() or path.is_symlink():
@@ -70,44 +102,52 @@ def _read_json(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _candidate_specs() -> list[tuple[str, str, str]]:
-    base = "docs/publications/2026-08-12-observer-relative-retrocausality"
     return [
-        (f"{base}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf", "QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf", "PRIMARY"),
-        (f"{base}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "SUPPLEMENT"),
-        (f"{base}/README.md", "README.md", "SUPPLEMENT"),
-        (f"{base}/WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md", "WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md", "SUPPLEMENT"),
-        (f"{base}/AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md", "AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md", "SUPPLEMENT"),
-        (f"{base}/CLAIM_MATRIX.json", "OBSERVER_RELATIVE_RETROCAUSALITY_CLAIM_MATRIX.json", "SUPPLEMENT"),
-        (f"{base}/AN_VON_UND_FUER_ALLE_MENSCHEN_CLAIM_MATRIX.json", "AN_VON_UND_FUER_ALLE_MENSCHEN_CLAIM_MATRIX.json", "SUPPLEMENT"),
-        (f"{base}/HISTORICAL_ARTIFACTS.json", "HISTORICAL_ARTIFACTS.json", "SUPPLEMENT"),
-        (f"{base}/PDF_RENDER_VALIDATION.json", "PDF_RENDER_VALIDATION.json", "SUPPLEMENT"),
-        (f"{base}/QIKVRT_RETROCAUSALITY_WITNESS.json", "QIKVRT_RETROCAUSALITY_WITNESS.json", "SUPPLEMENT"),
-        (f"{base}/verify_observer_relative_retrocausality.py", "verify_observer_relative_retrocausality.py", "SUPPLEMENT"),
-        (f"{base}/CHANGE_NOTICE_CURRENT_SYNTHESIS_V2.md", "CHANGE_NOTICE_CURRENT_SYNTHESIS_V2.md", "SUPPLEMENT"),
-        (f"{base}/SHA256SUMS", "CURRENT_SYNTHESIS_SHA256SUMS", "SUPPLEMENT"),
-        ("state/work_units/OBSERVER_RELATIVE_RETROCAUSALITY_CURRENT_SYNTHESIS_V2.json", "CURRENT_SYNTHESIS_WORK_UNIT.json", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/ZENODO_METADATA_DRAFT.json", "ZENODO_METADATA.json", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/CHANGE_NOTICE.md", "ZENODO_SUCCESSOR_CHANGE_NOTICE.md", "SUPPLEMENT"),
+        (f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf", "QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf", "PRIMARY"),
+        (f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "SUPPLEMENT"),
+        (f"{BASE}/README.md", "README.md", "SUPPLEMENT"),
+        (f"{BASE}/WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md", "WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md", "SUPPLEMENT"),
+        (f"{BASE}/AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md", "AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md", "SUPPLEMENT"),
+        (f"{BASE}/CLAIM_MATRIX.json", "OBSERVER_RELATIVE_RETROCAUSALITY_CLAIM_MATRIX.json", "SUPPLEMENT"),
+        (f"{BASE}/AN_VON_UND_FUER_ALLE_MENSCHEN_CLAIM_MATRIX.json", "AN_VON_UND_FUER_ALLE_MENSCHEN_CLAIM_MATRIX.json", "SUPPLEMENT"),
+        (f"{BASE}/HISTORICAL_ARTIFACTS.json", "HISTORICAL_ARTIFACTS.json", "SUPPLEMENT"),
+        (f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json", "QIKVRT_RETROCAUSALITY_WITNESS.json", "SUPPLEMENT"),
+        (f"{BASE}/verify_observer_relative_retrocausality.py", "verify_observer_relative_retrocausality.py", "SUPPLEMENT"),
+        (f"{BASE}/CHANGE_NOTICE_CURRENT_SYNTHESIS_V2.md", "CHANGE_NOTICE_CURRENT_SYNTHESIS_V2.md", "SUPPLEMENT"),
         (f"{RELEASE_REL}/ZENODO_LICENSE_NOTICE.md", "ZENODO_LICENSE_NOTICE.md", "SUPPLEMENT"),
         (f"{RELEASE_REL}/CITATION.cff", "CITATION.cff", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/ZENODO_FILESET.md", "ZENODO_FILESET.md", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/FINALIZATION_CHECKLIST.md", "FINALIZATION_CHECKLIST.md", "SUPPLEMENT"),
         (f"{RELEASE_REL}/CLAIM_MATRIX_V2.json", "CLAIM_MATRIX_V2.json", "SUPPLEMENT"),
         (f"{RELEASE_REL}/SOURCE_EVIDENCE_BINDINGS.json", "SOURCE_EVIDENCE_BINDINGS.json", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json", "BOUNDARY_TEST_REPORT.json", "SUPPLEMENT"),
-        (f"{RELEASE_REL}/PRODUCTION_GATE_STATUS.json", "PRODUCTION_GATE_STATUS.json", "SUPPLEMENT"),
-        ("policy/zenodo-machine-proof-policy-v2.json", "zenodo-machine-proof-policy-v2.json", "SUPPLEMENT"),
-        ("policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json", "qikvrt-zenodo-machine-proof-bundle-v2.schema.json", "SUPPLEMENT"),
-        ("policy/qikvrt-prepublication-return-receipt-v2.schema.json", "qikvrt-prepublication-return-receipt-v2.schema.json", "SUPPLEMENT"),
         ("LICENSES/CC-BY-NC-ND-4.0.txt", "CC-BY-NC-ND-4.0.txt", "SUPPLEMENT"),
         ("LICENSES/PolyForm-Noncommercial-1.0.0.txt", "PolyForm-Noncommercial-1.0.0.txt", "SUPPLEMENT"),
     ]
+
+
+def _candidate_upload_boundary() -> dict[str, object]:
+    return {
+        "scope": "PUBLIC_CONTENT_AND_EVIDENCE_ONLY",
+        "excluded_categories": [
+            "preparation",
+            "publication-control",
+            "authorization",
+            "execution-status",
+            "draft",
+            "repository-internal validation",
+            "policy and schema source",
+        ],
+        "excluded_paths": sorted(NON_UPLOAD_CONTROL_PATHS),
+        "rule": "The frozen upload set contains public research content, its public evidence bindings and required license material only. Preparation, control and draft artifacts remain repository-resident and are not Zenodo upload candidates.",
+    }
 
 
 def _candidate_files() -> list[dict[str, Any]]:
     values: list[dict[str, Any]] = []
     names: set[str] = set()
     for relative, name, role in _candidate_specs():
+        if relative in NON_UPLOAD_CONTROL_PATHS:
+            raise RuntimeError(f"control artifact entered public upload set: {relative}")
+        if any(marker in relative.upper() or marker in name.upper() for marker in CONTROL_NAME_MARKERS):
+            raise RuntimeError(f"draft or control name entered public upload set: {relative}")
         if name in names:
             raise RuntimeError(f"duplicate upload name: {name}")
         names.add(name)
@@ -115,6 +155,10 @@ def _candidate_files() -> list[dict[str, Any]]:
         item["name"] = name
         item["role"] = role
         values.append(item)
+    if not any(item["path"] == f"{BASE}/HISTORICAL_ARTIFACTS.json" for item in values):
+        raise RuntimeError("public candidate must retain the historical-artifact binding")
+    if not any(item["path"] == f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json" for item in values):
+        raise RuntimeError("public candidate must retain the executable-witness report")
     return values
 
 
@@ -319,6 +363,7 @@ def _build_generated(*, write: bool) -> dict[str, object]:
         "finite_witness_reexecuted": True,
         "historical_record_21888130_preserved": True,
         "existing_metadata_edit_package_preserved": True,
+        "candidate_upload_set_excludes_preparation_control_and_draft_files": True,
         "canonical_prepublication_return_receipt": False,
         "canonical_machine_proof_bundle": False,
         "canonical_exact_upload_authorization": False,
@@ -352,6 +397,11 @@ def _build_generated(*, write: bool) -> dict[str, object]:
             {
                 "id": "BND-004",
                 "name": "new Lean kernel proof for this exact current claim set is not represented as present",
+                "state": "PASS",
+            },
+            {
+                "id": "BND-005",
+                "name": "candidate upload set contains public content and evidence only, excluding preparation, control and draft artifacts",
                 "state": "PASS",
             },
         ],
@@ -388,6 +438,7 @@ def _build_generated(*, write: bool) -> dict[str, object]:
         "file_count": len(candidate),
         "total_bytes": sum(item["bytes"] for item in candidate),
         "candidate_aggregate_sha256": candidate_aggregate_sha256,
+        "upload_boundary": _candidate_upload_boundary(),
         "preserved_predecessor": {
             "record_id": "21888130",
             "doi": "10.5281/zenodo.21888130",
@@ -643,6 +694,11 @@ def _check() -> None:
     status = _read_json(RELEASE / "PRODUCTION_GATE_STATUS.json")
     if status.get("state") != "PREPUBLICATION_PACKAGE_PREPARED_NOT_EXECUTABLE":
         raise RuntimeError("production gate status boundary drifted")
+    for name in (
+        "candidate_upload_set_excludes_preparation_control_and_draft_files",
+    ):
+        if status.get("gates", {}).get(name) is not True:
+            raise RuntimeError(f"candidate-boundary gate must remain true: {name}")
     for name in (
         "canonical_prepublication_return_receipt",
         "canonical_machine_proof_bundle",

@@ -21,19 +21,26 @@ proper-time measurement.  `NEGATIVE_INFORMATION_DIRECTION` requires increasing
 receiver-local change order and decreasing authenticated source order in the
 same declared source-order domain.
 
-## Required local checks
+## Required local checks and fixity
 
 ```sh
 python3 -B verify_candidate.py
 sha256sum -c SHA256SUMS
 ```
 
+The validator checks the XML header, seven deterministic classification
+fixtures, local non-effect assertions, manifest bindings, and the full
+`SHA256SUMS` scope.  It performs no network operation and does not render the
+draft.
+
 ## Required renderer check before any submission
 
 Render `draft-lohmann-qikvrt-local-change-time-00.xml` using the locked
 `xml2rfc 3.34.0` derivation, retain the generated TXT and HTML, and refresh
 `RENDER_STATUS.json`, `SUBMISSION_MANIFEST.json`, `SHA256SUMS`, and the
-artifact-bound authorization form from the final bytes.
+artifact-bound authorization form from the final bytes.  The exact renderer is
+not available in this local runtime.  `idnits` is also not a declared available
+runtime component, so this package records no `idnits` result.
 
 The render output must be reviewed for RFCXML errors, line wrapping, references,
 BCP 78/79 boilerplate, I-D filename and revision, and no unintentional claims

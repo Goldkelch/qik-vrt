@@ -59,19 +59,25 @@ retrocausality, or authorization of a downstream effect.
 | `EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md` | A non-authorizing form for a later action-time decision. |
 | `SHA256SUMS` | Fixity index for this local package. |
 
-## Local validation
+## Local validation and fixity
 
 ```sh
 python3 -B verify_candidate.py
 sha256sum -c SHA256SUMS
 ```
 
-The locked `xml2rfc 3.34.0` renderer is not available in this runtime.  Thus
-this package intentionally includes no locally rendered TXT or HTML artifacts.
-Before any external upload, the exact final source must be rendered and
-reviewed with the required renderer, the artifact manifest must be refreshed,
-and the author must confirm the exact bytes and destination state at action
-time.
+The validator checks the XML header, seven deterministic classification
+fixtures, the declared local non-effect state, the manifest-to-file bindings,
+and the complete `SHA256SUMS` scope.  It does not render, submit, send email,
+or authenticate a real principal.
+
+The locked `xml2rfc 3.34.0` renderer is not available in this runtime; `idnits`
+is likewise not available as a declared runtime component.  Thus this package
+intentionally contains no locally generated TXT or HTML artifacts and makes no
+`idnits` result claim.  Before any external upload, the exact final source must
+be rendered and reviewed with the required renderer, the artifact manifest and
+fixity index must be refreshed, and the author must confirm the exact bytes and
+destination state at action time.
 
 No command in this directory submits a document, sends email, calls the
 Datatracker, creates a repository reference, or mutates an external system.
