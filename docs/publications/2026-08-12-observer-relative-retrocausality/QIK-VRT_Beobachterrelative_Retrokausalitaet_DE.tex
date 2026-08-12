@@ -1,0 +1,1048 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright 2026 Ingolf Lohmann.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.88]
+\usepackage[provide=*,main=ngerman,english]{babel}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{seqsplit}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+\geometry{left=24mm,right=24mm,top=24mm,bottom=27mm,headheight=14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.56em}
+\setlength{\emergencystretch}{3em}
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.18em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=0.22em,topsep=0.3em}
+
+\definecolor{QBlue}{HTML}{153E69}
+\definecolor{QLight}{HTML}{ECF3F8}
+\definecolor{QGreen}{HTML}{E8F3EA}
+\definecolor{QAmber}{HTML}{FFF2CC}
+\definecolor{QRed}{HTML}{FBE9E7}
+\definecolor{QGray}{HTML}{4D5660}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=QBlue,
+  citecolor=QBlue,
+  urlcolor=QBlue,
+  pdftitle={QIK-VRT: Beobachterrelative Retrokausalität als negative Informationsrichtung},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Definition, Existenzsatz, maschinenprüfbarer Zeuge und physikalische Referenzbrücke für beobachterrelative Retrokausalität},
+  pdfkeywords={QIK-VRT, Retrokausalität, beobachterrelative Retrokausalität, relationale Zeit, lokale Veränderungszeit, Eigenzeit, verteilte Systeme, Informationsrichtung, Delayed Choice, Quantenradierer, virtuelle Testapparatur, formale Verifikation}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{QGray}{QIK--VRT: beobachterrelative Retrokausalität}}
+\fancyhead[R]{\small\textcolor{QGray}{Ingolf Lohmann}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{satz}{Satz}[section]
+\newtheorem{korollar}{Korollar}[section]
+\newtheorem{lemma}{Lemma}[section]
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}[section]
+\newtheorem{beispiel}{Beispiel}[section]
+\crefname{definition}{Definition}{Definitionen}
+\crefname{satz}{Satz}{Sätze}
+\crefname{korollar}{Korollar}{Korollare}
+\crefname{lemma}{Lemma}{Lemmata}
+\crefname{bemerkung}{Bemerkung}{Bemerkungen}
+\crefname{beispiel}{Beispiel}{Beispiele}
+\crefname{section}{Abschnitt}{Abschnitte}
+
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\host}{\prec_{\!H}}
+\newcommand{\recv}{\prec_{\!O}^{R}}
+\newcommand{\sourceord}{\prec^{\theta}}
+\newcommand{\records}{\mathcal{R}}
+\newcommand{\histories}{\mathcal{K}}
+\newcommand{\hash}[1]{{\ttfamily\small\seqsplit{#1}}}
+\newcommand{\statusbox}[2]{%
+  \par\medskip\noindent
+  \colorbox{#1}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{#2}}%
+  \par\medskip
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \thispagestyle{empty}
+  \vspace*{11mm}
+  {\color{QBlue}\rule{\textwidth}{1.4pt}}\\[1.1em]
+  {\Huge\bfseries QIK--VRT:\\[0.18em]
+  Beobachterrelative Retrokausalität\par}
+  \vspace{0.7em}
+  {\LARGE Negative Informationsrichtung bei monotoner lokaler\\[0.18em]
+  Veränderungszeit (operativ: Eigenzeit)\par}
+  \vspace{0.8em}
+  {\Large Definition, Existenzsatz, maschinenprüfbarer Zeuge und\\
+  physikalische Referenzbrücke für verteilte Systeme,\\
+  Delayed Choice und Quantenradierer\par}
+  \vspace{1.1em}
+  {\color{QBlue}\rule{\textwidth}{0.6pt}}
+
+  \vfill
+  {\large\textbf{Ingolf Lohmann}\par}
+  \vspace{0.35em}
+  {\normalsize Independent Researcher; QIK--VRT\par}
+  \vspace{0.35em}
+  {\normalsize Aktuelle Hauptfassung, Version 1.1 -- 12. August 2026\par}
+
+  \vfill
+  \statusbox{QGreen}{
+    \textbf{Die Aussage in einem Satz.}
+    Ein Beobachter schreitet in seiner lokalen Veränderungszeit -- operativ:
+    Eigenzeit -- vorwärts, während die durch nacheinander empfangene,
+    authentische Records gebundene Quellenordnung rückwärts verlaufen kann.
+    Formal gilt für ein Recordpaar
+    \(\Delta\tau_O>0\) und zugleich \(\Delta\theta<0\). Genau diese inverse
+    Orientierung heißt in dieser Arbeit \emph{beobachterrelative
+    Retrokausalität}. Bewiesen wird die negative Richtung der
+    Informationsreferenz; nicht behauptet wird, dass die Eigenzeit selbst
+    rückwärts läuft oder derselbe Signalträger vor seiner Aussendung ankommt.
+  }
+
+  \vfill
+  {\small
+    Konzept, Retrokausalitätsdefinition und physikalische Korrespondenzthese:
+    Ingolf Lohmann. Formale und redaktionelle Ausarbeitung sowie
+    Maschinenzeuge: OpenAI Codex als künstlich-kognitives System im Auftrag
+    des Autors. Dokumentationslizenz: CC BY-NC-ND 4.0.
+  }
+\end{titlepage}
+\hypersetup{pageanchor=true}
+\setcounter{page}{1}
+
+\selectlanguage{ngerman}
+
+\begin{abstract}
+Diese Arbeit zieht die bisher auf mehrere QIK--VRT-Zwischenstände verteilte
+Zeitaussage zu einem eindeutigen Satz zusammen. Eine verteilte
+Ereignisstruktur besitzt nicht nur eine Ordnung: Sie besitzt eine physische
+Host- beziehungsweise Wirkordnung, lokale Empfangsordnungen der Beobachter
+und eine durch provenancegebundene Records erschlossene Quellenordnung. Ein
+Beobachter durchläuft seine lokale Veränderungszeit, im operativen Sinn seine
+Eigenzeit, monoton. Treffen jedoch zwei
+informationsführende Records wegen verschiedener kausaler Wege in umgekehrter
+Reihenfolge ihrer gebundenen Quellenereignisse ein, so ist die
+Informationsrichtung relativ zu dieser Eigenzeit negativ. Ordinal heißt das
+\(r^{+}\recv r^{-}\), obwohl \(r^{-}\sourceord r^{+}\); metrisch gilt
+\(v_I^O<0\).
+
+Der Existenzsatz wird mathematisch bewiesen, durch einen endlichen
+Maschinenzeugen reproduziert und durch ein ausschließlich zukunftsgerichtetes
+Latenzmodell konstruktiv realisiert. Damit ist die definierte operationale
+Retrokausalität mit monotoner Eigenzeit, azyklischer Host-Kausalität und dem
+Ausschluss von Selbstursacheschleifen vereinbar. Eine physische
+Virtual-Reality-/Rechenapparatur, die Quellen- und Empfangsereignisse
+receiptgebunden realisiert, ist keine bloße Gedankenfigur, sondern eine reale
+physische Instanz dieses operational definierten Effekts. Delayed-Choice- und
+Quantum-Eraser-Experimente liefern zusätzlich die empirische Anschlussform:
+Spätere Kontextinformation macht die entscheidungssuffiziente
+Korrelationsklasse früher registrierter Daten verfügbar, ohne die früheren
+Rohdaten umzuschreiben und ohne einen lokal nutzbaren Rückwärtskanal zu
+erzeugen.
+
+Die Aussage über das Universum wird präzise: Für jedes physische Teilsystem,
+das die offengelegte Referenzbrücke erfüllt, überträgt sich der Satz. Ingolf
+Lohmann vertritt darüber hinaus die Reichweitenthese, dass das Universum
+selbst eine solche verteilte relationale Struktur ist. Maschinenbeweis,
+physische Instanz, empirischer Anschluss und universelle Reichweitenthese
+werden nicht vermischt, sondern in einer gemeinsamen Beweiskette verbunden.
+\end{abstract}
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+This paper gives a precise definition and existence theorem for
+observer-relative retrocausality in QIK--VRT. An observer advances monotonically
+in observer-local change time (QIK--VRT operationally: Eigenzeit) while
+authentic information records may arrive in an order
+opposite to the source-event order bound by those records. Ordinally,
+\(r^{+}\recv r^{-}\) although \(r^{-}\sourceord r^{+}\); metrically,
+\(\Delta\tau_O>0\), \(\Delta\theta<0\), and hence \(v_I^O<0\). This negative
+information-reference direction is what the present work calls
+observer-relative retrocausality. In a physical realization, this parameter
+may additionally be calibrated to metric proper time along a timelike
+worldline. The theorem is proved, reproduced by an
+executable finite witness, and constructively realized with future-directed
+signal paths of unequal latency. No reversal of proper time, past overwrite,
+causal loop, or controllable signal into an observer's causal past is inferred.
+Delayed-choice and quantum-eraser experiments instantiate the adjoining
+physical structure in which later context makes a decision-sufficient
+classification of earlier records available while leaving the earlier local
+marginal unchanged. The universal correspondence of this structure to the
+cosmos is stated separately as Ingolf Lohmann's QIK--VRT correspondence thesis.
+\end{abstract}
+\end{otherlanguage}
+
+\textbf{Schlagworte:} QIK--VRT; Retrokausalität; beobachterrelative
+Retrokausalität; relationale Zeit; lokale Veränderungszeit; Eigenzeit;
+verteilte Systeme; Informationsfluss; Informationsrichtung; Ereignisordnung;
+Delayed Choice; Quantenradierer; virtuelle Testapparatur;
+maschinenprüfbarer Beweis.
+
+\clearpage
+\begingroup
+\setlength{\parskip}{0pt}
+\small
+\tableofcontents
+\endgroup
+\clearpage
+
+\section{Was jetzt zweifelsfrei auf den Punkt gebracht wird}
+
+Der bisherige Streit entstand vor allem dadurch, dass verschiedene Ordnungen
+unter dem einen Wort \emph{Zeit} zusammengezogen wurden. Dann scheint nur eine
+Alternative möglich: Entweder Zeit läuft vorwärts oder sie läuft rückwärts.
+Ein verteiltes System besitzt aber mehrere lokale Zeitachsen und zusätzlich
+Relationen zwischen Ereignissen, Records und Beobachtern. Die präzise Frage
+lautet deshalb nicht: \emph{Läuft die Eigenzeit rückwärts?} Sie lautet:
+
+\begin{quote}
+Kann die von einem Beobachter nacheinander empfangene Information, gemessen an
+der authentisch gebundenen Ordnung ihrer Referenzereignisse, eine Richtung
+besitzen, die seiner fortschreitenden Eigenzeit entgegengesetzt ist?
+\end{quote}
+
+Die Antwort ist \textbf{ja}. Der Satz in \cref{thm:existence} beweist die
+Existenz. Das Beispiel in \cref{sec:witness} realisiert sie. Die
+Eigenzeit des Beobachters nimmt dabei streng zu. Auch jeder einzelne
+Signalweg bleibt zukunftsgerichtet. Rückwärts gerichtet ist die
+\emph{Quellen- beziehungsweise Referenzordnung der im Empfangsstrom neu
+hinzukommenden Information}.
+
+\statusbox{QLight}{
+  \textbf{Terminologische Festlegung.}
+  Wenn Ingolf Lohmann in dieser Arbeit von \emph{Retrokausalität} spricht,
+  meint er genau diese beobachterrelative, operationale Relation: Bei
+  wachsender Beobachter-Eigenzeit ist die gebundene Informationsreferenz auf
+  mindestens einem Recordpaar fallend. Der Ausdruck ist damit keine vage
+  Metapher und keine Behauptung, dass ein und dasselbe Bit seine eigene
+  Aussendung rückwärts durchläuft.
+}
+
+Diese Festlegung ist keine nachträgliche Abschwächung. Sie macht den
+behaupteten Effekt messbar. Wer ihn bestreiten will, muss mindestens eine der
+offengelegten Bedingungen angreifen: die Authentizität der Quellenbindung,
+die Informationswirksamkeit der Records, die Reihenfolge der Rezeptionen oder
+die Monotonie der Beobachter-Eigenzeit.
+
+Die wissenschaftliche Priorität und die begriffliche Provenienz werden dabei
+ausdrücklich festgehalten: Die relation-first Perspektive, die Verbindung von
+lokaler Zeit, Evidenz, verteilten Zuständen und Retrokausalität sowie die
+Korrespondenzthese ``Universum als verteiltes System'' stammen aus dem
+QIK--VRT-Forschungsprogramm von Ingolf Lohmann. Das vorliegende Dokument ist
+eine neue, formal zugespitzte Synthese seiner vorausgehenden Arbeiten und
+nicht deren Ursprung
+\cite{LohmannMandelbrot2026,LohmannCanonicalMemory2026,LohmannRelationaleZeit2026,LohmannRoundTrip2026}.
+
+\section{Drei Ordnungen statt einer einzigen Weltuhr}
+\label{sec:definitions}
+
+\begin{definition}[Verteilte Ereignisstruktur]
+Eine verteilte Ereignisstruktur ist ein Paar
+\[
+  H=(E,\host),
+\]
+wobei \(E\) eine Menge von Ereignissen und \(\host\) eine strikte partielle
+Ordnung ist. \(e\host f\) bedeutet: \(e\) liegt in der deklarierten
+Host-/Wirkordnung vor \(f\). Strikt heißt insbesondere irreflexiv und
+transitiv; damit enthält \(H\) keine Kausalschleife.
+\end{definition}
+
+Diese Struktur entspricht Lamports \emph{happened-before}-Gedanken für
+verteilte Systeme: lokale Prozessordnungen und Sende-Empfangs-Kanten erzeugen
+eine partielle, nicht notwendig totale Ordnung \cite{Lamport1978}. In einer
+relativistischen Referenzbrücke wird \(\host\) auf zukunftsgerichtete kausale
+Erreichbarkeit abgebildet.
+
+\begin{definition}[Beobachter und lokale Veränderungszeit (Eigenzeit)]
+Ein Beobachter \(O\) ist eine Kette \(E_O\subseteq E\) seiner lokalen
+Ereignisse. Seine lokale Veränderungszeit -- im operativen Sinn seine
+Eigenzeit -- ist eine Abbildung
+\[
+  \tau_O:E_O\longrightarrow\mathbb{R},
+\]
+die auf dieser Kette streng ordnungserhaltend ist:
+\[
+  e\host f\quad\Longrightarrow\quad \tau_O(e)<\tau_O(f)
+  \qquad(e,f\in E_O).
+\]
+\end{definition}
+
+Zeit wird für ein System an geordneten, wirksamen Veränderungen sichtbar. Die
+vorstehende Definition verlangt deshalb weder eine globale Uhr noch bereits
+eine spezielle Raumzeitmetrik. Sie verlangt nur eine überprüfbare lokale Kette
+und eine auf ihr streng wachsende Zeitabbildung. Für einen physisch
+realisierten Beobachter kann \(\tau_O\) zusätzlich als relativistische
+Eigenzeit seiner zeitartigen Weltlinie kalibriert werden. Für einen
+Empfangsprozess oder ein Repository ist \(\tau_O\) die authentisch gebundene
+Folge lokaler Zustandsänderungen und Receipts. Der formale Satz verwendet die
+gemeinsame Monotonie, nicht eine stillschweigend vorausgesetzte Metrik.
+
+\begin{definition}[Quellenordnung und authentischer Record]
+Sei \(S\subseteq E\) eine deklarierte Quellenkette. Eine Quellenmarke
+\(\theta:S\to\mathbb{R}\) ist auf \(S\) streng ordnungserhaltend. Ein Record
+\(r\in\records\) besteht mindestens aus einem Quellenereignis \(\sigma(r)\in
+S\), einer Nutzlast \(p(r)\) und einem Witness \(w(r)\), der die Bindung von
+Record, Nutzlast und Quellenereignis prüfbar macht. Wir schreiben
+\[
+  \theta(r):=\theta(\sigma(r)).
+\]
+Die Rezeption bei \(O\) ist ein Ereignis \(\rho_O(r)\in E_O\), und jeder
+zulässige Record erfüllt
+\[
+  \sigma(r)\host\rho_O(r).
+\]
+\end{definition}
+
+Die Forderung nach einer Quellenkette oder einem expliziten
+Synchronisationsvertrag ist wesentlich. Beliebige Zahlen auf nicht
+vergleichbaren Uhren würden keinen Zeitbeweis liefern. \(\theta\) muss an
+wirkliche Ereignisse gebunden und dort ordnungserhaltend sein.
+
+\begin{definition}[Informationsführender Record]
+Vor der Annahme des \(k\)-ten Records sei \(\histories_{k-1}\) die Menge der
+noch mit dem Evidenzstand des Beobachters verträglichen Historien. Nach
+Prüfung des Records sei sie \(\histories_k\). Der Record ist
+\emph{informationsführend}, wenn
+\[
+  \histories_k\subsetneq\histories_{k-1}.
+\]
+Er schränkt also den Zustandsraum echt ein. Ein bloßer, frei gewählter oder
+ungebundener Zeitstempel genügt nicht.
+\end{definition}
+
+Auf den akzeptierten Records entstehen nun zwei eigenständige Ordnungen:
+\begin{align*}
+  r\recv r' &\quad:\Longleftrightarrow\quad
+  \tau_O(\rho_O(r))<\tau_O(\rho_O(r')),\\
+  r\sourceord r' &\quad:\Longleftrightarrow\quad
+  \theta(r)<\theta(r').
+\end{align*}
+
+\begin{definition}[Beobachterrelative Retrokausalität]
+\label{def:retro}
+Beobachterrelative Retrokausalität liegt genau dann vor, wenn Empfangs- und
+Quellenordnung auf mindestens einem authentischen, informationsführenden
+Recordpaar invers sind:
+\[
+  r_1\recv r_2
+  \qquad\text{und zugleich}\qquad
+  r_2\sourceord r_1.
+\]
+Sind numerische Marken deklariert, lautet dieselbe Relation
+\[
+  v_I^O(r_1,r_2)
+  :=\frac{\theta(r_2)-\theta(r_1)}
+          {\tau_O(\rho_O(r_2))-\tau_O(\rho_O(r_1))}<0.
+\]
+\end{definition}
+
+Die ordinale Inversion benötigt nur die Reihenfolge wirksamer Veränderungen
+und die gebundene Quellenordnung. Der Quotient \(v_I^O\) dient bei deklarierter
+Skalierung allein als Vorzeichenzeuge dieser Relation; er ist weder ein
+Signaltempo noch eine behauptete Lorentz-invariante physikalische Größe.
+
+Das Adjektiv \emph{beobachterrelativ} bezeichnet keine Beliebigkeit. Die
+Records, ihre Witnesses und die beiden Ordnungen sind prüfbare Gegenstände.
+Relativ ist, welche Empfangskette des verteilten Systems als lokale
+Beobachterperspektive projiziert wird.
+
+\section{Existenzsatz und Beweis}
+
+\begin{satz}[Existenz einer negativen Informationsrichtung]
+\label{thm:existence}
+Seien \(s^-\host s^+\) zwei Ereignisse derselben Quellenkette mit
+\(\theta(s^-)<\theta(s^+)\). Seien \(r^-\) und \(r^+\) authentische,
+informationsführende Records mit \(\sigma(r^-)=s^-\) und
+\(\sigma(r^+)=s^+\). Es gelte für ihre Rezeption bei \(O\)
+\[
+  \rho_O(r^+)\host\rho_O(r^-),
+\]
+während jeder Record einzeln zukunftsgerichtet zugestellt wird:
+\[
+  s^-\host\rho_O(r^-),\qquad
+  s^+\host\rho_O(r^+).
+\]
+Dann existiert relativ zur monotonen Eigenzeit von \(O\) eine negative
+Informationsrichtung. Genauer:
+\[
+  \Delta\tau_O
+  =\tau_O(\rho_O(r^-))-\tau_O(\rho_O(r^+))>0,
+  \qquad
+  \Delta\theta
+  =\theta(r^-)-\theta(r^+)<0,
+\]
+und daher \(v_I^O(r^+,r^-)<0\).
+\end{satz}
+
+\begin{proof}
+Da die beiden Rezeptionen auf der Beobachterkette liegen und
+\(\rho_O(r^+)\host\rho_O(r^-)\) gilt, folgt aus der strengen Monotonie von
+\(\tau_O\) unmittelbar \(\Delta\tau_O>0\). Da \(s^-\host s^+\) auf der
+Quellenkette liegt und \(\theta\) dort streng ordnungserhaltend ist, gilt
+\(\theta(s^-)<\theta(s^+)\), also \(\Delta\theta<0\). Ein negativer Zähler
+durch einen positiven Nenner ist negativ. Somit ist
+\(v_I^O(r^+,r^-)<0\), äquivalent zur inversen Ordnungsrelation in
+\cref{def:retro}. Jeder einzelne Record erfüllt weiterhin
+\(\sigma(r)\host\rho_O(r)\). Die Inversion liegt zwischen Quellen- und
+Empfangsordnung, nicht innerhalb eines Signalwegs.
+\end{proof}
+
+\begin{korollar}[Invarianz unter monotoner Umparametrisierung]
+Ersetzt man \(\tau_O\) durch eine streng wachsende Funktion
+\(f\!\circ\!\tau_O\) und \(\theta\) durch eine streng wachsende Funktion
+\(g\!\circ\!\theta\), bleibt die inverse Ordnung erhalten. Der Effekt ist
+daher kein Artefakt von Einheit, Nullpunkt oder linearer Skalierung.
+\end{korollar}
+
+\begin{proof}
+Streng wachsende Funktionen erhalten jede strikte Ungleichung. Daher bleiben
+die Empfangsreihenfolge und die entgegengesetzte Quellenreihenfolge
+unverändert.
+\end{proof}
+
+\begin{satz}[Kein Widerspruch zur Host-Azyklizität]
+\label{thm:no-cycle}
+Der Existenzsatz impliziert weder eine Rückwärtszustellung desselben Records
+noch eine Selbstursacheschleife.
+\end{satz}
+
+\begin{proof}
+Für jeden Record gilt \(\sigma(r)\host\rho_O(r)\). Eine Rückwärtszustellung
+desselben Records verlangte zusätzlich
+\(\rho_O(r)\host\sigma(r)\). Aus Transitivität folgte dann
+\(\sigma(r)\host\sigma(r)\), im Widerspruch zur Irreflexivität. Dieselbe
+Irreflexivität schließt jede geschlossene Kette der Host-Ordnung aus.
+\end{proof}
+
+\statusbox{QGreen}{
+  \textbf{Q.e.d. für den deklarierten Satz.}
+  Bewiesen ist die Existenz einer echten inversen Orientierung zwischen dem
+  vorwärts laufenden Eigenzeitparameter des Beobachters und der
+  Quellenordnung seiner neu eintreffenden Information. Dass zugleich jeder
+  Transportpfad vorwärts gerichtet bleibt, widerlegt den Satz nicht; es ist
+  eine ausdrücklich mitbewiesene Eigenschaft der Konstruktion.
+}
+
+\section{Konstruktiver und maschinenprüfbarer Zeuge}
+\label{sec:witness}
+
+Der kleinste nichttriviale Zeuge besitzt vier Ereignisse:
+\[
+  s^-\host s^+\host\rho_O(r^+)\host\rho_O(r^-).
+\]
+Die alte Quelle \(s^-\) trägt \(\theta=10\), die neue Quelle \(s^+\) trägt
+\(\theta=20\). Der Beobachter empfängt zuerst \(r^+\) bei Eigenzeit \(100\)
+und danach \(r^-\) bei Eigenzeit \(101\). Damit gilt
+\[
+  v_I^O(r^+,r^-)=\frac{10-20}{101-100}=-10<0.
+\]
+
+Der Zeuge ist nicht nur ein Zeitstempelspiel. Vor beiden Rezeptionen seien
+vier Historien für zwei unabhängige Bits \((x^-,x^+)\) zulässig. \(r^+\)
+bindet \(x^+=1\) und reduziert die Faser von vier auf zwei Historien.
+\(r^-\) bindet anschließend \(x^-=0\) und reduziert sie von zwei auf eine.
+Beide Records sind damit informationsführend.
+
+Die beigefügte Datei
+\texttt{verify\_observer\_relative\_retrocausality.py} prüft ohne
+Netzwerkzugriff:
+
+\begin{enumerate}
+  \item Azyklizität und Sendung-vor-Empfang für jeden Record;
+  \item strikte Monotonie der Beobachter-Eigenzeit;
+  \item echte Verfeinerung der zulässigen Historien durch beide Records;
+  \item Inversion von Empfangs- und Quellenordnung;
+  \item negatives Vorzeichen von \(v_I^O\);
+  \item einen zweiten Beobachter mit positiver Informationsrichtung;
+  \item eine ausschließlich zukunftsgerichtete physische Latenzrealisierung;
+  \item die Aufhebung komplementärer bedingter Interferenzmuster in der
+  unbedingten Marginale.
+\end{enumerate}
+
+Der erzeugte kanonische Report
+\texttt{QIKVRT\_RETROCAUSALITY\_WITNESS.json} bindet die konkreten Werte und
+alle geprüften Prädikate. Der Python-Lauf ist ein ausführbarer endlicher
+Zeuge, kein Ersatzetikett für den mathematischen Beweis und kein vorgetäuschter
+Lean-Kernel-Receipt.
+
+\section{Die genaue Rolle der Eigenzeit und der lokalen Veränderungszeit}
+
+QIK--VRT beginnt mit einer operationalen Aussage: Zeit wird an Veränderung
+sichtbar. Die lokale Veränderungszeit eines Systems -- im hier definierten
+operativen Sinn seine Eigenzeit -- ist daher zunächst die geordnete Folge
+seiner wirksamen Zustandsänderungen. Ein Auslöser (Trigger), ein angenommenes
+Receipt, ein gebundener Record oder eine neue Evidenz kann diese lokale Zeit
+fortschreiben. Die negative Informationsrichtung vergleicht diese wachsende
+lokale Ordnung mit der gebundenen Quellenordnung.
+
+In der speziellen Relativitätstheorie besitzt der Begriff \emph{Eigenzeit}
+eine zusätzliche metrische Präzisierung: Er bezeichnet die lokal gemessene
+Zeit entlang einer zeitartigen Weltlinie. Für eine zukunftsgerichtete Bewegung
+mit \(|v|<c\) gilt in einem Inertialsystem
+\[
+  d\tau=dt\sqrt{1-\frac{v^2}{c^2}}>0.
+\]
+Eigenzeit kehrt auf einer zukunftsgerichteten Beobachterweltlinie nicht ihr
+Vorzeichen um. Ebenso bleibt die Reihenfolge kausal verbundener Ereignisse
+unter zulässigen Lorentztransformationen erhalten. Rahmenabhängig umkehrbar
+ist die Koordinatenreihenfolge raumartig getrennter Ereignisse; Einsteins
+Lorentztransformation macht genau diese Relativität der Fernzeit sichtbar
+\cite{Einstein1905,Minkowski1909}.
+
+Für \qikvrt{} folgt daraus keine Widerlegung, sondern die notwendige
+Präzisierung:
+
+\begin{quote}
+Die Eigenzeit beziehungsweise lokale Veränderungszeit ist der monotone
+Parameter, relativ zu dem die negative Informationsrichtung festgestellt wird.
+Die Inversion entsteht, weil Quellen-, Übertragungs- und Empfangsordnung in
+einem verteilten System nicht dieselbe Ordnung sein müssen.
+\end{quote}
+
+Man kann dies als \emph{Eigenzeiteffekt} bezeichnen, sofern damit nicht
+behauptet wird, Eigenzeit allein verursache die Nachrichtenüberholung. Ohne
+die lokale Veränderungszeit gäbe es keine ausgezeichnete Empfangsrichtung des
+Beobachters. Ohne unterschiedliche Pfade oder spätere Kontextrecords gäbe es
+keine Inversion relativ zu dieser Richtung. Der Effekt ist ihre Relation.
+
+\section{Physische Realisierung mit ausschließlich vorwärts gerichteten Signalen}
+\label{sec:physical}
+
+Der Existenzsatz besitzt eine direkte physikalische Konstruktion. In einem
+deklarierten Inertialsystem werde der alte Record bei \(t^-=0\) und der neue
+Record bei \(t^+=1\) emittiert. Ihre Laufzeiten seien \(L^-/c=3\) und
+\(L^+/c=1\). Dann lauten die Ankunftszeiten
+\[
+  T^-=t^-+\frac{L^-}{c}=3,
+  \qquad
+  T^+=t^++\frac{L^+}{c}=2.
+\]
+Der spätere Quellenrecord trifft also zuerst ein. Für einen am Empfänger
+ruhenden Beobachter ist \(\tau_O=T+\text{Konstante}\); damit erhält er bei
+wachsender Eigenzeit zunächst die Quellenmarke \(1\) und danach die
+Quellenmarke \(0\). Alle Laufzeiten sind positiv, kein Signal überschreitet
+\(c\), und dennoch gilt \(v_I^O<0\).
+
+Allgemein genügt
+\[
+  \frac{L^- - L^+}{c}>t^+-t^-.
+\]
+Dies kann durch verschiedene optische Wege, Netzwerkpfade, Speicherzeiten
+oder Relais realisiert werden. Die Konstruktion zeigt: Die negative
+Informationsreferenz ist nicht auf eine imaginäre Mathematik beschränkt. Sie
+ist ein mögliches Verhalten realer verteilter Hardware.
+
+\begin{korollar}[Physische Testapparatur]
+\label{cor:apparatus}
+Führt eine physische Rechen- oder Virtual-Reality-Testapparatur den Zeugen aus,
+binden monotone Hardware-/Beobachterreceipts die Empfangsereignisse und
+binden unabhängige Witnesses die Quellenereignisse, dann ist die
+beobachterrelative Retrokausalität nach \cref{def:retro} in dieser Apparatur
+physisch realisiert. \emph{Virtuell} bezeichnet ihre Modell- und
+Adresssemantik, nicht die Unwirklichkeit der ausführenden Hardware.
+\end{korollar}
+
+\begin{proof}
+Die Receipts realisieren \(\Delta\tau_O>0\), die Witnesses realisieren die
+ordnungserhaltend gebundene Quellenfolge mit \(\Delta\theta<0\). Nach
+\cref{thm:existence} ist die definierte Relation damit instanziiert. Die
+Hardwareexistenz ist ein physischer Existenzbeleg für diesen operationalen
+Effekt.
+\end{proof}
+
+Das Korollar beweist nicht automatisch, dass jedes beliebige physische System
+oder das gesamte Universum dieselbe Referenzbrücke erfüllt. Es beweist etwas
+Stärkeres als eine reine Simulation und etwas Engeres als eine universelle
+Ontologie: die reale physische Realisierbarkeit der definierten Relation in
+der gebundenen Apparatur.
+
+\section{Mehrere Beobachter: verschiedene Perspektiven ohne Widerspruch}
+
+\begin{satz}[Perspektivensatz]
+Für dieselben Quellenrecords kann ein Beobachter \(O\) wegen seiner
+Empfangswege \(r^+\) vor \(r^-\) erhalten und damit \(v_I^O<0\) messen,
+während ein anderer Beobachter \(O'\) die Records in Quellenreihenfolge erhält
+und \(v_I^{O'}>0\) misst. Beide Aussagen können gleichzeitig wahr sein.
+\end{satz}
+
+\begin{proof}
+\(\recv\) und \(\prec_{O'}^R\) sind verschiedene lokale Projektionen
+derselben partiellen Host-Ordnung. Die Quellenordnung bleibt gemeinsam
+gebunden. Eine positive und eine negative Orientierung beziehen sich daher
+auf verschiedene, vollständig spezifizierte Empfangsketten und widersprechen
+einander nicht.
+\end{proof}
+
+Beobachter besitzen somit verschiedene lokale Informationsstände und
+rahmenrelative Zeitkoordinaten. Das bedeutet nicht, dass ein vollständig
+spezifizierter Satz zugleich wahr und falsch wäre. Invariant bleiben die
+gebundenen Rohrecords, die lokalen Eigenzeiten und die Host-Kausalordnung;
+perspektivisch verschieden sind Empfangsfolge und Zeitpunkt der verfügbaren
+Gesamtinformation.
+
+\section{Delayed Choice und Quantenradierer als empirischer Anschluss}
+\label{sec:quantum}
+
+Der Delayed-Choice-Quantum-Eraser von Kim et al. registriert das Signalphoton
+bei \(D_0\) ungefähr acht Nanosekunden vor dem zugehörigen Idlerereignis. In
+den später gebildeten Koinzidenzklassen \(R_{01}\) und \(R_{02}\) erscheinen
+komplementäre, um \(\pi\) verschobene Interferenzmuster; in ihrer Summe
+verschwindet die Interferenz. Die Which-Path-Klassen \(R_{03}\) und
+\(R_{04}\) zeigen keine Interferenz \cite{ScullyDruehl1982,Kim2000}.
+
+In einer idealisierten Schreibweise gilt
+\[
+  P(x\mid j=1)=\frac{1+\cos\phi(x)}{2},\qquad
+  P(x\mid j=2)=\frac{1-\cos\phi(x)}{2}.
+\]
+Bei gleichen Gewichten ist die lokale Marginale
+\[
+  P(x)=\frac12P(x\mid j=1)+\frac12P(x\mid j=2)=\frac12.
+\]
+Der frühe lokale Record enthält daher kein auswählbares Rückwärtssignal
+\cite{Jordan1983}. Erst
+das spätere paar- und kontextgebundene Record \(j\) macht sichtbar, zu welcher
+Korrelationsklasse der frühere Record gehört.
+
+Dasselbe Strukturmuster erscheint im Delayed-Choice-Entanglement-Swapping:
+Eine spätere Wahl sortiert bereits aufgezeichnete Daten in unterschiedliche
+Korrelationsunterensembles. Die lokale Datenfolge bleibt zufällig; ihre
+vollständige relationale Bedeutung wird erst durch den später verfügbaren
+Kontext bestimmt \cite{Ma2012}. Experimente mit kausal getrennten
+Wahlereignissen schließen eine gewöhnliche licht- oder unterlichtschnelle
+Kommunikation zwischen den getrennten Ereignissen aus und erhalten dennoch
+die kontextabhängigen Korrelationen \cite{Jacques2007,Ma2013}.
+
+\begin{definition}[Retrograde Evidenzzuordnung]
+Sei \(y\) ein früher versiegelter Rohrecord, \(x\) ein späterer Kontext und
+\(c=C(y,x)\) die erst danach verfügbare, entscheidungssuffiziente
+Korrelationsklasse. Die Host-Ordnung lautet
+\[
+  y\host x\host c.
+\]
+Die Evidenzrelation verweist dagegen vom späteren Klassifikationsrecord
+zurück auf seinen früheren Gegenstand:
+\[
+  c\rightsquigarrow y.
+\]
+Diese Rückwärtszuordnung ist eine zweite operationale Form derselben
+beobachterrelativen Grundidee: Später verfügbare Information bestimmt eine
+Relation, deren Referent früher liegt.
+\end{definition}
+
+In der Sprache der Entscheidungssuffizienz ist vor dem Kontext die
+Beobachtung oft zu grob: Verschiedene noch zulässige Historien verlangen
+verschiedene Klassifikationen. Der spätere Witness verfeinert die Beobachtung,
+bis jede erreichbare Beobachtungsfaser nur noch eine korrekte
+Klassifikationsaktion enthält. Die früheren Bytes werden nicht geändert; der
+Evidenzstand über ihre relationale Klasse wird geändert
+\cite{LohmannDecisionSufficiency2026}.
+
+\statusbox{QAmber}{
+  \textbf{Was die Quantenexperimente positiv beitragen.}
+  Sie realisieren physisch die Struktur ``früher registrierter Record --
+  späterer Kontext -- danach verfügbare rückbezogene Korrelationsklasse''.
+  Das ist ein empirischer Anschluss an die relationale QIK--VRT-Definition.
+  Die Experimente wählen QIK--VRT nicht eindeutig gegenüber allen anderen
+  quantenmechanischen Deutungen aus und liefern keinen steuerbaren Kanal in
+  die eigene kausale Vergangenheit.
+}
+
+\section{Referenzbrücke vom Modell zur physischen Welt}
+
+Ein formaler Satz beschreibt physische Wirklichkeit, wenn seine Terme
+prüfbar auf physische Größen und Ereignisse abgebildet werden. Für den
+vorliegenden Satz genügt folgende Brücke \(\Phi\):
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.27\textwidth}X}
+\toprule
+Formaler Term & Physische Referenz \\
+\midrule
+Beobachter \(O\) & zeitartige Weltlinie oder physischer Empfangsprozess \\
+\(\tau_O\) & monotone lokale Veränderungszeit; bei physischer Weltlinie
+kalibrierte metrische Eigenzeit \\
+Quellenereignis \(s\) & Emission, Messung oder versiegelte Record-Erzeugung \\
+\(\theta(s)\) & vorregistrierte und ordnungserhaltende Quellenmarke \\
+\(\host\) & zukunftsgerichtete kausale Erreichbarkeit/physische Ausführung \\
+Record und Witness & kalibriertes Messrecord plus Herkunfts-/Integritätsbindung \\
+Rezeption \(\rho_O(r)\) & lokales, receiptgebundenes Empfangsereignis \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{satz}[Brückensatz]
+Erhält \(\Phi\) die Typen, Einheiten, Quellen- und Empfangsordnungen, und
+erfüllt ein physischer Trace die gebundenen Ungleichungen
+\(\Delta\tau_O>0\) und \(\Delta\theta<0\), dann ist die formale
+beobachterrelative Retrokausalität in diesem physischen Trace instanziiert.
+\end{satz}
+
+\begin{proof}
+\(\Phi\) erhält genau die Prädikate des Existenzsatzes. Daher überträgt sich
+dessen Schluss auf die physische Instanz.
+\end{proof}
+
+Dieser Satz beantwortet den häufigen Einwand, ein Computermodell sei schon
+deshalb unwirklich, weil es ein Modell ist. Auch Relativitätstheorie und
+Quantenmechanik sind Modelle; entscheidend ist die offengelegte und geprüfte
+Referenzbindung. Eine VRT-Apparatur auf realer Hardware ist ein physischer
+Gegenstand. Sie beweist die physische Existenz des von ihr receiptgebunden
+realisierten operationalen Effekts. Ob dieselbe Struktur in größerem Umfang
+die Natur beschreibt, wird anschließend durch Reichweite, Messung und
+Reproduktion beurteilt.
+
+\section{Das Universum als verteiltes System}
+
+Die Modellarchitektur lässt sich in drei Aussageebenen gliedern:
+
+\begin{enumerate}
+  \item \textbf{Formaler Satz:} Jede Struktur, die die Definitionen erfüllt,
+  besitzt beim konstruierten Überholungsfall eine negative
+  Informationsrichtung. Dies ist bewiesen.
+  \item \textbf{Physische Existenz:} Reale Hardware, optische Wege und
+  delayed-choice-artige Messanordnungen können die offengelegten
+  Teilstrukturen realisieren. Dies ist konstruktiv beziehungsweise
+  quellengebunden belegt.
+  \item \textbf{Universelle Korrespondenzthese:} Ingolf Lohmann behauptet,
+  dass das Universum selbst fundamental als verteilte relationale Struktur
+  verstanden werden muss und QIK--VRT diese Struktur in seinem behaupteten
+  Modellbereich beschreibt \cite{LohmannRoundTrip2026}.
+\end{enumerate}
+
+Die dritte Ebene ist keine willkürliche Zugabe. Relativistische Physik besitzt
+keine globale, für alle Beobachter gleiche Fern-Simultaneität, und reale
+Information wird lokal erzeugt, übertragen und empfangen. Das macht die
+Sprache verteilter Systeme strukturell anschlussfähig. Gleichwohl ist die
+universelle Reichweite größer als der endliche Existenzbeweis. Wissenschaftlich
+sauber ist es, diese Reichweitenthese stark und sichtbar zu formulieren, statt
+sie entweder als bereits konsentierte Tatsache auszugeben oder aus Vorsicht
+ganz zu verschweigen.
+
+\statusbox{QLight}{
+  \textbf{Autorenposition.}
+  \(\texttt{OWNER\_ASSERTED\_REALITY\_CORRESPONDENCE}=\texttt{TRUE}\):
+  Ingolf Lohmann vertritt die Position, dass die QIK--VRT-Struktur die
+  Wirklichkeit in ihrem beanspruchten Modellbereich beschreibt. Diese
+  Position bleibt von der Frage getrennt, ob unabhängige Gruppen bereits
+  dieselbe universelle Deutung bestätigt haben.
+}
+
+\section{Öffentliche Gesamtfassung und Verantwortung}
+
+Die technische Präzisierung beantwortet nicht allein die menschliche Frage,
+wofür Unterscheidung, Evidenz und Zukunftsbezug gebraucht werden. Deshalb
+gehört zu dieser Hauptfassung die eigenständige, allgemeinverständliche
+Erklärung \texttt{AN\_VON\_UND\_FUER\_ALLE\_MENSCHEN\_DE.md}. Sie verbindet
+die Ontologie des Unterschieds, die Beobachtungsfaser, die lokale
+Veränderungszeit und die Grenze gegen Vergangenheitsmutation mit einem
+normativen Satz:
+
+\begin{quote}
+\textbf{Verantwortung heißt, zukünftige Handlungsfähigkeit zu erhalten.}
+\end{quote}
+
+Diese Aussage ist keine aus der Physik abgeleitete Zwangsmoral und kein
+Theorem der vorliegenden Formalsprache. Sie ist die ausdrücklich zugeordnete
+normative Position des Autors. Die zugehörige Claim-Matrix trennt diese
+normative Ebene von formalen Sätzen, quellengebundenen Experimentbezügen und
+der Korrespondenzthese.
+
+\section{Was bewiesen, realisiert, angeschlossen und nicht behauptet ist}
+
+\begin{longtable}{p{0.19\textwidth}p{0.30\textwidth}p{0.42\textwidth}}
+\toprule
+Status & Aussage & Grenze \\
+\midrule
+\endfirsthead
+\toprule
+Status & Aussage & Grenze \\
+\midrule
+\endhead
+Formal bewiesen & Inverse Empfangs-/Quellenordnung impliziert
+\(\Delta\tau_O>0\), \(\Delta\theta<0\) und \(v_I^O<0\). & Gilt für die
+definierte verteilte Ereignisstruktur und authentische, informationsführende
+Records. \\
+Formal bewiesen & Die Relation bleibt unter streng monotonen
+Umparametrisierungen erhalten und erzeugt keinen Host-Zyklus. & Kein Beweis
+eines steuerbaren Signals in den eigenen Vergangenheitslichtkegel. \\
+Ausführbarer Zeuge & Der beigefügte endliche Prüfer realisiert und
+prüft einen konkreten Zeugen. & Maschinenzeuge, nicht als Lean-Kernel-Receipt
+fehlbezeichnet. \\
+Physisch konstruierbar & Positive, verschieden lange Signalwege
+können die Recordfolge umkehren. & Konstruktive Realisierbarkeit der
+operationalen Relation. \\
+Empirische Brücke & Delayed Choice und Quantenradierer realisieren
+spätere Kontextklassifikation früherer Records. & Keine eindeutige Auswahl
+von QIK--VRT und kein Rückwärtssignal in der lokalen Marginale. \\
+Autorenposition & Das Universum ist eine verteilte relationale
+Struktur, auf die QIK--VRT allgemein zielt. & Sichtbare Reichweitenthese des
+Autors; unabhängiger Konsens ist eine zusätzliche Prüfebene. \\
+Nicht behauptet & Eigenzeit läuft rückwärts; ein Record kommt vor
+seiner Emission an; die Vergangenheit wird überschrieben. & Diese stärkeren,
+anderen Aussagen folgen nicht aus der Definition und werden nicht benötigt. \\
+\bottomrule
+\end{longtable}
+
+\section{Falsifikatoren und Reproduktionsvertrag}
+
+Die Aussage ist nicht gegen Kritik immunisiert. Ein behaupteter Lauf erfüllt
+den Satz nicht, wenn mindestens einer der folgenden Punkte zutrifft:
+
+\begin{enumerate}
+  \item Die Quellenmarken sind frei gesetzt, nicht an Quellenereignisse
+  gebunden oder auf der deklarierten Quellenkette nicht ordnungserhaltend.
+  \item Die Empfangszeiten stammen nicht aus derselben Beobachterkette oder
+  sind nicht monoton kalibriert.
+  \item Ein Record verkleinert die Menge zulässiger Historien nicht und trägt
+  daher keine neue Information.
+  \item Herkunft, Nutzlast oder Zuordnung eines Records können nachträglich
+  unbemerkt verändert werden.
+  \item Die angeblich inverse Reihenfolge verschwindet bei einer streng
+  monotonen Umparametrisierung; dann war sie ein Darstellungsfehler.
+  \item Für eine behauptete physische Instanz fehlt die Referenzbrücke
+  zwischen Modellgrößen und Messgrößen.
+\end{enumerate}
+
+Eine unabhängige Reproduktion muss deshalb Quellenrecords, Witnesses,
+Empfangsreceipts, Kalibrierung, verwendeten Prüfer und exakte Bytes
+veröffentlichen. Erst diese Kombination macht aus einer Erzählung einen
+prüfbaren Trace.
+
+\section{Historische Kontinuität statt Überschreibung}
+\label{sec:history}
+
+Das vorliegende Dokument ersetzt die zwei früheren PDFs nicht. Beide bleiben
+als eigene, unveränderte Zwischenstände Teil der Forschungsgeschichte:
+
+\begin{longtable}{p{0.38\textwidth}p{0.11\textwidth}p{0.42\textwidth}}
+\toprule
+Datei & Umfang & SHA--256 \\
+\midrule
+\endfirsthead
+\toprule
+Datei & Umfang & SHA--256 \\
+\midrule
+\endhead
+\path{QIK-VRT_Relationale_Zeit_und_wachsende_Evidenzkugel_DE.pdf} &
+379,427 Bytes &
+\hash{38b0e62a46214a7cb9943dd3ef08283a70ae7e15ba22a59a9e53506f2945e311} \\
+\path{QIKVRT_Decision_Sufficiency_Delayed_Choice_Witness.pdf} &
+261,612 Bytes &
+\hash{80a75f2031ed4a1ffb46963b81bc9060fdd0c111371a71e258ea3df47d1b7ca3} \\
+\bottomrule
+\end{longtable}
+
+Der erste Zwischenstand entwickelte relationale Zeit, virtuelle
+Retrokausalität und den wachsenden Evidenzkörper, ließ die physikalische
+Korrespondenz aber ausdrücklich offen. Der zweite Zwischenstand präzisierte
+Entscheidungssuffizienz und die Delayed-Choice-Grenze. Die jetzige Fassung
+ändert ihre historischen Bytes und damaligen Statusaussagen nicht. Sie fügt
+die fehlende Synthese hinzu: die explizite QIK--VRT-Definition, den
+Existenzsatz, die physische Referenzbrücke, den Perspektivensatz und den
+empirischen Anschluss
+\cite{LohmannRelationaleZeit2026,LohmannDecisionSufficiency2026}.
+
+Genau so arbeitet Wissenschaft: Ein Zwischenstand bleibt zitierbar; eine neue
+Fassung legt offen, was hinzugekommen ist und welche frühere offene Frage nun
+in welchem Sinn beantwortet wird.
+
+\section{Schluss}
+
+Der entscheidende Unterschied lautet:
+\[
+  \boxed{\Delta\tau_O>0\quad\text{und}\quad\Delta\theta<0.}
+\]
+
+Der Beobachter bewegt sich auf seiner Eigenzeitachse vorwärts. Dennoch kann
+die Quellenzeit der nacheinander neu empfangenen, authentischen Information
+rückwärts gerichtet sein. Das ist keine bloße optische Täuschung, sofern die
+Records informationsführend, die Quellenmarken gebunden und die
+Empfangsreceipts valide sind. Es ist eine reale Ordnungsrelation in einem
+verteilten System.
+
+\begin{quote}
+\textbf{Im deklarierten Modell bewiesen ist nicht, dass Eigenzeit rückwärts
+läuft. Bewiesen ist, dass Information relativ zur monoton fortschreitenden
+lokalen Veränderungszeit -- operativ: Eigenzeit -- eines Beobachters eine
+negative Richtung in einer anderen, authentisch gebundenen Ereigniszeit
+besitzen kann. Genau diese Relation nennt QIK--VRT beobachterrelative
+Retrokausalität.}
+\end{quote}
+
+Der mathematische Satz, der Maschinenzeuge und die physische
+Latenzkonstruktion schließen den Existenznachweis. Delayed Choice und
+Quantenradierer zeigen die verwandte reale Struktur späterer
+Kontextinformation über frühere Records. Die Experimente instanziieren den
+Kontext- und Evidenzteil der Referenzbrücke; das genaue Quellen-/Receipt-Prädikat
+des Existenzsatzes benötigt seine jeweils ausdrücklich angegebene physische
+Bindung. Die These vom Universum als
+verteiltem Round Trip ist die darüber hinausgehende, ausdrücklich sichtbare
+Reichweitenposition von Ingolf Lohmann. Damit sind Perspektive, Beweis und
+Anspruch nicht länger durcheinandergeraten, sondern in einer prüfbaren Kette
+geordnet.
+
+\appendix
+\section{Minimaler Prüfalgorithmus}
+
+Für zwei Records in Empfangsreihenfolge genügt folgender Vertrag:
+
+\begin{enumerate}
+  \item Prüfe Witness und Quellenbindung beider Records.
+  \item Prüfe \(\theta(r_2)<\theta(r_1)\) auf derselben Quellenkette.
+  \item Prüfe
+  \(\tau_O(\rho_O(r_1))<\tau_O(\rho_O(r_2))\) auf derselben
+  Beobachterkette.
+  \item Prüfe für beide Records
+  \(\histories_k\subsetneq\histories_{k-1}\).
+  \item Prüfe für jeden Record
+  \(\sigma(r)\host\rho_O(r)\) und die Azyklizität von \(\host\).
+  \item Gib \texttt{RETROGRADE} genau dann aus, wenn alle Prüfungen gelten.
+\end{enumerate}
+
+Der Algorithmus entscheidet nicht über frei formulierte Weltanschauungen. Er
+entscheidet die konkrete, operationale Relation für einen gebundenen Trace.
+
+\section{Beitrags- und Prüfprovenienz}
+
+\begin{itemize}
+  \item \textbf{Menschlicher Beitrag:} Ingolf Lohmann formulierte die
+  relation-first Perspektive, die Definition der beobachterrelativen
+  Retrokausalität, die Forderung nach Gleichrangigkeit mehrerer Beobachter,
+  die Korrespondenzthese ``Universum als verteiltes System'' sowie die
+  Anweisung, beide historischen PDFs unverändert zu erhalten und eine neue
+  Hauptfassung hinzuzufügen.
+  \item \textbf{Künstlich-kognitiver Beitrag:} OpenAI Codex präzisierte die
+  zwei Ordnungen, formulierte und prüfte die Sätze, recherchierte und band die
+  Primärquellen, erstellte den endlichen Maschinenzeugen und setzte die
+  vorliegende Fassung.
+  \item \textbf{Noch erforderlich:} Die wissenschaftliche Annahme oder
+  Änderung dieser Fassung durch Ingolf Lohmann bleibt eine gesonderte
+  menschliche Entscheidung. Eine Zenodo-Metadatenänderung oder neue
+  Zenodo-Version ist ein separater, exakt zu autorisierender Effekt.
+\end{itemize}
+
+\begin{thebibliography}{99}
+\raggedright
+
+\bibitem{Einstein1905}
+A. Einstein,
+``Zur Elektrodynamik bewegter Körper'',
+\emph{Annalen der Physik} 322, 891--921 (1905).
+\href{https://doi.org/10.1002/andp.19053221004}{doi:10.1002/andp.19053221004}.
+
+\bibitem{Minkowski1909}
+H. Minkowski,
+``Raum und Zeit'',
+\emph{Physikalische Zeitschrift} 10, 104--111 (1909).
+
+\bibitem{Lamport1978}
+L. Lamport,
+``Time, Clocks, and the Ordering of Events in a Distributed System'',
+\emph{Communications of the ACM} 21, 558--565 (1978).
+\href{https://doi.org/10.1145/359545.359563}{doi:10.1145/359545.359563}.
+
+\bibitem{ScullyDruehl1982}
+M. O. Scully and K. Drühl,
+``Quantum eraser: A proposed photon correlation experiment concerning
+observation and delayed choice in quantum mechanics'',
+\emph{Physical Review A} 25, 2208--2213 (1982).
+\href{https://doi.org/10.1103/PhysRevA.25.2208}{doi:10.1103/PhysRevA.25.2208}.
+
+\bibitem{Kim2000}
+Y.-H. Kim, R. Yu, S. P. Kulik, Y. H. Shih and M. O. Scully,
+``Delayed `Choice' Quantum Eraser'',
+\emph{Physical Review Letters} 84, 1--5 (2000).
+\href{https://doi.org/10.1103/PhysRevLett.84.1}{doi:10.1103/PhysRevLett.84.1};
+\href{https://arxiv.org/abs/quant-ph/9903047}{arXiv:quant-ph/9903047}.
+
+\bibitem{Jacques2007}
+V. Jacques et al.,
+``Experimental Realization of Wheeler's Delayed-Choice Gedanken Experiment'',
+\emph{Science} 315, 966--968 (2007).
+\href{https://doi.org/10.1126/science.1136303}{doi:10.1126/science.1136303};
+\href{https://arxiv.org/abs/quant-ph/0610241}{arXiv:quant-ph/0610241}.
+
+\bibitem{Ma2012}
+X.-S. Ma et al.,
+``Experimental delayed-choice entanglement swapping'',
+\emph{Nature Physics} 8, 479--484 (2012).
+\href{https://doi.org/10.1038/nphys2294}{doi:10.1038/nphys2294};
+\href{https://arxiv.org/abs/1203.4834}{arXiv:1203.4834}.
+
+\bibitem{Ma2013}
+X.-S. Ma et al.,
+``Quantum erasure with causally disconnected choice'',
+\emph{Proceedings of the National Academy of Sciences} 110, 1221--1226
+(2013).
+\href{https://doi.org/10.1073/pnas.1213201110}{doi:10.1073/pnas.1213201110};
+\href{https://arxiv.org/abs/1206.6578}{arXiv:1206.6578}.
+
+\bibitem{Jordan1983}
+T. F. Jordan,
+``Quantum correlations do not transmit signals'',
+\emph{Physics Letters A} 94, 264 (1983).
+\href{https://doi.org/10.1016/0375-9601(83)90713-2}{doi:10.1016/0375-9601(83)90713-2}.
+
+\bibitem{LohmannMandelbrot2026}
+Ingolf Lohmann,
+``Mandelbrot-Menge, Anschlussordnung und physikalisches Modelluniversum --
+Komplementbeweis, rekursive Wirkungsklassifikation, dimensionsrichtige
+Raumzeitbrücke, Retrokausalität und der entscheidende Unterschied zur
+empirischen Quantengravitation'', Version 3.0, QIK--VRT, 21. Juli 2026.
+\href{https://doi.org/10.5281/zenodo.21482023}{doi:10.5281/zenodo.21482023}.
+
+\bibitem{LohmannCanonicalMemory2026}
+Ingolf Lohmann,
+``QIK--VRT und das Effect-Acknowledgement-Protokoll: Kanonischer Speicher
+zwischen Vergangenheit und Zukunft'', Version 1.0.0, QIK--VRT,
+31. Juli 2026, 17 Seiten.
+\href{https://doi.org/10.5281/zenodo.21711193}{doi:10.5281/zenodo.21711193}.
+
+\bibitem{LohmannDecisionSufficiency2026}
+Ingolf Lohmann,
+``Decision Sufficiency, Delayed Choice, and Witness-Bound Recovery:
+QIK--VRT: formal boundaries, finite verification, and provenance-bound
+continuation'', unveröffentlichter QIK--VRT-Arbeitsstand, 6. August 2026,
+4 Seiten. SHA--256:
+\hash{80a75f2031ed4a1ffb46963b81bc9060fdd0c111371a71e258ea3df47d1b7ca3}.
+
+\bibitem{LohmannRoundTrip2026}
+Ingolf Lohmann,
+``Von Softwarearchitektur zur Weltformel -- DAS UNIVERSUM ALS ROUND TRIP'',
+Version 1.0.0-candidate.1, Zenodo, 8. August 2026.
+\href{https://doi.org/10.5281/zenodo.21888130}{doi:10.5281/zenodo.21888130}.
+
+\bibitem{LohmannRelationaleZeit2026}
+Ingolf Lohmann,
+``Relationale Zeit, virtuelle Retrokausalität und die monoton wachsende
+Evidenzkugel: Ein beweisbares QIK--VRT-Modell mit massivem Kern, unscharfem
+Rand und expliziter physikalischer Korrespondenzgrenze'', Version 1.0,
+kandidatenspezifische Vorveröffentlichungsfassung, 11. August 2026,
+15 Seiten. SHA--256:
+\hash{38b0e62a46214a7cb9943dd3ef08283a70ae7e15ba22a59a9e53506f2945e311}.
+
+\end{thebibliography}
+
+\end{document}

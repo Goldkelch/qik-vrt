@@ -1,0 +1,182 @@
+{
+  "$id": "https://github.com/Goldkelch/qik-vrt/blob/main/policy/qikvrt-zenodo-published-metadata-edit-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "qikvrt_zenodo_published_metadata_edit_manifest_v1"
+    },
+    "state": {
+      "const": "edit_published_metadata"
+    },
+    "confirm": {
+      "const": "EDIT_PUBLISHED_ZENODO_METADATA_ONLY"
+    },
+    "repository": {
+      "const": "Goldkelch/qik-vrt"
+    },
+    "source_head": {
+      "$ref": "#/$defs/gitBlob"
+    },
+    "publication_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "metadata_before": {
+      "$ref": "#/$defs/identity"
+    },
+    "metadata_after": {
+      "$ref": "#/$defs/identity"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/immutableFile"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "type": "array"
+    },
+    "machine_proof": {
+      "$ref": "#/$defs/identity"
+    },
+    "owner_authorization": {
+      "$ref": "#/$defs/identity"
+    },
+    "evidence_path": {
+      "pattern": "^(?:[^/]+/)*zenodo-metadata-edit\\.json$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "state",
+    "confirm",
+    "repository",
+    "source_head",
+    "publication_id",
+    "target",
+    "metadata_before",
+    "metadata_after",
+    "files",
+    "machine_proof",
+    "owner_authorization",
+    "evidence_path"
+  ],
+  "type": "object",
+  "$defs": {
+    "doi": {
+      "pattern": "^10\\.5281/zenodo\\.[1-9][0-9]*$",
+      "type": "string"
+    },
+    "gitBlob": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "git_blob_sha": {
+          "$ref": "#/$defs/gitBlob"
+        }
+      },
+      "required": [
+        "path",
+        "bytes",
+        "sha256",
+        "git_blob_sha"
+      ],
+      "type": "object"
+    },
+    "immutableFile": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "md5": {
+          "pattern": "^[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "md5",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "concept_record_id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "doi": {
+          "$ref": "#/$defs/doi"
+        },
+        "concept_doi": {
+          "$ref": "#/$defs/doi"
+        },
+        "before_revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "before_etag": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "before_public_metadata_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_after_revision": {
+          "minimum": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "record_id",
+        "concept_record_id",
+        "doi",
+        "concept_doi",
+        "before_revision",
+        "before_etag",
+        "before_public_metadata_sha256",
+        "expected_after_revision"
+      ],
+      "type": "object"
+    }
+  }
+}
