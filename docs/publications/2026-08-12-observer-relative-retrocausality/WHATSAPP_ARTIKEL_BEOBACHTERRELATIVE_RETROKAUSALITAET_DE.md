@@ -8,7 +8,7 @@ Ingolf Lohmann hat mit QIK-VRT eine klare und maschinell prüfbare Form von Retr
 
 Der bewiesene Effekt ist genauer und zugleich überraschend:
 
-Ein Beobachter bewegt sich in seiner eigenen Zeit immer weiter vorwärts. Trotzdem können die Informationen, die ihn nacheinander erreichen, auf Ereignisse verweisen, deren zeitliche Reihenfolge rückwärts läuft.
+Ein Beobachter verändert sich in seiner eigenen lokalen Zeit immer weiter. QIK-VRT nennt diese streng wachsende Folge wirksamer Zustandsänderungen operativ Eigenzeit. Trotzdem können die Informationen, die ihn nacheinander erreichen, auf Ereignisse verweisen, deren Quellenreihenfolge rückwärts läuft.
 
 Genau diese negative Richtung der Informationsreferenz nennt Lohmann beobachterrelative Retrokausalität.
 
@@ -20,13 +20,13 @@ Die entscheidende Formel ist sehr kurz:
 
 Das sieht schwieriger aus, als es ist.
 
-τ, gesprochen Tau, ist die Zeit des Beobachters. Also die Zeit, die für ihn selbst vorwärtsläuft.
+τ, gesprochen Tau, ist die lokale Veränderungszeit des Beobachters. Also die geordnete Folge der Zustandsänderungen, in der für ihn etwas wirksam wird.
 
 θ, gesprochen Theta, ist die Zeit des Ereignisses, auf das eine empfangene Information verweist.
 
 Δ bedeutet einfach: Was hat sich zwischen zwei Beobachtungen verändert?
 
-Δτ > 0 heißt: Für den Beobachter ist Zeit vergangen.
+Δτ > 0 heißt: Für den Beobachter ist eine weitere wirksame Veränderung eingetreten.
 
 Δθ < 0 heißt: Die später empfangene Information verweist auf ein früheres Ereignis als die zuvor empfangene Information.
 
@@ -108,9 +108,11 @@ Dabei wird das frühere Ereignis nicht umgeschrieben. Was sich ändert, ist der 
 
 ## Welche Rolle spielt die Eigenzeit?
 
-Jeder reale Beobachter folgt seiner eigenen Weltlinie und damit seiner eigenen Eigenzeit.
+Zeit wird an Veränderung sichtbar. Deshalb ist die QIK-VRT-Eigenzeit eines Systems zuerst seine lokal geordnete Folge wirksamer Änderungen: ein Auslöser trifft ein, ein herkunftsgebundener Eintrag wird geprüft, Evidenz wird anschlussfähig, der Zustand ist nicht mehr derselbe wie zuvor.
 
-Diese Eigenzeit läuft für ihn monoton vorwärts. Genau das bleibt auch bei QIK-VRT unangetastet.
+Diese lokale Veränderungszeit läuft für den Beobachter monoton vorwärts. Genau das bleibt auch bei QIK-VRT unangetastet.
+
+Bei einem physischen Beobachter kann dieser lokale Parameter an die Eigenzeit seiner Weltlinie kalibriert werden. Für den formalen Satz ist das aber keine versteckte Voraussetzung. Entscheidend ist, dass die lokale Kette nachvollziehbar voranschreitet.
 
 Die Eigenzeit ist der feste Bezug, an dem die Informationsrichtung gemessen wird. Sie läuft nicht rückwärts und wird nicht angehalten.
 
@@ -263,6 +265,14 @@ Und in genau diesem Sinn ist sie mathematisch bewiesen, technisch realisiert und
 q.e.d.
 
 Ingolf Lohmann
+
+## Die gemeinsame Erklärung
+
+Die ausführliche, an Lebende, Verstorbene und zukünftige Menschen gerichtete
+Gesamtfassung steht in `AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md`. Sie ergänzt diese
+Erklärung um Unterschied, Informationswirksamkeit, Beobachtungsfaser,
+Verantwortung und Zukunft, ohne den formalen Satz mit einer vollständigen
+Weltdeutung zu verwechseln.
 
 ## Zum Nachlesen
 

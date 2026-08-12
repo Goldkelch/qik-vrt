@@ -5,8 +5,11 @@
 
 The checker proves no statement by naming it.  It evaluates the exact finite
 witness used in the accompanying paper and fails unless every declared
-predicate holds.  It uses only the Python standard library and performs no
-network or external-system effect.
+predicate holds.  Its time parameter is the observer-local, strictly monotone
+change sequence (QIK-VRT operationally: Eigenzeit).  A metric relativistic
+proper-time calibration requires an additional physical reference binding and
+is not asserted by this finite checker.  It uses only the Python standard
+library and performs no network or external-system effect.
 """
 
 from __future__ import annotations
@@ -34,14 +37,14 @@ def canonical_report() -> dict[str, object]:
             "source_mark": 10,
             "payload": 0,
             "receive_event": "receive_old",
-            "observer_proper_time": 101,
+            "observer_local_change_time": 101,
         },
         "new": {
             "source_event": "emit_new",
             "source_mark": 20,
             "payload": 1,
             "receive_event": "receive_new",
-            "observer_proper_time": 100,
+            "observer_local_change_time": 100,
         },
     }
 
@@ -61,10 +64,13 @@ def canonical_report() -> dict[str, object]:
 
     first = records["new"]
     second = records["old"]
-    delta_tau = second["observer_proper_time"] - first["observer_proper_time"]
+    delta_tau = (
+        second["observer_local_change_time"]
+        - first["observer_local_change_time"]
+    )
     delta_theta = second["source_mark"] - first["source_mark"]
     information_slope = delta_theta / delta_tau
-    require(delta_tau > 0, "observer proper time is not increasing")
+    require(delta_tau > 0, "observer-local change time is not increasing")
     require(delta_theta < 0, "source-reference direction is not decreasing")
     require(information_slope < 0, "information-time slope is not negative")
 
@@ -81,11 +87,12 @@ def canonical_report() -> dict[str, object]:
     )
 
     observer_o_prime = {
-        "old_proper_time": 200,
-        "new_proper_time": 201,
+        "old_local_change_time": 200,
+        "new_local_change_time": 201,
     }
     o_prime_delta_tau = (
-        observer_o_prime["new_proper_time"] - observer_o_prime["old_proper_time"]
+        observer_o_prime["new_local_change_time"]
+        - observer_o_prime["old_local_change_time"]
     )
     o_prime_delta_theta = records["new"]["source_mark"] - records["old"]["source_mark"]
     o_prime_slope = o_prime_delta_theta / o_prime_delta_tau
@@ -132,24 +139,35 @@ def canonical_report() -> dict[str, object]:
         )
 
     return {
-        "schema": "qikvrt_observer_relative_retrocausality_witness_v1",
+        "schema": "qikvrt_observer_relative_retrocausality_witness_v2",
         "result": "VERIFIED_FOR_DECLARED_OPERATIONAL_MODEL",
+        "time_semantics": {
+            "formal_parameter": "observer_local_change_time",
+            "qikvrt_operational_name": "Eigenzeit",
+            "meaning": "strictly monotone sequence of locally effective state changes",
+            "metric_proper_time_boundary": (
+                "a relativistic proper-time interpretation requires an additional "
+                "physical worldline and clock-calibration binding"
+            ),
+        },
         "definition": {
-            "retrograde": "observer proper time increases while bound source mark decreases",
+            "retrograde": (
+                "observer-local change time increases while bound source mark decreases"
+            ),
             "ordinal_form": "receive(new) precedes receive(old) while source(old) precedes source(new)",
         },
         "host_event_order": events,
         "records": records,
         "observer_o": {
             "reception_sequence": ["new", "old"],
-            "delta_proper_time": delta_tau,
+            "delta_local_change_time": delta_tau,
             "delta_source_mark": delta_theta,
             "information_time_slope": information_slope,
             "retrograde": True,
         },
         "observer_o_prime": {
             "reception_sequence": ["old", "new"],
-            "delta_proper_time": o_prime_delta_tau,
+            "delta_local_change_time": o_prime_delta_tau,
             "delta_source_mark": o_prime_delta_theta,
             "information_time_slope": o_prime_slope,
             "retrograde": False,
@@ -169,7 +187,7 @@ def canonical_report() -> dict[str, object]:
         "verified_predicates": [
             "HOST_ORDER_ACYCLIC",
             "EACH_SOURCE_PRECEDES_ITS_RECEPTION",
-            "OBSERVER_PROPER_TIME_STRICTLY_INCREASES",
+            "OBSERVER_LOCAL_CHANGE_TIME_STRICTLY_INCREASES",
             "EACH_RECORD_STRICTLY_REFINES_ADMISSIBLE_HISTORIES",
             "RECEPTION_ORDER_INVERTS_BOUND_SOURCE_ORDER_FOR_OBSERVER_O",
             "INFORMATION_TIME_SLOPE_NEGATIVE_FOR_OBSERVER_O",
@@ -185,6 +203,7 @@ def canonical_report() -> dict[str, object]:
             "CONTROLLABLE_SIGNAL_TO_OWN_CAUSAL_PAST",
             "QIK_VRT_IS_UNIQUELY_SELECTED_BY_QUANTUM_EXPERIMENTS",
             "UNIVERSE_WIDE_CORRESPONDENCE_IS_PROVED_BY_THIS_FINITE_WITNESS",
+            "METRIC_PROPER_TIME_CALIBRATION_IS_PROVED_BY_THIS_FINITE_WITNESS",
         ],
     }
 
