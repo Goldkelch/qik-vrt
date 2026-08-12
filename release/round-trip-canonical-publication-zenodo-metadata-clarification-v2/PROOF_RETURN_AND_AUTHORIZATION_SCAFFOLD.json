@@ -1,0 +1,78 @@
+{
+  "schema": "qikvrt_zenodo_metadata_edit_proof_return_authorization_scaffold_v1",
+  "state": "TEMPLATE_NOT_EVIDENCE_NOT_EXECUTABLE",
+  "purpose": "Define the dependency order for the future metadata-edit proof, owner return and exact authorization without claiming any of them exists.",
+  "dependencies": [
+    {
+      "step": 1,
+      "requires": [
+        "FRESH_PUBLIC_RECORD_CAPTURE.json",
+        "METADATA_BEFORE.json",
+        "METADATA_AFTER.json",
+        "IMMUTABLE_FILE_INVENTORY.json"
+      ],
+      "produces": "METADATA_EDIT_CLAIM_MATRIX.json",
+      "state_before_production": "FRESH_BASELINE_VERIFIED_LOCALLY"
+    },
+    {
+      "step": 2,
+      "requires": [
+        "METADATA_EDIT_CLAIM_MATRIX.json",
+        "CHANGE_NOTICE.md",
+        "METADATA_BEFORE.json",
+        "METADATA_AFTER.json",
+        "IMMUTABLE_FILE_INVENTORY.json"
+      ],
+      "produces": "PREPUBLICATION_RETURN_RECEIPT.json",
+      "required_schema": "qikvrt_prepublication_return_receipt_v2",
+      "owner_return_required_before_next_step": true
+    },
+    {
+      "step": 3,
+      "requires": [
+        "PREPUBLICATION_RETURN_RECEIPT.json",
+        "METADATA_EDIT_CLAIM_MATRIX.json",
+        "IMMUTABLE_FILE_INVENTORY.json",
+        "exact control-file Git identities"
+      ],
+      "produces": "MACHINE_PROOF_BUNDLE.json",
+      "required_schema": "qikvrt_zenodo_metadata_edit_machine_proof_v1"
+    },
+    {
+      "step": 4,
+      "requires": [
+        "MACHINE_PROOF_BUNDLE.json",
+        "PREPUBLICATION_RETURN_RECEIPT.json",
+        "current remote repository head",
+        "new exact single-use owner decision"
+      ],
+      "produces": "OWNER_ZENODO_METADATA_EDIT_AUTHORIZATION.json",
+      "required_schema": "qikvrt_zenodo_metadata_edit_owner_authorization_v1"
+    },
+    {
+      "step": 5,
+      "requires": [
+        "OWNER_ZENODO_METADATA_EDIT_AUTHORIZATION.json",
+        "MACHINE_PROOF_BUNDLE.json",
+        "METADATA_BEFORE.json",
+        "METADATA_AFTER.json",
+        "IMMUTABLE_FILE_INVENTORY.json"
+      ],
+      "produces": "METADATA_EDIT_MANIFEST.json",
+      "required_schema": "qikvrt_zenodo_published_metadata_edit_manifest_v1",
+      "network_action_permitted_by_this_scaffold": false
+    }
+  ],
+  "explicit_absences": {
+    "prepublication_return_receipt": "NOT_MATERIALIZED",
+    "machine_proof": "NOT_MATERIALIZED",
+    "owner_authorization": "NOT_MATERIALIZED",
+    "execution_manifest": "NOT_MATERIALIZED",
+    "zenodo_metadata_edit": "NOT_EXECUTED"
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
