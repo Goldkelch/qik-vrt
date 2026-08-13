@@ -1,5 +1,5 @@
 {
-  "schema": "qikvrt_ietf_current_candidate_manifest_v2",
+  "schema": "qikvrt_ietf_current_candidate_manifest_v3",
   "candidate_id": "eap-lctp-00-current-synthesis-local-2026-08-12",
   "state": "LOCAL_CURRENT_CANDIDATE_NOT_SUBMITTED",
   "internet_draft": "draft-lohmann-qikvrt-local-change-time-00",
@@ -61,34 +61,67 @@
     },
     "validator": {
       "path": "verify_candidate.py",
-      "size_bytes": 5821,
-      "sha256": "8e0b1d20325215a9eb86250784174f9778401071e5c4ed7be59a6785bc44d059"
+      "size_bytes": 11599,
+      "sha256": "63e1d89ff295471b3e39782af774ea7d20eed222a230cb1625ffffb9e3def377"
     },
     "render_status": {
       "path": "RENDER_STATUS.json",
-      "size_bytes": 909,
-      "sha256": "13d0a78d6780539c6da3cc78cc8b3b8db758bda25e386b3b9dd6aa55801d34c3"
+      "size_bytes": 1209,
+      "sha256": "d74913ccedd0db3b8524a850d82dc393e452b4a80cdb4b0aaee5395b9bde2763"
     },
     "source_provenance": {
       "path": "SOURCE_PROVENANCE.json",
-      "size_bytes": 5337,
-      "sha256": "7e0740b3b41cfe5a461cf11dd48fe025f23e5c2f6c140bc8c1b757206e0dc7f3"
+      "size_bytes": 5336,
+      "sha256": "c9b629b4afe942ab97999e3dd2c77c9a3f99c90c10ff4980075c795de3d11533"
+    },
+    "readme": {
+      "path": "README.md",
+      "size_bytes": 3753,
+      "sha256": "cecdfe445f94b1fcbdd08259827e07f8ca4aa7927c7d898def9fd3e235d31608"
+    },
+    "staging_readme": {
+      "path": "STAGING_README.md",
+      "size_bytes": 2338,
+      "sha256": "9a079f142728908be69764e16c4523d44fc99c9cd3acde03d0f4242a631a0cd4"
+    },
+    "authorization_draft": {
+      "path": "EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md",
+      "size_bytes": 2028,
+      "sha256": "1bdf4a65fc8075479006190d9462c1304be86cb69f467eb38804526b5a860cd0"
     }
+  },
+  "fixity_index": {
+    "path": "SHA256SUMS",
+    "indexed_paths": [
+      "draft-lohmann-qikvrt-local-change-time-00.xml",
+      "TEST_VECTORS.json",
+      "verify_candidate.py",
+      "RENDER_STATUS.json",
+      "SOURCE_PROVENANCE.json",
+      "SUBMISSION_MANIFEST.json",
+      "README.md",
+      "STAGING_README.md",
+      "EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md"
+    ],
+    "excludes": [
+      "SHA256SUMS"
+    ]
   },
   "validation": {
     "xml_well_formed": true,
     "static_ietf_header_precheck": "PASS",
     "reference_classification_vectors": 7,
+    "candidate_fixity": "PASS",
     "validation_command": "python3 -B verify_candidate.py",
-    "result": "PASS",
+    "result": "PASS_STATIC_CANDIDATE_VALIDATION",
     "renderer_validation": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
-    "idnits_validation": "PENDING_RENDERED_TEXT_AND_IDNITS"
+    "idnits_validation": "CONTINUE_NO_RENDERED_TEXT_AND_NO_DECLARED_IDNITS_RUNTIME"
   },
   "ietf_submission_requirements": {
     "static_source_precheck": {
       "rfcxml_version_3": true,
       "ipr_selector_trust200902": true,
-      "rendered_ietf_trust_boilerplate": "PENDING_XML2RFC_3_34_0",
+      "rendered_ietf_trust_boilerplate": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
       "submission_type_ietf": true,
       "intended_status_experimental": true,
       "document_name_revision": true,
@@ -101,7 +134,7 @@
     "remaining": [
       "exact locked xml2rfc 3.34.0 rendering of the final source",
       "rendered text and HTML visual review",
-      "idnits check against final rendered artifacts",
+      "idnits validation after exact rendered text is available",
       "fresh Datatracker destination and account observation",
       "final author/account confirmation",
       "exact-artifact action-time authorization",

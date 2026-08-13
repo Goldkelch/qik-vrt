@@ -25,7 +25,7 @@ Records absteigt. Die Fassung enthält:
 - die deutsche Hauptfassung und reproduzierbare LaTeX-Quelle;
 - den endlichen, netzwerkfreien ausführbaren Zeugen samt kanonischem Report;
 - die öffentliche Erklärung **„An, von und für alle Menschen“**;
-- Claim-, Quellen-, Render- und historische Bytebindungen;
+- Claim-, Quellen- und historische Bytebindungen;
 - eine klare Grenze: kein Überschreiben der Vergangenheit, kein Empfang vor
   Emission, kein kausal geschlossener Kreis und kein steuerbarer Rückkanal in
   die eigene kausale Vergangenheit.
@@ -38,6 +38,25 @@ und bleibt ein historischer Zwischenstand. Die dazu getrennt vorbereitete
 Metadatenklärung bleibt metadata-only. Dieser Nachfolger ist ein anderes,
 neues Publikationsobjekt und verweist auf den historischen Record, statt seine
 Dateien oder seine frühere Aussagezeit zu überschreiben.
+
+## Öffentlicher Dateisatz und interne Steuerung
+
+`FROZEN_UPLOAD_CANDIDATE.json` enthält ausschließlich den öffentlichen
+Dateisatz: Forschungsinhalt, ausführbaren Zeugen, öffentliche Evidenzbindungen
+und die erforderlichen Lizenztexte. Die historischen Zwischenstände bleiben
+dabei durch `HISTORICAL_ARTIFACTS.json` gebunden; sie werden nicht kopiert,
+neu datiert oder überschrieben.
+
+Außerhalb dieses Dateisatzes bleiben bewusst die Vorbereitungs- und
+Steuerungsartefakte: Metadatenentwurf, `*_DRAFT.json`-Dateien,
+Rückgabe- und Autorisierungsunterlagen, Ablaufchecklisten, Gate-Status,
+Policy-/Schemaquellen, lokale Prüfsummen und der Materialisierer. Sie dienen
+der nachvollziehbaren Vorbereitung im Repository, sind aber kein
+wissenschaftlicher Uploaddateisatz und keine Veröffentlichung.
+
+Der Nachfolger ist weiterhin **nicht veröffentlicht**. Weder ein neuer
+Zenodo-Record noch ein DOI oder ein Upload wird von diesem lokalen Kandidaten
+behauptet.
 
 ## Gültiger Vorbereitungsstatus
 

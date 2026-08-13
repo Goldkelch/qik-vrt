@@ -10,6 +10,7 @@ or contacts an external service.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from xml.etree import ElementTree
@@ -18,6 +19,31 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parent
 XML_PATH = ROOT / "draft-lohmann-qikvrt-local-change-time-00.xml"
 VECTORS_PATH = ROOT / "TEST_VECTORS.json"
+MANIFEST_PATH = ROOT / "SUBMISSION_MANIFEST.json"
+RENDER_STATUS_PATH = ROOT / "RENDER_STATUS.json"
+CHECKSUMS_PATH = ROOT / "SHA256SUMS"
+
+FIXITY_PATHS = (
+    "draft-lohmann-qikvrt-local-change-time-00.xml",
+    "TEST_VECTORS.json",
+    "verify_candidate.py",
+    "RENDER_STATUS.json",
+    "SOURCE_PROVENANCE.json",
+    "SUBMISSION_MANIFEST.json",
+    "README.md",
+    "STAGING_README.md",
+    "EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md",
+)
+
+SUPPORTING_ARTIFACT_PATHS = {
+    "TEST_VECTORS.json",
+    "verify_candidate.py",
+    "RENDER_STATUS.json",
+    "SOURCE_PROVENANCE.json",
+    "README.md",
+    "STAGING_README.md",
+    "EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md",
+}
 
 FORWARD = "FORWARD_INFORMATION_DIRECTION"
 NEGATIVE = "NEGATIVE_INFORMATION_DIRECTION"
@@ -27,6 +53,11 @@ INDETERMINATE = "INDETERMINATE"
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def digest(path: Path) -> tuple[str, int]:
+    payload = path.read_bytes()
+    return hashlib.sha256(payload).hexdigest(), len(payload)
 
 
 def classify(baseline: dict[str, object], current: dict[str, object]) -> str:
@@ -107,7 +138,7 @@ def validate_xml() -> dict[str, object]:
         "doc_name": root.attrib["docName"],
         "profile_version": "eap-lctp-1",
         "static_ietf_header_precheck": "PASS",
-        "renderer_and_idnits": "PENDING_XML2RFC_3_34_0_AND_IDNITS",
+        "renderer_and_idnits": "CONTINUE_NO_RENDERED_ARTIFACTS",
     }
 
 
@@ -134,8 +165,121 @@ def validate_vectors() -> dict[str, object]:
     }
 
 
+def validate_manifest_and_fixity() -> dict[str, object]:
+    """Check the current local package without rendering or external access."""
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    require(
+        manifest["schema"] == "qikvrt_ietf_current_candidate_manifest_v3",
+        "unexpected submission-manifest schema",
+    )
+    require(
+        manifest["state"] == "LOCAL_CURRENT_CANDIDATE_NOT_SUBMITTED",
+        "candidate state must remain local and not submitted",
+    )
+    require(
+        manifest["internet_draft"] == "draft-lohmann-qikvrt-local-change-time-00",
+        "manifest Internet-Draft name mismatch",
+    )
+    require(
+        all(value is False for value in manifest["external_effects"].values()),
+        "manifest must not claim an external effect",
+    )
+
+    xml_record = manifest["submission_artifacts"]["xml"]
+    xml_digest, xml_size = digest(XML_PATH)
+    require(xml_record["path"] == XML_PATH.name, "manifest XML path mismatch")
+    require(xml_record["sha256"] == xml_digest, "manifest XML digest mismatch")
+    require(xml_record["size_bytes"] == xml_size, "manifest XML size mismatch")
+
+    supporting = manifest["supporting_artifacts"]
+    paths = {record["path"] for record in supporting.values()}
+    require(paths == SUPPORTING_ARTIFACT_PATHS, "manifest supporting-artifact paths mismatch")
+    for name, record in supporting.items():
+        path = ROOT / record["path"]
+        require(path.is_file(), f"{name}: declared supporting artifact is absent")
+        actual_digest, actual_size = digest(path)
+        require(record["sha256"] == actual_digest, f"{name}: digest mismatch")
+        require(record["size_bytes"] == actual_size, f"{name}: size mismatch")
+
+    fixity = manifest["fixity_index"]
+    require(fixity["path"] == CHECKSUMS_PATH.name, "fixity-index path mismatch")
+    require(
+        tuple(fixity["indexed_paths"]) == FIXITY_PATHS,
+        "fixity-index paths mismatch",
+    )
+    require(fixity["excludes"] == [CHECKSUMS_PATH.name], "fixity-index exclusion mismatch")
+
+    recorded: dict[str, str] = {}
+    for raw in CHECKSUMS_PATH.read_text(encoding="utf-8").splitlines():
+        digest_value, separator, name = raw.partition("  ")
+        require(separator == "  ", "invalid SHA256SUMS record")
+        require(len(digest_value) == 64, "invalid SHA256SUMS digest length")
+        require(name and name not in recorded, "duplicate or empty SHA256SUMS path")
+        recorded[name] = digest_value
+    require(tuple(recorded) == FIXITY_PATHS, "SHA256SUMS path order or scope mismatch")
+    for name in FIXITY_PATHS:
+        actual_digest, _ = digest(ROOT / name)
+        require(recorded[name] == actual_digest, f"SHA256SUMS mismatch: {name}")
+
+    render_status = json.loads(RENDER_STATUS_PATH.read_text(encoding="utf-8"))
+    require(
+        render_status["schema"] == "qikvrt_ietf_candidate_render_status_v3",
+        "unexpected render-status schema",
+    )
+    require(
+        render_status["state"] == "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
+        "unexpected renderer state",
+    )
+    require(render_status["source"]["path"] == XML_PATH.name, "render source path mismatch")
+    require(render_status["source"]["sha256"] == xml_digest, "render source digest mismatch")
+    require(render_status["source"]["size_bytes"] == xml_size, "render source size mismatch")
+    require(
+        render_status["required_renderer"] == {
+            "name": "xml2rfc",
+            "version": "3.34.0",
+            "runtime_contract": "runtime/toolchains/TOOLCHAIN.lock.tsv",
+            "availability_observed": False,
+        },
+        "renderer contract mismatch",
+    )
+    for output_name in ("txt", "html"):
+        require(
+            render_status["outputs"][output_name]["state"] == "NOT_RENDERED",
+            f"{output_name} output state mismatch",
+        )
+    require(
+        all(value is False for value in render_status["external_effects"].values()),
+        "render status must not claim an external effect",
+    )
+    require(
+        manifest["validation"] == {
+            "xml_well_formed": True,
+            "static_ietf_header_precheck": "PASS",
+            "reference_classification_vectors": 7,
+            "candidate_fixity": "PASS",
+            "validation_command": "python3 -B verify_candidate.py",
+            "result": "PASS_STATIC_CANDIDATE_VALIDATION",
+            "renderer_validation": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
+            "idnits_validation": "CONTINUE_NO_RENDERED_TEXT_AND_NO_DECLARED_IDNITS_RUNTIME",
+        },
+        "validation state mismatch",
+    )
+    return {
+        "manifest": "PASS",
+        "fixity_index": "PASS",
+        "rendered_artifacts": "NOT_RENDERED",
+        "renderer_validation": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
+        "idnits_validation": "CONTINUE_NO_RENDERED_TEXT_AND_NO_DECLARED_IDNITS_RUNTIME",
+    }
+
+
 def main() -> int:
-    report = {"xml": validate_xml(), "vectors": validate_vectors()}
+    report = {
+        "manifest_and_fixity": validate_manifest_and_fixity(),
+        "vectors": validate_vectors(),
+        "xml": validate_xml(),
+    }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
