@@ -66,6 +66,11 @@ normalization rules explicit without fabricating a current remote observation:
 `PREPARATION_NOT_EXECUTABLE` local state.  It is a plan and audit aid; it cannot
 authorize an external operation.
 
+`CURRENT_SYNTHESIS_AND_SUCCESSOR_STRATEGY.md` records the current editions
+decision: keywords may make the preserved historical corpus discoverable, but
+the current synthesis remains a separate successor preparation until its own
+fresh artifact and authorization boundary are materialized.
+
 `SHA256SUMS` binds this local preparation set.  It intentionally excludes
 itself; run `sha256sum -c release/round-trip-canonical-publication-zenodo-metadata-clarification-v2/SHA256SUMS`
 from the repository root to check it.
