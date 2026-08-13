@@ -1,0 +1,169 @@
+{
+  "schema": "eap_tprp_classification_test_vectors_v1",
+  "profile_version": "eap-tprp-1",
+  "purpose": "Local deterministic fixtures for the reference-classification relation in draft-lohmann-qikvrt-temporal-provenance-00.",
+  "authentication_fixture_boundary": "authentication_valid is a controlled test-double result; no fixture is a production signature or a claim about a real principal.",
+  "vectors": [
+    {
+      "id": "V1_RETROGRADE_REFERENCE",
+      "baseline": {
+        "evidence_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "expected_classification": "RETROGRADE_REFERENCE"
+    },
+    {
+      "id": "V2_FORWARD_REFERENCE",
+      "baseline": {
+        "evidence_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "expected_classification": "FORWARD_REFERENCE"
+    },
+    {
+      "id": "V3_DIFFERENT_DOMAIN",
+      "baseline": {
+        "evidence_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d1",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d2",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V4_SOURCE_AUTHENTICATION_FAILURE",
+      "baseline": {
+        "evidence_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": false,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V5_RECEIPT_SEQUENCE_NOT_STRICT",
+      "baseline": {
+        "evidence_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V6_EQUAL_SOURCE_MARKER",
+      "baseline": {
+        "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V7_BASELINE_BINDING_MISMATCH",
+      "baseline": {
+        "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "receiver_id": "receiver-r",
+        "receipt_sequence": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected_classification": "INDETERMINATE"
+    }
+  ]
+}
