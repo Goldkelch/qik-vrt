@@ -9,11 +9,13 @@ Author and rights holder: Ingolf Lohmann.
 ## Warum derzeit kein aktiver Workflow erzeugt wird
 
 Ein produktiver GitHub-Actions-Workflow muss an einen bestimmten remote
-vorhandenen Quell-Commit, den finalen v2-Manifest und die kanonische
-Einmalautorisierung gebunden sein. Diese Werte existieren vor sichtbarer
-Kandidatenrückgabe und exakter Freigabe nicht. Ein jetzt aktiver Workflow hätte
-damit entweder Platzhalter oder einen zu weiten Ausführungsbereich; beides
-wäre mit der Zenodo-v2-Policy unvereinbar.
+vorhandenen Vorautorisierungs-Commit, den finalen v2-Manifest und die
+kanonische Einmalautorisierung gebunden sein. Der vervollständigte
+`CHANGE_NOTICE.md`, der Receipt, der Grenztestreport und das Proof-Bundle sind
+vorhanden; die exakte Freigabe, der remote Quell-Commit und sein gebundener
+Nachfolger-Commit fehlen noch. Ein jetzt aktiver Workflow hätte damit entweder
+Platzhalter oder einen zu weiten Ausführungsbereich; beides wäre mit der
+Zenodo-v2-Policy unvereinbar.
 
 ## Vorgesehener enger Workflow nach Finalisierung
 
@@ -24,10 +26,12 @@ Workflow mit folgenden unveränderlichen Eigenschaften angelegt werden:
 - **Repository:** nur `Goldkelch/qik-vrt`.
 - **Inputs:** keine frei wählbaren Pfade; höchstens ein exakter
   `expected_source_head`, der mit fest codiertem Manifestpfad verglichen wird.
-- **Bindung:** checkout bei diesem Head; `git rev-parse HEAD` und
-  `manifest.source_head` müssen bytegenau übereinstimmen; Worktree muss sauber
-  sein; v2-Machine-Proof- und Owner-Autorisierungsprüfung erfolgen vor jedem
-  Netzwerkzugriff.
+- **Bindung:** Checkout beim exakten Ausführungs-Commit. Dieser muss ein
+  Nachfolger von `manifest.source_head` sein; alle zurückgegebenen
+  Kandidatenblobs müssen am `source_head` identisch sein. Manifest,
+  Autorisierung, Upload- und Kontrollbytes müssen am Ausführungs-Commit
+  bytegenau gebunden und sauber sein. Die v2-Machine-Proof- und
+  Owner-Autorisierungsprüfung erfolgt vor jedem Netzwerkzugriff.
 - **Secrets:** nur `GITHUB_TOKEN` und `ZENODO_ACCESS_TOKEN` aus GitHub Actions
   Secrets, niemals geloggt oder in Artefakte geschrieben.
 - **Ausführung:** ausschließlich

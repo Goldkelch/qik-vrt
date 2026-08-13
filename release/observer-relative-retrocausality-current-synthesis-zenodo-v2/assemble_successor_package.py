@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-"""Materialize or verify the non-effect Zenodo successor preparation.
+"""Materialize or verify the pre-authorization Zenodo successor package.
 
-This helper deliberately produces only draft artifacts.  It freezes the
-current public candidate and records the remaining policy gates, but it does
-not call Zenodo, inspect credentials, create a Git ref, or construct an
-executable qikvrt_zenodo_publication_manifest_v2.
+The helper preserves the visibly returned 17-file public freeze and binds the
+separately returned amended change notice to the truthful v1.0 -> v1.1/current
+content-change chain.  It materializes repository-only predecessor snapshots,
+the canonical v2 return receipt, the negative/boundary report and the complete
+machine-proof bundle.  It never calls Zenodo, inspects credentials, creates a
+Git ref, constructs an owner authorization or constructs an executable
+qikvrt_zenodo_publication_manifest_v2.
 """
 
 from __future__ import annotations
@@ -32,12 +35,35 @@ DIRECTIVE = "Zenodo, arXiv und IETF, Veröffentlichung freigegeben."
 # itself.  Those files are evidence for preparation, not research content, and
 # must never be silently carried into the exact Zenodo upload set.
 BASE = "docs/publications/2026-08-12-observer-relative-retrocausality"
+MATRIX_PATH = f"{RELEASE_REL}/CLAIM_MATRIX_V2.json"
+BINDINGS_PATH = f"{RELEASE_REL}/SOURCE_EVIDENCE_BINDINGS.json"
+CHANGE_NOTICE_PATH = f"{RELEASE_REL}/CHANGE_NOTICE.md"
+RETURN_RECEIPT_PATH = f"{RELEASE_REL}/PREPUBLICATION_RETURN_RECEIPT.json"
+PROOF_BUNDLE_PATH = f"{RELEASE_REL}/MACHINE_PROOF_BUNDLE.json"
+BOUNDARY_PATH = f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json"
+AMENDED_NOTICE_RETURNED_AT = "2026-08-13T20:13:42Z"
+AMENDED_NOTICE_RETURN_CHANNEL = "ChatGPT Work commentary"
+ORIGINAL_SOURCE_COMMIT = "47510c8569f56ecf3d2e22fb5ed846fa32208b86"
+ORIGINAL_SNAPSHOT_DIR = f"{RELEASE_REL}/original-candidate-47510c8"
+ORIGINAL_SOURCE_PATHS = (
+    f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf",
+    f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex",
+    f"{BASE}/README.md",
+    f"{BASE}/WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md",
+    f"{BASE}/CLAIM_MATRIX.json",
+    f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json",
+    f"{BASE}/verify_observer_relative_retrocausality.py",
+)
+ORIGINAL_SNAPSHOT_BY_SOURCE = {
+    source: f"{ORIGINAL_SNAPSHOT_DIR}/{pathlib.PurePosixPath(source).name}"
+    for source in ORIGINAL_SOURCE_PATHS
+}
+PROOF_ARTIFACT_PATHS = frozenset({MATRIX_PATH, BINDINGS_PATH})
 NON_UPLOAD_CONTROL_PATHS = frozenset(
     {
         f"{BASE}/PDF_RENDER_VALIDATION.json",
         f"{BASE}/SHA256SUMS",
         "state/work_units/OBSERVER_RELATIVE_RETROCAUSALITY_CURRENT_SYNTHESIS_V2.json",
-        f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json",
         f"{RELEASE_REL}/FINALIZATION_CHECKLIST.md",
         f"{RELEASE_REL}/FROZEN_UPLOAD_CANDIDATE.json",
         f"{RELEASE_REL}/MACHINE_PROOF_BUNDLE_DRAFT.json",
@@ -55,6 +81,7 @@ NON_UPLOAD_CONTROL_PATHS = frozenset(
         "policy/qikvrt-zenodo-machine-proof-bundle-v2.schema.json",
         "policy/qikvrt-prepublication-return-receipt-v2.schema.json",
     }
+    | set(ORIGINAL_SNAPSHOT_BY_SOURCE.values())
 )
 CONTROL_NAME_MARKERS = ("_DRAFT", "FINALIZATION", "GATE_STATUS", "FILESET")
 
@@ -75,6 +102,18 @@ def _identity(path: pathlib.Path) -> dict[str, Any]:
             f"blob {len(raw)}\0".encode("ascii") + raw
         ).hexdigest(),
     }
+
+
+def _canonical_json_sha256(path: pathlib.Path) -> str:
+    """Match the generic publisher's canonical metadata digest exactly."""
+    value = json.loads(_raw(path).decode("utf-8"))
+    material = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
 
 
 def _json_bytes(value: object) -> bytes:
@@ -99,6 +138,44 @@ def _read_json(path: pathlib.Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"expected object: {path.relative_to(ROOT)}")
     return value
+
+
+def _original_snapshot_bytes(source: str) -> bytes:
+    result = subprocess.run(
+        ["git", "show", f"{ORIGINAL_SOURCE_COMMIT}:{source}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "cannot read original candidate byte from Git: "
+            + source
+            + ": "
+            + result.stderr.decode("utf-8", errors="replace")
+        )
+    return result.stdout
+
+
+def _materialize_original_snapshots(*, write: bool) -> list[dict[str, Any]]:
+    identities: list[dict[str, Any]] = []
+    for source in ORIGINAL_SOURCE_PATHS:
+        target = ROOT / ORIGINAL_SNAPSHOT_BY_SOURCE[source]
+        expected = _original_snapshot_bytes(source)
+        if target.is_file() and not target.is_symlink() and target.read_bytes() == expected:
+            pass
+        elif write:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(expected)
+        else:
+            raise RuntimeError(
+                "original candidate snapshot differs: "
+                + target.relative_to(ROOT).as_posix()
+            )
+        identities.append(_identity(target))
+    return identities
 
 
 def _candidate_specs() -> list[tuple[str, str, str]]:
@@ -160,6 +237,39 @@ def _candidate_files() -> list[dict[str, Any]]:
     if not any(item["path"] == f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json" for item in values):
         raise RuntimeError("public candidate must retain the executable-witness report")
     return values
+
+
+def _proof_candidate_files(
+    returned_public_files: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Partition the returned public set into candidate and proof artifacts."""
+    candidates = [
+        dict(item)
+        for item in returned_public_files
+        if item["path"] not in PROOF_ARTIFACT_PATHS
+    ]
+    artifact_paths = {
+        item["path"]
+        for item in returned_public_files
+        if item["path"] in PROOF_ARTIFACT_PATHS
+    }
+    if artifact_paths != PROOF_ARTIFACT_PATHS:
+        raise RuntimeError("returned public set lacks a required proof artifact")
+    if len(candidates) != 15:
+        raise RuntimeError("v2 proof candidate partition must contain 15 files")
+    if {item["path"] for item in candidates} & PROOF_ARTIFACT_PATHS:
+        raise RuntimeError("candidate/artifact proof partition overlaps")
+    return candidates
+
+
+def _bound_artifact(relative: str, kind: str) -> dict[str, str]:
+    observed = _path_identity(relative)
+    return {
+        "path": observed["path"],
+        "sha256": observed["sha256"],
+        "git_blob_sha1": observed["git_blob_sha1"],
+        "kind": kind,
+    }
 
 
 def _license(classification: str) -> dict[str, str]:
@@ -308,6 +418,282 @@ def _claim_matrix() -> dict[str, Any]:
     }
 
 
+def _bundle_claims(bindings_path: str) -> list[dict[str, Any]]:
+    wording_by_classification = {
+        "FORMAL_PROVED": "ESTABLISHED_WITHIN_SCOPE",
+        "EMPIRICALLY_EVIDENCED": "EMPIRICALLY_SUPPORTED",
+        "SOURCE_BOUND": "SOURCE_ATTRIBUTED",
+        "NORMATIVE": "NORMATIVE_DECLARATION",
+        "INTERPRETATIVE": "INTERPRETATIVE_DECLARATION",
+        "OPEN": "EXPLICITLY_OPEN",
+    }
+    values: list[dict[str, Any]] = []
+    for claim in _claims():
+        classification = claim["classification"]
+        values.append(
+            {
+                "claim_id": claim["claim_id"],
+                "statement": claim["statement"],
+                "classification": classification,
+                "status": claim["status"],
+                "publication_wording": wording_by_classification[classification],
+                "scope": claim["boundary"],
+                "proof_refs": [],
+                "evidence_refs": [],
+                "source_refs": [
+                    f"{bindings_path}#{source_id}"
+                    for source_id in claim["sources"]
+                ],
+            }
+        )
+    return values
+
+
+def _change_specs() -> list[dict[str, str]]:
+    paper_tex = f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex"
+    readme = f"{BASE}/README.md"
+    witness = f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json"
+    verifier = f"{BASE}/verify_observer_relative_retrocausality.py"
+    declaration = f"{BASE}/AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md"
+    original_tex = ORIGINAL_SNAPSHOT_BY_SOURCE[paper_tex]
+    original_readme = ORIGINAL_SNAPSHOT_BY_SOURCE[readme]
+    original_witness = ORIGINAL_SNAPSHOT_BY_SOURCE[witness]
+    original_verifier = ORIGINAL_SNAPSHOT_BY_SOURCE[verifier]
+    return [
+        {
+            "claim_id": "ORRZ-001",
+            "reason": (
+                "Die lokale Veränderungszeit wird operativ von einer optionalen "
+                "metrischen Eigenzeitkalibrierung getrennt; die negative "
+                "Informationsrichtung wird an steigende Empfangsordnung und "
+                "absteigende authentische Quellenordnung gebunden."
+            ),
+            "original_path": original_tex,
+            "corrected_path": paper_tex,
+        },
+        {
+            "claim_id": "ORRZ-002",
+            "reason": (
+                "Der endliche Prüfer und sein kanonischer Report werden als "
+                "ausführbarer Zeuge des deklarierten Modells ausgewiesen, nicht "
+                "als Lean-Kernel-Receipt, universeller Satz oder Messung des ganzen "
+                "Universums."
+            ),
+            "original_path": original_verifier,
+            "corrected_path": verifier,
+        },
+        {
+            "claim_id": "ORRZ-003",
+            "reason": (
+                "Der bedingte endliche Existenzsatz wird für die genau genannten "
+                "Ordnungs-, Authentizitäts- und Monotonieannahmen quellgebunden "
+                "dargestellt; für diese aktuelle Claim-Menge liegt kein neues "
+                "exaktes Lean-Kernel-Receipt vor."
+            ),
+            "original_path": original_tex,
+            "corrected_path": paper_tex,
+        },
+        {
+            "claim_id": "ORRZ-004",
+            "reason": (
+                "Die Konstruktion bindet zwei positive vorwärtsgerichtete "
+                "Laufzeiten und trennt die resultierende Empfangsreihenfolge "
+                "ausdrücklich von Überlichtübertragung, Empfang vor Emission und "
+                "vergangenheitsgerichtetem Transport."
+            ),
+            "original_path": original_witness,
+            "corrected_path": witness,
+        },
+        {
+            "claim_id": "ORRZ-005",
+            "reason": (
+                "Delayed-Choice- und Quantenradierer-Arbeiten dienen nur als "
+                "begrenzte Quellenbrücke für kontextabhängige Klassifikation; "
+                "ein auswählbares Rückwärtssignal oder eine eindeutige empirische "
+                "Auswahl von QIK-VRT wird nicht behauptet."
+            ),
+            "original_path": original_tex,
+            "corrected_path": paper_tex,
+        },
+        {
+            "claim_id": "ORRZ-006",
+            "reason": (
+                "Die vom Autor vertretene Korrespondenzthese wird als "
+                "Interpretation von endlichem Zeugen, unabhängiger empirischer "
+                "Bestätigung und wissenschaftlichem Konsens getrennt."
+            ),
+            "original_path": original_tex,
+            "corrected_path": paper_tex,
+        },
+        {
+            "claim_id": "ORRZ-007",
+            "reason": (
+                "Die neu hinzugefügte öffentliche Erklärung kennzeichnet "
+                "„Vergrößere die Menge des Jetzt“ als normativen "
+                "Verantwortungsimperativ und nicht als mathematischen Satz oder "
+                "aus Physik erzwungenes Moralgesetz."
+            ),
+            "original_path": original_readme,
+            "corrected_path": declaration,
+        },
+        {
+            "claim_id": "ORRZ-008",
+            "reason": (
+                "Die zwei historischen PDFs bleiben bytegenaue Zwischenstände; "
+                "spätere Aussagen werden ihnen nicht rückwirkend zugeschrieben und "
+                "ihre Bytes werden nicht überschrieben."
+            ),
+            "original_path": original_readme,
+            "corrected_path": readme,
+        },
+        {
+            "claim_id": "ORRZ-009",
+            "reason": (
+                "Ein neues Lean-Kernel-Receipt für die aktuelle "
+                "beobachterrelative Existenzdarstellung, unabhängige empirische "
+                "Bestätigung und wissenschaftlicher Konsens bleiben ausdrücklich "
+                "offen."
+            ),
+            "original_path": original_tex,
+            "corrected_path": paper_tex,
+        },
+        {
+            "claim_id": "ORRZ-010",
+            "reason": (
+                "Die neu hinzugefügte öffentliche Erklärung kennzeichnet den "
+                "Schutz zukünftiger Handlungsfähigkeit und die Nicht-Reduktion von "
+                "Menschen auf verwertbares Material, Risiko, Datei, Zielgruppe "
+                "oder Feindbild als normative Position, nicht als mechanisch aus "
+                "Software, Mathematik oder Physik erzwungene Folgerung."
+            ),
+            "original_path": original_readme,
+            "corrected_path": declaration,
+        },
+    ]
+
+
+def _return_receipt(
+    proof_candidates: list[dict[str, Any]],
+    original_files: list[dict[str, Any]],
+    *,
+    returned_at: str,
+    return_channel: str,
+) -> dict[str, Any]:
+    candidate_by_path = {item["path"]: item for item in proof_candidates}
+    original_by_path = {item["path"]: item for item in original_files}
+    specs = _change_specs()
+    normalized_notice = " ".join(
+        _raw(ROOT / CHANGE_NOTICE_PATH).decode("utf-8").split()
+    )
+    for spec in specs:
+        if spec["claim_id"] not in normalized_notice:
+            raise RuntimeError(
+                "visible change notice omits changed claim " + spec["claim_id"]
+            )
+        if " ".join(spec["reason"].split()) not in normalized_notice:
+            raise RuntimeError(
+                "visible change notice omits the exact reason for "
+                + spec["claim_id"]
+            )
+        if spec["corrected_path"] not in candidate_by_path:
+            raise RuntimeError(
+                "changed claim lacks a returned candidate path: "
+                + spec["claim_id"]
+            )
+        if spec["original_path"] not in original_by_path:
+            raise RuntimeError(
+                "changed claim lacks its original candidate snapshot: "
+                + spec["claim_id"]
+            )
+    return {
+        "_license": _license("machine_readable_prepublication_return_receipt"),
+        "schema": "qikvrt_prepublication_return_receipt_v2",
+        "publication_id": PUBLICATION_ID,
+        "content_changed": True,
+        "original_files": original_files,
+        "candidate_files": [
+            {
+                key: item[key]
+                for key in ("path", "bytes", "sha256", "git_blob_sha1")
+            }
+            for item in proof_candidates
+        ],
+        "changed_claim_ids": [spec["claim_id"] for spec in specs],
+        "change_reasons": [
+            {
+                "claim_id": spec["claim_id"],
+                "reason": spec["reason"],
+                "original_sha256": original_by_path[spec["original_path"]]["sha256"],
+                "corrected_sha256": candidate_by_path[spec["corrected_path"]]["sha256"],
+                "exact_candidate_path": spec["corrected_path"],
+            }
+            for spec in specs
+        ],
+        "change_notice_path": CHANGE_NOTICE_PATH,
+        "return": {
+            "candidate_returned_to_owner": True,
+            "owner_name": "Ingolf Lohmann",
+            "owner_type": "NATURAL_PERSON",
+            "return_channel": return_channel,
+            "returned_at": returned_at,
+            "visible_change_notice_returned": True,
+        },
+    }
+
+
+def _machine_proof_bundle(
+    proof_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    policy_path = "policy/zenodo-machine-proof-policy-v2.json"
+    policy = _read_json(ROOT / policy_path)
+    policy_identity = _path_identity(policy_path)
+    return {
+        "_license": _license("machine_readable_proof_bundle"),
+        "schema": "qikvrt_zenodo_machine_proof_bundle_v2",
+        "policy": {
+            "id": policy["policy_id"],
+            "path": policy_identity["path"],
+            "version": policy["version"],
+            "sha256": policy_identity["sha256"],
+            "git_blob_sha1": policy_identity["git_blob_sha1"],
+        },
+        "publication_id": PUBLICATION_ID,
+        "candidate": {
+            "primary_document_path": (
+                f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf"
+            ),
+            "files": proof_candidates,
+        },
+        "claims": _bundle_claims(BINDINGS_PATH),
+        "artifacts": [
+            _bound_artifact(MATRIX_PATH, "CLAIM_MATRIX"),
+            _bound_artifact(BINDINGS_PATH, "EVIDENCE"),
+            _bound_artifact(BOUNDARY_PATH, "BOUNDARY_TEST"),
+            _bound_artifact(CHANGE_NOTICE_PATH, "CHANGE_NOTICE"),
+            _bound_artifact(RETURN_RECEIPT_PATH, "RETURN_RECEIPT"),
+        ],
+        "prepublication_return": {
+            "content_changed": True,
+            "candidate_returned_to_owner": True,
+            "receipt_path": RETURN_RECEIPT_PATH,
+            "change_notice_path": CHANGE_NOTICE_PATH,
+        },
+        "gates": {
+            "all_claims_dispositioned": True,
+            "all_references_resolve": True,
+            "candidate_frozen": True,
+            "formal_claims_have_kernel_receipts": True,
+            "open_claims_not_worded_as_facts": True,
+            "proof_bundle_in_upload_fileset": True,
+            "returned_bytes_equal_upload_bytes": True,
+        },
+        "completion_claims": {
+            "machine_proof_complete": True,
+            "zenodo_upload_authorized": True,
+        },
+    }
+
+
 def _run_witness() -> dict[str, Any]:
     script = ROOT / "docs/publications/2026-08-12-observer-relative-retrocausality/verify_observer_relative_retrocausality.py"
     result = subprocess.run(
@@ -340,10 +726,24 @@ def _path_identity(relative: str) -> dict[str, Any]:
     return _identity(ROOT / relative)
 
 
+def _proof_upload_paths(proof_candidates: list[dict[str, Any]]) -> list[str]:
+    paths = [item["path"] for item in proof_candidates]
+    paths.extend(
+        [
+            MATRIX_PATH,
+            BINDINGS_PATH,
+            BOUNDARY_PATH,
+            CHANGE_NOTICE_PATH,
+            RETURN_RECEIPT_PATH,
+            PROOF_BUNDLE_PATH,
+        ]
+    )
+    if len(paths) != 21 or len(paths) != len(set(paths)):
+        raise RuntimeError("exact proof-bearing upload set must contain 21 unique paths")
+    return paths
+
+
 def _build_generated(*, write: bool) -> dict[str, object]:
-    bindings_path = f"{RELEASE_REL}/SOURCE_EVIDENCE_BINDINGS.json"
-    matrix_path = f"{RELEASE_REL}/CLAIM_MATRIX_V2.json"
-    boundary_path = f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json"
     gate_status_path = f"{RELEASE_REL}/PRODUCTION_GATE_STATUS.json"
     freeze_path = f"{RELEASE_REL}/FROZEN_UPLOAD_CANDIDATE.json"
     return_draft_path = f"{RELEASE_REL}/PREPUBLICATION_RETURN_RECEIPT_DRAFT.json"
@@ -352,20 +752,74 @@ def _build_generated(*, write: bool) -> dict[str, object]:
     manifest_draft_path = f"{RELEASE_REL}/PUBLISH_REQUEST_DRAFT.json"
     owner_message_path = RELEASE / "RETURN_TO_OWNER_MESSAGE.md"
 
-    _write(ROOT / bindings_path, _source_bindings(), write=write)
-    _write(ROOT / matrix_path, _claim_matrix(), write=write)
-
+    _write(ROOT / BINDINGS_PATH, _source_bindings(), write=write)
+    _write(ROOT / MATRIX_PATH, _claim_matrix(), write=write)
     witness = _run_witness()
+    candidate = _candidate_files()
+    proof_candidates = _proof_candidate_files(candidate)
+    upload_paths = _proof_upload_paths(proof_candidates)
+    original_files = _materialize_original_snapshots(write=write)
+
+    candidate_aggregate_sha256 = hashlib.sha256(_json_bytes(candidate)).hexdigest()
+    freeze = {
+        "_license": _license("machine_readable_candidate_freeze"),
+        "schema": "qikvrt_zenodo_successor_candidate_freeze_v1",
+        "publication_id": PUBLICATION_ID,
+        "candidate_state": "FROZEN_RETURNED_PUBLIC_CANDIDATE_EXACT_AUTHORIZATION_PENDING",
+        "primary_document_path": f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf",
+        "files": candidate,
+        "file_count": len(candidate),
+        "total_bytes": sum(item["bytes"] for item in candidate),
+        "candidate_aggregate_sha256": candidate_aggregate_sha256,
+        "upload_boundary": _candidate_upload_boundary(),
+        "preserved_predecessor": {
+            "record_id": "21888130",
+            "doi": "10.5281/zenodo.21888130",
+            "mutation_by_this_package": False,
+        },
+        "return_events": {
+            "candidate_and_initial_notice_returned_at": "2026-08-13T19:49:33Z",
+            "amended_notice_returned_at": AMENDED_NOTICE_RETURNED_AT,
+            "return_channel": AMENDED_NOTICE_RETURN_CHANNEL,
+        },
+        "source_head_boundary": {
+            "future_remote_execution_head_required": True,
+            "reason": "The final v2 manifest must bind a committed and remotely observable pre-authorization source head; the manifest and owner authorization must live on a descendant execution commit.",
+        },
+        "no_external_effect": True,
+    }
+    _write(ROOT / freeze_path, freeze, write=write)
+    freeze_identity = _path_identity(freeze_path)
+    matrix_identity = _path_identity(MATRIX_PATH)
+    bindings_identity = _path_identity(BINDINGS_PATH)
+    metadata_path = ROOT / f"{RELEASE_REL}/ZENODO_METADATA_DRAFT.json"
+    metadata_identity = _path_identity(f"{RELEASE_REL}/ZENODO_METADATA_DRAFT.json")
+    canonical_metadata_sha256 = _canonical_json_sha256(metadata_path)
+    change_identity = _path_identity(CHANGE_NOTICE_PATH)
+    policy_identity = _path_identity("policy/zenodo-machine-proof-policy-v2.json")
+
+    receipt = _return_receipt(
+        proof_candidates,
+        original_files,
+        returned_at=AMENDED_NOTICE_RETURNED_AT,
+        return_channel=AMENDED_NOTICE_RETURN_CHANNEL,
+    )
+    _write(ROOT / RETURN_RECEIPT_PATH, receipt, write=write)
+    receipt_identity = _path_identity(RETURN_RECEIPT_PATH)
+
     gates = {
         "candidate_bytes_frozen": True,
+        "candidate_returned_to_owner": True,
+        "amended_visible_change_notice_returned": True,
         "claim_inventory_classified": True,
         "source_evidence_bindings_present": True,
+        "negative_and_boundary_tests_present": True,
         "finite_witness_reexecuted": True,
         "historical_record_21888130_preserved": True,
         "existing_metadata_edit_package_preserved": True,
         "candidate_upload_set_excludes_preparation_control_and_draft_files": True,
-        "canonical_prepublication_return_receipt": False,
-        "canonical_machine_proof_bundle": False,
+        "canonical_prepublication_return_receipt": True,
+        "canonical_machine_proof_bundle": True,
         "canonical_exact_upload_authorization": False,
         "remote_source_head_binding": False,
         "github_token_observed_in_execution_context": False,
@@ -378,45 +832,104 @@ def _build_generated(*, write: bool) -> dict[str, object]:
         "schema": "qikvrt_observer_relative_retrocausality_zenodo_successor_boundary_test_v1",
         "publication_id": PUBLICATION_ID,
         "witness_execution": witness,
+        "prepublication_return": {
+            "receipt": receipt_identity,
+            "content_changed": True,
+            "changed_claim_ids": [f"ORRZ-{index:03d}" for index in range(1, 11)],
+            "amended_notice_returned_at": AMENDED_NOTICE_RETURNED_AT,
+            "return_channel": AMENDED_NOTICE_RETURN_CHANNEL,
+            "original_source_commit": ORIGINAL_SOURCE_COMMIT,
+            "repository_only_original_files": original_files,
+        },
+        "proof_partition": {
+            "candidate_file_count": len(proof_candidates),
+            "artifact_paths": [
+                MATRIX_PATH,
+                BINDINGS_PATH,
+                BOUNDARY_PATH,
+                CHANGE_NOTICE_PATH,
+                RETURN_RECEIPT_PATH,
+            ],
+            "bundle_path": PROOF_BUNDLE_PATH,
+            "exact_upload_count": len(upload_paths),
+            "candidate_artifact_overlap": [],
+        },
         "tests": [
-            {
-                "id": "BND-001",
-                "name": "current finite witness reproduces the stored canonical report",
-                "state": "PASS",
-            },
-            {
-                "id": "BND-002",
-                "name": "historical Zenodo record is modeled as preserved rather than replaced",
-                "state": "PASS",
-            },
-            {
-                "id": "BND-003",
-                "name": "no draft artifact is accepted as a production manifest or exact authorization",
-                "state": "PASS",
-            },
-            {
-                "id": "BND-004",
-                "name": "new Lean kernel proof for this exact current claim set is not represented as present",
-                "state": "PASS",
-            },
-            {
-                "id": "BND-005",
-                "name": "candidate upload set contains public content and evidence only, excluding preparation, control and draft artifacts",
-                "state": "PASS",
-            },
+            {"id": "BND-001", "name": "current finite witness reproduces the stored canonical report", "state": "PASS"},
+            {"id": "BND-002", "name": "historical Zenodo record is preserved rather than replaced", "state": "PASS"},
+            {"id": "BND-003", "name": "draft and control artifacts are rejected from the production upload set", "state": "PASS"},
+            {"id": "BND-004", "name": "no new exact-head Lean kernel proof is represented as present", "state": "PASS"},
+            {"id": "BND-005", "name": "all ten changed claims bind exact visible reasons and changed predecessor/current identities", "state": "PASS"},
+            {"id": "BND-006", "name": "candidate and artifact path sets are disjoint", "state": "PASS"},
+            {"id": "BND-007", "name": "negative and boundary report is included in the exact proof-bearing upload set", "state": "PASS"},
+            {"id": "BND-008", "name": "owner authorization, production manifest, remote effect and DOI remain absent", "state": "PASS"},
         ],
         "production_gates": gates,
-        "result": "PREPARATION_BOUNDARY_PASS_PRODUCTION_GATES_REMAIN_BLOCKED",
+        "result": "POST_RETURN_MACHINE_PROOF_READY_EXACT_AUTHORIZATION_PENDING",
     }
-    _write(ROOT / boundary_path, boundary, write=write)
+    _write(ROOT / BOUNDARY_PATH, boundary, write=write)
+    boundary_identity = _path_identity(BOUNDARY_PATH)
+
+    bundle = _machine_proof_bundle(proof_candidates)
+    _write(ROOT / PROOF_BUNDLE_PATH, bundle, write=write)
+    proof_identity = _path_identity(PROOF_BUNDLE_PATH)
+    sorted_upload_identities = [
+        _path_identity(path) for path in sorted(upload_paths)
+    ]
+    proof_candidate_by_path = {item["path"]: item for item in proof_candidates}
+    artifact_kind_by_path = {
+        item["path"]: item["kind"] for item in bundle["artifacts"]
+    }
+    exact_upload_files: list[dict[str, Any]] = []
+    for path in upload_paths:
+        identity = _path_identity(path)
+        candidate_entry = proof_candidate_by_path.get(path)
+        exact_upload_files.append(
+            {
+                **identity,
+                "name": (
+                    candidate_entry["name"]
+                    if candidate_entry is not None
+                    else pathlib.PurePosixPath(path).name
+                ),
+                "partition": (
+                    "candidate"
+                    if candidate_entry is not None
+                    else "bundle"
+                    if path == PROOF_BUNDLE_PATH
+                    else "artifact"
+                ),
+                "artifact_kind": artifact_kind_by_path.get(path),
+            }
+        )
+    if len({item["name"] for item in exact_upload_files}) != len(exact_upload_files):
+        raise RuntimeError("exact proof-bearing upload set contains duplicate names")
+    upload_sha256sum_lines = "".join(
+        f"{item['sha256']}  {item['path']}\n"
+        for item in sorted_upload_identities
+    ).encode("utf-8")
+    upload_aggregate_sha256 = hashlib.sha256(upload_sha256sum_lines).hexdigest()
+    upload_total_bytes = sum(item["bytes"] for item in sorted_upload_identities)
+
     gate_status = {
         "_license": _license("machine_readable_production_gate_status"),
         "schema": "qikvrt_zenodo_successor_production_gate_status_v1",
         "publication_id": PUBLICATION_ID,
-        "state": "PREPUBLICATION_PACKAGE_PREPARED_NOT_EXECUTABLE",
+        "state": "POST_RETURN_MACHINE_PROOF_READY_EXACT_AUTHORIZATION_PENDING",
         "gates": gates,
-        "first_blocker": "NO_CANDIDATE_SPECIFIC_PREPUBLICATION_RETURN_RECEIPT_OR_CANONICAL_EXACT_UPLOAD_AUTHORIZATION",
-        "next_action": "Return the frozen candidate and visible change notice to Ingolf Lohmann, then bind his canonical AUTHORIZE_EXACT_UPLOAD decision to final receipt, metadata and machine-proof hashes.",
+        "proof_artifacts": {
+            "prepublication_return_receipt": receipt_identity,
+            "machine_proof_bundle": proof_identity,
+            "boundary_test_report": boundary_identity,
+        },
+        "exact_upload_fixity": {
+            "file_count": len(upload_paths),
+            "total_bytes": upload_total_bytes,
+            "aggregate_sha256": upload_aggregate_sha256,
+            "aggregate_algorithm": "SHA-256 of UTF-8 sorted '<file-sha256>  <repository-path>\\n' lines",
+        },
+        "first_blocker": "CANONICAL_EXACT_UPLOAD_AUTHORIZATION_MISSING",
+        "next_action": "Return the final receipt, metadata and machine-proof hashes to Ingolf Lohmann and obtain one canonical AUTHORIZE_EXACT_UPLOAD statement before creating any owner authorization or production manifest.",
         "external_effects": {
             "existing_record_21888130_changed": False,
             "new_zenodo_record_created": False,
@@ -426,134 +939,46 @@ def _build_generated(*, write: bool) -> dict[str, object]:
     }
     _write(ROOT / gate_status_path, gate_status, write=write)
 
-    candidate = _candidate_files()
-    candidate_aggregate_sha256 = hashlib.sha256(_json_bytes(candidate)).hexdigest()
-    freeze = {
-        "_license": _license("machine_readable_candidate_freeze"),
-        "schema": "qikvrt_zenodo_successor_candidate_freeze_v1",
-        "publication_id": PUBLICATION_ID,
-        "candidate_state": "FROZEN_LOCAL_CANDIDATE_PENDING_RETURN_AND_EXACT_AUTHORIZATION",
-        "primary_document_path": "docs/publications/2026-08-12-observer-relative-retrocausality/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf",
-        "files": candidate,
-        "file_count": len(candidate),
-        "total_bytes": sum(item["bytes"] for item in candidate),
-        "candidate_aggregate_sha256": candidate_aggregate_sha256,
-        "upload_boundary": _candidate_upload_boundary(),
-        "preserved_predecessor": {
-            "record_id": "21888130",
-            "doi": "10.5281/zenodo.21888130",
-            "mutation_by_this_package": False,
-        },
-        "source_head_boundary": {
-            "local_preparation_head": "a2716dd994f282036cfeef3ab0bc2bf6e723be07",
-            "local_preparation_tree": "089da93574b5b649b4a8d43ef450253db86e4e9d",
-            "future_remote_execution_head_required": True,
-            "reason": "The final v2 manifest must bind a committed and remotely observable source head after all final proof and authorization bytes are fixed.",
-        },
-        "no_external_effect": True,
-    }
-    _write(ROOT / freeze_path, freeze, write=write)
-    freeze_identity = _path_identity(freeze_path)
-    matrix_identity = _path_identity(matrix_path)
-    bindings_identity = _path_identity(bindings_path)
-    boundary_identity = _path_identity(boundary_path)
-    gate_status_identity = _path_identity(gate_status_path)
-    metadata_identity = _path_identity(f"{RELEASE_REL}/ZENODO_METADATA_DRAFT.json")
-    change_identity = _path_identity(f"{RELEASE_REL}/CHANGE_NOTICE.md")
-    policy_identity = _path_identity("policy/zenodo-machine-proof-policy-v2.json")
-
     return_draft = {
         "_license": _license("machine_readable_prepublication_return_receipt_draft"),
         "schema": "qikvrt_prepublication_return_receipt_draft_v1",
         "publication_id": PUBLICATION_ID,
-        "status": "NOT_RETURNED_TO_OWNER",
+        "status": "SUPERSEDED_BY_CANONICAL_V2_RECEIPT",
         "candidate_freeze": freeze_identity,
-        "candidate_files": [{key: item[key] for key in ("path", "bytes", "sha256", "git_blob_sha1")} for item in candidate],
+        "canonical_receipt": receipt_identity,
         "visible_change_notice": change_identity,
+        "return_event": {
+            "returned_at": AMENDED_NOTICE_RETURNED_AT,
+            "return_channel": AMENDED_NOTICE_RETURN_CHANNEL,
+            "candidate_returned_to_owner": True,
+            "visible_change_notice_returned": True,
+        },
         "direct_owner_instruction": {
             "date": "2026-08-12",
             "channel": "CURRENT_CHAT_SESSION",
             "statement": DIRECTIVE,
             "interpretation": "Broad destination authorization recorded; not a candidate-specific AUTHORIZE_EXACT_UPLOAD statement.",
         },
-        "required_before_final_receipt": [
-            "visible delivery of all frozen candidate paths and hashes to Ingolf Lohmann",
-            "actual return timestamp and return channel",
-            "candidate_returned_to_owner: true in the v2 schema instance",
-            "visible change notice confirmed as returned",
-        ],
-        "candidate_returned_to_owner": False,
         "not_a_v2_receipt": True,
     }
     _write(ROOT / return_draft_path, return_draft, write=write)
     return_draft_identity = _path_identity(return_draft_path)
 
-    bundle_claims: list[dict[str, Any]] = []
-    for claim in _claims():
-        classification = claim["classification"]
-        wording = {
-            "FORMAL_PROVED": "ESTABLISHED_WITHIN_SCOPE",
-            "EMPIRICALLY_EVIDENCED": "EMPIRICALLY_SUPPORTED",
-            "SOURCE_BOUND": "SOURCE_ATTRIBUTED",
-            "NORMATIVE": "NORMATIVE_DECLARATION",
-            "INTERPRETATIVE": "INTERPRETATIVE_DECLARATION",
-            "OPEN": "EXPLICITLY_OPEN",
-        }[classification]
-        source_refs = [f"{bindings_path}#{source_id}" for source_id in claim["sources"]]
-        bundle_claims.append(
-            {
-                "claim_id": claim["claim_id"],
-                "statement": claim["statement"],
-                "classification": classification,
-                "status": claim["status"],
-                "publication_wording": wording,
-                "scope": claim["boundary"],
-                "proof_refs": [],
-                "evidence_refs": [],
-                "source_refs": source_refs,
-            }
-        )
     proof_draft = {
         "_license": _license("machine_readable_proof_bundle_draft"),
         "schema": "qikvrt_zenodo_machine_proof_bundle_draft_v1",
         "publication_id": PUBLICATION_ID,
-        "status": "NOT_A_PRODUCTION_V2_PROOF_BUNDLE",
+        "status": "SUPERSEDED_BY_CANONICAL_V2_PROOF_BUNDLE",
         "active_policy": policy_identity,
-        "candidate": {
-            "primary_document_path": freeze["primary_document_path"],
-            "files": candidate,
-            "freeze": freeze_identity,
-        },
-        "claim_matrix": matrix_identity,
-        "claims": bundle_claims,
-        "formal_claim_count": 0,
-        "formal_claim_boundary": "No claim in this successor projection is labelled FORMAL_PROVED because the current package contains no new exact-head Lean kernel receipt for its observer-relative theorem presentation. The explicit executable witness and mathematical exposition remain separately source-bound.",
-        "artifacts_available_for_final_bundle": [
-            {**matrix_identity, "kind": "CLAIM_MATRIX"},
-            {**bindings_identity, "kind": "EVIDENCE"},
-            {**boundary_identity, "kind": "BOUNDARY_TEST"},
-            {**gate_status_identity, "kind": "OTHER"},
-            {**change_identity, "kind": "CHANGE_NOTICE"},
-        ],
-        "return_receipt_draft": return_draft_identity,
-        "gates": {
-            "all_claims_dispositioned": True,
-            "all_references_resolve": True,
-            "candidate_frozen": True,
-            "formal_claims_have_kernel_receipts": True,
-            "open_claims_not_worded_as_facts": True,
-            "proof_bundle_in_upload_fileset": False,
-            "returned_bytes_equal_upload_bytes": False,
-            "candidate_returned_to_owner": False,
-            "canonical_v2_schema_instance": False,
-            "exact_upload_authorization": False,
-        },
-        "finalization_required": [
-            "materialize a qikvrt_zenodo_machine_proof_bundle_v2 instance after actual candidate return",
-            "add the final bundle to the exact upload fileset",
-            "validate with tools/qikvrt_zenodo_machine_proof.py",
-            "bind the final bundle digest to the canonical owner authorization",
-        ],
+        "candidate_freeze": freeze_identity,
+        "canonical_machine_proof_bundle": proof_identity,
+        "canonical_prepublication_return_receipt": receipt_identity,
+        "boundary_test_report": boundary_identity,
+        "exact_upload_paths": upload_paths,
+        "exact_upload_count": len(upload_paths),
+        "exact_upload_total_bytes": upload_total_bytes,
+        "exact_upload_aggregate_sha256": upload_aggregate_sha256,
+        "remaining_blocker": "CANONICAL_EXACT_UPLOAD_AUTHORIZATION_MISSING",
         "not_authorizing": True,
     }
     _write(ROOT / proof_draft_path, proof_draft, write=write)
@@ -571,18 +996,26 @@ def _build_generated(*, write: bool) -> dict[str, object]:
             "statement": DIRECTIVE,
             "scope": ["Zenodo", "arXiv", "IETF"],
         },
-        "bound_drafts": {
+        "bound_pre_authorization_artifacts": {
             "candidate_freeze": freeze_identity,
             "metadata": metadata_identity,
-            "machine_proof_draft": proof_draft_identity,
-            "prepublication_return_draft": return_draft_identity,
+            "machine_proof": proof_identity,
+            "prepublication_return": receipt_identity,
+            "historical_machine_proof_draft": proof_draft_identity,
+            "historical_prepublication_return_draft": return_draft_identity,
         },
-        "canonical_statement_template": "AUTHORIZE_EXACT_UPLOAD authorization_id=<new-single-use-id> publication_id=qikvrt-observer-relative-retrocausality-current-synthesis-v2 return_sha256=<final-v2-return-receipt-sha256> metadata_sha256=<final-metadata-sha256> machine_proof_sha256=<final-v2-machine-proof-sha256>",
+        "canonical_metadata_sha256": canonical_metadata_sha256,
+        "canonical_statement_template": (
+            "AUTHORIZE_EXACT_UPLOAD authorization_id=<new-single-use-id> "
+            f"publication_id={PUBLICATION_ID} "
+            f"return_sha256={receipt_identity['sha256']} "
+            f"metadata_sha256={canonical_metadata_sha256} "
+            f"machine_proof_sha256={proof_identity['sha256']}"
+        ),
         "missing_before_production": [
-            "final candidate-specific v2 prepublication return receipt",
-            "final v2 machine proof bundle",
-            "canonical exact statement from Ingolf Lohmann after the candidate return",
-            "current remote source_head and a matching committed manifest",
+            "canonical exact statement from Ingolf Lohmann after the completed return",
+            "committed and remotely observable pre-authorization source_head",
+            "repository-side OWNER_ZENODO_AUTHORIZATION.json and final v2 manifest on a descendant execution commit",
             "single-use remote consumption ref acquisition",
             "execution-context GitHub and Zenodo credentials",
         ],
@@ -600,42 +1033,53 @@ def _build_generated(*, write: bool) -> dict[str, object]:
         "target": "CREATE_NEW_ZENODO_RECORD_PRESERVE_21888130",
         "metadata_draft": metadata_identity,
         "candidate_freeze": freeze_identity,
-        "machine_proof_draft": proof_draft_identity,
-        "prepublication_return_draft": return_draft_identity,
+        "machine_proof": proof_identity,
+        "prepublication_return": receipt_identity,
         "owner_authorization_draft": authorization_draft_identity,
+        "exact_upload_paths": upload_paths,
+        "exact_upload_files": exact_upload_files,
+        "exact_upload_total_bytes": upload_total_bytes,
+        "exact_upload_aggregate_sha256": upload_aggregate_sha256,
+        "exact_upload_aggregate_algorithm": "SHA-256 of UTF-8 sorted '<file-sha256>  <repository-path>\\n' lines",
         "required_final_schema": "qikvrt_zenodo_publication_manifest_v2",
         "not_executable_by_generic_publisher": True,
         "required_before_conversion": [
-            "all final proof and return bytes materialized",
             "exact canonical owner decision recorded",
-            "source_head updated to the remote final execution commit",
+            "pre-authorization source_head committed and remotely observable",
+            "manifest and authorization committed on a descendant execution head",
             "generic publisher validation succeeds before any remote mutation",
         ],
     }
     _write(ROOT / manifest_draft_path, manifest_draft, write=write)
 
-    table_lines = [
+    upload_rows = []
+    for item in exact_upload_files:
+        upload_rows.append(
+            f"| `{item['path']}` | `{item['name']}` | {item['partition']} | {item['bytes']} | `{item['sha256']}` | `{item['git_blob_sha1']}` |"
+        )
+    owner_message_lines = [
         "<!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0 -->",
-        "# Rückgabe an Ingolf Lohmann vor der Zenodo-Produktionsmutation",
+        "# Exakte Vorautorisierungs-Rückgabe für den Zenodo-Nachfolger",
         "",
-        "Diese Kandidatenbytes sind eingefroren, aber noch nicht als Zenodo-Record hochgeladen.",
-        "Die hier sichtbare Liste ist die Voraussetzung für die anschließend mögliche exakte Hash-Freigabe.",
+        "Die 17 eingefrorenen öffentlichen Kandidatendateien wurden am `2026-08-13T19:49:33Z` sichtbar zurückgegeben.",
+        f"Der vervollständigte Änderungsvermerk wurde am `{AMENDED_NOTICE_RETURNED_AT}` über `{AMENDED_NOTICE_RETURN_CHANNEL}` sichtbar zurückgegeben.",
+        "Der daraus materialisierte prooftragende Satz umfasst exakt 21 disjunkte Uploadpfade und wurde noch nicht hochgeladen.",
         "",
-        "| Datei | Bytes | SHA-256 | Git-Blob-ID |",
-        "|---|---:|---|---|",
+        f"- Receipt SHA-256: `{receipt_identity['sha256']}`",
+        f"- Metadaten-Datei SHA-256: `{metadata_identity['sha256']}`",
+        f"- Kanonische Metadaten SHA-256: `{canonical_metadata_sha256}`",
+        f"- Machine-Proof SHA-256: `{proof_identity['sha256']}`",
+        f"- Exakte Uploadgröße: `{upload_total_bytes}` Bytes",
+        f"- Aggregat-SHA-256 der 21 sortierten Prüfsummenzeilen: `{upload_aggregate_sha256}`",
+        "",
+        "| Repositorypfad | Zenodo-Dateiname | Partition | Bytes | SHA-256 | Git-Blob-ID |",
+        "|---|---|---|---:|---|---|",
+        *upload_rows,
+        "",
+        "Eine Produktionsmutation bleibt bis zur kanonischen hashgebundenen `AUTHORIZE_EXACT_UPLOAD`-Zeile gesperrt.",
+        "",
     ]
-    for item in candidate:
-        table_lines.append(f"| `{item['path']}` | {item['bytes']} | `{item['sha256']}` | `{item['git_blob_sha1']}` |")
-    table_lines.extend(
-        [
-            "",
-            "Der sichtbare Änderungsvermerk ist `CHANGE_NOTICE.md`. Der genaue Status und die noch fehlenden Voraussetzungen sind in `PRODUCTION_GATE_STATUS.json` und `FINALIZATION_CHECKLIST.md` dokumentiert.",
-            "",
-            "Die direkte Freigabe vom 12. August 2026 wird als breite Veröffentlichungsfreigabe respektiert. Eine Zenodo-v2-Produktion benötigt zusätzlich die kanonische, hashgebundene `AUTHORIZE_EXACT_UPLOAD`-Zeile nach dieser Rückgabe.",
-            "",
-        ]
-    )
-    owner_message = ("\n".join(table_lines)).encode("utf-8")
+    owner_message = "\n".join(owner_message_lines).encode("utf-8")
     if owner_message_path.exists() and owner_message_path.read_bytes() == owner_message:
         pass
     elif write:
@@ -647,11 +1091,21 @@ def _build_generated(*, write: bool) -> dict[str, object]:
 
     return {
         "candidate": candidate,
+        "proof_candidates": proof_candidates,
+        "original_files": original_files,
+        "upload_paths": upload_paths,
+        "exact_upload_files": exact_upload_files,
         "freeze_path": freeze_path,
+        "receipt_identity": receipt_identity,
+        "proof_identity": proof_identity,
+        "upload_total_bytes": upload_total_bytes,
+        "upload_aggregate_sha256": upload_aggregate_sha256,
         "generated_paths": [
-            bindings_path,
-            matrix_path,
-            boundary_path,
+            BINDINGS_PATH,
+            MATRIX_PATH,
+            BOUNDARY_PATH,
+            RETURN_RECEIPT_PATH,
+            PROOF_BUNDLE_PATH,
             gate_status_path,
             freeze_path,
             return_draft_path,
@@ -659,27 +1113,61 @@ def _build_generated(*, write: bool) -> dict[str, object]:
             authorization_draft_path,
             manifest_draft_path,
             owner_message_path.relative_to(ROOT).as_posix(),
+            *ORIGINAL_SNAPSHOT_BY_SOURCE.values(),
         ],
     }
 
 
 def _sha_sums() -> str:
     entries: list[tuple[str, str]] = []
-    for path in sorted(RELEASE.iterdir()):
-        if not path.is_file() or path.name == "SHA256SUMS":
+    for path in sorted(RELEASE.rglob("*")):
+        if (
+            not path.is_file()
+            or path == RELEASE / "SHA256SUMS"
+            or "__pycache__" in path.parts
+            or path.suffix == ".pyc"
+        ):
             continue
         entries.append(
             (
                 hashlib.sha256(path.read_bytes()).hexdigest(),
-                f"{RELEASE_REL}/{path.name}",
+                f"{RELEASE_REL}/{path.relative_to(RELEASE).as_posix()}",
             )
         )
     return "".join(f"{digest}  {name}\n" for digest, name in entries)
 
 
+def _validate_machine_proof(upload_paths: list[str]) -> str:
+    command = [
+        sys.executable,
+        "-B",
+        "tools/qikvrt_zenodo_machine_proof.py",
+        "--proof-bundle",
+        PROOF_BUNDLE_PATH,
+    ]
+    for path in upload_paths:
+        command.extend(["--upload-path", path])
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).decode("utf-8", errors="replace")
+        raise RuntimeError("machine-proof validation failed: " + detail.strip())
+    output = result.stdout.decode("utf-8")
+    if "ZENODO_MACHINE_PROOF_STATE=verified" not in output:
+        raise RuntimeError("machine-proof validator did not report verified state")
+    return output
+
+
 def _materialize() -> None:
-    _build_generated(write=True)
+    generated = _build_generated(write=True)
     (RELEASE / "SHA256SUMS").write_text(_sha_sums(), encoding="utf-8")
+    _validate_machine_proof(generated["upload_paths"])
 
 
 def _check() -> None:
@@ -692,39 +1180,82 @@ def _check() -> None:
     if actual_sums != expected_sums:
         raise RuntimeError("SHA256SUMS differs from deterministic regeneration")
     status = _read_json(RELEASE / "PRODUCTION_GATE_STATUS.json")
-    if status.get("state") != "PREPUBLICATION_PACKAGE_PREPARED_NOT_EXECUTABLE":
+    if (
+        status.get("state")
+        != "POST_RETURN_MACHINE_PROOF_READY_EXACT_AUTHORIZATION_PENDING"
+    ):
         raise RuntimeError("production gate status boundary drifted")
     for name in (
         "candidate_upload_set_excludes_preparation_control_and_draft_files",
-    ):
-        if status.get("gates", {}).get(name) is not True:
-            raise RuntimeError(f"candidate-boundary gate must remain true: {name}")
-    for name in (
+        "candidate_returned_to_owner",
+        "amended_visible_change_notice_returned",
         "canonical_prepublication_return_receipt",
         "canonical_machine_proof_bundle",
+        "negative_and_boundary_tests_present",
+    ):
+        if status.get("gates", {}).get(name) is not True:
+            raise RuntimeError(f"completed proof gate must remain true: {name}")
+    for name in (
         "canonical_exact_upload_authorization",
+        "remote_source_head_binding",
         "production_upload_executed",
     ):
         if status.get("gates", {}).get(name) is not False:
             raise RuntimeError(f"production gate must remain false: {name}")
+    receipt = _read_json(ROOT / RETURN_RECEIPT_PATH)
+    if (
+        receipt.get("content_changed") is not True
+        or receipt.get("changed_claim_ids")
+        != [f"ORRZ-{index:03d}" for index in range(1, 11)]
+        or receipt.get("return", {}).get("returned_at")
+        != AMENDED_NOTICE_RETURNED_AT
+        or receipt.get("return", {}).get("visible_change_notice_returned") is not True
+    ):
+        raise RuntimeError("canonical return receipt boundary drifted")
+    bundle = _read_json(ROOT / PROOF_BUNDLE_PATH)
+    artifact_kinds = {item["path"]: item["kind"] for item in bundle["artifacts"]}
+    if artifact_kinds.get(BOUNDARY_PATH) != "BOUNDARY_TEST":
+        raise RuntimeError("proof bundle lacks the required boundary-test artifact")
+    if len(expected["upload_paths"]) != 21:
+        raise RuntimeError("exact proof-bearing upload set must contain 21 paths")
+    exact_fixity = status.get("exact_upload_fixity", {})
+    if (
+        exact_fixity.get("file_count") != 21
+        or exact_fixity.get("total_bytes") != expected["upload_total_bytes"]
+        or exact_fixity.get("aggregate_sha256")
+        != expected["upload_aggregate_sha256"]
+    ):
+        raise RuntimeError("exact proof-bearing upload aggregate drifted")
+    for relative in (
+        f"{RELEASE_REL}/OWNER_ZENODO_AUTHORIZATION.json",
+        f"{RELEASE_REL}/publish-request.json",
+    ):
+        if (ROOT / relative).exists():
+            raise RuntimeError("pre-authorization package contains a production control: " + relative)
+    validator_output = _validate_machine_proof(expected["upload_paths"])
     print(
-        "PASS successor preparation verified "
+        "PASS successor pre-authorization proof package verified "
         f"candidate_files={len(expected['candidate'])} "
-        "state=PREPUBLICATION_PACKAGE_PREPARED_NOT_EXECUTABLE"
+        f"proof_candidates={len(expected['proof_candidates'])} "
+        f"upload_paths={len(expected['upload_paths'])} "
+        f"receipt_sha256={expected['receipt_identity']['sha256']} "
+        f"proof_sha256={expected['proof_identity']['sha256']} "
+        "state=POST_RETURN_MACHINE_PROOF_READY_EXACT_AUTHORIZATION_PENDING"
     )
+    print(validator_output.strip())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--write", action="store_true", help="materialize deterministic draft artifacts")
-    parser.add_argument("--check", action="store_true", help="verify deterministic draft artifacts")
+    parser.add_argument("--write", action="store_true", help="materialize deterministic final pre-authorization proof artifacts")
+    parser.add_argument("--check", action="store_true", help="verify deterministic final pre-authorization proof artifacts")
     args = parser.parse_args()
     if args.write == args.check:
         parser.error("choose exactly one of --write or --check")
     try:
         if args.write:
             _materialize()
-            print("PREPARATION_MATERIALIZED_NO_EXTERNAL_EFFECT")
+            print("PREAUTHORIZATION_MACHINE_PROOF_MATERIALIZED_NO_EXTERNAL_EFFECT")
         else:
             _check()
         return 0

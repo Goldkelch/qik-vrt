@@ -29,7 +29,47 @@ Die fortgeschriebene Fassung trennt klar:
 
 Die maßgeblichen aktuell hinzugefügten oder präzisierten Inhaltsteile sind
 `ORRZ-001`, `ORRZ-002`, `ORRZ-003`, `ORRZ-004`, `ORRZ-005`, `ORRZ-006`,
-`ORRZ-007`, `ORRZ-008` und `ORRZ-009` aus `CLAIM_MATRIX_V2.json`.
+`ORRZ-007`, `ORRZ-008`, `ORRZ-009` und `ORRZ-010` aus
+`CLAIM_MATRIX_V2.json`.
+
+## Maschinengebundene Änderungsgründe
+
+- `ORRZ-001`: Die lokale Veränderungszeit wird operativ von einer optionalen
+  metrischen Eigenzeitkalibrierung getrennt; die negative Informationsrichtung
+  wird an steigende Empfangsordnung und absteigende authentische Quellenordnung
+  gebunden.
+- `ORRZ-002`: Der endliche Prüfer und sein kanonischer Report werden als
+  ausführbarer Zeuge des deklarierten Modells ausgewiesen, nicht als
+  Lean-Kernel-Receipt, universeller Satz oder Messung des ganzen Universums.
+- `ORRZ-003`: Der bedingte endliche Existenzsatz wird für die genau genannten
+  Ordnungs-, Authentizitäts- und Monotonieannahmen quellgebunden dargestellt;
+  für diese aktuelle Claim-Menge liegt kein neues exaktes Lean-Kernel-Receipt
+  vor.
+- `ORRZ-004`: Die Konstruktion bindet zwei positive vorwärtsgerichtete
+  Laufzeiten und trennt die resultierende Empfangsreihenfolge ausdrücklich von
+  Überlichtübertragung, Empfang vor Emission und vergangenheitsgerichtetem
+  Transport.
+- `ORRZ-005`: Delayed-Choice- und Quantenradierer-Arbeiten dienen nur als
+  begrenzte Quellenbrücke für kontextabhängige Klassifikation; ein auswählbares
+  Rückwärtssignal oder eine eindeutige empirische Auswahl von QIK-VRT wird nicht
+  behauptet.
+- `ORRZ-006`: Die vom Autor vertretene Korrespondenzthese wird als
+  Interpretation von endlichem Zeugen, unabhängiger empirischer Bestätigung und
+  wissenschaftlichem Konsens getrennt.
+- `ORRZ-007`: Die neu hinzugefügte öffentliche Erklärung kennzeichnet
+  „Vergrößere die Menge des Jetzt“ als normativen Verantwortungsimperativ und
+  nicht als mathematischen Satz oder aus Physik erzwungenes Moralgesetz.
+- `ORRZ-008`: Die zwei historischen PDFs bleiben bytegenaue Zwischenstände;
+  spätere Aussagen werden ihnen nicht rückwirkend zugeschrieben und ihre Bytes
+  werden nicht überschrieben.
+- `ORRZ-009`: Ein neues Lean-Kernel-Receipt für die aktuelle
+  beobachterrelative Existenzdarstellung, unabhängige empirische Bestätigung
+  und wissenschaftlicher Konsens bleiben ausdrücklich offen.
+- `ORRZ-010`: Die neu hinzugefügte öffentliche Erklärung kennzeichnet den
+  Schutz zukünftiger Handlungsfähigkeit und die Nicht-Reduktion von Menschen
+  auf verwertbares Material, Risiko, Datei, Zielgruppe oder Feindbild als
+  normative Position, nicht als mechanisch aus Software, Mathematik oder Physik
+  erzwungene Folgerung.
 
 ## Byte- und Geschichtsgrenze
 
