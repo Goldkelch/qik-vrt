@@ -306,6 +306,17 @@ class CicdTests(unittest.TestCase):
                 self.assertFalse(ok)
                 self.assertIn("changed after planning", reason)
 
+    def test_publication_journal_rejects_outside_path_without_unbounded_parent_walk(self) -> None:
+        with tempfile.TemporaryDirectory() as repository, tempfile.TemporaryDirectory() as outside:
+            root = pathlib.Path(repository)
+            journal = cicd.PublicationJournal(
+                pathlib.Path(outside) / "journal.json", {"actions": []}
+            )
+            with mock.patch.object(cicd, "ROOT", root), self.assertRaisesRegex(
+                ValueError, "escapes repository root"
+            ):
+                journal.record("PREPARED")
+
     def test_execute_preflight_rejects_untracked_source(self) -> None:
         head = "a" * 40
         plan = {
@@ -373,6 +384,50 @@ class CicdTests(unittest.TestCase):
                 [event["state"] for event in durable["events"]],
                 ["PREPARED", "APPLIED", "VERIFIED", "COMMITTED"],
             )
+
+    def test_execute_requires_repository_owned_github_capability_before_journal(self) -> None:
+        head = "a" * 40
+        plan = {
+            "github_repository": "owner/repo",
+            "github_remote": "origin",
+            "github_branch": "main",
+            "github_tag": "release",
+            "actions": [{
+                "effect": "github_push",
+                "command": ["git", "push", "origin", "HEAD:refs/heads/main"],
+            }],
+            "assets": [],
+        }
+
+        def fake_run(command: list[str], timeout: int = 180) -> dict[str, object]:
+            del timeout
+            stdout = ""
+            returncode = 0
+            if command[1:] == ["rev-parse", "--is-inside-work-tree"]:
+                stdout = "true\n"
+            elif command[1:] == ["rev-parse", "HEAD"]:
+                stdout = head + "\n"
+            elif command[1:] == ["remote", "get-url", "--push", "origin"]:
+                stdout = "https://github.com/owner/repo.git\n"
+            elif any(part.endswith("qikvrt_github_publish_runtime.py") for part in command):
+                returncode = 20
+                stdout = '{"state":"CREDENTIAL_REQUIRED"}\n'
+            return {
+                "command": command,
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": "",
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            journal = cicd.PublicationJournal(pathlib.Path(directory) / "journal.json", plan)
+            with mock.patch.object(cicd, "_run", side_effect=fake_run) as runner:
+                code, _steps, reason = cicd.execute_plan(plan, journal)
+            self.assertEqual(code, 20)
+            self.assertIn("repository-owned GitHub publication capability", reason)
+            self.assertFalse(journal.path.exists())
+            executed = [call.args[0] for call in runner.call_args_list]
+            self.assertFalse(any(command[:2] == ["git", "push"] for command in executed))
 
     def test_missing_effect_authorization_writes_no_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

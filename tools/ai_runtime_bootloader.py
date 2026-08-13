@@ -187,6 +187,7 @@ def main() -> int:
             "verify integrity authorities",
             "verify declared tool/cache contracts",
             "check runtime profile without hidden installation",
+            "verify repository-owned GitHub publication capability without network or credentials",
             "hand control to the authorized task executor using fastest verified reusable path",
             "measure reusable interaction and runtime evidence",
             "persist reviewed improvements through repository changes",
@@ -274,6 +275,24 @@ def main() -> int:
             )
         else:
             raise BootBlock("tools/bootstrap-runtime.sh is missing")
+
+        if args.profile in {"publication", "all"}:
+            publication_runtime = ROOT / "tools/qikvrt_github_publish_runtime.py"
+            if publication_runtime.is_file():
+                report["gates"].append(
+                    run_gate(
+                        "repository-owned GitHub publication capability",
+                        [
+                            sys.executable,
+                            "-B",
+                            str(publication_runtime.relative_to(ROOT)),
+                            "offline-check",
+                            "--json",
+                        ],
+                    )
+                )
+            else:
+                raise BootBlock("tools/qikvrt_github_publish_runtime.py is missing")
 
         has_continue = any(gate["state"] == "CONTINUE" for gate in report["gates"])
         report["state"] = "CONTINUE" if has_continue else "PASS"

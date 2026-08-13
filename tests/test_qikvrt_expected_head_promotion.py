@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+WORKFLOW = ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml"
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_expected_head_promotion",
     ROOT / "tools/qikvrt_expected_head_promotion.py",
@@ -117,6 +120,46 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         result = MODULE.evaluate_promotion(self.snapshot(mergeable=False))
         self.assertEqual(result["state"], "BLOCK")
         self.assertEqual(result["first_blocker"], "NOT_MERGEABLE")
+
+    def test_blocked_oldest_candidate_does_not_starve_later_promotable_candidate(self) -> None:
+        blocked = self.snapshot(
+            pr_number=451,
+            last_progress_epoch=10,
+            mergeable=False,
+            expected_head_sha="c" * 40,
+            current_head_sha="c" * 40,
+        )
+        promotable = self.snapshot(pr_number=452, last_progress_epoch=20)
+        result = MODULE.evaluate_candidate_queue({"candidates": [promotable, blocked]})
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["selected_pr_number"], 452)
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["decisions"][0]["first_blocker"], "NOT_MERGEABLE")
+
+    def test_candidate_queue_quarantines_cycle_equivalent_invalid_input(self) -> None:
+        invalid = self.snapshot(
+            pr_number=451,
+            last_progress_epoch=10,
+            expected_head_sha="invalid",
+        )
+        promotable = self.snapshot(pr_number=452, last_progress_epoch=20)
+        result = MODULE.evaluate_candidate_queue({"candidates": [invalid, promotable]})
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["selected_pr_number"], 452)
+        self.assertEqual(result["decisions"][0]["first_blocker"], "INVALID_PROMOTION_SNAPSHOT")
+
+    def test_workflow_scans_all_candidates_without_generated_projection_false_conflicts(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))["promotion_executor"]
+        self.assertEqual(contract["candidate_scan"], "ALL_MARKED_CURRENT_BASE_CANDIDATES")
+        self.assertFalse(contract["blocked_candidate_stalls_later_candidate"])
+        self.assertFalse(
+            contract["generated_projection_overlap_alone_defines_competing_writer"]
+        )
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("evaluate-queue", source)
+        self.assertIn("for row in discovery['candidates']", source)
+        self.assertIn("generated_projections", source)
+        self.assertNotIn("chosen = candidates[0]", source)
 
 
 if __name__ == "__main__":

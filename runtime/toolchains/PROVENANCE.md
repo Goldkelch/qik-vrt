@@ -43,6 +43,16 @@ Authentication is deliberately outside this runtime definition. Neither
 `GH_TOKEN`, `GITHUB_TOKEN`, nor the state produced by `gh auth login` may be
 committed or cached by these scripts.
 
+`tools/qikvrt_github_publish_runtime.py` supplies the repository-owned layer
+above that external identity: it resolves only the exact verified executable,
+checks authentication, selected repository identity, push permission, the
+remote base head and an effect-free Git transport probe before publication,
+and can bind `.git/config` to `gh auth git-credential` without embedding a
+secret. Its redacted receipt is capability evidence only, not authorization or
+proof that a push, pull request, merge, release, or other external effect
+occurred. The corresponding CI job uses only an ephemeral job-scoped token and
+does not retain it as an artifact.
+
 ## xml2rfc 3.34.0
 
 - Upstream project: <https://github.com/ietf-tools/xml2rfc>

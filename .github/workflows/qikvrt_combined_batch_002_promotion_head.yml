@@ -16,10 +16,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: qikvrt-combined-batch-002-${{ github.repository }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   verify-combined-head:
     if: github.repository == 'Goldkelch/qik-vrt'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Verify exact integrated source files

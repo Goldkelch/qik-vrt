@@ -32,6 +32,13 @@
     "test_path": "tests/test_qikvrt_expected_head_promotion.py",
     "opt_in_marker": "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->",
     "maximum_candidates_per_run": 1,
+    "candidate_scan": "ALL_MARKED_CURRENT_BASE_CANDIDATES",
+    "fairness_order": [
+      "LAST_PROGRESS_EPOCH_ASC",
+      "PULL_REQUEST_NUMBER_ASC"
+    ],
+    "blocked_candidate_stalls_later_candidate": false,
+    "generated_projection_overlap_alone_defines_competing_writer": false,
     "schedule_fallback": "*/10 * * * *",
     "workflow_run_reobservation": true,
     "two_phase_promotion": [
@@ -64,7 +71,14 @@
     "same_repository_only": true,
     "draft_only": true,
     "merge_current_main_before_repair": true,
-    "maximum_pull_requests_per_run": 1,
+    "maximum_pull_requests_per_run": 4,
+    "parallelism": "PATH_DISJOINT_CONFLICT_COMPONENTS",
+    "fairness_order": [
+      "LAST_PROGRESS_EPOCH_ASC",
+      "WORK_ID_ASC"
+    ],
+    "blocked_candidate_stalls_independent_component": false,
+    "generated_projection_overlap_alone_defines_conflict": false,
     "history_rewrite": "FORBIDDEN",
     "post_repair_verification": [
       "python3 -B tools/qikvrt_publication_overview.py check",
@@ -85,6 +99,16 @@
     "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
     "node_split_acceptance": "QUEUE_ROWS_REQUIRE_EXACT_NODE_CONTINUITY_RECEIPT",
     "external_effect": "FORBIDDEN"
+  },
+  "github_publish_runtime": {
+    "contract_path": "state/autonomy/GITHUB_PUBLISH_RUNTIME_CONTRACT_V1.json",
+    "runtime_path": "tools/qikvrt_github_publish_runtime.py",
+    "workflow_path": ".github/workflows/qikvrt_github_publish_runtime.yml",
+    "preflight": "EFFECT_FREE_BEFORE_PUBLICATION_JOURNAL",
+    "waiting_for_cli_or_credentials_holds_writer_lease": false,
+    "default_review_object": "DRAFT_PULL_REQUEST",
+    "credentials_persisted_in_repository": false,
+    "merge_release_deploy_or_external_publication_authorized": false
   },
   "allowlisted_handlers": [
     {
