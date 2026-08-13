@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qikvrt-round-trip-zenodo-bundle-freeze-${{ github.repository }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   exact-head-round-trip-zenodo-bundle-freeze:
     runs-on: ubuntu-24.04

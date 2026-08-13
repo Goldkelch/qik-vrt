@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT GitHub publish runtime
+
+on:
+  push:
+    paths:
+      - ".github/workflows/qikvrt_github_publish_runtime.yml"
+      - "docs/GITHUB_PUBLISH_RUNTIME.md"
+      - "state/autonomy/GITHUB_PUBLISH_RUNTIME_CONTRACT_V1.json"
+      - "tools/qikvrt_github_publish_runtime.py"
+      - "tools/qikvrt_cicd_publish.py"
+      - "tools/bootstrap-gh.sh"
+      - "tools/bootstrap-gh.ps1"
+      - "runtime/toolchains/**"
+      - "tests/test_qikvrt_github_publish_runtime.py"
+      - "tests/test_launcher_runtime.py"
+      - "Makefile"
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_github_publish_runtime.yml"
+      - "docs/GITHUB_PUBLISH_RUNTIME.md"
+      - "state/autonomy/GITHUB_PUBLISH_RUNTIME_CONTRACT_V1.json"
+      - "tools/qikvrt_github_publish_runtime.py"
+      - "tools/qikvrt_cicd_publish.py"
+      - "tools/bootstrap-gh.sh"
+      - "tools/bootstrap-gh.ps1"
+      - "runtime/toolchains/**"
+      - "tests/test_qikvrt_github_publish_runtime.py"
+      - "tests/test_launcher_runtime.py"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-github-publish-runtime-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed bytes without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify repository-owned publication capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_github_publish_runtime.py offline-check --json
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_github_publish_runtime
+
+  authenticated-effect-free-preflight:
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact workflow-dispatch head without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify authenticated publication capability without remote mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_github_publish_runtime.py prepare \
+              --repository "$GITHUB_REPOSITORY" \
+              --remote origin \
+              --base main \
+              --install --accept-third-party \
+              --configure-local-git --require-clean --json \
+              --receipt .qikvrt/evidence/GITHUB_PUBLISH_RUNTIME_RECEIPT.json
+
+      - name: Prove the authenticated job did not mutate repository content
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"

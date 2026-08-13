@@ -41,9 +41,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qikvrt-manuscript-proof-${{ github.repository }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   source-claim-and-kernel-gates:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: formalization/QIKVRT_Formalization_v2.0

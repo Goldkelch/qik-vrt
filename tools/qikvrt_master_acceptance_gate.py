@@ -36,6 +36,7 @@ CORE_FILES = (
     "tools/qikvrt_integrity.py",
     "tools/qikvrt_master_acceptance_gate.py",
     "tools/qikvrt_cicd_publish.py",
+    "tools/qikvrt_github_publish_runtime.py",
     "tools/qikvrt_validate_state_run.py",
     "src/qikvrt_api_handler.py",
     "src/qikvrt_effect_ack.py",

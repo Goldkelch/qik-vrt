@@ -27,6 +27,11 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         )
         self.assertEqual(executor["opt_in_marker"], MARKER)
         self.assertEqual(executor["maximum_candidates_per_run"], 1)
+        self.assertEqual(executor["candidate_scan"], "ALL_MARKED_CURRENT_BASE_CANDIDATES")
+        self.assertFalse(executor["blocked_candidate_stalls_later_candidate"])
+        self.assertFalse(
+            executor["generated_projection_overlap_alone_defines_competing_writer"]
+        )
         self.assertEqual(executor["schedule_fallback"], "*/10 * * * *")
         self.assertEqual(
             executor["two_phase_promotion"],

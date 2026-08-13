@@ -96,7 +96,12 @@ class AutonomousSelfHealTests(unittest.TestCase):
         )
         self.assertTrue(continuation["same_repository_only"])
         self.assertTrue(continuation["draft_only"])
-        self.assertEqual(continuation["maximum_pull_requests_per_run"], 1)
+        self.assertEqual(continuation["maximum_pull_requests_per_run"], 4)
+        self.assertEqual(
+            continuation["parallelism"],
+            "PATH_DISJOINT_CONFLICT_COMPONENTS",
+        )
+        self.assertFalse(continuation["blocked_candidate_stalls_independent_component"])
         self.assertIn(
             "IDENTIFIED_HUMAN_PHYSICS_REVIEW_WHEN_REQUIRED",
             continuation["external_gates"],

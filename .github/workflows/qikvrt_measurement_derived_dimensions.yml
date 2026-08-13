@@ -10,9 +10,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qikvrt-measurement-derived-dimensions-${{ github.repository }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   exact-head-measurement-derived-dimensions:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: docs/publications/2026-08-07-measurement-derived-dimensions

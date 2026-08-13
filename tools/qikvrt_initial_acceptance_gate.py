@@ -38,6 +38,7 @@ CONTEXT_FILES = (
     "tools/qikvrt_integrity.py",
     "tools/qikvrt_master_acceptance_gate.py",
     "tools/qikvrt_cicd_publish.py",
+    "tools/qikvrt_github_publish_runtime.py",
 )
 REQUIRED_FIELDS = {
     "effect_authorized",
