@@ -139,6 +139,7 @@
     },
     "observer_workflow_names": [
       "QIKVRT reflexive repository watchdog",
+      "QIKVRT publication candidate readiness observer",
       "QIKVRT workflow executor watchdog",
       "QIKVRT workflow executor",
       "QIKVRT live status watch"
@@ -216,6 +217,25 @@
       "ietf_mutation",
       "credentialed_external_write"
     ]
+  },
+  "publication_candidate_readiness_observer": {
+    "enabled": true,
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "contract_path": "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
+    "controller_path": "tools/qikvrt_publication_candidate_readiness.py",
+    "workflow_path": ".github/workflows/qikvrt_publication_candidate_readiness.yml",
+    "acceptance_test_path": "tests/test_qikvrt_publication_candidate_readiness.py",
+    "documentation_path": "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md",
+    "work_unit_path": "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json",
+    "observation_cadence": "PT10M",
+    "artifact_only": true,
+    "external_effect": "FORBIDDEN",
+    "writer_dispatch_policy_change": "FORBIDDEN",
+    "receipt_is_promotion_authorization": false
   },
   "mesh_node_split_acceptance": {
     "applies_to": "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW",

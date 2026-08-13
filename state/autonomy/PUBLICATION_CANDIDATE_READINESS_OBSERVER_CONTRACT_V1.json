@@ -1,0 +1,203 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_publication_candidate_readiness_observer_contract_v1",
+  "contract_id": "qikvrt-publication-candidate-readiness-observer-v1",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "base_ref": "main",
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ]
+  },
+  "observer": {
+    "controller_path": "tools/qikvrt_publication_candidate_readiness.py",
+    "workflow_path": ".github/workflows/qikvrt_publication_candidate_readiness.yml",
+    "acceptance_test_path": "tests/test_qikvrt_publication_candidate_readiness.py",
+    "documentation_path": "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md",
+    "work_unit_path": "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json",
+    "receipt_schema": "qikvrt_publication_candidate_readiness_receipt_v1",
+    "cadence": "PT10M",
+    "event_triggers": [
+      "PULL_REQUEST",
+      "WORKFLOW_RUN_COMPLETED",
+      "SCHEDULE",
+      "WORKFLOW_DISPATCH"
+    ],
+    "artifact_only": true,
+    "permissions": [
+      "actions:read",
+      "contents:read",
+      "pull-requests:read"
+    ],
+    "forbidden_actions": [
+      "REF_UPDATE",
+      "PULL_REQUEST_WRITE",
+      "MERGE",
+      "WORKFLOW_DISPATCH",
+      "RELEASE",
+      "DEPLOYMENT",
+      "ZENODO_MUTATION",
+      "ARXIV_SUBMISSION",
+      "IETF_SUBMISSION",
+      "CREDENTIALED_EXTERNAL_WRITE"
+    ]
+  },
+  "candidate_selection": {
+    "same_repository_only": true,
+    "body_marker": "<!-- qikvrt-publication-readiness:enabled external_effect=NONE -->",
+    "path_prefixes": [
+      "docs/publications/",
+      "publication-staging/",
+      "release/observer-relative-retrocausality-current-synthesis-zenodo-v2/"
+    ],
+    "maximum_candidates_per_cycle": 10
+  },
+  "binding": {
+    "required": [
+      "REPOSITORY",
+      "PR_NUMBER",
+      "BASE_SHA",
+      "BASE_TREE",
+      "HEAD_SHA",
+      "HEAD_TREE",
+      "DIFF_SCOPE_DIGEST",
+      "WORKFLOW_BLOB_INVENTORY_DIGEST",
+      "CONTRACT_BLOB_DIGEST",
+      "REOBSERVED_BASE_HEAD",
+      "REOBSERVED_CANDIDATE_HEAD",
+      "REOBSERVED_CANDIDATE_TREE"
+    ],
+    "invalidating_drift": [
+      "BASE_DRIFT",
+      "HEAD_DRIFT",
+      "TREE_DRIFT",
+      "SCOPE_DRIFT",
+      "WORKFLOW_BLOB_DRIFT",
+      "CONTRACT_BLOB_DRIFT"
+    ]
+  },
+  "workflow_gates": {
+    "required": [
+      {
+        "name": "QIKVRT CI",
+        "path": ".github/workflows/qikvrt_ci.yml"
+      },
+      {
+        "name": "QIKVRT repository evidence materialization",
+        "path": ".github/workflows/qikvrt_batch04_integrity.yml"
+      },
+      {
+        "name": "QIKVRT Batch-003 remaining subject disposition",
+        "path": ".github/workflows/qikvrt_batch003_remaining_disposition.yml"
+      },
+      {
+        "name": "QIKVRT workflow executor watchdog",
+        "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+      },
+      {
+        "name": "QIK-VRT global claim completion",
+        "path": ".github/workflows/qikvrt_global_completion.yml",
+        "permitted_skipped_job_prefixes": [
+          "materialize"
+        ]
+      },
+      {
+        "name": "QIKVRT adaptive runtime",
+        "path": ".github/workflows/qikvrt_adaptive_runtime.yml",
+        "permitted_skipped_job_prefixes": [
+          "warm-cache"
+        ]
+      },
+      {
+        "name": "QIKVRT live status watch",
+        "path": ".github/workflows/qikvrt_live_status_watch.yml"
+      },
+      {
+        "name": "QIKVRT Collective Proposal Review",
+        "path": ".github/workflows/qikvrt_collective_review.yml"
+      }
+    ],
+    "conditionally_not_applicable": [
+      {
+        "name": "QIKVRT Batch-003 subject 172dd public archive probe",
+        "path": ".github/workflows/qikvrt_batch003_subject_172dd_public_probe.yml",
+        "applicable_head_refs": [
+          "agent/batch003-subject-172dd-public-freeze-probe"
+        ]
+      },
+      {
+        "name": "QIKVRT Batch-003 remaining archive probe",
+        "path": ".github/workflows/qikvrt_batch003_remaining_archive_probe.yml",
+        "applicable_head_refs": [
+          "agent/batch003-subject-172dd-public-freeze-probe"
+        ]
+      },
+      {
+        "name": "QIKVRT PR18 integrity repair",
+        "path": ".github/workflows/qikvrt_pr18_integrity_repair.yml",
+        "applicable_head_refs": [
+          "infra/live-status-default-branch"
+        ],
+        "write_capable": true
+      }
+    ],
+    "strict_rules": [
+      "EVENT_PULL_REQUEST",
+      "EXACT_HEAD_SHA",
+      "EXACT_HEAD_REF",
+      "TERMINAL_SUCCESS_WITH_NONZERO_JOB_EVIDENCE",
+      "ACTION_REQUIRED_UNTRUSTED",
+      "ZERO_JOB_UNTRUSTED",
+      "UNDECLARED_SKIP_HOLD"
+    ]
+  },
+  "repository_readiness": {
+    "advisory_only": true,
+    "requires": [
+      "OPEN_NON_DRAFT_CLEAN_CANDIDATE",
+      "CURRENT_MAIN_BINDING",
+      "NO_COMPETING_CURRENT_BASE_WRITER_SCOPE_OVERLAP",
+      "EXACT_HEAD_WORKFLOW_GATE_MATRIX",
+      "REVIEW_STATE_REOBSERVED"
+    ],
+    "never_performs": [
+      "READY_FOR_REVIEW",
+      "MERGE",
+      "PROMOTION_EXECUTION"
+    ]
+  },
+  "external_boundaries": [
+    {
+      "target": "ZENODO",
+      "source_path": "release/observer-relative-retrocausality-current-synthesis-zenodo-v2/PRODUCTION_GATE_STATUS.json",
+      "default_state": "NOT_AUTHORIZED"
+    },
+    {
+      "target": "ARXIV",
+      "source_path": "publication-staging/arxiv-observer-relative-retrocausality-en-v2/arxiv_v2_submission_manifest.json",
+      "default_state": "NOT_AUTHORIZED"
+    },
+    {
+      "target": "IETF",
+      "source_path": "docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/SUBMISSION_MANIFEST.json",
+      "default_state": "NOT_AUTHORIZED"
+    }
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "EXTERNAL_EFFECT": false,
+    "ZENODO_EFFECT": false,
+    "ARXIV_EFFECT": false,
+    "IETF_EFFECT": false
+  }
+}

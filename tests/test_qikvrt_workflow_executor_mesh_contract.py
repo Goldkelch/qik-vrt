@@ -58,6 +58,27 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertFalse(boundaries["watchdog_terminality_is_gate_success"])
         self.assertFalse(boundaries["action_required_is_trusted_execution"])
         self.assertFalse(boundaries["zero_job_is_trusted_execution"])
+        readiness = contract["publication_candidate_readiness_observer"]
+        self.assertTrue(readiness["enabled"])
+        self.assertEqual(
+            readiness["applies_to"],
+            ["AUTHORITY", "MIRROR", "EVERY_FUTURE_MESH_NODE"],
+        )
+        self.assertEqual(
+            readiness["contract_path"],
+            "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
+        )
+        self.assertEqual(
+            readiness["controller_path"],
+            "tools/qikvrt_publication_candidate_readiness.py",
+        )
+        self.assertTrue(readiness["artifact_only"])
+        self.assertEqual(readiness["external_effect"], "FORBIDDEN")
+        self.assertFalse(readiness["receipt_is_promotion_authorization"])
+        self.assertIn(
+            "QIKVRT publication candidate readiness observer",
+            contract["reflexive_deadlock_prevention"]["observer_workflow_names"],
+        )
         continuity = contract["mesh_node_split_acceptance"]
         self.assertEqual(continuity["applies_to"], "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW")
         self.assertEqual(
@@ -199,6 +220,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("contents: read", watchdog)
         self.assertIn("tests.test_qikvrt_workflow_executor_mesh_contract", watchdog)
         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
+        self.assertIn(".github/workflows/qikvrt_publication_candidate_readiness.yml", watchdog)
+        self.assertIn("tests.test_qikvrt_publication_candidate_readiness", watchdog)
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)
 

@@ -1,0 +1,58 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_publication_candidate_readiness_observer_work_unit_v1",
+  "work_unit_id": "PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1",
+  "title": "Persist a cyclic exact-head publication-candidate readiness observer",
+  "repository": "Goldkelch/qik-vrt",
+  "owner_instruction": {
+    "language": "de",
+    "decision": "IMPLEMENT_PERPETUAL_READ_ONLY_CYCLIC_READINESS_OBSERVATION",
+    "scope": "REPOSITORY_AND_ARCHITECTURALLY_RELEVANT_MESH_CONTRACTS"
+  },
+  "implementation_paths": [
+    ".github/workflows/qikvrt_publication_candidate_readiness.yml",
+    "tools/qikvrt_publication_candidate_readiness.py",
+    "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
+    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "tests/test_qikvrt_publication_candidate_readiness.py",
+    "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md"
+  ],
+  "cyclic_observation": {
+    "cadence": "PT10M",
+    "exact_head_reobservation": true,
+    "exact_base_reobservation": true,
+    "scope_and_workflow_blob_binding": true,
+    "competing_writer_detection": true,
+    "artifact_only_receipt": true
+  },
+  "separation": {
+    "repository_readiness_is_advisory_only": true,
+    "zenodo_authorization": false,
+    "arxiv_authorization": false,
+    "ietf_authorization": false,
+    "platform_or_external_effect": false
+  },
+  "effect_boundary": {
+    "branch_or_ref_mutation": false,
+    "draft_state_mutation": false,
+    "merge": false,
+    "workflow_dispatch": false,
+    "release": false,
+    "deployment": false,
+    "zenodo": false,
+    "arxiv": false,
+    "ietf": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "EXTERNAL_EFFECT": false
+  }
+}

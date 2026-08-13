@@ -1,0 +1,319 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT publication candidate readiness observer
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Open main-base PR number to observe (optional)"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/10 * * * *"
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Batch-003 remaining subject disposition"
+      - "QIKVRT workflow executor watchdog"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT adaptive runtime"
+      - "QIKVRT live status watch"
+      - "QIKVRT Collective Proposal Review"
+      - "QIKVRT Batch-003 subject 172dd public archive probe"
+      - "QIKVRT Batch-003 remaining archive probe"
+      - "QIKVRT PR18 integrity repair"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  resolve-candidates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      has_candidates: ${{ steps.resolve.outputs.has_candidates }}
+    steps:
+      - name: Check out the trusted Authority main observer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - id: resolve
+        name: Resolve eligible same-repository main-base candidates without mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          DISPATCH_PR: ${{ inputs.pr || '' }}
+          OUTPUT_PATH: ${{ github.output }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path(".")
+          contract = json.loads((root / "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json").read_text(encoding="utf-8"))
+          selection = contract["candidate_selection"]
+          repository = os.environ["REPOSITORY"]
+          event = json.loads(pathlib.Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+
+          def api(path, paginate=False):
+              command = ["gh", "api"]
+              if paginate:
+                  command.extend(["--paginate", "--slurp"])
+              command.append(path)
+              data = json.loads(subprocess.check_output(command, text=True))
+              if not paginate:
+                  return data
+              if isinstance(data, list) and data and all(isinstance(page, list) for page in data):
+                  return [item for page in data for item in page]
+              return data if isinstance(data, list) else [data]
+
+          def files(number):
+              return api(f"repos/{repository}/pulls/{number}/files?per_page=100", paginate=True)
+
+          numbers = set()
+          name = os.environ["EVENT_NAME"]
+          if name == "pull_request":
+              numbers.add(int(event["number"]))
+          elif name == "workflow_run":
+              numbers.update(int(item["number"]) for item in event["workflow_run"].get("pull_requests", []) if item.get("number"))
+          elif name == "workflow_dispatch" and os.environ.get("DISPATCH_PR"):
+              numbers.add(int(os.environ["DISPATCH_PR"]))
+          else:
+              for item in api(f"repos/{repository}/pulls?state=open&base=main&per_page=100", paginate=True):
+                  body = item.get("body") or ""
+                  paths = {file["filename"] for file in files(item["number"])}
+                  if selection["body_marker"] in body or any(path.startswith(prefix) for prefix in selection["path_prefixes"] for path in paths):
+                      numbers.add(int(item["number"]))
+
+          selected = []
+          for number in sorted(numbers):
+              pull = api(f"repos/{repository}/pulls/{number}")
+              head_repository = (pull.get("head", {}).get("repo") or {}).get("full_name")
+              if pull.get("state") != "open" or pull.get("base", {}).get("ref") != "main":
+                  continue
+              if selection["same_repository_only"] and head_repository != repository:
+                  continue
+              body = pull.get("body") or ""
+              paths = {file["filename"] for file in files(number)}
+              if selection["body_marker"] in body or any(path.startswith(prefix) for prefix in selection["path_prefixes"] for path in paths):
+                  selected.append({"pr": number})
+          selected = selected[: int(selection["maximum_candidates_per_cycle"])]
+          output = pathlib.Path(os.environ["OUTPUT_PATH"])
+          with output.open("a", encoding="utf-8") as stream:
+              stream.write("matrix=" + json.dumps({"include": selected}, separators=(",", ":")) + "\n")
+              stream.write("has_candidates=" + ("true" if selected else "false") + "\n")
+          PY
+
+  observe:
+    needs: resolve-candidates
+    if: needs.resolve-candidates.outputs.has_candidates == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve-candidates.outputs.matrix) }}
+    concurrency:
+      group: qikvrt-publication-candidate-readiness-${{ github.repository }}-${{ matrix.pr }}
+      cancel-in-progress: true
+    steps:
+      - name: Check out the trusted Authority main observer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Capture and reobserve the exact candidate without mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ matrix.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/publication-candidate-readiness
+          mkdir -p "$root"
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          root = pathlib.Path(".qikvrt/publication-candidate-readiness")
+          repository = os.environ["REPOSITORY"]
+          number = int(os.environ["PR_NUMBER"])
+          contract_path = "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
+          contract = json.loads(pathlib.Path(contract_path).read_text(encoding="utf-8"))
+
+          def api(path, paginate=False):
+              command = ["gh", "api"]
+              if paginate:
+                  command.extend(["--paginate", "--slurp"])
+              command.append(path)
+              raw = subprocess.check_output(command, text=True)
+              data = json.loads(raw)
+              if not paginate:
+                  return data
+              if isinstance(data, list) and data and all(isinstance(page, list) for page in data):
+                  return [item for page in data for item in page]
+              return data if isinstance(data, list) else [data]
+
+          def contents(path, ref):
+              try:
+                  return api(f"repos/{repository}/contents/{path}?ref={ref}")
+              except subprocess.CalledProcessError:
+                  return None
+
+          def commit(sha):
+              return api(f"repos/{repository}/commits/{sha}")
+
+          def workflow_inventory(tree):
+              payload = api(f"repos/{repository}/git/trees/{tree}?recursive=1")
+              return {
+                  item["path"]: item["sha"]
+                  for item in payload.get("tree", [])
+                  if item.get("type") == "blob" and item.get("path", "").startswith(".github/workflows/")
+              }
+
+          def changed_files(pr):
+              items = api(f"repos/{repository}/pulls/{pr}/files?per_page=100", paginate=True)
+              return [{"path": item["filename"], "sha": item["sha"]} for item in items if item.get("sha")]
+
+          def scope_sha(files):
+              encoded = (json.dumps(sorted(files, key=lambda item: item["path"]), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+              return hashlib.sha256(encoded).hexdigest()
+
+          def inventory_sha(inventory):
+              encoded = (json.dumps(dict(sorted(inventory.items())), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+              return hashlib.sha256(encoded).hexdigest()
+
+          def read_external(head):
+              value = {}
+              for boundary in contract["external_boundaries"]:
+                  source = contents(boundary["source_path"], head)
+                  if not source or source.get("type") != "file":
+                      value[boundary["target"]] = {"present": False}
+                      continue
+                  raw = base64.b64decode((source.get("content") or "").replace("\n", ""))
+                  value[boundary["target"]] = {
+                      "present": True,
+                      "blob_sha": source["sha"],
+                      "sha256": hashlib.sha256(raw).hexdigest(),
+                  }
+              return value
+
+          pull = api(f"repos/{repository}/pulls/{number}")
+          main_head = api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
+          base_commit = commit(main_head)
+          head_commit = commit(pull["head"]["sha"])
+          files = changed_files(number)
+          base_inventory = workflow_inventory(base_commit["commit"]["tree"]["sha"])
+          head_inventory = workflow_inventory(head_commit["commit"]["tree"]["sha"])
+          runs = api(f"repos/{repository}/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=100").get("workflow_runs", [])
+          for run in runs:
+              run["jobs"] = api(f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100").get("jobs", [])
+          reviews = api(f"repos/{repository}/pulls/{number}/reviews?per_page=100", paginate=True)
+          comments = api(f"repos/{repository}/pulls/{number}/comments?per_page=100", paginate=True)
+          competing = []
+          candidate_paths = {item["path"] for item in files}
+          for other in api(f"repos/{repository}/pulls?state=open&base=main&per_page=100", paginate=True):
+              if int(other["number"]) == number or other.get("base", {}).get("sha") != main_head:
+                  continue
+              overlap = sorted(candidate_paths & {item["path"] for item in changed_files(other["number"])})
+              if overlap:
+                  competing.append({"number": int(other["number"]), "overlap_paths": overlap})
+          predecessor = None
+          match = re.search(r"<!-- qikvrt-publication-readiness-predecessor:(\\d+) head=([0-9a-f]{40}) -->", pull.get("body") or "")
+          if match:
+              old_number = int(match.group(1))
+              old = api(f"repos/{repository}/pulls/{old_number}")
+              predecessor = {
+                  "number": old_number,
+                  "declared_head_sha": match.group(2),
+                  "observed_head_sha": old["head"]["sha"],
+                  "state": old["state"],
+                  "changed_paths": [item["path"] for item in changed_files(old_number)],
+              }
+          base_contract = contents(contract_path, main_head)
+          candidate_contract = contents(contract_path, pull["head"]["sha"])
+          if not base_contract:
+              raise RuntimeError("Authority main lacks the observer contract")
+          snapshot = {
+              "schema": "qikvrt_publication_candidate_readiness_snapshot_v1",
+              "repository": repository,
+              "authority": {"main_head_sha": main_head, "main_tree_sha": base_commit["commit"]["tree"]["sha"]},
+              "candidate": {
+                  "number": number,
+                  "state": pull["state"],
+                  "base_ref": pull["base"]["ref"],
+                  "base_sha": pull["base"]["sha"],
+                  "head_ref": pull["head"]["ref"],
+                  "head_sha": pull["head"]["sha"],
+                  "head_tree_sha": head_commit["commit"]["tree"]["sha"],
+                  "changed_file_count": len(files),
+                  "changed_files": files,
+                  "draft": pull["draft"],
+                  "mergeable": pull.get("mergeable") is True,
+              },
+              "contract_blob_sha": base_contract["sha"],
+              "workflow_inventories": {"base": base_inventory, "head": head_inventory},
+              "workflow_runs": runs,
+              "reviews": reviews,
+              "review_comment_count": len(comments),
+              "competing_writers": competing,
+              "declared_predecessor": predecessor,
+              "external_inputs": read_external(pull["head"]["sha"]),
+          }
+          refreshed = api(f"repos/{repository}/pulls/{number}")
+          refreshed_main = api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
+          refreshed_head = commit(refreshed["head"]["sha"])
+          refreshed_files = changed_files(number)
+          refreshed_inventory = workflow_inventory(refreshed_head["commit"]["tree"]["sha"])
+          refreshed_contract = contents(contract_path, refreshed["head"]["sha"])
+          snapshot["reobservation"] = {
+              "main_head_sha": refreshed_main,
+              "base_sha": refreshed["base"]["sha"],
+              "head_sha": refreshed["head"]["sha"],
+              "head_tree_sha": refreshed_head["commit"]["tree"]["sha"],
+              "scope_sha256": scope_sha(refreshed_files),
+              "workflow_blob_inventory_sha256": inventory_sha(refreshed_inventory),
+              "contract_blob_sha": refreshed_contract["sha"] if refreshed_contract else "0" * 40,
+          }
+          (root / "snapshot.json").write_text(json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Evaluate the snapshot without promotion or external effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/publication-candidate-readiness
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_publication_candidate_readiness
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_publication_candidate_readiness.py evaluate --input "$root/snapshot.json" > "$root/publication-candidate-readiness-receipt.json"
+
+      - name: Upload the exact-head observation receipt
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
+        with:
+          name: qikvrt-publication-candidate-readiness-${{ matrix.pr }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/publication-candidate-readiness
+          if-no-files-found: error
