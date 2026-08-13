@@ -186,6 +186,7 @@ class PublicationCandidateReadinessTests(unittest.TestCase):
         self.assertIn("contents: read", workflow)
         self.assertIn("pull-requests: read", workflow)
         self.assertIn("qikvrt-publication-candidate-readiness-", workflow)
+        self.assertIn("github.event.pull_request.head.sha || 'main'", workflow)
         for forbidden in ("actions: write", "pull-requests: write", "gh pr merge", "/merge", "/dispatches", "zenodo.org", "arxiv.org", "datatracker.ietf.org"):
             self.assertNotIn(forbidden, workflow)
 

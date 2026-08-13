@@ -46,3 +46,9 @@ Mirror, and every future mesh node. That placement preserves the observer's
 read-only boundary without widening the existing writer dispatch policy. The
 workflow uses only `actions: read`, `contents: read`, and `pull-requests:
 read`, and uploads the receipt as an Actions artifact.
+
+While this observer is itself first introduced by a pull request, its literal
+pull-request head is checked out solely to bootstrap the read-only contract and
+regression checks. Once the contract is on Authority `main`, scheduled and
+workflow-run cycles check out Authority `main` and observe candidates only by
+API reads. Neither bootstrap nor steady-state execution receives a write scope.

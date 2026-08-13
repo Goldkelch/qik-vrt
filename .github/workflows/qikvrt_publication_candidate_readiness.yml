@@ -42,10 +42,10 @@ jobs:
       matrix: ${{ steps.resolve.outputs.matrix }}
       has_candidates: ${{ steps.resolve.outputs.has_candidates }}
     steps:
-      - name: Check out the trusted Authority main observer
+      - name: Check out the bootstrap candidate or trusted Authority main observer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.sha || 'main' }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -134,10 +134,10 @@ jobs:
       group: qikvrt-publication-candidate-readiness-${{ github.repository }}-${{ matrix.pr }}
       cancel-in-progress: true
     steps:
-      - name: Check out the trusted Authority main observer
+      - name: Check out the bootstrap candidate or trusted Authority main observer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.sha || 'main' }}
           fetch-depth: 1
           persist-credentials: false
 
