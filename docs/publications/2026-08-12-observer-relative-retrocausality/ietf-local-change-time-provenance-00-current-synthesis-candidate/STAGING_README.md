@@ -29,22 +29,22 @@ sha256sum -c SHA256SUMS
 ```
 
 The validator checks the XML header, seven deterministic classification
-fixtures, local non-effect assertions, manifest bindings, and the full
-`SHA256SUMS` scope.  It performs no network operation and does not render the
-draft.
+fixtures, local non-effect assertions, manifest bindings, retained TXT/HTML
+structure, and the full `SHA256SUMS` scope.  It performs no network operation
+and does not submit the draft.
 
 ## Required renderer check before any submission
 
-Render `draft-lohmann-qikvrt-local-change-time-00.xml` using the locked
-`xml2rfc 3.34.0` derivation, retain the generated TXT and HTML, and refresh
-`RENDER_STATUS.json`, `SUBMISSION_MANIFEST.json`, `SHA256SUMS`, and the
-artifact-bound authorization form from the final bytes.  The exact renderer is
-not available in this local runtime.  `idnits` is also not a declared available
-runtime component, so this package records no `idnits` result.
+The exact source has been rendered twice using the locked `xml2rfc 3.34.0`
+derivation on Python 3.12.13 with networking disabled, configuration files
+skipped, and independent isolated caches.  The retained TXT and HTML are
+byte-identical across both runs and are bound by `RENDER_STATUS.json`,
+`SUBMISSION_MANIFEST.json`, and `SHA256SUMS`.
 
-The render output must be reviewed for RFCXML errors, line wrapping, references,
-BCP 78/79 boilerplate, I-D filename and revision, and no unintentional claims
-of physical backwards signalling, past modification, IETF consensus, or an RFC.
+The renderer reported no warning or error.  The text line width, BCP 78/79
+boilerplate, I-D filename and revision, Security Considerations, IANA
+Considerations, and claim boundaries were checked locally.  `idnits` is not a
+declared runtime component, so this package records no `idnits` result.
 
 ## Action-time boundary
 

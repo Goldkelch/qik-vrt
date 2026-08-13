@@ -44,10 +44,12 @@ liegt getrennt in
 
 | Artefakt | SHA-256 |
 |---|---|
-| `arxiv-source.tar.gz` | `5da3373eabc8225e6aa6db1982e0d1d20573b1f6cec35514ab2f3ede5137f3f7` |
+| `arxiv-source.tar.gz` | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` |
 | daraus gebautes `main.pdf` | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` |
 
-Der Satz- und Sichtprüflauf ist erfolgreich; ein frisches Entpacken des
+Das Uploadarchiv enthält nur die selbständige `main.tex`; die README- und
+Provenienzdateien bleiben außerhalb des arXiv-Uploads erhalten. Der Satz- und
+Sichtprüflauf ist erfolgreich; ein frisches Entpacken des
 Archivs und derselbe Zwei-Pass-Lauf erzeugten ein byteidentisches PDF. Das
 Manifest enthält die vorgeschlagenen Kategorien `cs.DC`, `cs.LO` und `cs.CR`,
 aber keine unzulässige Behauptung eines eigenständigen `quant-ph`-Resultats.

@@ -28,9 +28,9 @@ the manuscript.
 | Field | Bound value |
 |---|---|
 | File | `arxiv-source.tar.gz` |
-| Bytes | `11143` |
-| SHA-256 | `5da3373eabc8225e6aa6db1982e0d1d20573b1f6cec35514ab2f3ede5137f3f7` |
-| Members | `main.tex`, `README.md` |
+| Bytes | `9778` |
+| SHA-256 | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` |
+| Members | `main.tex` |
 | Rendered PDF SHA-256 | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` |
 | Build result | two successful pdfLaTeX passes; 8 pages; archive rebuild PDF byte-identical |
 
@@ -41,7 +41,7 @@ the manuscript.
 > action: title, author/affiliation, primary category, cross-lists, comments,
 > and the selected current arXiv distribution licence.  I confirm that the
 > upload archive has SHA-256
-> `5da3373eabc8225e6aa6db1982e0d1d20573b1f6cec35514ab2f3ede5137f3f7`.
+> `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f`.
 > No differing bytes, metadata field, destination, or licence selection is
 > authorized by this declaration.
 

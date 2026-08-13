@@ -108,7 +108,7 @@
 
     <section anchor="evidence-object">
       <name>Profile Evidence Object</name>
-      <t>A profile evidence object MUST be an I-JSON object encoded as UTF-8 without a byte-order mark.  Its canonical representation uses the JSON Canonicalization Scheme (JCS) from <xref target="RFC8785"/> after Unicode NFC normalization.  A digest identifier has the form <tt>sha256:</tt> followed by 64 lowercase hexadecimal characters.</t>
+      <t>A profile evidence object MUST be an I-JSON object as defined by <xref target="RFC7493"/> and encoded as UTF-8 JSON as specified by <xref target="RFC8259"/>, without a byte-order mark.  Its canonical representation uses the JSON Canonicalization Scheme (JCS) from <xref target="RFC8785"/> after Unicode NFC normalization as specified by <xref target="UNICODE-NORM"/>.  A digest identifier uses SHA-256 as specified by <xref target="RFC6234"/> and has the form <tt>sha256:</tt> followed by 64 lowercase hexadecimal characters.</t>
       <t>The profile has version string <tt>eap-lctp-1</tt>.  A missing required member, an unsupported profile version, duplicate normalized member names, a floating-point number, or an integer outside the I-JSON safe-integer range MUST cause profile validation to fail.  The deployment MAY carry the object as application/json; this document does not register a media type.</t>
       <table anchor="evidence-fields">
         <name>Required profile evidence members</name>
@@ -133,7 +133,7 @@
           <tr><td>evidence_refs</td><td>Set-like array of additional exact evidence digests.</td></tr>
         </tbody>
       </table>
-      <t>Optional members MAY carry an RFC 3339 receipt timestamp, local transport context, key-discovery context, retention information, or an application-defined review reason.  Optional members MUST be included in the provenance commitment projection unless the deployment profile explicitly lists the member as uncommitted volatile telemetry.  A receiver timestamp is not required for the classification and MUST NOT substitute for local_change_index.</t>
+      <t>Optional members MAY carry an RFC 3339 <xref target="RFC3339"/> receipt timestamp, local transport context, key-discovery context, retention information, or an application-defined review reason.  Optional members MUST be included in the provenance commitment projection unless the deployment profile explicitly lists the member as uncommitted volatile telemetry.  A receiver timestamp is not required for the classification and MUST NOT substitute for local_change_index.</t>
 
       <section anchor="assertion-projections">
         <name>Assertion and Commitment Projections</name>
@@ -169,7 +169,7 @@ else:
 
     <section anchor="cddl">
       <name>Profile CDDL</name>
-      <t>This section defines the JSON member shape.  The authentication, canonicalization, and comparison predicates are specified in the main text.</t>
+      <t>This section defines the JSON member shape using CDDL <xref target="RFC8610"/>.  The authentication, canonicalization, and comparison predicates are specified in the main text.</t>
       <sourcecode type="cddl"><![CDATA[
 eap-lctp-evidence = {
   profile_version: "eap-lctp-1",

@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parent
 XML_PATH = ROOT / "draft-lohmann-qikvrt-local-change-time-00.xml"
+TXT_PATH = ROOT / "draft-lohmann-qikvrt-local-change-time-00.txt"
+HTML_PATH = ROOT / "draft-lohmann-qikvrt-local-change-time-00.html"
 VECTORS_PATH = ROOT / "TEST_VECTORS.json"
 MANIFEST_PATH = ROOT / "SUBMISSION_MANIFEST.json"
 RENDER_STATUS_PATH = ROOT / "RENDER_STATUS.json"
@@ -25,6 +28,8 @@ CHECKSUMS_PATH = ROOT / "SHA256SUMS"
 
 FIXITY_PATHS = (
     "draft-lohmann-qikvrt-local-change-time-00.xml",
+    "draft-lohmann-qikvrt-local-change-time-00.txt",
+    "draft-lohmann-qikvrt-local-change-time-00.html",
     "TEST_VECTORS.json",
     "verify_candidate.py",
     "RENDER_STATUS.json",
@@ -48,6 +53,13 @@ SUPPORTING_ARTIFACT_PATHS = {
 FORWARD = "FORWARD_INFORMATION_DIRECTION"
 NEGATIVE = "NEGATIVE_INFORMATION_DIRECTION"
 INDETERMINATE = "INDETERMINATE"
+class RenderedHTMLText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fragments: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.fragments.append(data)
 
 
 def require(condition: bool, message: str) -> None:
@@ -124,6 +136,12 @@ def validate_xml() -> dict[str, object]:
         "not a claim that the value is a relativistic metric proper time",
         "not a statement that a signal travelled backward",
         "This document requests no IANA actions.",
+        '<xref target="RFC3339"/>',
+        '<xref target="RFC6234"/>',
+        '<xref target="RFC7493"/>',
+        '<xref target="RFC8259"/>',
+        '<xref target="RFC8610"/>',
+        '<xref target="UNICODE-NORM"/>',
     ):
         require(required in source, f"missing required source phrase: {required}")
     for forbidden in (
@@ -138,7 +156,47 @@ def validate_xml() -> dict[str, object]:
         "doc_name": root.attrib["docName"],
         "profile_version": "eap-lctp-1",
         "static_ietf_header_precheck": "PASS",
-        "renderer_and_idnits": "CONTINUE_NO_RENDERED_ARTIFACTS",
+        "renderer": "PASS_OFFLINE_RENDER_CLEAN",
+        "idnits": "CONTINUE_NO_DECLARED_IDNITS_RUNTIME",
+    }
+
+
+def validate_rendered_artifacts() -> dict[str, object]:
+    txt = TXT_PATH.read_text(encoding="utf-8")
+    html = HTML_PATH.read_text(encoding="utf-8")
+    parser = RenderedHTMLText()
+    parser.feed(html)
+    parser.close()
+    html_text = " ".join(" ".join(parser.fragments).split())
+
+    required = (
+        "Status of This Memo",
+        "Copyright Notice",
+        "Security Considerations",
+        "IANA Considerations",
+        "This document requests no IANA actions.",
+        "not a statement that a signal travelled backward",
+    )
+    for phrase in required:
+        require(phrase in txt, f"rendered TXT lacks required phrase: {phrase}")
+        require(phrase in html_text, f"rendered HTML lacks required phrase: {phrase}")
+    maximum_line_length = max(map(len, txt.splitlines()), default=0)
+    require(maximum_line_length == 72, "unexpected rendered TXT maximum line length")
+    page_count = txt.count("[Page ")
+    require(page_count == 16, "unexpected rendered TXT page count")
+    return {
+        "txt": {
+            "sha256": digest(TXT_PATH)[0],
+            "size_bytes": digest(TXT_PATH)[1],
+            "maximum_line_length": maximum_line_length,
+            "page_count": page_count,
+        },
+        "html": {
+            "sha256": digest(HTML_PATH)[0],
+            "size_bytes": digest(HTML_PATH)[1],
+            "parse": "PASS",
+        },
+        "result": "PASS",
     }
 
 
@@ -192,6 +250,21 @@ def validate_manifest_and_fixity() -> dict[str, object]:
     require(xml_record["sha256"] == xml_digest, "manifest XML digest mismatch")
     require(xml_record["size_bytes"] == xml_size, "manifest XML size mismatch")
 
+    for output_name, output_path in (("txt", TXT_PATH), ("html", HTML_PATH)):
+        output_record = manifest["submission_artifacts"][output_name]
+        output_digest, output_size = digest(output_path)
+        require(
+            output_record["state"] == "RENDERED_REPRODUCIBLY",
+            f"manifest {output_name} state mismatch",
+        )
+        require(output_record["path"] == output_path.name, f"manifest {output_name} path mismatch")
+        require(output_record["sha256"] == output_digest, f"manifest {output_name} digest mismatch")
+        require(output_record["size_bytes"] == output_size, f"manifest {output_name} size mismatch")
+        require(
+            output_record["required_renderer"] == "xml2rfc 3.34.0",
+            f"manifest {output_name} renderer mismatch",
+        )
+
     supporting = manifest["supporting_artifacts"]
     paths = {record["path"] for record in supporting.values()}
     require(paths == SUPPORTING_ARTIFACT_PATHS, "manifest supporting-artifact paths mismatch")
@@ -228,55 +301,74 @@ def validate_manifest_and_fixity() -> dict[str, object]:
         "unexpected render-status schema",
     )
     require(
-        render_status["state"] == "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
+        render_status["state"] == "PASS_OFFLINE_RENDER_CLEAN",
         "unexpected renderer state",
     )
     require(render_status["source"]["path"] == XML_PATH.name, "render source path mismatch")
     require(render_status["source"]["sha256"] == xml_digest, "render source digest mismatch")
     require(render_status["source"]["size_bytes"] == xml_size, "render source size mismatch")
-    require(
-        render_status["required_renderer"] == {
-            "name": "xml2rfc",
-            "version": "3.34.0",
-            "runtime_contract": "runtime/toolchains/TOOLCHAIN.lock.tsv",
-            "availability_observed": False,
-        },
-        "renderer contract mismatch",
-    )
-    for output_name in ("txt", "html"):
-        require(
-            render_status["outputs"][output_name]["state"] == "NOT_RENDERED",
-            f"{output_name} output state mismatch",
-        )
+    renderer = render_status["required_renderer"]
+    require(renderer["name"] == "xml2rfc", "renderer name mismatch")
+    require(renderer["version"] == "3.34.0", "renderer version mismatch")
+    require(renderer["python_version"] == "3.12.13", "renderer Python mismatch")
+    require(renderer["pypdf_version"] == "6.15.0", "renderer pypdf mismatch")
+    require(renderer["platformdirs_version"] == "4.11.0", "renderer platformdirs mismatch")
+    require(renderer["availability_observed"] is True, "renderer availability mismatch")
+    require(renderer["network_access"] is False, "renderer must remain offline")
+    require(renderer["configuration_files_skipped"] is True, "renderer config-file boundary mismatch")
+    require(renderer["isolated_cache"] is True, "renderer cache boundary mismatch")
+    for output_name, output_path in (("txt", TXT_PATH), ("html", HTML_PATH)):
+        output = render_status["outputs"][output_name]
+        output_digest, output_size = digest(output_path)
+        require(output["state"] == "RENDERED_REPRODUCIBLY", f"{output_name} output state mismatch")
+        require(output["path"] == output_path.name, f"{output_name} output path mismatch")
+        require(output["sha256"] == output_digest, f"{output_name} output digest mismatch")
+        require(output["size_bytes"] == output_size, f"{output_name} output size mismatch")
+        require(output["repeat_render_byte_identical"] is True, f"{output_name} reproducibility mismatch")
+    diagnostics = render_status["renderer_diagnostics"]
+    require(diagnostics["errors_per_mode"] == 0, "renderer error count mismatch")
+    require(diagnostics["warnings_per_mode"] == 0, "renderer warning count mismatch")
+    require(diagnostics["unused_references"] == [], "unexpected renderer warnings")
     require(
         all(value is False for value in render_status["external_effects"].values()),
         "render status must not claim an external effect",
     )
+    validation = manifest["validation"]
+    require(validation["xml_well_formed"] is True, "manifest XML validation mismatch")
+    require(validation["static_ietf_header_precheck"] == "PASS", "manifest header validation mismatch")
+    require(validation["reference_classification_vectors"] == 7, "manifest vector count mismatch")
+    require(validation["candidate_fixity"] == "PASS", "manifest fixity state mismatch")
+    require(validation["validation_command"] == "python3 -B verify_candidate.py", "manifest command mismatch")
     require(
-        manifest["validation"] == {
-            "xml_well_formed": True,
-            "static_ietf_header_precheck": "PASS",
-            "reference_classification_vectors": 7,
-            "candidate_fixity": "PASS",
-            "validation_command": "python3 -B verify_candidate.py",
-            "result": "PASS_STATIC_CANDIDATE_VALIDATION",
-            "renderer_validation": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
-            "idnits_validation": "CONTINUE_NO_RENDERED_TEXT_AND_NO_DECLARED_IDNITS_RUNTIME",
-        },
-        "validation state mismatch",
+        validation["result"] == "PASS_LOCAL_CANDIDATE_VALIDATION",
+        "manifest validation result mismatch",
+    )
+    require(
+        validation["renderer_validation"] == "PASS_OFFLINE_RENDER_CLEAN",
+        "manifest renderer validation mismatch",
+    )
+    require(validation["render_reproducibility"] == "PASS_BYTE_IDENTICAL_TWO_RUNS", "manifest reproducibility mismatch")
+    require(
+        validation["renderer_warnings"]["references"] == [],
+        "manifest renderer warnings mismatch",
+    )
+    require(
+        validation["idnits_validation"] == "CONTINUE_NO_DECLARED_IDNITS_RUNTIME",
+        "manifest idnits boundary mismatch",
     )
     return {
         "manifest": "PASS",
         "fixity_index": "PASS",
-        "rendered_artifacts": "NOT_RENDERED",
-        "renderer_validation": "CONTINUE_XML2RFC_3_34_0_UNAVAILABLE",
-        "idnits_validation": "CONTINUE_NO_RENDERED_TEXT_AND_NO_DECLARED_IDNITS_RUNTIME",
+        "rendered_artifacts": "PASS",
+        "renderer_validation": "PASS_OFFLINE_RENDER_CLEAN",
+        "idnits_validation": "CONTINUE_NO_DECLARED_IDNITS_RUNTIME",
     }
 
 
 def main() -> int:
     report = {
         "manifest_and_fixity": validate_manifest_and_fixity(),
+        "rendered_artifacts": validate_rendered_artifacts(),
         "vectors": validate_vectors(),
         "xml": validate_xml(),
     }

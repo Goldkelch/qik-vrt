@@ -51,6 +51,8 @@ retrocausality, or authorization of a downstream effect.
 | File | Role |
 |---|---|
 | `draft-lohmann-qikvrt-local-change-time-00.xml` | RFCXML source for the separate current candidate. |
+| `draft-lohmann-qikvrt-local-change-time-00.txt` | Reproducible offline text render from the locked renderer. |
+| `draft-lohmann-qikvrt-local-change-time-00.html` | Reproducible offline HTML render from the locked renderer. |
 | `TEST_VECTORS.json` | Synthetic deterministic classification fixtures. |
 | `verify_candidate.py` | Offline XML and vector validator. |
 | `RENDER_STATUS.json` | Renderer observation; it is not a Datatracker receipt. |
@@ -68,16 +70,20 @@ sha256sum -c SHA256SUMS
 
 The validator checks the XML header, seven deterministic classification
 fixtures, the declared local non-effect state, the manifest-to-file bindings,
-and the complete `SHA256SUMS` scope.  It does not render, submit, send email,
-or authenticate a real principal.
+the retained TXT/HTML structure, and the complete `SHA256SUMS` scope.  It does
+not render, submit, send email, or authenticate a real principal.
 
-The locked `xml2rfc 3.34.0` renderer is not available in this runtime; `idnits`
-is likewise not available as a declared runtime component.  Thus this package
-intentionally contains no locally generated TXT or HTML artifacts and makes no
-`idnits` result claim.  Before any external upload, the exact final source must
-be rendered and reviewed with the required renderer, the artifact manifest and
-fixity index must be refreshed, and the author must confirm the exact bytes and
-destination state at action time.
+The source was rendered twice with the repository-locked `xml2rfc 3.34.0`
+environment on Python 3.12.13 using `--no-network` and independent isolated
+caches.  Both runs produced byte-identical TXT and HTML outputs.  The renderer
+completed without warnings or errors.  The retained text has a maximum line
+length of 72 characters and contains the rendered IETF Trust boilerplate,
+Security Considerations, and IANA Considerations.  `idnits` is not a declared
+runtime component, so no `idnits` result is claimed.
+
+Before any external upload, the final bytes, account fields, and destination
+must be observed again, and the author must confirm the exact artifact set at
+action time.
 
 No command in this directory submits a document, sends email, calls the
 Datatracker, creates a repository reference, or mutates an external system.

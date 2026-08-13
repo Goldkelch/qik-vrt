@@ -15,10 +15,10 @@ English successor manuscript.  It is not the historical
 
 | Artifact | SHA-256 | Role |
 |---|---|---|
-| `arxiv-source.tar.gz` | `5da3373eabc8225e6aa6db1982e0d1d20573b1f6cec35514ab2f3ede5137f3f7` | Minimal deterministic arXiv source archive (`main.tex`, `README.md`). |
+| `arxiv-source.tar.gz` | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` | Minimal deterministic arXiv source archive (self-contained `main.tex` only). |
 | `main.pdf` | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` | 8-page rendering built from the frozen archive. |
 | `main.tex` | `e6e147cfe5a9d7dda7041797278a259f7d9b91fb810a7207b952fb2f2fbdfdc7` | Exact TeX source. |
-| `README.md` | `9025a2cfa090e21dd11840d17bd7e1d834beed006c62ed0bf5ef64fe5bbd561b` | Exact source/claim-scope guide. |
+| `README.md` | `9025a2cfa090e21dd11840d17bd7e1d834beed006c62ed0bf5ef64fe5bbd561b` | Staging/source claim-scope guide; not an upload-archive member. |
 
 The rendered PDF was built twice using pdfLaTeX with
 `SOURCE_DATE_EPOCH=1786543200` and `FORCE_SOURCE_DATE=1`.  Rebuilding from a
@@ -26,7 +26,7 @@ fresh extraction of the exact compressed archive produced a byte-identical PDF.
 The visual-rendering receipt records the page-level check.
 
 `ARXIV_LOCAL_COMPATIBILITY_VALIDATION.json` adds a fresh archive-level
-preflight: the archive has only the two declared members, no unsafe paths or
+preflight: the archive has only the declared `main.tex` member, no unsafe paths or
 links, no external source dependencies, and a clean two-pass pdfLaTeX rebuild.
 It records local compatibility evidence only; it is not an arXiv service
 receipt.
