@@ -87,7 +87,7 @@ Table of Contents
    2.  Conventions and Terminology . . . . . . . . . . . . . . . . .   4
    3.  Architecture and Compatibility  . . . . . . . . . . . . . . .   5
    4.  Profile Evidence Object . . . . . . . . . . . . . . . . . . .   6
-     4.1.  Assertion and Commitment Projections  . . . . . . . . . .   7
+     4.1.  Assertion and Commitment Projections  . . . . . . . . . .   8
    5.  Reference Classification  . . . . . . . . . . . . . . . . . .   8
    6.  Profile CDDL  . . . . . . . . . . . . . . . . . . . . . . . .   9
    7.  Binding to EFFECT_ACK Version 1 . . . . . . . . . . . . . . .  10
@@ -146,6 +146,13 @@ Internet-Draft                  EAP-LCTP                     August 2026
    introduces a new physical theory nor changes the causal direction of
    a network delivery.
 
+   This profile does not encode coordinate-time assignments between
+   spacelike-separated physical events.  If a deployment separately
+   assigns a source observer's local-present event to another observer's
+   coordinate future, that assignment is not a causal-future relation
+   and does not make a source-bound object available before a future-
+   directed delivery path reaches its receiver.
+
 1.1.  Goals
 
    *  Bind a source event, a source-order marker, and the immutable
@@ -153,6 +160,15 @@ Internet-Draft                  EAP-LCTP                     August 2026
 
    *  Bind a receiver identity and a strictly increasing local change
       index to the same evidence comparison.
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 3]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
 
    *  Define deterministic FORWARD_INFORMATION_DIRECTION,
       NEGATIVE_INFORMATION_DIRECTION, and INDETERMINATE classifications.
@@ -162,13 +178,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
 
    *  State security, privacy, retention, and non-claim boundaries
       explicitly.
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 3]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
 
 1.2.  Non-Goals
 
@@ -209,6 +218,14 @@ Internet-Draft                  EAP-LCTP                     August 2026
    Source event  An event asserted by an authenticated source principal
       and identified by source_event_id within a source-order domain.
 
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 4]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
    Source-order domain  A named domain whose authority defines the
       comparability and monotonic interpretation of its source-order
       markers.
@@ -218,14 +235,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
       comparable only within the same authenticated source-order domain.
 
    Receiver  The designated principal or component that produces an
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 4]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
-
       authenticated local observation of an evidence object.
 
    Operational Eigenzeit / local change time  In this profile, the
@@ -260,6 +269,19 @@ Internet-Draft                  EAP-LCTP                     August 2026
    required_evidence_refs, policy_id, policy_version, and policy_hash
    mechanisms.
 
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 5]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
    A deployment that requires EAP-LCTP for a proposed effect MUST
    describe that requirement in its immutable policy descriptor.  If the
    required profile evidence is unavailable, malformed, unauthenticated,
@@ -273,14 +295,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
    a condition for additional review, isolation, blocking, or continued
    evaluation.  It MUST NOT infer an ordinary release from the
    classification alone.
-
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 5]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
 
 4.  Profile Evidence Object
 
@@ -316,6 +330,14 @@ Internet-Draft                  EAP-LCTP                     August 2026
    | source_event_id             | Identifier for the asserted source |
    |                             | event.                             |
    +-----------------------------+------------------------------------+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 6]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
    | source_order_marker         | Non-negative I-JSON safe integer   |
    |                             | within the named domain.           |
    +-----------------------------+------------------------------------+
@@ -330,14 +352,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
    |                             | source assertion.                  |
    +-----------------------------+------------------------------------+
    | receiver_id                 | Deployment-scoped identifier for   |
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 6]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
-
    |                             | the receiver.                      |
    +-----------------------------+------------------------------------+
    | local_change_index          | Positive strictly increasing local |
@@ -372,6 +386,14 @@ Internet-Draft                  EAP-LCTP                     August 2026
    Optional members MAY carry an RFC 3339 [RFC3339] receipt timestamp,
    local transport context, key-discovery context, retention
    information, or an application-defined review reason.  Optional
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 7]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
    members MUST be included in the provenance commitment projection
    unless the deployment profile explicitly lists the member as
    uncommitted volatile telemetry.  A receiver timestamp is not required
@@ -385,14 +407,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
    source_event_id, source_order_marker, and source_principal.  The
    source_assertion_digest MUST equal the SHA-256 digest of that
    projection.
-
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 7]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
 
    The receiver observation projection is the canonical object
    containing profile_version, evidence_id, source_assertion_digest,
@@ -428,6 +442,14 @@ Internet-Draft                  EAP-LCTP                     August 2026
 
    3.  b.source_order_domain equals c.source_order_domain;
 
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 8]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
    4.  both source assertions and both receiver observations
        authenticate successfully under the deployment security profile;
        and
@@ -439,16 +461,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
    If all conditions are true, the verifier MUST use the following
    algorithm and MUST reject a producer-supplied classification that
    differs from its rederived result:
-
-
-
-
-
-
-Lohmann                 Expires 13 February 2027                [Page 8]
-
-Internet-Draft                  EAP-LCTP                     August 2026
-
 
    if c.source_order_marker > b.source_order_marker:
        classification = FORWARD_INFORMATION_DIRECTION
@@ -479,18 +491,6 @@ Internet-Draft                  EAP-LCTP                     August 2026
    This section defines the JSON member shape using CDDL [RFC8610].  The
    authentication, canonicalization, and comparison predicates are
    specified in the main text.
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

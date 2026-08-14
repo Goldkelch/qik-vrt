@@ -4,7 +4,7 @@
 """Materialize or verify the pre-authorization Zenodo successor package.
 
 The helper preserves the visibly returned 17-file public freeze and binds the
-separately returned amended change notice to the truthful v1.0 -> v1.1/current
+separately returned amended change notice to the truthful v1.0 -> current
 content-change chain.  It materializes repository-only predecessor snapshots,
 the canonical v2 return receipt, the negative/boundary report and the complete
 machine-proof bundle.  It never calls Zenodo, inspects credentials, creates a
@@ -41,7 +41,7 @@ CHANGE_NOTICE_PATH = f"{RELEASE_REL}/CHANGE_NOTICE.md"
 RETURN_RECEIPT_PATH = f"{RELEASE_REL}/PREPUBLICATION_RETURN_RECEIPT.json"
 PROOF_BUNDLE_PATH = f"{RELEASE_REL}/MACHINE_PROOF_BUNDLE.json"
 BOUNDARY_PATH = f"{RELEASE_REL}/BOUNDARY_TEST_REPORT.json"
-AMENDED_NOTICE_RETURNED_AT = "2026-08-13T20:13:42Z"
+AMENDED_NOTICE_RETURNED_AT = "2026-08-14T09:25:59Z"
 AMENDED_NOTICE_RETURN_CHANNEL = "ChatGPT Work commentary"
 ORIGINAL_SOURCE_COMMIT = "47510c8569f56ecf3d2e22fb5ed846fa32208b86"
 ORIGINAL_SNAPSHOT_DIR = f"{RELEASE_REL}/original-candidate-47510c8"
@@ -57,6 +57,15 @@ ORIGINAL_SOURCE_PATHS = (
 ORIGINAL_SNAPSHOT_BY_SOURCE = {
     source: f"{ORIGINAL_SNAPSHOT_DIR}/{pathlib.PurePosixPath(source).name}"
     for source in ORIGINAL_SOURCE_PATHS
+}
+ORIGINAL_SNAPSHOT_IDENTITIES = {
+    f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf": (125122, "b31453b01e1b46b05b7e2954d7637223864965f033e987b604d1a07325d8786c"),
+    f"{BASE}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex": (42975, "ff7a10e78f8f602352612d797e83a8911be3bc464d0d69e7b88f41f4a9139412"),
+    f"{BASE}/README.md": (4610, "a23f96ec7f75dc28dcbc37012f1195a97370fdcfcf8dc92b6e70b0be6c3a18d9"),
+    f"{BASE}/WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md": (17052, "433c1149ab8842311d58e89892a0feaf445330fbfcac0799d246307db86877b4"),
+    f"{BASE}/CLAIM_MATRIX.json": (8078, "c7250fc60ce5d13808a69dc6af2a5c80e348bce3ed28514f18cae1d98fae6be8"),
+    f"{BASE}/QIKVRT_RETROCAUSALITY_WITNESS.json": (3722, "6ed0ae65dd112631b1c952275151c93ed5c8c126f87d9cdd8d1a64caa8fa3cd7"),
+    f"{BASE}/verify_observer_relative_retrocausality.py": (7482, "53e43a4d3d96acc8654379d4cf5f0b09ec41edde686a39b7a5cec16ecdf524c9"),
 }
 PROOF_ARTIFACT_PATHS = frozenset({MATRIX_PATH, BINDINGS_PATH})
 NON_UPLOAD_CONTROL_PATHS = frozenset(
@@ -149,14 +158,18 @@ def _original_snapshot_bytes(source: str) -> bytes:
         check=False,
         timeout=30,
     )
-    if result.returncode != 0:
-        raise RuntimeError(
-            "cannot read original candidate byte from Git: "
-            + source
-            + ": "
-            + result.stderr.decode("utf-8", errors="replace")
-        )
-    return result.stdout
+    expected_size, expected_sha256 = ORIGINAL_SNAPSHOT_IDENTITIES[source]
+    if result.returncode == 0:
+        payload = result.stdout
+    else:
+        # The historical commit is retained as provenance, but a shallow or
+        # pruned remote may not expose its object.  The repository therefore
+        # retains a separately hash-pinned public snapshot for exact replay.
+        archived = ROOT / ORIGINAL_SNAPSHOT_BY_SOURCE[source]
+        payload = _raw(archived)
+    if len(payload) != expected_size or hashlib.sha256(payload).hexdigest() != expected_sha256:
+        raise RuntimeError("original candidate snapshot identity mismatch: " + source)
+    return payload
 
 
 def _materialize_original_snapshots(*, write: bool) -> list[dict[str, Any]]:

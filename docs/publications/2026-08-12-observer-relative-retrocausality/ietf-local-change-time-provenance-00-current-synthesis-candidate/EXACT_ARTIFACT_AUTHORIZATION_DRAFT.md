@@ -31,16 +31,16 @@ individual Internet-Draft package to the IETF Datatracker:
   author/email: Ingolf Lohmann / [current Datatracker account email]
   destination observed at: [UTC timestamp and safe public destination URL]
 
-  XML:  draft-lohmann-qikvrt-local-change-time-00.xml 34356 sha256:2114a80cdaf6ba68ae3318e9a64f2dad8f4908c48cc43f27662a3c73d2af0649
-  TXT:  draft-lohmann-qikvrt-local-change-time-00.txt 38195 sha256:4d3865181e3f3b0ff1733e588fddbab45e41117e9777a33acb592fe2e5490124
-  HTML: draft-lohmann-qikvrt-local-change-time-00.html 87626 sha256:fb0a2d8010d449201528190ecc8f9cf67398319fbb98c33adb3f1d9512bdcce3
+  XML:  draft-lohmann-qikvrt-local-change-time-00.xml 34747 sha256:6ca7f8f65d2f04c3db2465c5eaccf37f9cb874900347ab50e41f20b8b31acc95
+  TXT:  draft-lohmann-qikvrt-local-change-time-00.txt 38586 sha256:482aeaaa9a2c31a4b985b3789daa604af8b4133d5b238e047bd441ca48c47bae
+  HTML: draft-lohmann-qikvrt-local-change-time-00.html 88073 sha256:b565c2248f2ef387071236e4c4954a32bbc460f237391ef295a608bae0506bc0
   manifest: SUBMISSION_MANIFEST.json [bytes] sha256:[digest]
   vectors: TEST_VECTORS.json 7360 sha256:7a1adca587c906f2deddb1824eb7b6d0372c424c53c5b2f961aa28b87fa722f5
 
 I understand that this authorization covers the named external submission only.
-It does not assert a physical backwards-signalling channel, changed past event,
-payload truth, IETF endorsement, IETF consensus, an RFC, or independent
-interoperability.
+It does not assert a physical backwards-signalling channel, a coordinate future
+as causal future, a changed past event, payload truth, IETF endorsement, IETF
+consensus, an RFC, or independent interoperability.
 
 Signed/confirmed at action time: [name, timestamp, confirmation channel]
 ```

@@ -28,10 +28,10 @@ the manuscript.
 | Field | Bound value |
 |---|---|
 | File | `arxiv-source.tar.gz` |
-| Bytes | `9778` |
-| SHA-256 | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` |
+| Bytes | `9919` |
+| SHA-256 | `5202c13e8a9e4934de0c09b7f238fc80073410c5d52ef231e0c05d035c00322a` |
 | Members | `main.tex` |
-| Rendered PDF SHA-256 | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` |
+| Rendered PDF SHA-256 | `943331e2297b9663b02471d51d9adcb277f191fafb1e9d15f8ef2ba63730b12c` |
 | Build result | two successful pdfLaTeX passes; 8 pages; archive rebuild PDF byte-identical |
 
 ## Action-time declaration to record after destination re-observation
@@ -40,15 +40,14 @@ the manuscript.
 > above to the arXiv target fields displayed and re-observed at the time of
 > action: title, author/affiliation, primary category, cross-lists, comments,
 > and the selected current arXiv distribution licence.  I confirm that the
-> upload archive has SHA-256
-> `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f`.
+> upload archive has SHA-256 `5202c13e8a9e4934de0c09b7f238fc80073410c5d52ef231e0c05d035c00322a`.
 > No differing bytes, metadata field, destination, or licence selection is
 > authorized by this declaration.
 
 The author has directly released the Zenodo/arXiv/IETF publication work in the
-shared work context on 12 August 2026.  This draft preserves the required
-exact-byte and destination-field binding rather than fabricating a platform
-action or a signature that has not been observed.
+shared work context.  This draft preserves the required exact-byte and
+destination-field binding rather than fabricating a platform action or a
+signature that has not been observed.
 
 ## Required completion evidence
 

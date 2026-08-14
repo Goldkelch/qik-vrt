@@ -14,6 +14,13 @@ kann dieser lokale Parameter zusätzlich als relativistische Eigenzeit
 kalibriert werden; der formale Satz setzt zunächst nur die monotone lokale
 Veränderungsordnung voraus.
 
+Für raumartig getrennte Vergleichsereignisse kann das lokale
+Gegenwartsereignis eines Quellenbeobachters in einer gewählten
+Koordinatisierung im Koordinaten-Zukunftsbereich eines anderen Beobachters
+liegen. Diese Zuordnung ist keine kausale Zukunftsbeziehung: Ein an das
+Quellenereignis gebundener Record wird erst nach seiner Erzeugung über einen
+zukunftsgerichteten Signalweg verfügbar.
+
 ## Bestandteile
 
 - `QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.pdf` — gesetzte Hauptfassung.

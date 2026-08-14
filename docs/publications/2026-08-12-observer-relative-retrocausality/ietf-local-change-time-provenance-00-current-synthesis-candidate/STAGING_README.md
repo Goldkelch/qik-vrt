@@ -21,6 +21,12 @@ proper-time measurement.  `NEGATIVE_INFORMATION_DIRECTION` requires increasing
 receiver-local change order and decreasing authenticated source order in the
 same declared source-order domain.
 
+The profile does not encode coordinate-time assignments between
+spacelike-separated physical events.  A coordinate assignment of a source
+observer's local-present event to another observer's coordinate future is not
+a causal-future relation and does not make a source-bound object available
+before future-directed delivery reaches the receiver.
+
 ## Required local checks and fixity
 
 ```sh

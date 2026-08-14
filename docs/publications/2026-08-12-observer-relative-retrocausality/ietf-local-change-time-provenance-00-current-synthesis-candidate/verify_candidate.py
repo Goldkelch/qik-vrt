@@ -164,6 +164,7 @@ def validate_xml() -> dict[str, object]:
 
 def validate_rendered_artifacts() -> dict[str, object]:
     txt = TXT_PATH.read_text(encoding="utf-8")
+    normalized_txt = " ".join(txt.split())
     html = HTML_PATH.read_text(encoding="utf-8")
     parser = RenderedHTMLText()
     parser.feed(html)
@@ -180,7 +181,7 @@ def validate_rendered_artifacts() -> dict[str, object]:
         "This profile does not encode coordinate-time assignments between spacelike-separated physical events.",
     )
     for phrase in required:
-        require(phrase in txt, f"rendered TXT lacks required phrase: {phrase}")
+        require(phrase in normalized_txt, f"rendered TXT lacks required phrase: {phrase}")
         require(phrase in html_text, f"rendered HTML lacks required phrase: {phrase}")
     maximum_line_length = max(map(len, txt.splitlines()), default=0)
     require(maximum_line_length == 72, "unexpected rendered TXT maximum line length")
