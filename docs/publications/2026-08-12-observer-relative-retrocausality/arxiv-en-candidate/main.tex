@@ -1,0 +1,602 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright (c) 2026 Ingolf Lohmann.
+% Local arXiv submission candidate. Not submitted.
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=27mm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black,
+  pdftitle={Observer-Relative Retrocausality in Distributed Information Systems},
+  pdfauthor={Ingolf Lohmann},
+  pdfsubject={Formal existence result, executable witnesses, and evidence-bound effect control},
+  pdfkeywords={QIK-VRT, retrocausality, distributed systems, provenance, proper time, delayed choice, effect acknowledgement}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\setlist[itemize]{leftmargin=1.5em,itemsep=0.15em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=1.8em,itemsep=0.2em,topsep=0.25em}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}{Corollary}[section]
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\host}{\prec_{\!H}}
+\newcommand{\receive}{\prec_{\!O}^{R}}
+\newcommand{\sourceorder}{\prec^{\theta}}
+\newcommand{\qikvrt}{QIK--VRT}
+\newcommand{\zenodo}{\url{https://doi.org/10.5281/zenodo.21888130}}
+\newcommand{\authoritysnapshot}{\url{https://github.com/Goldkelch/qik-vrt/tree/12842e8df99553260774d53517522b2b5539c8a8}}
+\newcommand{\mirrorsnapshot}{\url{https://github.com/ingolf-lohmann/qik-vrt/tree/c52b324914978dc5d6d80251260ce55f396909f7}}
+
+\title{Observer-Relative Retrocausality in Distributed Information Systems:\\
+\large A Formal Existence Result, Executable Witnesses, and Evidence-Bound Effect Control}
+\author{Ingolf Lohmann\\
+Independent Researcher, QIK--VRT}
+\date{12 August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We introduce \emph{observer-relative retrocausality}, an operational relation
+in a distributed event system. Let $\tau_O$ be a strictly increasing local
+time parameter for an observer $O$, and let $\theta$ be an authenticated,
+order-preserving marker of source events. The relation occurs when two
+information-bearing records are received in increasing local time while their
+bound source markers decrease: $\Delta\tau_O>0$ and $\Delta\theta<0$.
+Equivalently, reception order is inverse to source-event order for at least one
+record pair. A short existence theorem shows that this relation is compatible
+with an acyclic host order and with every individual record being emitted
+before it is received. A finite executable witness and a positive-latency
+construction make the relation reproducible.
+
+The paper separates this operational result from stronger propositions that it
+does not entail: proper time does not run backwards, no record is received
+before its own emission, no past record is overwritten, and no controllable
+backward signalling channel is introduced. Delayed-choice and quantum-eraser
+experiments are discussed as a structural connection: later context can make a
+classification of earlier records available without changing the earlier local
+record or enabling signalling to the past. We also describe an evidence-profile
+proposal for the Effect Acknowledgement protocol that records source reference,
+receiver-local receipt order, and provenance before a downstream effect is
+released. The paper is a concise English synthesis of the QIK--VRT research
+programme; the wider universe-level correspondence is explicitly identified as
+the author's thesis rather than as a consequence of the finite theorem.
+\end{abstract}
+
+\noindent\textbf{Keywords:} QIK--VRT; observer-relative retrocausality;
+distributed systems; proper time; provenance; information-reference direction;
+delayed choice; quantum eraser; effect acknowledgement.
+
+\section{Introduction}
+\label{sec:introduction}
+
+Information systems routinely receive valid records in an order different from
+the order in which their source events occurred. The familiar cause is unequal
+latency: an older record can take a longer path, be delayed by storage or
+relaying, and arrive after a newer record. The usual observation is mundane,
+but it exposes a useful distinction that is often hidden by speaking simply of
+`time`: source-event order, path order, local reception order, and the
+evidence available to a particular observer are distinct relations.
+
+This paper formalizes the distinction in the terminology of Ingolf Lohmann's
+QIK--VRT research programme. It calls an inverse relation between an
+observer's increasing local time and the authenticated source-time references
+of newly received information \emph{observer-relative retrocausality}. The
+term is defined operationally here. It must not be read as silently importing
+every stronger use of retrocausality in the foundations of physics.
+
+The central relation is deliberately compact:
+\begin{equation}
+  \Delta\tau_O>0 \qquad\text{and}\qquad \Delta\theta<0.
+  \label{eq:core}
+\end{equation}
+The first inequality says that the observer advances in its own local time.
+The second says that the later-received record refers to an earlier,
+authenticated source event than the previously received record. The
+backward direction is therefore a direction of \emph{information reference
+relative to that observer}; it is not a reversal of the transport of an
+individual signal.
+
+The contributions are as follows.
+\begin{enumerate}
+  \item We give an exact, provenance-sensitive definition of observer-relative
+  retrocausality and prove a finite existence theorem for it.
+  \item We give an executable witness and a constructive positive-latency
+  realization, including a second observer with the opposite reception order.
+  \item We state the physical and epistemic boundaries: the result does not
+  establish backwards proper time, past modification, causal loops,
+  superluminal propagation, or controllable messages into the past.
+  \item We connect the record/evidence structure to delayed-choice and
+  quantum-eraser experiments without claiming that those experiments uniquely
+  select QIK--VRT.
+  \item We specify a companion evidence-profile proposal for effect control in
+  distributed computing.
+\end{enumerate}
+
+The QIK--VRT programme, the operational terminology, and the author's broader
+correspondence thesis originate with Ingolf Lohmann. The present manuscript
+condenses and clarifies historical materials retained in the public QIK--VRT
+corpus \cite{LohmannRoundTrip2026,LohmannRelationalTime2026,
+LohmannDecisionSufficiency2026,LohmannMandelbrot2026,LohmannCanonicalMemory2026}.
+
+\section{Event model and definition}
+\label{sec:model}
+
+We use a distributed event structure
+\begin{equation}
+  H=(E,\host),
+\end{equation}
+where $E$ is a set of events and $\host$ is a strict partial order. The
+relation $e\host f$ means that $e$ precedes $f$ in the declared host or
+effect-relevant order. It is irreflexive and transitive, so it has no causal
+cycle. This is structurally analogous to the partial order of events in a
+distributed system described by Lamport \cite{Lamport1978}.
+
+An observer $O$ is represented by a chain $E_O\subseteq E$ and a strictly
+increasing local-time map
+\begin{equation}
+  \tau_O:E_O\longrightarrow\mathbb{R},\qquad
+  e\host f\Longrightarrow\tau_O(e)<\tau_O(f)\quad(e,f\in E_O).
+  \label{eq:localtime}
+\end{equation}
+For a relativistic realization, $\tau_O$ may be proper time along a
+future-directed timelike worldline. For a computational realization, it is a
+calibrated monotone local receipt parameter. The formal theorem needs only the
+monotonicity in \cref{eq:localtime}.
+
+Let $S\subseteq E$ be a declared source chain. Its source marker
+\begin{equation}
+  \theta:S\longrightarrow\mathbb{R}
+\end{equation}
+is strictly order-preserving. A record $r$ contains a payload $p(r)$, a
+source event $\sigma(r)\in S$, and an integrity/provenance witness $w(r)$
+that binds the record to $\sigma(r)$. We abbreviate
+\begin{equation}
+  \theta(r)=\theta(\sigma(r)).
+\end{equation}
+The reception event of $r$ at $O$ is $\rho_O(r)\in E_O$. Every admissible
+record satisfies
+\begin{equation}
+  \sigma(r)\host\rho_O(r).
+  \label{eq:forwarddelivery}
+\end{equation}
+Thus the model explicitly requires source-before-reception for every single
+record.
+
+The provenance binding matters. Arbitrary labels written on unrelated
+messages do not establish a temporal relation. A valid source marker must be
+bound to a real source event and must preserve the stated source order. The
+record must also be informational rather than a duplicate with no evidentiary
+consequence. One useful operational test is strict refinement of the set of
+histories compatible with the observer's evidence: if $\mathcal{K}_{k-1}$ is
+the compatible set before accepting a record and $\mathcal{K}_k$ the set after
+verification, the record is information-bearing when
+\begin{equation}
+  \mathcal{K}_k\subsetneq\mathcal{K}_{k-1}.
+  \label{eq:information}
+\end{equation}
+
+On accepted records there are at least two relevant orders:
+\begin{align}
+ r\receive r' &\Longleftrightarrow
+   \tau_O(\rho_O(r))<\tau_O(\rho_O(r')),\\
+ r\sourceorder r' &\Longleftrightarrow
+   \theta(r)<\theta(r').
+\end{align}
+
+\begin{definition}[Observer-relative retrocausality]
+\label{def:orr}
+Observer-relative retrocausality occurs for $O$ when there are authentic,
+information-bearing records $r_1,r_2$ such that
+\begin{equation}
+  r_1\receive r_2\qquad\text{and}\qquad r_2\sourceorder r_1.
+  \label{eq:inverseorders}
+\end{equation}
+When numerical markers are present, the associated comparative
+information-reference slope is
+\begin{equation}
+  v_I^O(r_1,r_2)=
+  \frac{\theta(r_2)-\theta(r_1)}
+       {\tau_O(\rho_O(r_2))-\tau_O(\rho_O(r_1))}<0.
+  \label{eq:slope}
+\end{equation}
+\end{definition}
+
+The relation is observer-relative because the reception order is local to an
+observer. It is not arbitrary: the records, source witnesses, and local
+receipts can be checked. Different receivers can legitimately instantiate
+different reception orders over the same source records.
+
+\section{Existence theorem and constructive witness}
+\label{sec:theorem}
+
+\begin{theorem}[Existence of negative information-reference direction]
+\label{thm:existence}
+Let $s^-\host s^+$ be two events in the source chain with
+$\theta(s^-)<\theta(s^+)$. Let $r^-$ and $r^+$ be authentic,
+information-bearing records bound respectively to $s^-$ and $s^+$. Suppose
+that their receiver-local delivery order is inverted,
+\begin{equation}
+  \rho_O(r^+)\host\rho_O(r^-),
+  \label{eq:overtaking}
+\end{equation}
+and that each record separately satisfies \cref{eq:forwarddelivery}. Then
+observer-relative retrocausality occurs for $O$. More specifically,
+\begin{equation}
+  \Delta\tau_O=
+  \tau_O(\rho_O(r^-))-\tau_O(\rho_O(r^+))>0
+\end{equation}
+and
+\begin{equation}
+  \Delta\theta=\theta(r^-)-\theta(r^+)<0,
+\end{equation}
+so $v_I^O(r^+,r^-)<0$.
+\end{theorem}
+
+\begin{proof}
+Because the reception events lie on the observer chain and
+\cref{eq:overtaking} holds, strict monotonicity of $\tau_O$ gives
+$\Delta\tau_O>0$. Because the source marker is order-preserving on the
+source chain, $\theta(s^-)<\theta(s^+)$, so $\Delta\theta<0$. The quotient
+in \cref{eq:slope} is therefore negative. The individual forward-delivery
+conditions continue to hold, so the inverse relation is between source order
+and reception order, not within an individual signal path.
+\end{proof}
+
+The proof is intentionally short. It is a conditional theorem about an
+explicit relation, not a claim that an arbitrary out-of-order packet proves a
+new dynamical law. Its utility is to make the exact conditions inspectable:
+source binding, information content, monotone local time, and inverse
+reception/source order.
+
+\begin{proposition}[No causal loop follows]
+\label{prop:noloop}
+The assumptions of \cref{thm:existence} do not imply a backward delivery of a
+single record or a causal loop in $H$.
+\end{proposition}
+
+\begin{proof}
+For every record, \cref{eq:forwarddelivery} gives
+$\sigma(r)\host\rho_O(r)$. Backward delivery of that same record would also
+require $\rho_O(r)\host\sigma(r)$, contradicting irreflexivity by
+transitivity. Since $\host$ is a strict partial order, it has no closed
+causal chain.
+\end{proof}
+
+\subsection{Finite witness}
+
+Take two source events with markers $\theta(s^-)=10$ and
+$\theta(s^+)=20$. Let their reception events occur at receiver-local times
+$100$ and $101$ in the inverse order:
+\begin{equation}
+  \tau_O(\rho_O(r^+))=100,\qquad
+  \tau_O(\rho_O(r^-))=101.
+\end{equation}
+Then
+\begin{equation}
+  v_I^O(r^+,r^-)=\frac{10-20}{101-100}=-10<0.
+\end{equation}
+The associated witness can be made information-bearing by beginning with four
+possible two-bit histories. The first received record binds one bit and
+reduces the compatible histories from four to two; the second binds the other
+bit and reduces them from two to one. Equation \cref{eq:information} then
+holds for both records.
+
+The companion QIK--VRT corpus contains a network-independent checker,
+\path{verify_observer_relative_retrocausality.py}, and its canonical
+JSON witness report. It checks acyclicity, source-before-reception,
+monotonicity, strict evidence refinement, inverse source/reception order, a
+second observer, and a positive-latency realization. The exact source
+snapshots are linked in \cref{sec:reproducibility}. The checker is an
+executable finite witness, not a substitute for a proof assistant kernel or an
+empirical survey of nature.
+
+\subsection{Positive-latency realization}
+
+Let the older record be emitted at coordinate time $t^-=0$ with delay
+$d^-=3$, and the newer record at $t^+=1$ with delay $d^+=1$. Their reception
+times are
+\begin{equation}
+  T^-=t^-+d^-=3,\qquad T^+=t^++d^+=2.
+\end{equation}
+Both delays are positive, yet the later source event is received first. In a
+relativistic idealization with propagation at or below $c$, write
+$d^\pm=L^\pm/c$. The condition for overtaking is
+\begin{equation}
+  \frac{L^- - L^+}{c}>t^+-t^-.
+  \label{eq:latencycondition}
+\end{equation}
+This can be implemented by unequal optical paths, network routes, buffers, or
+relays. It realizes the operational relation in \cref{def:orr}; it does not
+make any path past-directed.
+
+\section{Observer perspective and proper time}
+\label{sec:observers}
+
+The same source records can have different reception orders for different
+observers. Receiver $O$ can receive $r^+$ before $r^-$ and satisfy
+$v_I^O<0$, while $O'$ receives $r^-$ before $r^+$ and satisfies
+$v_I^{O'}>0$. There is no contradiction because the two inequalities refer to
+different local reception chains. What remains common is the authenticated
+source order and the declared host order.
+
+In a physical relativistic realization, proper time remains increasing along a
+future-directed timelike worldline. For motion with $|v|<c$ in an inertial
+frame,
+\begin{equation}
+  d\tau=dt\sqrt{1-v^2/c^2}>0.
+\end{equation}
+This is why the formal relation should not be described as proper time
+running backwards. Rather, proper time supplies the fixed local direction
+against which the source-reference direction of the received information is
+compared. The distinction is compatible with the relativistic treatment of
+local clocks and event order \cite{Einstein1905,Minkowski1909}.
+
+\section{Delayed choice, quantum erasure, and later evidence}
+\label{sec:quantum}
+
+Delayed-choice and quantum-eraser experiments are relevant here as a
+structural connection, not as a unique proof of the QIK--VRT interpretation.
+In the delayed-choice quantum eraser of Kim et al., earlier signal detections
+can later be sorted with suitable partner and context records into correlation
+classes showing different conditional patterns \cite{ScullyDruehl1982,Kim2000}.
+For complementary conditional patterns one may schematically write
+\begin{align}
+  P(x\mid j=1)&=\frac{1+\cos\phi(x)}{2},\\
+  P(x\mid j=2)&=\frac{1-\cos\phi(x)}{2}.
+\end{align}
+At equal weights their unconditioned local marginal is
+\begin{equation}
+  P(x)=\tfrac12P(x\mid j=1)+\tfrac12P(x\mid j=2)=\tfrac12.
+\end{equation}
+Thus the earlier local record does not carry a selectable backward signal
+\cite{Jordan1983}. The later context makes a correlation classification of
+the earlier record available; it does not rewrite the earlier raw data.
+
+Related delayed-choice realizations and delayed-choice entanglement swapping
+make the same separation useful: later measurement context and joint data
+analysis can change which conditional relation an observer is justified in
+asserting about earlier registrations, without supplying a controllable
+message into the observer's causal past \cite{Jacques2007,Ma2012,Ma2013}.
+The experiments therefore exhibit a physical family of later evidence about
+earlier records situations. They do not uniquely select QIK--VRT over other
+interpretations, and they do not establish arbitrary physical retrocausality.
+The historical QIK--VRT decision-sufficiency paper makes the same distinction
+between later evidence classification and a retrospective mutation of a
+physical record \cite{LohmannDecisionSufficiency2026}.
+
+\section{Evidence-bound effect control}
+\label{sec:eap}
+
+The formal distinction between reception order and source reference has a
+direct systems-engineering implication. A receiver should not treat a
+received item as decision-sufficient solely because it arrived. Before an
+irreversible or consequential effect is released, the evaluator may need to
+know: What source event does this record represent? Is that binding
+authenticated? Which local reception sequence applies? Is later evidence
+required to classify the record correctly? Has the evidence chain been
+preserved?
+
+The companion proposal is named the \emph{EAP Temporal-Provenance and
+Reference Profile} (EAP--TPRP). It is an external evidence profile for
+\texttt{EFFECT\_ACK} version 1. It introduces no version-1 wire fields and no
+change to the version-1 release predicate. It binds, as external evidence:
+\begin{enumerate}
+  \item an authenticated \texttt{source\_event\_id} and
+  \texttt{source\_order\_marker};
+  \item a \texttt{receiver\_id} plus
+  \texttt{receiver\_receipt\_sequence} or \texttt{receipt\_timestamp};
+  \item an immutable provenance commitment and evidence references; and
+  \item one of \texttt{FORWARD\_REFERENCE},
+  \texttt{RETROGRADE\_REFERENCE}, or \texttt{INDETERMINATE}.
+\end{enumerate}
+Here \texttt{RETROGRADE\_REFERENCE} means only that, for one receiver, a
+later locally received authenticated evidence object refers to an earlier
+source-order marker than a previously received object. It does \emph{not}
+assert backward signalling, alteration of past events, physical or ontic
+retrocausality, truth of payload content, or sender intent.
+
+This is a proposed application-layer control and provenance layer around a
+stored-program computer architecture. It is not a replacement for the
+von-Neumann architecture, a new processor instruction, or an IETF-recognized
+extension of a computing architecture. Its intended engineering benefit is
+to make the evidence and origin conditions of a proposed effect auditable
+before release. In distributed environments, that can help expose
+information asymmetries; it cannot by itself prove exploitation, motive, or
+truth.
+
+At the time of this manuscript, the public base document
+\path{draft-lohmann-qikvrt-effect-ack-03} is an active individual Internet
+Draft, not an RFC, IETF standard, working-group product, consensus result, or
+IETF endorsement \cite{LohmannEAP2026}. EAP--TPRP is a local,
+not-yet-submitted companion candidate.
+
+\section{Scope, falsifiability, and correspondence}
+\label{sec:scope}
+
+The operational result is falsifiable for any claimed instance. It fails if
+any of the following conditions is absent:
+\begin{itemize}
+  \item the source markers are freely assigned, unauthenticated, or not
+  order-preserving on the declared source chain;
+  \item the two receipts are not on the same monotone observer chain;
+  \item a purported record is not information-bearing in the sense of
+  \cref{eq:information};
+  \item the provenance binding can be silently altered; or
+  \item the supposedly inverse relation disappears under the declared
+  order-preserving reparameterizations.
+\end{itemize}
+
+The theory is therefore not the proposition that any delayed packet is a
+time machine. It is a defined and checkable relation between two bound
+orders. The result establishes a formal consequence of the stated model and
+a constructive realization of that model's relation. A run on real hardware
+is a physical instance of the computational/record relation if the declared
+reference bindings are actually satisfied. Such a run is not, by itself, an
+independent confirmation that all natural systems or the universe have the
+same structure.
+
+Lohmann's broader QIK--VRT correspondence thesis is that the universe itself
+is fundamentally a distributed relational system and that this framework
+describes reality in its stated model scope \cite{LohmannRoundTrip2026}. This
+paper preserves that thesis as the author's explicitly attributed position. It
+does not present the thesis as scientific consensus or as a deduction from the
+finite theorem alone.
+
+\section{Reproducibility and historical continuity}
+\label{sec:reproducibility}
+
+The complete historical QIK--VRT corpus, including earlier intermediate
+documents and machine-readable materials, is publicly preserved at Zenodo
+under \zenodo. The two retained historical intermediate papers document the
+development of relational time and decision sufficiency; the preceding
+Mandelbrot and canonical-memory works document related distinctions between
+classification, provenance, and effect acknowledgement
+\cite{LohmannRelationalTime2026,LohmannDecisionSufficiency2026,
+LohmannMandelbrot2026,LohmannCanonicalMemory2026}. The immutable source
+snapshots used for reproducibility are available from the Authority repository
+at \authoritysnapshot{} and the Mirror repository at \mirrorsnapshot{}.
+These references are immutable snapshots, not assertions that either
+repository state presently represents a new publication or an IETF submission.
+
+The source package for this manuscript contains only the concise English
+synthesis. Its accompanying submission manifest records the artifact digests
+and explicitly states that it is a local candidate until a separate
+artifact-bound publication authorization and a platform submission are
+completed. Earlier QIK--VRT PDFs are retained as historical intermediate
+states rather than overwritten. This preserves the research history while
+separating it from the current clarification.
+
+\section{Conclusion}
+
+In a distributed system an observer can advance monotonically in local time
+while the authenticated source-event references of its newly received records
+run in the opposite direction. Under the operational definition in this
+paper, that is observer-relative retrocausality:
+\begin{equation}
+  \Delta\tau_O>0\quad\text{and}\quad\Delta\theta<0.
+\end{equation}
+The relation is mathematically transparent, constructively realizable with
+positive delays, and testable with provenance-bound records. It neither
+requires nor implies a reversed clock, a signal travelling into the past, or a
+causal loop. Its scientific value is the precise separation of source order,
+receiver-local order, and later evidentiary classification. Its engineering
+value is a proposed way to bind those distinctions to effect-control decisions
+without turning receipt alone into authorization.
+
+\section*{Author contribution and disclosure}
+
+Ingolf Lohmann originated the QIK--VRT research programme, the stated
+operational definition, and the correspondence thesis. This manuscript is a
+new English synthesis of that programme. Artificial-intelligence assistance
+was used for drafting, formal organization, consistency checking, and layout;
+the distinction between author-attributed claims, formal results, and open
+scientific scope is retained explicitly.
+
+\begin{thebibliography}{99}
+
+\bibitem{Einstein1905}
+A. Einstein, Zur Elektrodynamik bewegter Korper, \emph{Annalen der
+Physik} 322, 891--921 (1905).
+\href{https://doi.org/10.1002/andp.19053221004}{doi:10.1002/andp.19053221004}.
+
+\bibitem{Minkowski1909}
+H. Minkowski, Raum und Zeit, \emph{Physikalische Zeitschrift} 10,
+104--111 (1909).
+
+\bibitem{Lamport1978}
+L. Lamport, Time, Clocks, and the Ordering of Events in a Distributed
+System, \emph{Communications of the ACM} 21, 558--565 (1978).
+\href{https://doi.org/10.1145/359545.359563}{doi:10.1145/359545.359563}.
+
+\bibitem{ScullyDruehl1982}
+M. O. Scully and K. Druhl, Quantum eraser: A proposed photon correlation
+experiment concerning observation and delayed choice in quantum mechanics,
+\emph{Physical Review A} 25, 2208--2213 (1982).
+\href{https://doi.org/10.1103/PhysRevA.25.2208}{doi:10.1103/PhysRevA.25.2208}.
+
+\bibitem{Kim2000}
+Y.-H. Kim, R. Yu, S. P. Kulik, Y. H. Shih, and M. O. Scully, Delayed
+Choice Quantum Eraser, \emph{Physical Review Letters} 84, 1--5 (2000).
+\href{https://doi.org/10.1103/PhysRevLett.84.1}{doi:10.1103/PhysRevLett.84.1}.
+
+\bibitem{Jacques2007}
+V. Jacques et al., Experimental Realization of Wheeler's Delayed-Choice
+Gedanken Experiment, \emph{Science} 315, 966--968 (2007).
+\href{https://doi.org/10.1126/science.1136303}{doi:10.1126/science.1136303}.
+
+\bibitem{Ma2012}
+X.-S. Ma et al., Experimental delayed-choice entanglement swapping,
+\emph{Nature Physics} 8, 479--484 (2012).
+\href{https://doi.org/10.1038/nphys2294}{doi:10.1038/nphys2294}.
+
+\bibitem{Ma2013}
+X.-S. Ma et al., Quantum erasure with causally disconnected choice,
+\emph{Proceedings of the National Academy of Sciences} 110, 1221--1226
+(2013). \href{https://doi.org/10.1073/pnas.1213201110}{doi:10.1073/pnas.1213201110}.
+
+\bibitem{Jordan1983}
+T. F. Jordan, Quantum correlations do not transmit signals,
+\emph{Physics Letters A} 94, 264 (1983).
+\href{https://doi.org/10.1016/0375-9601(83)90713-2}{doi:10.1016/0375-9601(83)90713-2}.
+
+\bibitem{LohmannRoundTrip2026}
+I. Lohmann, Von Softwarearchitektur zur Weltformel -- DAS UNIVERSUM ALS
+ROUND TRIP, version 1.0.0-candidate.1, Zenodo (2026).
+\href{https://doi.org/10.5281/zenodo.21888130}{doi:10.5281/zenodo.21888130}.
+
+\bibitem{LohmannRelationalTime2026}
+I. Lohmann, Relationale Zeit, virtuelle Retrokausalitat und die monoton
+wachsende Evidenzkugel: Ein beweisbares QIK--VRT-Modell mit massivem Kern,
+unscharfem Rand und expliziter physikalischer Korrespondenzgrenze,
+QIK--VRT historical intermediate manuscript (11 August 2026), preserved in
+the associated QIK--VRT publication package \cite{LohmannRoundTrip2026}.
+
+\bibitem{LohmannDecisionSufficiency2026}
+I. Lohmann, Decision Sufficiency, Delayed Choice, and Witness-Bound Recovery:
+QIK--VRT: formal boundaries, finite verification, and provenance-bound
+continuation, QIK--VRT historical intermediate manuscript (6 August 2026),
+preserved as a byte-exact historical intermediate state in the associated
+QIK--VRT publication package.
+
+\bibitem{LohmannMandelbrot2026}
+I. Lohmann, Mandelbrot-Menge, Anschlussordnung und physikalisches
+Modelluniversum -- Komplementbeweis, rekursive Wirkungsklassifikation,
+dimensionsrichtige Raumzeitbruecke, Retrokausalitat und der entscheidende
+Unterschied zur empirischen Quantengravitation, version 3.0, Zenodo (2026).
+\href{https://doi.org/10.5281/zenodo.21482023}{doi:10.5281/zenodo.21482023}.
+
+\bibitem{LohmannCanonicalMemory2026}
+I. Lohmann, QIK--VRT und das Effect-Acknowledgement-Protokoll: Kanonischer
+Speicher zwischen Vergangenheit und Zukunft, version 1.0.0, Zenodo.
+\href{https://doi.org/10.5281/zenodo.21711193}{doi:10.5281/zenodo.21711193}.
+
+\bibitem{LohmannEAP2026}
+I. Lohmann, QIK--VRT Effect Acknowledgement: Separating Receipt from
+Authorization for Downstream Effect, Internet-Draft
+\texttt{draft-lohmann-qikvrt-effect-ack-03}, active individual submission
+(2026). \url{https://datatracker.ietf.org/doc/draft-lohmann-qikvrt-effect-ack/}.
+
+\end{thebibliography}
+
+\end{document}

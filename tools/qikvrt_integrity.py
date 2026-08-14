@@ -927,8 +927,17 @@ def build_outputs(root: pathlib.Path = ROOT) -> tuple[bytes, bytes, bytes, dict[
         ],
         "files": entries,
     }
+    # Keep the complete repository inventory in one deterministic Git blob
+    # while avoiding presentation-only whitespace growth as the inventory
+    # expands.  The detached digest continues to bind these exact bytes.
     manifest_bytes = (
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
     ).encode("utf-8")
     index_bytes = "".join(
         f"{digest}  {relative}\n"

@@ -1,0 +1,170 @@
+{
+  "schema": "eap_lctp_classification_test_vectors_v1",
+  "profile_version": "eap-lctp-1",
+  "purpose": "Local deterministic fixtures for the local-change-time and source-order classification relation in draft-lohmann-qikvrt-local-change-time-00.",
+  "operational_eigenzeit_boundary": "local_change_index is QIK-VRT operational Eigenzeit: a strictly increasing receiver-local effective-change order, not a metric proper-time measurement.",
+  "authentication_fixture_boundary": "authentication_valid is a controlled test-double result; no fixture is a production signature or a claim about a real principal.",
+  "vectors": [
+    {
+      "id": "V1_NEGATIVE_INFORMATION_DIRECTION",
+      "baseline": {
+        "evidence_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "expected_classification": "NEGATIVE_INFORMATION_DIRECTION"
+    },
+    {
+      "id": "V2_FORWARD_INFORMATION_DIRECTION",
+      "baseline": {
+        "evidence_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "expected_classification": "FORWARD_INFORMATION_DIRECTION"
+    },
+    {
+      "id": "V3_DIFFERENT_DOMAIN",
+      "baseline": {
+        "evidence_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d1",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d2",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V4_SOURCE_AUTHENTICATION_FAILURE",
+      "baseline": {
+        "evidence_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": false,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V5_LOCAL_CHANGE_INDEX_NOT_STRICT",
+      "baseline": {
+        "evidence_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V6_EQUAL_SOURCE_MARKER",
+      "baseline": {
+        "evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected_classification": "INDETERMINATE"
+    },
+    {
+      "id": "V7_BASELINE_BINDING_MISMATCH",
+      "baseline": {
+        "evidence_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "receiver_id": "receiver-r",
+        "local_change_index": 7,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 20,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true
+      },
+      "current": {
+        "evidence_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "receiver_id": "receiver-r",
+        "local_change_index": 8,
+        "source_order_domain": "domain-d",
+        "source_order_marker": 10,
+        "source_authentication_valid": true,
+        "receiver_authentication_valid": true,
+        "baseline_evidence_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected_classification": "INDETERMINATE"
+    }
+  ]
+}
