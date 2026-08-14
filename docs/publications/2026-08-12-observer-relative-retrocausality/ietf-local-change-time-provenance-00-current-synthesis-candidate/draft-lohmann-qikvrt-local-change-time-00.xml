@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Local staging candidate only.  This source has not been submitted to the
+  IETF Datatracker.  It defines an external evidence profile compatible with
+  QIK-VRT EFFECT_ACK version 1 and intentionally changes no version-1 wire
+  member, state, release predicate, or IANA registry.
+-->
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     version="3"
+     ipr="trust200902"
+     category="exp"
+     submissionType="IETF"
+     docName="draft-lohmann-qikvrt-local-change-time-00"
+     tocInclude="true"
+     tocDepth="3"
+     symRefs="true"
+     sortRefs="true">
+  <front>
+    <title abbrev="EAP-LCTP">Local Change-Time Provenance Profile for QIK-VRT Effect Acknowledgement</title>
+    <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-local-change-time-00"/>
+    <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann">
+      <organization>Independent Researcher</organization>
+      <address>
+        <email>ingolf.lohmann@live.com</email>
+      </address>
+    </author>
+    <date year="2026" month="August" day="12"/>
+    <area>Applications and Real-Time</area>
+    <keyword>provenance</keyword>
+    <keyword>effect acknowledgement</keyword>
+    <keyword>evidence</keyword>
+    <keyword>local change time</keyword>
+    <keyword>operational Eigenzeit</keyword>
+    <keyword>source order</keyword>
+    <keyword>negative information direction</keyword>
+
+    <abstract>
+      <t>This document specifies the EAP Local Change-Time Provenance Profile (EAP-LCTP), an external evidence profile for QIK-VRT Effect Acknowledgement (EFFECT_ACK) version 1.  The profile allows an evaluator to authenticate and compare a source-order marker associated with an immutable source event against the local change order of one designated receiver.</t>
+      <t>In QIK-VRT terminology, the receiver's strictly increasing local change order is its operational Eigenzeit.  This is an operational state-change ordering, not a claim that the value is a relativistic metric proper time.  EAP-LCTP defines NEGATIVE_INFORMATION_DIRECTION for the limited case in which later effective local change refers to an earlier authenticated marker in the same comparable source-order domain.  The classification is a statement about two evidence orders.  It is not a statement that a signal travelled backward, that a past event changed, that content is true, or that a sender had a particular intent.</t>
+      <t>The profile is deliberately external to the closed EFFECT_ACK version-1 JSON record.  It is bound through the existing evidence-reference and policy mechanisms and does not change any version-1 wire field, state, DONE predicate, authorization rule, or IANA registry.</t>
+    </abstract>
+  </front>
+
+  <middle>
+    <section anchor="intro">
+      <name>Introduction</name>
+      <t>An effect-control system often needs more than evidence of receipt.  It can also need to determine which authenticated source event an evidence object describes, whether two source-order markers are comparable, and whether locally received evidence arrived in a different order from that source reference.</t>
+      <t>QIK-VRT EFFECT_ACK version 1 separates transport receipt from authorization for a downstream effect.  Its closed record contains generic evidence digests and a policy binding, rather than a field for every possible evidence profile.  This document defines one such profile.  It is designed so that a deployment can require and validate local-change-time provenance evidence without changing the EFFECT_ACK version-1 wire format.</t>
+      <t>The profile compares two orderings for one comparison: source order and receiver local change order.  A source-order marker is not presumed to be a globally synchronized clock reading.  It is an authenticated, deployment-scoped ordering value for a named source-order domain.  A receiver local_change_index is not presumed to establish a universal order among receivers.  It is a strictly increasing local sequence of effective state changes for one receiver identity.</t>
+      <t>The term NEGATIVE_INFORMATION_DIRECTION is intentionally operational.  It means only that the relation defined in <xref target="classification"/> has been validated: local_change_index increases while the comparable authenticated source-order marker decreases.  The term neither introduces a new physical theory nor changes the causal direction of a network delivery.</t>
+      <t>This profile does not encode coordinate-time assignments between spacelike-separated physical events.  If a deployment separately assigns a source observer's local-present event to another observer's coordinate future, that assignment is not a causal-future relation and does not make a source-bound object available before a future-directed delivery path reaches its receiver.</t>
+
+      <section anchor="goals">
+        <name>Goals</name>
+        <ul>
+          <li>Bind a source event, a source-order marker, and the immutable object described by that event to authenticated evidence.</li>
+          <li>Bind a receiver identity and a strictly increasing local change index to the same evidence comparison.</li>
+          <li>Define deterministic FORWARD_INFORMATION_DIRECTION, NEGATIVE_INFORMATION_DIRECTION, and INDETERMINATE classifications.</li>
+          <li>Permit a deployment policy to require the profile using the existing EFFECT_ACK version-1 evidence and policy bindings.</li>
+          <li>State security, privacy, retention, and non-claim boundaries explicitly.</li>
+        </ul>
+      </section>
+
+      <section anchor="non-goals">
+        <name>Non-Goals</name>
+        <ul>
+          <li>This profile does not modify the closed EFFECT_ACK version-1 record.</li>
+          <li>This profile does not authorize an effect merely because a classification is present.</li>
+          <li>This profile does not establish the semantic truth, legality, safety, or completeness of a payload or its evidence.</li>
+          <li>This profile does not provide a global clock, global total order, or synchronization protocol.</li>
+          <li>This profile does not establish backward signalling, retroactive alteration of an event, superluminal communication, physical or ontic retrocausality, or sender intent.</li>
+          <li>This profile does not identify a natural person solely from an identifier, key, signature, or receipt record.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section anchor="conventions">
+      <name>Conventions and Terminology</name>
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals, as shown here.</t>
+      <dl>
+        <dt>Base protocol</dt>
+        <dd>QIK-VRT EFFECT_ACK version 1, as specified by <xref target="EFFECT-ACK-V1"/>.</dd>
+        <dt>Profile evidence object</dt>
+        <dd>An immutable EAP-LCTP JSON object and its authenticated envelopes or references.  Its digest can occur in the base protocol's evidence-reference sets.</dd>
+        <dt>Source event</dt>
+        <dd>An event asserted by an authenticated source principal and identified by source_event_id within a source-order domain.</dd>
+        <dt>Source-order domain</dt>
+        <dd>A named domain whose authority defines the comparability and monotonic interpretation of its source-order markers.</dd>
+        <dt>Source-order marker</dt>
+        <dd>A non-negative I-JSON safe integer asserted for a source event by an authorized source principal.  It is comparable only within the same authenticated source-order domain.</dd>
+        <dt>Receiver</dt>
+        <dd>The designated principal or component that produces an authenticated local observation of an evidence object.</dd>
+        <dt>Operational Eigenzeit / local change time</dt>
+        <dd>In this profile, the strictly increasing order of effective state changes of one named receiver.  The wire representation is local_change_index, a positive I-JSON safe integer.  It orders receiver-local evidence changes only and is not a global time coordinate or a metric proper-time assertion.</dd>
+        <dt>Comparison baseline</dt>
+        <dd>A previously authenticated profile evidence object for the same receiver that is named by digest in the current evidence object.</dd>
+        <dt>Reference classification</dt>
+        <dd>The deterministic result FORWARD_INFORMATION_DIRECTION, NEGATIVE_INFORMATION_DIRECTION, or INDETERMINATE derived from a baseline and a current observation.</dd>
+      </dl>
+    </section>
+
+    <section anchor="architecture">
+      <name>Architecture and Compatibility</name>
+      <t>An EAP-LCTP deployment contains at least a source authority, a receiver, an evidence store or transport, a profile verifier, an EFFECT_ACK evaluator, and an effect executor.  The source authority and receiver can be distinct components or may be the same component in a local deployment.  Each role MUST be identified in the deployment security profile.</t>
+      <t>EAP-LCTP is an external evidence profile.  The base protocol remains a closed version-1 record with its existing five states and DONE-only ordinary-release rule.  A deployment MUST NOT add EAP-LCTP members to a version-1 EFFECT_ACK record.  It MUST instead bind the exact profile evidence object through existing evidence_refs, required_evidence_refs, policy_id, policy_version, and policy_hash mechanisms.</t>
+      <t>A deployment that requires EAP-LCTP for a proposed effect MUST describe that requirement in its immutable policy descriptor.  If the required profile evidence is unavailable, malformed, unauthenticated, non-comparable, stale under local policy, or fails rederivation, the evaluator MUST NOT treat the requirement as satisfied.  The base protocol's existing state-selection and release rules determine the resulting EFFECT_ACK state.</t>
+      <t>NEGATIVE_INFORMATION_DIRECTION is an evidence classification, not a base-protocol state or decision.  A deployment policy MAY treat it as a condition for additional review, isolation, blocking, or continued evaluation.  It MUST NOT infer an ordinary release from the classification alone.</t>
+    </section>
+
+    <section anchor="evidence-object">
+      <name>Profile Evidence Object</name>
+      <t>A profile evidence object MUST be an I-JSON object as defined by <xref target="RFC7493"/> and encoded as UTF-8 JSON as specified by <xref target="RFC8259"/>, without a byte-order mark.  Its canonical representation uses the JSON Canonicalization Scheme (JCS) from <xref target="RFC8785"/> after Unicode NFC normalization as specified by <xref target="UNICODE-NORM"/>.  A digest identifier uses SHA-256 as specified by <xref target="RFC6234"/> and has the form <tt>sha256:</tt> followed by 64 lowercase hexadecimal characters.</t>
+      <t>The profile has version string <tt>eap-lctp-1</tt>.  A missing required member, an unsupported profile version, duplicate normalized member names, a floating-point number, or an integer outside the I-JSON safe-integer range MUST cause profile validation to fail.  The deployment MAY carry the object as application/json; this document does not register a media type.</t>
+      <table anchor="evidence-fields">
+        <name>Required profile evidence members</name>
+        <thead><tr><th>Member</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td>profile_version</td><td>Exactly <tt>eap-lctp-1</tt>.</td></tr>
+          <tr><td>evidence_id</td><td>Locally unique identifier for this evidence object.</td></tr>
+          <tr><td>subject_digest</td><td>Digest of the immutable object described by the source event.</td></tr>
+          <tr><td>source_order_domain</td><td>Authenticated domain in which source_order_marker is comparable.</td></tr>
+          <tr><td>source_event_id</td><td>Identifier for the asserted source event.</td></tr>
+          <tr><td>source_order_marker</td><td>Non-negative I-JSON safe integer within the named domain.</td></tr>
+          <tr><td>source_principal</td><td>Deployment-scoped identifier for the source authority.</td></tr>
+          <tr><td>source_assertion_digest</td><td>Digest of the canonical source assertion projection.</td></tr>
+          <tr><td>source_authentication_ref</td><td>Digest or authenticated reference to evidence that validates the source assertion.</td></tr>
+          <tr><td>receiver_id</td><td>Deployment-scoped identifier for the receiver.</td></tr>
+          <tr><td>local_change_index</td><td>Positive strictly increasing local change index for receiver_id; the profile's operational Eigenzeit representation.</td></tr>
+          <tr><td>receiver_assertion_digest</td><td>Digest of the canonical receiver observation projection.</td></tr>
+          <tr><td>receiver_authentication_ref</td><td>Digest or authenticated reference to evidence that validates the receiver observation.</td></tr>
+          <tr><td>baseline_evidence_digest</td><td>Digest of a previous profile evidence object, or null when no comparison is made.</td></tr>
+          <tr><td>classification</td><td>FORWARD_INFORMATION_DIRECTION, NEGATIVE_INFORMATION_DIRECTION, or INDETERMINATE.</td></tr>
+          <tr><td>provenance_commitment</td><td>Digest of the canonical provenance commitment projection.</td></tr>
+          <tr><td>evidence_refs</td><td>Set-like array of additional exact evidence digests.</td></tr>
+        </tbody>
+      </table>
+      <t>Optional members MAY carry an RFC 3339 <xref target="RFC3339"/> receipt timestamp, local transport context, key-discovery context, retention information, or an application-defined review reason.  Optional members MUST be included in the provenance commitment projection unless the deployment profile explicitly lists the member as uncommitted volatile telemetry.  A receiver timestamp is not required for the classification and MUST NOT substitute for local_change_index.</t>
+
+      <section anchor="assertion-projections">
+        <name>Assertion and Commitment Projections</name>
+        <t>The source assertion projection is the canonical object containing profile_version, evidence_id, subject_digest, source_order_domain, source_event_id, source_order_marker, and source_principal.  The source_assertion_digest MUST equal the SHA-256 digest of that projection.</t>
+        <t>The receiver observation projection is the canonical object containing profile_version, evidence_id, source_assertion_digest, receiver_id, local_change_index, and baseline_evidence_digest.  The receiver_assertion_digest MUST equal the SHA-256 digest of that projection.</t>
+        <t>The provenance commitment projection is the full profile evidence object with provenance_commitment removed.  The provenance_commitment MUST equal the SHA-256 digest of that projection.  A profile verifier MUST validate all three digest projections before using the evidence object.</t>
+        <t>The source_authentication_ref MUST resolve, under the deployment security profile, to an authenticated assertion over the source assertion digest by a principal authorized for source_principal and source_order_domain.  The receiver_authentication_ref MUST similarly resolve to an authenticated assertion over the receiver assertion digest by a principal authorized for receiver_id.  A digest, signature, certificate, or key identifier does not by itself establish the truth of the described payload or the identity of a natural person.</t>
+      </section>
+    </section>
+
+    <section anchor="classification">
+      <name>Reference Classification</name>
+      <t>Let b be the validated baseline evidence object and c be the validated current evidence object.  The verifier MUST only compare b and c when all of the following conditions are true:</t>
+      <ol>
+        <li>b.receiver_id equals c.receiver_id;</li>
+        <li>b.local_change_index is strictly less than c.local_change_index;</li>
+        <li>b.source_order_domain equals c.source_order_domain;</li>
+        <li>both source assertions and both receiver observations authenticate successfully under the deployment security profile; and</li>
+        <li>the baseline digest in c equals the canonical evidence-object digest of b.</li>
+      </ol>
+      <t>If any condition is false, c.classification MUST be INDETERMINATE.  If all conditions are true, the verifier MUST use the following algorithm and MUST reject a producer-supplied classification that differs from its rederived result:</t>
+      <sourcecode type="pseudocode"><![CDATA[
+if c.source_order_marker > b.source_order_marker:
+    classification = FORWARD_INFORMATION_DIRECTION
+else if c.source_order_marker < b.source_order_marker:
+    classification = NEGATIVE_INFORMATION_DIRECTION
+else:
+    classification = INDETERMINATE
+]]></sourcecode>
+      <t>NEGATIVE_INFORMATION_DIRECTION therefore means that, for one receiver and one comparable source-order domain, later local change refers to an earlier authenticated source-order marker than the designated baseline.  Equivalently, the validated comparison has delta local_change_index greater than zero and delta source_order_marker less than zero.  It does not mean that c was received before it was sent, that either source event was changed, or that one event physically caused another event in a reverse direction.</t>
+      <t>A receiver MUST assign local_change_index strictly monotonically for every profile evidence object it emits.  It MUST NOT reuse a local_change_index for different evidence_id values.  A deployment requiring detection of deletion or rewriting MUST retain an authenticated append-only anchor or equivalent independent commitment for its sequence; local monotonicity alone does not detect a complete rewrite by a compromised receiver.</t>
+    </section>
+
+    <section anchor="cddl">
+      <name>Profile CDDL</name>
+      <t>This section defines the JSON member shape using CDDL <xref target="RFC8610"/>.  The authentication, canonicalization, and comparison predicates are specified in the main text.</t>
+      <sourcecode type="cddl"><![CDATA[
+eap-lctp-evidence = {
+  profile_version: "eap-lctp-1",
+  evidence_id: bounded-id,
+  subject_digest: sha256-id,
+  source_order_domain: bounded-id,
+  source_event_id: bounded-id,
+  source_order_marker: source-marker,
+  source_principal: bounded-id,
+  source_assertion_digest: sha256-id,
+  source_authentication_ref: sha256-id,
+  receiver_id: bounded-id,
+  local_change_index: local-change-index,
+  receiver_assertion_digest: sha256-id,
+  receiver_authentication_ref: sha256-id,
+  baseline_evidence_digest: sha256-id / null,
+  classification: reference-classification,
+  provenance_commitment: sha256-id,
+  evidence_refs: digest-set,
+  * tstr => any,
+}
+
+reference-classification =
+    "FORWARD_INFORMATION_DIRECTION"
+  / "NEGATIVE_INFORMATION_DIRECTION"
+  / "INDETERMINATE"
+
+sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
+source-marker = 0..9007199254740991
+local-change-index = 1..9007199254740991
+bounded-id = tstr
+digest-set = [*128 sha256-id]
+]]></sourcecode>
+      <t>The open tail in the CDDL permits application-specific optional members.  A deployment that requires a closed profile object MUST publish that stricter policy.  An optional member MUST NOT alter the classification algorithm unless a future profile version explicitly defines its effect.</t>
+    </section>
+
+    <section anchor="base-binding">
+      <name>Binding to EFFECT_ACK Version 1</name>
+      <t>A base-protocol evaluator that requires this profile MUST place the digest of every required EAP-LCTP evidence object in both evidence_refs and required_evidence_refs of its EFFECT_ACK version-1 record.  The policy descriptor identified by policy_id, policy_version, and policy_hash MUST identify the accepted EAP-LCTP version, authentication methods, principal authorization rules, evidence retrieval method, freshness policy, and the required response to each classification.</t>
+      <t>The base-protocol consumer MUST validate the referenced profile evidence or rely on an authenticated evaluator authorized by the deployment to make that assertion.  It MUST still independently apply every base-protocol release condition.  EAP-LCTP neither replaces origin_checked, context_checked, semantics_reconstructed, risk_classified, nor any other base-protocol condition.</t>
+      <t>In particular, a NEGATIVE_INFORMATION_DIRECTION classification MUST NOT map directly to EFFECT_ACK_DONE.  It MAY cause a policy-specific additional check or state selection, but the policy and base protocol, not this classification alone, control any downstream effect.</t>
+    </section>
+
+    <section anchor="conformance">
+      <name>Conformance Requirements</name>
+      <section anchor="profile-producer">
+        <name>Profile Producer</name>
+        <t>A conforming producer MUST create canonical source and receiver assertion projections, bind them to authorized authentication evidence, calculate the digest projections, select the classification according to <xref target="classification"/>, and calculate provenance_commitment.  It MUST NOT emit FORWARD_INFORMATION_DIRECTION or NEGATIVE_INFORMATION_DIRECTION without a valid baseline and all required authenticated order comparisons.</t>
+      </section>
+      <section anchor="profile-verifier">
+        <name>Profile Verifier</name>
+        <t>A conforming verifier MUST parse the I-JSON object, validate the CDDL shape and bounds, verify all digest projections, retrieve and validate the source and receiver authentication references, authorize the relevant principals, validate the baseline, rederive classification, and apply local freshness and replay policy.  It MUST treat a missing, unauthenticated, malformed, stale, or non-comparable comparison as not satisfying a policy requirement.</t>
+      </section>
+      <section anchor="base-deployment">
+        <name>Base-Protocol Deployment</name>
+        <t>A base-protocol deployment claiming to require EAP-LCTP MUST bind the profile evidence through the existing version-1 policy and evidence mechanisms.  It MUST NOT claim that the profile changes the version-1 wire format.  It MUST document the effect of each classification and the fail-closed behavior for unavailable or invalid profile evidence.</t>
+      </section>
+    </section>
+
+    <section anchor="test-vectors">
+      <name>Test Vectors</name>
+      <t>The following vectors show the classification relation.  Values marked authenticated are fixtures for a verifier whose authentication-profile test double accepts the named principals.  They are not cryptographic key material and do not demonstrate a production signature scheme.</t>
+      <table anchor="classification-vectors">
+        <name>Classification vectors</name>
+        <thead><tr><th>Vector</th><th>Baseline</th><th>Current</th><th>Expected</th></tr></thead>
+        <tbody>
+          <tr><td>V1</td><td>receiver r, local change 7, domain d, marker 20</td><td>receiver r, local change 8, domain d, marker 10</td><td>NEGATIVE_INFORMATION_DIRECTION</td></tr>
+          <tr><td>V2</td><td>receiver r, local change 7, domain d, marker 10</td><td>receiver r, local change 8, domain d, marker 20</td><td>FORWARD_INFORMATION_DIRECTION</td></tr>
+          <tr><td>V3</td><td>receiver r, local change 7, domain d1, marker 20</td><td>receiver r, local change 8, domain d2, marker 10</td><td>INDETERMINATE</td></tr>
+          <tr><td>V4</td><td>receiver r, local change 7, domain d, marker 20</td><td>receiver r, local change 8, domain d, marker 10; source assertion fails</td><td>INDETERMINATE</td></tr>
+          <tr><td>V5</td><td>receiver r, local change 7, domain d, marker 20</td><td>receiver r, local change 7, domain d, marker 10</td><td>INDETERMINATE</td></tr>
+        </tbody>
+      </table>
+      <t>A machine-readable companion vector set is part of the local staging package.  A production conformance suite MUST additionally test duplicate names, canonicalization failures, invalid digests, forged or unauthorized assertions, replay, local-change-index reuse, missing baselines, equal source-order markers, stale evidence, and policy binding to the base protocol.</t>
+    </section>
+
+    <section anchor="security">
+      <name>Security Considerations</name>
+      <t>An attacker can attempt to forge a source-order marker, substitute a baseline, reorder local observations, replay an old valid evidence object, use incomparable domains as if they were comparable, compromise a source or receiver key, or bypass the EFFECT_ACK gate.  A profile deployment MUST authenticate both source and receiver assertions and MUST authorize the principals that make them.</t>
+      <t>Hash identifiers provide content binding under the security assumptions of SHA-256.  They do not authenticate a principal, establish freshness, demonstrate source honesty, or prevent a complete rewrite of an unanchored evidence history.  Deployments requiring rewrite detection MUST retain an authenticated independent anchor.  Deployments SHOULD bind profile assertions to an authenticated session or trusted evidence store to resist substitution and replay.</t>
+      <t>Source-order markers can be abused when a source authority is compromised or has an ambiguous domain definition.  A deployment MUST define who can authorize a source-order domain, how source-order markers are generated, and whether markers are strictly monotonic, merely monotonic, or allocated in ranges.  A verifier MUST NOT compare markers from different domains or from unauthenticated domain authorities.</t>
+      <t>NEGATIVE_INFORMATION_DIRECTION can be used as a forensic or review signal.  It MUST NOT be treated as evidence of malicious intent, deception, causal influence, a message from the future, or a physical anomaly without additional policy-defined evidence.  A correct classification only verifies the bound order relation under the stated authentication and retention assumptions.</t>
+      <t>Profile validation and evidence retrieval can create denial-of-service opportunities.  Implementations MUST bound object size, identifier size, recursion, signature-validation work, baseline retrieval, cache growth, and the number of candidate baselines.  Failure to complete validation within a policy-defined budget MUST fail the profile requirement rather than permit an effect.</t>
+    </section>
+
+    <section anchor="privacy">
+      <name>Privacy Considerations</name>
+      <t>Source and receiver identifiers, local change indices, timestamps, source-event identifiers, and evidence references can disclose system topology, user behavior, commercial activity, location, or sensitive decision timing.  A cryptographic identifier is not anonymization, and a digest can reveal low-entropy data through guessing.</t>
+      <t>Deployments SHOULD use scoped pseudonymous identifiers, access-controlled evidence stores, data minimization, retention limits, and access logging.  They SHOULD avoid placing personal data in source_event_id, evidence_id, or optional reason fields.  A deployment MUST document who can retrieve evidence, how a subject can request redaction where applicable, and how a redaction preserves the fact that a verification limitation now exists.</t>
+      <t>Local change indices may enable correlation across contexts.  Deployments SHOULD scope receiver_id and local_change_index to the smallest domain needed for the stated effect-control purpose.  They MUST NOT publish a global change history merely because the profile can represent one.</t>
+    </section>
+
+    <section anchor="iana">
+      <name>IANA Considerations</name>
+      <t>This document requests no IANA actions.  EAP-LCTP is an external evidence profile carried through existing EFFECT_ACK version-1 evidence references.  It defines no new base-protocol wire version, state, media type, registry, or protocol number.</t>
+    </section>
+
+    <section anchor="implementation-status" removeInRFC="true">
+      <name>Implementation Status</name>
+      <t>This section is non-normative.</t>
+      <t>At the time this local candidate was prepared, the profile has a machine-readable classification-vector set and a small local verifier.  It has not been submitted to the IETF Datatracker, has no IETF consensus or endorsement, and has not been shown interoperable between independently developed implementations.  The base protocol's public individual Internet-Draft status does not confer a standard status on this companion candidate.</t>
+    </section>
+
+    <section anchor="acknowledgements">
+      <name>Acknowledgements</name>
+      <t>The research direction, requested scope, and terminology were provided by Ingolf Lohmann.  Artificial-intelligence-assisted drafting and local consistency checks supported this candidate.  This acknowledgement does not assign standards status or substitute for author and community review.</t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date year="1997" month="March"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+        <seriesInfo name="DOI" value="10.17487/RFC2119"/>
+      </reference>
+      <reference anchor="RFC8174" target="https://www.rfc-editor.org/info/rfc8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date year="2017" month="May"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+      </reference>
+      <reference anchor="RFC8259" target="https://www.rfc-editor.org/info/rfc8259">
+        <front>
+          <title>The JavaScript Object Notation (JSON) Data Interchange Format</title>
+          <author initials="T." surname="Bray" fullname="Tim Bray" role="editor"/>
+          <date year="2017" month="December"/>
+        </front>
+        <seriesInfo name="STD" value="90"/>
+        <seriesInfo name="RFC" value="8259"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8259"/>
+      </reference>
+      <reference anchor="RFC7493" target="https://www.rfc-editor.org/info/rfc7493">
+        <front>
+          <title>The I-JSON Message Format</title>
+          <author initials="T." surname="Bray" fullname="Tim Bray" role="editor"/>
+          <date year="2015" month="March"/>
+        </front>
+        <seriesInfo name="RFC" value="7493"/>
+        <seriesInfo name="DOI" value="10.17487/RFC7493"/>
+      </reference>
+      <reference anchor="RFC8785" target="https://www.rfc-editor.org/info/rfc8785">
+        <front>
+          <title>JSON Canonicalization Scheme (JCS)</title>
+          <author initials="A." surname="Rundgren" fullname="Anders Rundgren"/>
+          <author initials="B." surname="Jordan" fullname="Bret Jordan"/>
+          <author initials="S." surname="Erdtman" fullname="Samuel Erdtman"/>
+          <date year="2020" month="June"/>
+        </front>
+        <seriesInfo name="RFC" value="8785"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8785"/>
+      </reference>
+      <reference anchor="RFC8610" target="https://www.rfc-editor.org/info/rfc8610">
+        <front>
+          <title>Concise Data Definition Language (CDDL): A Notational Convention to Express Concise Binary Object Representation (CBOR) and JSON Data Structures</title>
+          <author initials="H." surname="Birkholz" fullname="Henk Birkholz"/>
+          <author initials="C." surname="Vigano" fullname="Carsten Vigano"/>
+          <author initials="C." surname="Bormann" fullname="Carsten Bormann"/>
+          <date year="2019" month="January"/>
+        </front>
+        <seriesInfo name="RFC" value="8610"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8610"/>
+      </reference>
+      <reference anchor="RFC3339" target="https://www.rfc-editor.org/info/rfc3339">
+        <front>
+          <title>Date and Time on the Internet: Timestamps</title>
+          <author initials="G." surname="Klyne" fullname="Graham Klyne"/>
+          <author initials="C." surname="Newman" fullname="Chris Newman"/>
+          <date year="2002" month="July"/>
+        </front>
+        <seriesInfo name="RFC" value="3339"/>
+        <seriesInfo name="DOI" value="10.17487/RFC3339"/>
+      </reference>
+      <reference anchor="RFC6234" target="https://www.rfc-editor.org/info/rfc6234">
+        <front>
+          <title>US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)</title>
+          <author initials="D. E." surname="Eastlake 3rd" fullname="Donald E. Eastlake 3rd"/>
+          <author initials="T." surname="Hansen" fullname="Tony Hansen"/>
+          <date year="2011" month="May"/>
+        </front>
+        <seriesInfo name="RFC" value="6234"/>
+        <seriesInfo name="DOI" value="10.17487/RFC6234"/>
+      </reference>
+      <reference anchor="UNICODE-NORM" target="https://www.unicode.org/reports/tr15/">
+        <front>
+          <title>Unicode Normalization Forms</title>
+          <author><organization>The Unicode Consortium</organization></author>
+          <date year="2025" month="August"/>
+        </front>
+        <seriesInfo name="Unicode Standard Annex" value="15"/>
+      </reference>
+      <reference anchor="EFFECT-ACK-V1" target="https://www.ietf.org/archive/id/draft-lohmann-qikvrt-effect-ack-03.txt">
+        <front>
+          <title>QIK-VRT Effect Acknowledgement: Separating Receipt from Authorization for Downstream Effect</title>
+          <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"/>
+          <date year="2026" month="August"/>
+        </front>
+        <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-03"/>
+      </reference>
+    </references>
+    <section anchor="change-log">
+      <name>Change Log</name>
+      <t>Revision -00 defines the initial EAP-LCTP external evidence profile.  It makes the receiver's local change time explicit as QIK-VRT operational Eigenzeit, uses local_change_index in the profile object, and names the inverse authenticated source-order relation NEGATIVE_INFORMATION_DIRECTION.  It intentionally introduces no modification to the base protocol's version-1 wire record, state set, DONE predicate, ordinary-release rule, or IANA considerations.</t>
+    </section>
+  </back>
+</rfc>

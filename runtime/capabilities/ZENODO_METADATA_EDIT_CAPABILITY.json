@@ -1,0 +1,87 @@
+{
+  "schema": "qikvrt_runtime_capability_v5",
+  "capability": "zenodo-published-metadata-edit-only",
+  "profile": "publication",
+  "implementation": "tools/qikvrt_zenodo_metadata_edit.py",
+  "reuse_before_create_decision": {
+    "existing_generic_publisher": "tools/qikvrt_zenodo_publish.py only starts proof-bearing new-record publication and its completion path prepares an exact uploaded fileset",
+    "existing_shared_client": "tools/qikvrt_zenodo_actions.py prepare_draft deliberately deletes inherited files before upload and therefore cannot be called for a metadata-only invariant",
+    "selected_reuse": "Import the existing validation, canonical authorization, annotated create-only consumption-ref, secret handling, HTTP origin validation, file redownload and atomic evidence primitives; isolate only the edit/PUT/republish state machine so the new path contains no file mutation call"
+  },
+  "reused_authorities": [
+    "tools/qikvrt_zenodo_actions.py",
+    "tools/qikvrt_zenodo_publish.py",
+    "tools/qikvrt_zenodo_machine_proof.py",
+    "policy/zenodo-machine-proof-policy-v2.json",
+    "policy/qikvrt-prepublication-return-receipt-v2.schema.json"
+  ],
+  "manifest_schema": "qikvrt_zenodo_published_metadata_edit_manifest_v1",
+  "manifest_schema_path": "policy/qikvrt-zenodo-published-metadata-edit-manifest-v1.schema.json",
+  "machine_proof_schema": "qikvrt_zenodo_metadata_edit_machine_proof_v1",
+  "owner_authorization_schema": "qikvrt_zenodo_metadata_edit_owner_authorization_v1",
+  "evidence_schema": "qikvrt_zenodo_metadata_edit_evidence_v1",
+  "invocation": "python -B tools/qikvrt_zenodo_metadata_edit.py --manifest <repository-relative-manifest.json>",
+  "workflow_binding": "none; an exact candidate and separate canonical authorization are required before any workflow may invoke this capability",
+  "scope": {
+    "existing_published_record_only": true,
+    "allowed_metadata_fields": [
+      "description",
+      "keywords",
+      "notes",
+      "related_identifiers"
+    ],
+    "record_creation": false,
+    "version_creation": false,
+    "file_upload": false,
+    "file_delete": false,
+    "title_change": false,
+    "doi_change": false,
+    "concept_change": false
+  },
+  "trigger_contract": "The repository candidate binds the exact public before state, ETag, revision, public-metadata response digest, metadata before/after payloads, immutable file inventory, metadata-specific machine proof, v2 prepublication return receipt, and a canonical candidate-specific AUTHORIZE_EXACT_UPLOAD decision.",
+  "credential": {
+    "environment_variables": [
+      "ZENODO_ACCESS_TOKEN",
+      "GITHUB_TOKEN"
+    ],
+    "storage": "GitHub Actions secrets only",
+    "cacheable": false
+  },
+  "hard_gates": [
+    "EXISTING_RECORD_DOI_CONCEPT_EXACT",
+    "BEFORE_ETAG_REVISION_AND_PUBLIC_METADATA_SHA256_EXACT",
+    "BEFORE_FILES_BYTE_REDOWNLOADED_EXACT",
+    "CHANGED_METADATA_FIELDS_ALLOWLISTED",
+    "TITLE_AND_IDENTITY_FIELDS_UNCHANGED",
+    "METADATA_MACHINE_PROOF_COMPLETE",
+    "CANDIDATE_SPECIFIC_PREPUBLICATION_RETURN_COMPLETE",
+    "CANONICAL_OWNER_DECISION_EXACT",
+    "GLOBAL_GIT_CONSUMPTION_REF_CREATED_ONCE",
+    "SECOND_BEFORE_GATE_AFTER_AUTHORIZATION_CONSUMPTION",
+    "NO_FILE_MUTATION_ENDPOINT_USED",
+    "AFTER_REVISION_EXACT_AND_ETAG_CHANGED",
+    "AFTER_METADATA_EXACT",
+    "AFTER_FILES_BYTE_REDOWNLOADED_EXACT",
+    "PUBLIC_EVIDENCE_PERSISTED"
+  ],
+  "effect_sequence": [
+    "READ_ONLY_PUBLIC_BEFORE_GATE",
+    "CREATE_ONLY_REMOTE_GIT_AUTHORIZATION_CONSUMPTION_REF",
+    "PERSIST_LOCAL_CONSUMPTION_RECEIPT",
+    "READ_ONLY_SECOND_BEFORE_GATE",
+    "OPEN_EXISTING_RECORD_FOR_EDIT",
+    "PUT_METADATA_ONLY",
+    "REPUBLISH_SAME_RECORD",
+    "PUBLIC_AFTER_GATE",
+    "BYTE_EXACT_FILE_REDOWNLOAD",
+    "PERSIST_FINAL_EVIDENCE"
+  ],
+  "recovery": "Final public_verified evidence is read-only reverified. Any intermediate consumed evidence, an already-existing exact consumption ref without local final evidence, or a concurrent edit conflict blocks automatic retry and requires explicit remote reconciliation.",
+  "rollback": "No destructive rollback is attempted. If the exact after state is not publicly verified, EFFECT_ACK_DONE is not claimed; a separately reviewed correction and authorization are required.",
+  "effect_boundary": "Only phase public_verified with the same record/DOI/concept, exact after metadata, changed ETag and revision, and byte-exact unchanged files may set effect_ack_done=true.",
+  "tests": [
+    "tests/test_qikvrt_zenodo_metadata_edit.py"
+  ],
+  "rights_holder": "Ingolf Lohmann",
+  "license": "Implementation files declare their software license; this capability description is CC-BY-NC-ND-4.0"
+}

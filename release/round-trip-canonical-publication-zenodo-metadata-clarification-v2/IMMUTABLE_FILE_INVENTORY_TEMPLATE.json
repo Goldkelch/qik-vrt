@@ -1,0 +1,53 @@
+{
+  "schema": "qikvrt_zenodo_immutable_file_inventory_template_v1",
+  "state": "TEMPLATE_NOT_EVIDENCE_NOT_EXECUTABLE",
+  "purpose": "Specify the fresh public immutable-file inventory and byte-redownload verification needed for a metadata-only edit.",
+  "target": {
+    "record_id": 21888130,
+    "record_url": "https://zenodo.org/records/21888130"
+  },
+  "fresh_inventory_required": {
+    "input_path": "release/round-trip-canonical-publication-zenodo-metadata-clarification-v2/FRESH_PUBLIC_RECORD_CAPTURE.json",
+    "source_json_pointer": "/files",
+    "entry_schema": {
+      "required_fields": [
+        "name",
+        "size",
+        "md5",
+        "sha256"
+      ],
+      "ordering": "NAME_ASCENDING",
+      "duplicate_names": "REJECT",
+      "server_listing_and_each_download_must_match": true
+    },
+    "redownload_verification": {
+      "method": "GET_EACH_PUBLIC_FILE_DOWNLOAD_URL",
+      "compare": [
+        "downloaded_byte_length_equals_size",
+        "downloaded_md5_equals_md5",
+        "downloaded_sha256_equals_sha256"
+      ],
+      "failure_action": "BLOCK"
+    },
+    "future_materialization": {
+      "path": "release/round-trip-canonical-publication-zenodo-metadata-clarification-v2/IMMUTABLE_FILE_INVENTORY.json",
+      "entry_count": null,
+      "total_bytes": null,
+      "canonical_inventory_sha256": null,
+      "entries": []
+    }
+  },
+  "historical_cross_check_not_usable_for_execution": {
+    "source_path": "release/round-trip-canonical-publication-zenodo-authorization-v2/zenodo-publication.json",
+    "file_count": 54,
+    "total_bytes": 66147275,
+    "aggregate_sha256": "8db8780bff6644b6b895afc6924393c977c14ef649449510d4d523ecd6993ce1",
+    "reason": "This is a prior public-verification receipt, not a substitute for a fresh listing and redownload before a new effect."
+  },
+  "external_effects": {
+    "fresh_file_listing_read": false,
+    "file_redownload_performed": false,
+    "zenodo_metadata_edit": "NOT_EXECUTED",
+    "file_mutation": "NOT_EXECUTED"
+  }
+}

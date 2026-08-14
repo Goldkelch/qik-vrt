@@ -1,0 +1,896 @@
+
+
+
+
+Network Working Group                                         I. Lohmann
+Internet-Draft                                    Independent Researcher
+Intended status: Experimental                             12 August 2026
+Expires: 13 February 2027
+
+
+Local Change-Time Provenance Profile for QIK-VRT Effect Acknowledgement
+               draft-lohmann-qikvrt-local-change-time-00
+
+Abstract
+
+   This document specifies the EAP Local Change-Time Provenance Profile
+   (EAP-LCTP), an external evidence profile for QIK-VRT Effect
+   Acknowledgement (EFFECT_ACK) version 1.  The profile allows an
+   evaluator to authenticate and compare a source-order marker
+   associated with an immutable source event against the local change
+   order of one designated receiver.
+
+   In QIK-VRT terminology, the receiver's strictly increasing local
+   change order is its operational Eigenzeit.  This is an operational
+   state-change ordering, not a claim that the value is a relativistic
+   metric proper time.  EAP-LCTP defines NEGATIVE_INFORMATION_DIRECTION
+   for the limited case in which later effective local change refers to
+   an earlier authenticated marker in the same comparable source-order
+   domain.  The classification is a statement about two evidence orders.
+   It is not a statement that a signal travelled backward, that a past
+   event changed, that content is true, or that a sender had a
+   particular intent.
+
+   The profile is deliberately external to the closed EFFECT_ACK
+   version-1 JSON record.  It is bound through the existing evidence-
+   reference and policy mechanisms and does not change any version-1
+   wire field, state, DONE predicate, authorization rule, or IANA
+   registry.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 1]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 13 February 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.1.  Goals . . . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.2.  Non-Goals . . . . . . . . . . . . . . . . . . . . . . . .   4
+   2.  Conventions and Terminology . . . . . . . . . . . . . . . . .   4
+   3.  Architecture and Compatibility  . . . . . . . . . . . . . . .   5
+   4.  Profile Evidence Object . . . . . . . . . . . . . . . . . . .   6
+     4.1.  Assertion and Commitment Projections  . . . . . . . . . .   8
+   5.  Reference Classification  . . . . . . . . . . . . . . . . . .   8
+   6.  Profile CDDL  . . . . . . . . . . . . . . . . . . . . . . . .   9
+   7.  Binding to EFFECT_ACK Version 1 . . . . . . . . . . . . . . .  10
+   8.  Conformance Requirements  . . . . . . . . . . . . . . . . . .  11
+     8.1.  Profile Producer  . . . . . . . . . . . . . . . . . . . .  11
+     8.2.  Profile Verifier  . . . . . . . . . . . . . . . . . . . .  11
+     8.3.  Base-Protocol Deployment  . . . . . . . . . . . . . . . .  11
+   9.  Test Vectors  . . . . . . . . . . . . . . . . . . . . . . . .  12
+   10. Security Considerations . . . . . . . . . . . . . . . . . . .  13
+   11. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  14
+   12. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  14
+   13. Implementation Status . . . . . . . . . . . . . . . . . . . .  14
+   14. Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  15
+   15. Normative References  . . . . . . . . . . . . . . . . . . . .  15
+   Appendix A.  Change Log . . . . . . . . . . . . . . . . . . . . .  16
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  16
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 2]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+1.  Introduction
+
+   An effect-control system often needs more than evidence of receipt.
+   It can also need to determine which authenticated source event an
+   evidence object describes, whether two source-order markers are
+   comparable, and whether locally received evidence arrived in a
+   different order from that source reference.
+
+   QIK-VRT EFFECT_ACK version 1 separates transport receipt from
+   authorization for a downstream effect.  Its closed record contains
+   generic evidence digests and a policy binding, rather than a field
+   for every possible evidence profile.  This document defines one such
+   profile.  It is designed so that a deployment can require and
+   validate local-change-time provenance evidence without changing the
+   EFFECT_ACK version-1 wire format.
+
+   The profile compares two orderings for one comparison: source order
+   and receiver local change order.  A source-order marker is not
+   presumed to be a globally synchronized clock reading.  It is an
+   authenticated, deployment-scoped ordering value for a named source-
+   order domain.  A receiver local_change_index is not presumed to
+   establish a universal order among receivers.  It is a strictly
+   increasing local sequence of effective state changes for one receiver
+   identity.
+
+   The term NEGATIVE_INFORMATION_DIRECTION is intentionally operational.
+   It means only that the relation defined in Section 5 has been
+   validated: local_change_index increases while the comparable
+   authenticated source-order marker decreases.  The term neither
+   introduces a new physical theory nor changes the causal direction of
+   a network delivery.
+
+   This profile does not encode coordinate-time assignments between
+   spacelike-separated physical events.  If a deployment separately
+   assigns a source observer's local-present event to another observer's
+   coordinate future, that assignment is not a causal-future relation
+   and does not make a source-bound object available before a future-
+   directed delivery path reaches its receiver.
+
+1.1.  Goals
+
+   *  Bind a source event, a source-order marker, and the immutable
+      object described by that event to authenticated evidence.
+
+   *  Bind a receiver identity and a strictly increasing local change
+      index to the same evidence comparison.
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 3]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   *  Define deterministic FORWARD_INFORMATION_DIRECTION,
+      NEGATIVE_INFORMATION_DIRECTION, and INDETERMINATE classifications.
+
+   *  Permit a deployment policy to require the profile using the
+      existing EFFECT_ACK version-1 evidence and policy bindings.
+
+   *  State security, privacy, retention, and non-claim boundaries
+      explicitly.
+
+1.2.  Non-Goals
+
+   *  This profile does not modify the closed EFFECT_ACK version-1
+      record.
+
+   *  This profile does not authorize an effect merely because a
+      classification is present.
+
+   *  This profile does not establish the semantic truth, legality,
+      safety, or completeness of a payload or its evidence.
+
+   *  This profile does not provide a global clock, global total order,
+      or synchronization protocol.
+
+   *  This profile does not establish backward signalling, retroactive
+      alteration of an event, superluminal communication, physical or
+      ontic retrocausality, or sender intent.
+
+   *  This profile does not identify a natural person solely from an
+      identifier, key, signature, or receipt record.
+
+2.  Conventions and Terminology
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Base protocol  QIK-VRT EFFECT_ACK version 1, as specified by
+      [EFFECT-ACK-V1].
+
+   Profile evidence object  An immutable EAP-LCTP JSON object and its
+      authenticated envelopes or references.  Its digest can occur in
+      the base protocol's evidence-reference sets.
+
+   Source event  An event asserted by an authenticated source principal
+      and identified by source_event_id within a source-order domain.
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 4]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   Source-order domain  A named domain whose authority defines the
+      comparability and monotonic interpretation of its source-order
+      markers.
+
+   Source-order marker  A non-negative I-JSON safe integer asserted for
+      a source event by an authorized source principal.  It is
+      comparable only within the same authenticated source-order domain.
+
+   Receiver  The designated principal or component that produces an
+      authenticated local observation of an evidence object.
+
+   Operational Eigenzeit / local change time  In this profile, the
+      strictly increasing order of effective state changes of one named
+      receiver.  The wire representation is local_change_index, a
+      positive I-JSON safe integer.  It orders receiver-local evidence
+      changes only and is not a global time coordinate or a metric
+      proper-time assertion.
+
+   Comparison baseline  A previously authenticated profile evidence
+      object for the same receiver that is named by digest in the
+      current evidence object.
+
+   Reference classification  The deterministic result
+      FORWARD_INFORMATION_DIRECTION, NEGATIVE_INFORMATION_DIRECTION, or
+      INDETERMINATE derived from a baseline and a current observation.
+
+3.  Architecture and Compatibility
+
+   An EAP-LCTP deployment contains at least a source authority, a
+   receiver, an evidence store or transport, a profile verifier, an
+   EFFECT_ACK evaluator, and an effect executor.  The source authority
+   and receiver can be distinct components or may be the same component
+   in a local deployment.  Each role MUST be identified in the
+   deployment security profile.
+
+   EAP-LCTP is an external evidence profile.  The base protocol remains
+   a closed version-1 record with its existing five states and DONE-only
+   ordinary-release rule.  A deployment MUST NOT add EAP-LCTP members to
+   a version-1 EFFECT_ACK record.  It MUST instead bind the exact
+   profile evidence object through existing evidence_refs,
+   required_evidence_refs, policy_id, policy_version, and policy_hash
+   mechanisms.
+
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 5]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   A deployment that requires EAP-LCTP for a proposed effect MUST
+   describe that requirement in its immutable policy descriptor.  If the
+   required profile evidence is unavailable, malformed, unauthenticated,
+   non-comparable, stale under local policy, or fails rederivation, the
+   evaluator MUST NOT treat the requirement as satisfied.  The base
+   protocol's existing state-selection and release rules determine the
+   resulting EFFECT_ACK state.
+
+   NEGATIVE_INFORMATION_DIRECTION is an evidence classification, not a
+   base-protocol state or decision.  A deployment policy MAY treat it as
+   a condition for additional review, isolation, blocking, or continued
+   evaluation.  It MUST NOT infer an ordinary release from the
+   classification alone.
+
+4.  Profile Evidence Object
+
+   A profile evidence object MUST be an I-JSON object as defined by
+   [RFC7493] and encoded as UTF-8 JSON as specified by [RFC8259],
+   without a byte-order mark.  Its canonical representation uses the
+   JSON Canonicalization Scheme (JCS) from [RFC8785] after Unicode NFC
+   normalization as specified by [UNICODE-NORM].  A digest identifier
+   uses SHA-256 as specified by [RFC6234] and has the form sha256:
+   followed by 64 lowercase hexadecimal characters.
+
+   The profile has version string eap-lctp-1.  A missing required
+   member, an unsupported profile version, duplicate normalized member
+   names, a floating-point number, or an integer outside the I-JSON
+   safe-integer range MUST cause profile validation to fail.  The
+   deployment MAY carry the object as application/json; this document
+   does not register a media type.
+
+   +=============================+====================================+
+   | Member                      | Purpose                            |
+   +=============================+====================================+
+   | profile_version             | Exactly eap-lctp-1.                |
+   +-----------------------------+------------------------------------+
+   | evidence_id                 | Locally unique identifier for this |
+   |                             | evidence object.                   |
+   +-----------------------------+------------------------------------+
+   | subject_digest              | Digest of the immutable object     |
+   |                             | described by the source event.     |
+   +-----------------------------+------------------------------------+
+   | source_order_domain         | Authenticated domain in which      |
+   |                             | source_order_marker is comparable. |
+   +-----------------------------+------------------------------------+
+   | source_event_id             | Identifier for the asserted source |
+   |                             | event.                             |
+   +-----------------------------+------------------------------------+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 6]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   | source_order_marker         | Non-negative I-JSON safe integer   |
+   |                             | within the named domain.           |
+   +-----------------------------+------------------------------------+
+   | source_principal            | Deployment-scoped identifier for   |
+   |                             | the source authority.              |
+   +-----------------------------+------------------------------------+
+   | source_assertion_digest     | Digest of the canonical source     |
+   |                             | assertion projection.              |
+   +-----------------------------+------------------------------------+
+   | source_authentication_ref   | Digest or authenticated reference  |
+   |                             | to evidence that validates the     |
+   |                             | source assertion.                  |
+   +-----------------------------+------------------------------------+
+   | receiver_id                 | Deployment-scoped identifier for   |
+   |                             | the receiver.                      |
+   +-----------------------------+------------------------------------+
+   | local_change_index          | Positive strictly increasing local |
+   |                             | change index for receiver_id; the  |
+   |                             | profile's operational Eigenzeit    |
+   |                             | representation.                    |
+   +-----------------------------+------------------------------------+
+   | receiver_assertion_digest   | Digest of the canonical receiver   |
+   |                             | observation projection.            |
+   +-----------------------------+------------------------------------+
+   | receiver_authentication_ref | Digest or authenticated reference  |
+   |                             | to evidence that validates the     |
+   |                             | receiver observation.              |
+   +-----------------------------+------------------------------------+
+   | baseline_evidence_digest    | Digest of a previous profile       |
+   |                             | evidence object, or null when no   |
+   |                             | comparison is made.                |
+   +-----------------------------+------------------------------------+
+   | classification              | FORWARD_INFORMATION_DIRECTION,     |
+   |                             | NEGATIVE_INFORMATION_DIRECTION, or |
+   |                             | INDETERMINATE.                     |
+   +-----------------------------+------------------------------------+
+   | provenance_commitment       | Digest of the canonical provenance |
+   |                             | commitment projection.             |
+   +-----------------------------+------------------------------------+
+   | evidence_refs               | Set-like array of additional exact |
+   |                             | evidence digests.                  |
+   +-----------------------------+------------------------------------+
+
+                Table 1: Required profile evidence members
+
+   Optional members MAY carry an RFC 3339 [RFC3339] receipt timestamp,
+   local transport context, key-discovery context, retention
+   information, or an application-defined review reason.  Optional
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 7]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   members MUST be included in the provenance commitment projection
+   unless the deployment profile explicitly lists the member as
+   uncommitted volatile telemetry.  A receiver timestamp is not required
+   for the classification and MUST NOT substitute for
+   local_change_index.
+
+4.1.  Assertion and Commitment Projections
+
+   The source assertion projection is the canonical object containing
+   profile_version, evidence_id, subject_digest, source_order_domain,
+   source_event_id, source_order_marker, and source_principal.  The
+   source_assertion_digest MUST equal the SHA-256 digest of that
+   projection.
+
+   The receiver observation projection is the canonical object
+   containing profile_version, evidence_id, source_assertion_digest,
+   receiver_id, local_change_index, and baseline_evidence_digest.  The
+   receiver_assertion_digest MUST equal the SHA-256 digest of that
+   projection.
+
+   The provenance commitment projection is the full profile evidence
+   object with provenance_commitment removed.  The provenance_commitment
+   MUST equal the SHA-256 digest of that projection.  A profile verifier
+   MUST validate all three digest projections before using the evidence
+   object.
+
+   The source_authentication_ref MUST resolve, under the deployment
+   security profile, to an authenticated assertion over the source
+   assertion digest by a principal authorized for source_principal and
+   source_order_domain.  The receiver_authentication_ref MUST similarly
+   resolve to an authenticated assertion over the receiver assertion
+   digest by a principal authorized for receiver_id.  A digest,
+   signature, certificate, or key identifier does not by itself
+   establish the truth of the described payload or the identity of a
+   natural person.
+
+5.  Reference Classification
+
+   Let b be the validated baseline evidence object and c be the
+   validated current evidence object.  The verifier MUST only compare b
+   and c when all of the following conditions are true:
+
+   1.  b.receiver_id equals c.receiver_id;
+
+   2.  b.local_change_index is strictly less than c.local_change_index;
+
+   3.  b.source_order_domain equals c.source_order_domain;
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 8]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   4.  both source assertions and both receiver observations
+       authenticate successfully under the deployment security profile;
+       and
+
+   5.  the baseline digest in c equals the canonical evidence-object
+       digest of b.
+
+   If any condition is false, c.classification MUST be INDETERMINATE.
+   If all conditions are true, the verifier MUST use the following
+   algorithm and MUST reject a producer-supplied classification that
+   differs from its rederived result:
+
+   if c.source_order_marker > b.source_order_marker:
+       classification = FORWARD_INFORMATION_DIRECTION
+   else if c.source_order_marker < b.source_order_marker:
+       classification = NEGATIVE_INFORMATION_DIRECTION
+   else:
+       classification = INDETERMINATE
+
+   NEGATIVE_INFORMATION_DIRECTION therefore means that, for one receiver
+   and one comparable source-order domain, later local change refers to
+   an earlier authenticated source-order marker than the designated
+   baseline.  Equivalently, the validated comparison has delta
+   local_change_index greater than zero and delta source_order_marker
+   less than zero.  It does not mean that c was received before it was
+   sent, that either source event was changed, or that one event
+   physically caused another event in a reverse direction.
+
+   A receiver MUST assign local_change_index strictly monotonically for
+   every profile evidence object it emits.  It MUST NOT reuse a
+   local_change_index for different evidence_id values.  A deployment
+   requiring detection of deletion or rewriting MUST retain an
+   authenticated append-only anchor or equivalent independent commitment
+   for its sequence; local monotonicity alone does not detect a complete
+   rewrite by a compromised receiver.
+
+6.  Profile CDDL
+
+   This section defines the JSON member shape using CDDL [RFC8610].  The
+   authentication, canonicalization, and comparison predicates are
+   specified in the main text.
+
+
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027                [Page 9]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   eap-lctp-evidence = {
+     profile_version: "eap-lctp-1",
+     evidence_id: bounded-id,
+     subject_digest: sha256-id,
+     source_order_domain: bounded-id,
+     source_event_id: bounded-id,
+     source_order_marker: source-marker,
+     source_principal: bounded-id,
+     source_assertion_digest: sha256-id,
+     source_authentication_ref: sha256-id,
+     receiver_id: bounded-id,
+     local_change_index: local-change-index,
+     receiver_assertion_digest: sha256-id,
+     receiver_authentication_ref: sha256-id,
+     baseline_evidence_digest: sha256-id / null,
+     classification: reference-classification,
+     provenance_commitment: sha256-id,
+     evidence_refs: digest-set,
+     * tstr => any,
+   }
+
+   reference-classification =
+       "FORWARD_INFORMATION_DIRECTION"
+     / "NEGATIVE_INFORMATION_DIRECTION"
+     / "INDETERMINATE"
+
+   sha256-id = tstr .regexp "^sha256:[0-9a-f]{64}$"
+   source-marker = 0..9007199254740991
+   local-change-index = 1..9007199254740991
+   bounded-id = tstr
+   digest-set = [*128 sha256-id]
+
+   The open tail in the CDDL permits application-specific optional
+   members.  A deployment that requires a closed profile object MUST
+   publish that stricter policy.  An optional member MUST NOT alter the
+   classification algorithm unless a future profile version explicitly
+   defines its effect.
+
+7.  Binding to EFFECT_ACK Version 1
+
+   A base-protocol evaluator that requires this profile MUST place the
+   digest of every required EAP-LCTP evidence object in both
+   evidence_refs and required_evidence_refs of its EFFECT_ACK version-1
+   record.  The policy descriptor identified by policy_id,
+   policy_version, and policy_hash MUST identify the accepted EAP-LCTP
+   version, authentication methods, principal authorization rules,
+   evidence retrieval method, freshness policy, and the required
+   response to each classification.
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 10]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   The base-protocol consumer MUST validate the referenced profile
+   evidence or rely on an authenticated evaluator authorized by the
+   deployment to make that assertion.  It MUST still independently apply
+   every base-protocol release condition.  EAP-LCTP neither replaces
+   origin_checked, context_checked, semantics_reconstructed,
+   risk_classified, nor any other base-protocol condition.
+
+   In particular, a NEGATIVE_INFORMATION_DIRECTION classification MUST
+   NOT map directly to EFFECT_ACK_DONE.  It MAY cause a policy-specific
+   additional check or state selection, but the policy and base
+   protocol, not this classification alone, control any downstream
+   effect.
+
+8.  Conformance Requirements
+
+8.1.  Profile Producer
+
+   A conforming producer MUST create canonical source and receiver
+   assertion projections, bind them to authorized authentication
+   evidence, calculate the digest projections, select the classification
+   according to Section 5, and calculate provenance_commitment.  It MUST
+   NOT emit FORWARD_INFORMATION_DIRECTION or
+   NEGATIVE_INFORMATION_DIRECTION without a valid baseline and all
+   required authenticated order comparisons.
+
+8.2.  Profile Verifier
+
+   A conforming verifier MUST parse the I-JSON object, validate the CDDL
+   shape and bounds, verify all digest projections, retrieve and
+   validate the source and receiver authentication references, authorize
+   the relevant principals, validate the baseline, rederive
+   classification, and apply local freshness and replay policy.  It MUST
+   treat a missing, unauthenticated, malformed, stale, or non-comparable
+   comparison as not satisfying a policy requirement.
+
+8.3.  Base-Protocol Deployment
+
+   A base-protocol deployment claiming to require EAP-LCTP MUST bind the
+   profile evidence through the existing version-1 policy and evidence
+   mechanisms.  It MUST NOT claim that the profile changes the version-1
+   wire format.  It MUST document the effect of each classification and
+   the fail-closed behavior for unavailable or invalid profile evidence.
+
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 11]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+9.  Test Vectors
+
+   The following vectors show the classification relation.  Values
+   marked authenticated are fixtures for a verifier whose
+   authentication-profile test double accepts the named principals.
+   They are not cryptographic key material and do not demonstrate a
+   production signature scheme.
+
+   +========+===========+============+================================+
+   | Vector | Baseline  | Current    | Expected                       |
+   +========+===========+============+================================+
+   | V1     | receiver  | receiver   | NEGATIVE_INFORMATION_DIRECTION |
+   |        | r, local  | r, local   |                                |
+   |        | change 7, | change 8,  |                                |
+   |        | domain d, | domain d,  |                                |
+   |        | marker 20 | marker 10  |                                |
+   +--------+-----------+------------+--------------------------------+
+   | V2     | receiver  | receiver   | FORWARD_INFORMATION_DIRECTION  |
+   |        | r, local  | r, local   |                                |
+   |        | change 7, | change 8,  |                                |
+   |        | domain d, | domain d,  |                                |
+   |        | marker 10 | marker 20  |                                |
+   +--------+-----------+------------+--------------------------------+
+   | V3     | receiver  | receiver   | INDETERMINATE                  |
+   |        | r, local  | r, local   |                                |
+   |        | change 7, | change 8,  |                                |
+   |        | domain    | domain d2, |                                |
+   |        | d1,       | marker 10  |                                |
+   |        | marker 20 |            |                                |
+   +--------+-----------+------------+--------------------------------+
+   | V4     | receiver  | receiver   | INDETERMINATE                  |
+   |        | r, local  | r, local   |                                |
+   |        | change 7, | change 8,  |                                |
+   |        | domain d, | domain d,  |                                |
+   |        | marker 20 | marker 10; |                                |
+   |        |           | source     |                                |
+   |        |           | assertion  |                                |
+   |        |           | fails      |                                |
+   +--------+-----------+------------+--------------------------------+
+   | V5     | receiver  | receiver   | INDETERMINATE                  |
+   |        | r, local  | r, local   |                                |
+   |        | change 7, | change 7,  |                                |
+   |        | domain d, | domain d,  |                                |
+   |        | marker 20 | marker 10  |                                |
+   +--------+-----------+------------+--------------------------------+
+
+                     Table 2: Classification vectors
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 12]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   A machine-readable companion vector set is part of the local staging
+   package.  A production conformance suite MUST additionally test
+   duplicate names, canonicalization failures, invalid digests, forged
+   or unauthorized assertions, replay, local-change-index reuse, missing
+   baselines, equal source-order markers, stale evidence, and policy
+   binding to the base protocol.
+
+10.  Security Considerations
+
+   An attacker can attempt to forge a source-order marker, substitute a
+   baseline, reorder local observations, replay an old valid evidence
+   object, use incomparable domains as if they were comparable,
+   compromise a source or receiver key, or bypass the EFFECT_ACK gate.
+   A profile deployment MUST authenticate both source and receiver
+   assertions and MUST authorize the principals that make them.
+
+   Hash identifiers provide content binding under the security
+   assumptions of SHA-256.  They do not authenticate a principal,
+   establish freshness, demonstrate source honesty, or prevent a
+   complete rewrite of an unanchored evidence history.  Deployments
+   requiring rewrite detection MUST retain an authenticated independent
+   anchor.  Deployments SHOULD bind profile assertions to an
+   authenticated session or trusted evidence store to resist
+   substitution and replay.
+
+   Source-order markers can be abused when a source authority is
+   compromised or has an ambiguous domain definition.  A deployment MUST
+   define who can authorize a source-order domain, how source-order
+   markers are generated, and whether markers are strictly monotonic,
+   merely monotonic, or allocated in ranges.  A verifier MUST NOT
+   compare markers from different domains or from unauthenticated domain
+   authorities.
+
+   NEGATIVE_INFORMATION_DIRECTION can be used as a forensic or review
+   signal.  It MUST NOT be treated as evidence of malicious intent,
+   deception, causal influence, a message from the future, or a physical
+   anomaly without additional policy-defined evidence.  A correct
+   classification only verifies the bound order relation under the
+   stated authentication and retention assumptions.
+
+   Profile validation and evidence retrieval can create denial-of-
+   service opportunities.  Implementations MUST bound object size,
+   identifier size, recursion, signature-validation work, baseline
+   retrieval, cache growth, and the number of candidate baselines.
+   Failure to complete validation within a policy-defined budget MUST
+   fail the profile requirement rather than permit an effect.
+
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 13]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+11.  Privacy Considerations
+
+   Source and receiver identifiers, local change indices, timestamps,
+   source-event identifiers, and evidence references can disclose system
+   topology, user behavior, commercial activity, location, or sensitive
+   decision timing.  A cryptographic identifier is not anonymization,
+   and a digest can reveal low-entropy data through guessing.
+
+   Deployments SHOULD use scoped pseudonymous identifiers, access-
+   controlled evidence stores, data minimization, retention limits, and
+   access logging.  They SHOULD avoid placing personal data in
+   source_event_id, evidence_id, or optional reason fields.  A
+   deployment MUST document who can retrieve evidence, how a subject can
+   request redaction where applicable, and how a redaction preserves the
+   fact that a verification limitation now exists.
+
+   Local change indices may enable correlation across contexts.
+   Deployments SHOULD scope receiver_id and local_change_index to the
+   smallest domain needed for the stated effect-control purpose.  They
+   MUST NOT publish a global change history merely because the profile
+   can represent one.
+
+12.  IANA Considerations
+
+   This document requests no IANA actions.  EAP-LCTP is an external
+   evidence profile carried through existing EFFECT_ACK version-1
+   evidence references.  It defines no new base-protocol wire version,
+   state, media type, registry, or protocol number.
+
+13.  Implementation Status
+
+   This section is to be removed before publishing as an RFC.
+
+   This section is non-normative.
+
+   At the time this local candidate was prepared, the profile has a
+   machine-readable classification-vector set and a small local
+   verifier.  It has not been submitted to the IETF Datatracker, has no
+   IETF consensus or endorsement, and has not been shown interoperable
+   between independently developed implementations.  The base protocol's
+   public individual Internet-Draft status does not confer a standard
+   status on this companion candidate.
+
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 14]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+14.  Acknowledgements
+
+   The research direction, requested scope, and terminology were
+   provided by Ingolf Lohmann.  Artificial-intelligence-assisted
+   drafting and local consistency checks supported this candidate.  This
+   acknowledgement does not assign standards status or substitute for
+   author and community review.
+
+15.  Normative References
+
+   [EFFECT-ACK-V1]
+              Lohmann, I., "QIK-VRT Effect Acknowledgement: Separating
+              Receipt from Authorization for Downstream Effect", Work in
+              Progress, Internet-Draft, draft-lohmann-qikvrt-effect-ack-
+              03, August 2026, <https://www.ietf.org/archive/id/draft-
+              lohmann-qikvrt-effect-ack-03.txt>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3339]  Klyne, G. and C. Newman, "Date and Time on the Internet:
+              Timestamps", RFC 3339, DOI 10.17487/RFC3339, July 2002,
+              <https://www.rfc-editor.org/info/rfc3339>.
+
+   [RFC6234]  Eastlake 3rd, D. E. and T. Hansen, "US Secure Hash
+              Algorithms (SHA and SHA-based HMAC and HKDF)", RFC 6234,
+              DOI 10.17487/RFC6234, May 2011,
+              <https://www.rfc-editor.org/info/rfc6234>.
+
+   [RFC7493]  Bray, T., Ed., "The I-JSON Message Format", RFC 7493,
+              DOI 10.17487/RFC7493, March 2015,
+              <https://www.rfc-editor.org/info/rfc7493>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC8259]  Bray, T., Ed., "The JavaScript Object Notation (JSON) Data
+              Interchange Format", STD 90, RFC 8259,
+              DOI 10.17487/RFC8259, December 2017,
+              <https://www.rfc-editor.org/info/rfc8259>.
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 15]
+
+Internet-Draft                  EAP-LCTP                     August 2026
+
+
+   [RFC8610]  Birkholz, H., Vigano, C., and C. Bormann, "Concise Data
+              Definition Language (CDDL): A Notational Convention to
+              Express Concise Binary Object Representation (CBOR) and
+              JSON Data Structures", RFC 8610, DOI 10.17487/RFC8610,
+              January 2019, <https://www.rfc-editor.org/info/rfc8610>.
+
+   [RFC8785]  Rundgren, A., Jordan, B., and S. Erdtman, "JSON
+              Canonicalization Scheme (JCS)", RFC 8785,
+              DOI 10.17487/RFC8785, June 2020,
+              <https://www.rfc-editor.org/info/rfc8785>.
+
+   [UNICODE-NORM]
+              The Unicode Consortium, "Unicode Normalization Forms",
+              Unicode Standard Annex 15, August 2025,
+              <https://www.unicode.org/reports/tr15/>.
+
+Appendix A.  Change Log
+
+   Revision -00 defines the initial EAP-LCTP external evidence profile.
+   It makes the receiver's local change time explicit as QIK-VRT
+   operational Eigenzeit, uses local_change_index in the profile object,
+   and names the inverse authenticated source-order relation
+   NEGATIVE_INFORMATION_DIRECTION.  It intentionally introduces no
+   modification to the base protocol's version-1 wire record, state set,
+   DONE predicate, ordinary-release rule, or IANA considerations.
+
+Author's Address
+
+   Ingolf Lohmann
+   Independent Researcher
+   Email: ingolf.lohmann@live.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lohmann                 Expires 13 February 2027               [Page 16]

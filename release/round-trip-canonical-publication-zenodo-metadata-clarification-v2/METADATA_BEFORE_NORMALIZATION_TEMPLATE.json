@@ -1,0 +1,70 @@
+{
+  "schema": "qikvrt_zenodo_metadata_before_normalization_template_v1",
+  "state": "TEMPLATE_NOT_EVIDENCE_NOT_EXECUTABLE",
+  "purpose": "Specify how fresh public record.metadata is copied into the exact metadata_before artifact for a same-DOI edit.",
+  "input_contract": {
+    "required_fresh_capture_path": "release/round-trip-canonical-publication-zenodo-metadata-clarification-v2/FRESH_PUBLIC_RECORD_CAPTURE.json",
+    "json_pointer": "/metadata",
+    "source_response_sha256": null,
+    "source_response_etag": null,
+    "source_record_revision": null
+  },
+  "normalization_rules": {
+    "copy_semantics": "COPY_CURRENT_PUBLIC_METADATA_EXACTLY_THEN_SERIALIZE_CANONICALLY",
+    "allowed_keys": [
+      "access_right",
+      "creators",
+      "description",
+      "keywords",
+      "language",
+      "license",
+      "notes",
+      "publication_date",
+      "publication_type",
+      "related_identifiers",
+      "title",
+      "upload_type",
+      "version"
+    ],
+    "required_keys": [
+      "access_right",
+      "creators",
+      "description",
+      "title",
+      "upload_type",
+      "version"
+    ],
+    "forbidden_keys": [
+      "prereserve_doi"
+    ],
+    "forbidden_key_action": "BLOCK_DO_NOT_SILENTLY_REMOVE_OR_REWRITE",
+    "immutability_check_before_after": [
+      "access_right",
+      "creators",
+      "language",
+      "license",
+      "publication_date",
+      "publication_type",
+      "title",
+      "upload_type",
+      "version"
+    ],
+    "permitted_changed_keys": [
+      "description",
+      "keywords",
+      "notes",
+      "related_identifiers"
+    ]
+  },
+  "future_materialization": {
+    "path": "release/round-trip-canonical-publication-zenodo-metadata-clarification-v2/METADATA_BEFORE.json",
+    "bytes": null,
+    "sha256": null,
+    "git_blob_sha": null,
+    "canonical_metadata_sha256": null
+  },
+  "external_effects": {
+    "metadata_before_materialized": false,
+    "zenodo_metadata_edit": "NOT_EXECUTED"
+  }
+}
