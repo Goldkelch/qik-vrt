@@ -20,13 +20,13 @@ record is available until future-directed delivery reaches the receiver.
 
 | Artifact | SHA-256 | Role |
 |---|---|---|
-| `arxiv-source.tar.gz` | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` | Minimal deterministic arXiv source archive (self-contained `main.tex` only). |
-| `main.pdf` | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` | 8-page rendering built from the frozen archive. |
-| `main.tex` | `e6e147cfe5a9d7dda7041797278a259f7d9b91fb810a7207b952fb2f2fbdfdc7` | Exact TeX source. |
+| `arxiv-source.tar.gz` | `5202c13e8a9e4934de0c09b7f238fc80073410c5d52ef231e0c05d035c00322a` | Minimal deterministic arXiv source archive (self-contained `main.tex` only). |
+| `main.pdf` | `943331e2297b9663b02471d51d9adcb277f191fafb1e9d15f8ef2ba63730b12c` | 8-page rendering built from the frozen archive. |
+| `main.tex` | `dfc5852e5986ab54b392acaddfe5b7a478e25b9589bd6d59eef035f51a1107cd` | Exact TeX source. |
 | `README.md` | `9025a2cfa090e21dd11840d17bd7e1d834beed006c62ed0bf5ef64fe5bbd561b` | Staging/source claim-scope guide; not an upload-archive member. |
 
 The rendered PDF was built twice using pdfLaTeX with
-`SOURCE_DATE_EPOCH=1786543200` and `FORCE_SOURCE_DATE=1`.  Rebuilding from a
+`SOURCE_DATE_EPOCH=1786665600` and `FORCE_SOURCE_DATE=1`.  Rebuilding from a
 fresh extraction of the exact compressed archive produced a byte-identical PDF.
 The visual-rendering receipt records the page-level check.
 

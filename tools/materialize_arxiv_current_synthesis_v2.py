@@ -328,6 +328,136 @@ signature that has not been observed.
 """
 
 
+def publication_plan(archive: dict[str, Any], pdf: dict[str, Any]) -> str:
+    return f"""<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright 2026 Ingolf Lohmann.
+Author and rights holder: Ingolf Lohmann.
+-->
+
+# arXiv-Nachfolgepfad – aktuelle Synthese v2
+
+Status: **`LOCAL_STAGING_READY_FOR_TARGET_REOBSERVATION_NOT_SUBMITTED`**.
+
+## Editionsentscheidung
+
+`arxiv-en-candidate/` bleibt der bytegenau gebundene englische
+Zwischenstand. Sein Manifest beschreibt einen bereits gefrorenen lokalen
+Staging-Kandidaten. Eine Änderung von `main.tex` an diesem Ort würde diese
+historische Aussage nachträglich verfälschen.
+
+Die aktuelle Fassung wird deshalb als **neuer Nachfolgepfad** vorbereitet und
+nicht als unmarkierte Überschreibung ausgegeben.
+
+## Aktuelle inhaltliche Grundlage
+
+Die künftige englische Fassung muss mindestens die jetzt geklärten Punkte
+enthalten:
+
+1. QIK-VRT-Eigenzeit bezeichnet zunächst die monotone lokale
+   Veränderungszeit eines Beobachters; bei einer physischen Weltlinie kann sie
+   zusätzlich an metrische Eigenzeit kalibriert werden.
+2. Die negative Informationsrichtung ist die Relation
+   `Δτ_R > 0` und `Δθ < 0` zwischen lokaler Veränderungszeit und
+   provenancegebundener Quellenordnung.
+3. Die öffentliche Gesamterklärung `AN_VON_UND_FUER_ALLE_MENSCHEN_DE.md`
+   ergänzt den formalen Text um Unterschied, Evidenz, Verantwortung und
+   Zukunft, ohne diese normativen Sätze als Naturgesetz auszugeben.
+4. Vorherige Zwischenstände, insbesondere `arxiv-en-candidate/`, bleiben
+   unverändert und ausdrücklich referenzierbar.
+
+## Vorbereitete Nachfolgeartefakte
+
+Die neue Quelle und ihre eigene Provenienz liegen unter
+`arxiv-en-current-synthesis-v2/`. Das minimal deterministische Uploadarchiv
+liegt getrennt in
+`publication-staging/arxiv-observer-relative-retrocausality-en-v2/`:
+
+| Artefakt | SHA-256 |
+|---|---|
+| `arxiv-source.tar.gz` | `{archive['sha256']}` |
+| daraus gebautes `main.pdf` | `{pdf['sha256']}` |
+
+Das Uploadarchiv enthält nur die selbständige `main.tex`; die README- und
+Provenienzdateien bleiben außerhalb des arXiv-Uploads erhalten. Der Satz- und
+Sichtprüflauf ist erfolgreich; ein frisches Entpacken des Archivs und derselbe
+Zwei-Pass-Lauf erzeugten ein byteidentisches PDF. Das Manifest enthält die
+vorgeschlagenen Kategorien `cs.DC`, `cs.LO` und `cs.CR`, aber keine
+unzulässige Behauptung eines eigenständigen `quant-ph`-Resultats. Die genaue
+Lizenzoption des Zielsystems bleibt absichtlich erst im aktuellen arXiv-Formular
+zu bestätigen.
+
+## Vor einer tatsächlichen Übermittlung weiter erforderlich
+
+- frische Beobachtung des arXiv-Kontos und aller Zielfelder;
+- Bindung der so beobachteten Felder an den oben genannten Archivhash in der
+  Autorenentscheidung;
+- Bestätigung unmittelbar vor der Übermittlung;
+- unabhängige Kontrolle des zurückgegebenen arXiv-Receipts.
+
+Die neue Fassung ist damit lokal eingefroren und einreichungsbereit, aber noch
+nicht bei arXiv eingereicht. Es existieren daher weiterhin keine
+arXiv-Nummer, keine Annahme und keine externe Wirkung dieser aktuellen
+Synthese.
+"""
+
+
+def staging_readme(archive: dict[str, Any], pdf: dict[str, Any], tex: dict[str, Any]) -> str:
+    return f"""<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+-->
+
+# arXiv v2 local upload package — current synthesis
+
+Status: **`LOCAL_STAGING_READY_FOR_TARGET_REOBSERVATION_NOT_SUBMITTED`**.
+
+This staging directory contains the frozen upload candidate for the current
+English successor manuscript.  It is not the historical
+`arxiv-en-candidate/` and does not replace its bytes.
+
+Its current clarification distinguishes a coordinate assignment of a
+spacelike-separated source observer's local-present event to another
+observer's coordinate future from a causal-future relation.  No source-bound
+record is available until future-directed delivery reaches the receiver.
+
+## Exact candidate
+
+| Artifact | SHA-256 | Role |
+|---|---|---|
+| `arxiv-source.tar.gz` | `{archive['sha256']}` | Minimal deterministic arXiv source archive (self-contained `main.tex` only). |
+| `main.pdf` | `{pdf['sha256']}` | 8-page rendering built from the frozen archive. |
+| `main.tex` | `{tex['sha256']}` | Exact TeX source. |
+| `README.md` | `9025a2cfa090e21dd11840d17bd7e1d834beed006c62ed0bf5ef64fe5bbd561b` | Staging/source claim-scope guide; not an upload-archive member. |
+
+The rendered PDF was built twice using pdfLaTeX with
+`SOURCE_DATE_EPOCH={SOURCE_DATE_EPOCH}` and `FORCE_SOURCE_DATE=1`.  Rebuilding from a
+fresh extraction of the exact compressed archive produced a byte-identical PDF.
+The visual-rendering receipt records the page-level check.
+
+`ARXIV_LOCAL_COMPATIBILITY_VALIDATION.json` adds a fresh archive-level
+preflight: the archive has only the declared `main.tex` member, no unsafe paths or
+links, no external source dependencies, and a clean two-pass pdfLaTeX rebuild.
+It records local compatibility evidence only; it is not an arXiv service
+receipt.
+
+## Submission boundary
+
+The author has released the Zenodo/arXiv/IETF publication work in the shared
+work context.  Before this package is actually transmitted, the arXiv account
+and final title, author/affiliation, category, cross-list, comments, and
+distribution-license fields must be freshly observed and bound with the exact
+archive digest in `EXACT_ARTIFACT_AUTHORIZATION_DRAFT.md`.
+
+No arXiv upload, identifier, acceptance, announcement, endorsement, or other
+external effect is represented by this directory.
+"""
+
+
+def archive_confirmation(archive: dict[str, Any]) -> str:
+    return f"Confirm that the exact archive SHA-256 is {archive['sha256']}."
+
+
 def checksum_payload(directory: Path, paths: tuple[str, ...]) -> str:
     return "".join(
         f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n"
@@ -356,6 +486,10 @@ def refresh_receipts(*, write: bool, archive: dict[str, Any], pdf: dict[str, Any
                 "archive_rebuild_pdf_byte_identical": True,
             }
         )
+        required = manifest["authorization_boundary"]["required_before_submission"]
+        if not isinstance(required, list) or not required:
+            fail(f"missing submission authorization boundary: {manifest_path.relative_to(ROOT)}")
+        required[0] = archive_confirmation(archive)
         write_json(manifest_path, manifest, write=write)
 
     validation = read_json(STAGING / "PDF_RENDER_VALIDATION.json")
@@ -381,6 +515,9 @@ def refresh_receipts(*, write: bool, archive: dict[str, Any], pdf: dict[str, Any
     ):
         write_text(path, draft, write=write)
 
+    write_text(BASE / "ARXIV_V2_CURRENT_SYNTHESIS_PLAN.md", publication_plan(archive, pdf), write=write)
+    write_text(STAGING / "STAGING_README.md", staging_readme(archive, pdf, tex), write=write)
+
     write_text(SOURCE / "SHA256SUMS", checksum_payload(SOURCE, SOURCE_SUM_PATHS), write=write)
     write_text(STAGING / "SOURCE_SHA256SUMS", checksum_payload(STAGING, SOURCE_SUM_PATHS), write=write)
     write_text(STAGING / "SHA256SUMS", checksum_payload(STAGING, STAGING_SUM_PATHS), write=write)
@@ -402,8 +539,16 @@ def check_common(archive: dict[str, Any], pdf: dict[str, Any], pages: int) -> No
             fail(f"stale PDF binding: {manifest_path.relative_to(ROOT)}")
         if bindings["arxiv-source.tar.gz"]["sha256"] != archive["sha256"]:
             fail(f"stale archive binding: {manifest_path.relative_to(ROOT)}")
+        required = manifest["authorization_boundary"]["required_before_submission"]
+        if not isinstance(required, list) or not required or required[0] != archive_confirmation(archive):
+            fail(f"stale submission authorization archive binding: {manifest_path.relative_to(ROOT)}")
         if manifest["build_and_visual_validation"]["page_count"] != pages:
             fail(f"stale page count: {manifest_path.relative_to(ROOT)}")
+    tex = identity(STAGING / "main.tex")
+    if (BASE / "ARXIV_V2_CURRENT_SYNTHESIS_PLAN.md").read_text(encoding="utf-8") != publication_plan(archive, pdf):
+        fail("current-synthesis plan is stale")
+    if (STAGING / "STAGING_README.md").read_text(encoding="utf-8") != staging_readme(archive, pdf, tex):
+        fail("staging README is stale")
     if (SOURCE / "SHA256SUMS").read_text(encoding="utf-8") != checksum_payload(SOURCE, SOURCE_SUM_PATHS):
         fail("source SHA256SUMS is stale")
     if (STAGING / "SOURCE_SHA256SUMS").read_text(encoding="utf-8") != checksum_payload(STAGING, SOURCE_SUM_PATHS):

@@ -44,17 +44,17 @@ liegt getrennt in
 
 | Artefakt | SHA-256 |
 |---|---|
-| `arxiv-source.tar.gz` | `95cb42a7e586b75c96d5fd10e462f04166c25a14e7223899344a01ef02371f1f` |
-| daraus gebautes `main.pdf` | `1210f4aae243ae799dcf43533f73eef3c4f63995a1441b167333767821c0cd89` |
+| `arxiv-source.tar.gz` | `5202c13e8a9e4934de0c09b7f238fc80073410c5d52ef231e0c05d035c00322a` |
+| daraus gebautes `main.pdf` | `943331e2297b9663b02471d51d9adcb277f191fafb1e9d15f8ef2ba63730b12c` |
 
 Das Uploadarchiv enthält nur die selbständige `main.tex`; die README- und
 Provenienzdateien bleiben außerhalb des arXiv-Uploads erhalten. Der Satz- und
-Sichtprüflauf ist erfolgreich; ein frisches Entpacken des
-Archivs und derselbe Zwei-Pass-Lauf erzeugten ein byteidentisches PDF. Das
-Manifest enthält die vorgeschlagenen Kategorien `cs.DC`, `cs.LO` und `cs.CR`,
-aber keine unzulässige Behauptung eines eigenständigen `quant-ph`-Resultats.
-Die genaue Lizenzoption des Zielsystems bleibt absichtlich erst im aktuellen
-arXiv-Formular zu bestätigen.
+Sichtprüflauf ist erfolgreich; ein frisches Entpacken des Archivs und derselbe
+Zwei-Pass-Lauf erzeugten ein byteidentisches PDF. Das Manifest enthält die
+vorgeschlagenen Kategorien `cs.DC`, `cs.LO` und `cs.CR`, aber keine
+unzulässige Behauptung eines eigenständigen `quant-ph`-Resultats. Die genaue
+Lizenzoption des Zielsystems bleibt absichtlich erst im aktuellen arXiv-Formular
+zu bestätigen.
 
 ## Vor einer tatsächlichen Übermittlung weiter erforderlich
 
