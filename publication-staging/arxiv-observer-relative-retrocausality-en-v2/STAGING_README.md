@@ -11,6 +11,11 @@ This staging directory contains the frozen upload candidate for the current
 English successor manuscript.  It is not the historical
 `arxiv-en-candidate/` and does not replace its bytes.
 
+Its current clarification distinguishes a coordinate assignment of a
+spacelike-separated source observer's local-present event to another
+observer's coordinate future from a causal-future relation.  No source-bound
+record is available until future-directed delivery reaches the receiver.
+
 ## Exact candidate
 
 | Artifact | SHA-256 | Role |

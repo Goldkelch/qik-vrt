@@ -57,6 +57,11 @@ causal loop, superluminal propagation, a controllable signal into the past,
 independent empirical confirmation of the universal correspondence thesis, or
 scientific consensus.
 
+For spacelike-separated comparisons, a source observer's local-present event
+may be assigned to another observer's coordinate future.  This is not a
+causal-future relation and does not make a source-bound record available before
+its future-directed delivery path reaches the receiver.
+
 Ingolf Lohmann's QIK-VRT correspondence thesis is retained explicitly as an
 author-attributed claim about reality in its stated model scope.  It is not
 silently substituted for the finite theorem or for external peer review.

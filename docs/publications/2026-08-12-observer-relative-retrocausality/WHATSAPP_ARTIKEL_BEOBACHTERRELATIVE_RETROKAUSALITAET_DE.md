@@ -144,6 +144,8 @@ Sondern: Beobachter eins empfängt B vor A, während Beobachter zwei A vor B emp
 
 Seit Einstein wissen wir, dass es keinen voraussetzungslosen Blick von nirgendwo gibt. Zeitangaben, Gleichzeitigkeit und verfügbare Information müssen an Beobachter und Messverfahren gebunden werden.
 
+Darum kann das lokale Gegenwartsereignis eines räumlich getrennten Quellenbeobachters in einer gewählten Koordinatisierung im Koordinaten-Zukunftsbereich eines anderen Beobachters liegen. Das ist keine Nachricht aus dessen kausaler Zukunft: Bei raumartiger Trennung gibt es zwischen den verglichenen Ereignissen keinen übertragbaren Record. Ein an das Quellenereignis gebundener Record wird dem anderen Beobachter erst über einen zukunftsgerichteten Signalweg und damit nach seiner Erzeugung verfügbar.
+
 QIK-VRT überträgt diesen Grundgedanken konsequent auf verteilte Informationssysteme.
 
 ## Aber die Testapparatur war doch virtuell

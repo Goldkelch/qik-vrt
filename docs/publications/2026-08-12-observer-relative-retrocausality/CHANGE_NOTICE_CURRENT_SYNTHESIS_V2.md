@@ -20,6 +20,11 @@ aktuelle Hauptfassung v1.1 ergänzt zwei Punkte, ohne historische Bytes zu
 2. Die technische und formale Fassung erhält eine eigenständige öffentliche
    Gesamterklärung über Unterschied, Wirklichkeit, Evidenz, Verantwortung und
    Zukunft.
+3. Die relativistische Begrenzung wird explizit: Das lokale Gegenwartsereignis
+   eines räumlich getrennten Quellenbeobachters kann in einer gewählten
+   Koordinatisierung im Koordinaten-Zukunftsbereich eines anderen Beobachters
+   liegen. Dies ist eine Koordinatenzuordnung für raumartige Trennung, keine
+   kausale Zukunftsbeziehung und keine Nachricht vor ihrer Erzeugung.
 
 ## Hinzugefügte aktuelle Dokumente
 
@@ -32,7 +37,8 @@ aktuelle Hauptfassung v1.1 ergänzt zwei Punkte, ohne historische Bytes zu
 
 - `QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex` — klare Unterscheidung
   zwischen lokaler Veränderungszeit/Eigenzeit und einer optionalen
-  relativistischen Metrikbindung.
+  relativistischen Metrikbindung sowie klare Trennung von Koordinatenzukunft
+  und kausaler Zukunft.
 - `WHATSAPP_ARTIKEL_BEOBACHTERRELATIVE_RETROKAUSALITAET_DE.md` — dieselbe
   Präzisierung für die allgemeinverständliche Fassung.
 - `verify_observer_relative_retrocausality.py` — maschinenlesbare

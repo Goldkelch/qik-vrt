@@ -46,6 +46,12 @@ source order.  It is not evidence of backwards signalling, a message from the
 future, changed past records, payload truth, sender intent, physical or ontic
 retrocausality, or authorization of a downstream effect.
 
+The profile also does not encode coordinate-time assignments between
+spacelike-separated physical events.  A source observer's local-present event
+can be assigned to another observer's coordinate future without becoming that
+observer's causal future; no source-bound object is available before a
+future-directed delivery path reaches the receiver.
+
 ## Contents
 
 | File | Role |

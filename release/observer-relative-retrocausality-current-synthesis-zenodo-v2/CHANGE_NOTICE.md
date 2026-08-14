@@ -22,6 +22,8 @@ Die fortgeschriebene Fassung trennt klar:
   Eigenzeit;
 - die negative Informationsrichtung als Relation zwischen Empfangsordnung und
   provenancegebundener Quellenordnung;
+- die Koordinatenzukunft eines raumartig getrennten Quellenereignisses von
+  einer kausalen Zukunftsbeziehung und von Nachrichtenempfang vor Emission;
 - einen endlichen ausführbaren Zeugen von einer universellen empirischen
   Behauptung;
 - die Korrespondenzthese des Autors von unabhängiger Bestätigung und
@@ -35,9 +37,13 @@ Die maßgeblichen aktuell hinzugefügten oder präzisierten Inhaltsteile sind
 ## Maschinengebundene Änderungsgründe
 
 - `ORRZ-001`: Die lokale Veränderungszeit wird operativ von einer optionalen
-  metrischen Eigenzeitkalibrierung getrennt; die negative Informationsrichtung
-  wird an steigende Empfangsordnung und absteigende authentische Quellenordnung
-  gebunden.
+  metrischen Eigenzeitkalibrierung getrennt; die negative
+  Informationsrichtung wird an steigende Empfangsordnung und absteigende
+  authentische Quellenordnung gebunden. Bei raumartiger Trennung kann ein
+  lokales Gegenwartsereignis in einer gewählten Koordinatisierung im
+  Koordinaten-Zukunftsbereich eines anderen Beobachters liegen; dies ist keine
+  kausale Zukunftsbeziehung und stellt keinen Record vor seiner
+  Quellenerzeugung bereit.
 - `ORRZ-002`: Der endliche Prüfer und sein kanonischer Report werden als
   ausführbarer Zeuge des deklarierten Modells ausgewiesen, nicht als
   Lean-Kernel-Receipt, universeller Satz oder Messung des ganzen Universums.

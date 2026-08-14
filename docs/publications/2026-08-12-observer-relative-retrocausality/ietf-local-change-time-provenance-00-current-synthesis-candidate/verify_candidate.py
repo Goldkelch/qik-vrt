@@ -135,6 +135,7 @@ def validate_xml() -> dict[str, object]:
         "FORWARD_INFORMATION_DIRECTION",
         "not a claim that the value is a relativistic metric proper time",
         "not a statement that a signal travelled backward",
+        "This profile does not encode coordinate-time assignments between spacelike-separated physical events.",
         "This document requests no IANA actions.",
         '<xref target="RFC3339"/>',
         '<xref target="RFC6234"/>',
@@ -176,6 +177,7 @@ def validate_rendered_artifacts() -> dict[str, object]:
         "IANA Considerations",
         "This document requests no IANA actions.",
         "not a statement that a signal travelled backward",
+        "This profile does not encode coordinate-time assignments between spacelike-separated physical events.",
     )
     for phrase in required:
         require(phrase in txt, f"rendered TXT lacks required phrase: {phrase}")

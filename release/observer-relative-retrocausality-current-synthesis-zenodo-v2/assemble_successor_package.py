@@ -285,7 +285,7 @@ def _license(classification: str) -> dict[str, str]:
 def _source_bindings() -> dict[str, Any]:
     base = "docs/publications/2026-08-12-observer-relative-retrocausality"
     bindings = [
-        ("SRC-PAPER-DEFINITION", f"{base}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "Operational definition of observer-local change time / Eigenzeit and negative information direction.", ["ORRZ-001"]),
+        ("SRC-PAPER-DEFINITION", f"{base}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "Operational definition of observer-local change time / Eigenzeit, negative information direction, and the coordinate-future versus causal-future boundary.", ["ORRZ-001"]),
         ("SRC-EXECUTABLE-WITNESS", f"{base}/verify_observer_relative_retrocausality.py", "Finite checker that evaluates the declared witness without network or external-system effects.", ["ORRZ-002"]),
         ("SRC-WITNESS-REPORT", f"{base}/QIKVRT_RETROCAUSALITY_WITNESS.json", "Canonical output of the finite witness checker.", ["ORRZ-002", "ORRZ-004"]),
         ("SRC-PAPER-EXISTENCE", f"{base}/QIK-VRT_Beobachterrelative_Retrokausalitaet_DE.tex", "Documented conditional finite existence argument and its declared assumptions.", ["ORRZ-003"]),
@@ -318,7 +318,7 @@ def _claims() -> list[dict[str, Any]]:
             "statement": "QIK-VRT defines observer-relative retrocausality as a negative information direction: a receiver's local change time increases while the authenticated comparable source-order markers of successive information-bearing records decrease.",
             "classification": "INTERPRETATIVE",
             "status": "DECLARED",
-            "boundary": "This is the authorial operational definition used by the work. A metric relativistic proper-time calibration needs an additional physical worldline binding.",
+            "boundary": "This is the authorial operational definition used by the work. A metric relativistic proper-time calibration needs an additional physical worldline binding. For spacelike-separated comparisons, a coordinate-future assignment is not a causal-future relation and does not make a source-bound record available before its source emission.",
             "proof_refs": [],
             "sources": ["SRC-PAPER-DEFINITION"],
         },
@@ -466,7 +466,12 @@ def _change_specs() -> list[dict[str, str]]:
                 "Die lokale Veränderungszeit wird operativ von einer optionalen "
                 "metrischen Eigenzeitkalibrierung getrennt; die negative "
                 "Informationsrichtung wird an steigende Empfangsordnung und "
-                "absteigende authentische Quellenordnung gebunden."
+                "absteigende authentische Quellenordnung gebunden. Bei "
+                "raumartiger Trennung kann ein lokales Gegenwartsereignis in "
+                "einer gewählten Koordinatisierung im Koordinaten-Zukunftsbereich "
+                "eines anderen Beobachters liegen; dies ist keine kausale "
+                "Zukunftsbeziehung und stellt keinen Record vor seiner "
+                "Quellenerzeugung bereit."
             ),
             "original_path": original_tex,
             "corrected_path": paper_tex,

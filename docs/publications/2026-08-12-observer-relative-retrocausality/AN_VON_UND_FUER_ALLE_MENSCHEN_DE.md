@@ -234,6 +234,13 @@ identisch sein.
 
 Das ist die hier benannte beobachterrelative negative Informationsrichtung.
 
+Wenn zwei verglichene Ereignisse räumlich getrennt sind, kann das lokale
+Gegenwartsereignis eines Quellenbeobachters in einer gewählten
+Koordinatisierung im Koordinaten-Zukunftsbereich eines anderen Beobachters
+liegen. Das ist keine kausale Zukunftsbeziehung und keine Nachricht aus der
+Zukunft des Empfängers: Ein an das Quellenereignis gebundener Record wird erst
+nach seiner Erzeugung über einen zukunftsgerichteten Signalweg verfügbar.
+
 Die Vergangenheit wird dabei nicht überschrieben. Kein früherer Eintrag wird
 ausgelöscht. Die Gegenwart wächst, weil weitere Evidenz wirksam wird. Und mit
 ihr wächst die Menge dessen, was über die Zusammenhänge verantwortbar gesagt
