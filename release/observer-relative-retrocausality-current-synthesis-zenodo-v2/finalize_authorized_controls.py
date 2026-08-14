@@ -19,13 +19,19 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[2]
+ROOT_STR = str(ROOT)
+if ROOT_STR not in sys.path:
+    sys.path.insert(0, ROOT_STR)
 
 from tools import qikvrt_zenodo_machine_proof as machine_proof
 from tools import qikvrt_zenodo_publish as publish
 
 
-ROOT = Path(__file__).resolve().parents[2]
 RELEASE_RELATIVE = (
     "release/observer-relative-retrocausality-current-synthesis-zenodo-v2"
 )
@@ -150,6 +156,20 @@ def parse_time(value: str, where: str) -> dt.datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         block(where + " has no timezone")
     return parsed
+
+
+def source_commit_time(source_head: str) -> dt.datetime:
+    _status, raw = git("show", "-s", "--format=%cI", source_head)
+    timestamp = parse_rfc3339(raw, "authorization source commit timestamp")
+    return parse_time(timestamp, "authorization source commit timestamp")
+
+
+def require_action_time_after_source(action_time: dt.datetime, source_head: str) -> None:
+    source_time = source_commit_time(source_head)
+    if action_time < source_time:
+        block("authorization input predates the selected source commit")
+    if action_time > dt.datetime.now(dt.timezone.utc):
+        block("authorization input is future-dated")
 
 
 def release_state() -> dict[str, Any]:
@@ -292,10 +312,12 @@ def load_action(path: Path, state: dict[str, Any]) -> dict[str, Any]:
     if value["principal"] != PRINCIPAL:
         block("authorization input principal differs from the rights holder")
     authorized_at = parse_rfc3339(value["authorized_at"], "authorization input authorized_at")
-    if parse_time(authorized_at, "authorization input authorized_at") < parse_time(
+    authorized_time = parse_time(authorized_at, "authorization input authorized_at")
+    if authorized_time < parse_time(
         state["returned_at"], "prepublication return timestamp"
     ):
         block("authorization input predates the candidate prepublication return")
+    require_action_time_after_source(authorized_time, source_head)
     expected_statement = publish._canonical_authorization_statement(
         authorization_id,
         PUBLICATION_ID,
@@ -429,6 +451,11 @@ def check_controls() -> None:
         block("final manifest source_head is invalid")
     normalized = validate_working_controls(manifest_source)
     source_head = normalized["source_head"]
+    authorization_time = parse_time(
+        normalized["owner_authorization"]["authorization_event"]["authorized_at"],
+        "owner authorization authorized_at",
+    )
+    require_action_time_after_source(authorization_time, source_head)
     execution_head = current_head()
     if source_head == execution_head:
         block("execution HEAD must be a descendant, not the source head itself")

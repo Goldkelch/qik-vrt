@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import json
 import os
@@ -64,7 +65,10 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
             "authorization_id": authorization_id,
             "nonce": "a" * 64,
             "source_head": source_head,
-            "authorized_at": "2026-08-14T10:30:00Z",
+            "authorized_at": dt.datetime.now(dt.timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "exact_statement": statement,
         }
 
@@ -112,6 +116,39 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
             parsed = controls.load_action(input_path, state)
         self.assertEqual(parsed, action)
 
+    def test_rejects_authorization_before_the_selected_source_commit(self) -> None:
+        state = controls.release_state()
+        action = self.action()
+        source_time = controls.source_commit_time(action["source_head"])
+        returned_time = controls.parse_time(
+            state["returned_at"], "prepublication return timestamp"
+        )
+        self.assertGreater(source_time, returned_time)
+        action["authorized_at"] = (
+            returned_time + (source_time - returned_time) / 2
+        ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        with tempfile.TemporaryDirectory() as temporary:
+            input_path = Path(temporary) / "authorization.json"
+            input_path.write_text(
+                json.dumps(self.action_input(action)), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SystemExit, "predates the selected source commit"):
+                controls.load_action(input_path, state)
+
+    def test_rejects_future_dated_authorization(self) -> None:
+        state = controls.release_state()
+        action = self.action()
+        action["authorized_at"] = (
+            dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+        ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        with tempfile.TemporaryDirectory() as temporary:
+            input_path = Path(temporary) / "authorization.json"
+            input_path.write_text(
+                json.dumps(self.action_input(action)), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SystemExit, "future-dated"):
+                controls.load_action(input_path, state)
+
     def test_release_state_has_exact_proof_bearing_files(self) -> None:
         state = controls.release_state()
         self.assertEqual(len(state["files"]), 21)
@@ -121,7 +158,6 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
 
     def test_write_then_committed_descendant_check_is_local_only(self) -> None:
         """Exercise the real two-commit transition in an isolated worktree."""
-        state = controls.release_state()
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
             isolated = temporary_root / "isolated"
@@ -135,24 +171,30 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
                     / "release/observer-relative-retrocausality-current-synthesis-zenodo-v2"
                     / "finalize_authorized_controls.py"
                 )
-                isolated_script.write_bytes(SCRIPT.read_bytes())
-                self.run_command(
-                    ["git", "add", isolated_script.relative_to(isolated).as_posix()],
-                    cwd=isolated,
-                )
-                self.run_command(
-                    [
-                        "git",
-                        "-c",
-                        "user.name=Zenodo Finalizer Test",
-                        "-c",
-                        "user.email=zenodo-finalizer-test@example.invalid",
-                        "commit",
-                        "-m",
-                        "test: add local Zenodo finalizer",
-                    ],
-                    cwd=isolated,
-                )
+                self.assertTrue(isolated_script.is_file())
+                if isolated_script.read_bytes() != SCRIPT.read_bytes():
+                    isolated_script.write_bytes(SCRIPT.read_bytes())
+                    self.run_command(
+                        ["git", "add", isolated_script.relative_to(isolated).as_posix()],
+                        cwd=isolated,
+                    )
+                    self.run_command(
+                        [
+                            "git",
+                            "-c",
+                            "commit.gpgsign=false",
+                            "-c",
+                            "user.name=Zenodo Finalizer Test",
+                            "-c",
+                            "user.email=zenodo-finalizer-test@example.invalid",
+                            "commit",
+                            "--no-verify",
+                            "--no-gpg-sign",
+                            "-m",
+                            "test: update local Zenodo finalizer",
+                        ],
+                        cwd=isolated,
+                    )
                 source_head = self.run_command(
                     ["git", "rev-parse", "HEAD"], cwd=isolated
                 ).stdout.strip()
@@ -166,7 +208,7 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
                 environment = dict(os.environ)
                 environment.pop("GITHUB_REPOSITORY", None)
                 environment.pop("GITHUB_SHA", None)
-                environment["PYTHONPATH"] = str(isolated)
+                environment.pop("PYTHONPATH", None)
                 written = self.run_command(
                     [
                         sys.executable,
