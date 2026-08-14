@@ -158,11 +158,19 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
 
     def test_write_then_committed_descendant_check_is_local_only(self) -> None:
         """Exercise the real two-commit transition in an isolated worktree."""
+        source_ref = "HEAD"
+        if controls.AUTHORIZATION_PATH.exists() or controls.MANIFEST_PATH.exists():
+            self.assertTrue(controls.AUTHORIZATION_PATH.is_file())
+            self.assertTrue(controls.MANIFEST_PATH.is_file())
+            source_ref = controls.load_json(
+                controls.MANIFEST_PATH.relative_to(ROOT).as_posix()
+            )["source_head"]
+            self.assertIsInstance(source_ref, str)
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
             isolated = temporary_root / "isolated"
             self.run_command(
-                ["git", "worktree", "add", "--detach", str(isolated), "HEAD"],
+                ["git", "worktree", "add", "--detach", str(isolated), source_ref],
                 cwd=ROOT,
             )
             try:
