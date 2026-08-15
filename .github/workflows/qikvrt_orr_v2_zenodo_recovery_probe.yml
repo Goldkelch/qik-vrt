@@ -1,0 +1,281 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Probe exact ORR v2 Zenodo recovery metadata
+
+on:
+  push:
+    branches:
+      - recovery-probe/observer-relative-retrocausality-v2-21947141-v1
+    paths:
+      - .github/workflows/qikvrt_orr_v2_zenodo_recovery_probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-orr-v2-zenodo-recovery-probe-21947141-v1
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/recovery-probe/observer-relative-retrocausality-v2-21947141-v1' &&
+      github.event.before == '60b4b3209e7b47b3572663e204b04e2e4176566b' &&
+      github.event.after == github.sha &&
+      github.event.forced == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_BRANCH: recovery-probe/observer-relative-retrocausality-v2-21947141-v1
+      CONTROLLER_PARENT: 60b4b3209e7b47b3572663e204b04e2e4176566b
+      PUBLICATION_HEAD: 63d26a3f8a7ddb74ba1eed4aab44d6decffc5cbc
+      RECEIPT_HEAD: 059bf7a353b6a524cd272071276f80fd08e710c4
+      EXECUTION_HEAD: a7cd4011b8cdf06e650e22dc3e8dda6df22a5bf0
+      RECEIPT_BLOB: fb1a0e88602a59f2b7e99280be47e9094223801b
+      RECORD_ID: '21947141'
+      DOI: 10.5281/zenodo.21947141
+      CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/98655d056beb7a6df29c4dab9b4efea5064db63ac1e961f21aa305245cd8a4c9
+      TAG_OBJECT: 36c516a4dc42d8571edbdb825a3334626a07f3f3
+      MANIFEST_PATH: release/observer-relative-retrocausality-current-synthesis-zenodo-v2/publish-request.json
+      EVIDENCE_PATH: release/observer-relative-retrocausality-current-synthesis-zenodo-v2/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out exact read-only probe controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact recovery probe boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$CONTROLLER_PARENT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          expected = {
+              "ref": "refs/heads/" + os.environ["EXPECTED_BRANCH"],
+              "before": os.environ["CONTROLLER_PARENT"],
+              "after": os.environ["GITHUB_SHA"],
+              "forced": False,
+              "created": False,
+              "deleted": False,
+          }
+          for key, value in expected.items():
+              if event.get(key) != value:
+                  raise SystemExit(f"BLOCK: recovery probe push {key} differs")
+          PY
+          expected_delta="$(
+            printf '%s\t%s\n' \
+              A .github/workflows/qikvrt_orr_v2_zenodo_recovery_probe.yml \
+              M REPOSITORY_FILE_MANIFEST.json \
+              M REPOSITORY_FILE_MANIFEST.json.sha256 \
+              M SHA256SUMS.txt
+          )"
+          observed_delta="$(
+            git diff --name-status --no-renames \
+              "$CONTROLLER_PARENT" "$GITHUB_SHA" --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_branch="$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          remote_main="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )"
+          remote_publication="$(
+            git ls-remote --heads origin \
+              refs/heads/publication/observer-relative-retrocausality-v2-4025b85c |
+              awk 'NR == 1 { print $1 }'
+          )"
+          remote_receipt="$(
+            git ls-remote --heads origin \
+              refs/heads/receipt/observer-relative-retrocausality-zenodo-v2-31881167575 |
+              awk 'NR == 1 { print $1 }'
+          )"
+          tag_object="$(
+            git ls-remote origin "$CONSUMPTION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          peeled_target="$(
+            git ls-remote origin "$CONSUMPTION_REF^{}" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_branch" = "$GITHUB_SHA"
+          test "$remote_main" = "$CONTROLLER_PARENT"
+          test "$remote_publication" = "$PUBLICATION_HEAD"
+          test "$remote_receipt" = "$RECEIPT_HEAD"
+          test "$tag_object" = "$TAG_OBJECT"
+          test "$peeled_target" = "$EXECUTION_HEAD"
+          test "$(git rev-parse "$RECEIPT_HEAD:$EVIDENCE_PATH")" = "$RECEIPT_BLOB"
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gates before read-only observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recheck exact remote recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )" = "$CONTROLLER_PARENT"
+          test "$(
+            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$GITHUB_SHA"
+          test "$(
+            git ls-remote origin "$CONSUMPTION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$TAG_OBJECT"
+
+      - name: Observe exact private draft metadata without mutation
+        id: observe
+        shell: bash
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          PROBE_PATH: ${{ runner.temp }}/orr-v2-zenodo-metadata-probe.json
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ.get("ZENODO_ACCESS_TOKEN", "")
+          if len(token) < 20 or any(character.isspace() for character in token):
+              raise SystemExit("BLOCK: ZENODO_ACCESS_TOKEN is structurally invalid")
+          root = Path.cwd().resolve()
+          manifest = json.loads((root / os.environ["MANIFEST_PATH"]).read_text())
+          expected = dict(manifest["metadata"])
+          expected.pop("prereserve_doi", None)
+          record_id = int(os.environ["RECORD_ID"])
+          url = os.environ["ZENODO_API_BASE"].rstrip("/") + \
+              "/deposit/depositions/" + str(record_id)
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          request = urllib.request.Request(
+              url,
+              method="GET",
+              headers={
+                  "Accept": "application/json",
+                  "Authorization": "Bearer " + token,
+                  "User-Agent": "qik-vrt-orr-v2-recovery-probe",
+              },
+          )
+          opener = urllib.request.build_opener(NoRedirect())
+          try:
+              response = opener.open(request, timeout=60)
+          except urllib.error.HTTPError as exc:
+              response = exc
+          try:
+              status = int(response.status)
+              if response.geturl() != url:
+                  raise SystemExit("BLOCK: Zenodo probe response URL changed")
+              raw = response.read(2_000_001)
+          finally:
+              response.close()
+          if status not in {200, 202}:
+              raise SystemExit(f"BLOCK: Zenodo probe HTTP status {status}")
+          if len(raw) > 2_000_000:
+              raise SystemExit("BLOCK: Zenodo probe response exceeded byte bound")
+          if token.encode() in raw:
+              raise SystemExit("BLOCK: Zenodo probe response contained its token")
+          try:
+              value = json.loads(raw.decode("utf-8"))
+          except (UnicodeDecodeError, json.JSONDecodeError):
+              raise SystemExit("BLOCK: Zenodo probe returned invalid JSON")
+          if not isinstance(value, dict):
+              raise SystemExit("BLOCK: Zenodo probe response is not an object")
+          observed_id = value.get("id")
+          if isinstance(observed_id, str) and observed_id.isdecimal():
+              observed_id = int(observed_id)
+          if observed_id != record_id:
+              raise SystemExit("BLOCK: Zenodo probe record ID differs")
+          metadata = value.get("metadata")
+          if not isinstance(metadata, dict):
+              raise SystemExit("BLOCK: Zenodo probe metadata is not an object")
+
+          differences = []
+          def compare(path, actual, wanted):
+              if isinstance(wanted, dict):
+                  if not isinstance(actual, dict):
+                      differences.append({"path": path, "expected": wanted, "actual": actual})
+                      return
+                  for key, child in wanted.items():
+                      child_path = path + "." + key if path else key
+                      if key not in actual:
+                          differences.append({"path": child_path, "expected": child, "actual": {"missing": True}})
+                      else:
+                          compare(child_path, actual[key], child)
+                  return
+              if isinstance(wanted, list):
+                  if not isinstance(actual, list) or len(actual) != len(wanted):
+                      differences.append({"path": path, "expected": wanted, "actual": actual})
+                      return
+                  for index, child in enumerate(wanted):
+                      compare(f"{path}[{index}]", actual[index], child)
+                  return
+              if actual != wanted:
+                  differences.append({"path": path, "expected": wanted, "actual": actual})
+          compare("metadata", metadata, expected)
+          links = value.get("links")
+          files = value.get("files")
+          result = {
+              "schema": "qikvrt_orr_v2_zenodo_draft_metadata_probe_v1",
+              "effect": "READ_ONLY",
+              "record_id": record_id,
+              "expected_doi": os.environ["DOI"],
+              "http_status": status,
+              "submitted": bool(value.get("submitted")),
+              "bucket_link_present": isinstance(links, dict) and isinstance(links.get("bucket"), str),
+              "server_file_count": len(files) if isinstance(files, list) else None,
+              "expected_metadata": expected,
+              "observed_controlled_metadata": {
+                  key: metadata.get(key) for key in expected
+              },
+              "differences": differences,
+              "exact_controlled_metadata": not differences,
+          }
+          Path(os.environ["PROBE_PATH"]).write_text(
+              json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print(f"ZENODO_DRAFT_METADATA_DIFFERENCE_COUNT={len(differences)}")
+          PY
+          printf 'path=%s\n' "$PROBE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded read-only probe evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: orr-v2-zenodo-metadata-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.observe.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
