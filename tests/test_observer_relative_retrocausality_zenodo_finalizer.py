@@ -17,6 +17,10 @@ SCRIPT = (
     / "release/observer-relative-retrocausality-current-synthesis-zenodo-v2"
     / "finalize_authorized_controls.py"
 )
+WORKFLOW = (
+    ROOT
+    / ".github/workflows/qikvrt_observer_relative_retrocausality_zenodo_publish.yml"
+)
 SPEC = importlib.util.spec_from_file_location("orr_zenodo_finalizer", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 controls = importlib.util.module_from_spec(SPEC)
@@ -155,6 +159,15 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
         self.assertEqual(len(state["authorization_uploads"]), 21)
         self.assertEqual(state["metadata"]["creators"], [{"name": "Lohmann, Ingolf"}])
         self.assertGreaterEqual(state["returned_at"], "2026-08-14T09:25:59Z")
+
+    def test_workflow_requires_the_confirmed_goldkelch_execution_account(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("github.actor == 'Goldkelch'", workflow)
+        self.assertIn("github.triggering_actor == 'Goldkelch'", workflow)
+        self.assertIn('test "$GITHUB_ACTOR" = \'Goldkelch\'', workflow)
+        self.assertIn('test "$GITHUB_TRIGGERING_ACTOR" = \'Goldkelch\'', workflow)
+        self.assertNotIn("github.actor == 'ingolf-lohmann'", workflow)
+        self.assertNotIn("github.triggering_actor == 'ingolf-lohmann'", workflow)
 
     def test_write_then_committed_descendant_check_is_local_only(self) -> None:
         """Exercise the real two-commit transition in an isolated worktree."""

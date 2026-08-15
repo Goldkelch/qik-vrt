@@ -24,8 +24,8 @@ jobs:
     if: >-
       github.repository == 'Goldkelch/qik-vrt' &&
       github.ref == 'refs/heads/main' &&
-      github.actor == 'ingolf-lohmann' &&
-      github.triggering_actor == 'ingolf-lohmann' &&
+      github.actor == 'Goldkelch' &&
+      github.triggering_actor == 'Goldkelch' &&
       inputs.confirmation == 'PUBLISH_OBSERVER_RELATIVE_RETROCAUSALITY_ZENODO_V2'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -52,8 +52,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
-          test "$GITHUB_ACTOR" = 'ingolf-lohmann'
-          test "$GITHUB_TRIGGERING_ACTOR" = 'ingolf-lohmann'
+          test "$GITHUB_ACTOR" = 'Goldkelch'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'Goldkelch'
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXECUTION_HEAD"
           git cat-file -e "$DISPATCH_MAIN_HEAD^{commit}"
           git merge-base --is-ancestor "$EXECUTION_HEAD" "$DISPATCH_MAIN_HEAD"
