@@ -71,6 +71,10 @@
     {
       "type": "CODE_AND_TEST_CANDIDATE",
       "description": "Changed remote selection to use the policy-bound upstream in personal copies, retain origin fallback for direct Authority clones and fail closed on URL mismatch; added regression tests and restored the delegation contract's explicit conforming-AI-client wording."
+    },
+    {
+      "type": "GITHUB_PERSISTENCE_AND_REVIEW_ROUTING",
+      "description": "Committed and pushed the exact candidate to the selected personal origin. GitHub rejected a cross-repository pull request because the personal origin is a standalone repository rather than a fork; the separate Authority review-branch write was not executed because it requires explicit destination-scoped authorization."
     }
   ],
   "joint_components": [
@@ -131,13 +135,14 @@
       "REPOSITORY_FILE_MANIFEST.json.sha256",
       "SHA256SUMS.txt"
     ],
-    "self_binding_rule": "The candidate commit and repository-native integrity materialization bind the exact output bytes; no impossible in-file self-hash is claimed."
+    "self_binding_rule": "The candidate commit binds the initial candidate bytes. The append-only post-effect receipt commit containing this updated work unit and the repository-native integrity materialization bind the final receipt bytes; no impossible in-file self-hash is claimed."
   },
   "git_history": {
     "branch": "work/20260815-ai-bootstrap",
     "base_commit": "17bf684b08363bdb8ae95775ea5a4ae22ce4f0a9",
     "base_tree": "3c0d0e1067ffff10f2bfb20614a94beca646b24b",
-    "candidate_commit": "BOUND_BY_GIT_COMMIT_CONTAINING_THIS_WORK_UNIT",
+    "candidate_commit": "7e1323c62b964b60121f7f30ac8d7ebc46159543",
+    "post_effect_receipt_commit": "BOUND_BY_GIT_COMMIT_CONTAINING_THIS_UPDATE",
     "force_push": false,
     "history_rewrite": false,
     "merge": "NOT_EXECUTED"
@@ -146,9 +151,9 @@
     "focused_tests": "PASS: 24/24 controller, AI-entrypoint and personal-working-memory contract tests",
     "full_repository_gate": "PASS: make test, including 7864387 C90 effect-ack checks and final integrity verification",
     "controller_check": "HOLD_EXPECTED_AFTER_MATERIALIZATION: full controller requires a clean repository; policy-bound resolver and remote-main query are covered by passing regression tests and the live resolver selected upstream at 17bf684b08363bdb8ae95775ea5a4ae22ce4f0a9",
-    "repository_integrity": "PASS: generated and verified 3777 classified entries and 3768 immutable digests before final provenance-only update; final regeneration and verification required",
+    "repository_integrity": "PASS: generated and verified 3777 classified entries and 3768 immutable digests before and after the candidate commit; final provenance-only regeneration and verification required",
     "exact_head_ci": "PENDING",
-    "first_current_blocker": "CANDIDATE_COMMIT_PUSH_DRAFT_REVIEW_AND_EXACT_HEAD_CI_NOT_YET_OBSERVED"
+    "first_current_blocker": "DRAFT_PR_REQUIRES_EXPLICIT_AUTHORIZATION_FOR_A_NEW_AUTHORITY_REVIEW_BRANCH_BECAUSE_THE_SELECTED_PERSONAL_ORIGIN_IS_NOT_A_GITHUB_FORK"
   },
   "human_decision": {
     "directive": "RECEIVED",
@@ -161,8 +166,10 @@
   "external_effects": {
     "read_only_remote_reobservation": "EXECUTED",
     "github_device_login": "EXECUTED_REPOSITORY_LOCAL_CREDENTIAL_STORE",
-    "branch_push": "NOT_EXECUTED",
-    "draft_pull_request": "NOT_EXECUTED",
+    "branch_push": "EXECUTED_TO_PERSONAL_ORIGIN: ingolf-lohmann/qik-vrt work/20260815-ai-bootstrap at 7e1323c62b964b60121f7f30ac8d7ebc46159543",
+    "cross_repository_pull_request": "REJECTED_BY_GITHUB_WITHOUT_STATE_CHANGE: personal origin is not a fork of Goldkelch/qik-vrt",
+    "authority_review_branch_push": "NOT_EXECUTED: separate destination-scoped authorization required",
+    "draft_pull_request": "BLOCKED_PENDING_EXPLICIT_AUTHORITY_REVIEW_BRANCH_AUTHORIZATION",
     "merge": "NOT_EXECUTED",
     "release": "NOT_EXECUTED",
     "deployment": "NOT_EXECUTED",
@@ -175,7 +182,7 @@
     "poster_is_independent_empirical_confirmation": false,
     "owner_assertion_equals_scientific_consensus": false
   },
-  "candidate_state": "LOCAL_VERIFIED_PENDING_COMMIT_PUSH_DRAFT_REVIEW_EXACT_HEAD_CI_AND_HUMAN_REVIEW",
+  "candidate_state": "PERSISTED_TO_PERSONAL_ORIGIN_PENDING_EXPLICIT_AUTHORITY_REVIEW_BRANCH_AUTHORIZATION_DRAFT_REVIEW_EXACT_HEAD_CI_AND_HUMAN_REVIEW",
   "release_claims": {
     "PASS": false,
     "FINAL_PASS": false,
