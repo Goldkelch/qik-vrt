@@ -1,0 +1,224 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Recover exact ORR v2 Zenodo record 21947141
+
+on:
+  push:
+    branches:
+      - recovery-execution/observer-relative-retrocausality-v2-21947141-v2
+    paths:
+      - .github/workflows/qikvrt_observer_relative_retrocausality_zenodo_recovery.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: qikvrt-observer-relative-retrocausality-zenodo-v2
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      github.event.created == false &&
+      github.event.deleted == false &&
+      github.event.forced == false &&
+      github.event.before == '60b4b3209e7b47b3572663e204b04e2e4176566b' &&
+      github.event.after == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MAIN_PARENT: 60b4b3209e7b47b3572663e204b04e2e4176566b
+      MAIN_TREE: e3984c07a0e757f657cf49edcc042a6a72453446
+      ACTIVATION_REF: refs/heads/publication/observer-relative-retrocausality-v2-4025b85c
+      ACTIVATION_HEAD: 63d26a3f8a7ddb74ba1eed4aab44d6decffc5cbc
+      EXECUTION: a7cd4011b8cdf06e650e22dc3e8dda6df22a5bf0
+      EXECUTION_PARENT: 56127a6fd7dadea331fea98ed6cba19b4b96c6b2
+      EXECUTION_TREE: 3f6b96dd007d259f54d944380ba218d454b7363d
+      RECEIPT_REF: refs/heads/receipt/observer-relative-retrocausality-zenodo-v2-31881167575
+      SEED_RECEIPT: 059bf7a353b6a524cd272071276f80fd08e710c4
+      CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/98655d056beb7a6df29c4dab9b4efea5064db63ac1e961f21aa305245cd8a4c9
+      TAG_OBJECT: 36c516a4dc42d8571edbdb825a3334626a07f3f3
+      TRIGGER_BRANCH: recovery-execution/observer-relative-retrocausality-v2-21947141-v2
+      EVIDENCE_PATH: release/observer-relative-retrocausality-current-synthesis-zenodo-v2/zenodo-publication.json
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out the exact one-shot recovery controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: controller
+
+      - name: Verify exact push controller and unchanged remote boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "${{ github.event.created }}" = "false"
+          test "${{ github.event.deleted }}" = "false"
+          test "${{ github.event.forced }}" = "false"
+          test "${{ github.event.before }}" = "$MAIN_PARENT"
+          test "${{ github.event.after }}" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = "refs/heads/$TRIGGER_BRANCH"
+          test "$GITHUB_REF_NAME" = "$TRIGGER_BRANCH"
+          test "$(git -C controller rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C controller show -s --format=%P HEAD)" = "$MAIN_PARENT"
+          test "$(git -C controller rev-parse "$MAIN_PARENT^{tree}")" = "$MAIN_TREE"
+          expected_delta="$(
+            printf '%s\n' \
+              'A	.github/workflows/qikvrt_observer_relative_retrocausality_zenodo_recovery.yml' \
+              'M	REPOSITORY_FILE_MANIFEST.json' \
+              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
+              'M	SHA256SUMS.txt' \
+              'A	release/observer-relative-retrocausality-current-synthesis-zenodo-v2/ORR_V2_RECOVERY_BASIS.json' \
+              'A	tests/test_observer_relative_retrocausality_zenodo_recovery.py' \
+              'A	tools/qikvrt_observer_relative_retrocausality_zenodo_recovery.py'
+          )"
+          observed_delta="$(
+            git -C controller diff \
+              --name-status \
+              --no-renames \
+              "$MAIN_PARENT" \
+              "$GITHUB_SHA" \
+              --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          test "$(
+            git -C controller ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 { print $1 }'
+          )" = "$MAIN_PARENT"
+          test "$(
+            git -C controller ls-remote --heads origin "$ACTIVATION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$ACTIVATION_HEAD"
+          test "$(
+            git -C controller ls-remote --heads origin "$RECEIPT_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$SEED_RECEIPT"
+          test "$(
+            git -C controller ls-remote origin "$CONSUMPTION_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$TAG_OBJECT"
+          test "$(
+            git -C controller ls-remote origin "$CONSUMPTION_REF^{}" |
+              awk 'NR == 1 { print $1 }'
+          )" = "$EXECUTION"
+          python3 -B controller/tools/qikvrt_tool_cache.py verify
+          python3 -B controller/tools/qikvrt_integrity.py verify
+
+      - name: Run complete controller gates before credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C controller fetch --no-tags origin "$RECEIPT_REF"
+          PYTHONPATH="$GITHUB_WORKSPACE/controller" \
+            python3 -B -m unittest -v \
+              controller/tests/test_observer_relative_retrocausality_zenodo_recovery.py
+          make -C controller test
+          test -z "$(git -C controller status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize immutable execution and exact record-created seed
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C controller fetch --no-tags origin "$RECEIPT_REF"
+          target="$RUNNER_TEMP/qikvrt-orr-v2-recovery-execution"
+          git -C controller worktree add --detach "$target" "$EXECUTION"
+          test "$(git -C "$target" rev-parse HEAD)" = "$EXECUTION"
+          test "$(git -C "$target" show -s --format=%P HEAD)" = "$EXECUTION_PARENT"
+          test "$(git -C "$target" rev-parse 'HEAD^{tree}')" = "$EXECUTION_TREE"
+          python3 -B controller/tools/qikvrt_observer_relative_retrocausality_zenodo_recovery.py \
+            --verify-basis \
+            --execution-root "$target"
+          make -C "$target" test
+          test -z "$(git -C "$target" status --porcelain=v1 --untracked-files=all)"
+          printf 'path=%s\n' "$target" >> "$GITHUB_OUTPUT"
+
+      - name: Restore and validate exact seed before Zenodo credentials
+        id: prepare
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.target.outputs.path }}
+        run: |
+          set -euo pipefail
+          python3 -B controller/tools/qikvrt_observer_relative_retrocausality_zenodo_recovery.py \
+            --prepare \
+            --execution-root "$TARGET" \
+            --controller-head "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+          grep -Fx 'prepared=true' "$GITHUB_OUTPUT"
+          grep -Fx 'finalized=false' "$GITHUB_OUTPUT"
+          grep -Fx "receipt_commit=$SEED_RECEIPT" "$GITHUB_OUTPUT"
+          test "$(
+            git hash-object "$TARGET/$EVIDENCE_PATH"
+          )" = fb1a0e88602a59f2b7e99280be47e9094223801b
+          python3 -B - "$TARGET/$EVIDENCE_PATH" <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          if path.is_symlink() or not path.is_file():
+              raise SystemExit("BLOCK: restored evidence is not regular")
+          path.unlink()
+          if os.path.lexists(path):
+              raise SystemExit("BLOCK: restored evidence cleanup failed")
+          PY
+          test -z "$(git -C "$TARGET" status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reconcile exact draft with synchronous same-ref checkpoints
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 30
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          TARGET: ${{ steps.target.outputs.path }}
+        run: |
+          set -euo pipefail
+          test "$(
+            env -u GITHUB_TOKEN -u GH_TOKEN -u ZENODO_ACCESS_TOKEN \
+              git -C "$TARGET" rev-parse HEAD
+          )" = "$EXECUTION"
+          python3 -B controller/tools/qikvrt_observer_relative_retrocausality_zenodo_recovery.py \
+            --publish \
+            --execution-root "$TARGET" \
+            --controller-head "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Upload bounded local recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: orr-v2-zenodo-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: ignore
+          path: ${{ steps.target.outputs.path }}/release/observer-relative-retrocausality-current-synthesis-zenodo-v2/zenodo-publication.json
+
+      - name: Enforce public verification and same receipt ref finality
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.publish.outputs.status }}" = "0"
+          test "${{ steps.publish.outputs.finalized }}" = "false"
+          test "${{ steps.publish.outputs.phase }}" = "public_verified"
+          test "${{ steps.publish.outputs.state }}" = "published"
+          test "${{ steps.publish.outputs.record_id }}" = "21947141"
+          test "${{ steps.publish.outputs.doi }}" = "10.5281/zenodo.21947141"
+          [[ "${{ steps.publish.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(
+            git -C controller ls-remote --heads origin "$RECEIPT_REF" |
+              awk 'NR == 1 { print $1 }'
+          )" = "${{ steps.publish.outputs.receipt_commit }}"
