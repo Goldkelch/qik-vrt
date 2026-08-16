@@ -39,6 +39,15 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             contract["executor"]["single_writer_order"],
             ["AUTHORITY", "MIRROR", "MESH_NODE"],
         )
+        replica = contract["replica_orchestration"]
+        self.assertEqual(
+            replica["contract_path"],
+            "state/autonomy/MESH_REPLICA_ORCHESTRATION_CONTRACT_V1.json",
+        )
+        self.assertEqual(replica["controller_path"], "tools/qikvrt_mesh_replica_orchestrator.py")
+        self.assertEqual(replica["mode"], "PLAN_VALIDATE_ONLY")
+        self.assertEqual(replica["apply_mode"], "NOT_IMPLEMENTED")
+        self.assertEqual(replica["external_effect"], "NONE")
         self.assertEqual(
             contract["dispatch_policy"]["authorized_workflows"],
             [

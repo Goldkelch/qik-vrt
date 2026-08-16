@@ -1,0 +1,108 @@
+{
+  "_license": {
+    "classification": "machine_readable_policy",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_mesh_replica_orchestration_contract_v1",
+  "contract_id": "qikvrt-mesh-replica-orchestration-v1",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "entrypoint": "AI",
+    "workflow_executor_contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+  },
+  "controller": {
+    "path": "tools/qikvrt_mesh_replica_orchestrator.py",
+    "mode": "PLAN_VALIDATE_ONLY",
+    "repository_writes": "NONE",
+    "network": "NONE",
+    "process_execution": "LOCAL_GIT_REV_PARSE_ONLY"
+  },
+  "mode": "PLAN_VALIDATE_ONLY",
+  "apply_mode": "NOT_IMPLEMENTED",
+  "execution_effect": "NONE",
+  "allowed_source_repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "resource_caps": {
+    "max_parallel_read_only_replicas": 4,
+    "max_ttl_seconds": 14400,
+    "max_disk_bytes_per_replica": 5368709120,
+    "max_cpu_seconds_per_replica": 14400,
+    "max_network_bytes_per_replica": 4294967296
+  },
+  "admission": {
+    "require_exact_source_head_and_tree": true,
+    "require_exact_observation_head_and_tree": true,
+    "require_fresh_bound_node_liveness": true,
+    "accepted_node_liveness": "FRESH_BOUND",
+    "max_active_productive_writers": 0,
+    "max_queued_productive_runs": 2,
+    "duplicate_exact_request": "NOOP"
+  },
+  "requires_exact_execution_authorization": true,
+  "future_execution_authorization": {
+    "schema": "qikvrt_mesh_replica_execution_authorization_v1",
+    "required_fields": [
+      "authorization_id",
+      "issued_at",
+      "expires_at",
+      "source_repository",
+      "source_ref",
+      "source_head_sha",
+      "source_tree_sha",
+      "target_kind",
+      "target_identifier",
+      "visibility",
+      "read_write_mode",
+      "task_selector",
+      "task_sha256",
+      "replica_count",
+      "ttl_seconds",
+      "disk_bytes",
+      "cpu_seconds",
+      "network_bytes",
+      "synchronization_direction",
+      "path_allowlist",
+      "conflict_disposition",
+      "rollback_disposition"
+    ]
+  },
+  "synchronization_boundary": {
+    "current_mode": "NO_SYNCHRONIZATION_EXECUTION",
+    "future_only_via": "CREATE_ONLY_REVIEW_BRANCH_AND_PULL_REQUEST",
+    "requires_fresh_source_and_target_reobservation": true,
+    "requires_path_allowlist": true,
+    "divergence_or_conflict_disposition": "HOLD",
+    "direct_main_write": "FORBIDDEN"
+  },
+  "forbidden_operations": [
+    "git_clone",
+    "git_fetch",
+    "git_push",
+    "fork",
+    "repository_creation",
+    "account_creation",
+    "remote_ref_write",
+    "force_push",
+    "delete_or_overwrite",
+    "credential_use",
+    "cloud_or_billing_provisioning",
+    "automatic_merge"
+  ],
+  "required_tests": [
+    "tests/test_qikvrt_mesh_replica_orchestrator.py",
+    "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+    "tests/test_seed_workflows.py"
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "REPLICA_CREATED": false,
+    "SYNCHRONIZATION_EXECUTED": false,
+    "AUTHORITY_MIRROR_EQUALITY": false
+  }
+}

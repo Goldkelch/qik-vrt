@@ -150,6 +150,26 @@ def _validate_contract_shape(contract: Mapping[str, Any], root: Path) -> None:
     ]:
         raise ExecutorBlock("executor single writer order is not authority-first")
 
+    replica = _mapping(contract.get("replica_orchestration"), "replica orchestration")
+    replica_contract_path = _string(replica.get("contract_path"), "replica orchestration contract path")
+    replica_controller_path = _string(replica.get("controller_path"), "replica orchestration controller path")
+    if replica_contract_path != "state/autonomy/MESH_REPLICA_ORCHESTRATION_CONTRACT_V1.json":
+        raise ExecutorBlock("replica orchestration contract path is invalid")
+    if replica_controller_path != "tools/qikvrt_mesh_replica_orchestrator.py":
+        raise ExecutorBlock("replica orchestration controller path is invalid")
+    if not (root / replica_contract_path).is_file() or not (root / replica_controller_path).is_file():
+        raise ExecutorBlock("replica orchestration required file is absent")
+    if replica.get("mode") != "PLAN_VALIDATE_ONLY" or replica.get("apply_mode") != "NOT_IMPLEMENTED":
+        raise ExecutorBlock("replica orchestration exceeds plan-only mode")
+    if replica.get("external_effect") != "NONE":
+        raise ExecutorBlock("replica orchestration exceeds the no-effect boundary")
+    if _string_list(replica.get("required_tests"), "replica orchestration required tests") != [
+        "tests/test_qikvrt_mesh_replica_orchestrator.py",
+        "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+        "tests/test_seed_workflows.py",
+    ]:
+        raise ExecutorBlock("replica orchestration acceptance tests are incomplete")
+
     policy = _mapping(contract.get("dispatch_policy"), "dispatch policy")
     if policy.get("enabled") is not True or policy.get("dispatch_ref") != "main":
         raise ExecutorBlock("dispatch policy is not enabled for main")
