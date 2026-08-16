@@ -81,3 +81,26 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONNOUSERSITE: "1"
         run: python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+
+      - name: Package verified Firefox reference client
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-firefox-package
+          (
+            cd browser/firefox/qikvrt-terminal
+            zip -X -9 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+              manifest.json background.js content.js terminal.css options.html options.js README.md
+          )
+          sha256sum /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+            > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
+          test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+
+      - name: Preserve verified Firefox package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        with:
+          name: qikvrt-firefox-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-firefox-package
+          if-no-files-found: error
+          retention-days: 30
