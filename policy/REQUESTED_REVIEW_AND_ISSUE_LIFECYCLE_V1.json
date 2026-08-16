@@ -55,6 +55,26 @@
       "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true
     }
   },
+  "review_executor": {
+    "workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
+    "decision_core": "tools/qikvrt_requested_review_executor.py",
+    "contract_gate": ".github/workflows/qikvrt_requested_review_contract.yml",
+    "event_triggers": [
+      "pull_request.review_requested",
+      "pull_request.synchronize",
+      "pull_request.ready_for_review",
+      "pull_request.reopened",
+      "workflow_run.completed"
+    ],
+    "recovery_schedule": "*/5 * * * *",
+    "exact_head_status_context": "QIKVRT requested review execution",
+    "promotion_workflow": ".github/workflows/qikvrt_expected_head_promotion.yml",
+    "promotion_requires_successful_review_status": true,
+    "duplicate_exact_head_review": "FORBIDDEN",
+    "head_tree_or_scope_drift_invalidates_review": true,
+    "platform_approval_fallback": "PERSIST_SUBSTANTIVE_DISPOSITION_AS_COMMENT_WITH_EXACT_PLATFORM_LIMITATION",
+    "independent_code_owner_approval_may_be_inferred": false
+  },
   "issue_lifecycle": {
     "unclassified_open_issue": "FORBIDDEN",
     "allowed_dispositions": [
