@@ -7,12 +7,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import sys
 import tempfile
 import urllib.parse
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -610,7 +612,20 @@ class ZenodoMetadataEditTests(unittest.TestCase):
                 "evidence_path": "candidate/zenodo-metadata-edit.json",
             }
             manifest_path = write_json("candidate/metadata-edit-request.json", manifest_value)
-            normalized_manifest_value = edit.load_manifest(manifest_path, root)
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "ingolf-lohmann/qik-vrt"},
+            ):
+                with self.assertRaisesRegex(
+                    zenodo.ZenodoError,
+                    "GITHUB_REPOSITORY differs from the metadata-edit manifest",
+                ):
+                    edit.load_manifest(manifest_path, root)
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": publication.PRODUCTION_REPOSITORY},
+            ):
+                normalized_manifest_value = edit.load_manifest(manifest_path, root)
             self.assertEqual(
                 normalized_manifest_value["changed_fields"],
                 ["description", "keywords", "notes"],

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
+from collections.abc import Mapping
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -30,6 +33,18 @@ WORLD_WORK = REPOSITORY_ROOT / "state/work_units/WORLD_FORMULA_RELATION_KERNEL_V
 IETF = REPOSITORY_ROOT / "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
 GLOBAL = REPOSITORY_ROOT / "GLOBAL_CLAIM_INVENTORY.json"
 FORBIDDEN = re.compile(r"(?m)^\s*(?:sorry|admit|axiom)\b")
+SHA1 = re.compile(r"^[0-9a-f]{40}$")
+GITHUB_REPOSITORY = re.compile(
+    r"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+    r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
+)
+AUTHORITY_REPOSITORY = "Goldkelch/qik-vrt"
+MIRROR_REPOSITORY = "ingolf-lohmann/qik-vrt"
+AUTHORITY_REMOTE = "https://github.com/Goldkelch/qik-vrt.git"
+EXPECTED_EXECUTION_POLICY = {
+    AUTHORITY_REPOSITORY: {"source_commit_must_be_ancestor": True},
+    MIRROR_REPOSITORY: {"source_commit_must_be_ancestor": False},
+}
 
 
 def load_object(path: pathlib.Path) -> dict[str, Any]:
@@ -39,9 +54,9 @@ def load_object(path: pathlib.Path) -> dict[str, Any]:
     return value
 
 
-def git(*args: str) -> str:
+def git(*args: str, repository_root: pathlib.Path = REPOSITORY_ROOT) -> str:
     completed = subprocess.run(
-        ["git", *args], cwd=REPOSITORY_ROOT, text=True,
+        ["git", *args], cwd=repository_root, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
     )
     if completed.returncode != 0:
@@ -49,24 +64,149 @@ def git(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def verify_source_bindings(scope: dict[str, Any]) -> None:
+def git_succeeds(*args: str, repository_root: pathlib.Path) -> bool:
+    return subprocess.run(
+        ["git", *args], cwd=repository_root, text=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    ).returncode == 0
+
+
+def execution_repository(
+    repository_root: pathlib.Path,
+    environment: Mapping[str, str],
+) -> str:
+    remote = git("remote", "get-url", "origin", repository_root=repository_root)
+    match = GITHUB_REPOSITORY.fullmatch(remote)
+    if match is None:
+        raise ValueError("origin is not an exact GitHub repository remote")
+    remote_repository = match.group("repository")
+    event_repository = environment.get("GITHUB_REPOSITORY")
+    if event_repository is not None and event_repository != remote_repository:
+        raise ValueError("GITHUB_REPOSITORY and origin repository differ")
+    return event_repository or remote_repository
+
+
+def fetch_exact_source_commit(
+    destination: pathlib.Path,
+    canonical_remote: str,
+    source_commit: str,
+) -> None:
+    completed = subprocess.run(
+        [
+            "git", "-c", "fetch.fsckObjects=true", "fetch",
+            "--no-tags", "--depth=1", "--no-write-fetch-head",
+            canonical_remote, source_commit,
+        ],
+        cwd=destination,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if completed.returncode != 0:
+        raise ValueError(
+            "exact source commit fetch failed: " + completed.stderr.strip()
+        )
+
+
+def verify_source_object_store(
+    scope: dict[str, Any],
+    source_store: pathlib.Path,
+) -> None:
     source_commit = scope["source_commit"]
-    if git("rev-parse", "--verify", f"{source_commit}^{{commit}}") != source_commit:
+    if git(
+        "rev-parse", "--verify", f"{source_commit}^{{commit}}",
+        repository_root=source_store,
+    ) != source_commit:
         raise ValueError("source commit does not resolve exactly")
-    if subprocess.run(
-        ["git", "merge-base", "--is-ancestor", source_commit, "HEAD"],
-        cwd=REPOSITORY_ROOT, check=False,
-    ).returncode != 0:
-        raise ValueError("source commit is not an ancestor of execution HEAD")
+    observed_tree = git(
+        "rev-parse", "--verify", f"{source_commit}^{{tree}}",
+        repository_root=source_store,
+    )
+    if observed_tree != scope["source_tree"]:
+        raise ValueError("source tree mismatch")
     for entry in scope["sources"]:
-        observed = git("rev-parse", "--verify", f"{source_commit}:{entry['path']}")
+        observed = git(
+            "rev-parse", "--verify", f"{source_commit}:{entry['path']}",
+            repository_root=source_store,
+        )
         if observed != entry["git_blob_sha1"]:
             raise ValueError(f"source blob mismatch: {entry['path']}")
+        if git("cat-file", "-t", observed, repository_root=source_store) != "blob":
+            raise ValueError(f"source path is not a blob: {entry['path']}")
+
+
+def verify_source_bindings(
+    scope: dict[str, Any],
+    *,
+    repository_root: pathlib.Path = REPOSITORY_ROOT,
+    environment: Mapping[str, str] | None = None,
+) -> None:
+    if scope.get("schema") != "qikvrt_universal_ontology_source_scope_v2":
+        raise ValueError("source-scope schema mismatch")
+    source_commit = scope.get("source_commit")
+    source_tree = scope.get("source_tree")
+    if not isinstance(source_commit, str) or SHA1.fullmatch(source_commit) is None:
+        raise ValueError("source commit is not an exact SHA-1")
+    if not isinstance(source_tree, str) or SHA1.fullmatch(source_tree) is None:
+        raise ValueError("source tree is not an exact SHA-1")
+
+    source_repository = scope.get("repository")
+    resolution = scope.get("source_resolution")
+    if not isinstance(source_repository, str) or not isinstance(resolution, dict):
+        raise ValueError("source-resolution policy is absent")
+    if source_repository != AUTHORITY_REPOSITORY:
+        raise ValueError("source repository differs from the fixed Authority")
+    canonical_remote = resolution.get("canonical_remote")
+    if canonical_remote != AUTHORITY_REMOTE:
+        raise ValueError("canonical source remote differs from the fixed Authority")
+    if resolution.get("fetch_policy") != "EXACT_COMMIT_IF_MISSING":
+        raise ValueError("source fetch policy differs")
+    permitted = resolution.get("permitted_execution_repositories")
+    if permitted != EXPECTED_EXECUTION_POLICY or any(
+        not isinstance(policy, dict)
+        or policy.get("source_commit_must_be_ancestor") is not
+        EXPECTED_EXECUTION_POLICY[repository]["source_commit_must_be_ancestor"]
+        for repository, policy in permitted.items()
+    ):
+        raise ValueError("execution repository policy differs from the fixed pair")
+
+    observed_repository = execution_repository(
+        repository_root,
+        os.environ if environment is None else environment,
+    )
+    repository_policy = permitted.get(observed_repository)
+    if not isinstance(repository_policy, dict):
+        raise ValueError(f"execution repository is not permitted: {observed_repository}")
+    require_ancestor = repository_policy.get("source_commit_must_be_ancestor")
+    if not isinstance(require_ancestor, bool):
+        raise ValueError("source ancestry policy is absent")
+
+    source_is_local = git_succeeds(
+        "rev-parse", "--verify", "--quiet", f"{source_commit}^{{commit}}",
+        repository_root=repository_root,
+    )
+    if require_ancestor:
+        if not source_is_local or not git_succeeds(
+            "merge-base", "--is-ancestor", source_commit, "HEAD",
+            repository_root=repository_root,
+        ):
+            raise ValueError("source commit is not an ancestor of execution HEAD")
+
+    if source_is_local:
+        verify_source_object_store(scope, repository_root)
+        return
+
+    with tempfile.TemporaryDirectory(prefix="qikvrt-source-provenance-") as temporary:
+        source_store = pathlib.Path(temporary) / "source.git"
+        git("init", "--bare", str(source_store), repository_root=repository_root)
+        fetch_exact_source_commit(source_store, canonical_remote, source_commit)
+        verify_source_object_store(scope, source_store)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skip-git-source-bindings", action="store_true")
     args = parser.parse_args(argv)
     try:
         matrices = [load_object(path) for path in MATRICES]
@@ -145,8 +285,7 @@ def main(argv: list[str] | None = None) -> int:
             "PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False
         }:
             raise ValueError("completion boundary weakened")
-        if not args.skip_git_source_bindings:
-            verify_source_bindings(scope)
+        verify_source_bindings(scope)
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"BLOCK: {exc}", file=sys.stderr)
         return 1
