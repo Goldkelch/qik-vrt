@@ -47,6 +47,18 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
             "schemas/human_machine_progress.schema.json",
             context["required_read_order"],
         )
+        mesh = context["mesh_replica_orchestration"]
+        self.assertEqual(
+            mesh["contract"],
+            "state/autonomy/MESH_REPLICA_ORCHESTRATION_CONTRACT_V1.json",
+        )
+        self.assertEqual(
+            mesh["controller"], "tools/qikvrt_mesh_replica_orchestrator.py"
+        )
+        self.assertEqual(mesh["mode"], "PLAN_VALIDATE_ONLY")
+        self.assertEqual(mesh["execution_effect"], "NONE")
+        self.assertIn(mesh["contract"], context["required_read_order"])
+        self.assertIn("docs/MESH_REPLICA_ORCHESTRATION.md", context["required_read_order"])
         for authority in (
             "tools/ai_handoff.py",
             "tools/qikvrt_integrity.py",

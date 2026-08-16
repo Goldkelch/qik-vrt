@@ -173,5 +173,17 @@ The executor controller is read-only; its Action wrapper may only issue the narr
 
 Every future Mesh node added through `registry/node_request_queue/*.tsv` must carry the exact receipt and acceptance connection order declared by that contract. The Seed acceptance path validates the node-bound receipt before acceptance; `tests/test_qikvrt_workflow_executor_mesh_contract.py` and `tests/test_seed_workflows.py` are mandatory structural acceptance tests. The receipt and its watchdog observation are bounded technical evidence only; they do not establish PASS, FINAL_PASS, EFFECT_ACK_DONE, Authority/Mirror equality, scientific confirmation, or an external effect.
 
+MESH REPLICA ORCHESTRATION
+
+`state/autonomy/MESH_REPLICA_ORCHESTRATION_CONTRACT_V1.json` and
+`tools/qikvrt_mesh_replica_orchestrator.py` provide a separate,
+exact-head-bound `PLAN_VALIDATE_ONLY` surface for future replica scaling. It
+can return only `NOOP` or `HOLD` after checking source/ref/head/tree, fresh
+node liveness, writer/queue state, bounded resource requests and future
+authorization shape. It has no apply mode and performs no network, clone,
+fork, repository creation, remote-ref mutation, credential use or
+synchronization. Every actual replica or synchronization effect remains
+separately exact-authorized, reviewable and post-effect reobserved.
+
 Do not claim PASS, DONE, synchronization, publication, deployment, merge, verbatim audio verification, independent physical confirmation, scientific consensus, or symmetric canonicality without corresponding evidence.
 Freely available architecture does not automatically open-source the concrete implementation.
