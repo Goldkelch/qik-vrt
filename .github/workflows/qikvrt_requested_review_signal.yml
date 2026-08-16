@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+name: QIK-VRT requested review signal
+
+# This workflow deliberately has no token permissions, secrets, checkout,
+# artifacts, or candidate-code execution. Its completion is merely a prompt
+# for the trusted default-branch executor to re-resolve the current PR by API.
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions: {}
+
+jobs:
+  emit-requested-review-signal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Emit unprivileged review signal
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "An unprivileged pull-request review event completed."

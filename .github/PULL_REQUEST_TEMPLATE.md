@@ -24,6 +24,13 @@ Describe the bounded change and the problem it addresses.
 - [ ] New behavior has a reproducible example or test.
 - [ ] Security, evidence, and claim boundaries are stated.
 - [ ] Documentation and integrity manifests are updated where required.
+- [ ] `REPOSITORY_DELIVERY_VERIFIED` closure records the bounded scope, targeted regression,
+      documentation update or `NOT_APPLICABLE` reason, integrity materialization,
+      exact-head test evidence, and the post-effect remote ref/head/tree
+      reobservation when the requested effect has occurred.
+- [ ] A public browser-interface change records static contract coverage and a
+      bounded live page/CORS/voice-device observation, or an explicit
+      environment-bound `CONTINUE`/`BLOCK` reason.
 
 ## Effect review
 

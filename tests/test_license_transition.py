@@ -57,6 +57,7 @@ CURRENT_SOURCE_FILES = (
     "tests/test_effect_ack_release_workflows.py",
     "tests/test_handler_security.py",
     "tests/test_handler_unit.py",
+    "tests/test_human_machine_progress_protocol.py",
     "tests/test_integrity.py",
     "tests/test_launcher_runtime.py",
     "tests/test_license_transition.py",

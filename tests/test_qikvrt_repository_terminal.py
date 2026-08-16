@@ -12,6 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "docs/terminal/index.html"
 SCRIPT = ROOT / "docs/assets/js/qikvrt-repository-terminal.js"
 STYLE = ROOT / "docs/assets/css/qikvrt-terminal.css"
+LIVE_TESTING = ROOT / "docs/terminal/TESTING.md"
 
 
 class RepositoryTerminalTests(unittest.TestCase):
@@ -97,6 +98,22 @@ class RepositoryTerminalTests(unittest.TestCase):
         marker = "SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0"
         self.assertIn(marker, self.script)
         self.assertIn(marker, pathlib.Path(__file__).read_text(encoding="utf-8"))
+
+    def test_live_browser_cors_and_voice_test_boundary_is_documented(self) -> None:
+        testing = LIVE_TESTING.read_text(encoding="utf-8")
+        for marker in (
+            "STATIC_SOURCE_AND_SECURITY_CONTRACT",
+            "LIVE_PAGE_LOAD",
+            "DECLARED_CORS_AND_SAME_ORIGIN_READS",
+            "FORBIDDEN_INPUT_REJECTION",
+            "OPT_IN_VOICE_OR_DEVICE_BEHAVIOR",
+            "ASR_DRAFT",
+            "CONTINUE",
+            "does not prove audible output",
+            "QIKVRT_DELIVERY_CLOSURE_BROWSER_E2E_V1",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, testing)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,201 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_unit",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_requested_review_lifecycle_executor_work_unit_v1",
+  "work_unit_id": "QIKVRT_REQUESTED_REVIEW_LIFECYCLE_EXECUTOR_V1",
+  "title": "Make mandatory requested-review disposition executable and fail-closed",
+  "created_at": "2026-08-16T15:32:00Z",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "refs/heads/agent/delivery-closure-browser-e2e-v2-88dde0b",
+  "source_commit": "f8b3364095121eb6216572e2904cb09f1602d406",
+  "source_tree": "08a873b2e5e81fd2ccfb445257dac6f5bb30de6e",
+  "human_actor": {
+    "actor_class": "HUMAN",
+    "attribution_id": "Ingolf Lohmann",
+    "role": "Product Owner, originating author and rights holder",
+    "identity_proof_boundary": "Repository and platform records attribute the directive to the named account context; they are not biometric or universal identity proof."
+  },
+  "artificial_cognitive_actor": {
+    "actor_class": "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "provider": "OpenAI",
+    "system_family": "Codex",
+    "model_or_build": "GPT-5 family; exact build UNAVAILABLE",
+    "session_or_run_id": "UNAVAILABLE",
+    "tools_and_adapters": [
+      "GitHub API and Actions review tooling",
+      "local Git worktree",
+      "QIK-VRT repository-native integrity generator",
+      "QIK-VRT focused and full test suite"
+    ],
+    "observed_at": "2026-08-16T15:32:00Z",
+    "source_repository": "Goldkelch/qik-vrt",
+    "source_ref": "refs/heads/agent/delivery-closure-browser-e2e-v2-88dde0b",
+    "source_commit": "f8b3364095121eb6216572e2904cb09f1602d406",
+    "identity_and_observation_limits": "Tool and model family information is runtime-supplied. No claim is made about hidden implementation internals, legal personhood, independent intent, authorship rights, an account-level Code Owner approval, or any external effect."
+  },
+  "human_contributions": [
+    {
+      "type": "PURPOSE_AND_CONSTRAINTS",
+      "description": "Directed completion of the requested-review lifecycle as an exact-head, fail-closed repository-internal mechanism; required that no account be impersonated and no approval, merge, release, deployment, publication or external effect be fabricated."
+    }
+  ],
+  "artificial_cognitive_contributions": [
+    {
+      "type": "REPOSITORY_REOBSERVATION_AND_ANALYSIS",
+      "description": "Identified the missing executable exact-head requested-review disposition path and bound the observed PR #640 review-state limitation."
+    },
+    {
+      "type": "IMPLEMENTATION_AND_VALIDATION",
+      "description": "Drafted the trusted-default-branch executor, unprivileged review signal, read-only snapshotter, fail-closed decision and target-resolution cores, focused tests, policy and documentation bindings, and integrity materialization plan."
+    }
+  ],
+  "joint_components": [
+    {
+      "component": "requested-review lifecycle executor",
+      "human_part": "purpose, constraints and decision to complete the lifecycle",
+      "artificial_cognitive_part": "repository observation, implementation, test and evidence design",
+      "separable": true
+    }
+  ],
+  "unresolved_origin": [],
+  "inputs": {
+    "retention_mode": "METADATA_ONLY",
+    "human_directive_transport": "CURRENT_CHAT_SESSION",
+    "raw_transcript_persisted": false,
+    "transport_input_digest": "UNAVAILABLE",
+    "repository_inputs": [
+      {
+        "path": "AI",
+        "git_blob_at_source_commit": "4568ace744168d3ea780ed83e420c361534ea267",
+        "purpose": "canonical runtime and effect boundary"
+      },
+      {
+        "path": "AGENTS.md",
+        "git_blob_at_source_commit": "4e89045aaad5b513cf2bf604f68b6a3417a6979a",
+        "purpose": "repository execution constraints"
+      },
+      {
+        "path": "GOVERNANCE.md",
+        "git_blob_at_source_commit": "dea8c3667dbce23330e08b866c9e84f3753bb51f",
+        "purpose": "Code Owner and review requirements"
+      },
+      {
+        "path": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+        "git_blob_at_source_commit": "d3fb4e10781ae0fb8afb4572e596e35789244d4d",
+        "purpose": "requested-review lifecycle policy"
+      },
+      {
+        "path": "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+        "git_blob_at_source_commit": "31578d038956d2fac65ce2de00bf6b7fffb2d38a",
+        "purpose": "review-lifecycle delegation"
+      }
+    ]
+  },
+  "authorization": {
+    "delegation_path": "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+    "delegation_id": "OWNER-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1",
+    "standing_scope": "perform_requested_substantive_reviews_without_reinteraction",
+    "current_directive": "Product Owner directed that the previously required review-lifecycle implementation be completed rather than silently left pending.",
+    "identity_boundary": "The executor must report GitHub's actual signer and may not impersonate @Goldkelch or claim an unrecorded account-level approval."
+  },
+  "observed_defect": {
+    "policy_path": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+    "policy_rule": "requested_review_default=EXECUTE_IMMEDIATELY",
+    "missing_implementation": "No workflow bound the policy to an exact-head review disposition; the collective-review workflow was intentionally evidence-only and read-only.",
+    "reproduction": {
+      "pull_request": 640,
+      "base_sha": "88dde0ba2394e941f11b8e848fcd4899bbc5d29c",
+      "head_sha": "f8b3364095121eb6216572e2904cb09f1602d406",
+      "tree_sha": "08a873b2e5e81fd2ccfb445257dac6f5bb30de6e",
+      "api_result": "GitHub REST rejected same-account approval with HTTP 422 Review Can not approve your own pull request.",
+      "classification": "REQUESTED_REVIEW_LIFECYCLE_IMPLEMENTATION_GAP"
+    }
+  },
+  "outputs": {
+    "content_head_before_work_unit": "f8b3364095121eb6216572e2904cb09f1602d406",
+    "content_tree_before_work_unit": "08a873b2e5e81fd2ccfb445257dac6f5bb30de6e",
+    "paths": [
+      ".github/workflows/qikvrt_requested_review_lifecycle.yml",
+      ".github/workflows/qikvrt_requested_review_signal.yml",
+      "Makefile",
+      "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
+      "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+      "REPOSITORY_FILE_MANIFEST.json",
+      "REPOSITORY_FILE_MANIFEST.json.sha256",
+      "SHA256SUMS.txt",
+      "state/work_units/QIKVRT_REQUESTED_REVIEW_LIFECYCLE_EXECUTOR_V1.json",
+      "tests/test_qikvrt_requested_review_lifecycle.py",
+      "tests/test_qikvrt_requested_review_snapshot.py",
+      "tests/test_qikvrt_requested_review_target.py",
+      "tests/test_qikvrt_requested_review_lifecycle_contract.py",
+      "tools/qikvrt_requested_review_lifecycle.py",
+      "tools/qikvrt_requested_review_snapshot.py",
+      "tools/qikvrt_requested_review_target.py"
+    ],
+    "sha256_binding": "LOCAL_REPOSITORY_NATIVE_INTEGRITY_REGENERATED_AND_VERIFIED; FINAL_APPEND_ONLY_COMMIT_BINDING_PENDING",
+    "self_binding_rule": "The future Git commit and repository-native integrity outputs containing this work-unit file bind its exact bytes; no impossible in-file self-hash is claimed."
+  },
+  "required_behavior": [
+    "Run write-capable review lifecycle logic only from trusted default-branch bytes; inspect candidate bytes through GitHub APIs.",
+    "Use a zero-permission review signal and a separately trusted executor; never pass an artifact, candidate byte, shell fragment or PR-controlled workflow content into the write-capable execution path.",
+    "Reobserve the current base, exact head, tree, current test-merge context, changed paths and bounded rendered diff, comments, reviews, user and team requested-review history, unresolved threads, competing/superseded state, and observable Actions checks plus legacy statuses on the head and test-merge contexts; fail closed when GitHub files/diff completeness boundaries or counts do not agree.",
+    "Treat observed Actions/status data as evidence-limited: it cannot establish branch-protection completeness, merge readiness, Code Owner approval, release readiness or an external effect.",
+    "Reobserve after a run only when GitHub's API binds that run to exactly one current open PR with the expected workflow name, path and event; reobserve on eligible status events and on the default-branch reconciliation schedule so an already submitted review can be reconsidered when observable gates later change.",
+    "Record one deduplicated exact-binding COMMENT_WITH_BLOCKER review when no eligible requested reviewer has recorded an exact-head APPROVE, REQUEST_CHANGES or COMMENT_WITH_BLOCKER disposition; render PR-controlled evidence as bounded JSON-safe, Markdown-inert excerpts while retaining the full exact binding hash.",
+    "Bind any lifecycle comment to commit_id and reobserve both its returned review state and the candidate immediately after the write.",
+    "Fail the lifecycle check while the review condition remains unresolved.",
+    "Never auto-approve, auto-merge, impersonate a GitHub account, or claim an external effect."
+  ],
+  "verification": {
+    "targeted_tests": [
+      "tests.test_qikvrt_requested_review_lifecycle",
+      "tests.test_qikvrt_requested_review_snapshot",
+      "tests.test_qikvrt_requested_review_target",
+      "tests.test_qikvrt_requested_review_lifecycle_contract"
+    ],
+    "integrity": "VERIFIED_LOCAL_REPOSITORY_NATIVE_REGENERATION_AND_VERIFICATION",
+    "focused_lifecycle_suite": "VERIFIED_LOCAL_72_TESTS",
+    "full_local_suite": "VERIFIED_LOCAL_MAKE_TEST",
+    "remote_exact_head_gates": "PENDING_AFTER_APPEND_ONLY_PUSH",
+    "bootstrap": "PENDING_FRESH_HUMAN_PRODUCT_OWNER_COMMENT_WITH_BLOCKER_ON_INTRODUCING_PR"
+  },
+  "git_history": {
+    "branch": "agent/delivery-closure-browser-e2e-v2-88dde0b",
+    "base_commit": "88dde0ba2394e941f11b8e848fcd4899bbc5d29c",
+    "base_tree": "c56cefb1464ec934d4b34b705618d5de2b40292c",
+    "content_commits": [],
+    "append_only": true,
+    "force_push": false,
+    "history_rewrite": false,
+    "candidate_commit": "BOUND_BY_GIT_COMMIT_CONTAINING_THIS_WORK_UNIT",
+    "merge": "NOT_EXECUTED"
+  },
+  "human_decision": {
+    "directive": "RECEIVED",
+    "implementation_authorization": "PRODUCT_OWNER_AUTHORIZED_CURRENT_CHAT",
+    "candidate_review": "PENDING",
+    "acceptance": "NOT_YET_RECORDED",
+    "rejection": "NOT_RECORDED",
+    "manual_modification": "NOT_RECORDED"
+  },
+  "external_effects": {
+    "repository_commit": "AUTHORIZED_REVIEW_BRANCH_ONLY",
+    "pull_request": "EXISTING_REVIEW_CANDIDATE_UPDATED_APPEND_ONLY",
+    "merge": "NOT_EXECUTED",
+    "release": "NOT_EXECUTED",
+    "deployment": "NOT_EXECUTED",
+    "zenodo": "NOT_EXECUTED",
+    "ietf": "NOT_EXECUTED"
+  },
+  "candidate_state": "LOCAL_VALIDATED_PENDING_APPEND_ONLY_PUSH_REMOTE_EXACT_HEAD_GATES_AND_HUMAN_REVIEW",
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
