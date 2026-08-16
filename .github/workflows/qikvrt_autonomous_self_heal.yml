@@ -75,6 +75,28 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Bind canonical upstream remote from repository policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_url="$(python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          policy = json.loads(Path('policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json').read_text(encoding='utf-8'))
+          canonical = policy['personal_working_memory']['canonical_source_remote']
+          if canonical.get('name') != 'upstream' or not isinstance(canonical.get('url'), str):
+              raise SystemExit('BLOCK: canonical upstream policy is malformed')
+          print(canonical['url'])
+          PY
+          )"
+          test -n "$upstream_url"
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "$upstream_url"
+          else
+            git remote add upstream "$upstream_url"
+          fi
+          test "$(git remote get-url upstream)" = "$upstream_url"
+
       - name: Verify continuous opportunistic auto-repair contract
         shell: bash
         run: |
