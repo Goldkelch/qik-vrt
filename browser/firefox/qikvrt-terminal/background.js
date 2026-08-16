@@ -87,25 +87,67 @@ async function persistWatchdogFrame() {
 
 async function ensureWatchdog() {
   const current = await browser.alarms.get(WATCHDOG_ALARM);
-  if (!current) {
-    await browser.alarms.create(WATCHDOG_ALARM, {periodInMinutes: WATCHDOG_PERIOD_MINUTES});
-  }
+  if (!current) await browser.alarms.create(WATCHDOG_ALARM, {periodInMinutes: WATCHDOG_PERIOD_MINUTES});
   return persistWatchdogFrame();
 }
 
-function parseEffectAck(raw) {
+function decodeSfBytes(value) {
+  if (typeof value !== "string" || value.length < 2 || value[0] !== ":" || value[value.length - 1] !== ":") return null;
+  try {
+    const binary = atob(value.slice(1, -1));
+    return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+  } catch (_) {
+    return null;
+  }
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function asciiFromBytes(bytes) {
+  if (!bytes || bytes.some(byte => byte > 0x7f)) return null;
+  return String.fromCharCode(...bytes);
+}
+
+function sfBytesFromAscii(value) {
+  if (typeof value !== "string" || !/^[\x20-\x7e]+$/.test(value)) throw new Error("non-ASCII commit token");
+  return `:${btoa(value)}:`;
+}
+
+function sfBytesFromHex(hex) {
+  if (!/^[0-9a-f]{64}$/.test(hex || "")) throw new Error("invalid record hash");
+  let binary = "";
+  for (let i = 0; i < hex.length; i += 2) binary += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+  return `:${btoa(binary)}:`;
+}
+
+function parseStructuredDictionary(raw) {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const members = new Map();
   for (const part of raw.split(",")) {
-    const [k, ...rest] = part.trim().split("=");
-    if (!k || !rest.length) continue;
-    members.set(k.trim().toLowerCase(), rest.join("=").trim());
+    const index = part.indexOf("=");
+    if (index <= 0) return null;
+    const key = part.slice(0, index).trim().toLowerCase();
+    const value = part.slice(index + 1).trim();
+    if (!/^[a-z*][a-z0-9_.*-]*$/.test(key) || members.has(key)) return null;
+    members.set(key, value);
   }
+  return members;
+}
+
+function parseEffectAck(raw) {
+  const members = parseStructuredDictionary(raw);
+  if (!members) return null;
   const v = Number(members.get("v"));
-  const token = (members.get("state") || "").replace(/^"|"$/g, "").toLowerCase();
-  const state = STATE_MAP.get(token);
-  if (v !== 1 || !state) return null;
-  return {v, state, raw};
+  const stateToken = (members.get("state") || "").toLowerCase();
+  const state = STATE_MAP.get(stateToken);
+  const hashBytes = decodeSfBytes(members.get("hash"));
+  const tokenBytes = members.has("token") ? decodeSfBytes(members.get("token")) : null;
+  if (v !== 1 || !state || !hashBytes || hashBytes.length !== 32) return null;
+  const commitToken = tokenBytes ? asciiFromBytes(tokenBytes) : null;
+  if (members.has("token") && !commitToken) return null;
+  return {v, state, record_hash: bytesToHex(hashBytes), commit_token: commitToken, raw};
 }
 
 async function backendBase() {
@@ -117,22 +159,33 @@ async function backendBase() {
 
 async function backendRequest(path, init) {
   const base = await backendBase();
-  const response = await fetch(`${base}${path}`, {
-    credentials: "omit",
-    cache: "no-store",
-    ...init
-  });
+  const response = await fetch(`${base}${path}`, {credentials: "omit", cache: "no-store", ...init});
   const effect = parseEffectAck(response.headers.get("Effect-Ack"));
-  let body = null;
   const type = response.headers.get("content-type") || "";
-  if (type.includes("application/json")) body = await response.json();
-  else body = {text: await response.text()};
+  const body = type.includes("application/json") ? await response.json() : {text: await response.text()};
   return {http_status: response.status, effect_ack: effect, body};
 }
 
 async function discover() {
   const result = await backendRequest("/.well-known/effect-ack", {method: "GET"});
   return {...result, discovered: result.http_status >= 200 && result.http_status < 300};
+}
+
+async function validatePreparedRecord(result) {
+  const effect = result.effect_ack;
+  const body = result.body;
+  if (!effect || effect.state !== "EFFECT_ACK_DONE") return fail("prepare is not DONE");
+  if (!body || typeof body.record_hash !== "string" || !/^[0-9a-f]{64}$/.test(body.record_hash)) return fail("prepare record hash unavailable");
+  if (body.record_hash !== effect.record_hash) return fail("compact/full record hash mismatch");
+  if (!effect.commit_token || body.commit_token !== effect.commit_token) return fail("compact/full commit token mismatch");
+  if (typeof body.record_url !== "string" || !body.record_url.startsWith("/effect-ack/records/")) return fail("bound record URL unavailable");
+  const recordResult = await backendRequest(body.record_url, {method: "GET"});
+  const record = recordResult.body;
+  if (recordResult.http_status !== 200 || !recordResult.effect_ack || !record) return fail("full record unavailable");
+  if (recordResult.effect_ack.record_hash !== body.record_hash) return fail("record response hash mismatch");
+  if (record.state !== "EFFECT_ACK_DONE" || record.ordinary_release !== true) return fail("full record is not release-eligible DONE");
+  if (record.record_hash !== `sha256:${body.record_hash}`) return fail("full record self-binding mismatch");
+  return {...result, record_validated: true, full_record: record, ordinary_release: false};
 }
 
 async function prepareEffect(payload) {
@@ -144,41 +197,30 @@ async function prepareEffect(payload) {
     body: JSON.stringify(payload)
   });
   if (!result.effect_ack) return fail("missing or malformed Effect-Ack response");
-  return {...result, ordinary_release: false};
+  if (result.effect_ack.state !== "EFFECT_ACK_DONE") return {...result, record_validated: false, ordinary_release: false};
+  return validatePreparedRecord(result);
 }
 
 async function commitEffect(payload) {
   if (!payload || payload.confirmed !== true) return fail("explicit commit confirmation required");
   const prepared = payload.prepared;
-  if (!prepared || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
-    return fail("validated DONE prepare result required");
-  }
-  const token = prepared.body && prepared.body.commit_token;
-  const hash = prepared.body && prepared.body.record_hash;
+  if (!prepared || prepared.record_validated !== true || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") return fail("validated DONE prepare result required");
+  const token = prepared.effect_ack.commit_token;
+  const hash = prepared.effect_ack.record_hash;
   if (typeof token !== "string" || typeof hash !== "string") return fail("prepare binding unavailable");
+  const effectAckRequest = `v=1, mode=commit, token=${sfBytesFromAscii(token)}, hash=${sfBytesFromHex(hash)}`;
   const result = await backendRequest("/terminal/commit", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Effect-Ack-Request": "v=1, mode=commit",
-      "X-QIKVRT-Commit-Token": token,
-      "X-QIKVRT-Record-Hash": hash
-    },
+    headers: {"Content-Type": "application/json", "Effect-Ack-Request": effectAckRequest},
     body: JSON.stringify(payload.request || {})
   });
   const done = result.effect_ack && result.effect_ack.state === "EFFECT_ACK_DONE";
-  return {...result, ordinary_release: Boolean(done)};
+  return {...result, ordinary_release: Boolean(done && result.body && result.body.ordinary_release === true)};
 }
 
-browser.runtime.onInstalled.addListener(() => {
-  ensureWatchdog().catch(() => undefined);
-});
-browser.runtime.onStartup.addListener(() => {
-  ensureWatchdog().catch(() => undefined);
-});
-browser.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined);
-});
+browser.runtime.onInstalled.addListener(() => { ensureWatchdog().catch(() => undefined); });
+browser.runtime.onStartup.addListener(() => { ensureWatchdog().catch(() => undefined); });
+browser.alarms.onAlarm.addListener(alarm => { if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined); });
 ensureWatchdog().catch(() => undefined);
 
 browser.runtime.onMessage.addListener(message => {
