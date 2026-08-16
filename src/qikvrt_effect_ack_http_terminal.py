@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 """Loopback-only reference backend for the QIKVRT Firefox terminal.
 
-This is an Experimental HTTP-profile demonstrator.  It proves the prepare /
+This is an Experimental HTTP-profile demonstrator. It proves the prepare /
 exact-bound single-use commit / post-effect-reobservation shape without granting
 repository, publication, deployment, or other external-effect capability.
 """
@@ -216,17 +216,24 @@ class Handler(BaseHTTPRequestHandler):
         if not token or not record_hash:
             self._json(428, {"state": "HOLD", "ordinary_release": False, "reason": "exact prepare binding required"})
             return
+        commit_input_hash = sha256(canonical_json(body))
         with STATE.lock:
             prepared = STATE.prepared.get(token)
             if prepared is None or prepared.used or prepared.expires_at < time.time() or not hmac.compare_digest(prepared.record_hash, record_hash):
                 self._json(409, {"state": "HOLD", "ordinary_release": False, "reason": "invalid stale used or mismatched token"})
+                return
+            if not hmac.compare_digest(prepared.input_hash, commit_input_hash):
+                self._json(409, {"state": "HOLD", "ordinary_release": False, "reason": "commit payload differs from exact prepared payload"})
                 return
             prepared.used = True
             event = {
                 "event_id": len(STATE.events) + 1,
                 "kind": "TERMINAL_INPUT_ACCEPTED",
                 "record_hash": record_hash,
+                "input_hash": commit_input_hash,
                 "text": str(body.get("text", ""))[:4096],
+                "audio_present": body.get("audio") is not None,
+                "video_present": body.get("video") is not None,
                 "observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "external_effect": "NONE",
             }
