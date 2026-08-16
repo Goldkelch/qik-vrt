@@ -1,6 +1,8 @@
 const AUTHORITY = "Goldkelch/qik-vrt";
-const DEFAULT_BACKEND = "http://127.0.0.1:8766";
-const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8766", "http://localhost:8766"]);
+const DEFAULT_BACKEND = "http://127.0.0.1:8771";
+const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
+const WATCHDOG_ALARM = "qikvrt-repository-watchdog";
+const WATCHDOG_PERIOD_MINUTES = 5;
 const STATE_MAP = new Map([
   ["nack", "EFFECT_NACK"],
   ["continue", "EFFECT_ACK_CONTINUE"],
@@ -59,6 +61,36 @@ async function observeAuthority() {
       ordinary_release_requires: "VALID_EFFECT_ACK_DONE"
     }
   };
+}
+
+async function persistWatchdogFrame() {
+  let frame;
+  try {
+    frame = await observeAuthority();
+  } catch (error) {
+    frame = fail(error.message);
+    frame.observed_at = new Date().toISOString();
+  }
+  const previous = await browser.storage.local.get("qikvrtWatchdogFrame");
+  const prior = previous.qikvrtWatchdogFrame || null;
+  const materialChange = !prior || !frame.ok || !prior.ok ||
+    !prior.source || !frame.source ||
+    prior.source.head !== frame.source.head ||
+    prior.source.tree !== frame.source.tree ||
+    JSON.stringify(prior.workflows || {}) !== JSON.stringify(frame.workflows || {});
+  await browser.storage.local.set({
+    qikvrtWatchdogFrame: frame,
+    qikvrtWatchdogMaterialChange: Boolean(materialChange)
+  });
+  return frame;
+}
+
+async function ensureWatchdog() {
+  const current = await browser.alarms.get(WATCHDOG_ALARM);
+  if (!current) {
+    await browser.alarms.create(WATCHDOG_ALARM, {periodInMinutes: WATCHDOG_PERIOD_MINUTES});
+  }
+  return persistWatchdogFrame();
 }
 
 function parseEffectAck(raw) {
@@ -128,7 +160,7 @@ async function commitEffect(payload) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Effect-Ack-Request": `v=1, mode=commit`,
+      "Effect-Ack-Request": "v=1, mode=commit",
       "X-QIKVRT-Commit-Token": token,
       "X-QIKVRT-Record-Hash": hash
     },
@@ -138,9 +170,20 @@ async function commitEffect(payload) {
   return {...result, ordinary_release: Boolean(done)};
 }
 
+browser.runtime.onInstalled.addListener(() => {
+  ensureWatchdog().catch(() => undefined);
+});
+browser.runtime.onStartup.addListener(() => {
+  ensureWatchdog().catch(() => undefined);
+});
+browser.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined);
+});
+ensureWatchdog().catch(() => undefined);
+
 browser.runtime.onMessage.addListener(message => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
-  if (message.kind === "OBSERVE_AUTHORITY") return observeAuthority().catch(error => fail(error.message));
+  if (message.kind === "OBSERVE_AUTHORITY") return persistWatchdogFrame().catch(error => fail(error.message));
   if (message.kind === "DISCOVER_EFFECT_ACK") return discover().catch(error => fail(error.message));
   if (message.kind === "PREPARE_EFFECT") return prepareEffect(message.payload).catch(error => fail(error.message));
   if (message.kind === "COMMIT_EFFECT") return commitEffect(message.payload).catch(error => fail(error.message));
