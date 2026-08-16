@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT code-owner review observer
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, review_requested, review_request_removed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Validate pull-request event selector without repository access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          pr = event.get("pull_request") or {}
+          number = pr.get("number")
+          if not isinstance(number, int) or number <= 0:
+              raise SystemExit("BLOCK: pull-request number is unavailable")
+          if pr.get("base", {}).get("ref") != "main":
+              raise SystemExit("BLOCK: pull request is not based on main")
+          print(f"observed review lifecycle event for PR #{number}")
+          PY
