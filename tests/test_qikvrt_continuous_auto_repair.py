@@ -54,6 +54,15 @@ class ContinuousAutoRepairContractTests(unittest.TestCase):
         self.assertNotIn("Goldkelch/qik-vrt", workflow)
         self.assertNotIn("ingolf-lohmann/qik-vrt", workflow)
 
+    def test_operational_runner_materializes_policy_bound_upstream(self) -> None:
+        workflow = self.workflow
+        self.assertIn("Bind canonical upstream remote from repository policy", workflow)
+        self.assertIn("canonical_source_remote", workflow)
+        self.assertIn("git remote add upstream \"$upstream_url\"", workflow)
+        self.assertIn("git remote set-url upstream \"$upstream_url\"", workflow)
+        self.assertIn("test \"$(git remote get-url upstream)\" = \"$upstream_url\"", workflow)
+        self.assertNotIn("https://github.com/Goldkelch/qik-vrt.git", workflow)
+
     def test_no_recursive_watchdog_or_self_trigger_is_admitted(self) -> None:
         workflow = self.workflow
         self.assertNotIn(

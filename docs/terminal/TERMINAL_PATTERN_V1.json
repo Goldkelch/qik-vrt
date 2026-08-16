@@ -1,0 +1,88 @@
+{
+  "schema": "qikvrt_repository_terminal_pattern_v1",
+  "pattern_id": "QIKVRT_TERMINAL_PATTERN_V1",
+  "version": "1.0",
+  "purpose": "Transport-neutral passive terminal observation of repository-native self-heal and watchdog evidence.",
+  "canonical_authority": "Goldkelch/qik-vrt",
+  "repository_job": {
+    "workflow": ".github/workflows/qikvrt_self_heal_terminal_monitor.yml",
+    "workflow_name": "QIKVRT self-heal terminal monitor",
+    "controller": "tools/qikvrt_self_heal_terminal_monitor.py",
+    "schedule": "*/5 * * * *",
+    "event_driven": [
+      "push:main",
+      "workflow_run:QIK-VRT autonomous bounded self-heal",
+      "workflow_run:QIKVRT reflexive repository watchdog",
+      "workflow_dispatch"
+    ],
+    "permissions": ["actions:read", "contents:read"],
+    "repository_mutation": false,
+    "external_effect": false
+  },
+  "snapshot_schema": "qikvrt_self_heal_terminal_snapshot_v1",
+  "required_snapshot_sections": [
+    "main",
+    "self_heal",
+    "reflexive_watchdog",
+    "writer_lease",
+    "classification",
+    "terminal_semantics",
+    "completion_claims"
+  ],
+  "semantic_states": {
+    "EXPECTED_FAIL_CLOSED_HOLD": "The controller intentionally stopped because a declared precondition was not established.",
+    "SOURCE_OR_WORKFLOW_CONTRACT_DEFECT": "Fail-closed behavior worked, but a deterministic source/workflow integration defect caused the hold.",
+    "WORKFLOW_EVIDENCE_DEFECT": "A failed execution lacked the receipt required to explain the failure deterministically.",
+    "OBSERVE": "No deterministic terminal defect is established by the current snapshot."
+  },
+  "client_contract": {
+    "mode": "PASSIVE_MONITOR",
+    "credentials_default": "OMIT",
+    "free_url_input": false,
+    "repository_writes": false,
+    "workflow_dispatch": false,
+    "effect_execution": false,
+    "untrusted_remote_content_execution": false,
+    "repository_to_client": "OBSERVATION",
+    "client_to_repository": "NONE_BY_THIS_PATTERN"
+  },
+  "adapters": {
+    "firefox_webextension": {
+      "state": "REFERENCE_IMPLEMENTED",
+      "path": "docs/terminal/firefox/",
+      "manifest": "docs/terminal/firefox/manifest.json",
+      "network_scope": [
+        "https://api.github.com/repos/Goldkelch/qik-vrt/*"
+      ]
+    },
+    "static_web": {
+      "state": "EXISTING_IMPLEMENTATION",
+      "path": "docs/terminal/index.html"
+    },
+    "cli": {
+      "state": "ADAPTER_READY",
+      "input": "snapshot JSON",
+      "output": "terminal rendering"
+    },
+    "http_backend": {
+      "state": "ADAPTER_READY",
+      "input": "snapshot JSON",
+      "required_behavior": "serve without upgrading observation into effect authorization"
+    },
+    "mcp_or_agent_client": {
+      "state": "ADAPTER_READY",
+      "input": "snapshot JSON",
+      "required_behavior": "preserve provenance, exact-head binding and effect boundary"
+    },
+    "other_clients": {
+      "state": "ADAPTER_READY",
+      "input": "snapshot JSON",
+      "required_behavior": "map semantic fields without weakening fail-closed states"
+    }
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
