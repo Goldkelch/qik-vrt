@@ -1,0 +1,539 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Ingolf Lohmann.
+name: QIK-VRT requested review lifecycle
+
+# The write-capable executor must be defined and checked out from the default
+# branch. Review submission is relayed through a non-authoritative signal
+# workflow; no output, artifact, candidate byte or shell fragment from that
+# workflow is consumed here. Completion of every repository PR workflow,
+# legacy status events, and a bounded default-branch reconciliation schedule
+# causes a reobservation so a review that precedes CI completion is rechecked
+# without a re-submission.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Open pull request number to reobserve"
+        required: true
+        type: string
+  pull_request_target:
+    types:
+      [opened, reopened, ready_for_review, converted_to_draft, synchronize, edited, review_requested, review_request_removed]
+  workflow_run:
+    workflows:
+      - QIK-VRT requested review signal
+      - QIKVRT adaptive runtime
+      - QIK-VRT authenticated audio request
+      - QIK-VRT autonomous bounded self-heal
+      - QIKVRT Batch-003 remaining archive probe
+      - QIKVRT Batch-003 remaining subject disposition
+      - QIKVRT Batch-003 subject 172dd public archive probe
+      - QIKVRT repository evidence materialization
+      - QIKVRT CI
+      - QIK-VRT manuscript proof coverage
+      - QIKVRT Collective Proposal Review
+      - QIK-VRT combined Batch 002 promotion head
+      - QIKVRT effective corpus closure overlay
+      - QIKVRT corpus correction temporal precedence
+      - QIK-VRT formalization and audio tooling
+      - QIK-VRT global claim completion
+      - QIKVRT live status watch
+      - QIKVRT PR18 integrity repair
+      - QIK-VRT Mandelbrot 42-loop proof reproduction
+      - QIK-VRT measurement-derived dimensions proof
+      - QIK-VRT measurement-independence boundary verification
+      - QIKVRT pre-spacetime Zenodo scoped Effect-ACK
+      - QIK-VRT publication router
+      - QIK-VRT c measurement binding proof
+      - QIK-VRT QCE candidate verification
+      - QIK-VRT QCE causal-axis bridge proof
+      - QIK-VRT QCE causal-axis evidence selection proof
+      - QIK-VRT QCE now serialization proof
+      - QIK-VRT QCE null calibration ratio proof
+      - QIKVRT reflexive repository watchdog
+      - QIK-VRT Round Trip final byte freeze
+      - QIK-VRT Round Trip prepublication return
+      - QIK-VRT Round Trip Zenodo bundle freeze
+      - QIK-VRT universal ontology finite-model verification
+      - QIKVRT versioned corrected corpus candidates
+      - QIKVRT workflow executor watchdog
+    types: [completed]
+  status:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-requested-review-lifecycle-target:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      pull_requests: ${{ steps.resolve.outputs.pull_requests }}
+      trusted_workflow_sha: ${{ steps.trusted_source.outputs.sha }}
+    steps:
+      - name: Bind the executor to its exact trusted default-branch source
+        id: trusted_source
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          expected_ref="${REPOSITORY}/.github/workflows/qikvrt_requested_review_lifecycle.yml@refs/heads/${DEFAULT_BRANCH}"
+          if [ "$WORKFLOW_REPOSITORY" != "$REPOSITORY" ] || [ "$WORKFLOW_REF" != "$expected_ref" ]; then
+            echo "Lifecycle executor did not originate from its trusted default-branch workflow source." >&2
+            exit 2
+          fi
+          if ! [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Lifecycle executor workflow SHA is absent or malformed." >&2
+            exit 2
+          fi
+          printf 'sha=%s\n' "$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check out trusted target resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.trusted_source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve one current open pull request from a trusted API observation
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          DIRECT_PR: ${{ github.event.pull_request.number || inputs.pr || '' }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name || '' }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event || '' }}
+          STATUS_HEAD: ${{ github.event.sha || '' }}
+        run: |
+          set -euo pipefail
+          selection=/tmp/qikvrt-requested-review-target.json
+          case "$EVENT_NAME" in
+            pull_request_target|workflow_dispatch)
+              PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+                tools/qikvrt_requested_review_target.py \
+                --repository "$REPOSITORY" --direct-pull-request "$DIRECT_PR" > "$selection"
+              ;;
+            workflow_run)
+              EXPECTED_WORKFLOW_EVENT="pull_request"
+              case "$WORKFLOW_RUN_NAME" in
+                "QIK-VRT requested review signal")
+                  EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_requested_review_signal.yml"
+                  EXPECTED_WORKFLOW_EVENT="pull_request_review"
+                  ;;
+                "QIKVRT adaptive runtime") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_adaptive_runtime.yml" ;;
+                "QIK-VRT authenticated audio request") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_audio_request.yml" ;;
+                "QIK-VRT autonomous bounded self-heal") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_autonomous_self_heal.yml" ;;
+                "QIKVRT Batch-003 remaining archive probe") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_batch003_remaining_archive_probe.yml" ;;
+                "QIKVRT Batch-003 remaining subject disposition") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_batch003_remaining_disposition.yml" ;;
+                "QIKVRT Batch-003 subject 172dd public archive probe") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_batch003_subject_172dd_public_probe.yml" ;;
+                "QIKVRT repository evidence materialization") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_batch04_integrity.yml" ;;
+                "QIKVRT CI") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_ci.yml" ;;
+                "QIK-VRT manuscript proof coverage") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_manuscript_proof.yml" ;;
+                "QIKVRT Collective Proposal Review") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_collective_review.yml" ;;
+                "QIK-VRT combined Batch 002 promotion head") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_combined_batch_002_promotion_head.yml" ;;
+                "QIKVRT effective corpus closure overlay") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_corpus_closure_overlay.yml" ;;
+                "QIKVRT corpus correction temporal precedence") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_corpus_status_temporal_precedence.yml" ;;
+                "QIK-VRT formalization and audio tooling") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_formalization_and_audio.yml" ;;
+                "QIK-VRT global claim completion") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_global_completion.yml" ;;
+                "QIKVRT live status watch") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_live_status_watch.yml" ;;
+                "QIKVRT PR18 integrity repair") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_pr18_integrity_repair.yml" ;;
+                "QIK-VRT Mandelbrot 42-loop proof reproduction") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_mandelbrot_42_proof_reproduction.yml" ;;
+                "QIK-VRT measurement-derived dimensions proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_measurement_derived_dimensions.yml" ;;
+                "QIK-VRT measurement-independence boundary verification") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_measurement_independence_formalization.yml" ;;
+                "QIKVRT pre-spacetime Zenodo scoped Effect-ACK") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_pre_spacetime_zenodo_scoped_effect_ack.yml" ;;
+                "QIK-VRT publication router") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_publication_router.yml" ;;
+                "QIK-VRT c measurement binding proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_c_measurement_binding.yml" ;;
+                "QIK-VRT QCE candidate verification") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_candidate.yml" ;;
+                "QIK-VRT QCE causal-axis bridge proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_causal_axis_bridge.yml" ;;
+                "QIK-VRT QCE causal-axis evidence selection proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_causal_axis_selection.yml" ;;
+                "QIK-VRT QCE now serialization proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_now_serialization.yml" ;;
+                "QIK-VRT QCE null calibration ratio proof") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_qce_null_calibration_ratio.yml" ;;
+                "QIKVRT reflexive repository watchdog") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_reflexive_repository_watchdog.yml" ;;
+                "QIK-VRT Round Trip final byte freeze") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_round_trip_final_byte_freeze.yml" ;;
+                "QIK-VRT Round Trip prepublication return") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_round_trip_prepublication_return.yml" ;;
+                "QIK-VRT Round Trip Zenodo bundle freeze") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_round_trip_zenodo_bundle_freeze.yml" ;;
+                "QIK-VRT universal ontology finite-model verification") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_universal_ontology_formalization.yml" ;;
+                "QIKVRT versioned corrected corpus candidates") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_versioned_corrected_candidates.yml" ;;
+                "QIKVRT workflow executor watchdog") EXPECTED_WORKFLOW_PATH=".github/workflows/qikvrt_workflow_executor_watchdog.yml" ;;
+                *)
+                  echo "Refusing an unexpected workflow_run source: $WORKFLOW_RUN_NAME" >&2
+                  exit 2
+                  ;;
+              esac
+              # Names alone are insufficient: many watched workflows also
+              # complete for push, dispatch, schedule or workflow_run events.
+              # They are non-authoritative liveness noise, not PR gate
+              # completions. A mismatch is a safe no-op here; a matching
+              # payload is still revalidated by the trusted REST resolver.
+              if [ "$WORKFLOW_RUN_EVENT" != "$EXPECTED_WORKFLOW_EVENT" ]; then
+                printf '{"pull_request":null}\n' > "$selection"
+              else
+                PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+                  tools/qikvrt_requested_review_target.py \
+                  --repository "$REPOSITORY" --workflow-run-id "$WORKFLOW_RUN_ID" \
+                  --expected-workflow-name "$WORKFLOW_RUN_NAME" \
+                  --expected-workflow-path "$EXPECTED_WORKFLOW_PATH" \
+                  --expected-event "$EXPECTED_WORKFLOW_EVENT" > "$selection"
+              fi
+              ;;
+            status)
+              PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+                tools/qikvrt_requested_review_target.py \
+                --repository "$REPOSITORY" --commit-sha "$STATUS_HEAD" > "$selection"
+              ;;
+            schedule)
+              PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+                tools/qikvrt_requested_review_target.py \
+                --repository "$REPOSITORY" --all-open > "$selection"
+              ;;
+            *)
+              echo "Refusing unsupported lifecycle trigger: $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          python3 -B - <<'PY'
+          import json
+          import os
+
+          value = json.load(open("/tmp/qikvrt-requested-review-target.json", encoding="utf-8"))
+          if "pull_requests" in value:
+              pull_requests = value["pull_requests"]
+          elif "pull_request" in value:
+              pull_requests = [] if value["pull_request"] is None else [value["pull_request"]]
+          else:
+              raise SystemExit("target resolver returned no pull request selection")
+          if not isinstance(pull_requests, list) or any(
+              isinstance(number, bool) or not isinstance(number, int) or number < 1
+              for number in pull_requests
+          ):
+              raise SystemExit("target resolver returned malformed pull request selection")
+          if len(set(pull_requests)) != len(pull_requests):
+              raise SystemExit("target resolver returned duplicate pull request selection")
+          rendered = json.dumps(sorted(pull_requests), separators=(",", ":"))
+          if not pull_requests:
+              print("No current open pull request remains for this stale event.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"pull_requests={rendered}\n")
+          PY
+
+  execute-requested-review-lifecycle:
+    needs: resolve-requested-review-lifecycle-target
+    if: >-
+      needs.resolve-requested-review-lifecycle-target.outputs.pull_requests != '' &&
+      needs.resolve-requested-review-lifecycle-target.outputs.pull_requests != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pull_request: ${{ fromJSON(needs.resolve-requested-review-lifecycle-target.outputs.pull_requests) }}
+    concurrency:
+      # Serialize only one target PR. A repository-global group would let a
+      # busy PR displace pending reconciliations for every other open PR.
+      group: qikvrt-requested-review-lifecycle-${{ github.repository }}-${{ matrix.pull_request }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      checks: read
+      issues: read
+      pull-requests: write
+      statuses: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      REQUESTED_PR: ${{ matrix.pull_request }}
+      TRUSTED_WORKFLOW_SHA: ${{ needs.resolve-requested-review-lifecycle-target.outputs.trusted_workflow_sha }}
+    steps:
+      # Never check out or execute candidate bytes. `pull_request_target`,
+      # `workflow_run` and `status` are evaluated from this
+      # workflow's exact trusted default-branch definition; the candidate is read
+      # only through GitHub APIs in the snapshotter below.
+      - name: Check out trusted decision code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve-requested-review-lifecycle-target.outputs.trusted_workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Regression-test trusted review decision code
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_requested_review_lifecycle \
+            tests.test_qikvrt_requested_review_snapshot \
+            tests.test_qikvrt_requested_review_target \
+            tests.test_qikvrt_requested_review_lifecycle_contract
+
+      - name: Reobserve initial exact requested-review state
+        id: initial
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_snapshot.py \
+            --repository "$REPOSITORY" --pull-request "$REQUESTED_PR" \
+            > /tmp/qikvrt-requested-review-initial-snapshot.json
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_lifecycle.py evaluate \
+            --input /tmp/qikvrt-requested-review-initial-snapshot.json \
+            > /tmp/qikvrt-requested-review-initial-decision.json
+          set -e
+          python3 -B - <<'PY'
+          import json
+          value = json.load(open("/tmp/qikvrt-requested-review-initial-snapshot.json", encoding="utf-8"))
+          decision = json.load(open("/tmp/qikvrt-requested-review-initial-decision.json", encoding="utf-8"))
+          print(json.dumps({
+              "base": value["base_sha"],
+              "head": value["head_sha"],
+              "tree": value["tree_sha"],
+              "test_merge": value["merge_commit_sha"],
+              "paths": value["changed_paths"],
+              "check_runs": value["check_run_count"],
+              "legacy_statuses": value["legacy_status_count"],
+              "comment_count": len(value["comments"]),
+              "decision": decision["state"],
+              "blocker": decision.get("first_blocker"),
+          }, sort_keys=True))
+          with open("/tmp/qikvrt-requested-review-initial-output", "w", encoding="utf-8") as output:
+              output.write(f"state={decision['state']}\n")
+              output.write(f"persistable={str(bool(decision.get('persistable'))).lower()}\n")
+              output.write(f"recorded={str(bool(decision.get('review_already_recorded'))).lower()}\n")
+              output.write(f"blocker={decision.get('first_blocker') or ''}\n")
+          PY
+          cat /tmp/qikvrt-requested-review-initial-output >> "$GITHUB_OUTPUT"
+
+      - name: Reobserve immediately before a lifecycle write
+        id: before_write
+        if: >-
+          steps.initial.outputs.state == 'BLOCK' &&
+          steps.initial.outputs.persistable == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_snapshot.py \
+            --repository "$REPOSITORY" --pull-request "$REQUESTED_PR" \
+            > /tmp/qikvrt-requested-review-before-write-snapshot.json
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_lifecycle.py evaluate \
+            --input /tmp/qikvrt-requested-review-before-write-snapshot.json \
+            > /tmp/qikvrt-requested-review-before-write-decision.json
+          set -e
+          python3 -B - <<'PY'
+          import json
+          value = json.load(open("/tmp/qikvrt-requested-review-before-write-decision.json", encoding="utf-8"))
+          with open("/tmp/qikvrt-requested-review-before-write-output", "w", encoding="utf-8") as output:
+              output.write(f"state={value['state']}\n")
+              output.write(f"persistable={str(bool(value.get('persistable'))).lower()}\n")
+              output.write(f"recorded={str(bool(value.get('review_already_recorded'))).lower()}\n")
+              output.write(f"blocker={value.get('first_blocker') or ''}\n")
+          PY
+          cat /tmp/qikvrt-requested-review-before-write-output >> "$GITHUB_OUTPUT"
+
+      - name: Persist one exact-binding COMMENT_WITH_BLOCKER review
+        id: persist
+        if: >-
+          steps.before_write.outputs.state == 'BLOCK' &&
+          steps.before_write.outputs.persistable == 'true' &&
+          steps.before_write.outputs.recorded != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A prior step selected this write path, but repeat the *full*
+          # read-only observation in this same shell immediately before POST.
+          # If a head, base, review, marker, gate, or competing-writer fact
+          # changed between steps, no stale decision is persisted.
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_snapshot.py \
+            --repository "$REPOSITORY" --pull-request "$REQUESTED_PR" \
+            > /tmp/qikvrt-requested-review-pre-persist-snapshot.json
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_lifecycle.py evaluate \
+            --input /tmp/qikvrt-requested-review-pre-persist-snapshot.json \
+            > /tmp/qikvrt-requested-review-pre-persist-decision.json
+          set -e
+          python3 -B - <<'PY'
+          import json
+
+          value = json.load(open("/tmp/qikvrt-requested-review-pre-persist-decision.json", encoding="utf-8"))
+          if value.get("state") != "BLOCK" or not value.get("persistable"):
+              raise SystemExit("pre-persist reobservation no longer permits a lifecycle blocker review")
+          if value.get("review_already_recorded"):
+              raise SystemExit("pre-persist reobservation found an existing lifecycle marker")
+          if not isinstance(value.get("binding_sha256"), str) or len(value["binding_sha256"]) != 64:
+              raise SystemExit("pre-persist reobservation lacks an exact binding")
+          PY
+          python3 -B - <<'PY' > /tmp/qikvrt-requested-review.md
+          import json
+
+
+          MAX_EXCERPT_ITEMS = 16
+          MAX_EXCERPT_TEXT = 160
+
+
+          def bounded_strings(values):
+              rendered = []
+              for value in values[:MAX_EXCERPT_ITEMS]:
+                  rendered.append(value if len(value) <= MAX_EXCERPT_TEXT else value[:MAX_EXCERPT_TEXT - 3] + "...")
+              return {
+                  "shown": rendered,
+                  "shown_count": len(rendered),
+                  "total_count": len(values),
+              }
+
+
+          def safe_json(value):
+              # Preserve raw bytes only in the exact binding.  The returned
+              # JSON contains no literal Markdown-code delimiter, HTML, or
+              # mention character; markdown_json below makes every caller an
+              # inert inline-code span, including GFM links and images.
+              return (
+                  json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+                  .replace("`", "\\u0060")
+                  .replace("@", "\\u0040")
+                  .replace("<", "\\u003c")
+                  .replace(">", "\\u003e")
+                  .replace("&", "\\u0026")
+              )
+
+
+          def markdown_json(value):
+              # safe_json removes literal backticks, so this is one bounded,
+              # syntactically inert Markdown code span rather than PR text.
+              return "`" + safe_json(value) + "`"
+
+
+          value = json.load(open("/tmp/qikvrt-requested-review-pre-persist-decision.json", encoding="utf-8"))
+          print("<!-- qikvrt-review-disposition:COMMENT_WITH_BLOCKER -->")
+          print(value["review_marker"])
+          print()
+          print("## Requested review lifecycle — COMMENT_WITH_BLOCKER")
+          print()
+          print("- Repository / PR JSON: " + markdown_json({"repository": value["repository"], "pull_request": value["pull_request"]}))
+          print("- Base / head / tree JSON: " + markdown_json({"base": value["base_sha"], "head": value["head_sha"], "tree": value["tree_sha"]}))
+          print("- GitHub test-merge JSON: " + markdown_json(value["merge_commit_sha"]))
+          print("- Diff JSON: " + markdown_json({"sha256": value["diff_sha256"], "bytes": value["diff_bytes"]}))
+          print("- Scope JSON (the full scope is bound by binding_sha256): " + markdown_json(bounded_strings(value["reviewed_scope"])))
+          print("- Requested reviewer(s) JSON: " + markdown_json(bounded_strings(value["requested_reviewers"])))
+          print("- Requested team(s) JSON: " + markdown_json(bounded_strings(value["requested_teams"])))
+          print("- Observed exact-head requested-review state(s) JSON: " + markdown_json(value["observed_exact_head_review_states"][:MAX_EXCERPT_ITEMS]))
+          print("- Finding JSON: " + markdown_json({"class": value["first_blocker"], "detail": value["detail"][:2048]}))
+          if value.get("first_non_green_gate"):
+              print("- First non-green gate JSON: " + markdown_json(value["first_non_green_gate"]))
+          print(f"- Next action: {value['next_action']}")
+          print()
+          if value["first_blocker"] == "REQUESTED_REVIEW_NOT_RECORDED":
+              print("No eligible requested-reviewer substantive disposition is currently recorded for this exact binding.")
+          else:
+              print("Lifecycle completion is blocked by the finding above; observed review state is reported without inferring it absent.")
+          print("Gate data cover observed Actions checks and legacy statuses only; they are not a branch-protection, merge-readiness, approval, release, deployment, publication, or external-effect claim.")
+          PY
+          body_bytes="$(wc -c < /tmp/qikvrt-requested-review.md)"
+          if [ "$body_bytes" -gt 60000 ]; then
+            echo "Bounded lifecycle review body still exceeds 60000 UTF-8 bytes." >&2
+            exit 2
+          fi
+          head="$(python3 -B - <<'PY'
+          import json
+          print(json.load(open("/tmp/qikvrt-requested-review-pre-persist-decision.json", encoding="utf-8"))["head_sha"])
+          PY
+          )"
+          body="$(cat /tmp/qikvrt-requested-review.md)"
+          gh api --method POST "repos/${REPOSITORY}/pulls/${REQUESTED_PR}/reviews" \
+            -f event=COMMENT -f "commit_id=${head}" --raw-field body="$body" \
+            > /tmp/qikvrt-requested-review-created.json
+          python3 -B - <<'PY'
+          import json
+          import subprocess
+          expected = json.load(open("/tmp/qikvrt-requested-review-pre-persist-decision.json", encoding="utf-8"))
+          created = json.load(open("/tmp/qikvrt-requested-review-created.json", encoding="utf-8"))
+          review_id = created.get("id")
+          if isinstance(review_id, bool) or not isinstance(review_id, int):
+              raise SystemExit("created lifecycle review has no numeric id")
+          observed = json.loads(subprocess.check_output([
+              "gh", "api",
+              f"repos/{expected['repository']}/pulls/{expected['pull_request']}/reviews/{review_id}",
+          ], text=True))
+          if observed.get("state") != "COMMENTED":
+              raise SystemExit("created lifecycle review is not COMMENTED")
+          if observed.get("commit_id") != expected["head_sha"]:
+              raise SystemExit("created lifecycle review is not bound to the expected head")
+          if expected["review_marker"] not in (observed.get("body") or ""):
+              raise SystemExit("created lifecycle review lost its exact-binding marker")
+          with open("/tmp/qikvrt-requested-review-persist-output", "w", encoding="utf-8") as output:
+              output.write(f"review_id={review_id}\n")
+          PY
+          cat /tmp/qikvrt-requested-review-persist-output >> "$GITHUB_OUTPUT"
+
+      - name: Reobserve final exact requested-review state
+        id: final
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_snapshot.py \
+            --repository "$REPOSITORY" --pull-request "$REQUESTED_PR" \
+            > /tmp/qikvrt-requested-review-final-snapshot.json
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B \
+            tools/qikvrt_requested_review_lifecycle.py evaluate \
+            --input /tmp/qikvrt-requested-review-final-snapshot.json \
+            > /tmp/qikvrt-requested-review-final-decision.json
+          set -e
+          python3 -B - <<'PY'
+          import json
+          snapshot = json.load(open("/tmp/qikvrt-requested-review-final-snapshot.json", encoding="utf-8"))
+          decision = json.load(open("/tmp/qikvrt-requested-review-final-decision.json", encoding="utf-8"))
+          print(json.dumps({
+              "base": snapshot["base_sha"],
+              "head": snapshot["head_sha"],
+              "tree": snapshot["tree_sha"],
+              "decision": decision["state"],
+              "disposition": decision.get("disposition"),
+              "blocker": decision.get("first_blocker"),
+          }, sort_keys=True))
+          with open("/tmp/qikvrt-requested-review-final-output", "w", encoding="utf-8") as output:
+              output.write(f"state={decision['state']}\n")
+              output.write(f"blocker={decision.get('first_blocker') or ''}\n")
+          PY
+          cat /tmp/qikvrt-requested-review-final-output >> "$GITHUB_OUTPUT"
+
+      - name: Fail closed until the requested substantive review is recorded
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="${{ steps.final.outputs.state }}"
+          if [ "$state" = "REVIEW_RECORDED" ] || [ "$state" = "NOT_APPLICABLE" ]; then
+            exit 0
+          fi
+          blocker="${{ steps.final.outputs.blocker }}"
+          if [ -z "$state" ]; then
+            echo "BLOCK: final requested-review reobservation did not complete" >&2
+          else
+            echo "BLOCK: ${blocker:-UNCLASSIFIED_REQUESTED_REVIEW_STATE}" >&2
+          fi
+          exit 2
