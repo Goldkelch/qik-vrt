@@ -50,6 +50,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
     def test_executor_is_bounded_and_sha_bound(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/10 * * * *"', workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("READY_RECLASSIFIED_REOBSERVATION_REQUIRED", workflow)
         self.assertIn('exit 0', workflow)
@@ -57,6 +58,17 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
         self.assertIn("if other.get('base', {}).get('sha') != current_main", workflow)
         self.assertIn("if other.get('head', {}).get('sha') == head", workflow)
+
+    def test_code_owner_review_gate_is_live_and_reobserved(self) -> None:
+        workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("code_owner_review_gate", workflow)
+        self.assertIn("rules/branches/main", workflow)
+        self.assertIn("verify_current_review_gate", workflow)
+        self.assertIn("CODE_OWNER_REVIEW_GATE_NOT_GREEN", workflow)
+        self.assertLess(
+            workflow.rfind("verify_current_review_gate"),
+            workflow.index("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge"),
+        )
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

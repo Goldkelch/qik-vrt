@@ -1,0 +1,91 @@
+{
+  "_license": {
+    "classification": "machine_readable_work_unit",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_required_code_owner_review_enforcement_repair_v1",
+  "work_unit_id": "QIKVRT-REQUIRED-CODE-OWNER-REVIEW-ENFORCEMENT-REPAIR-V1",
+  "title": "Fail-closed native Code Owner review enforcement and promotion guard",
+  "created_at": "2026-08-16T16:16:31Z",
+  "source": {
+    "repository": "Goldkelch/qik-vrt",
+    "ref": "refs/heads/main",
+    "commit": "88dde0ba2394e941f11b8e848fcd4899bbc5d29c",
+    "tree": "c56cefb1464ec934d4b34b705618d5de2b40292c"
+  },
+  "observed_defect": {
+    "ruleset_id": 19344903,
+    "rule_target": "refs/heads/main",
+    "required_approving_review_count": 0,
+    "require_code_owner_review": false,
+    "dismiss_stale_reviews_on_push": false,
+    "require_last_push_approval": false,
+    "evidence": [
+      ".github/CODEOWNERS requests @Goldkelch but does not enforce approval",
+      ".github/workflows/qikvrt_collective_review.yml is proposal-only evidence",
+      ".github/workflows/qikvrt_expected_head_promotion.yml previously had no live review/ruleset precondition before merge"
+    ]
+  },
+  "authorization": {
+    "human_direction": "REPOSITORY_CI_REVIEW_ENFORCEMENT_REPAIR_REQUESTED",
+    "standing_delegations": [
+      "OWNER-QIKVRT-EVOLUTIONARY-AUTOMATION-STANDING-DELEGATION-V1",
+      "OWNER-AUTONOMOUS-REPOSITORY-CONTINUATION-V2"
+    ],
+    "source_repair": "AUTHORIZED_AS_BOUNDED_REVIEWABLE_SUCCESSOR",
+    "github_ruleset_mutation": "SEPARATE_ADMINISTRATIVE_EFFECT_REQUIRED"
+  },
+  "implementation": {
+    "review_gate": "An unprivileged PR/review-event observer contains no repository access or write permission. A trusted-main workflow_run/scheduled publisher then reobserves the current PR head, current main rules, and current reviews, posts only an exact-head status, and never creates, approves, dismisses, or impersonates a review.",
+    "native_rule": "The evaluator accepts success only when GitHub itself requires one approval, Code Owner review, stale-review dismissal, and last-push approval.",
+    "promotion_guard": "Expected-head promotion blocks without a fresh exact-head successful gate observation and reobserves it immediately before its merge endpoint.",
+    "untrusted_pr_boundary": "The observer has permissions: {} and no checkout. The status-writing publisher runs only from main, checks out ref main, consumes no observer output, and never executes a PR head."
+  },
+  "required_platform_completion": {
+    "ruleset_id": 19344903,
+    "preserve_existing_rules": true,
+    "set": {
+      "required_approving_review_count": 1,
+      "require_code_owner_review": true,
+      "dismiss_stale_reviews_on_push": true,
+      "require_last_push_approval": true
+    },
+    "later_after_gate_observation": "Add status context QIKVRT required code-owner review as a required main check.",
+    "boundary": "Only an administrator with an explicit platform authorization may mutate this GitHub ruleset."
+  },
+  "outputs": [
+    ".github/workflows/qikvrt_code_owner_review_observer.yml",
+    ".github/workflows/qikvrt_required_review_gate.yml",
+    "tools/qikvrt_required_review_gate.py",
+    "tests/test_qikvrt_required_review_gate.py",
+    "tests/test_qikvrt_required_review_gate_workflow.py",
+    "tools/qikvrt_expected_head_promotion.py",
+    ".github/workflows/qikvrt_expected_head_promotion.yml",
+    "tests/test_qikvrt_expected_head_promotion.py",
+    "tests/test_qikvrt_expected_head_promotion_contract.py",
+    "Makefile",
+    "state/work_units/QIKVRT_REQUIRED_CODE_OWNER_REVIEW_ENFORCEMENT_REPAIR_V1.json",
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt"
+  ],
+  "verification": {
+    "focused_tests": "PASS_LOCAL_33_TESTS",
+    "full_repository_test": "PENDING_EXACT_HEAD_CI",
+    "repository_integrity": "PENDING_EXACT_HEAD_MATERIALIZATION",
+    "code_owner_review": "PENDING_INDEPENDENT_GITHUB_CODE_OWNER_REVIEW",
+    "ruleset": "PENDING_SEPARATE_ADMINISTRATIVE_EFFECT",
+    "first_remaining_blocker": "NATIVE_GITHUB_RULESET_NOT_YET_ENFORCED"
+  },
+  "boundaries": {
+    "automatic_review_approval": "FORBIDDEN",
+    "review_impersonation": "FORBIDDEN",
+    "automatic_merge": "FORBIDDEN_BY_THIS_WORK_UNIT",
+    "history_rewrite": "FORBIDDEN",
+    "force_push": "FORBIDDEN",
+    "release": "NOT_AUTHORIZED",
+    "external_effect": "NONE"
+  }
+}

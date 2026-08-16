@@ -5,8 +5,8 @@
 
 This module intentionally does not mutate GitHub. It evaluates an exact live
 snapshot and returns either PROMOTABLE or the first deterministic blocker.
-The GitHub workflow is responsible for reobserving the same head/base again
-immediately before changing draft state or merging.
+The GitHub workflow is responsible for reobserving the same head/base/review
+state again immediately before changing draft state or merging.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import json
 import pathlib
 import sys
 from typing import Any, Iterable, Mapping, Sequence
+
 
 PROMOTION_MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
 SUCCESS_CONCLUSIONS = {"success"}
@@ -79,6 +80,43 @@ def _blocked(snapshot: Mapping[str, Any], failure_class: str, detail: str) -> di
     }
 
 
+def _code_owner_review_blocker(
+    snapshot: Mapping[str, Any], expected_head: str
+) -> tuple[str, str] | None:
+    """Bind promotion to the fresh, non-mutating review-gate observation."""
+    observed = snapshot.get("code_owner_review_gate")
+    if not isinstance(observed, Mapping):
+        return (
+            "CODE_OWNER_REVIEW_GATE_MISSING",
+            "promotion snapshot has no Code Owner review-gate observation",
+        )
+    observed_head = observed.get("head_sha")
+    if observed_head != expected_head:
+        return (
+            "CODE_OWNER_REVIEW_STALE",
+            f"review gate head {observed_head!r} != expected head {expected_head}",
+        )
+    state = observed.get("gate_state")
+    if state == "success":
+        return None
+    first_blocker = observed.get("first_blocker")
+    allowed = {
+        "CODE_OWNER_RULE_NOT_ENFORCED",
+        "CODE_OWNER_REVIEW_MISSING",
+        "CODE_OWNER_REVIEW_STALE",
+        "CODE_OWNER_REVIEW_NOT_APPROVED",
+        "CODE_OWNER_REVIEW_DISMISSED",
+        "CODE_OWNER_REVIEW_CHANGES_REQUESTED",
+        "CODE_OWNER_REVIEW_SELF_APPROVAL",
+    }
+    if first_blocker in allowed:
+        return first_blocker, str(observed.get("detail") or first_blocker)
+    return (
+        "CODE_OWNER_REVIEW_GATE_NOT_GREEN",
+        f"Code Owner review gate is {state!r}",
+    )
+
+
 def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     """Evaluate one promotion candidate against the live fail-closed contract."""
     if not isinstance(snapshot, Mapping):
@@ -97,6 +135,10 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         return _blocked(snapshot, "NOT_MERGEABLE", "candidate is not currently mergeable")
     if snapshot.get("external_effect") != "NONE":
         return _blocked(snapshot, "EXTERNAL_EFFECT_BOUNDARY", "candidate crosses an external-effect boundary")
+
+    review_blocker = _code_owner_review_blocker(snapshot, expected_head)
+    if review_blocker is not None:
+        return _blocked(snapshot, *review_blocker)
 
     overlaps = snapshot.get("competing_writer_overlaps", [])
     if not isinstance(overlaps, list):

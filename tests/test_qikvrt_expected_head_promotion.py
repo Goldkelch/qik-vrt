@@ -7,6 +7,7 @@ import pathlib
 import sys
 import unittest
 
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_expected_head_promotion",
@@ -29,6 +30,11 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "draft": True,
             "mergeable": True,
             "external_effect": "NONE",
+            "code_owner_review_gate": {
+                "gate_state": "success",
+                "first_blocker": None,
+                "head_sha": "b" * 40,
+            },
             "required_gates": [
                 "QIKVRT CI",
                 "QIKVRT repository evidence materialization",
@@ -52,6 +58,41 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertEqual(result["state"], "PROMOTABLE")
         self.assertEqual(result["expected_head_sha"], "b" * 40)
         self.assertEqual(result["first_blocker"], None)
+
+    def test_missing_code_owner_gate_blocks(self) -> None:
+        snapshot = self.snapshot()
+        del snapshot["code_owner_review_gate"]
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "CODE_OWNER_REVIEW_GATE_MISSING")
+
+    def test_stale_code_owner_review_blocks(self) -> None:
+        snapshot = self.snapshot(code_owner_review_gate={
+            "gate_state": "success", "head_sha": "c" * 40, "first_blocker": None,
+        })
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "CODE_OWNER_REVIEW_STALE")
+
+    def test_native_rule_not_enforced_blocks(self) -> None:
+        snapshot = self.snapshot(code_owner_review_gate={
+            "gate_state": "failure",
+            "head_sha": "b" * 40,
+            "first_blocker": "CODE_OWNER_RULE_NOT_ENFORCED",
+        })
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "CODE_OWNER_RULE_NOT_ENFORCED")
+
+    def test_pending_review_blocks(self) -> None:
+        snapshot = self.snapshot(code_owner_review_gate={
+            "gate_state": "pending",
+            "head_sha": "b" * 40,
+            "first_blocker": "CODE_OWNER_REVIEW_MISSING",
+        })
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "CODE_OWNER_REVIEW_MISSING")
 
     def test_old_action_required_run_is_superseded_by_newer_success(self) -> None:
         snapshot = self.snapshot()
