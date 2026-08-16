@@ -42,6 +42,8 @@ protokolliert. Geheimnisse sind nicht enthalten.
 
 8. `QIKVRT_EXTERNAL_EFFECTS=enabled`
 
+9. `Authorize push of commit f051ac211b43f6d741b67f4f5a7419fc182fabcf to new branch work/20260815-ai-bootstrap in Goldkelch/qik-vrt, creation of a public draft PR to main, and one append-only provenance/integrity receipt commit on that review branch.`
+
 ## Bildwortlaut
 
 Das einmal zusätzlich zum QIK-VRT-QR-Poster gelieferte, signierte Poster trägt
