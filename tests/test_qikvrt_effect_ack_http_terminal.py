@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import threading
 import time
 import unittest
@@ -16,6 +17,7 @@ MODULE_PATH = ROOT / "src" / "qikvrt_effect_ack_http_terminal.py"
 _spec = importlib.util.spec_from_file_location("qikvrt_effect_ack_http_terminal", MODULE_PATH)
 assert _spec and _spec.loader
 terminal = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = terminal
 _spec.loader.exec_module(terminal)
 
 
