@@ -61,6 +61,41 @@ The repository runtime MUST improve cumulatively by reusing and refining existin
 
 `PASS` is scope-bound. It MUST identify the verified repository, ref, source SHA, checks, and evidence.
 
+## Repository delivery closure
+
+For every authorized repository mutation, the client records the following
+ordered closure before reporting the requested repository effect as delivered:
+
+```text
+SCOPE_AND_IMPLEMENTATION_BOUND
+→ TARGETED_REGRESSION
+→ DOCUMENTATION_DISPOSITION
+→ REPOSITORY_INTEGRITY_MATERIALIZED
+→ EXACT_HEAD_TEST_GATE
+→ REMOTE_REF_REOBSERVED
+→ REPOSITORY_DELIVERY_VERIFIED
+```
+
+`DOCUMENTATION_DISPOSITION` means either that the user, operator, API or
+runtime documentation changed with the behavior, or that the client records
+`NOT_APPLICABLE` and a concrete reason. A local commit, a transport response, a
+push, a merge, a green unrelated workflow, or a zero exit code is not a
+substitute for the complete chain.
+
+Use a test-first, red-green-refactor loop when behavior changes: first make the
+expected observable behavior or failure boundary reproducible, then implement
+the smallest change that satisfies it, then refactor only while the same tests
+remain green. Retain negative and security regressions where the failure class
+is relevant.
+
+For a reachable public browser interface, run the source/security contract and
+the bounded live path appropriate to the interface: page load, intended user
+flow, same-origin and declared cross-origin reads, rejected forbidden input,
+and optional-device behavior. Microphone capture remains opt-in; absent or
+denied browser capability is recorded as `CONTINUE` or `BLOCK`. Visual
+readback state does not prove audible output, and a browser observation does
+not generalize to another browser, device, account, network or time.
+
 ## Durable multi-scope handoff
 
 `AI_PROGRESS.json` uses the durable `qikvrt-ai-progress/3.1` variant of
