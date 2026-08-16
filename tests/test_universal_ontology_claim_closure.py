@@ -2,10 +2,15 @@
 """Boundary regression tests for universal-ontology claim closure."""
 from __future__ import annotations
 
+import copy
+import importlib.util
 import json
 import pathlib
 import re
+import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FORMAL = ROOT / "formalization/QIKVRT_Formalization_v2.0"
@@ -19,6 +24,21 @@ STANDING = ROOT / "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZA
 WORK = ROOT / "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
 IETF = ROOT / "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_ontology_formalization.yml"
+VERIFIER_PATH = FORMAL / "scripts/verify_universal_ontology.py"
+
+
+def load_verifier_module():
+    spec = importlib.util.spec_from_file_location(
+        "qikvrt_verify_universal_ontology", VERIFIER_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("universal-ontology verifier cannot be imported")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+VERIFIER = load_verifier_module()
 
 
 class UniversalOntologyClaimClosureTests(unittest.TestCase):
@@ -88,8 +108,26 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
 
     def test_source_scope_binds_authority_baseline(self):
         scope = self.load(SCOPE)
+        self.assertEqual(scope["schema"], "qikvrt_universal_ontology_source_scope_v2")
         self.assertEqual(scope["repository"], "Goldkelch/qik-vrt")
         self.assertEqual(scope["source_commit"], "df66a3d9ea7dee7889028cc5a93f0ac34424b4b2")
+        resolution = scope["source_resolution"]
+        self.assertEqual(
+            resolution["canonical_remote"],
+            "https://github.com/Goldkelch/qik-vrt.git",
+        )
+        self.assertEqual(resolution["fetch_policy"], "EXACT_COMMIT_IF_MISSING")
+        self.assertEqual(
+            resolution["permitted_execution_repositories"],
+            {
+                "Goldkelch/qik-vrt": {
+                    "source_commit_must_be_ancestor": True,
+                },
+                "ingolf-lohmann/qik-vrt": {
+                    "source_commit_must_be_ancestor": False,
+                },
+            },
+        )
         paths = {item["path"] for item in scope["sources"]}
         self.assertIn("GLOBAL_CLAIM_INVENTORY.json", paths)
         self.assertIn("docs/publications/index.json", paths)
@@ -144,6 +182,162 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
         self.assertIn("make_universal_ontology_kernel_receipt.py", text)
         self.assertIn("UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json", text)
         self.assertIn("universal-ontology-extended-axioms.txt", text)
+
+
+class UniversalOntologySourceProvenanceTests(unittest.TestCase):
+    @staticmethod
+    def git(repository: pathlib.Path, *args: str) -> str:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(completed.stderr)
+        return completed.stdout.strip()
+
+    def init_repository(self, path: pathlib.Path, origin: str) -> None:
+        path.mkdir()
+        self.git(path, "init", "--initial-branch=main")
+        self.git(path, "config", "user.name", "QIK-VRT test")
+        self.git(path, "config", "user.email", "test@example.invalid")
+        self.git(path, "remote", "add", "origin", origin)
+
+    def source_fixture(self, root: pathlib.Path):
+        source = root / "source"
+        self.init_repository(source, "https://github.com/Goldkelch/qik-vrt.git")
+        bound = source / "BOUND.txt"
+        bound.write_text("authority source\n", encoding="utf-8")
+        self.git(source, "add", "BOUND.txt")
+        self.git(source, "commit", "-m", "authority source")
+        commit = self.git(source, "rev-parse", "HEAD")
+        tree = self.git(source, "rev-parse", "HEAD^{tree}")
+        blob = self.git(source, "rev-parse", "HEAD:BOUND.txt")
+        scope = {
+            "schema": "qikvrt_universal_ontology_source_scope_v2",
+            "repository": "Goldkelch/qik-vrt",
+            "source_commit": commit,
+            "source_tree": tree,
+            "source_resolution": {
+                "canonical_remote": "https://github.com/Goldkelch/qik-vrt.git",
+                "fetch_policy": "EXACT_COMMIT_IF_MISSING",
+                "permitted_execution_repositories": {
+                    "Goldkelch/qik-vrt": {
+                        "source_commit_must_be_ancestor": True,
+                    },
+                    "ingolf-lohmann/qik-vrt": {
+                        "source_commit_must_be_ancestor": False,
+                    },
+                },
+            },
+            "sources": [{"path": "BOUND.txt", "git_blob_sha1": blob}],
+        }
+        return source, scope
+
+    def test_mirror_fetches_and_verifies_exact_nonancestor_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            source, scope = self.source_fixture(root)
+            mirror = root / "mirror"
+            self.init_repository(mirror, "https://github.com/ingolf-lohmann/qik-vrt.git")
+            (mirror / "MIRROR.txt").write_text("mirror history\n", encoding="utf-8")
+            self.git(mirror, "add", "MIRROR.txt")
+            self.git(mirror, "commit", "-m", "mirror parent")
+
+            fetches = []
+
+            def fetch_from_fixture(destination, canonical_remote, source_commit):
+                fetches.append((canonical_remote, source_commit))
+                self.git(
+                    destination,
+                    "fetch", "--no-tags", "--depth=1", "--no-write-fetch-head",
+                    str(source), source_commit,
+                )
+
+            with mock.patch.object(
+                VERIFIER,
+                "fetch_exact_source_commit",
+                side_effect=fetch_from_fixture,
+            ):
+                VERIFIER.verify_source_bindings(
+                    scope,
+                    repository_root=mirror,
+                    environment={"GITHUB_REPOSITORY": "ingolf-lohmann/qik-vrt"},
+                )
+
+            self.assertEqual(
+                fetches,
+                [("https://github.com/Goldkelch/qik-vrt.git", scope["source_commit"])],
+            )
+
+    def test_unlisted_execution_repository_is_blocked_before_fetch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            _, scope = self.source_fixture(root)
+            execution = root / "unlisted"
+            self.init_repository(execution, "https://github.com/example/qik-vrt.git")
+            (execution / "UNLISTED.txt").write_text("unlisted\n", encoding="utf-8")
+            self.git(execution, "add", "UNLISTED.txt")
+            self.git(execution, "commit", "-m", "unlisted")
+
+            with mock.patch.object(VERIFIER, "fetch_exact_source_commit") as fetch:
+                with self.assertRaisesRegex(ValueError, "not permitted"):
+                    VERIFIER.verify_source_bindings(
+                        scope,
+                        repository_root=execution,
+                        environment={"GITHUB_REPOSITORY": "example/qik-vrt"},
+                    )
+                fetch.assert_not_called()
+
+    def test_scope_cannot_redirect_fixed_source_or_execution_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            _, scope = self.source_fixture(root)
+            mirror = root / "mirror"
+            self.init_repository(mirror, "https://github.com/ingolf-lohmann/qik-vrt.git")
+            (mirror / "MIRROR.txt").write_text("mirror history\n", encoding="utf-8")
+            self.git(mirror, "add", "MIRROR.txt")
+            self.git(mirror, "commit", "-m", "mirror parent")
+
+            redirected = copy.deepcopy(scope)
+            redirected["repository"] = "example/redirected"
+            redirected["source_resolution"]["canonical_remote"] = (
+                "https://github.com/example/redirected.git"
+            )
+            expanded = copy.deepcopy(scope)
+            expanded["source_resolution"]["permitted_execution_repositories"][
+                "example/qik-vrt"
+            ] = {"source_commit_must_be_ancestor": False}
+            numeric_boolean = copy.deepcopy(scope)
+            numeric_boolean["source_resolution"]["permitted_execution_repositories"][
+                "Goldkelch/qik-vrt"
+            ]["source_commit_must_be_ancestor"] = 1
+
+            for changed, message in (
+                (redirected, "fixed Authority"),
+                (expanded, "fixed pair"),
+                (numeric_boolean, "fixed pair"),
+            ):
+                with self.subTest(message=message):
+                    with mock.patch.object(VERIFIER, "fetch_exact_source_commit") as fetch:
+                        with self.assertRaisesRegex(ValueError, message):
+                            VERIFIER.verify_source_bindings(
+                                changed,
+                                repository_root=mirror,
+                                environment={
+                                    "GITHUB_REPOSITORY": "ingolf-lohmann/qik-vrt"
+                                },
+                            )
+                        fetch.assert_not_called()
+
+    def test_source_binding_has_no_skip_flag(self):
+        self.assertNotIn(
+            "--skip-git-source-bindings",
+            VERIFIER_PATH.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":
