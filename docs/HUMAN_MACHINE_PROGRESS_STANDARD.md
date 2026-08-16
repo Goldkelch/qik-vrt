@@ -1,13 +1,77 @@
 # QIK-VRT Human–Machine Progress Standard
 
 Status: normative repository standard  
-Version: 2.0
+Version: 2.1
 
 ## Purpose
 
 Every externally meaningful repository operation MUST remain visible to the human operator. The client MUST emit a complete progress frame immediately before and immediately after every discrete GitHub action, and whenever an observed workflow, job, or step changes state.
 
 A later summary does not compensate for a missing frame. Prose does not replace execution telemetry.
+
+## Operational foundation
+
+The working method begins with an explicit, inspectable distinction: inputs,
+states, effects, evidence and unknowns must not be collapsed into one label.
+`0` is the neutral element of addition and `1` the neutral element of
+multiplication; these are the basic algebraic reference points used here to
+keep identity, composition and change distinct. The operational path is:
+
+```text
+UNTERSCHIED → INFORMATION → RELATION → KAUSALORDNUNG →
+MODELL → IMPLEMENTIERUNG → TEST → DOKUMENTATION → EVIDENZ → RÜCKBEZUG
+```
+
+This standard does not itself prove a mathematical, physical, legal or
+scientific claim. Formal derivations, empirical observations and normative
+decisions retain their separately bound evidence and review requirements.
+
+## Definition of Ready
+
+Before implementation, a change has a bounded scope, current source/ref,
+observable acceptance criteria, risk and effect classification, applicable test
+plan, documentation plan, provenance/rights considerations and known
+authorization limits. Missing information is a `HOLD` or `BLOCK`, not an
+invitation to invent requirements.
+
+## Test-first engineering loop
+
+For behavior changes, establish the smallest reproducible positive or negative
+test first; implement until it passes; then refactor while all applicable tests
+remain green. Choose the smallest relevant mix of unit, contract, integration,
+security, accessibility, browser, workflow and end-to-end tests. Existing
+regressions remain binding when their source, behavior and safety boundary
+still apply.
+
+## Repository delivery closure
+
+An authorized repository mutation reaches the scoped state
+`REPOSITORY_DELIVERY_VERIFIED` only after all applicable gates complete in this
+order:
+
+```text
+SCOPE_AND_IMPLEMENTATION_BOUND
+→ TARGETED_REGRESSION
+→ DOCUMENTATION_DISPOSITION
+→ REPOSITORY_INTEGRITY_MATERIALIZED
+→ EXACT_HEAD_TEST_GATE
+→ REMOTE_REF_REOBSERVED
+```
+
+Documentation is complete only when it has been updated for the behavioral
+change or explicitly marked `NOT_APPLICABLE` with a reason. Integrity is
+complete only after regeneration for intentional changed bytes and verification
+of the final candidate. Remote reobservation binds repository, target ref,
+head SHA, root tree and observation time after the requested push, merge or
+other repository effect. A local commit, push, merge, green unrelated run, or
+zero exit code alone does not establish delivery closure.
+
+For public browser interfaces, the applicable closure additionally records
+source/security regression, live page load, intended interaction, declared
+CORS/same-origin reads, rejection of forbidden input, and opt-in voice/device
+behavior. A denied microphone, unavailable speech engine or unobserved audio
+output is a bounded result, not a failure to be hidden or a success to be
+claimed.
 
 ## Non-recursive telemetry boundary
 

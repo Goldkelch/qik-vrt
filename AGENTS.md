@@ -81,6 +81,27 @@ verified `DONE` result or a concrete external `BLOCK` that cannot be repaired
 with the already authorized repository capabilities. Commentary, discussion,
 or an unchanged intermediate status MUST NOT replace continued execution.
 
+## Repository delivery closure
+
+`REPOSITORY_DELIVERY_VERIFIED` is the scoped completion state for an authorized
+repository mutation. It requires, in order: a bound scope and implementation,
+an applicable behavioral, negative, security, accessibility, integration or
+end-to-end regression, an updated documentation record or an explicit
+`NOT_APPLICABLE` disposition with reason, regenerated and verified repository
+integrity, an exact-head test gate, and a fresh remote ref/head/tree
+reobservation after the requested effect. A local commit, push, merge, or zero
+exit code alone is not delivery closure.
+
+For a public browser interface, the applicable regression set includes its
+static source/security contract and a bounded live browser observation when the
+interface is reachable. Browser permission, microphone, device, CORS or audio
+availability limits are recorded as `CONTINUE`/`BLOCK` evidence; they are never
+silently converted into a successful voice or external-effect claim. The
+normative human and machine contracts are
+`docs/HUMAN_MACHINE_PROGRESS_STANDARD.md`,
+`docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md`, and
+`policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json`.
+
 ## Mandatory machine proof before every Zenodo publication
 
 `NO_MACHINE_PROOF_NO_ZENODO_UPLOAD` is mandatory for every future publication
