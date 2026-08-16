@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import sys
@@ -19,6 +20,14 @@ assert _spec and _spec.loader
 terminal = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = terminal
 _spec.loader.exec_module(terminal)
+
+
+def sf_bytes(raw: bytes) -> str:
+    return ":" + base64.b64encode(raw).decode("ascii") + ":"
+
+
+def commit_field(token: str, digest: str) -> str:
+    return f"v=1, mode=commit, token={sf_bytes(token.encode('ascii'))}, hash={sf_bytes(bytes.fromhex(digest))}"
 
 
 class EffectAckHttpTerminalContractTests(unittest.TestCase):
@@ -43,6 +52,11 @@ class EffectAckHttpTerminalContractTests(unittest.TestCase):
         self.assertIn("browser.alarms", background)
         self.assertIn("WATCHDOG_PERIOD_MINUTES = 5", background)
         self.assertIn("validated DONE prepare result required", background)
+        self.assertIn("record_validated", background)
+        self.assertIn("compact/full record hash mismatch", background)
+        self.assertIn("Effect-Ack-Request", background)
+        self.assertNotIn("X-QIKVRT-Commit-Token", background)
+        self.assertNotIn("X-QIKVRT-Record-Hash", background)
         self.assertIn("getUserMedia({audio: true", content)
         self.assertIn("getUserMedia({audio: false, video:", content)
         self.assertIn("preparedRequest", content)
@@ -64,6 +78,21 @@ class EffectAckHttpTerminalContractTests(unittest.TestCase):
         ):
             self.assertIn(value, text)
         self.assertIn("MUST NOT execute the protected effect", text)
+
+    def test_structured_request_parser_is_closed_and_exact(self) -> None:
+        parsed = terminal.parse_effect_ack_request("v=1, mode=prepare")
+        self.assertEqual(parsed, {"v": 1, "mode": "prepare"})
+        token = "abc_DEF-123"
+        digest = "00" * 32
+        parsed = terminal.parse_effect_ack_request(commit_field(token, digest))
+        self.assertEqual(parsed["token"], token)
+        self.assertEqual(parsed["hash"], digest)
+        with self.assertRaises(ValueError):
+            terminal.parse_effect_ack_request("v=1, mode=prepare, token=:YQ==:")
+        with self.assertRaises(ValueError):
+            terminal.parse_effect_ack_request("v=1, mode=commit")
+        with self.assertRaises(ValueError):
+            terminal.parse_effect_ack_request("v=2, mode=prepare")
 
 
 class LoopbackTerminalE2ETests(unittest.TestCase):
@@ -94,12 +123,21 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
             return exc.code, exc.headers, payload
 
     def prepare(self, payload: dict):
-        status, headers, body = self.request("/terminal/prepare", method="POST", body=payload, headers={"Effect-Ack-Request": "v=1, mode=prepare"})
+        status, headers, body = self.request(
+            "/terminal/prepare",
+            method="POST",
+            body=payload,
+            headers={"Effect-Ack-Request": "v=1, mode=prepare"},
+        )
         self.assertEqual(status, 200)
         self.assertIn("state=done", headers["Effect-Ack"])
+        self.assertIn("token=:", headers["Effect-Ack"])
         self.assertFalse(body["ordinary_release"])
         self.assertEqual(body["external_effect"], "NONE")
         return body
+
+    def commit_headers(self, prepared: dict) -> dict[str, str]:
+        return {"Effect-Ack-Request": commit_field(prepared["commit_token"], prepared["record_hash"])}
 
     def test_discovery_prepare_commit_reobserve_and_replay_block(self) -> None:
         status, headers, capability = self.request("/.well-known/effect-ack")
@@ -117,23 +155,23 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         }
         prepared = self.prepare(payload)
 
-        status, _, record = self.request(prepared["record_url"])
+        status, record_headers, record = self.request(prepared["record_url"])
         self.assertEqual(status, 200)
         self.assertEqual(record["state"], "EFFECT_ACK_DONE")
         self.assertEqual(record["external_effect"], "NONE")
+        self.assertIn("state=done", record_headers["Effect-Ack"])
+        self.assertNotIn("token=:", record_headers["Effect-Ack"])
 
         wrong = dict(payload)
         wrong["text"] = "different"
         status, _, rejected = self.request(
-            "/terminal/commit", method="POST", body=wrong,
-            headers={"X-QIKVRT-Commit-Token": prepared["commit_token"], "X-QIKVRT-Record-Hash": prepared["record_hash"]},
+            "/terminal/commit", method="POST", body=wrong, headers=self.commit_headers(prepared)
         )
         self.assertEqual(status, 409)
         self.assertIn("differs", rejected["reason"])
 
         status, _, committed = self.request(
-            "/terminal/commit", method="POST", body=payload,
-            headers={"X-QIKVRT-Commit-Token": prepared["commit_token"], "X-QIKVRT-Record-Hash": prepared["record_hash"]},
+            "/terminal/commit", method="POST", body=payload, headers=self.commit_headers(prepared)
         )
         self.assertEqual(status, 200)
         self.assertTrue(committed["ordinary_release"])
@@ -141,8 +179,7 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         self.assertEqual(committed["post_effect"]["text"], "eins und nicht keins")
 
         status, _, replay = self.request(
-            "/terminal/commit", method="POST", body=payload,
-            headers={"X-QIKVRT-Commit-Token": prepared["commit_token"], "X-QIKVRT-Record-Hash": prepared["record_hash"]},
+            "/terminal/commit", method="POST", body=payload, headers=self.commit_headers(prepared)
         )
         self.assertEqual(status, 409)
         self.assertIn("used", replay["reason"])
@@ -153,14 +190,34 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         self.assertEqual(observed["last_event"]["kind"], "TERMINAL_INPUT_ACCEPTED")
 
     def test_expired_token_fails_closed(self) -> None:
-        payload = {"schema": "qikvrt_terminal_input_v1", "submitted_at": "2026-08-16T21:00:00Z", "page": "AI", "text": "x", "audio": None, "video": None}
+        payload = {
+            "schema": "qikvrt_terminal_input_v1",
+            "submitted_at": "2026-08-16T21:00:00Z",
+            "page": "AI",
+            "text": "x",
+            "audio": None,
+            "video": None,
+        }
         prepared = self.prepare(payload)
         terminal.STATE.prepared[prepared["commit_token"]].expires_at = time.time() - 1
         status, _, body = self.request(
-            "/terminal/commit", method="POST", body=payload,
-            headers={"X-QIKVRT-Commit-Token": prepared["commit_token"], "X-QIKVRT-Record-Hash": prepared["record_hash"]},
+            "/terminal/commit", method="POST", body=payload, headers=self.commit_headers(prepared)
         )
         self.assertEqual(status, 409)
+        self.assertFalse(body["ordinary_release"])
+
+    def test_missing_or_malformed_effect_ack_request_fails_closed(self) -> None:
+        payload = {"schema": "qikvrt_terminal_input_v1", "text": "x"}
+        status, _, body = self.request("/terminal/prepare", method="POST", body=payload)
+        self.assertEqual(status, 400)
+        self.assertFalse(body["ordinary_release"])
+        status, _, body = self.request(
+            "/terminal/commit",
+            method="POST",
+            body=payload,
+            headers={"Effect-Ack-Request": "v=1, mode=commit"},
+        )
+        self.assertEqual(status, 400)
         self.assertFalse(body["ordinary_release"])
 
 
