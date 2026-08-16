@@ -16,6 +16,7 @@ on:
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
       - "QIKVRT Collective Proposal Review"
+      - "QIKVRT required code-owner review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIK-VRT universal ontology finite-model verification"
@@ -180,8 +181,16 @@ jobs:
           pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
           current_main = gh_json(f'repos/{repository}/commits/main')['sha']
           head = pr['head']['sha']
+          # Review-gate runs use pull_request_target/review events; query every
+          # exact-head event rather than only pull_request executions.
           runs = gh_run_pages(
-              f'repos/{repository}/actions/runs?head_sha={head}&event=pull_request&per_page=100'
+              f'repos/{repository}/actions/runs?head_sha={head}&per_page=100'
+          )
+          reviews = gh_pages(f'repos/{repository}/pulls/{pr_number}/reviews?per_page=100')
+          rules = gh_json(f'repos/{repository}/rules/branches/main')
+          from tools.qikvrt_required_review_gate import evaluate_required_review
+          review_gate = evaluate_required_review(
+              pr, rules, reviews, required_code_owner='Goldkelch'
           )
           workflow_runs = [
               {
@@ -230,6 +239,7 @@ jobs:
               'external_effect': 'NONE',
               'required_gates': required_gates,
               'workflow_runs': workflow_runs,
+              'code_owner_review_gate': review_gate,
               'competing_writer_overlaps': overlaps,
           }, sort_keys=True))
           PY
@@ -271,6 +281,56 @@ jobs:
           test "$current_base" = "$EXPECTED_BASE"
           test "$current_head" = "$EXPECTED_HEAD"
 
+          verify_current_review_gate() {
+            python3 -B - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          from tools.qikvrt_required_review_gate import evaluate_required_review
+
+          repository = os.environ['REPOSITORY']
+          pr_number = int(os.environ['PR_NUMBER'])
+          expected_head = os.environ['EXPECTED_HEAD']
+
+          def gh_json(path):
+              raw = subprocess.check_output(['gh', 'api', path], text=True)
+              return json.loads(raw)
+
+          def gh_pages(path):
+              raw = subprocess.check_output(
+                  ['gh', 'api', '--paginate', '--slurp', path], text=True
+              )
+              pages = json.loads(raw)
+              result = []
+              for page in pages:
+                  if isinstance(page, list):
+                      result.extend(page)
+                  else:
+                      result.append(page)
+              return result
+
+          pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
+          if pr.get('head', {}).get('sha') != expected_head:
+              raise SystemExit('BLOCK: HEAD_DRIFT')
+          rules = gh_json(f'repos/{repository}/rules/branches/main')
+          reviews = gh_pages(f'repos/{repository}/pulls/{pr_number}/reviews?per_page=100')
+          decision = evaluate_required_review(
+              pr, rules, reviews, required_code_owner='Goldkelch'
+          )
+          if decision.get('head_sha') != expected_head:
+              raise SystemExit('BLOCK: CODE_OWNER_REVIEW_STALE')
+          if decision.get('gate_state') != 'success':
+              raise SystemExit(
+                  'BLOCK: ' + str(
+                      decision.get('first_blocker') or 'CODE_OWNER_REVIEW_GATE_NOT_GREEN'
+                  )
+              )
+          PY
+          }
+
+          verify_current_review_gate
+
           if [ "$draft" = "true" ]; then
             # Phase 1 only. ready_for_review may itself register new checks, so
             # this run MUST NOT merge. A later workflow_run/schedule cycle will
@@ -289,6 +349,7 @@ jobs:
           test "$current_main" = "$EXPECTED_BASE"
           test "$current_base" = "$EXPECTED_BASE"
           test "$current_head" = "$EXPECTED_HEAD"
+          verify_current_review_gate
 
           gh api \
             --method PUT \

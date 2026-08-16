@@ -1,0 +1,227 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT required code-owner review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize, review_requested, review_request_removed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Open pull-request number to reobserve"
+        required: true
+        type: string
+
+# This workflow deliberately checks out only trusted main.  It observes PR and
+# ruleset API data and posts a status; it never executes bytes from a PR head.
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-required-review-gate-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  required-review-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      DISPATCH_PR: ${{ inputs.pr || '' }}
+      REQUIRED_CODE_OWNER: Goldkelch
+      STATUS_CONTEXT: QIKVRT required code-owner review
+    steps:
+      - name: Check out trusted main gate implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Observe current pull request, main rules, and reviews
+        id: observe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          repository = os.environ["REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          dispatch_pr = os.environ.get("DISPATCH_PR", "").strip()
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          observed = event.get("pull_request") or {}
+          number = observed.get("number") or dispatch_pr
+          if not str(number).isdigit() or int(number) <= 0:
+              raise SystemExit("BLOCK: pull-request number is unavailable")
+          number = int(number)
+
+          def api(path):
+              request = Request(
+                  f"https://api.github.com{path}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          def pages(path):
+              result = []
+              separator = "&" if "?" in path else "?"
+              page = 1
+              while True:
+                  value = api(f"{path}{separator}per_page=100&page={page}")
+                  if not isinstance(value, list):
+                      raise SystemExit(f"BLOCK: expected list from {path}")
+                  result.extend(value)
+                  if len(value) < 100:
+                      return result
+                  page += 1
+
+          pr = api(f"/repos/{repository}/pulls/{number}")
+          rules = api(f"/repos/{repository}/rules/branches/main")
+          reviews = pages(f"/repos/{repository}/pulls/{number}/reviews")
+          destination = Path(os.environ["RUNNER_TEMP"])
+          (destination / "qikvrt-review-gate-pr.json").write_text(
+              json.dumps(pr, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          (destination / "qikvrt-review-gate-rules.json").write_text(
+              json.dumps(rules, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          (destination / "qikvrt-review-gate-reviews.json").write_text(
+              json.dumps(reviews, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"pr={number}\n")
+              output.write(f"head_sha={pr['head']['sha']}\n")
+          PY
+
+      - name: Evaluate observed review prerequisite without review mutation
+        id: evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python3 -B tools/qikvrt_required_review_gate.py evaluate \
+            --pr "$RUNNER_TEMP/qikvrt-review-gate-pr.json" \
+            --rules "$RUNNER_TEMP/qikvrt-review-gate-rules.json" \
+            --reviews "$RUNNER_TEMP/qikvrt-review-gate-reviews.json" \
+            --required-code-owner "$REQUIRED_CODE_OWNER" \
+            > "$RUNNER_TEMP/qikvrt-review-gate-decision.json"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/qikvrt-review-gate-decision.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          value = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "qikvrt-review-gate-decision.json"), encoding="utf-8"))
+          print(f"gate_state={value['gate_state']}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          PY
+          exit 0
+
+      - name: Reobserve and publish an exact-head status
+        id: publish
+        shell: bash
+        env:
+          OBSERVED_HEAD: ${{ steps.observe.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.observe.outputs.pr }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          from tools.qikvrt_required_review_gate import evaluate_required_review
+
+          repository = os.environ["REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          pr_number = int(os.environ["PR_NUMBER"])
+          observed_head = os.environ["OBSERVED_HEAD"]
+          required_code_owner = os.environ["REQUIRED_CODE_OWNER"]
+          status_context = os.environ["STATUS_CONTEXT"]
+
+          def request_json(path, *, method="GET", body=None):
+              data = None if body is None else json.dumps(body).encode("utf-8")
+              request = Request(
+                  f"https://api.github.com{path}",
+                  data=data,
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          def pages(path):
+              result = []
+              separator = "&" if "?" in path else "?"
+              page = 1
+              while True:
+                  value = request_json(f"{path}{separator}per_page=100&page={page}")
+                  if not isinstance(value, list):
+                      raise SystemExit(f"BLOCK: expected list from {path}")
+                  result.extend(value)
+                  if len(value) < 100:
+                      return result
+                  page += 1
+
+          pr = request_json(f"/repos/{repository}/pulls/{pr_number}")
+          head = pr["head"]["sha"]
+          if head != observed_head:
+              print("HEAD_DRIFT_NO_STATUS")
+              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+                  output.write("gate_state=failure\n")
+                  output.write("blocker=HEAD_DRIFT\n")
+              raise SystemExit(2)
+          rules = request_json(f"/repos/{repository}/rules/branches/main")
+          reviews = pages(f"/repos/{repository}/pulls/{pr_number}/reviews")
+          decision = evaluate_required_review(
+              pr,
+              rules,
+              reviews,
+              required_code_owner=required_code_owner,
+          )
+          gate_state = decision["gate_state"]
+          description = f"{gate_state}: {decision.get('first_blocker') or 'CODE_OWNER_REVIEW_CURRENT'}"[:140]
+          request_json(
+              f"/repos/{repository}/statuses/{head}",
+              method="POST",
+              body={
+                  "state": gate_state,
+                  "context": status_context,
+                  "description": description,
+                  "target_url": f"{os.environ['GITHUB_SERVER_URL']}/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              },
+          )
+          print(json.dumps(decision, sort_keys=True))
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"gate_state={gate_state}\n")
+              output.write(f"blocker={decision.get('first_blocker') or ''}\n")
+          if gate_state != "success":
+              raise SystemExit(2)
+          PY
+
+      - name: Enforce the observed result
+        if: always()
+        shell: bash
+        run: |
+          test "${{ steps.publish.outputs.gate_state }}" = "success"
