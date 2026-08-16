@@ -45,6 +45,7 @@
   let videoStream = null;
   let snapshotBlob = null;
   let prepared = null;
+  let preparedRequest = null;
 
   function render(value) {
     output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -147,6 +148,7 @@
     setState("PREPARE", "no protected effect");
     commitButton.disabled = true;
     prepared = null;
+    preparedRequest = null;
     const request = {
       schema: "qikvrt_terminal_input_v1",
       submitted_at: new Date().toISOString(),
@@ -157,22 +159,25 @@
     };
     const result = await send("PREPARE_EFFECT", request);
     prepared = result;
+    preparedRequest = request;
     render(result);
     const done = result && result.effect_ack && result.effect_ack.state === "EFFECT_ACK_DONE";
     commitButton.disabled = !done;
-    setState(done ? "PREPARED_DONE" : "HOLD", done ? "commit available" : (result.reason || "non-DONE"));
+    setState(done ? "PREPARED_DONE" : "HOLD", done ? "exact prepared payload frozen for commit" : (result.reason || "non-DONE"));
   }
 
   async function commit() {
-    if (!prepared || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
+    if (!prepared || !preparedRequest || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
       setState("HOLD", "DONE prepare required");
       return;
     }
     commitButton.disabled = true;
     setState("COMMIT", "exact prepared binding");
-    const result = await send("COMMIT_EFFECT", {confirmed: true, prepared, request: {text: command.value}});
+    const result = await send("COMMIT_EFFECT", {confirmed: true, prepared, request: preparedRequest});
     render(result);
     setState(result && result.ordinary_release ? "EFFECT_ACK_DONE" : "HOLD", result && result.ordinary_release ? "post-effect reobserve required" : "commit not released");
+    prepared = null;
+    preparedRequest = null;
     await observe();
   }
 
