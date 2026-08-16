@@ -54,15 +54,17 @@ jobs:
           python3 -m pip install --disable-pip-version-check -r runtime/toolchains/requirements-xml2rfc-3.34.0.txt
           test "$(xml2rfc --version | head -n1)" = "xml2rfc 3.34.0"
 
-      - name: Render companion Internet-Draft as TXT and HTML
+      - name: Render core and companion Internet-Drafts as TXT and HTML
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/qikvrt-ietf-render
-          xml2rfc external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml --v3 --text --skip-config-files --out /tmp/qikvrt-ietf-render/draft-lohmann-qikvrt-effect-ack-http-00.txt
-          xml2rfc external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml --v3 --html --skip-config-files --out /tmp/qikvrt-ietf-render/draft-lohmann-qikvrt-effect-ack-http-00.html
-          test -s /tmp/qikvrt-ietf-render/draft-lohmann-qikvrt-effect-ack-http-00.txt
-          test -s /tmp/qikvrt-ietf-render/draft-lohmann-qikvrt-effect-ack-http-00.html
+          for draft in draft-lohmann-qikvrt-effect-ack-03 draft-lohmann-qikvrt-effect-ack-http-00; do
+            xml2rfc "external/ietf/${draft}.xml" --v3 --text --skip-config-files --out "/tmp/qikvrt-ietf-render/${draft}.txt"
+            xml2rfc "external/ietf/${draft}.xml" --v3 --html --skip-config-files --out "/tmp/qikvrt-ietf-render/${draft}.html"
+            test -s "/tmp/qikvrt-ietf-render/${draft}.txt"
+            test -s "/tmp/qikvrt-ietf-render/${draft}.html"
+          done
 
       - name: Check Python syntax
         run: |
