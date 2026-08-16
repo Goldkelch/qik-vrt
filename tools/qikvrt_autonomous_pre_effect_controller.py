@@ -16,6 +16,9 @@ from tools import qikvrt_autonomous_self_heal as self_heal
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "state/autonomy/AUTONOMOUS_PRE_EFFECT_POLICY_V1.json"
+PERSONAL_ORIGIN_POLICY = (
+    ROOT / "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"
+)
 EXPECTED_PRECONDITIONS = [
     "CURRENT_MAIN_REOBSERVED",
     "EXACT_HEAD_BOUND",
@@ -41,6 +44,7 @@ PROHIBITED_CLAIMS = {
 REQUIRED_EVIDENCE_PATHS = (
     "AI",
     "AI_CONTEXT.json",
+    "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
     "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
     "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
     "REPOSITORY_FILE_MANIFEST.json",
@@ -81,9 +85,37 @@ def load_policy() -> dict[str, Any]:
     return value
 
 
+def _canonical_source_remote() -> str:
+    try:
+        policy = json.loads(PERSONAL_ORIGIN_POLICY.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise PreEffectBlock("personal-origin policy cannot be loaded") from exc
+    if policy.get("schema") != "qikvrt_ai_personal_working_memory_origin_and_attribution_v1":
+        raise PreEffectBlock("personal-origin policy schema mismatch")
+    canonical = policy.get("personal_working_memory", {}).get("canonical_source_remote", {})
+    expected_name = canonical.get("name")
+    expected_url = canonical.get("url")
+    if expected_name != "upstream" or not isinstance(expected_url, str):
+        raise PreEffectBlock("canonical source remote contract mismatch")
+
+    remotes_result = self_heal.run(("git", "remote"), timeout=60)
+    if remotes_result.returncode:
+        raise PreEffectBlock("cannot enumerate Git remotes")
+    remotes = set(remotes_result.stdout.split())
+
+    candidate = expected_name if expected_name in remotes else "origin"
+    if candidate not in remotes:
+        raise PreEffectBlock("canonical source remote is absent")
+    url_result = self_heal.run(("git", "remote", "get-url", candidate), timeout=60)
+    if url_result.returncode or url_result.stdout.strip() != expected_url:
+        raise PreEffectBlock("canonical source remote URL mismatch")
+    return candidate
+
+
 def _remote_main_revision() -> str | None:
+    remote = _canonical_source_remote()
     result = self_heal.run((
-        "git", "ls-remote", "--heads", "origin", "refs/heads/main",
+        "git", "ls-remote", "--heads", remote, "refs/heads/main",
     ), timeout=60)
     if result.returncode:
         return None
