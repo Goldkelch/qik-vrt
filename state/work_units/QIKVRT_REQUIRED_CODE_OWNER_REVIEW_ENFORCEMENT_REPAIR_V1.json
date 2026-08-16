@@ -38,10 +38,10 @@
     "github_ruleset_mutation": "SEPARATE_ADMINISTRATIVE_EFFECT_REQUIRED"
   },
   "implementation": {
-    "review_gate": "A trusted-main workflow observes the current PR head, current main rules, and current reviews; it posts only an exact-head status and never creates, approves, dismisses, or impersonates a review.",
+    "review_gate": "An unprivileged PR/review-event observer contains no repository access or write permission. A trusted-main workflow_run/scheduled publisher then reobserves the current PR head, current main rules, and current reviews, posts only an exact-head status, and never creates, approves, dismisses, or impersonates a review.",
     "native_rule": "The evaluator accepts success only when GitHub itself requires one approval, Code Owner review, stale-review dismissal, and last-push approval.",
     "promotion_guard": "Expected-head promotion blocks without a fresh exact-head successful gate observation and reobserves it immediately before its merge endpoint.",
-    "untrusted_pr_boundary": "The status-writing gate checks out ref main and never executes a PR head."
+    "untrusted_pr_boundary": "The observer has permissions: {} and no checkout. The status-writing publisher runs only from main, checks out ref main, consumes no observer output, and never executes a PR head."
   },
   "required_platform_completion": {
     "ruleset_id": 19344903,
@@ -56,6 +56,7 @@
     "boundary": "Only an administrator with an explicit platform authorization may mutate this GitHub ruleset."
   },
   "outputs": [
+    ".github/workflows/qikvrt_code_owner_review_observer.yml",
     ".github/workflows/qikvrt_required_review_gate.yml",
     "tools/qikvrt_required_review_gate.py",
     "tests/test_qikvrt_required_review_gate.py",
@@ -71,7 +72,7 @@
     "SHA256SUMS.txt"
   ],
   "verification": {
-    "focused_tests": "PASS_LOCAL_31_TESTS",
+    "focused_tests": "PASS_LOCAL_33_TESTS",
     "full_repository_test": "PENDING_EXACT_HEAD_CI",
     "repository_integrity": "PENDING_EXACT_HEAD_MATERIALIZATION",
     "code_owner_review": "PENDING_INDEPENDENT_GITHUB_CODE_OWNER_REVIEW",

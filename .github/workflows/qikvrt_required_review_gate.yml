@@ -2,37 +2,148 @@
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT required code-owner review
 
+# The unprivileged observer receives the untrusted PR/review events. This
+# publisher starts only after that observer completed, or from trusted main on
+# schedule/manual recovery. It never consumes observer output or PR-head code.
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review, synchronize, review_requested, review_request_removed]
-  pull_request_review:
-    types: [submitted, edited, dismissed]
+  workflow_run:
+    workflows: ["QIKVRT code-owner review observer"]
+    types: [completed]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       pr:
-        description: "Open pull-request number to reobserve"
+        description: "Open main-based pull-request number to reobserve"
         required: true
         type: string
 
-# This workflow deliberately checks out only trusted main.  It observes PR and
-# ruleset API data and posts a status; it never executes bytes from a PR head.
+# This trusted-main publisher reads live API state and posts one exact-head
+# status. It never requests, submits, dismisses, impersonates, or approves a
+# review.
 permissions:
   contents: read
   pull-requests: read
   statuses: write
 
-concurrency:
-  group: qikvrt-required-review-gate-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr || github.run_id }}
-  cancel-in-progress: true
-
 jobs:
-  required-review-gate:
+  resolve-targets:
+    # workflow_dispatch can select an arbitrary ref. Do not grant the
+    # publisher's write-capable token to a workflow definition outside main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 3
+    outputs:
+      prs: ${{ steps.resolve.outputs.prs }}
     env:
       GITHUB_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
       DISPATCH_PR: ${{ inputs.pr || '' }}
+    steps:
+      - name: Resolve only main-based live pull-request selectors
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          repository = os.environ["REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          event_name = os.environ["EVENT_NAME"]
+          dispatch_pr = os.environ.get("DISPATCH_PR", "").strip()
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+
+          def api(path):
+              request = Request(
+                  f"https://api.github.com{path}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          def pages(path):
+              result = []
+              separator = "&" if "?" in path else "?"
+              page = 1
+              while True:
+                  value = api(f"{path}{separator}per_page=100&page={page}")
+                  if not isinstance(value, list):
+                      raise SystemExit(f"BLOCK: expected list from {path}")
+                  result.extend(value)
+                  if len(value) < 100:
+                      return result
+                  page += 1
+
+          def number(value):
+              if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                  raise ValueError("pull-request number is unavailable")
+              return value
+
+          targets = []
+          if event_name == "workflow_run":
+              run = event.get("workflow_run")
+              selectors = run.get("pull_requests") if isinstance(run, dict) else None
+              if isinstance(selectors, list):
+                  for selector in selectors:
+                      if not isinstance(selector, dict):
+                          continue
+                      if selector.get("base", {}).get("ref") != "main":
+                          continue
+                      try:
+                          targets.append(number(selector.get("number")))
+                      except ValueError:
+                          continue
+              targets = sorted(set(targets))
+              # A workflow_run may have zero/multiple PRs. It is only an
+              # untrusted selector, so publish nothing unless exactly one is
+              # bound; the publish job re-fetches the live PR below.
+              if len(targets) != 1:
+                  targets = []
+          elif event_name == "workflow_dispatch":
+              try:
+                  targets = [number(int(dispatch_pr))]
+              except (TypeError, ValueError):
+                  raise SystemExit("BLOCK: workflow_dispatch requires a positive PR number")
+          elif event_name == "schedule":
+              targets = sorted(
+                  number(pr["number"])
+                  for pr in pages(f"/repos/{repository}/pulls?state=open&base=main")
+                  if pr.get("state") == "open" and pr.get("base", {}).get("ref") == "main"
+              )
+          else:
+              raise SystemExit(f"BLOCK: unsupported trusted trigger {event_name!r}")
+
+          value = json.dumps(targets, separators=(",", ":"))
+          print(f"resolved_prs={value}")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"prs={value}\n")
+          PY
+
+  publish-exact-head-status:
+    needs: resolve-targets
+    if: needs.resolve-targets.outputs.prs != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJSON(needs.resolve-targets.outputs.prs) }}
+    concurrency:
+      group: qikvrt-required-review-gate-${{ github.repository }}-${{ matrix.pr }}
+      cancel-in-progress: true
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ matrix.pr }}
       REQUIRED_CODE_OWNER: Goldkelch
       STATUS_CONTEXT: QIKVRT required code-owner review
     steps:
@@ -43,7 +154,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Observe current pull request, main rules, and reviews
+      - name: Observe current main-based pull request, rules, and reviews
         id: observe
         shell: bash
         run: |
@@ -52,18 +163,11 @@ jobs:
           import json
           import os
           from pathlib import Path
-          from urllib.error import HTTPError
           from urllib.request import Request, urlopen
 
           repository = os.environ["REPOSITORY"]
           token = os.environ["GITHUB_TOKEN"]
-          dispatch_pr = os.environ.get("DISPATCH_PR", "").strip()
-          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-          observed = event.get("pull_request") or {}
-          number = observed.get("number") or dispatch_pr
-          if not str(number).isdigit() or int(number) <= 0:
-              raise SystemExit("BLOCK: pull-request number is unavailable")
-          number = int(number)
+          number = int(os.environ["PR_NUMBER"])
 
           def api(path):
               request = Request(
@@ -91,6 +195,8 @@ jobs:
                   page += 1
 
           pr = api(f"/repos/{repository}/pulls/{number}")
+          if pr.get("state") != "open" or pr.get("base", {}).get("ref") != "main":
+              raise SystemExit("BLOCK: target must be an open main-based pull request")
           rules = api(f"/repos/{repository}/rules/branches/main")
           reviews = pages(f"/repos/{repository}/pulls/{number}/reviews")
           destination = Path(os.environ["RUNNER_TEMP"])
@@ -104,7 +210,6 @@ jobs:
               json.dumps(reviews, sort_keys=True) + "\n", encoding="utf-8"
           )
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"pr={number}\n")
               output.write(f"head_sha={pr['head']['sha']}\n")
           PY
 
@@ -137,7 +242,6 @@ jobs:
         shell: bash
         env:
           OBSERVED_HEAD: ${{ steps.observe.outputs.head_sha }}
-          PR_NUMBER: ${{ steps.observe.outputs.pr }}
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
@@ -185,6 +289,8 @@ jobs:
                   page += 1
 
           pr = request_json(f"/repos/{repository}/pulls/{pr_number}")
+          if pr.get("state") != "open" or pr.get("base", {}).get("ref") != "main":
+              raise SystemExit("BLOCK: target must remain an open main-based pull request")
           head = pr["head"]["sha"]
           if head != observed_head:
               print("HEAD_DRIFT_NO_STATUS")

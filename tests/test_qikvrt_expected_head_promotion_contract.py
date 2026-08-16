@@ -50,6 +50,7 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
     def test_executor_is_bounded_and_sha_bound(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/10 * * * *"', workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("READY_RECLASSIFIED_REOBSERVATION_REQUIRED", workflow)
         self.assertIn('exit 0', workflow)
@@ -84,4 +85,3 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

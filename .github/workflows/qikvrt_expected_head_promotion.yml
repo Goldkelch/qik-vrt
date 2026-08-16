@@ -36,6 +36,9 @@ concurrency:
 
 jobs:
   evaluate-and-promote:
+    # workflow_dispatch can select an arbitrary ref. This write-capable
+    # executor must run only from the trusted main workflow definition.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -181,8 +184,9 @@ jobs:
           pr = gh_json(f'repos/{repository}/pulls/{pr_number}')
           current_main = gh_json(f'repos/{repository}/commits/main')['sha']
           head = pr['head']['sha']
-          # Review-gate runs use pull_request_target/review events; query every
-          # exact-head event rather than only pull_request executions.
+          # These exact-head runs cover candidate testing. The trusted review
+          # publisher runs on main, so review enforcement is bound below by a
+          # fresh direct ruleset/review observation rather than this run list.
           runs = gh_run_pages(
               f'repos/{repository}/actions/runs?head_sha={head}&per_page=100'
           )
