@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT EFFECT_ACK HTTP Firefox terminal
+
+on:
+  pull_request:
+    paths:
+      - "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml"
+      - "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json"
+      - "browser/firefox/qikvrt-terminal/**"
+      - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
+      - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
+      - "src/qikvrt_effect_ack_http_terminal.py"
+      - "tests/test_qikvrt_effect_ack_http_terminal.py"
+      - ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Parse machine-readable contracts and RFCXML
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json >/dev/null
+          python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
+          python3 -m json.tool docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json >/dev/null
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml')
+          ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml')
+          PY
+
+      - name: Install locked RFCXML renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -r runtime/toolchains/requirements-xml2rfc-3.34.0.txt
+          test "$(xml2rfc --version | head -n1)" = "xml2rfc 3.34.0"
+
+      - name: Render core and companion Internet-Drafts as TXT and HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-ietf-render
+          for draft in draft-lohmann-qikvrt-effect-ack-03 draft-lohmann-qikvrt-effect-ack-http-00; do
+            xml2rfc "external/ietf/${draft}.xml" --v3 --text --skip-config-files --out "/tmp/qikvrt-ietf-render/${draft}.txt"
+            xml2rfc "external/ietf/${draft}.xml" --v3 --html --skip-config-files --out "/tmp/qikvrt-ietf-render/${draft}.html"
+            test -s "/tmp/qikvrt-ietf-render/${draft}.txt"
+            test -s "/tmp/qikvrt-ietf-render/${draft}.html"
+          done
+
+      - name: Check Python syntax
+        run: |
+          python3 -m py_compile src/qikvrt_effect_ack_http_terminal.py tests/test_qikvrt_effect_ack_http_terminal.py
+
+      - name: Check Firefox JavaScript syntax
+        run: |
+          node --check browser/firefox/qikvrt-terminal/background.js
+          node --check browser/firefox/qikvrt-terminal/content.js
+          node --check browser/firefox/qikvrt-terminal/options.js
+
+      - name: Run HTTP terminal contract and E2E tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        run: python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+
+      - name: Package verified Firefox reference client
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-firefox-package
+          (
+            cd browser/firefox/qikvrt-terminal
+            zip -X -9 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+              manifest.json background.js content.js terminal.css options.html options.js README.md
+          )
+          sha256sum /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
+            > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
+          test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+
+      - name: Preserve verified Firefox package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-firefox-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-firefox-package
+          if-no-files-found: error
+          retention-days: 30

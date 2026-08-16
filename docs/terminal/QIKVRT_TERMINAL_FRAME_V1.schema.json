@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goldkelch.github.io/qik-vrt/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json",
+  "title": "QIKVRT Terminal Frame V1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "observed_at", "source", "terminal_semantics"],
+  "properties": {
+    "schema": {"const": "qikvrt_terminal_frame_v1"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "ref", "head", "tree"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "workflows": {"type": "object"},
+    "effect_ack": {
+      "type": ["object", "null"],
+      "properties": {
+        "state": {"enum": ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"]},
+        "record_hash": {"type": "string"}
+      }
+    },
+    "media": {
+      "type": "object",
+      "properties": {
+        "audio": {"enum": ["LOCAL", "SUBMITTED", "ABSENT"]},
+        "video": {"enum": ["LOCAL", "SUBMITTED", "ABSENT"]}
+      }
+    },
+    "terminal_semantics": {
+      "type": "object",
+      "required": ["rendering_is_authorization", "ordinary_release_requires"],
+      "properties": {
+        "rendering_is_authorization": {"const": false},
+        "ordinary_release_requires": {"const": "VALID_EFFECT_ACK_DONE"}
+      }
+    }
+  }
+}
