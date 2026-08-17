@@ -1,18 +1,18 @@
-name: Publish Effect-Ack HTTP -01 to IETF v1
+name: Publish Effect-Ack HTTP -00 to IETF v1
 
 on:
   push:
     branches: [publication/integrated-wirkraum-metagrammar-m68000-v1]
     paths:
       - '.github/workflows/publish_effect_ack_http_ietf_v1.yml'
-      - 'external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.OWNER_AUTHORIZATION.json'
+      - 'external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.OWNER_AUTHORIZATION.json'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: qikvrt-ietf-effect-ack-http-01
+  group: qikvrt-ietf-effect-ack-http-00
   cancel-in-progress: false
 
 jobs:
@@ -30,15 +30,15 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           import hashlib, json, pathlib
-          auth_path = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.OWNER_AUTHORIZATION.json')
-          source = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.xml')
+          auth_path = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.OWNER_AUTHORIZATION.json')
+          source = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml')
           auth = json.loads(auth_path.read_text(encoding='utf-8'))
           expected = {
               'schema': 'qikvrt_ietf_owner_submission_authorization_v1',
-              'authorization_id': 'qikvrt-ietf-effect-ack-http-01-20260817',
+              'authorization_id': 'qikvrt-ietf-effect-ack-http-00-20260817',
               'authorized_by': 'Ingolf Lohmann',
-              'internet_draft': 'draft-lohmann-qikvrt-effect-ack-http-01',
-              'revision': '01',
+              'internet_draft': 'draft-lohmann-qikvrt-effect-ack-http-00',
+              'revision': '00',
               'requested_external_effect': 'SUBMIT_TO_IETF_DATATRACKER_AND_COMPLETE_REQUIRED_AUTHOR_CONFIRMATION',
               'authorization': 'GRANTED',
           }
@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          receipt='external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.SUBMISSION_RECEIPT.json'
+          receipt='external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.SUBMISSION_RECEIPT.json'
           if test -f "$receipt"; then
             echo 'BLOCK: submission receipt already exists; refusing duplicate submission' >&2
             exit 2
@@ -65,7 +65,7 @@ jobs:
             --output "$response" \
             --write-out '%{http_code}' \
             -F 'user=ingolf.lohmann@live.com' \
-            -F 'xml=@external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.xml;type=application/xml' \
+            -F 'xml=@external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml;type=application/xml' \
             https://datatracker.ietf.org/api/submission)"
           if ! test "$code" -ge 200 -a "$code" -lt 300; then
             printf 'IETF_SUBMISSION_HTTP=%s\n' "$code" >&2
@@ -81,7 +81,7 @@ jobs:
           name = data.get('name')
           rev = str(data.get('rev', ''))
           status_url = data.get('status_url')
-          if not sid.isdigit() or name != 'draft-lohmann-qikvrt-effect-ack-http' or rev != '01':
+          if not sid.isdigit() or name != 'draft-lohmann-qikvrt-effect-ack-http' or rev != '00':
               raise SystemExit('BLOCK: unexpected IETF submission response')
           p = urllib.parse.urlparse(status_url or '')
           if p.scheme != 'https' or p.netloc != 'datatracker.ietf.org' or not p.path.startswith('/api/submission/'):
@@ -124,7 +124,7 @@ jobs:
           set -euo pipefail
           git config user.name 'qik-vrt-ietf-submission[bot]'
           git config user.email 'qik-vrt-ietf-submission[bot]@users.noreply.github.com'
-          git add external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.SUBMISSION_RECEIPT.json
+          git add external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.SUBMISSION_RECEIPT.json
           git diff --cached --quiet && { echo 'BLOCK: receipt not materialized' >&2; exit 2; }
-          git commit -m 'ietf: persist Effect-Ack HTTP -01 submission receipt'
+          git commit -m 'ietf: persist Effect-Ack HTTP -00 submission receipt'
           git push origin HEAD:publication/integrated-wirkraum-metagrammar-m68000-v1
