@@ -49,6 +49,15 @@ class BoundedElasticResourceDelegationTests(unittest.TestCase):
         self.assertTrue(gates["exact_head_required"])
         self.assertTrue(gates["review_required"])
 
+    def test_workflow_binds_and_verifies_exact_source_head(self):
+        source_ref = "ref: ${{ github.event.pull_request.head.sha || github.sha }}"
+        source_env = "EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}"
+        self.assertEqual(self.workflow.count(source_ref), 2)
+        self.assertEqual(self.workflow.count("name: Verify exact source head checkout"), 2)
+        self.assertEqual(self.workflow.count(source_env), 2)
+        self.assertEqual(self.workflow.count('test "$actual" = "$EXPECTED_HEAD"'), 2)
+        self.assertIn('head="$(git rev-parse --verify HEAD^{commit})"', self.workflow)
+
     def test_workflow_has_parallel_matrix_but_no_write_permission(self):
         self.assertIn("max-parallel: 8", self.workflow)
         self.assertIn("matrix:", self.workflow)
