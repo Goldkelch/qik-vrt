@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT requested review contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_requested_review_executor.yml"
+      - ".github/workflows/qikvrt_requested_review_contract.yml"
+      - ".github/workflows/qikvrt_code_owner_review_observer.yml"
+      - ".github/workflows/qikvrt_required_review_gate.yml"
+      - ".github/workflows/qikvrt_expected_head_promotion.yml"
+      - "tools/qikvrt_requested_review_executor.py"
+      - "tools/qikvrt_required_review_gate.py"
+      - "tests/test_qikvrt_requested_review_executor.py"
+      - "tests/test_qikvrt_required_review_gate.py"
+      - "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+      - "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify review cores and decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/qikvrt_requested_review_executor.py \
+            tools/qikvrt_required_review_gate.py \
+            tests/test_qikvrt_requested_review_executor.py \
+            tests/test_qikvrt_required_review_gate.py
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_requested_review_executor \
+            tests.test_qikvrt_required_review_gate \
+            tests.test_qikvrt_expected_head_promotion
+
+      - name: Verify event, recovery, identity and promotion bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'review_requested' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F '*/5 * * * *' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'workflow_run:' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'independent Code-Owner approval: **not implied**' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'permissions: {}' .github/workflows/qikvrt_code_owner_review_observer.yml
+          grep -F 'QIKVRT requested review executor' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'QIKVRT requested review execution' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'require_code_owner_review' tools/qikvrt_required_review_gate.py
+          grep -F 'dismiss_stale_reviews_on_push' tools/qikvrt_required_review_gate.py
+          grep -F 'require_last_push_approval' tools/qikvrt_required_review_gate.py
+          grep -F 'QIKVRT requested review execution' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'statuses?per_page=100' .github/workflows/qikvrt_expected_head_promotion.yml
