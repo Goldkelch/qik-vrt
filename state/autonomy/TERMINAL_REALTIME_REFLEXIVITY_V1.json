@@ -1,0 +1,80 @@
+{
+  "schema": "qikvrt_terminal_realtime_reflexivity_v1",
+  "version": "1.1",
+  "status": "NORMATIVE",
+  "extends": "state/autonomy/STANDARD_TERMINAL_PATTERN_V1.json",
+  "owner_scaling_authorization": "state/autonomy/OWNER_AUTONOMOUS_TERMINAL_SCALING_V1.json",
+  "purpose": "Require every active Standard Terminal peer to expose its fresh inward state to every connected counterpart with a five-second freshness ceiling, adaptive sub-five-second exchange, and equivalent text, visual, and auditory representations.",
+  "timing": {
+    "maximum_peer_state_age_ms": 5000,
+    "periodic_heartbeat_floor_ms": 100,
+    "periodic_heartbeat_ceiling_ms": 4000,
+    "default_heartbeat_interval_ms": 1000,
+    "state_transition_push": "IMMEDIATE",
+    "five_seconds_is_ceiling_not_target": true,
+    "stale_is_fail_closed": true,
+    "active_runtime_required_for_sla": true,
+    "github_actions_is_audit_plane_not_realtime_transport": true
+  },
+  "adaptive_scaling": {
+    "enabled": true,
+    "autonomous": true,
+    "inputs": [
+      "transport_round_trip_latency_ms",
+      "peer_requested_interval_ms",
+      "local_load_fraction",
+      "send_queue_depth",
+      "state_transition_rate"
+    ],
+    "policy": "Choose the fastest bounded interval supported by both peers and current resources while preserving backpressure and the five-second freshness ceiling.",
+    "event_driven_transition_beats_periodic_timer": true,
+    "backpressure_required": true,
+    "redundant_stable_updates_may_be_coalesced": true,
+    "busy_loop_forbidden": true
+  },
+  "transport": {
+    "canonical_wire_format": "JSONL",
+    "push_preferred": true,
+    "poll_fallback_allowed": true,
+    "bidirectional_peer_role": true,
+    "sequence_monotonic_per_peer": true,
+    "state_envelope_schema": "qikvrt_terminal_peer_state_v1",
+    "transport_adapter_may_be_websocket_sse_stdio_unix_socket_or_equivalent": true
+  },
+  "modalities": {
+    "text": {
+      "required": true,
+      "representation": "compact status line plus canonical JSON"
+    },
+    "visual": {
+      "required": true,
+      "representation": "terminal status frame with state, freshness, blocker, and next action"
+    },
+    "auditory": {
+      "required": true,
+      "representation": "speech text with earcon hint; BEL fallback when no TTS adapter exists",
+      "raw_audio_generation_required": false
+    }
+  },
+  "counterpart_adaptation": {
+    "capability_negotiation_required": true,
+    "latency_and_interval_negotiation_required": true,
+    "lowest_latency_supported_representation_preferred": true,
+    "all_modalities_share_one_semantic_event_id": true,
+    "freshness_and_fail_closed_semantics_must_not_change_by_modality": true
+  },
+  "security": {
+    "state_only_no_credentials": true,
+    "semantic_promotion_forbidden": true,
+    "untrusted_peer_cannot_admit_productive_writer": true,
+    "stale_peer_cannot_admit_productive_writer": true
+  },
+  "implementation": "tools/qikvrt_terminal_realtime.py",
+  "acceptance_test": "tests/test_qikvrt_terminal_realtime.py",
+  "documentation": "docs/TERMINAL_REALTIME_REFLEXIVITY.md",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
