@@ -4,8 +4,8 @@
 """Fail-closed, exact-request GitHub administration effect executor.
 
 The executor intentionally supports only repository ruleset pull-request review
-policy updates.  It performs GET -> compare-and-swap validation -> full PUT ->
-GET verification and emits a redacted machine receipt.  Credentials are read
+policy updates. It performs GET -> compare-and-swap validation -> full PUT ->
+GET verification and emits a redacted machine receipt. Credentials are read
 only from an environment variable and are never serialized.
 """
 from __future__ import annotations
@@ -59,6 +59,16 @@ def validate_request(request: dict[str, Any]) -> None:
     repository = request.get("repository")
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise AdminEffectError("repository must be owner/name")
+    principal = request.get("admin_principal")
+    if not isinstance(principal, dict):
+        raise AdminEffectError("admin_principal is required")
+    if principal.get("account_login") != repository.split("/", 1)[0]:
+        raise AdminEffectError("admin_principal account must match repository owner")
+    installation_id = principal.get("installation_id")
+    if isinstance(installation_id, bool) or not isinstance(installation_id, int) or installation_id <= 0:
+        raise AdminEffectError("admin_principal installation_id must be a positive integer")
+    if principal.get("required_repository_permission") != "administration:write":
+        raise AdminEffectError("admin_principal must require administration:write")
     ruleset_id = request.get("ruleset_id")
     if isinstance(ruleset_id, bool) or not isinstance(ruleset_id, int) or ruleset_id <= 0:
         raise AdminEffectError("ruleset_id must be a positive integer")
@@ -155,7 +165,7 @@ def _api(base_url: str, token: str, method: str, path: str, payload: dict[str, A
     return value
 
 
-def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api.github.com", dry_run: bool = False) -> dict[str, Any]:
+def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api.github.com", dry_run: bool = False, credential_source: str = "runtime") -> dict[str, Any]:
     validate_request(request)
     repository = request["repository"]
     ruleset_id = request["ruleset_id"]
@@ -167,6 +177,8 @@ def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api
         "authorization_id": request["authorization_id"],
         "request_id": request["request_id"],
         "repository": repository,
+        "admin_principal": copy.deepcopy(request["admin_principal"]),
+        "credential_source": credential_source,
         "ruleset_id": ruleset_id,
         "before_sha256": _sha256(live_before),
         "observed_before": plan["observed"],
@@ -203,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("request")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--token-env", default="QIKVRT_GITHUB_ADMIN_TOKEN")
+    parser.add_argument("--credential-source", default=os.environ.get("QIKVRT_ADMIN_CREDENTIAL_SOURCE", "runtime"))
     parser.add_argument("--api-base", default=os.environ.get("GITHUB_API_URL", "https://api.github.com"))
     parser.add_argument("--receipt")
     args = parser.parse_args(argv)
@@ -211,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         token = os.environ.get(args.token_env, "")
         if not token:
             raise AdminEffectError(f"missing credential environment variable {args.token_env}")
-        receipt = execute(request, token=token, api_base=args.api_base, dry_run=not args.execute)
+        receipt = execute(request, token=token, api_base=args.api_base, dry_run=not args.execute, credential_source=args.credential_source)
     except (OSError, ValueError, json.JSONDecodeError, AdminEffectError) as exc:
         receipt = {"schema": RECEIPT_SCHEMA, "state": "HOLD", "verified": False, "error": str(exc), "credential_serialized": False}
         text = json.dumps(receipt, sort_keys=True, indent=2)
