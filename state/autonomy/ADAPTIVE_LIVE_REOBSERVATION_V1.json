@@ -1,0 +1,63 @@
+{
+  "schema": "qikvrt_adaptive_live_reobservation_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "purpose": "Continuously re-resolve and reobserve the latest materialized successor head and project it through the Standard Terminal Pattern without pinning observation to stale chat or PR metadata.",
+  "terminal_contract": "state/autonomy/STANDARD_TERMINAL_PATTERN_V1.json",
+  "selection": {
+    "authority": "LIVE_GITHUB_STATE",
+    "start": "REOBSERVE_TARGET_BRANCH_OR_PR_HEAD",
+    "head_is_relation_not_constant": true,
+    "prefer_current_ref_tip": true,
+    "materialization_detection": {
+      "github_actions_bot_commit_requires_parent_lineage_check": true,
+      "projection_only_changes_are_repository_native_materialization": true,
+      "tree_identical_trusted_carrier_is_same_materialized_state": true,
+      "scope_or_provenance_drift_blocks": true
+    },
+    "restart_on_head_drift": true,
+    "never_transfer_gate_success_between_heads": true
+  },
+  "observation": {
+    "bind": ["repository", "base_sha", "head_sha", "tree_sha", "parent_sha", "actor", "changed_paths"],
+    "collect": ["applicable_exact_head_workflows", "jobs", "failing_or_untrusted_steps", "review_state", "ruleset_preconditions", "writer_or_lease_state"],
+    "classify_with_standard_terminal_precedence": true,
+    "observer_remains_live_during_hold": true,
+    "productive_writer_requires_fresh_clear_inward_projection": true
+  },
+  "adaptive_terminal_render": {
+    "required_sections": [
+      "AUTHORITY",
+      "SUCCESSOR_BINDING",
+      "MATERIALIZATION",
+      "EXACT_HEAD_GATES",
+      "INWARD_REFLEXIVITY",
+      "OUTWARD_REFLECTION",
+      "FIRST_DETERMINISTIC_BLOCKER",
+      "NEXT_ACTION"
+    ],
+    "show_only_material_change_on_repeated_observation": true,
+    "completion_claims_default_false": true
+  },
+  "automatic_continuation": {
+    "enabled_under": "OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V3",
+    "continue_when_uniquely_determined": true,
+    "stop_conditions": [
+      "HEAD_OR_TREE_DRIFT_DURING_EFFECT",
+      "NONTERMINAL_APPLICABLE_GATE",
+      "UNTRUSTED_ACTION_REQUIRED_OR_ZERO_JOB",
+      "COMPETING_WRITER_OR_LEASE",
+      "HUMAN_IDENTITY_DEPENDENT_REVIEW_REQUIRED",
+      "MISSING_CREDENTIAL_OR_ADMIN_PERMISSION",
+      "MISSING_EMPIRICAL_EVIDENCE",
+      "MULTIPLE_NON_EQUIVALENT_SAFE_ACTIONS"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_SYNC": false,
+    "SYMMETRIC_CANONICALITY": false
+  }
+}
