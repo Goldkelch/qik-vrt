@@ -18,9 +18,11 @@ The executor preserves every rule and pull-request parameter not named by the re
 
 ## Credential bootstrap
 
-The runtime credential is supplied only as the Actions secret `QIKVRT_GITHUB_ADMIN_TOKEN`. It must be a least-privilege GitHub App installation token or fine-grained token with repository **Administration: write** capability for the exact target repository. The token is never committed, printed, uploaded, hashed into a receipt, or copied to another persistent store.
+Preferred mode is a dedicated least-privilege GitHub App installed on `Goldkelch/qik-vrt` with repository Metadata read and Administration write. Store only its client ID as repository variable `QIKVRT_ADMIN_APP_CLIENT_ID` and its private key as repository secret `QIKVRT_ADMIN_APP_PRIVATE_KEY`. The workflow uses the pinned official `actions/create-github-app-token` action to mint a repository-scoped, short-lived installation token requesting only `administration: write`; the token is revoked by the action after the job.
 
-If the secret is absent, the scheduled executor emits `ADMIN_CREDENTIAL_NOT_BOOTSTRAPPED` and performs no effect. This is a one-time infrastructure bootstrap, not a source defect.
+A fine-grained runtime token in secret `QIKVRT_GITHUB_ADMIN_TOKEN` with repository Administration write is supported only as a fallback bootstrap mode. No credential is committed, printed, uploaded, hashed into a receipt, or copied to another persistent store.
+
+If neither bootstrap mode is present, the executor emits `ADMIN_CREDENTIAL_NOT_BOOTSTRAPPED` and performs no effect. This is a one-time infrastructure bootstrap, not a source defect.
 
 ## Continuous behavior
 
