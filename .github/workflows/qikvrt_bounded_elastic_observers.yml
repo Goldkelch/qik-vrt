@@ -37,6 +37,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Verify elasticity contract before fan-out
+        run: python3 -B -m unittest -v tests.test_qikvrt_bounded_elastic_resource_delegation
       - id: plan
         name: Build deterministic bounded elasticity plan
         shell: bash
