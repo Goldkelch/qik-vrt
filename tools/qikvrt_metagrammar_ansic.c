@@ -7,11 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #define QMG_MAX_LINE 4096
 #define QMG_MAX_FIELD 512
-#define QMG_FIELD_COUNT 9
+#define QMG_FIELD_COUNT 10
 
 struct qmg_message {
     char kind[QMG_MAX_FIELD];
@@ -22,6 +21,7 @@ struct qmg_message {
     char evidence[QMG_MAX_FIELD];
     char state[QMG_MAX_FIELD];
     char effect[QMG_MAX_FIELD];
+    char next[QMG_MAX_FIELD];
     char proof[QMG_MAX_FIELD];
 };
 
@@ -68,7 +68,8 @@ static int qmg_split_fields(const char *line, struct qmg_message *m)
     out[5] = m->evidence;
     out[6] = m->state;
     out[7] = m->effect;
-    out[8] = m->proof;
+    out[8] = m->next;
+    out[9] = m->proof;
 
     index = 0;
     start = line;
@@ -164,6 +165,9 @@ static int qmg_validate_semantics(const struct qmg_message *m, char *error, size
     if (!qmg_prefix_value(m->effect, "EFFECT=", &effect) || strchr(effect, ':') == NULL) {
         strncpy(error, "WIRKUNG ungueltig", cap - 1U); error[cap - 1U] = '\0'; return 0;
     }
+    if (!qmg_prefix_value(m->next, "NEXT=", &next)) {
+        strncpy(error, "NEXT ungueltig", cap - 1U); error[cap - 1U] = '\0'; return 0;
+    }
     if (!qmg_prefix_value(m->proof, "PROOF=", &proof) || !qmg_is_hex_n(proof, 64U)) {
         strncpy(error, "BEWEIS muss SHA256 sein", cap - 1U); error[cap - 1U] = '\0'; return 0;
     }
@@ -176,11 +180,8 @@ static int qmg_validate_semantics(const struct qmg_message *m, char *error, size
     if (productive && !auth_bound) {
         strncpy(error, "produktive Wirkung ohne gebundene Autoritaet", cap - 1U); error[cap - 1U] = '\0'; return 0;
     }
-    if (!auth_bound) {
-        next = strstr(state, "NEXT=");
-        if (next != NULL && strstr(next, "EXECUTE") != NULL) {
-            strncpy(error, "ungebundene Autoritaet darf EXECUTE nicht zulassen", cap - 1U); error[cap - 1U] = '\0'; return 0;
-        }
+    if (!auth_bound && strcmp(next, "EXECUTE") == 0) {
+        strncpy(error, "ungebundene Autoritaet darf EXECUTE nicht zulassen", cap - 1U); error[cap - 1U] = '\0'; return 0;
     }
     if (strncmp(effect, "ACKNOWLEDGED:", 13U) == 0 && strcmp(m->kind, "ACK") != 0) {
         strncpy(error, "ACKNOWLEDGED erfordert Nachrichtenart ACK", cap - 1U); error[cap - 1U] = '\0'; return 0;
@@ -202,6 +203,7 @@ static void qmg_emit_ast(const struct qmg_message *m)
     printf("  EVIDENZ=%s\n", m->evidence);
     printf("  ZUSTAND=%s\n", m->state);
     printf("  WIRKUNG=%s\n", m->effect);
+    printf("  NEXT=%s\n", m->next);
     printf("  BEWEIS=%s\n", m->proof);
 }
 
@@ -232,7 +234,7 @@ int main(int argc, char **argv)
     if (in != stdin) fclose(in);
     memset(&message, 0, sizeof(message));
     if (!qmg_split_fields(line, &message)) {
-        fprintf(stderr, "HOLD: erwartet genau neun Felder\n");
+        fprintf(stderr, "HOLD: erwartet genau zehn Felder\n");
         return 2;
     }
     if (!qmg_validate_semantics(&message, error, sizeof(error))) {
