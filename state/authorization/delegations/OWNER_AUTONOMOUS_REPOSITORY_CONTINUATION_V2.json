@@ -7,10 +7,12 @@
   },
   "effective_at": "2026-08-05T17:13:00+02:00",
   "supersedes_for_new_execution": "OWNER-NO-REINTERACTION-STANDING-DELEGATION-V1",
-  "source_instruction": "The repository itself shall contain and operate bounded automations that independently continue objectively determined repository-internal repairs, self-healing and reviewed non-regressing development without repeated owner interaction.",
+  "extended_by": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V3.json",
+  "source_instruction": "The repository itself shall contain and operate bounded automations that independently continue objectively determined repository-internal repairs, self-healing and reviewed non-regressing development without repeated owner interaction. The 2026-08-17 Product-Owner extension additionally authorizes the separately exact-bound GitHub administration effect lane defined by V3 without weakening human-review, evidence or external-effect boundaries.",
   "related_delegations": [
     "state/authorization/delegations/OWNER_AI_ENTRYPOINT_CONTINUOUS_OPTIMIZATION_V1.json",
-    "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+    "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+    "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V3.json"
   ],
   "authorization_scope": {
     "state": "ACTIVE",
@@ -20,7 +22,8 @@
     "reviewable_successor_creation": true,
     "semantic_fingerprint_noop_required": true,
     "requested_substantive_review_execution": true,
-    "issue_lifecycle_triage_execution_clarification_and_evidence_bound_closure": true
+    "issue_lifecycle_triage_execution_clarification_and_evidence_bound_closure": true,
+    "exact_authorized_github_admin_effect_execution": true
   },
   "allowed_without_reinteraction": [
     "read_only_repository_and_public_evidence_observation",
@@ -39,31 +42,34 @@
     "classifying_each_observed_open_issue_as_execute_clarify_blocked_with_next_action_or_close_with_reason",
     "executing_the_smallest_deterministic_repository_internal_issue_work_unit",
     "requesting_the_minimum_bounded_clarification_needed_for_safe_issue_execution",
-    "closing_completed_not_planned_invalid_or_unsupported_issues_with_preserved_provenance_and_an_evidence_bound_reason"
+    "closing_completed_not_planned_invalid_or_unsupported_issues_with_preserved_provenance_and_an_evidence_bound_reason",
+    "executing_a_separately_exact_authorized_github_admin_effect_via_tools_qikvrt_github_admin_effect_executor_with_compare_and_swap_and_post_effect_live_verification"
   ],
   "mandatory_preconditions": [
     "the operation is the smallest deterministic repair of an evidenced blocker or an already declared work unit",
     "all source and target refs are reobserved immediately before mutation",
-    "the operation is reversible append_only or isolated on a review branch",
+    "the operation is reversible append_only or isolated on a review branch except for a separately exact-authorized bounded GitHub administration effect",
     "the operation cannot weaken evidence rights security effect or claim boundaries",
-    "no mutation occurs when the semantic fingerprint is unchanged",
+    "no source mutation occurs when the semantic fingerprint is unchanged",
     "all applicable exact_head gates remain mandatory",
     "every generated candidate remains reviewable and must preserve history",
     "a review is bound to the exact base head tree diff and applicable gate evidence and is invalidated by drift",
     "an issue disposition is bound to the current issue body comments repository evidence and a concrete next action or closure reason",
-    "issue closure preserves discussion and provenance and may not hide a real unresolved defect"
+    "a GitHub administration effect must bind repository resource identity expected_before desired_after authorization_id force_false and post_effect_live_verification",
+    "human identity dependent review evidence may not be synthesized"
   ],
   "not_authorized": [
-    "zenodo_create_upload_metadata_mutation_or_publication",
-    "ietf_datatracker_submission_resubmission_or_metadata_mutation",
-    "github_release_or_tag_creation",
-    "deployment_to_an_external_runtime",
-    "financial_legal_medical_physical_or_actuator_effects",
+    "zenodo_create_upload_metadata_mutation_or_publication_without_separate_exact_authorization",
+    "ietf_datatracker_submission_resubmission_or_metadata_mutation_without_separate_exact_authorization",
+    "github_release_or_tag_creation_without_separate_exact_authorization",
+    "deployment_to_an_external_runtime_without_separate_exact_authorization",
+    "financial_legal_medical_physical_or_actuator_effects_without_separate_exact_authorization",
     "force_push_or_history_rewrite",
     "unconditional_automatic_merge_or_unbound_promotion",
-    "automatic_branch_protection_change",
+    "unbound_branch_protection_or_ruleset_change",
     "impersonating_a_different_GitHub_account_or_claiming_an_account_level_review_state_not_recorded_by_GitHub",
     "fabricating_review_findings_issue_evidence_measurements_credentials_or_external_authorization",
+    "treating_a_technical_bot_review_as_an_independent_Code_Owner_review",
     "closing_an_issue_merely_to_suppress_actionable_work_or_hide_an_unresolved_defect",
     "claiming_repository_wide_PASS_FINAL_PASS_EFFECT_ACK_DONE_synchronization_or_symmetric_canonicality"
   ],
@@ -71,6 +77,15 @@
     "default": "FORBIDDEN",
     "required_override": "separate exact artifact hash scope and natural_person authorization",
     "no_retroactive_authorization": true
+  },
+  "admin_effect_extension": {
+    "delegation_path": "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V3.json",
+    "executor": "tools/qikvrt_github_admin_effect_executor.py",
+    "workflow": ".github/workflows/qikvrt_github_admin_effect_executor.yml",
+    "request_directory": "state/admin_effects/requests",
+    "unbound_admin_write": false,
+    "force": false,
+    "post_effect_live_verification_required": true
   },
   "promotion_policy": {
     "unconditional_automatic_merge": "FORBIDDEN",
