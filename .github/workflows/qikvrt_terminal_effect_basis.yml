@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT terminal effect evidence basis
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - ".github/workflows/qikvrt_terminal_effect_basis.yml"
+      - "state/autonomy/TERMINAL_EFFECT_EVIDENCE_BASIS_V1.json"
+      - "state/work_units/TERMINAL_EFFECT_EVIDENCE_BASIS_V1.json"
+      - "tools/qikvrt_terminal_effect_basis.py"
+      - "tests/test_qikvrt_terminal_effect_basis.py"
+      - "docs/TERMINAL_EFFECT_EVIDENCE_BASIS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact-head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+
+      - name: Validate contract, controller, and negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m json.tool state/autonomy/TERMINAL_EFFECT_EVIDENCE_BASIS_V1.json >/dev/null
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_terminal_effect_basis
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_terminal_effect_basis.py --help >/dev/null
