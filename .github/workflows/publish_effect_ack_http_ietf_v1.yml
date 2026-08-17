@@ -59,12 +59,39 @@ jobs:
             echo 'BLOCK: submission receipt already exists; refusing duplicate submission' >&2
             exit 2
           fi
+          login="$(python3 -B - <<'PY'
+          import json, urllib.parse, urllib.request
+          host = 'https://datatracker.ietf.org'
+          address = 'ingolf.lohmann@live.com'
+          email_url = host + '/api/v1/person/email/' + urllib.parse.quote(address, safe='') + '/?format=json'
+          def get(url):
+              p = urllib.parse.urlparse(url)
+              if p.scheme != 'https' or p.netloc != 'datatracker.ietf.org':
+                  raise SystemExit('BLOCK: unsafe Datatracker account resource URL')
+              with urllib.request.urlopen(url, timeout=30) as r:
+                  return json.loads(r.read())
+          email_obj = get(email_url)
+          person_ref = email_obj.get('person')
+          if not isinstance(person_ref, str) or not person_ref:
+              raise SystemExit('BLOCK: bound email has no Datatracker person')
+          person = get(urllib.parse.urljoin(host, person_ref))
+          user_ref = person.get('user')
+          if not isinstance(user_ref, str) or not user_ref:
+              raise SystemExit('BLOCK: Datatracker person has no login user')
+          user = get(urllib.parse.urljoin(host, user_ref))
+          username = user.get('username')
+          if not isinstance(username, str) or not username or any(c.isspace() for c in username):
+              raise SystemExit('BLOCK: Datatracker username unavailable')
+          print(username)
+          PY
+          )"
+          test -n "$login" || { echo 'BLOCK: empty Datatracker login' >&2; exit 2; }
           response="$(mktemp)"
           code="$(curl --silent --show-error --location \
             --max-time 90 \
             --output "$response" \
             --write-out '%{http_code}' \
-            -F 'user=ingolf.lohmann@live.com' \
+            -F "user=$login" \
             -F 'xml=@external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml;type=application/xml' \
             https://datatracker.ietf.org/api/submission)"
           if ! test "$code" -ge 200 -a "$code" -lt 300; then
