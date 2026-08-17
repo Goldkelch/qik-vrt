@@ -41,6 +41,8 @@ concurrency:
 
 env:
   DEFAULT_REQUEST: state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json
+  EXPECTED_ADMIN_ACCOUNT: Goldkelch
+  EXPECTED_ADMIN_INSTALLATION_ID: '147849532'
 
 jobs:
   contract:
@@ -65,6 +67,11 @@ jobs:
           request=json.loads(path.read_text(encoding='utf-8'))
           validate_request(request)
           assert request['repository'] == 'Goldkelch/qik-vrt'
+          assert request['admin_principal'] == {
+              'account_login': 'Goldkelch',
+              'installation_id': 147849532,
+              'required_repository_permission': 'administration:write',
+          }
           assert request['ruleset_id'] == 19344903
           assert request['desired_after'] == {
               'required_approving_review_count': 1,
@@ -81,7 +88,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
-      ADMIN_PAT: ${{ secrets.QIKVRT_GITHUB_ADMIN_TOKEN }}
       ADMIN_APP_CLIENT_ID: ${{ vars.QIKVRT_ADMIN_APP_CLIENT_ID }}
       ADMIN_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_ADMIN_APP_PRIVATE_KEY }}
     steps:
@@ -104,34 +110,50 @@ jobs:
           esac
           test -f "$request"
           printf 'path=%s\n' "$request" >> "$GITHUB_OUTPUT"
-      - name: Create short-lived GitHub App administration token
+      - name: Create exact short-lived Goldkelch installation token
         id: app-token
-        if: env.ADMIN_PAT == '' && env.ADMIN_APP_CLIENT_ID != '' && env.ADMIN_APP_PRIVATE_KEY != ''
+        if: env.ADMIN_APP_CLIENT_ID != '' && env.ADMIN_APP_PRIVATE_KEY != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ vars.QIKVRT_ADMIN_APP_CLIENT_ID }}
           private-key: ${{ secrets.QIKVRT_ADMIN_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          owner: Goldkelch
           repositories: qik-vrt
           permission-administration: write
+      - name: Verify exact installation identity
+        if: steps.app-token.outputs.token != ''
+        shell: bash
+        env:
+          OBSERVED_INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+        run: |
+          set -euo pipefail
+          test "$OBSERVED_INSTALLATION_ID" = "$EXPECTED_ADMIN_INSTALLATION_ID" || {
+            echo "ADMIN_INSTALLATION_ID_MISMATCH expected=$EXPECTED_ADMIN_INSTALLATION_ID observed=$OBSERVED_INSTALLATION_ID" >&2
+            exit 2
+          }
+          echo "ADMIN_INSTALLATION_ID_VERIFIED=$OBSERVED_INSTALLATION_ID"
       - name: Execute exact admin effect or emit bootstrap HOLD
         id: apply
         shell: bash
         env:
-          QIKVRT_GITHUB_ADMIN_TOKEN: ${{ env.ADMIN_PAT || steps.app-token.outputs.token }}
+          QIKVRT_GITHUB_ADMIN_TOKEN: ${{ steps.app-token.outputs.token }}
+          QIKVRT_ADMIN_CREDENTIAL_SOURCE: github_app_installation:${{ steps.app-token.outputs.installation-id }}
           REQUEST_PATH: ${{ steps.request.outputs.path }}
         run: |
           set -euo pipefail
           if [ -z "${QIKVRT_GITHUB_ADMIN_TOKEN:-}" ]; then
-            cat > admin-effect-receipt.json <<'JSON'
+            cat > admin-effect-receipt.json <<JSON
           {
             "schema": "qikvrt_github_admin_effect_receipt_v1",
             "state": "HOLD",
             "verified": false,
-            "first_blocker": "ADMIN_CREDENTIAL_NOT_BOOTSTRAPPED",
-            "accepted_bootstrap_modes": [
-              "QIKVRT_ADMIN_APP_CLIENT_ID + QIKVRT_ADMIN_APP_PRIVATE_KEY",
-              "QIKVRT_GITHUB_ADMIN_TOKEN"
+            "first_blocker": "BOUND_ADMIN_APP_CREDENTIAL_NOT_BOOTSTRAPPED",
+            "expected_admin_account": "$EXPECTED_ADMIN_ACCOUNT",
+            "expected_installation_id": 147849532,
+            "required_repository_permission": "administration:write",
+            "required_bootstrap": [
+              "QIKVRT_ADMIN_APP_CLIENT_ID",
+              "QIKVRT_ADMIN_APP_PRIVATE_KEY"
             ],
             "credential_serialized": false
           }
