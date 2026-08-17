@@ -13,12 +13,16 @@ on:
       - "Makefile"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+      - "state/autonomy/STANDARD_TERMINAL_PATTERN_V1.json"
       - "tools/qikvrt_workflow_executor.py"
+      - "tools/qikvrt_standard_terminal.py"
       - "tools/qikvrt_seed_common.py"
       - ".github/workflows/qikvrt_workflow_executor.yml"
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
       - ".github/workflows/qikvrt_live_status_watch.yml"
+      - ".github/workflows/qikvrt_standard_terminal.yml"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+      - "tests/test_qikvrt_standard_terminal.py"
       - "tests/test_seed_workflows.py"
       - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
       - "registry/NODE_DISCOVERY_POLICY.json"
@@ -76,6 +80,18 @@ jobs:
             fi
           fi
 
+          terminal_artifact="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              | jq -r --arg head "$live_head" \
+                  '[.artifacts[] | select(.expired == false and (.name | startswith("qikvrt-standard-terminal-" + $head + "-")))] | sort_by(.created_at) | reverse | .[0].id // empty'
+          )"
+          if test -n "$terminal_artifact"; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/$terminal_artifact/zip" \
+              > .qikvrt/workflow-executor/terminal.zip
+            unzip -p .qikvrt/workflow-executor/terminal.zip terminal-inward.json \
+              > .qikvrt/workflow-executor/terminal-inward.json || true
+          fi
+
       - name: Build exact-head dispatch plan
         shell: bash
         run: |
@@ -90,6 +106,25 @@ jobs:
           jq '.observed' .qikvrt/workflow-executor/dispatch-plan.json \
             > .qikvrt/workflow-executor/workflow-executor-snapshot.json
 
+      - name: Consume inward terminal feedback before observer dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/workflow-executor
+          head="$(cat "$root/observed-main-head.txt")"
+          tree="$(cat "$root/observed-main-tree.txt")"
+          if test -s "$root/terminal-inward.json"; then
+            python3 -B tools/qikvrt_standard_terminal.py admit \
+              --inward "$root/terminal-inward.json" \
+              --expect-head "$head" --expect-tree "$tree" \
+              --mode observer --json > "$root/terminal-admission.json"
+          else
+            printf '%s\n' \
+              '{"schema":"qikvrt_standard_terminal_admission_v1","state":"HOLD","mode":"OBSERVER","classification":"MISSING_FRESH_INWARD_PROJECTION","completion_claims":{"PASS":false,"FINAL_PASS":false,"EFFECT_ACK_DONE":false}}' \
+              > "$root/terminal-admission.json"
+          fi
+          jq '{state, mode, classification, next_actions}' "$root/terminal-admission.json"
+
       - name: Dispatch only a newly eligible no-effect exact-head watchdog
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,6 +132,12 @@ jobs:
         run: |
           set -euo pipefail
           plan=.qikvrt/workflow-executor/dispatch-plan.json
+          admission=.qikvrt/workflow-executor/terminal-admission.json
+          if test "$(jq -r '.state' "$admission")" != ADMIT; then
+            echo "Standard terminal inward admission is HOLD; preserving fail-closed no-dispatch state."
+            : > .qikvrt/workflow-executor/dispatched-runs.jsonl
+            exit 0
+          fi
           head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
           tree="$(cat .qikvrt/workflow-executor/observed-main-tree.txt)"
           count="$(jq '[.candidates[] | select(.disposition == "DISPATCH")] | length' "$plan")"
