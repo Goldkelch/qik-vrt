@@ -1,0 +1,86 @@
+{
+  "schema": "qikvrt_owner_autonomous_repository_continuation_v3",
+  "delegation_id": "OWNER-AUTONOMOUS-REPOSITORY-CONTINUATION-V3",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "effective_at": "2026-08-17T21:53:00+02:00",
+  "supersedes_for_new_execution": "OWNER-AUTONOMOUS-REPOSITORY-CONTINUATION-V2",
+  "source_instruction": "Repository-internal write actions that the repository itself has reviewed, verified and found acceptable, and that are uniquely determined by the current exact-head evidence and existing repository rules, are standing-authorized and must proceed automatically without repeated Product-Owner interaction.",
+  "execution_rule": {
+    "state": "ACTIVE",
+    "standing_authorization": true,
+    "requires_repeated_chat_authorization": false,
+    "default_for_uniquely_determined_repository_internal_write": "EXECUTE_NOW",
+    "do_not_park_on_owner_reconfirmation": true,
+    "reobserve_live_refs_before_every_mutation": true,
+    "exact_head_evidence_required": true,
+    "history_preserving_only": true,
+    "repository_native_review_or_verification_required": true,
+    "fail_closed_on_ambiguity_or_drift": true
+  },
+  "allowed_without_reinteraction": [
+    "marking_an_eligible_pull_request_ready_for_review",
+    "requesting_repository_native_reviewers_or_code_owners_when_required_by_repository_policy",
+    "executing_and_persisting_repository_native_substantive_review_dispositions_without_identity_impersonation",
+    "performing_the_smallest_uniquely_determined_repository_internal_source_repair",
+    "performing_the_smallest_uniquely_determined_repository_internal_metadata_repair",
+    "performing_repository_native_integrity_regeneration_and_materialization",
+    "creating_history_preserving_successor_or_tree_identical_carrier_branches",
+    "creating_or_updating_reviewable_pull_requests_for_authorized_repository_internal_work",
+    "persisting_exact_head_bound_status_receipt_work_unit_and_governance_projections",
+    "triggering_or_continuing_repository_native_tests_checks_and_verification_workflows",
+    "closing_fully_superseded_execution_only_recovery_or_verification_pull_requests_without_merge"
+  ],
+  "mandatory_preconditions": [
+    "the current authority repository and target refs are reobserved immediately before mutation",
+    "the action is uniquely determined by repository policy an existing work unit or the smallest deterministic repair of an evidenced blocker",
+    "the repository-native review verification or applicable gate evidence supports the action at the exact current head and tree",
+    "the action preserves history and does not require force push or destructive ref rewriting",
+    "the action does not weaken permissions integrity review security rights scientific or effect boundaries",
+    "the action is repository-internal and does not itself create an external publication release deployment or other external effect",
+    "head tree base scope provenance or authorization drift invalidates the prior decision and requires reobservation",
+    "all applicable exact-head gates remain mandatory and predecessor-head success is non-transferable",
+    "no competing productive writer or conflicting lease is active"
+  ],
+  "automatic_review_progression": {
+    "draft_to_ready_for_review": "AUTHORIZED_WHEN_CURRENT_EXACT_HEAD_IS_REVIEWABLE_AND_NO_REPOSITORY_RULE_REQUIRES_DRAFT_HOLD",
+    "review_request": "AUTHORIZED_WHEN_REPOSITORY_POLICY_IDENTIFIES_AN_ELIGIBLE_REVIEWER_OR_CODE_OWNER",
+    "repository_substantive_review": "AUTHORIZED_WHEN_BOUND_TO_CURRENT_BASE_HEAD_TREE_SCOPE_AND_GATE_EVIDENCE",
+    "platform_identity_rule": "NEVER_IMPERSONATE_OR_MISREPORT_THE_GITHUB_SIGNER",
+    "independent_human_or_code_owner_approval_may_be_inferred": false
+  },
+  "not_authorized_by_this_delegation": [
+    "force_push_or_history_rewrite",
+    "bypassing_branch_protection_rulesets_permissions_or_required_checks",
+    "fabricating_or_impersonating_a_review_reviewer_identity_receipt_measurement_or_authorization",
+    "unconditional_merge_or_merge_without_a_separate_exact_repository_bound_promotion_authorization",
+    "github_release_or_tag_creation_without_separate_exact_authorization",
+    "zenodo_create_upload_metadata_mutation_or_publication_without_separate_exact_authorization",
+    "ietf_datatracker_submission_resubmission_or_metadata_mutation_without_separate_exact_authorization",
+    "deployment_to_an_external_runtime_without_separate_exact_authorization",
+    "claiming_PASS_FINAL_PASS_EFFECT_ACK_DONE_or_external_effect_completion_without_exact_live_evidence"
+  ],
+  "failure_semantics": {
+    "ambiguous_action": "HOLD_WITH_FIRST_DETERMINISTIC_BLOCKER",
+    "head_tree_base_scope_or_provenance_drift": "REOBSERVE_AND_REEVALUATE",
+    "missing_repository_native_review_or_verification": "RUN_OR_REQUEST_THE_REPOSITORY_NATIVE_REVIEW_PATH",
+    "platform_or_admin_boundary": "REPORT_EXACT_REQUIRED_HUMAN_OR_ADMIN_ACTION",
+    "external_effect_boundary": "STOP_UNLESS_SEPARATELY_EXACTLY_AUTHORIZED"
+  },
+  "revocation": {
+    "revocable": true,
+    "method": "append a later owner decision naming this delegation_id and setting state to REVOKED"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE_DONE": false,
+    "PUBLICATION_DONE": false,
+    "RELEASE_DONE": false,
+    "DEPLOYMENT_DONE": false
+  }
+}
