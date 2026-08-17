@@ -4,112 +4,81 @@
     <title abbrev="EFFECT_ACK for HTTP">Effect Acknowledgement for HTTP and Web Linking</title>
     <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-http-00"/>
     <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"><organization>Independent Researcher</organization><address><email>ingolf.lohmann@live.com</email></address></author>
-    <date year="2026" month="August" day="16"/>
+    <date year="2026" month="August" day="18"/>
     <area>Applications and Real-Time</area>
-    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>authorization</keyword>
+    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>causality</keyword><keyword>effect acknowledgement</keyword>
     <abstract>
-      <t>This document defines an Experimental HTTP binding for the QIK-VRT Effect Acknowledgement protocol. It introduces two Structured Fields and a Web Linking relation for capability discovery, preparation of a protected effect, validation of a full EFFECT_ACK responsibility record, and an exact-bound commit.</t>
-      <t>The binding is opt-in and does not redefine HTTP transport acknowledgement or method semantics. Generic HTTP and HTML implementations can ignore the extension. A client that elects fail-closed protection, however, does not send a protected effect until support has been discovered and an EFFECT_ACK_DONE record has been independently validated.</t>
+      <t>This document defines an Experimental HTTP binding for the QIK-VRT Effect Acknowledgement protocol. It introduces two Structured Fields and a Web Linking relation for capability discovery, preparation of a protected effect, validation of a full responsibility record, and exact-bound commit.</t>
+      <t>The binding makes explicit that protocol sequence is not itself evidence of causality. A protected effect is released only from explicitly bound authority, evidence and causal dependencies; serialization is an implementation projection of that causal structure.</t>
     </abstract>
   </front>
   <middle>
     <section anchor="intro"><name>Introduction</name>
-      <t>HTTP success, transport acknowledgement, successful parsing and application return values do not establish authorization for an external effect. The EFFECT_ACK core protocol separates those concepts. This document maps that gate to HTTP without changing HTTP itself.</t>
-      <t>The binding uses Structured Field Values for HTTP <xref target="RFC9651"/> and Web Linking <xref target="RFC8288"/>. The same registered link relation can be represented in the HTTP Link field or by an HTML link element, providing one discovery model for protocol software and browsers.</t>
+      <t>HTTP success, transport acknowledgement, successful parsing and application return values do not establish authorization for an external effect. The EFFECT_ACK core protocol separates those concepts. This document maps that gate to HTTP without changing HTTP method semantics.</t>
+      <t>The binding uses Structured Field Values for HTTP <xref target="RFC9651"/> and Web Linking <xref target="RFC8288"/>. The same link relation can be represented in the HTTP Link field or by an HTML link element.</t>
     </section>
     <section anchor="requirements"><name>Conventions and Requirements</name>
       <t>The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, NOT RECOMMENDED, MAY, and OPTIONAL are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals.</t>
-      <t>This document assumes the five-state EFFECT_ACK core model: EFFECT_NACK, EFFECT_ACK_CONTINUE, EFFECT_ACK_DONE, EFFECT_ACK_ISOLATE and EFFECT_ACK_BLOCK. Only a fresh, authenticated, independently validated EFFECT_ACK_DONE record can be eligible for ordinary release.</t>
+      <t>This document assumes the five-state EFFECT_ACK model: EFFECT_NACK, EFFECT_ACK_CONTINUE, EFFECT_ACK_DONE, EFFECT_ACK_ISOLATE and EFFECT_ACK_BLOCK. Only a fresh, authenticated and independently validated EFFECT_ACK_DONE record can be eligible for ordinary release.</t>
+    </section>
+    <section anchor="causality"><name>Causality, Serialization and Metagrammar Binding</name>
+      <t>An implementation MUST NOT infer causal authorization from message order, wall-clock order, source-text order, transport completion, or a successful status code alone. Sequence can record order; it is not by itself proof of a causal dependency or authority.</t>
+      <t>A deployment that represents protected work as a directed causal graph MAY serialize causally independent operations in any deterministic topological order consistent with the explicit dependency edges. Parallel or distributed execution MAY use another topological projection of the same graph. Such projection MUST preserve all bound non-commutative effects, authority constraints, lease constraints, exact-version constraints and Effect-Ack dependencies.</t>
+      <t>Where a deployment uses a QIK-VRT metagrammar envelope, the responsibility-record digest SHOULD bind canonical bytes for operation identifier, resource binding, exact version identifiers, intent, authority, evidence, state, effect, next action and proof. Generic HTTP implementations are not required to understand that metagrammar.</t>
+      <t>A DONE result obtained before execution is an authorization-state record, not post-effect evidence. After a protected effect, a deployment claiming observed completion MUST obtain a distinct post-effect observation. Transport acknowledgement MUST NOT be substituted for that observation.</t>
     </section>
     <section anchor="discovery"><name>Capability Discovery</name>
       <t>An origin supporting this profile SHOULD advertise an <tt>effect-ack</tt> link relation. Discovery is metadata only and never authorizes an effect.</t>
-      <sourcecode type="http-message"><![CDATA[
-Link: </.well-known/effect-ack>; rel="effect-ack"; type="application/json"
-]]></sourcecode>
-      <t>An HTML representation MAY advertise the same relation:</t>
-      <sourcecode type="html"><![CDATA[
-<link rel="effect-ack" href="/.well-known/effect-ack" type="application/json">
-]]></sourcecode>
-      <t>A fail-closed client MUST establish support before sending a protected operation in prepare mode. If support cannot be established, the client MUST NOT send the protected effect.</t>
+      <sourcecode type="http-message"><![CDATA[Link: </.well-known/effect-ack>; rel="effect-ack"; type="application/json"]]></sourcecode>
+      <sourcecode type="html"><![CDATA[<link rel="effect-ack" href="/.well-known/effect-ack" type="application/json">]]></sourcecode>
+      <t>A fail-closed client MUST establish support before sending a protected operation in prepare mode.</t>
     </section>
     <section anchor="request"><name>Effect-Ack-Request Field</name>
-      <t><tt>Effect-Ack-Request</tt> is an HTTP request field whose value is a Structured Dictionary. Version 1 defines the following members:</t>
-      <table><thead><tr><th>Member</th><th>Type</th><th>Semantics</th></tr></thead><tbody>
-        <tr><td>v</td><td>Integer</td><td>Protocol version; value 1 in this document.</td></tr>
-        <tr><td>mode</td><td>Token</td><td><tt>prepare</tt> or <tt>commit</tt>.</td></tr>
-        <tr><td>token</td><td>Byte Sequence</td><td>Opaque single-use commit token. Required for commit and absent for prepare.</td></tr>
-        <tr><td>hash</td><td>Byte Sequence</td><td>32-octet SHA-256 digest of the canonical responsibility record. Required for commit.</td></tr>
-      </tbody></table>
+      <t><tt>Effect-Ack-Request</tt> is a Structured Dictionary. Version 1 defines <tt>v</tt> (Integer), <tt>mode</tt> (Token: prepare or commit), <tt>token</tt> (Byte Sequence, required for commit), and <tt>hash</tt> (Byte Sequence, the SHA-256 digest of the canonical responsibility record, required for commit).</t>
       <sourcecode type="http-message"><![CDATA[
 Effect-Ack-Request: v=1, mode=prepare
 Effect-Ack-Request: v=1, mode=commit, token=:AQIDBAUGBwgJCgsMDQ4PEA==:, hash=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:
 ]]></sourcecode>
-      <t>A server receiving prepare MUST NOT execute the protected effect. It MAY validate, simulate, preview, reserve or perform other work that deployment policy explicitly classifies as non-protected.</t>
+      <t>A server receiving prepare MUST NOT execute the protected effect.</t>
     </section>
     <section anchor="response"><name>Effect-Ack Field</name>
-      <t><tt>Effect-Ack</tt> is primarily an HTTP response field whose value is a Structured Dictionary. Version 1 defines:</t>
-      <table><thead><tr><th>Member</th><th>Type</th><th>Semantics</th></tr></thead><tbody>
-        <tr><td>v</td><td>Integer</td><td>Protocol version.</td></tr>
-        <tr><td>state</td><td>Token</td><td><tt>nack</tt>, <tt>continue</tt>, <tt>done</tt>, <tt>isolate</tt> or <tt>block</tt>.</td></tr>
-        <tr><td>hash</td><td>Byte Sequence</td><td>32-octet SHA-256 digest of the full canonical responsibility record.</td></tr>
-        <tr><td>token</td><td>Byte Sequence</td><td>Opaque commit token, present only when commit can be attempted.</td></tr>
-      </tbody></table>
-      <t>The compact field does not replace the full responsibility record. A consumer MUST obtain the exact record from the <tt>effect-ack</tt> link target or another authenticated channel and MUST independently validate it before commit.</t>
-      <sourcecode type="http-message"><![CDATA[
-Effect-Ack: v=1, state=done, hash=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:, token=:AQIDBAUGBwgJCgsMDQ4PEA==:
-Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
-]]></sourcecode>
+      <t><tt>Effect-Ack</tt> is a Structured Dictionary. Version 1 defines <tt>v</tt>, <tt>state</tt> (nack, continue, done, isolate or block), <tt>hash</tt>, and an optional single-use <tt>token</tt>.</t>
+      <t>The compact field does not replace the full responsibility record. A consumer MUST obtain and independently validate the exact record before commit.</t>
     </section>
     <section anchor="transaction"><name>Prepare and Commit Transaction</name>
       <ol>
-        <li>The client discovers the profile and decides that the proposed operation is protected.</li>
-        <li>The client transmits the exact proposed operation with <tt>mode=prepare</tt>. The server MUST NOT perform the protected effect.</li>
-        <li>The server evaluates the request under the EFFECT_ACK core protocol. A non-DONE result is returned without ordinary release.</li>
-        <li>For a DONE result the server MAY issue a single-use, short-lived token. The token MUST be integrity-protected and bound to the effective request target, method, request-content digest, policy digest, responsible principal, record hash and expiration.</li>
-        <li>The client obtains and independently validates the full responsibility record.</li>
-        <li>The client repeats the exact operation with <tt>mode=commit</tt>, the token and record hash.</li>
-        <li>The server atomically revalidates token freshness, single use, request equivalence, policy, record integrity and DONE state. Only then MAY the protected effect occur.</li>
-        <li>After execution, the deployment SHOULD expose a post-effect observation that can be bound into a successor record. A successful response alone is not post-effect proof.</li>
+        <li>The client discovers the profile and classifies the proposed operation as protected.</li>
+        <li>The client sends the exact proposed operation with <tt>mode=prepare</tt>; the protected effect MUST NOT occur.</li>
+        <li>The server evaluates the request. A non-DONE result does not release the effect.</li>
+        <li>For DONE the server MAY issue a short-lived single-use token bound to effective request target, method, request-content digest, policy digest, responsible principal, record hash and expiration.</li>
+        <li>The client independently validates the full responsibility record.</li>
+        <li>The client repeats the exact operation with <tt>mode=commit</tt>, token and record hash.</li>
+        <li>The server atomically revalidates freshness, single use, request equivalence, policy, record integrity and DONE state. Only then MAY the effect occur.</li>
+        <li>After execution, the deployment SHOULD expose a post-effect observation bound to the actual resulting state. A successful HTTP response alone is not post-effect proof.</li>
       </ol>
-      <t>Any difference in method, effective request target, content digest, policy binding, responsible principal, token freshness or record hash MUST prevent commit.</t>
     </section>
-    <section anchor="compat"><name>Backward Compatibility</name>
-      <t>The extension is opt-in. A generic HTTP recipient can ignore unknown fields according to HTTP semantics. Therefore, a fail-closed client MUST NOT send a protected operation to a server merely hoping that <tt>Effect-Ack-Request</tt> will be understood. Capability discovery or a deployment-configured equivalent is a prerequisite.</t>
-      <t>Servers MAY continue legacy behavior for endpoints that local policy does not classify as protected. A protected endpoint SHOULD reject an effect-bearing request that omits the required commit binding. This allows incremental deployment without redefining legacy HTTP.</t>
+    <section anchor="compat"><name>Backward Compatibility and HTML Integration</name>
+      <t>The extension is opt-in. Generic recipients can ignore unknown fields. A fail-closed client MUST NOT send a protected operation merely hoping the extension will be understood.</t>
+      <t>No new HTML element or parser behavior is defined. Ordinary HTML <tt>link</tt> can express the <tt>effect-ack</tt> relation. Its presence is discovery evidence only and MUST NOT be interpreted as DONE.</t>
     </section>
-    <section anchor="html"><name>HTML Integration</name>
-      <t>No new HTML element or parser behavior is defined. The registered Web Linking relation is expressed through the ordinary HTML <tt>link</tt> element. Browser software can discover the relation and expose a terminal, confirmation flow or other user interface without changing the document format.</t>
-      <t>The presence of an HTML link is discovery evidence only. It MUST NOT be interpreted as DONE.</t>
-    </section>
-    <section anchor="browser"><name>Browser Proxy Considerations</name>
-      <t>A browser extension can implement this profile while remaining compatible with unmodified servers and pages. It can discover the link relation, keep protected requests in a local prepare state, validate a returned full record, and issue commit only after DONE.</t>
-      <t>Audio, video and screen capture remain Web-platform permission events. Media bytes are not EFFECT_ACK evidence until the user explicitly submits them. A browser proxy MUST NOT silently capture or transmit media and MUST preserve a visible distinction between local preview, submitted input, prepared effect and committed effect.</t>
-      <t>A proxy that renders other clients or backend states SHOULD normalize observations into a transport-neutral terminal frame while preserving source identifiers, exact record hashes, timestamps and uncertainty. Rendering is not authorization.</t>
-    </section>
-    <section anchor="intermediaries"><name>Intermediaries, Caches and CORS</name>
-      <t>Intermediaries MUST NOT synthesize an <tt>Effect-Ack</tt> field. A transformation that changes bound request semantics invalidates a prepare token unless the transformation itself is included in the binding.</t>
-      <t>An authorization result is not a reusable cache validator. A cached DONE assertion MUST NOT authorize a different request or later effect. Responsibility records containing sensitive metadata SHOULD use appropriate cache controls.</t>
-      <t>Script access to response fields remains subject to ordinary Fetch and CORS rules. An origin that intends cross-origin script access explicitly exposes the field. Privileged extensions operate under separately granted browser permissions and MUST NOT treat those permissions as effect authorization.</t>
+    <section anchor="browser"><name>Browser and Terminal Considerations</name>
+      <t>A browser extension can discover the link relation, keep protected requests in prepare state, validate a returned record, and issue commit only after DONE.</t>
+      <t>Audio, video and screen capture remain Web-platform permission events. Media MUST NOT be silently captured or transmitted, and local preview, submitted input, prepared effect and committed effect MUST remain distinguishable.</t>
+      <t>A terminal reflecting observations back into an autonomous system MUST treat reflection as input evidence, not implicit authority. Any new productive action begins a new protected operation and Effect-Ack lifecycle.</t>
+      <t>A browser proxy MAY render a transport-neutral terminal frame received from another client or adapter. Such rendering MUST remain observation-only. A rendered frame MUST NOT enable Prepare or Commit, MUST NOT synthesize EFFECT_ACK_DONE, and MUST preserve the source binding needed for independent verification.</t>
     </section>
     <section anchor="security"><name>Security Considerations</name>
-      <t>Threats include forged DONE assertions, token theft, replay, request substitution between prepare and commit, downgrade, stale record reuse, policy substitution, alternate-path bypass, confused deputies and compromised evaluators. The full responsibility record and deployment authentication remain authoritative; the compact HTTP field is insufficient by itself.</t>
-      <t>Commit tokens MUST be unguessable, single-use, short-lived and exact-request bound. Consumers MUST rederive the EFFECT_ACK state. A browser or backend MUST NOT translate NACK, CONTINUE, ISOLATE or BLOCK into a releasing action.</t>
-      <t>HTTP Message Signatures <xref target="RFC9421"/> MAY be used by a deployment profile to bind relevant HTTP components, but this specification does not require a particular signature system.</t>
+      <t>Threats include forged DONE assertions, token theft, replay, request substitution, downgrade, stale record reuse, policy substitution, alternate-path bypass, confused deputies and compromised evaluators. Commit tokens MUST be unguessable, single-use, short-lived and exact-request bound. HTTP Message Signatures <xref target="RFC9421"/> MAY be used to bind relevant HTTP components.</t>
     </section>
     <section anchor="privacy"><name>Privacy Considerations</name>
-      <t>Responsibility records can expose principals, policy identifiers and evidence references. Implementations SHOULD minimize metadata, avoid placing sensitive records in broadly cacheable responses, and retain media locally until explicit submission.</t>
+      <t>Responsibility records can expose principals, policy identifiers and evidence references. Implementations SHOULD minimize metadata and retain media locally until explicit submission.</t>
     </section>
     <section anchor="iana"><name>IANA Considerations</name>
       <section><name>HTTP Field Name Registrations</name>
-        <t>IANA is requested to add the following provisional registrations to the Hypertext Transfer Protocol (HTTP) Field Name Registry:</t>
-        <table><thead><tr><th>Field Name</th><th>Status</th><th>Structured Type</th><th>Reference</th></tr></thead><tbody>
-          <tr><td>Effect-Ack</td><td>provisional</td><td>Dictionary</td><td>This document, <xref target="response"/></td></tr>
-          <tr><td>Effect-Ack-Request</td><td>provisional</td><td>Dictionary</td><td>This document, <xref target="request"/></td></tr>
-        </tbody></table>
+        <t>IANA is requested to add provisional registrations for <tt>Effect-Ack</tt> and <tt>Effect-Ack-Request</tt> to the Hypertext Transfer Protocol (HTTP) Field Name Registry. Both fields use Structured Dictionary values as defined by <xref target="RFC9651"/>.</t>
       </section>
-      <section anchor="linkrel"><name>Link Relation Registration</name>
-        <t>IANA is requested to register the following Link Relation Type:</t>
-        <dl><dt>Relation Name</dt><dd>effect-ack</dd><dt>Description</dt><dd>Refers to an endpoint or representation exposing EFFECT_ACK capability information or the responsibility record bound to the link context.</dd><dt>Reference</dt><dd>This document.</dd></dl>
+      <section><name>Link Relation Registration</name>
+        <t>IANA is requested to register <tt>effect-ack</tt> as a Link Relation Type referring to an endpoint or representation exposing EFFECT_ACK capability information or a responsibility record bound to the link context.</t>
       </section>
     </section>
   </middle>
@@ -122,31 +91,5 @@ Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9421.xml"/>
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9651.xml"/>
     </references>
-    <section><name>Example Exchange</name>
-      <sourcecode type="http-message"><![CDATA[
-GET /.well-known/effect-ack HTTP/1.1
-Host: example.test
-
-HTTP/1.1 200 OK
-Link: </.well-known/effect-ack>; rel="effect-ack"; type="application/json"
-
-POST /effect HTTP/1.1
-Host: example.test
-Effect-Ack-Request: v=1, mode=prepare
-Content-Digest: sha-256=:...:
-
-HTTP/1.1 200 OK
-Effect-Ack: v=1, state=done, hash=:...:, token=:...:
-Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
-
-POST /effect HTTP/1.1
-Host: example.test
-Effect-Ack-Request: v=1, mode=commit, token=:...:, hash=:...:
-Content-Digest: sha-256=:...:
-
-HTTP/1.1 204 No Content
-Effect-Ack: v=1, state=done, hash=:...:
-]]></sourcecode>
-    </section>
   </back>
 </rfc>
