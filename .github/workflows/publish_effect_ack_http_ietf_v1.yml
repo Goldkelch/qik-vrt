@@ -60,14 +60,18 @@ jobs:
             exit 2
           fi
           response="$(mktemp)"
-          code="$(curl --fail-with-body --silent --show-error --location \
+          code="$(curl --silent --show-error --location \
             --max-time 90 \
             --output "$response" \
             --write-out '%{http_code}' \
             -F 'user=ingolf.lohmann@live.com' \
             -F 'xml=@external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.xml;type=application/xml' \
             https://datatracker.ietf.org/api/submission)"
-          test "$code" -ge 200 -a "$code" -lt 300 || { cat "$response" >&2; exit 2; }
+          if ! test "$code" -ge 200 -a "$code" -lt 300; then
+            printf 'IETF_SUBMISSION_HTTP=%s\n' "$code" >&2
+            cat "$response" >&2
+            exit 2
+          fi
           python3 -B - "$response" "$receipt" <<'PY'
           import json, pathlib, sys, urllib.parse, urllib.request, time
           response_path = pathlib.Path(sys.argv[1])
@@ -83,7 +87,6 @@ jobs:
           if p.scheme != 'https' or p.netloc != 'datatracker.ietf.org' or not p.path.startswith('/api/submission/'):
               raise SystemExit('BLOCK: unsafe status URL')
           state = 'validating'
-          last = None
           for _ in range(30):
               with urllib.request.urlopen(status_url, timeout=30) as r:
                   last = json.loads(r.read())
@@ -109,8 +112,8 @@ jobs:
                   'ietf_submission_recorded': True,
                   'ietf_publication_claimed': False,
                   'ietf_consensus_claimed': False,
-                  'rfc_claimed': False,
-              },
+                  'rfc_claimed': False
+              }
           }
           receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(json.dumps(receipt, ensure_ascii=False))
