@@ -29,7 +29,11 @@ jobs:
           number = pr.get("number")
           if not isinstance(number, int) or number <= 0:
               raise SystemExit("BLOCK: pull-request number is unavailable")
-          if pr.get("base", {}).get("ref") != "main":
-              raise SystemExit("BLOCK: pull request is not based on main")
-          print(f"observed review lifecycle event for PR #{number}")
+          base_ref = pr.get("base", {}).get("ref")
+          head_ref = pr.get("head", {}).get("ref")
+          if not isinstance(base_ref, str) or not base_ref:
+              raise SystemExit("BLOCK: pull-request base ref is unavailable")
+          if not isinstance(head_ref, str) or not head_ref:
+              raise SystemExit("BLOCK: pull-request head ref is unavailable")
+          print(f"observed review lifecycle event for PR #{number}: {head_ref} -> {base_ref}")
           PY
