@@ -1,0 +1,157 @@
+name: Publish Effect-Ack HTTP -00 to IETF v1
+
+on:
+  push:
+    branches: [publication/integrated-wirkraum-metagrammar-m68000-v1]
+    paths:
+      - '.github/workflows/publish_effect_ack_http_ietf_v1.yml'
+      - 'external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.OWNER_AUTHORIZATION.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-ietf-effect-ack-http-00
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - name: Verify authorization and exact source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, pathlib
+          auth_path = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.OWNER_AUTHORIZATION.json')
+          source = pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml')
+          auth = json.loads(auth_path.read_text(encoding='utf-8'))
+          expected = {
+              'schema': 'qikvrt_ietf_owner_submission_authorization_v1',
+              'authorization_id': 'qikvrt-ietf-effect-ack-http-00-20260817',
+              'authorized_by': 'Ingolf Lohmann',
+              'internet_draft': 'draft-lohmann-qikvrt-effect-ack-http-00',
+              'revision': '00',
+              'requested_external_effect': 'SUBMIT_TO_IETF_DATATRACKER_AND_COMPLETE_REQUIRED_AUTHOR_CONFIRMATION',
+              'authorization': 'GRANTED',
+          }
+          for k, v in expected.items():
+              if auth.get(k) != v:
+                  raise SystemExit('BLOCK: authorization mismatch: ' + k)
+          digest = hashlib.sha256(source.read_bytes()).hexdigest()
+          if digest != auth.get('source_sha256'):
+              raise SystemExit('BLOCK: source digest mismatch')
+          print('authorized_source_sha256=' + digest)
+          PY
+      - name: Submit XML to official IETF Datatracker API and persist receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt='external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.SUBMISSION_RECEIPT.json'
+          if test -f "$receipt"; then
+            echo 'BLOCK: submission receipt already exists; refusing duplicate submission' >&2
+            exit 2
+          fi
+          login="$(python3 -B - <<'PY'
+          import json, urllib.parse, urllib.request
+          host = 'https://datatracker.ietf.org'
+          address = 'ingolf.lohmann@live.com'
+          email_url = host + '/api/v1/person/email/' + urllib.parse.quote(address, safe='') + '/?format=json'
+          def get(url):
+              p = urllib.parse.urlparse(url)
+              if p.scheme != 'https' or p.netloc != 'datatracker.ietf.org':
+                  raise SystemExit('BLOCK: unsafe Datatracker account resource URL')
+              with urllib.request.urlopen(url, timeout=30) as r:
+                  return json.loads(r.read())
+          email_obj = get(email_url)
+          person_ref = email_obj.get('person')
+          if not isinstance(person_ref, str) or not person_ref:
+              raise SystemExit('BLOCK: bound email has no Datatracker person')
+          person = get(urllib.parse.urljoin(host, person_ref))
+          user_ref = person.get('user')
+          if not isinstance(user_ref, str) or not user_ref:
+              raise SystemExit('BLOCK: Datatracker person has no login user')
+          user = get(urllib.parse.urljoin(host, user_ref))
+          username = user.get('username')
+          if not isinstance(username, str) or not username or any(c.isspace() for c in username):
+              raise SystemExit('BLOCK: Datatracker username unavailable')
+          print(username)
+          PY
+          )"
+          test -n "$login" || { echo 'BLOCK: empty Datatracker login' >&2; exit 2; }
+          response="$(mktemp)"
+          code="$(curl --silent --show-error --location \
+            --max-time 90 \
+            --output "$response" \
+            --write-out '%{http_code}' \
+            -F "user=$login" \
+            -F 'xml=@external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml;type=application/xml' \
+            https://datatracker.ietf.org/api/submission)"
+          if ! test "$code" -ge 200 -a "$code" -lt 300; then
+            printf 'IETF_SUBMISSION_HTTP=%s\n' "$code" >&2
+            cat "$response" >&2
+            exit 2
+          fi
+          python3 -B - "$response" "$receipt" <<'PY'
+          import json, pathlib, sys, urllib.parse, urllib.request, time
+          response_path = pathlib.Path(sys.argv[1])
+          receipt_path = pathlib.Path(sys.argv[2])
+          data = json.loads(response_path.read_text(encoding='utf-8'))
+          sid = str(data.get('id', ''))
+          name = data.get('name')
+          rev = str(data.get('rev', ''))
+          status_url = data.get('status_url')
+          if not sid.isdigit() or name != 'draft-lohmann-qikvrt-effect-ack-http' or rev != '00':
+              raise SystemExit('BLOCK: unexpected IETF submission response')
+          p = urllib.parse.urlparse(status_url or '')
+          if p.scheme != 'https' or p.netloc != 'datatracker.ietf.org' or not p.path.startswith('/api/submission/'):
+              raise SystemExit('BLOCK: unsafe status URL')
+          state = 'validating'
+          for _ in range(30):
+              with urllib.request.urlopen(status_url, timeout=30) as r:
+                  last = json.loads(r.read())
+              state = str(last.get('state', ''))
+              if state != 'validating':
+                  break
+              time.sleep(5)
+          receipt = {
+              'schema': 'qikvrt_ietf_datatracker_submission_receipt_v1',
+              'internet_draft': name,
+              'revision': rev,
+              'submission_id': int(sid),
+              'submission_type': 'Individual Submission',
+              'submitted': True,
+              'submission_checks': 'API_ACCEPTED',
+              'state': state,
+              'status_url_redacted_to_public_id': f'https://datatracker.ietf.org/submit/status/{sid}/',
+              'author_confirmation_channel': 'ingolf.lohmann@live.com',
+              'author_confirmation_observed': False,
+              'published': False,
+              'consensus': False,
+              'truth_boundaries': {
+                  'ietf_submission_recorded': True,
+                  'ietf_publication_claimed': False,
+                  'ietf_consensus_claimed': False,
+                  'rfc_claimed': False
+              }
+          }
+          receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(receipt, ensure_ascii=False))
+          PY
+      - name: Persist IETF submission receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'qik-vrt-ietf-submission[bot]'
+          git config user.email 'qik-vrt-ietf-submission[bot]@users.noreply.github.com'
+          git add external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.SUBMISSION_RECEIPT.json
+          git diff --cached --quiet && { echo 'BLOCK: receipt not materialized' >&2; exit 2; }
+          git commit -m 'ietf: persist Effect-Ack HTTP -00 submission receipt'
+          git push origin HEAD:publication/integrated-wirkraum-metagrammar-m68000-v1
