@@ -15,6 +15,11 @@ REQUEST = {
     "authorization_id": "a1",
     "effect_type": "RULESET_PULL_REQUEST_REVIEW_POLICY",
     "repository": "Goldkelch/qik-vrt",
+    "admin_principal": {
+        "account_login": "Goldkelch",
+        "installation_id": 147849532,
+        "required_repository_permission": "administration:write",
+    },
     "ruleset_id": 19344903,
     "ruleset_name": "QIK-VRT main protection",
     "expected_conditions": {"ref_name": {"exclude": [], "include": ["refs/heads/main"]}},
@@ -92,6 +97,18 @@ class AdminEffectExecutorTests(unittest.TestCase):
         with self.assertRaises(AdminEffectError):
             build_put_payload(live(), request)
 
+    def test_wrong_principal_account_is_rejected(self):
+        request = copy.deepcopy(REQUEST)
+        request["admin_principal"]["account_login"] = "ingolf-lohmann"
+        with self.assertRaises(AdminEffectError):
+            build_put_payload(live(), request)
+
+    def test_invalid_installation_id_is_rejected(self):
+        request = copy.deepcopy(REQUEST)
+        request["admin_principal"]["installation_id"] = 0
+        with self.assertRaises(AdminEffectError):
+            build_put_payload(live(), request)
+
     def test_execute_is_get_put_get_and_verifies(self):
         calls = []
         def fake_api(base, token, method, path, payload=None):
@@ -102,11 +119,13 @@ class AdminEffectExecutorTests(unittest.TestCase):
                 return live(after=True)
             return live(after=True)
         with patch("tools.qikvrt_github_admin_effect_executor._api", side_effect=fake_api):
-            receipt = execute(REQUEST, token="secret")
+            receipt = execute(REQUEST, token="secret", credential_source="github_app_installation:147849532")
         self.assertEqual([item[0] for item in calls], ["GET", "PUT", "GET"])
         self.assertEqual(receipt["state"], "APPLIED_VERIFIED")
         self.assertTrue(receipt["verified"])
         self.assertFalse(receipt["credential_serialized"])
+        self.assertEqual(receipt["admin_principal"]["installation_id"], 147849532)
+        self.assertEqual(receipt["credential_source"], "github_app_installation:147849532")
         self.assertNotIn("secret", str(receipt))
 
     def test_dry_run_performs_only_get(self):
