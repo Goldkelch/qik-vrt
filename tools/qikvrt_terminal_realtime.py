@@ -3,24 +3,28 @@
 # Copyright 2026 Ingolf Lohmann.
 """Realtime peer reflexivity for the QIK-VRT Standard Terminal.
 
-The process is transport-neutral: JSONL is the canonical wire representation.
-Active peers SHOULD push a fresh state envelope every four seconds.  Any peer
-state older than five seconds is rendered STALE and cannot admit productive
-work.  GitHub Actions remains an audit/handoff plane; it is not used to claim a
-five-second realtime SLA.
+Five seconds is the hard freshness ceiling, not the target cadence. Active peers
+push semantic transitions immediately (bounded by a short local scan interval)
+and otherwise emit an adaptively selected heartbeat between 100 ms and 4 s.
+GitHub Actions remains an audit/handoff plane, not the realtime transport.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 SCHEMA = "qikvrt_terminal_peer_state_v1"
-HEARTBEAT_INTERVAL_MS = 4000
+MIN_HEARTBEAT_INTERVAL_MS = 100
+DEFAULT_HEARTBEAT_INTERVAL_MS = 1000
+MAX_HEARTBEAT_INTERVAL_MS = 4000
+HEARTBEAT_INTERVAL_MS = DEFAULT_HEARTBEAT_INTERVAL_MS
 MAX_STATE_AGE_MS = 5000
+TRANSITION_SCAN_MS = 50
 FORBIDDEN_KEY_FRAGMENTS = ("token", "secret", "password", "private_key", "credential")
 
 
@@ -54,11 +58,78 @@ def _reject_credentials(value: Any, path: str = "state") -> None:
             _reject_credentials(child, f"{path}[{index}]")
 
 
-def make_envelope(*, peer_id: str, sequence: int, state: Mapping[str, Any], capabilities: Sequence[str], now_ms: int | None = None) -> dict[str, Any]:
+def _bounded_interval(value: int) -> int:
+    return max(MIN_HEARTBEAT_INTERVAL_MS, min(MAX_HEARTBEAT_INTERVAL_MS, int(value)))
+
+
+def _system_load_fraction() -> float:
+    try:
+        cpus = max(1, os.cpu_count() or 1)
+        return max(0.0, float(os.getloadavg()[0]) / cpus)
+    except (AttributeError, OSError):
+        return 0.5
+
+
+def choose_interval_ms(
+    *,
+    transport_rtt_ms: float = 20.0,
+    local_load_fraction: float | None = None,
+    send_queue_depth: int = 0,
+    peer_requested_interval_ms: int | None = None,
+) -> int:
+    """Select the fastest bounded cadence supported by current conditions.
+
+    The policy intentionally has no unbounded acceleration: 100 ms is the
+    periodic floor, state transitions use the separate immediate-push path,
+    and overload/backpressure stretches the heartbeat while staying below the
+    5-second stale ceiling.
+    """
+    if transport_rtt_ms < 0:
+        raise RealtimeTerminalBlock("transport_rtt_ms must be non-negative")
+    if send_queue_depth < 0:
+        raise RealtimeTerminalBlock("send_queue_depth must be non-negative")
+    load = _system_load_fraction() if local_load_fraction is None else float(local_load_fraction)
+    if load < 0:
+        raise RealtimeTerminalBlock("local_load_fraction must be non-negative")
+
+    if transport_rtt_ms <= 5:
+        target = 100
+    elif transport_rtt_ms <= 20:
+        target = 200
+    elif transport_rtt_ms <= 75:
+        target = 500
+    elif transport_rtt_ms <= 200:
+        target = 1000
+    else:
+        target = 2000
+
+    if peer_requested_interval_ms is not None:
+        target = max(target, _bounded_interval(peer_requested_interval_ms))
+
+    if load >= 0.90 or send_queue_depth >= 16:
+        target = max(target, 3500)
+    elif load >= 0.75 or send_queue_depth >= 8:
+        target = max(target, 2000)
+    elif load >= 0.60 or send_queue_depth >= 4:
+        target = max(target, 1000)
+
+    return _bounded_interval(target)
+
+
+def make_envelope(
+    *,
+    peer_id: str,
+    sequence: int,
+    state: Mapping[str, Any],
+    capabilities: Sequence[str],
+    now_ms: int | None = None,
+    heartbeat_interval_ms: int = DEFAULT_HEARTBEAT_INTERVAL_MS,
+) -> dict[str, Any]:
     if not peer_id.strip():
         raise RealtimeTerminalBlock("peer_id is required")
     if sequence < 0:
         raise RealtimeTerminalBlock("sequence must be non-negative")
+    interval = _bounded_interval(heartbeat_interval_ms)
     _reject_credentials(state)
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
     state_copy = dict(state)
@@ -70,7 +141,7 @@ def make_envelope(*, peer_id: str, sequence: int, state: Mapping[str, Any], capa
         "sequence": sequence,
         "emitted_at_ms": now,
         "expires_at_ms": now + MAX_STATE_AGE_MS,
-        "heartbeat_interval_ms": HEARTBEAT_INTERVAL_MS,
+        "heartbeat_interval_ms": interval,
         "maximum_peer_state_age_ms": MAX_STATE_AGE_MS,
         "event_id": event_id,
         "capabilities": caps,
@@ -94,6 +165,9 @@ def validate_envelope(envelope: Mapping[str, Any], *, now_ms: int | None = None,
     expires = envelope.get("expires_at_ms")
     if not isinstance(emitted, int) or not isinstance(expires, int) or expires - emitted != MAX_STATE_AGE_MS:
         raise RealtimeTerminalBlock("peer freshness binding malformed")
+    interval = envelope.get("heartbeat_interval_ms")
+    if not isinstance(interval, int) or not (MIN_HEARTBEAT_INTERVAL_MS <= interval <= MAX_HEARTBEAT_INTERVAL_MS):
+        raise RealtimeTerminalBlock("peer heartbeat interval outside adaptive bounds")
     state = _mapping(envelope.get("state"), "peer state")
     _reject_credentials(state)
     expected_event = digest({"peer_id": peer_id, "sequence": sequence, "state": dict(state)})
@@ -142,6 +216,7 @@ def render_modalities(envelope: Mapping[str, Any], *, now_ms: int | None = None)
         f" peer       : {envelope['peer_id']}",
         f" event      : {str(envelope['event_id'])[:16]}",
         f" freshness  : {freshness} ({validation['age_ms']} ms)",
+        f" cadence    : {envelope['heartbeat_interval_ms']} ms",
         f" state      : {classification}",
         f" blocker    : {blocker}",
         f" next       : {next_action}",
@@ -178,6 +253,17 @@ def _capabilities(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+def _emit(peer_id: str, sequence: int, state: Mapping[str, Any], capabilities: Sequence[str], interval_ms: int) -> None:
+    envelope = make_envelope(
+        peer_id=peer_id,
+        sequence=sequence,
+        state=state,
+        capabilities=capabilities,
+        heartbeat_interval_ms=interval_ms,
+    )
+    print(canonical(envelope), flush=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -187,12 +273,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     emit.add_argument("--state", type=Path, required=True)
     emit.add_argument("--sequence", type=int, default=0)
     emit.add_argument("--capabilities", default="text,visual,auditory")
+    emit.add_argument("--interval-ms", type=int, default=DEFAULT_HEARTBEAT_INTERVAL_MS)
 
     stream = sub.add_parser("stream")
     stream.add_argument("--peer-id", required=True)
     stream.add_argument("--state", type=Path, required=True)
     stream.add_argument("--start-sequence", type=int, default=0)
-    stream.add_argument("--interval-ms", type=int, default=HEARTBEAT_INTERVAL_MS)
+    stream.add_argument("--interval-ms", type=int, help="Explicit bounded cadence; omit for adaptive scaling")
+    stream.add_argument("--transport-rtt-ms", type=float, default=20.0)
+    stream.add_argument("--peer-requested-interval-ms", type=int)
+    stream.add_argument("--send-queue-depth", type=int, default=0)
     stream.add_argument("--count", type=int, default=0, help="0 means run continuously")
     stream.add_argument("--capabilities", default="text,visual,auditory")
 
@@ -203,21 +293,49 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "emit":
-            envelope = make_envelope(peer_id=args.peer_id, sequence=args.sequence, state=_read(args.state), capabilities=_capabilities(args.capabilities))
+            if not (MIN_HEARTBEAT_INTERVAL_MS <= args.interval_ms <= MAX_HEARTBEAT_INTERVAL_MS):
+                raise RealtimeTerminalBlock("interval_ms outside adaptive bounds")
+            envelope = make_envelope(peer_id=args.peer_id, sequence=args.sequence, state=_read(args.state), capabilities=_capabilities(args.capabilities), heartbeat_interval_ms=args.interval_ms)
             print(canonical(envelope))
             return 0
         if args.command == "stream":
-            if args.interval_ms <= 0 or args.interval_ms > HEARTBEAT_INTERVAL_MS:
-                raise RealtimeTerminalBlock(f"interval_ms must be in 1..{HEARTBEAT_INTERVAL_MS}")
+            if args.interval_ms is not None and not (MIN_HEARTBEAT_INTERVAL_MS <= args.interval_ms <= MAX_HEARTBEAT_INTERVAL_MS):
+                raise RealtimeTerminalBlock("interval_ms outside adaptive bounds")
             sequence = args.start_sequence
             emitted = 0
+            state = _read(args.state)
+            state_fingerprint = digest(state)
+            interval_ms = args.interval_ms or choose_interval_ms(
+                transport_rtt_ms=args.transport_rtt_ms,
+                send_queue_depth=args.send_queue_depth,
+                peer_requested_interval_ms=args.peer_requested_interval_ms,
+            )
+            _emit(args.peer_id, sequence, state, _capabilities(args.capabilities), interval_ms)
+            sequence += 1
+            emitted += 1
+            last_emit = time.monotonic()
             while args.count == 0 or emitted < args.count:
-                envelope = make_envelope(peer_id=args.peer_id, sequence=sequence, state=_read(args.state), capabilities=_capabilities(args.capabilities))
-                print(canonical(envelope), flush=True)
+                if args.interval_ms is None:
+                    interval_ms = choose_interval_ms(
+                        transport_rtt_ms=args.transport_rtt_ms,
+                        send_queue_depth=args.send_queue_depth,
+                        peer_requested_interval_ms=args.peer_requested_interval_ms,
+                    )
+                deadline = last_emit + interval_ms / 1000.0
+                sleep_s = max(0.001, min(TRANSITION_SCAN_MS / 1000.0, deadline - time.monotonic()))
+                time.sleep(sleep_s)
+                current_state = _read(args.state)
+                current_fingerprint = digest(current_state)
+                transitioned = current_fingerprint != state_fingerprint
+                heartbeat_due = time.monotonic() >= deadline
+                if not transitioned and not heartbeat_due:
+                    continue
+                state = current_state
+                state_fingerprint = current_fingerprint
+                _emit(args.peer_id, sequence, state, _capabilities(args.capabilities), interval_ms)
                 sequence += 1
                 emitted += 1
-                if args.count == 0 or emitted < args.count:
-                    time.sleep(args.interval_ms / 1000.0)
+                last_emit = time.monotonic()
             return 0
         envelope = _read(args.envelope)
         rendered = render_modalities(envelope)
