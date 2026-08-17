@@ -1,0 +1,107 @@
+{
+  "schema": "qikvrt_standard_terminal_pattern_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "purpose": "Provide one exact-head-bound fail-closed terminal semantics at mesh, node-boundary, and node-internal architectural boundaries with coupled outward reflection and inward reflexive admission feedback.",
+  "controller_path": "tools/qikvrt_standard_terminal.py",
+  "workflow_path": ".github/workflows/qikvrt_standard_terminal.yml",
+  "acceptance_test_path": "tests/test_qikvrt_standard_terminal.py",
+  "documentation_path": "docs/STANDARD_TERMINAL_PATTERN.md",
+  "continuous_observation": {
+    "source_workflow": "QIKVRT reflexive repository watchdog",
+    "source_artifact_prefix": "qikvrt-reflexive-repository-watchdog-",
+    "event_driven": true,
+    "schedule_fallback": "PT5M",
+    "no_repository_write": true,
+    "self_trigger_forbidden": true
+  },
+  "architectural_loci": [
+    {"scope": "MESH_BOUNDARY", "phase": "INGRESS"},
+    {"scope": "MESH_BOUNDARY", "phase": "EGRESS"},
+    {"scope": "MESH_NODE_BOUNDARY", "phase": "INGRESS"},
+    {"scope": "MESH_NODE_BOUNDARY", "phase": "EGRESS"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "PRE_DISPATCH"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "PRE_ACTION"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "POST_ACTION"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "INTEGRITY_PROJECTION"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "PERSISTENCE_WRITE"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "EXACT_HEAD_REOBSERVATION"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "GATE_AGGREGATION"},
+    {"scope": "MESH_NODE_INTERNAL", "phase": "EFFECT_ACK"}
+  ],
+  "classification_precedence": [
+    "EXACT_HEAD_MISMATCH",
+    "STALE_WRITER_OR_LEASE",
+    "INTEGRITY_PROJECTION_DEFECT",
+    "PLATFORM_PRE_JOB_BARRIER",
+    "EXECUTED_WORKFLOW_FAILURE",
+    "EXPECTED_SEMANTIC_HOLD",
+    "OBSERVED_EXACT_HEAD_SUCCESS",
+    "OBSERVE"
+  ],
+  "facts": [
+    "expected_semantic_hold",
+    "integrity_projection_defect",
+    "exact_head_mismatch",
+    "stale_writer_or_lease",
+    "platform_pre_job_barrier",
+    "executed_workflow_failure",
+    "observed_exact_head_success"
+  ],
+  "outward_reflection": {
+    "artifact": "terminal-outward.json",
+    "authoritative_for_semantic_truth": false,
+    "must_include_event_id": true,
+    "must_include_exact_binding": true,
+    "completion_claims_default_false": true
+  },
+  "inward_reflexivity": {
+    "artifact": "terminal-inward.json",
+    "must_share_event_ids_with_outward": true,
+    "feeds_next_observation": true,
+    "admission_fields": [
+      "blocks_productive_progress",
+      "admit_productive_writer",
+      "admit_observer",
+      "requires_human",
+      "retryable",
+      "next_action"
+    ],
+    "semantic_promotion_forbidden": true
+  },
+  "admission": {
+    "fail_closed_without_fresh_exact_head_inward_projection": true,
+    "observer_may_run_during_hold": true,
+    "productive_writer_requires_clear": true,
+    "action_required_is_clear": false,
+    "zero_job_is_clear": false,
+    "watchdog_success_is_productive_gate_success": false
+  },
+  "event_identity": {
+    "algorithm": "sha256",
+    "canonical_json": true,
+    "includes": [
+      "repository",
+      "head_sha",
+      "tree_sha",
+      "scope",
+      "phase",
+      "classification",
+      "source_semantic_fingerprint"
+    ],
+    "excludes_wall_clock": true
+  },
+  "replay": {
+    "same_binding_and_source_fingerprint_is_same_semantic_event": true,
+    "previous_inward_projection_is_reflexively_reobserved": true,
+    "no_change_state": "REFLEXIVE_STABLE",
+    "change_state": "REFLEXIVE_TRANSITION"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "SCIENTIFIC_CONFIRMATION": false
+  }
+}
