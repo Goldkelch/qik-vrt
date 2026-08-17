@@ -1,0 +1,52 @@
+{
+  "schema": "qikvrt_terminal_effect_evidence_basis_v1",
+  "version": "1.0",
+  "status": "NORMATIVE_CANDIDATE",
+  "purpose": "Define the exact evidence needed to make merge, publication, release, deployment, PASS, FINAL_PASS, and EFFECT_ACK_DONE decidable without treating this contract, a workflow transport acknowledgement, or a predecessor-head success as the effect itself.",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "entrypoint": "AI",
+    "evaluation_controller": "tools/qikvrt_terminal_effect_basis.py",
+    "acceptance_test": "tests/test_qikvrt_terminal_effect_basis.py",
+    "documentation": "docs/TERMINAL_EFFECT_EVIDENCE_BASIS.md",
+    "workflow": ".github/workflows/qikvrt_terminal_effect_basis.yml",
+    "work_unit": "state/work_units/TERMINAL_EFFECT_EVIDENCE_BASIS_V1.json"
+  },
+  "exact_binding": {
+    "required_fields": ["repository", "authority_head", "authority_tree", "base_head", "base_tree", "candidate_head", "candidate_tree", "scope_sha256"],
+    "head_is_relation_not_constant": true,
+    "resolve_live_refs_before_every_effect": true,
+    "restart_on_head_or_tree_drift": true,
+    "gate_transfer_between_heads": false
+  },
+  "common_candidate_admission": {
+    "required": ["valid_exact_binding", "repository_native_materialization_or_tree_identical_trusted_carrier", "integrity_verified_on_candidate_head_and_tree", "scope_clear", "provenance_clear", "all_applicable_candidate_gates_completed_success_with_executed_jobs", "no_competing_writer", "writer_lease_clear"],
+    "untrusted": ["action_required", "zero_job", "predecessor_head_success", "watchdog_terminality_without_productive_gate_success", "cached_or_chat_only_evidence"]
+  },
+  "readiness": {
+    "PASS_basis_ready": {"requires": ["common_candidate_admission"], "does_not_claim": ["PASS", "FINAL_PASS", "EFFECT_ACK_DONE"]},
+    "merge_basis_ready": {"requires": ["PASS_basis_ready", "mergeable", "not_draft", "ruleset_satisfied", "required_reviews_satisfied", "exact_merge_authorization"], "does_not_claim": ["MERGE_DONE"]},
+    "publication_basis_ready": {"requires": ["PASS_basis_ready", "immutable_publication_artifact", "metadata_digest", "rights_clear", "scientific_status_bound", "exact_publication_authorization"], "does_not_claim": ["PUBLICATION_DONE", "DOI_CREATED"]},
+    "release_basis_ready": {"requires": ["PASS_basis_ready", "immutable_release_artifact", "version", "sbom_digest", "provenance_digest", "exact_release_authorization"], "does_not_claim": ["RELEASE_DONE", "TAG_CREATED"]},
+    "deployment_basis_ready": {"requires": ["release_basis_ready", "deployment_artifact_equals_release_artifact", "environment", "rollback_plan_digest", "exact_deployment_authorization"], "does_not_claim": ["DEPLOYMENT_DONE"]},
+    "FINAL_PASS_basis_ready": {"requires": ["merge_basis_ready", "publication_basis_ready", "release_basis_ready", "deployment_basis_ready", "verified_merge_receipt", "verified_publication_effect_receipt", "verified_release_effect_receipt", "verified_deployment_effect_receipt", "post_promotion_authority_binding", "post_promotion_integrity", "post_promotion_applicable_gates_completed_success_with_executed_jobs"], "does_not_claim": ["FINAL_PASS", "EFFECT_ACK_DONE"]},
+    "EFFECT_ACK_DONE_basis_ready": {"requires": ["FINAL_PASS_basis_ready", "zero_pending_required_effects", "effect_ack_not_transport_ack_for_every_required_external_effect", "live_readback_for_every_required_external_effect", "exact_closure_receipt"], "does_not_claim": ["EFFECT_ACK_DONE"]}
+  },
+  "receipt_binding": {
+    "merge": ["candidate_head", "candidate_tree", "result_head", "result_tree", "receipt_sha256", "live_readback"],
+    "external_effect": ["request_head", "request_tree", "authorization_sha256", "artifact_sha256", "effect_id", "target", "receipt_sha256", "effect_ack", "live_readback"],
+    "closure": ["authority_head", "authority_tree", "required_effect_ids", "receipt_sha256", "live_readback"]
+  },
+  "negative_controls": {
+    "contract_or_documentation_is_effect": false,
+    "basis_ready_is_completion": false,
+    "transport_ack_is_effect_ack": false,
+    "workflow_success_is_external_effect": false,
+    "review_bot_is_independent_human_review": false,
+    "predecessor_head_gate_success_is_current_success": false,
+    "action_required_is_trusted_success": false,
+    "zero_job_is_trusted_success": false,
+    "self_asserted_completion_is_accepted": false
+  },
+  "completion_claims": {"MERGE_DONE": false, "PUBLICATION_DONE": false, "RELEASE_DONE": false, "DEPLOYMENT_DONE": false, "PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+}
