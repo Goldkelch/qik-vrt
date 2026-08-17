@@ -1,0 +1,31 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "GITHUB_ADMIN_EFFECT_EXECUTOR_V1",
+  "repository": "Goldkelch/qik-vrt",
+  "base_commit": "836a068d42b30f4df496caf4d712dbe8da45c043",
+  "branch": "agent/github-admin-effect-executor-v1",
+  "product_owner_authorization": "PO-2026-08-17-GITHUB-ADMIN-EFFECT-EXECUTOR-V1",
+  "purpose": "Close the persistent transport gap for exact GitHub administration effects by implementing a fail-closed repository-native executor.",
+  "initial_effect_request": "state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json",
+  "implementation_paths": [
+    ".github/workflows/qikvrt_github_admin_effect_executor.yml",
+    "tools/qikvrt_github_admin_effect_executor.py",
+    "tests/test_qikvrt_github_admin_effect_executor.py",
+    "policy/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json",
+    "schemas/qikvrt_github_admin_effect_request_v1.schema.json",
+    "docs/GITHUB_ADMIN_EFFECT_EXECUTOR.md",
+    "state/authorization/delegations/OWNER_GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json"
+  ],
+  "invariants": [
+    "GET_COMPARE_PUT_GET",
+    "EXACT_REQUEST_ONLY",
+    "COMPARE_AND_SWAP",
+    "ALLOWLIST_ONLY",
+    "NO_FORCE",
+    "NO_CREDENTIAL_PERSISTENCE",
+    "IDEMPOTENT_REOBSERVATION",
+    "ONE_ADMIN_EFFECT_WRITER"
+  ],
+  "external_effect": "NONE_AT_SOURCE_MATERIALIZATION",
+  "ruleset_effect": "SEPARATELY_EXECUTED_ONLY_AFTER_RUNTIME_ADMIN_CREDENTIAL"
+}
