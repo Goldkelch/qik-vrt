@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT bounded elastic observers
+
+on:
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Requested read-only observer lanes (1-8)"
+        required: false
+        default: "8"
+  schedule:
+    - cron: "*/5 * * * *"
+  pull_request:
+    paths:
+      - "state/autonomy/BOUNDED_ELASTIC_RESOURCE_DELEGATION_V1.json"
+      - "tools/qikvrt_elastic_resource_planner.py"
+      - ".github/workflows/qikvrt_bounded_elastic_observers.yml"
+      - "tests/test_qikvrt_bounded_elastic_resource_delegation.py"
+      - "docs/BOUNDED_ELASTIC_RESOURCE_DELEGATION.md"
+      - "state/work_units/BOUNDED_ELASTIC_RESOURCE_DELEGATION_20260817.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-elastic-observers-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      lanes: ${{ steps.plan.outputs.lanes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+      - name: Verify elasticity contract before fan-out
+        run: python3 -B -m unittest -v tests.test_qikvrt_bounded_elastic_resource_delegation
+      - id: plan
+        name: Build deterministic bounded elasticity plan
+        shell: bash
+        env:
+          REQUESTED_LANES: ${{ github.event.inputs.lanes || '8' }}
+        run: |
+          set -euo pipefail
+          plan="$(python3 -B tools/qikvrt_elastic_resource_planner.py --lanes "$REQUESTED_LANES" --json)"
+          printf '%s\n' "$plan" | jq .
+          echo "shards=$(printf '%s' "$plan" | jq -c '.shards')" >> "$GITHUB_OUTPUT"
+          echo "lanes=$(printf '%s' "$plan" | jq -r '.observer_lanes')" >> "$GITHUB_OUTPUT"
+
+  parallel-observers:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify exact source head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+      - name: Execute isolated read-only observer shard
+        shell: bash
+        env:
+          LANE: ${{ matrix.shard.lane }}
+          WORK_JSON: ${{ toJSON(matrix.shard.work) }}
+        run: |
+          set -euo pipefail
+          root=".qikvrt/elastic/lane-${LANE}"
+          mkdir -p "$root"
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          printf '%s\n' "$WORK_JSON" > "$root/work.json"
+          printf '%s\n' "$head" > "$root/head.txt"
+          printf '%s\n' "$tree" > "$root/tree.txt"
+          python3 -B -m py_compile tools/qikvrt_elastic_resource_planner.py
+          while IFS= read -r work; do
+            case "$work" in
+              repository) git status --porcelain=v1 > "$root/repository-status.txt" ;;
+              workflows) find .github/workflows -maxdepth 1 -type f -print | LC_ALL=C sort > "$root/workflows.txt" ;;
+              integrity) python3 -B tests/test_integrity.py > "$root/integrity.txt" ;;
+              terminal) python3 -B -m unittest -v tests.test_qikvrt_standard_terminal > "$root/terminal.txt" 2>&1 ;;
+              effect-ack) python3 -B -m unittest -v tests.test_effect_ack_conformance > "$root/effect-ack.txt" 2>&1 ;;
+              mesh) python3 -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract > "$root/mesh.txt" 2>&1 ;;
+              cache) python3 -B tools/qikvrt_tool_cache.py verify > "$root/cache.txt" ;;
+              reviews) printf '%s\n' 'review observation remains a separate exact-head gate; no synthetic approval' > "$root/reviews.txt" ;;
+              *) echo "unknown work class: $work" >&2; exit 2 ;;
+            esac
+          done < <(printf '%s\n' "$WORK_JSON" | jq -r '.[]')
+          python3 -B - <<'PY' "$root" "$LANE" "$head" "$tree"
+          import hashlib, json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          payload = {
+              "schema": "qikvrt_elastic_observer_lane_receipt_v1",
+              "lane": int(sys.argv[2]),
+              "head_sha": sys.argv[3],
+              "tree_sha": sys.argv[4],
+              "work": json.loads((root / "work.json").read_text()),
+              "productive_writer": False,
+              "repository_write": False,
+              "external_effect": False,
+          }
+          raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+          payload["semantic_sha256"] = hashlib.sha256(raw).hexdigest()
+          (root / "receipt.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          PY
+      - name: Preserve lane receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-elastic-observer-${{ github.run_id }}-${{ matrix.shard.lane }}
+          path: .qikvrt/elastic/lane-${{ matrix.shard.lane }}
+          if-no-files-found: error
+          retention-days: 14
+
+  reduce:
+    if: always()
+    needs: [plan, parallel-observers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Deterministic fail-closed reduction
+        shell: bash
+        env:
+          LANES: ${{ needs.plan.outputs.lanes }}
+          OBSERVER_RESULT: ${{ needs.parallel-observers.result }}
+        run: |
+          set -euo pipefail
+          printf 'observer_lanes=%s\nobserver_result=%s\nproductive_writer_limit=1\n' "$LANES" "$OBSERVER_RESULT"
+          test "$OBSERVER_RESULT" = success
+          echo 'BOUNDED_ELASTIC_OBSERVATION_VERIFIED'
