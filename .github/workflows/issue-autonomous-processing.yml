@@ -14,7 +14,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  models: read
+  copilot-requests: write
 
 concurrency:
   group: issue-agent-${{ github.event.issue.number || inputs.issue_number }}
@@ -56,11 +56,19 @@ jobs:
             --repository "$REPOSITORY" \
             --output-dir "evidence/issues/$ISSUE_NUMBER"
 
+      - name: Install pinned Copilot CLI
+        run: |
+          set -euo pipefail
+          npm install --global @github/copilot@1.0.80
+          copilot --version
+
       - name: Generate repository-grounded answer
         id: inference
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_AUTO_UPDATE: "false"
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
         run: |
           set -euo pipefail
@@ -68,7 +76,8 @@ jobs:
             --issue issue.json \
             --context "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
             --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
-            --model "openai/gpt-4.1"
+            --provider copilot-cli \
+            --model auto
 
       - name: Enforce truthful status
         env:

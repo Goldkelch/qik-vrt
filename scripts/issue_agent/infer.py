@@ -2,10 +2,8 @@
 import argparse
 import json
 import os
+import subprocess
 from pathlib import Path
-from urllib import request, error
-
-API_URL = "https://models.github.ai/inference/chat/completions"
 
 SYSTEM_PROMPT = """You are the repository-native QIK-VRT issue processor.
 Answer only from the supplied issue and repository context. Distinguish repository evidence,
@@ -30,47 +28,73 @@ The Required next action section must contain one concrete action, or NONE only 
 The final gate result must be one of DONE, CONTINUE, ISOLATE, BLOCK.
 """
 
+EXCLUDED_TOOLS = (
+    "bash,powershell,list_bash,list_powershell,read_bash,read_powershell,"
+    "stop_bash,stop_powershell,write_bash,write_powershell,apply_patch,create,edit,view,"
+    "list_agents,read_agent,task,write_agent,ask_user,glob,grep,rg,skill,web_fetch"
+)
+
+
+def build_prompt(issue: dict, context: str) -> str:
+    return (
+        SYSTEM_PROMPT
+        + "\n\n"
+        + f"ISSUE #{issue['number']}\nTITLE: {issue.get('title', '')}\n"
+        + f"BODY:\n{issue.get('body') or ''}\n\nREPOSITORY CONTEXT:\n{context}"
+    )
+
+
+def run_copilot(prompt: str, model: str, executable: str = "copilot") -> str:
+    env = os.environ.copy()
+    token = env.get("COPILOT_GITHUB_TOKEN") or env.get("GITHUB_TOKEN") or env.get("GH_TOKEN")
+    if not token:
+        raise RuntimeError("Copilot authentication token is required")
+    env["COPILOT_GITHUB_TOKEN"] = token
+    env["COPILOT_AUTO_UPDATE"] = "false"
+    completed = subprocess.run(
+        [
+            executable,
+            "--no-banner",
+            "--stream=off",
+            f"--model={model}",
+            f"--excluded-tools={EXCLUDED_TOOLS}",
+            "-p",
+            prompt,
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=180,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(f"Copilot CLI inference failed ({completed.returncode}): {detail}")
+    answer = completed.stdout.strip()
+    if not answer:
+        raise RuntimeError("Copilot CLI returned an empty answer")
+    return answer + "\n"
+
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--issue", required=True)
     p.add_argument("--context", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--model", required=True)
+    p.add_argument("--model", default="auto")
+    p.add_argument("--provider", choices=("copilot-cli",), default="copilot-cli")
+    p.add_argument("--copilot-executable", default="copilot")
     args = p.parse_args()
-
-    token = os.environ.get("GH_TOKEN")
-    if not token:
-        raise SystemExit("GH_TOKEN is required")
 
     issue = json.loads(Path(args.issue).read_text(encoding="utf-8"))
     context = Path(args.context).read_text(encoding="utf-8")
-    user_content = (
-        f"ISSUE #{issue['number']}\nTITLE: {issue.get('title', '')}\n"
-        f"BODY:\n{issue.get('body') or ''}\n\nREPOSITORY CONTEXT:\n{context}"
-    )
-    payload = json.dumps({
-        "model": args.model,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-    }).encode("utf-8")
-    req = request.Request(API_URL, data=payload, method="POST", headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2026-03-10",
-    })
-    try:
-        with request.urlopen(req, timeout=120) as response:
-            result = json.load(response)
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"GitHub Models inference failed: HTTP {exc.code}: {detail}")
+    prompt = build_prompt(issue, context)
 
-    answer = result["choices"][0]["message"]["content"].strip() + "\n"
+    try:
+        answer = run_copilot(prompt, args.model, args.copilot_executable)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        raise SystemExit(str(exc))
+
     Path(args.output).write_text(answer, encoding="utf-8")
 
 
