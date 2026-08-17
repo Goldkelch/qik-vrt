@@ -59,43 +59,52 @@ class AutonomousPreEffectControllerTests(unittest.TestCase):
         self.assertFalse(policy["epistemic_boundaries"]["independent_review_fabricable"])
         self.assertFalse(policy["epistemic_boundaries"]["measurement_fabricable"])
 
-    def test_personal_working_copy_uses_bound_canonical_upstream(self) -> None:
+    def test_normative_policy_selects_declared_authority_remote(self) -> None:
+        contract = MODULE._canonical_upstream_contract()
+        self.assertEqual(contract["repository"], "Goldkelch/qik-vrt")
+        self.assertEqual(contract["remote_name"], "authority")
+        self.assertEqual(
+            contract["remote_url"],
+            "https://github.com/Goldkelch/qik-vrt.git",
+        )
+        self.assertEqual(contract["default_branch"], "main")
+
+    def test_materialized_authority_remote_is_used_without_origin_fallback(self) -> None:
         def fake_run(command, timeout=900):
             del timeout
             command = tuple(command)
             if command == ("git", "remote"):
-                return self.command_result(command, "origin\nupstream\n")
-            if command == ("git", "remote", "get-url", "upstream"):
+                return self.command_result(command, "origin\nauthority\n")
+            if command == ("git", "remote", "get-url", "authority"):
                 return self.command_result(
                     command, "https://github.com/Goldkelch/qik-vrt.git\n"
                 )
             raise AssertionError(command)
 
         with mock.patch.object(MODULE.self_heal, "run", side_effect=fake_run):
-            self.assertEqual(MODULE._canonical_source_remote(), "upstream")
+            self.assertEqual(MODULE._canonical_source_remote(), "authority")
 
-    def test_direct_authority_clone_falls_back_to_bound_origin(self) -> None:
-        def fake_run(command, timeout=900):
-            del timeout
-            command = tuple(command)
-            if command == ("git", "remote"):
-                return self.command_result(command, "origin\n")
-            if command == ("git", "remote", "get-url", "origin"):
-                return self.command_result(
-                    command, "https://github.com/Goldkelch/qik-vrt.git\n"
-                )
-            raise AssertionError(command)
-
-        with mock.patch.object(MODULE.self_heal, "run", side_effect=fake_run):
-            self.assertEqual(MODULE._canonical_source_remote(), "origin")
-
-    def test_mismatched_upstream_url_fails_closed(self) -> None:
+    def test_missing_declared_authority_remote_fails_closed(self) -> None:
         def fake_run(command, timeout=900):
             del timeout
             command = tuple(command)
             if command == ("git", "remote"):
                 return self.command_result(command, "origin\nupstream\n")
-            if command == ("git", "remote", "get-url", "upstream"):
+            raise AssertionError(command)
+
+        with mock.patch.object(MODULE.self_heal, "run", side_effect=fake_run):
+            with self.assertRaisesRegex(
+                MODULE.PreEffectBlock, "canonical source remote is absent"
+            ):
+                MODULE._canonical_source_remote()
+
+    def test_mismatched_authority_url_fails_closed(self) -> None:
+        def fake_run(command, timeout=900):
+            del timeout
+            command = tuple(command)
+            if command == ("git", "remote"):
+                return self.command_result(command, "origin\nauthority\n")
+            if command == ("git", "remote", "get-url", "authority"):
                 return self.command_result(
                     command, "https://github.com/example/not-qik-vrt.git\n"
                 )
@@ -107,20 +116,20 @@ class AutonomousPreEffectControllerTests(unittest.TestCase):
             ):
                 MODULE._canonical_source_remote()
 
-    def test_remote_main_revision_queries_resolved_upstream(self) -> None:
-        expected = "17bf684b08363bdb8ae95775ea5a4ae22ce4f0a9"
+    def test_remote_main_revision_queries_policy_declared_remote_and_branch(self) -> None:
+        expected = "836a068d42b30f4df496caf4d712dbe8da45c043"
 
         def fake_run(command, timeout=900):
             del timeout
             command = tuple(command)
             if command == ("git", "remote"):
-                return self.command_result(command, "origin\nupstream\n")
-            if command == ("git", "remote", "get-url", "upstream"):
+                return self.command_result(command, "origin\nauthority\n")
+            if command == ("git", "remote", "get-url", "authority"):
                 return self.command_result(
                     command, "https://github.com/Goldkelch/qik-vrt.git\n"
                 )
             if command == (
-                "git", "ls-remote", "--heads", "upstream", "refs/heads/main"
+                "git", "ls-remote", "--heads", "authority", "refs/heads/main"
             ):
                 return self.command_result(command, f"{expected}\trefs/heads/main\n")
             raise AssertionError(command)
