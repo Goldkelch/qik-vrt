@@ -29,7 +29,9 @@ jobs:
           number = pr.get("number")
           if not isinstance(number, int) or number <= 0:
               raise SystemExit("BLOCK: pull-request number is unavailable")
-          if pr.get("base", {}).get("ref") != "main":
-              raise SystemExit("BLOCK: pull request is not based on main")
+          base_ref = pr.get("base", {}).get("ref")
+          if base_ref != "main":
+              print(f"NOT_APPLICABLE: PR #{number} base={base_ref!r}; code-owner main observer does not gate stacked successors")
+              raise SystemExit(0)
           print(f"observed review lifecycle event for PR #{number}")
           PY
