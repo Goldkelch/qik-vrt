@@ -1,0 +1,31 @@
+{
+  "schema": "qikvrt_owner_delegation_v1",
+  "authorization_id": "PO-2026-08-17-GITHUB-ADMIN-EFFECT-EXECUTOR-V1",
+  "product_owner": "Ingolf Lohmann",
+  "repository": "Goldkelch/qik-vrt",
+  "authorized_scope": [
+    "implement a repository-native GitHub administration-effect executor",
+    "execute exact separately bound ruleset review-policy requests after live compare-and-swap verification",
+    "continuously reobserve and idempotently retry only when the exact request remains valid"
+  ],
+  "initial_exact_effect": {
+    "request_path": "state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json",
+    "ruleset_id": 19344903,
+    "desired_after": {
+      "required_approving_review_count": 1,
+      "require_code_owner_review": true,
+      "dismiss_stale_reviews_on_push": true,
+      "require_last_push_approval": true
+    }
+  },
+  "forbidden": [
+    "force update",
+    "unbound generic administration writes",
+    "credential persistence",
+    "review fabrication",
+    "merge as a substitute for an administration effect",
+    "release, deployment, publication or external effect not separately authorized"
+  ],
+  "fail_closed": true,
+  "single_writer": true
+}
