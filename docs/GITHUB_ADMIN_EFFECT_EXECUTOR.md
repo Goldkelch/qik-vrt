@@ -38,6 +38,8 @@ If the bound app credentials are absent, the executor emits `BOUND_ADMIN_APP_CRE
 
 `.github/workflows/qikvrt_github_admin_effect_executor.yml` validates the contract on pull requests and runs the effect path on non-PR events. It is scheduled every five minutes, reacts to relevant pushes, and can be manually dispatched. Concurrency is repository-global with `cancel-in-progress: false`, giving the admin-effect lane one writer.
 
+The trusted implementation branch `agent/github-admin-effect-executor-v1` is intentionally included in the push trigger so an exact Product-Owner-authorized administration request can be bootstrapped and verified before promotion to `main`. A branch push does not relax any request binding: the same bound installation, compare-and-swap precondition, allowlist, `force=false`, post-effect GET and verified receipt remain mandatory.
+
 The general repository-native continuation remains provided by the autonomous self-heal, PR continuation, expected-head promotion, workflow executor and watchdog mechanisms declared from `/AI`. Together they are required to continue deterministic work without Product-Owner reinteraction until a declared stop condition is reached.
 
 Once a request has been applied, later executions detect the desired live state and return `ALREADY_APPLIED` without issuing another PUT.
