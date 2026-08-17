@@ -1,0 +1,73 @@
+{
+  "schema": "qikvrt_bounded_elastic_resource_delegation_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "authorization": {
+    "authority": "Product Owner",
+    "recorded_at": "2026-08-17",
+    "purpose": "Allow QIK-VRT to use environment-provided compute elastically for maximum verified throughput without weakening fail-closed semantics."
+  },
+  "allowed_resources": [
+    "environment_provided_runners",
+    "parallel_read_only_jobs",
+    "repository_native_nodes",
+    "content_addressed_caches",
+    "workflow_artifacts"
+  ],
+  "elasticity": {
+    "dynamic": true,
+    "max_observer_lanes": 8,
+    "default_observer_lanes": 4,
+    "scale_to_available_work": true,
+    "platform_scheduler_is_capacity_authority": true,
+    "queued_jobs_are_not_failure": true,
+    "deterministic_reduction_required": true
+  },
+  "serialization": {
+    "productive_writer_limit": 1,
+    "observer_jobs_may_run_in_parallel": true,
+    "productive_writer_requires_fresh_terminal_admission_clear": true,
+    "competing_productive_writer_forbidden": true,
+    "lease_bypass_forbidden": true
+  },
+  "security": {
+    "credential_escalation_forbidden": true,
+    "permission_escalation_forbidden": true,
+    "platform_quota_bypass_forbidden": true,
+    "foreign_system_use_without_authorization_forbidden": true,
+    "secrets_must_not_be_exported_to_observer_lanes": true
+  },
+  "gate_preservation": {
+    "exact_head_required": true,
+    "integrity_required": true,
+    "review_required": true,
+    "failed_gate_may_not_be_masked_by_parallel_success": true,
+    "cache_is_not_proof_authority": true,
+    "external_effect_authorization_implied": false
+  },
+  "work_classes": {
+    "parallel_safe": [
+      "read_only_repository_observation",
+      "workflow_inventory",
+      "integrity_readback",
+      "cache_warmup_without_authority",
+      "test_shard_execution",
+      "artifact_analysis"
+    ],
+    "serialized": [
+      "repository_content_write",
+      "branch_or_ref_mutation",
+      "pull_request_creation_or_update",
+      "merge",
+      "release",
+      "deployment",
+      "publication",
+      "external_effect"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
