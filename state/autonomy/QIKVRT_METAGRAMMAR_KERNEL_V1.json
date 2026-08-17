@@ -1,0 +1,93 @@
+{
+  "schema": "qikvrt_metagrammar_kernel_v1",
+  "version": "1.0.0",
+  "status": "NORMATIVE_CANDIDATE",
+  "authorship": {
+    "conceptual_author": "Ingolf Lohmann",
+    "formalization_assistance": "artificial intelligence",
+    "product_owner_authorization": "2026-08-17"
+  },
+  "purpose": "Provide one deterministic, fail-closed semantic kernel for communication among QIK-VRT instances without conflating assertion, authorization, execution, transport acknowledgement, effect acknowledgement, or completion.",
+  "axioms": [
+    "DISTINCTION_PRECEDES_INFORMATION",
+    "EXISTENCE_REQUIRES_DISTINGUISHABILITY",
+    "EVERY_MUTABLE_ASSERTION_REQUIRES_EXACT_BINDING",
+    "MISSING_EVIDENCE_NEVER_AUTHORIZES_EFFECT",
+    "TRANSPORT_ACK_IS_NOT_EFFECT_ACK",
+    "GATE_EVIDENCE_DOES_NOT_TRANSFER_BETWEEN_HEADS",
+    "ONLY_THE_FIRST_DETERMINISTIC_BLOCKER_CONTROLS_NEXT_ACTION"
+  ],
+  "canonical_sections": [
+    "AUTHORITY",
+    "SUCCESSOR_BINDING",
+    "MATERIALIZATION",
+    "EXACT_HEAD_GATES",
+    "INWARD_REFLEXIVITY",
+    "OUTWARD_REFLECTION",
+    "FIRST_DETERMINISTIC_BLOCKER",
+    "NEXT_ACTION"
+  ],
+  "truth_domain": ["TRUE", "FALSE", "UNDETERMINED"],
+  "applicability_domain": ["APPLICABLE", "NOT_APPLICABLE"],
+  "admission": {
+    "productive_writer": [
+      "exact_binding_valid",
+      "scope_clear",
+      "provenance_clear",
+      "integrity_clear",
+      "all_applicable_exact_head_gates_executed_terminal_success",
+      "authorization_exact",
+      "single_writer_lease_clear"
+    ],
+    "observer_during_hold": true,
+    "fail_closed": true
+  },
+  "evidence_precedence": [
+    "LIVE_EFFECT_RECEIPT",
+    "LIVE_STATE_READBACK",
+    "EXACT_REPOSITORY_EVIDENCE",
+    "DETERMINISTIC_REPRODUCTION",
+    "BOUND_REPORT",
+    "UNBOUND_ASSERTION",
+    "MODEL_MEMORY"
+  ],
+  "blocker_precedence": [
+    "AUTHORITY_CONFLICT",
+    "EXACT_HEAD_MISMATCH",
+    "SCOPE_OR_PROVENANCE_DRIFT",
+    "INTEGRITY_FAILURE",
+    "PLATFORM_PRE_JOB_BARRIER",
+    "EXECUTED_WORKFLOW_FAILURE",
+    "NONTERMINAL_APPLICABLE_GATE",
+    "REQUIRED_REVIEW_MISSING",
+    "REQUIRED_AUTHORIZATION_MISSING",
+    "REQUIRED_EFFECT_RECEIPT_MISSING",
+    "SEMANTIC_HOLD",
+    "NONE"
+  ],
+  "completion_implications": {
+    "EFFECT_ACK_DONE_implies_FINAL_PASS": true,
+    "FINAL_PASS_implies_PASS": true,
+    "PASS_implies_FINAL_PASS": false,
+    "FINAL_PASS_implies_EFFECT_ACK_DONE": false
+  },
+  "negative_controls": {
+    "action_required_is_success": false,
+    "zero_job_is_success": false,
+    "predecessor_gate_is_current_gate": false,
+    "workflow_success_is_external_effect": false,
+    "bot_review_is_independent_human_review": false,
+    "basis_ready_is_completion": false,
+    "self_asserted_completion_is_evidence": false
+  },
+  "limits": {
+    "absolute_infallibility_claimed": false,
+    "absolute_irrefutability_claimed": false,
+    "technical_goal": "maximal determinism, explicit falsifiability, reproducibility, bounded effects, and auditable correction"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
