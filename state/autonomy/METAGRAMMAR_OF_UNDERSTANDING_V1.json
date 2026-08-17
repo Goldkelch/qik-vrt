@@ -1,0 +1,54 @@
+{
+  "schema": "qikvrt_metagrammar_of_understanding_v1",
+  "version": "1.0",
+  "status": "NORMATIVE_CANDIDATE",
+  "purpose": "Establish one compact, machine-readable, unambiguous, verifiable and auditable communication grammar for terminal users, mesh instances, terminal boundaries, and pre/post-terminal architectural layers.",
+  "core_equation": "MEANING = INTENT + BINDING + AUTHORITY + EVIDENCE + STATE + EFFECT + PROOF",
+  "canonical_envelope_order": ["META", "BINDING", "INTENT", "AUTHORITY", "EVIDENCE", "STATE", "EFFECT", "PROOF"],
+  "message_kinds": ["OBSERVE", "DECIDE", "REQUEST", "AUTHORIZE", "ACT", "ACK", "HOLD", "NOOP", "ERROR"],
+  "verbs": ["OBSERVE", "CLASSIFY", "BIND", "DECIDE", "EXECUTE", "TEST", "REOBSERVE", "ACK", "PERSIST", "CREATE", "UPDATE", "CLOSE", "DISPATCH"],
+  "truth_values": ["TRUE", "FALSE", "UNKNOWN", "NOT_APPLICABLE"],
+  "effect_states": ["NONE", "REQUESTED", "EXECUTED", "OBSERVED", "ACKNOWLEDGED", "REJECTED", "UNKNOWN"],
+  "understanding_rule": {
+    "understood": "A message is understood only when its syntax validates, all normative references are exact-bound, its authority is in scope, its evidence is attributable, and its effect semantics are not inferred beyond observed proof.",
+    "ambiguity": "HOLD",
+    "missing_authority": "HOLD",
+    "stale_binding": "HOLD",
+    "unknown_truth": "HOLD_FOR_PRODUCTIVE_EFFECT",
+    "advisory_discovery": "NON_AUTHORITATIVE"
+  },
+  "security_invariants": [
+    "UNKNOWN is never promoted to TRUE.",
+    "No omitted field is interpreted as authorization.",
+    "Predecessor-head evidence is non-transferable.",
+    "action_required and zero-job terminality are not trusted success.",
+    "TRANSPORT_ACK is not EFFECT_ACK.",
+    "HOLD and NOOP do not imply failure.",
+    "A productive effect requires exact binding, applicable authority and admitted writer state.",
+    "Every productive effect requires post-effect reobservation before EFFECT_ACKNOWLEDGED.",
+    "The same semantic event retains the same deterministic event identity across inward and outward projections.",
+    "Compact text is a projection; canonical JSON is authoritative."
+  ],
+  "terminal_projection": {
+    "pre_terminal": "VALIDATE_AND_BIND",
+    "terminal_ingress": "DECODE_CLASSIFY",
+    "terminal_egress": "CANONICAL_ENVELOPE",
+    "post_terminal": "REOBSERVE_AND_ACK",
+    "inward_reflection": "ADMISSION_AND_NEXT_ACTION",
+    "outward_reflection": "AUDIT_AND_INTEROP"
+  },
+  "compact_form": {
+    "syntax": "KIND|RID|REPO@HEAD:TREE|VERB OBJECT|AUTH=STATUS:ID|EVID=TYPE:DIGEST|STATE=CLASSIFICATION|EFFECT=STATE:ID|NEXT=ACTION|PROOF=SHA256",
+    "separator": "|",
+    "reserved": ["|", "="],
+    "fallback": "If a value contains a reserved character, use canonical JSON only."
+  },
+  "effect_ack_contract": {
+    "completion_requires": ["effect_id", "post_effect_binding", "observed_result", "receipt", "canonical_proof"],
+    "forbidden_shortcuts": ["request_implies_execution", "execution_implies_observation", "observation_implies_ack", "transport_ack_implies_effect_ack"]
+  },
+  "reference_schema": "schemas/qikvrt_metagrammar_envelope_v1.schema.json",
+  "reference_tool": "tools/qikvrt_metagrammar.py",
+  "acceptance_test": "tests/test_qikvrt_metagrammar.py",
+  "documentation": "docs/METAGRAMMAR_OF_UNDERSTANDING.md"
+}
