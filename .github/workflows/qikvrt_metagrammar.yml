@@ -7,7 +7,9 @@ on:
       - 'schemas/qikvrt_metagrammar_envelope_v1.schema.json'
       - 'docs/METAGRAMMAR_OF_UNDERSTANDING.md'
       - 'tools/qikvrt_metagrammar.py'
+      - 'tools/qikvrt_metagrammar_ansic.c'
       - 'tests/test_qikvrt_metagrammar.py'
+      - 'tests/test_qikvrt_metagrammar_ansic.py'
       - '.github/workflows/qikvrt_metagrammar.yml'
   workflow_dispatch:
 
@@ -33,9 +35,14 @@ jobs:
           printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
           test "$actual" = "$EXPECTED_HEAD"
       - name: Compile Python
-        run: python3 -m py_compile tools/qikvrt_metagrammar.py tests/test_qikvrt_metagrammar.py
+        run: python3 -m py_compile tools/qikvrt_metagrammar.py tests/test_qikvrt_metagrammar.py tests/test_qikvrt_metagrammar_ansic.py
+      - name: Compile ANSI C kernel
+        run: cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_metagrammar_ansic.c -o /tmp/qikvrt-metagrammar-ansic
       - name: Run metagrammar tests
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_metagrammar
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_metagrammar \
+            tests.test_qikvrt_metagrammar_ansic
       - name: Validate normative JSON syntax
         run: |
           python3 - <<'PY'
