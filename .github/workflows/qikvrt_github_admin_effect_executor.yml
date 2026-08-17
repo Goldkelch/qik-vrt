@@ -80,6 +80,10 @@ jobs:
     needs: contract
     runs-on: ubuntu-24.04
     timeout-minutes: 8
+    env:
+      ADMIN_PAT: ${{ secrets.QIKVRT_GITHUB_ADMIN_TOKEN }}
+      ADMIN_APP_CLIENT_ID: ${{ vars.QIKVRT_ADMIN_APP_CLIENT_ID }}
+      ADMIN_APP_PRIVATE_KEY: ${{ secrets.QIKVRT_ADMIN_APP_PRIVATE_KEY }}
     steps:
       - name: Check out trusted ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -100,11 +104,21 @@ jobs:
           esac
           test -f "$request"
           printf 'path=%s\n' "$request" >> "$GITHUB_OUTPUT"
+      - name: Create short-lived GitHub App administration token
+        id: app-token
+        if: env.ADMIN_PAT == '' && env.ADMIN_APP_CLIENT_ID != '' && env.ADMIN_APP_PRIVATE_KEY != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.QIKVRT_ADMIN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.QIKVRT_ADMIN_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: qik-vrt
+          permission-administration: write
       - name: Execute exact admin effect or emit bootstrap HOLD
         id: apply
         shell: bash
         env:
-          QIKVRT_GITHUB_ADMIN_TOKEN: ${{ secrets.QIKVRT_GITHUB_ADMIN_TOKEN }}
+          QIKVRT_GITHUB_ADMIN_TOKEN: ${{ env.ADMIN_PAT || steps.app-token.outputs.token }}
           REQUEST_PATH: ${{ steps.request.outputs.path }}
         run: |
           set -euo pipefail
@@ -115,7 +129,10 @@ jobs:
             "state": "HOLD",
             "verified": false,
             "first_blocker": "ADMIN_CREDENTIAL_NOT_BOOTSTRAPPED",
-            "required_secret": "QIKVRT_GITHUB_ADMIN_TOKEN",
+            "accepted_bootstrap_modes": [
+              "QIKVRT_ADMIN_APP_CLIENT_ID + QIKVRT_ADMIN_APP_PRIVATE_KEY",
+              "QIKVRT_GITHUB_ADMIN_TOKEN"
+            ],
             "credential_serialized": false
           }
           JSON
