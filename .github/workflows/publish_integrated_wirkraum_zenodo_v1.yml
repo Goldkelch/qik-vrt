@@ -1,0 +1,78 @@
+name: Publish integrated Wirkraum article to Zenodo v1
+
+on:
+  push:
+    branches: [publication/integrated-wirkraum-metagrammar-m68000-v1]
+    paths: [release/integrated-wirkraum-zenodo-request-v1.json]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      TITLE: Vom Unterschied zum integrierten Wirkraum
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Publish exact text package and persist receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,urllib.error,urllib.parse,urllib.request
+          marker_path=pathlib.Path('release/integrated-wirkraum-zenodo-request-v1.json')
+          marker=json.loads(marker_path.read_text(encoding='utf-8'))
+          expected={'schema':'qikvrt_zenodo_publication_request_v1','action':'publish','confirm':'PUBLISH_INTEGRATED_WIRKRAUM_ARTICLE','authority_repository':'Goldkelch/qik-vrt','status':'EFFECT_ACK_CONTINUE'}
+          for k,v in expected.items():
+              if marker.get(k)!=v: raise SystemExit('BLOCK: marker mismatch '+k)
+          parent=subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()
+          if marker.get('candidate_commit')!=parent: raise SystemExit('BLOCK: candidate commit mismatch')
+          changed=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD^','HEAD'],text=True).splitlines()
+          if changed!=[str(marker_path)]: raise SystemExit('BLOCK: authorization commit changed more than marker')
+          token=os.environ.get('ZENODO_ACCESS_TOKEN','')
+          if len(token)<20 or any(c.isspace() for c in token): raise SystemExit('BLOCK: ZENODO_ACCESS_TOKEN unavailable')
+          package=pathlib.Path('publications/integrated-wirkraum-metagrammar-m68000')
+          files=[package/'ARTICLE.md',package/'PUBLICATION.json',pathlib.Path('external/ietf/draft-lohmann-qikvrt-effect-ack-http-01.xml')]
+          manifest=[]
+          for p in files:
+              b=p.read_bytes(); manifest.append({'name':p.name,'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
+          api='https://zenodo.org/api'; headers={'Authorization':'Bearer '+token,'Accept':'application/json','User-Agent':'qik-vrt-publication/1'}
+          def call(method,url,payload=None,ctype='application/json'):
+              data=None if payload is None else (payload if isinstance(payload,bytes) else json.dumps(payload,ensure_ascii=False).encode())
+              h=dict(headers); h['Content-Type']=ctype
+              req=urllib.request.Request(url,data=data,method=method,headers=h)
+              try:
+                  with urllib.request.urlopen(req,timeout=90) as r:
+                      raw=r.read(); return json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f'BLOCK: Zenodo HTTP {e.code}: '+e.read(4096).decode('utf-8','replace')[:1200])
+          title=os.environ['TITLE']; q=urllib.parse.quote(f'title:"{title}"')
+          deposits=call('GET',api+'/deposit/depositions?q='+q+'&size=100')
+          exact=[d for d in deposits if isinstance(d,dict) and ((d.get('metadata') or {}).get('title')==title)] if isinstance(deposits,list) else []
+          exact.sort(key=lambda d:int(d.get('id',0)),reverse=True)
+          dep=exact[0] if exact else call('POST',api+'/deposit/depositions',{})
+          depid=dep.get('id')
+          if not isinstance(depid,int): raise SystemExit('BLOCK: deposition id missing')
+          metadata={'metadata':{'title':title,'upload_type':'publication','publication_type':'article','description':'Wissenschaftlicher Fachartikel von Ingolf Lohmann über eine kausalitätsgebundene Metagrammatik, Effect Acknowledgement, reflexive künstliche Kognition und deterministische M68000-Ausführung. Die Analogie zu Mikroskop und Fernrohr bezeichnet die angestrebte kausal-epistemische Instrumentfunktion und keine bereits nachgewiesene historische Gleichrangigkeit. Panpsychismus wird als ontologische Interpretation, nicht als empirischer Befund behandelt.','creators':[{'name':'Lohmann, Ingolf'}],'contributors':[{'name':'OpenAI ChatGPT','type':'Other'}],'language':'deu','license':'cc-by-4.0','keywords':['QIK-VRT','Metagrammatik','Kausalität','Effect Acknowledgement','M68000','künstliche Kognition','Reflexivität','epistemische Werte'],'related_identifiers':[{'identifier':'https://github.com/Goldkelch/qik-vrt','relation':'isSupplementTo','scheme':'url'}],'notes':'Konzept, kreative Leitung und Autorenschaft: Ingolf Lohmann. KI-gestützte Formalisierung, Implementierung, Prüfung, Strukturierung und Redaktion sind offengelegt. Keine Behauptung realer MC68000-Hardwareausführung, massiver GPU/CPU-Beschleunigung, empirischen Panpsychismus-Nachweises oder IETF-Standardsstatus.'}}
+          if not dep.get('submitted'):
+              dep=call('PUT',api+f'/deposit/depositions/{depid}',metadata)
+              bucket=(dep.get('links') or {}).get('bucket')
+              if not isinstance(bucket,str) or not bucket.startswith('https://zenodo.org/api/files/'): raise SystemExit('BLOCK: unsafe Zenodo bucket')
+              for item,p in zip(manifest,files): call('PUT',bucket+'/'+urllib.parse.quote(item['name']),p.read_bytes(),'application/octet-stream')
+              dep=call('POST',api+f'/deposit/depositions/{depid}/actions/publish')
+          doi=dep.get('doi') or (dep.get('metadata') or {}).get('doi')
+          record_url=(dep.get('links') or {}).get('record_html') or (dep.get('links') or {}).get('html')
+          if not isinstance(doi,str) or not doi.startswith('10.'): raise SystemExit('BLOCK: published DOI missing')
+          receipt={'schema':'qikvrt_zenodo_publication_receipt_v1','candidate_commit':parent,'deposition_id':depid,'doi':doi,'record_url':record_url,'files':manifest,'status':'PUBLISHED_ARTICLE_WITH_CLAIM_BOUNDARIES','creator':'Ingolf Lohmann'}
+          pathlib.Path('release/integrated-wirkraum-zenodo-receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git add release/integrated-wirkraum-zenodo-receipt.json
+          git commit -m 'zenodo: persist integrated Wirkraum publication receipt'
+          git push origin HEAD:publication/integrated-wirkraum-metagrammar-m68000-v1
