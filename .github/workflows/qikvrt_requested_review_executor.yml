@@ -51,16 +51,28 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Detect trusted-main activation
+        id: active
+        shell: bash
+        run: |
+          if test -f tools/qikvrt_requested_review_executor.py; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+            echo 'BOOTSTRAP_NOOP: executor is not yet promoted to trusted main.'
+          fi
+
       - name: Set up Python
+        if: steps.active.outputs.active == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
       - name: Select one requested review
+        if: steps.active.outputs.active == 'true'
         id: select
         env:
           REQUESTED_PR: ${{ inputs.pr || '' }}
-          EVENT_NAME: ${{ github.event_name }}
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
           EVENT_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
         shell: bash
@@ -68,64 +80,36 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-selection.json
           import json, os, subprocess
-
-          repo = os.environ['REPOSITORY']
-          requested = os.environ.get('REQUESTED_PR', '').strip()
-          event_pr = os.environ.get('EVENT_PR', '').strip()
-          event_head = os.environ.get('EVENT_HEAD', '').strip()
-
-          def gh_json(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
-
-          def gh_pages(path):
-              pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp', path], text=True))
-              out = []
-              for page in pages:
-                  out.extend(page if isinstance(page, list) else [page])
+          repo=os.environ['REPOSITORY']; requested=os.environ.get('REQUESTED_PR','').strip(); event_pr=os.environ.get('EVENT_PR','').strip(); event_head=os.environ.get('EVENT_HEAD','').strip()
+          def one(path): return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def pages(path):
+              value=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True)); out=[]
+              for page in value: out.extend(page if isinstance(page,list) else [page])
               return out
-
-          if requested:
-              prs = [gh_json(f'repos/{repo}/pulls/{int(requested)}')]
-          elif event_pr:
-              prs = [gh_json(f'repos/{repo}/pulls/{int(event_pr)}')]
+          if requested: prs=[one(f'repos/{repo}/pulls/{int(requested)}')]
+          elif event_pr: prs=[one(f'repos/{repo}/pulls/{int(event_pr)}')]
           else:
-              prs = gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')
-              if event_head:
-                  prs = [pr for pr in prs if (pr.get('head') or {}).get('sha') == event_head]
-
-          candidates = []
-          marker = os.environ['REVIEW_MARKER']
+              prs=pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')
+              if event_head: prs=[pr for pr in prs if (pr.get('head') or {}).get('sha')==event_head]
+          marker=os.environ['REVIEW_MARKER']; candidates=[]
           for pr in prs:
-              if pr.get('state') != 'open' or pr.get('base', {}).get('ref') != 'main':
-                  continue
-              requested_people = [item.get('login') for item in pr.get('requested_reviewers', []) if item.get('login')]
-              requested_teams = [item.get('slug') for item in pr.get('requested_teams', []) if item.get('slug')]
-              if not requested_people and not requested_teams:
-                  continue
-              head = pr['head']['sha']
-              reviews = gh_pages(f"repos/{repo}/pulls/{pr['number']}/reviews?per_page=100")
-              exact_marker = f'<!-- {marker} head={head} '
-              if any(exact_marker in (review.get('body') or '') for review in reviews):
-                  continue
+              if pr.get('state')!='open' or pr.get('base',{}).get('ref')!='main': continue
+              people=[x.get('login') for x in pr.get('requested_reviewers',[]) if x.get('login')]; teams=[x.get('slug') for x in pr.get('requested_teams',[]) if x.get('slug')]
+              if not people and not teams: continue
+              head=pr['head']['sha']; reviews=pages(f"repos/{repo}/pulls/{pr['number']}/reviews?per_page=100")
+              if any(f'<!-- {marker} head={head} ' in (review.get('body') or '') for review in reviews): continue
               candidates.append(pr)
-
-          candidates.sort(key=lambda pr: (pr.get('created_at') or '', pr['number']))
-          chosen = candidates[0] if candidates else None
-          print(json.dumps({
-              'state': 'CANDIDATE' if chosen else 'NOOP',
-              'pr_number': chosen['number'] if chosen else None,
-          }, sort_keys=True))
+          candidates.sort(key=lambda pr:(pr.get('created_at') or '',pr['number'])); chosen=candidates[0] if candidates else None
+          print(json.dumps({'state':'CANDIDATE' if chosen else 'NOOP','pr_number':chosen['number'] if chosen else None},sort_keys=True))
           PY
           cat /tmp/qikvrt-review-selection.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
-          value = json.load(open('/tmp/qikvrt-review-selection.json', encoding='utf-8'))
-          print(f"state={value['state']}")
-          print(f"pr={value.get('pr_number') or ''}")
+          v=json.load(open('/tmp/qikvrt-review-selection.json')); print(f"state={v['state']}"); print(f"pr={v.get('pr_number') or ''}")
           PY
 
       - name: Materialize exact-head review snapshot
-        if: steps.select.outputs.state == 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: decision
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
@@ -134,60 +118,18 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-snapshot.json
           import json, os, subprocess
-
-          repo = os.environ['REPOSITORY']
-          pr_number = int(os.environ['PR_NUMBER'])
-          required = json.loads(os.environ['REQUIRED_GATES_JSON'])
-
-          def gh_json(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
-
-          def gh_pages(path):
-              pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp', path], text=True))
-              out = []
-              for page in pages:
-                  if isinstance(page, dict) and 'workflow_runs' in page:
-                      out.extend(page['workflow_runs'])
-                  else:
-                      out.extend(page if isinstance(page, list) else [page])
+          repo=os.environ['REPOSITORY']; n=int(os.environ['PR_NUMBER']); required=json.loads(os.environ['REQUIRED_GATES_JSON'])
+          def one(path): return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def pages(path):
+              value=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True)); out=[]
+              for page in value:
+                  if isinstance(page,dict) and 'workflow_runs' in page: out.extend(page['workflow_runs'])
+                  else: out.extend(page if isinstance(page,list) else [page])
               return out
-
-          pr = gh_json(f'repos/{repo}/pulls/{pr_number}')
-          current_main = gh_json(f'repos/{repo}/commits/main')['sha']
-          head = pr['head']['sha']
-          observed = gh_json(f'repos/{repo}/pulls/{pr_number}')['head']['sha']
-          tree = gh_json(f'repos/{repo}/git/commits/{head}')['tree']['sha']
-          files = gh_pages(f'repos/{repo}/pulls/{pr_number}/files?per_page=100')
-          runs = gh_pages(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
-
-          owner, name = repo.split('/', 1)
-          query = '''query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}'''
-          graph = json.loads(subprocess.check_output([
-              'gh','api','graphql','-f',f'query={query}','-F',f'owner={owner}','-F',f'name={name}','-F',f'number={pr_number}'
-          ], text=True))
-          nodes = graph['data']['repository']['pullRequest']['reviewThreads']['nodes']
-
-          print(json.dumps({
-              'repository': repo,
-              'pr_number': pr_number,
-              'current_main_sha': current_main,
-              'base_sha': pr['base']['sha'],
-              'head_sha': head,
-              'observed_head_sha': observed,
-              'tree_sha': tree,
-              'draft': bool(pr.get('draft')),
-              'requested_reviewers': [item.get('login') for item in pr.get('requested_reviewers', []) if item.get('login')],
-              'requested_team_reviewers': [item.get('slug') for item in pr.get('requested_teams', []) if item.get('slug')],
-              'changed_paths': sorted(item['filename'] for item in files),
-              'unresolved_review_threads': sum(1 for node in nodes if not node.get('isResolved')),
-              'required_gates': required,
-              'workflow_runs': [
-                  {'name': run.get('name'), 'status': run.get('status'), 'conclusion': run.get('conclusion'), 'run_number': run.get('run_number')}
-                  for run in runs
-              ],
-          }, sort_keys=True))
+          pr=one(f'repos/{repo}/pulls/{n}'); main=one(f'repos/{repo}/commits/main')['sha']; head=pr['head']['sha']; observed=one(f'repos/{repo}/pulls/{n}')['head']['sha']; tree=one(f'repos/{repo}/git/commits/{head}')['tree']['sha']; files=pages(f'repos/{repo}/pulls/{n}/files?per_page=100'); runs=pages(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
+          owner,name=repo.split('/',1); query='''query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}'''; graph=json.loads(subprocess.check_output(['gh','api','graphql','-f',f'query={query}','-F',f'owner={owner}','-F',f'name={name}','-F',f'number={n}'],text=True)); nodes=graph['data']['repository']['pullRequest']['reviewThreads']['nodes']
+          print(json.dumps({'repository':repo,'pr_number':n,'current_main_sha':main,'base_sha':pr['base']['sha'],'head_sha':head,'observed_head_sha':observed,'tree_sha':tree,'draft':bool(pr.get('draft')),'requested_reviewers':[x.get('login') for x in pr.get('requested_reviewers',[]) if x.get('login')],'requested_team_reviewers':[x.get('slug') for x in pr.get('requested_teams',[]) if x.get('slug')],'changed_paths':sorted(x['filename'] for x in files),'unresolved_review_threads':sum(1 for x in nodes if not x.get('isResolved')),'required_gates':required,'workflow_runs':[{'name':r.get('name'),'status':r.get('status'),'conclusion':r.get('conclusion'),'run_number':r.get('run_number')} for r in runs]},sort_keys=True))
           PY
-
           set +e
           python3 -B tools/qikvrt_requested_review_executor.py evaluate --input /tmp/qikvrt-review-snapshot.json > /tmp/qikvrt-review-decision.json
           rc=$?
@@ -195,29 +137,22 @@ jobs:
           cat /tmp/qikvrt-review-decision.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
-          value = json.load(open('/tmp/qikvrt-review-decision.json', encoding='utf-8'))
-          print(f"state={value['state']}")
-          print(f"head={value.get('head_sha') or ''}")
-          print(f"tree={value.get('tree_sha') or ''}")
-          print(f"blocker={value.get('first_blocker') or ''}")
+          v=json.load(open('/tmp/qikvrt-review-decision.json')); print(f"state={v['state']}"); print(f"head={v.get('head_sha') or ''}"); print(f"tree={v.get('tree_sha') or ''}"); print(f"blocker={v.get('first_blocker') or ''}")
           PY
           exit 0
 
       - name: Persist precise waiting state
-        if: steps.decision.outputs.state == 'WAIT'
+        if: steps.active.outputs.active == 'true' && steps.decision.outputs.state == 'WAIT'
         env:
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
         shell: bash
         run: |
           set -euo pipefail
           detail="$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-review-decision.json"))["detail"])')"
-          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
-            -f state=pending -f context="$STATUS_CONTEXT" \
-            -f description="${detail:0:140}" \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" -f state=pending -f context="$STATUS_CONTEXT" -f description="${detail:0:140}" -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Persist substantive review disposition
-        if: steps.decision.outputs.state != '' && steps.decision.outputs.state != 'WAIT'
+        if: steps.active.outputs.active == 'true' && steps.decision.outputs.state != '' && steps.decision.outputs.state != 'WAIT'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
@@ -226,8 +161,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          live_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          test "$live_head" = "$EXPECTED_HEAD"
+          test "$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')" = "$EXPECTED_HEAD"
           detail="$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-review-decision.json"))["detail"])')"
           scope_count="$(python3 -c 'import json; print(len(json.load(open("/tmp/qikvrt-review-decision.json"))["reviewed_scope"]))')"
           marker="<!-- ${REVIEW_MARKER} head=${EXPECTED_HEAD} disposition=${DISPOSITION} -->"
@@ -245,39 +179,23 @@ jobs:
 
           Any head/tree/scope drift invalidates this review. No merge, release, publication, PASS, FINAL_PASS or EFFECT_ACK_DONE is implied.
           EOF
-
-          event="$DISPOSITION"
-          if [ "$event" = "COMMENT_WITH_BLOCKER" ]; then event=COMMENT; fi
+          event="$DISPOSITION"; if [ "$event" = COMMENT_WITH_BLOCKER ]; then event=COMMENT; fi
           set +e
-          gh api --method POST "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-            -f commit_id="$EXPECTED_HEAD" -f event="$event" \
-            --raw-field body="$(cat /tmp/qikvrt-review-body.md)" > /tmp/qikvrt-review-write.json 2>/tmp/qikvrt-review-write.err
+          gh api --method POST "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f commit_id="$EXPECTED_HEAD" -f event="$event" --raw-field body="$(cat /tmp/qikvrt-review-body.md)" > /tmp/qikvrt-review-write.json 2>/tmp/qikvrt-review-write.err
           review_rc=$?
           set -e
           platform_state="$event"
           if [ "$review_rc" -ne 0 ]; then
-            # GitHub Actions approval can be disabled by repository policy. The
-            # Product-Owner technical disposition is still persisted exactly,
-            # but never misrepresented as an independent APPROVED state.
-            gh api --method POST "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-              -f commit_id="$EXPECTED_HEAD" -f event=COMMENT \
-              --raw-field body="$(cat /tmp/qikvrt-review-body.md)\n\nPlatform limitation: requested ${event} was rejected; persisted as COMMENT." \
-              > /tmp/qikvrt-review-write.json
+            gh api --method POST "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f commit_id="$EXPECTED_HEAD" -f event=COMMENT --raw-field body="$(cat /tmp/qikvrt-review-body.md)\n\nPlatform limitation: requested ${event} was rejected; persisted as COMMENT." > /tmp/qikvrt-review-write.json
             platform_state=COMMENT
           fi
-
-          if [ "$DISPOSITION" = "APPROVE" ]; then
-            status=success
-            description="substantive requested review executed; platform=${platform_state}"
-          else
-            status=failure
-            description="requested review disposition=${DISPOSITION}; platform=${platform_state}"
-          fi
-          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
-            -f state="$status" -f context="$STATUS_CONTEXT" \
-            -f description="${description:0:140}" \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ "$DISPOSITION" = APPROVE ]; then status=success; description="substantive requested review executed; platform=${platform_state}"; else status=failure; description="requested review disposition=${DISPOSITION}; platform=${platform_state}"; fi
+          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" -f state="$status" -f context="$STATUS_CONTEXT" -f description="${description:0:140}" -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Strict NOOP when no requested review exists
-        if: steps.select.outputs.state != 'CANDIDATE'
+        if: steps.active.outputs.active == 'true' && steps.select.outputs.state != 'CANDIDATE'
         run: echo 'No unexecuted requested review is currently actionable.'
+
+      - name: Bootstrap NOOP before trusted-main promotion
+        if: steps.active.outputs.active != 'true'
+        run: echo 'Executor definition is under review; trusted main remains the only executable source.'
