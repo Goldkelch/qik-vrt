@@ -23,6 +23,9 @@ on:
       - 'state/admin_effects/requests/**'
       - 'policy/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json'
       - 'docs/GITHUB_ADMIN_EFFECT_EXECUTOR.md'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
@@ -129,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$OBSERVED_INSTALLATION_ID" = "$EXPECTED_ADMIN_INSTALLATION_ID" || {
-            echo "ADMIN_INSTALLATION_ID_MISMATCH expected=$EXPECTED_ADMIN_INSTALLATION_ID observed=$OBSERVED_INSTALLATION_ID" >&2
+            echo "ADMIN_INSTALLATION_ID_MISMATCH expected=$EXPECTED_INSTALLATION_ID observed=$OBSERVED_INSTALLATION_ID" >&2
             exit 2
           }
           echo "ADMIN_INSTALLATION_ID_VERIFIED=$OBSERVED_INSTALLATION_ID"
