@@ -1,0 +1,163 @@
+name: QIKVRT M68000 Mega ST virtualization
+
+on:
+  pull_request:
+    paths:
+      - 'tools/qikvrt_m68000_megast_capsule.py'
+      - 'tests/test_qikvrt_m68000_megast_capsule.py'
+      - 'state/autonomy/M68000_MEGAST_MESH_RUNTIME_V1.json'
+      - 'docs/M68000_MEGAST_MESH_RUNTIME.md'
+      - '.github/workflows/qikvrt_m68000_megast_virtualization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  megast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact source head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Verify hardwired capsule and TOS image
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_m68000_megast_capsule
+
+      - name: Install reference Mega ST emulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends hatari xvfb curl unzip
+          hatari --version
+
+      - name: Acquire version-bound free TOS-compatible ROM
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/emutos
+          curl --fail --location --retry 3 \
+            'https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip' \
+            -o /tmp/emutos/emutos-512k-1.4.zip
+          sha256sum /tmp/emutos/emutos-512k-1.4.zip | tee /tmp/emutos/archive.sha256
+          unzip -q /tmp/emutos/emutos-512k-1.4.zip -d /tmp/emutos/unpacked
+          rom="$(find /tmp/emutos/unpacked -type f -iname '*.img' -print | LC_ALL=C sort | head -n 1)"
+          test -n "$rom"
+          printf '%s\n' "$rom" > /tmp/emutos/rom.path
+          sha256sum "$rom" | tee /tmp/emutos/rom.sha256
+
+      - name: Build exact-head-bound QIK capsule and Atari program
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikmegast/C
+          tree="$(git rev-parse HEAD^{tree})"
+          cat > /tmp/qikmegast/meta.json <<EOF
+          {
+            "source_binding": "Goldkelch/qik-vrt@${HEAD_SHA}:${tree}",
+            "causal_graph": "metagrammar-causal-ir-v1",
+            "authority": "PRODUCT_OWNER_BOUND_FAIL_CLOSED",
+            "evidence": "exact-head-ci",
+            "role_identity": "AUTHORITY:QIKVRT_MEGAST_REFERENCE"
+          }
+          EOF
+          python3 -B tools/qikvrt_m68000_megast_capsule.py \
+            --action REOBSERVE \
+            --metadata /tmp/qikmegast/meta.json \
+            --capsule /tmp/qikmegast/QIKM68K1.bin \
+            --tos-prg /tmp/qikmegast/C/QIKVRT.TOS
+          sha256sum /tmp/qikmegast/QIKM68K1.bin /tmp/qikmegast/C/QIKVRT.TOS
+          test "$(stat -c %s /tmp/qikmegast/QIKM68K1.bin)" -lt 512
+          test "$(stat -c %s /tmp/qikmegast/C/QIKVRT.TOS)" -lt 1024
+
+      - name: Execute on virtual Atari Mega ST
+        shell: bash
+        run: |
+          set -euo pipefail
+          rom="$(cat /tmp/emutos/rom.path)"
+          trace=/tmp/qikmegast/hatari.log
+          set +e
+          timeout 60s xvfb-run -a hatari \
+            --machine megast \
+            --cpulevel 0 \
+            --cpuclock 8 \
+            --compatible on \
+            --cpu-exact on \
+            --addr24 on \
+            --memsize 1 \
+            --tos "$rom" \
+            --harddrive /tmp/qikmegast \
+            --auto 'C:\QIKVRT.TOS' \
+            --fast-forward on \
+            --sound off \
+            --disable-video on \
+            --benchmark \
+            --run-vbls 600 \
+            --conout 2 \
+            --trace os_base \
+            >"$trace" 2>&1
+          rc=$?
+          set -e
+          cat "$trace"
+          test "$rc" -eq 0
+          grep -F 'QIKVRT_M68K_EXECUTED' "$trace"
+          printf '%s\n' 'MEGAST_VIRTUAL_EXECUTION_OBSERVED=true' | tee /tmp/qikmegast/receipt.env
+
+      - name: Emit virtualization receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse HEAD^{tree})"
+          capsule_sha="$(sha256sum /tmp/qikmegast/QIKM68K1.bin | awk '{print $1}')"
+          prg_sha="$(sha256sum /tmp/qikmegast/C/QIKVRT.TOS | awk '{print $1}')"
+          rom_sha="$(awk '{print $1}' /tmp/emutos/rom.sha256)"
+          cat > /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json <<EOF
+          {
+            "schema": "qikvrt_megast_virtual_execution_receipt_v1",
+            "source_head": "${HEAD_SHA}",
+            "source_tree": "${tree}",
+            "machine": "megast",
+            "cpu": "68000",
+            "cpu_clock_mhz": 8,
+            "addressing": "24-bit",
+            "ram_mib": 1,
+            "action": "REOBSERVE",
+            "capsule_sha256": "${capsule_sha}",
+            "tos_prg_sha256": "${prg_sha}",
+            "emutos_rom_sha256": "${rom_sha}",
+            "execution_marker": "QIKVRT_M68K_EXECUTED",
+            "observed": true
+          }
+          EOF
+          python3 -m json.tool /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qikvrt-megast-virtualization-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
+            /tmp/qikmegast/hatari.log
+            /tmp/qikmegast/QIKM68K1.bin
+            /tmp/qikmegast/C/QIKVRT.TOS
+            /tmp/emutos/archive.sha256
+            /tmp/emutos/rom.sha256
