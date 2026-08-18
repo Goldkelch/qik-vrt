@@ -89,11 +89,11 @@ jobs:
           if requested: prs=[one(f'repos/{repo}/pulls/{int(requested)}')]
           elif event_pr: prs=[one(f'repos/{repo}/pulls/{int(event_pr)}')]
           else:
-              prs=pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')
+              prs=pages(f'repos/{repo}/pulls?state=open&per_page=100')
               if event_head: prs=[pr for pr in prs if (pr.get('head') or {}).get('sha')==event_head]
           marker=os.environ['REVIEW_MARKER']; candidates=[]
           for pr in prs:
-              if pr.get('state')!='open' or pr.get('base',{}).get('ref')!='main': continue
+              if pr.get('state')!='open': continue
               people=[x.get('login') for x in pr.get('requested_reviewers',[]) if x.get('login')]; teams=[x.get('slug') for x in pr.get('requested_teams',[]) if x.get('slug')]
               if not people and not teams: continue
               head=pr['head']['sha']; reviews=pages(f"repos/{repo}/pulls/{pr['number']}/reviews?per_page=100")
@@ -118,6 +118,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-snapshot.json
           import json, os, subprocess
+          from urllib.parse import quote
           repo=os.environ['REPOSITORY']; n=int(os.environ['PR_NUMBER']); required=json.loads(os.environ['REQUIRED_GATES_JSON'])
           def one(path): return json.loads(subprocess.check_output(['gh','api',path],text=True))
           def pages(path):
@@ -126,9 +127,9 @@ jobs:
                   if isinstance(page,dict) and 'workflow_runs' in page: out.extend(page['workflow_runs'])
                   else: out.extend(page if isinstance(page,list) else [page])
               return out
-          pr=one(f'repos/{repo}/pulls/{n}'); main=one(f'repos/{repo}/commits/main')['sha']; head=pr['head']['sha']; observed=one(f'repos/{repo}/pulls/{n}')['head']['sha']; tree=one(f'repos/{repo}/git/commits/{head}')['tree']['sha']; files=pages(f'repos/{repo}/pulls/{n}/files?per_page=100'); runs=pages(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
+          pr=one(f'repos/{repo}/pulls/{n}'); main=one(f'repos/{repo}/commits/main')['sha']; base_ref=pr['base']['ref']; current_base=one(f"repos/{repo}/commits/{quote(base_ref,safe='')}")['sha']; head=pr['head']['sha']; observed=one(f'repos/{repo}/pulls/{n}')['head']['sha']; tree=one(f'repos/{repo}/git/commits/{head}')['tree']['sha']; files=pages(f'repos/{repo}/pulls/{n}/files?per_page=100'); runs=pages(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
           owner,name=repo.split('/',1); query='''query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}'''; graph=json.loads(subprocess.check_output(['gh','api','graphql','-f',f'query={query}','-F',f'owner={owner}','-F',f'name={name}','-F',f'number={n}'],text=True)); nodes=graph['data']['repository']['pullRequest']['reviewThreads']['nodes']
-          print(json.dumps({'repository':repo,'pr_number':n,'current_main_sha':main,'base_sha':pr['base']['sha'],'head_sha':head,'observed_head_sha':observed,'tree_sha':tree,'draft':bool(pr.get('draft')),'requested_reviewers':[x.get('login') for x in pr.get('requested_reviewers',[]) if x.get('login')],'requested_team_reviewers':[x.get('slug') for x in pr.get('requested_teams',[]) if x.get('slug')],'changed_paths':sorted(x['filename'] for x in files),'unresolved_review_threads':sum(1 for x in nodes if not x.get('isResolved')),'required_gates':required,'workflow_runs':[{'name':r.get('name'),'status':r.get('status'),'conclusion':r.get('conclusion'),'run_number':r.get('run_number')} for r in runs]},sort_keys=True))
+          print(json.dumps({'repository':repo,'pr_number':n,'current_main_sha':main,'base_ref':base_ref,'current_base_sha':current_base,'base_sha':pr['base']['sha'],'head_sha':head,'observed_head_sha':observed,'tree_sha':tree,'draft':bool(pr.get('draft')),'requested_reviewers':[x.get('login') for x in pr.get('requested_reviewers',[]) if x.get('login')],'requested_team_reviewers':[x.get('slug') for x in pr.get('requested_teams',[]) if x.get('slug')],'changed_paths':sorted(x['filename'] for x in files),'unresolved_review_threads':sum(1 for x in nodes if not x.get('isResolved')),'required_gates':required,'workflow_runs':[{'name':r.get('name'),'status':r.get('status'),'conclusion':r.get('conclusion'),'run_number':r.get('run_number')} for r in runs]},sort_keys=True))
           PY
           set +e
           python3 -B tools/qikvrt_requested_review_executor.py evaluate --input /tmp/qikvrt-review-snapshot.json > /tmp/qikvrt-review-decision.json
