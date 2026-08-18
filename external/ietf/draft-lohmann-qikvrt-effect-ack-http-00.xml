@@ -4,22 +4,29 @@
     <title abbrev="EFFECT_ACK for HTTP">Effect Acknowledgement for HTTP and Web Linking</title>
     <seriesInfo name="Internet-Draft" value="draft-lohmann-qikvrt-effect-ack-http-00"/>
     <author initials="I." surname="Lohmann" fullname="Ingolf Lohmann"><organization>Independent Researcher</organization><address><email>ingolf.lohmann@live.com</email></address></author>
-    <date year="2026" month="August" day="16"/>
+    <date year="2026" month="August" day="18"/>
     <area>Applications and Real-Time</area>
-    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>authorization</keyword>
+    <keyword>HTTP</keyword><keyword>Structured Fields</keyword><keyword>Web Linking</keyword><keyword>authorization</keyword><keyword>causality</keyword>
     <abstract>
       <t>This document defines an Experimental HTTP binding for the QIK-VRT Effect Acknowledgement protocol. It introduces two Structured Fields and a Web Linking relation for capability discovery, preparation of a protected effect, validation of a full EFFECT_ACK responsibility record, and an exact-bound commit.</t>
       <t>The binding is opt-in and does not redefine HTTP transport acknowledgement or method semantics. Generic HTTP and HTML implementations can ignore the extension. A client that elects fail-closed protection, however, does not send a protected effect until support has been discovered and an EFFECT_ACK_DONE record has been independently validated.</t>
+      <t>This revision also makes explicit that protocol sequence is not itself evidence of causality. A protected effect is released only from explicitly bound authority, evidence and causal dependencies; serialization is an implementation projection of that causal structure.</t>
     </abstract>
   </front>
   <middle>
     <section anchor="intro"><name>Introduction</name>
-      <t>HTTP success, transport acknowledgement, successful parsing and application return values do not establish authorization for an external effect. The EFFECT_ACK core protocol separates those concepts. This document maps that gate to HTTP without changing HTTP itself.</t>
+      <t>HTTP success, transport acknowledgement, successful parsing and application return values do not establish authorization for an external effect. The EFFECT_ACK core protocol separates those concepts. This document maps that gate to HTTP Semantics <xref target="RFC9110"/> without changing HTTP itself.</t>
       <t>The binding uses Structured Field Values for HTTP <xref target="RFC9651"/> and Web Linking <xref target="RFC8288"/>. The same registered link relation can be represented in the HTTP Link field or by an HTML link element, providing one discovery model for protocol software and browsers.</t>
     </section>
     <section anchor="requirements"><name>Conventions and Requirements</name>
       <t>The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, NOT RECOMMENDED, MAY, and OPTIONAL are to be interpreted as described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when, they appear in all capitals.</t>
       <t>This document assumes the five-state EFFECT_ACK core model: EFFECT_NACK, EFFECT_ACK_CONTINUE, EFFECT_ACK_DONE, EFFECT_ACK_ISOLATE and EFFECT_ACK_BLOCK. Only a fresh, authenticated, independently validated EFFECT_ACK_DONE record can be eligible for ordinary release.</t>
+    </section>
+    <section anchor="causality"><name>Causality, Serialization and Metagrammar Binding</name>
+      <t>An implementation MUST NOT infer causal authorization from message order, wall-clock order, source-text order, transport completion, or a successful status code alone. Sequence can record order; it is not by itself proof of a causal dependency or authority.</t>
+      <t>A deployment that represents protected work as a directed causal graph MAY serialize causally independent operations in any deterministic topological order consistent with the explicit dependency edges. Parallel or distributed execution MAY use another topological projection of the same graph. Such projection MUST preserve all bound non-commutative effects, authority constraints, lease constraints, exact-version constraints and Effect-Ack dependencies.</t>
+      <t>Where a deployment uses a QIK-VRT metagrammar envelope, the responsibility-record digest SHOULD bind canonical bytes for operation identifier, resource binding, exact version identifiers, intent, authority, evidence, state, effect, next action and proof. Generic HTTP implementations are not required to understand that metagrammar.</t>
+      <t>A DONE result obtained before execution is an authorization-state record, not post-effect evidence. After a protected effect, a deployment claiming observed completion MUST obtain a distinct post-effect observation. Transport acknowledgement MUST NOT be substituted for that observation.</t>
     </section>
     <section anchor="discovery"><name>Capability Discovery</name>
       <t>An origin supporting this profile SHOULD advertise an <tt>effect-ack</tt> link relation. Discovery is metadata only and never authorizes an effect.</t>
@@ -85,6 +92,8 @@ Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
       <t>A browser extension can implement this profile while remaining compatible with unmodified servers and pages. It can discover the link relation, keep protected requests in a local prepare state, validate a returned full record, and issue commit only after DONE.</t>
       <t>Audio, video and screen capture remain Web-platform permission events. Media bytes are not EFFECT_ACK evidence until the user explicitly submits them. A browser proxy MUST NOT silently capture or transmit media and MUST preserve a visible distinction between local preview, submitted input, prepared effect and committed effect.</t>
       <t>A proxy that renders other clients or backend states SHOULD normalize observations into a transport-neutral terminal frame while preserving source identifiers, exact record hashes, timestamps and uncertainty. Rendering is not authorization.</t>
+      <t>A browser proxy MAY render a transport-neutral terminal frame received from another client or adapter. Such rendering MUST remain observation-only. A rendered frame MUST NOT enable Prepare or Commit, MUST NOT synthesize EFFECT_ACK_DONE, and MUST preserve the source binding needed for independent verification.</t>
+      <t>A terminal reflecting observations back into an autonomous system MUST treat reflection as input evidence, not implicit authority. Any new productive action begins a new protected operation and Effect-Ack lifecycle.</t>
     </section>
     <section anchor="intermediaries"><name>Intermediaries, Caches and CORS</name>
       <t>Intermediaries MUST NOT synthesize an <tt>Effect-Ack</tt> field. A transformation that changes bound request semantics invalidates a prepare token unless the transformation itself is included in the binding.</t>
@@ -120,6 +129,7 @@ Link: </effect-ack/records/42>; rel="effect-ack"; type="application/json"
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8288.xml"/>
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9110.xml"/>
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9421.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9530.xml"/>
       <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.9651.xml"/>
     </references>
     <section><name>Example Exchange</name>
