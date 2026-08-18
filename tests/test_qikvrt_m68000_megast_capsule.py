@@ -29,11 +29,11 @@ class MegaSTCapsuleTests(unittest.TestCase):
         changed["evidence"] = "sha256:other"
         self.assertNotEqual(blob, capsule("REOBSERVE", changed))
 
-    def test_tos_program_contains_observable_wrapper_and_capsule(self):
+    def test_tos_program_reaches_capsule_before_observable_marker(self):
         text = tos_text(ACTIONS["REQUEST_AUTHORITY"])
-        self.assertEqual(len(text), 49)
+        self.assertEqual(len(text), 51)
         self.assertTrue(text.startswith(bytes.fromhex(
-            "41fa00162f083f3c00094e4161083f003f3c004c4e4170034e75"
+            "611641fa00162f083f3c00094e413f3c00003f3c004c4e4170034e75"
         )))
         self.assertTrue(text.endswith(EXEC_MARKER))
         prg = tos_prg(3)
