@@ -25,7 +25,8 @@
       "REQUEST_AUTHORITY": 3
     },
     "return": "RTS",
-    "unsupported": "HOLD_NO_CODE"
+    "unsupported": "HOLD_NO_CODE",
+    "runtime_witness_rule": "sentinel effect is reachable only after D0 equals the expected action value"
   },
   "capsule": {
     "magic": "QIKM68K1",
@@ -48,14 +49,18 @@
     "Exact-head evidence does not transfer across changed head/tree",
     "Terminal reflection is evidence input, never implicit authority",
     "One productive repository writer",
-    "Effect acknowledgement is distinct from transport acknowledgement"
+    "Effect acknowledgement is distinct from transport acknowledgement",
+    "Virtualization evidence does not imply review, merge, release or deployment authority"
   ],
   "virtualization": {
     "reference_emulator": "Hatari",
+    "reference_emulator_version": "2.4.1",
     "machine_option": "megast",
-    "rom": "EmuTOS or compatible TOS ROM",
-    "required_probe": "execute generated TOS program under emulated Mega ST and observe the hardwired decision capsule in the CPU trace",
-    "proof_state_before_probe": "NOT_ESTABLISHED"
+    "rom": "EmuTOS 1.4 etos512ca.img",
+    "emutos_archive_sha256": "1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663",
+    "emutos_rom_sha256": "f810041373d8efe15d55ec049fd4dd9be9b0fc521bbe6416b99d833f7fd6805d",
+    "required_probe": "verify exact head, byte-level control flow, fixed emulator/ROM identity, Mega ST/M68000/1MiB runtime identity, Pexec, expected D0 action value before sentinel effect, Fcreate(C:\\QIKVRT.OK), Pterm(0), host-visible empty sentinel, then emit an exact-head/tree receipt",
+    "proof_state_without_fresh_exact_head_receipt": "NOT_ESTABLISHED"
   },
   "product_owner_authorization": {
     "granted": true,
