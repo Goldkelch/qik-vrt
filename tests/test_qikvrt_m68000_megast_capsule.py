@@ -29,13 +29,23 @@ class MegaSTCapsuleTests(unittest.TestCase):
         changed["evidence"] = "sha256:other"
         self.assertNotEqual(blob, capsule("REOBSERVE", changed))
 
-    def test_tos_program_creates_post_capsule_sentinel(self):
+    def test_tos_program_checks_action_before_sentinel(self):
         text = tos_text(ACTIONS["REQUEST_AUTHORITY"])
-        self.assertEqual(len(text), 53)
-        self.assertTrue(text.startswith(bytes.fromhex(
-            "612241fa00243f3c00002f083f3c003c4e413f003f3c003e4e413f3c00003f3c004c4e4170034e75"
-        )))
+        self.assertEqual(len(text), 69)
+        self.assertEqual(
+            text[:56],
+            bytes.fromhex(
+                "61320c400003662241fa002e3f3c00002f083f3c003c4e41"
+                "3f003f3c003e4e413f3c00003f3c004c4e413f3c00013f3c004c4e41"
+                "70034e75"
+            ),
+        )
         self.assertTrue(text.endswith(SENTINEL_PATH))
+        # BSR target, BNE fail target and LEA filename target are all exact.
+        self.assertEqual(2 + int.from_bytes(text[1:2], "big", signed=True), 52)
+        self.assertEqual(8 + int.from_bytes(text[7:8], "big", signed=True), 42)
+        self.assertEqual(10 + int.from_bytes(text[10:12], "big", signed=True), 56)
+
         prg = tos_prg(3)
         magic, text_len, data_len, bss_len, sym_len, reserved, flags, absflag = struct.unpack(">HLLLLLLH", prg[:28])
         self.assertEqual(magic, 0x601A)
@@ -44,10 +54,19 @@ class MegaSTCapsuleTests(unittest.TestCase):
         self.assertEqual(prg[28:], text)
         self.assertLess(len(prg), 1024)
 
+    def test_all_actions_embed_their_expected_compare_and_moveq(self):
+        for name, action in ACTIONS.items():
+            with self.subTest(name=name):
+                text = tos_text(action)
+                self.assertEqual(text[2:6], struct.pack(">HH", 0x0C40, action))
+                self.assertEqual(text[52:56], decision_code(action))
+
     def test_only_four_effect_actions_exist(self):
         self.assertEqual(ACTIONS, {"NOOP": 0, "HOLD": 1, "REOBSERVE": 2, "REQUEST_AUTHORITY": 3})
         with self.assertRaises(ValueError):
             decision_code(4)
+        with self.assertRaises(ValueError):
+            tos_text(4)
 
 
 if __name__ == "__main__":
