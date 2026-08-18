@@ -33,7 +33,7 @@ class MegaSTCapsuleTests(unittest.TestCase):
         text = tos_text(ACTIONS["REQUEST_AUTHORITY"])
         self.assertEqual(len(text), 53)
         self.assertTrue(text.startswith(bytes.fromhex(
-            "612241fa00223f3c00002f083f3c003c4e413f003f3c003e4e413f3c00003f3c004c4e4170034e75"
+            "612241fa00243f3c00002f083f3c003c4e413f003f3c003e4e413f3c00003f3c004c4e4170034e75"
         )))
         self.assertTrue(text.endswith(SENTINEL_PATH))
         prg = tos_prg(3)
