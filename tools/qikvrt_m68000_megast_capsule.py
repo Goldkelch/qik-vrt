@@ -13,6 +13,7 @@ import struct
 from pathlib import Path
 
 MAGIC = b"QIKM68K1"
+EXEC_MARKER = b"QIKVRT_M68K_EXECUTED\r\n\0"
 ACTIONS = {"NOOP": 0, "HOLD": 1, "REOBSERVE": 2, "REQUEST_AUTHORITY": 3}
 
 
@@ -24,9 +25,17 @@ def decision_code(action: int) -> bytes:
 
 
 def tos_text(action: int) -> bytes:
-    # BSR.S capsule ; MOVE.W D0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1
+    if action not in range(4):
+        raise ValueError("unsupported QIK M68000 action")
+    # Observable TOS wrapper:
+    #   LEA marker(PC),A0
+    #   MOVE.L A0,-(SP) ; MOVE.W #9,-(SP) ; TRAP #1   (GEMDOS Cconws)
+    #   BSR.S capsule
+    #   MOVE.W D0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1 (GEMDOS Pterm)
     # capsule: MOVEQ #action,D0 ; RTS
-    return struct.pack(">HHHHHHH", 0x6108, 0x3F00, 0x3F3C, 0x004C, 0x4E41, 0x7000 | action, 0x4E75)
+    words = (0x41FA, 0x0016, 0x2F08, 0x3F3C, 0x0009, 0x4E41,
+             0x6108, 0x3F00, 0x3F3C, 0x004C, 0x4E41, 0x7000 | action, 0x4E75)
+    return struct.pack(">" + "H" * len(words), *words) + EXEC_MARKER
 
 
 def tos_prg(action: int) -> bytes:
