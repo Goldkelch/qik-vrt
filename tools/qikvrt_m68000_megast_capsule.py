@@ -37,9 +37,13 @@ def tos_text(action: int) -> bytes:
     #   MOVE.W #0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1
     # capsule: MOVEQ #action,D0 ; RTS
     # filename: "C:\\QIKVRT.OK\0"
+    #
+    # M68000 PC-relative d16 addressing uses the extension-word address as
+    # the PC base. The filename begins at byte offset 40 and the LEA extension
+    # word is at offset 4, therefore d16 = 36 = 0x0024.
     words = (
         0x6122,
-        0x41FA, 0x0022,
+        0x41FA, 0x0024,
         0x3F3C, 0x0000,
         0x2F08,
         0x3F3C, 0x003C,
