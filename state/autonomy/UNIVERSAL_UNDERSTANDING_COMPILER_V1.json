@@ -1,9 +1,46 @@
 {
   "schema": "qikvrt_universal_understanding_compiler_v1",
-  "version": "1.0",
+  "version": "1.1",
   "status": "NORMATIVE_CANDIDATE",
   "purpose": "Define a domain-neutral source language that compiles explicit meaning, binding, authority, evidence, state, effect, proof and causal predecessor data into a validated QIK-VRT decision plan, with a bounded fail-closed Atari Mega ST / M68000 target profile.",
   "core_equation": "MEANING = INTENT + BINDING + AUTHORITY + EVIDENCE + STATE + EFFECT + PROOF",
+  "distinction_calculus": {
+    "identities": [
+      "1 - 0 = 1",
+      "1 - 1 = 0",
+      "x = y",
+      "z = 0",
+      "x = 1",
+      "y = 1"
+    ],
+    "interpretation": {
+      "1 - 0 = 1": "PRESERVED_DISTINCTION",
+      "1 - 1 = 0": "ELIMINATED_DIFFERENCE_FOR_EQUAL_BOUND_VALUES",
+      "x = y": "BOUND_RELATION_OR_EQUALITY",
+      "z = 0": "DISTINGUISHED_FORMAL_ZERO",
+      "x = 1; y = 1": "WITNESS_ASSIGNMENT_FOR_X_EQUALS_Y"
+    },
+    "semantic_chain": [
+      "DISTINCTION",
+      "RELATION",
+      "BINDING_CONTEXT",
+      "AUTHORITY",
+      "CAUSAL_ORDER",
+      "PERMITTED_EFFECT_OR_FAIL_CLOSED",
+      "REOBSERVATION",
+      "PROOF"
+    ],
+    "invariants": [
+      "DISTINCTION != RELATION",
+      "RELATION != CAUSALITY",
+      "CAUSALITY != SEQUENCE",
+      "ZERO_RESULT != NO_EFFECT",
+      "FORMAL_DISTINCTION_CALCULUS != EMPIRICAL_QUANTUM_CAUSALITY",
+      "ARITHMETIC_IDENTITY != PHYSICAL_LAW"
+    ],
+    "source_redefinable": false,
+    "empirical_physics_claimed": false
+  },
   "ordering_invariant": "CAUSALITY != SEQUENCE",
   "source_order_has_causal_authority": false,
   "universal_frontend": {
@@ -14,7 +51,8 @@
     "unknown_may_drive_productive_intent": false,
     "acknowledged_effect_requires_ack_kind": true,
     "evidence_digest": "sha256-lowercase-hex-64",
-    "proof_digest": "sha256-lowercase-hex-64"
+    "proof_digest": "sha256-lowercase-hex-64",
+    "validated_plan_carries_distinction_kernel": true
   },
   "megast_target_profile": {
     "subject_scheme": "repo",
@@ -28,13 +66,14 @@
       "REOBSERVE": 2,
       "REQUEST_AUTHORITY": 3
     },
+    "formal_zero_aliases_noop": false,
     "machine_code_shape": "MOVEQ #action,D0 ; RTS",
     "unsupported_target_action": "REJECT_BEFORE_BINARY_EMISSION"
   },
   "pipeline": [
     "QIKU1_SOURCE",
     "ANSI_C89_UNIVERSAL_FRONTEND",
-    "VALIDATED_PLAN",
+    "VALIDATED_PLAN_WITH_DISTINCTION_KERNEL",
     "EXISTING_M68000_LOWERER",
     "EXISTING_M68000_EMITTER",
     "EXISTING_MEGAST_CAPSULE_WRAPPER",
@@ -43,6 +82,7 @@
   "boundaries": {
     "physical_hardware_execution_claimed": false,
     "performance_gain_claimed": false,
+    "empirical_quantum_causality_claimed": false,
     "merge_claimed": false,
     "release_claimed": false,
     "deployment_claimed": false,
