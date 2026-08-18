@@ -1,0 +1,39 @@
+{
+  "schema": "qikvrt_requirement_closure_inventory_v1",
+  "inventory_complete": false,
+  "inventory_boundary": "Seeded from current live open-issue evidence and the currently diagnosed stacked-review defect. Historical repository-wide requirement discovery is not yet complete and is itself an active remainder.",
+  "items": [
+    {
+      "stable_id": "DEFECT-STACKED-REQUESTED-REVIEW-BASE-MAIN-FILTER",
+      "class": "KNOWN_DEFECT",
+      "source_ref": "main:.github/workflows/qikvrt_requested_review_executor.yml",
+      "current_state": "ACTIVE_REMAINDER",
+      "first_deterministic_blocker": "REPAIR_PR_684_NOT_EFFECTIVE_ON_MAIN",
+      "next_history_preserving_action": "obtain independent code-owner disposition for PR #684, promote only if current gates and policy allow, then reobserve the main executor on a stacked requested-review probe",
+      "evidence_refs": ["PR #684", "PR #690"]
+    },
+    {
+      "stable_id": "REQUIREMENT-HISTORICAL-DISCOVERY",
+      "class": "REQUIREMENT",
+      "source_ref": "repository-wide historical normative artifacts, issues, pull requests, policies, work units and acceptance criteria",
+      "current_state": "ACTIVE_REMAINDER",
+      "first_deterministic_blocker": "COMPLETE_HISTORICAL_REQUIREMENT_INVENTORY_ABSENT",
+      "next_history_preserving_action": "enumerate every normatively materialized requirement and acceptance criterion, assign a stable closure item, and bind each to CLOSED_VERIFIED or an explicit active disposition without silently dropping historical items",
+      "evidence_refs": ["open issues #76,#79,#87,#89-#101,#136,#153,#408,#439,#445,#661", "policy/GLOBAL_SYSTEM_CLOSURE_V1.json"]
+    },
+    {
+      "stable_id": "REQUIREMENT-OPEN-ISSUE-BACKLOG-LIVENESS",
+      "class": "REQUIREMENT",
+      "source_ref": "current live open issue backlog",
+      "current_state": "ACTIVE_REMAINDER",
+      "first_deterministic_blocker": "OPEN_ISSUES_NOT_YET_PROVEN_TO_HAVE_EFFECTIVE_CLOSURE_PATHS",
+      "next_history_preserving_action": "for every open normative issue, resolve current implementation/evidence PRs, acceptance coverage, exact blocker and next executable action; orphaned issues become repository defects",
+      "evidence_refs": ["GitHub open issue search"]
+    }
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

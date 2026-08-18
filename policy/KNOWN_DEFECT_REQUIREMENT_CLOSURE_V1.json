@@ -1,0 +1,50 @@
+{
+  "schema": "qikvrt_known_defect_requirement_closure_v1",
+  "version": "1.0.0",
+  "purpose": "Make every known defect and every normatively materialized requirement explicitly closed or actively carried to closure.",
+  "invariants": [
+    "NO_SILENT_KNOWN_DEFECT",
+    "NO_ORPHANED_REQUIREMENT",
+    "NO_DETECTED_REPAIR_WITHOUT_EFFECTIVE_PATH",
+    "NO_CLOSED_CLAIM_WITH_OPEN_MANDATORY_REQUIREMENT",
+    "NO_REQUIREMENT_DISAPPEARS_WITHOUT_DISPOSITION",
+    "CAUSALITY_NE_SEQUENCE"
+  ],
+  "item_classes": [
+    "KNOWN_DEFECT",
+    "REQUIREMENT",
+    "ACCEPTANCE_CRITERION",
+    "REPAIR_CANDIDATE",
+    "EXTERNAL_BLOCKER"
+  ],
+  "allowed_states": [
+    "CLOSED_VERIFIED",
+    "ACTIVE_REMAINDER",
+    "BLOCKED_EXTERNAL",
+    "SUPERSEDED_WITH_TRACE",
+    "NOT_APPLICABLE_WITH_EVIDENCE"
+  ],
+  "forbidden_states": [
+    "SILENT_OPEN",
+    "UNKNOWN_DISPOSITION",
+    "REPAIR_UNPROMOTED_WITHOUT_REMAINDER",
+    "CLOSED_BY_ASSERTION_ONLY"
+  ],
+  "required_fields_for_nonclosed_items": [
+    "stable_id",
+    "class",
+    "source_ref",
+    "current_state",
+    "first_deterministic_blocker",
+    "next_history_preserving_action",
+    "evidence_refs"
+  ],
+  "closure_rule": "An item is closed only when its own acceptance criteria are satisfied by current, bindable evidence. Open issues, PRs, work units, comments, historical requirements and repository policies are not silently dropped from the closure set.",
+  "promotion_rule": "A deterministic repair that exists only on an unmerged candidate remains an ACTIVE_REMAINDER until the repair is effective on the bound target state and reobserved there.",
+  "repository_wide_completion_rule": "Repository-wide completion may be asserted only when the complete closure inventory contains no ACTIVE_REMAINDER, BLOCKED_EXTERNAL or undispositioned item. This policy does not assert that condition currently holds.",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
