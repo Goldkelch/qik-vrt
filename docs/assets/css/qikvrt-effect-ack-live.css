@@ -1,0 +1,275 @@
+/* SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
+/* Copyright 2026 Ingolf Lohmann. */
+
+:root {
+  --effect-live-border: color-mix(in srgb, currentColor 18%, transparent);
+  --effect-live-panel: color-mix(in srgb, currentColor 4%, transparent);
+  --effect-live-complete: #2b8a3e;
+  --effect-live-active: #1971c2;
+  --effect-live-waiting: #868e96;
+  --effect-live-blocked: #c92a2a;
+  --effect-live-isolated: #862e9c;
+  --effect-live-unobserved: #5f3dc4;
+}
+
+.effect-live-hero {
+  padding: 5rem 0 2.5rem;
+}
+
+.effect-live-hero-grid,
+.effect-live-mesh-grid,
+.effect-live-observation-grid,
+.effect-live-status-grid,
+.effect-live-delta-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.effect-live-hero-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 0.8fr);
+  align-items: center;
+}
+
+.effect-live-status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.effect-live-mesh-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.effect-live-observation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1.25rem;
+}
+
+.effect-live-delta-grid {
+  grid-template-columns: minmax(15rem, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+}
+
+.effect-live-section {
+  padding-block: 2.25rem;
+}
+
+.effect-live-section-heading,
+.effect-transaction-heading,
+.effect-stage-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.effect-live-actions,
+.effect-live-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.effect-live-boundary code,
+.effect-live-final-boundary code,
+.effect-transaction code,
+.effect-live-status-card code,
+.effect-live-observation-grid code,
+.effect-live-mesh-grid code {
+  overflow-wrap: anywhere;
+}
+
+.effect-state-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid var(--effect-live-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.effect-state-badge[data-state="EFFECT_ACK_DONE"],
+.effect-state-badge[data-state="COMPLETION_CANDIDATE"] {
+  border-color: var(--effect-live-complete);
+}
+
+.effect-state-badge[data-state="EFFECT_ACK_CONTINUE"],
+.effect-state-badge[data-state="CONTINUE"],
+.effect-state-badge[data-state="PROGRESS"] {
+  border-color: var(--effect-live-active);
+}
+
+.effect-state-badge[data-state="EFFECT_ACK_BLOCK"],
+.effect-state-badge[data-state="BLOCK"],
+.effect-state-badge[data-state="STALL"] {
+  border-color: var(--effect-live-blocked);
+}
+
+.effect-state-badge[data-state="EFFECT_ACK_ISOLATE"],
+.effect-state-badge[data-state="ISOLATE"] {
+  border-color: var(--effect-live-isolated);
+}
+
+.effect-state-badge[data-state="EFFECT_NACK"] {
+  border-color: var(--effect-live-unobserved);
+}
+
+.effect-live-transactions {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.effect-transaction {
+  min-width: 0;
+}
+
+.effect-transaction-heading h3 {
+  margin-top: 0;
+}
+
+.effect-transaction > a {
+  display: block;
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.effect-transaction-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1rem;
+  border-block: 1px solid var(--effect-live-border);
+  padding-block: 0.9rem;
+}
+
+.effect-transaction-meta p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.effect-stage-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.effect-stage {
+  border: 1px solid var(--effect-live-border);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: var(--effect-live-panel);
+}
+
+.effect-stage-heading {
+  align-items: baseline;
+}
+
+.effect-stage-heading code {
+  white-space: nowrap;
+}
+
+.effect-stage-track {
+  position: relative;
+  height: 0.7rem;
+  margin-top: 0.55rem;
+  overflow: hidden;
+  border: 1px solid var(--effect-live-border);
+  border-radius: 999px;
+}
+
+.effect-stage-fill {
+  display: block;
+  height: 100%;
+  transition: width 180ms ease-out;
+}
+
+.effect-stage-complete {
+  background: var(--effect-live-complete);
+}
+
+.effect-stage-active {
+  background: var(--effect-live-active);
+}
+
+.effect-stage-waiting {
+  background: var(--effect-live-waiting);
+}
+
+.effect-stage-blocked {
+  background: var(--effect-live-blocked);
+}
+
+.effect-stage-isolated {
+  background: var(--effect-live-isolated);
+}
+
+.effect-stage-unobserved {
+  background: var(--effect-live-unobserved);
+}
+
+.effect-stage-detail,
+.effect-activity-boundary {
+  margin: 0.45rem 0 0;
+}
+
+.effect-live-delta-stream {
+  margin: 0;
+  padding: 1rem 1rem 1rem 2.5rem;
+  max-height: 32rem;
+  overflow: auto;
+}
+
+.effect-live-delta-stream li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--effect-live-border);
+}
+
+.effect-live-delta-stream li:last-child {
+  border-bottom: 0;
+}
+
+.effect-live-delta-stream time,
+.effect-live-delta-stream code,
+.effect-live-delta-stream span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.effect-live-delta-stream time {
+  opacity: 0.72;
+  font-size: 0.85rem;
+}
+
+.effect-live-final-boundary {
+  border-width: 2px;
+}
+
+@media (max-width: 72rem) {
+  .effect-live-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 52rem) {
+  .effect-live-hero-grid,
+  .effect-live-mesh-grid,
+  .effect-live-observation-grid,
+  .effect-live-delta-grid,
+  .effect-live-status-grid,
+  .effect-transaction-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .effect-live-section-heading,
+  .effect-transaction-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .effect-stage-fill {
+    transition: none;
+  }
+}
