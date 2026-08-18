@@ -13,7 +13,7 @@ import struct
 from pathlib import Path
 
 MAGIC = b"QIKM68K1"
-EXEC_MARKER = b"QIKVRT_M68K_EXECUTED\r\n\0"
+SENTINEL_PATH = b"C:\\QIKVRT.OK\0"
 ACTIONS = {"NOOP": 0, "HOLD": 1, "REOBSERVE": 2, "REQUEST_AUTHORITY": 3}
 
 
@@ -27,18 +27,25 @@ def decision_code(action: int) -> bytes:
 def tos_text(action: int) -> bytes:
     if action not in range(4):
         raise ValueError("unsupported QIK M68000 action")
-    # Observable TOS wrapper. The marker is printed only after the capsule
-    # has executed and returned successfully.
+    # Observable TOS wrapper. A host-visible sentinel is created only after
+    # the hardwired capsule has executed and returned successfully.
+    #
     #   BSR.S capsule
-    #   LEA marker(PC),A0
-    #   MOVE.L A0,-(SP) ; MOVE.W #9,-(SP) ; TRAP #1   (GEMDOS Cconws)
-    #   MOVE.W #0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1 (GEMDOS Pterm(0))
+    #   LEA filename(PC),A0
+    #   MOVE.W #0,-(SP) ; MOVE.L A0,-(SP) ; MOVE.W #$3C,-(SP) ; TRAP #1
+    #   MOVE.W D0,-(SP) ; MOVE.W #$3E,-(SP) ; TRAP #1
+    #   MOVE.W #0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1
     # capsule: MOVEQ #action,D0 ; RTS
+    # filename: "C:\\QIKVRT.OK\0"
     words = (
-        0x6116,
-        0x41FA, 0x0016,
+        0x6122,
+        0x41FA, 0x0022,
+        0x3F3C, 0x0000,
         0x2F08,
-        0x3F3C, 0x0009,
+        0x3F3C, 0x003C,
+        0x4E41,
+        0x3F00,
+        0x3F3C, 0x003E,
         0x4E41,
         0x3F3C, 0x0000,
         0x3F3C, 0x004C,
@@ -46,7 +53,7 @@ def tos_text(action: int) -> bytes:
         0x7000 | action,
         0x4E75,
     )
-    return struct.pack(">" + "H" * len(words), *words) + EXEC_MARKER
+    return struct.pack(">" + "H" * len(words), *words) + SENTINEL_PATH
 
 
 def tos_prg(action: int) -> bytes:
