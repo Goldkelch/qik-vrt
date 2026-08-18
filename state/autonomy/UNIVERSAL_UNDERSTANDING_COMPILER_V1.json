@@ -1,0 +1,58 @@
+{
+  "schema": "qikvrt_universal_understanding_compiler_v1",
+  "version": "1.0",
+  "status": "NORMATIVE_CANDIDATE",
+  "purpose": "Define a domain-neutral source language that compiles explicit meaning, binding, authority, evidence, state, effect, proof and causal predecessor data into a validated QIK-VRT decision plan, with a bounded fail-closed Atari Mega ST / M68000 target profile.",
+  "core_equation": "MEANING = INTENT + BINDING + AUTHORITY + EVIDENCE + STATE + EFFECT + PROOF",
+  "ordering_invariant": "CAUSALITY != SEQUENCE",
+  "source_order_has_causal_authority": false,
+  "universal_frontend": {
+    "subject_form": ["scheme", "identity", "version", "state"],
+    "explicit_cause_required_for_dependency": true,
+    "productive_intents": ["EXECUTE", "CREATE", "UPDATE", "CLOSE", "DISPATCH", "PERSIST"],
+    "nonbound_safe_actions": ["HOLD", "NOOP", "REOBSERVE", "REQUEST_AUTHORITY"],
+    "unknown_may_drive_productive_intent": false,
+    "acknowledged_effect_requires_ack_kind": true,
+    "evidence_digest": "sha256-lowercase-hex-64",
+    "proof_digest": "sha256-lowercase-hex-64"
+  },
+  "megast_target_profile": {
+    "subject_scheme": "repo",
+    "identity": "owner/repository",
+    "version": "exact-head-sha40",
+    "state": "exact-root-tree-sha40",
+    "admitted_actions": ["NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"],
+    "abi": {
+      "NOOP": 0,
+      "HOLD": 1,
+      "REOBSERVE": 2,
+      "REQUEST_AUTHORITY": 3
+    },
+    "machine_code_shape": "MOVEQ #action,D0 ; RTS",
+    "unsupported_target_action": "REJECT_BEFORE_BINARY_EMISSION"
+  },
+  "pipeline": [
+    "QIKU1_SOURCE",
+    "ANSI_C89_UNIVERSAL_FRONTEND",
+    "VALIDATED_PLAN",
+    "EXISTING_M68000_LOWERER",
+    "EXISTING_M68000_EMITTER",
+    "EXISTING_MEGAST_CAPSULE_WRAPPER",
+    "EXACT_HEAD_REOBSERVATION"
+  ],
+  "boundaries": {
+    "physical_hardware_execution_claimed": false,
+    "performance_gain_claimed": false,
+    "merge_claimed": false,
+    "release_claimed": false,
+    "deployment_claimed": false,
+    "publication_claimed": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  },
+  "grammar": "docs/QIKVRT_UNIVERSAL_UNDERSTANDING_COMPILER.ebnf",
+  "documentation": "docs/QIKVRT_UNIVERSAL_UNDERSTANDING_COMPILER.md",
+  "reference_frontend": "tools/qikvrt_universal_understanding_ansic.c",
+  "acceptance_test": "tests/test_qikvrt_universal_understanding_ansic.py"
+}
