@@ -7,14 +7,24 @@
   "metaphor": ["IKARUS", "PHOENIX"],
   "semantics": {
     "exhaustion": "Reach a bounded fixed point for the current exact-head evidence and authorized deterministic derivations; do not create semantic noise after NOOP.",
-    "ash": "Reduce the completed pass to durable provenance-bound receipts, exact head/tree, causal dependencies, unresolved remainder, and next admissible actions.",
-    "regeneration": "Rebootstrap from canonical repository evidence and the persisted ash state; reconstruct rather than inherit unverified chat or cache state.",
+    "ash": "Reduce the completed pass to durable provenance-bound receipts, exact head/tree, causal dependencies, unresolved remainder, role-local identity state, and next admissible actions.",
+    "regeneration": "Rebootstrap from canonical repository evidence and the persisted ash state; reconstruct rather than inherit unverified chat or cache state, and preserve causally required role-local differences.",
     "reflexivity": "Terminal observations may become evidence inputs to the next pass, never implicit authority.",
-    "causality": "Causal dependencies govern admissibility; execution sequence is only a projection."
+    "causality": "Causal dependencies govern admissibility; execution sequence is only a projection.",
+    "identity": "Whole-tree equality is not role identity. Shared canonical structure may be equal while causally required role-local state differs."
+  },
+  "invariants": {
+    "causality_not_sequence": true,
+    "identity_not_equality": true,
+    "integration_not_flattening": true,
+    "regeneration_not_copy": true,
+    "evolution_not_repetition": true,
+    "operational_rule": "So much equality as required for interoperability; so much difference as necessary for identity, causality, and function."
   },
   "cycle": [
     "REOBSERVE_EXACT_HEAD",
     "BOOTSTRAP_CANONICAL_EVIDENCE",
+    "RESOLVE_ROLE_LOCAL_IDENTITY",
     "PROJECT_TERMINAL_STATE",
     "EXECUTE_ALLOWLISTED_DETERMINISTIC_WORK",
     "REOBSERVE_EFFECTS",
@@ -23,13 +33,14 @@
     "REGENERATE_FROM_CANONICAL_RECEIPT"
   ],
   "fixed_point": {
-    "condition": "No newly authorized semantic delta remains after exact-head reobservation.",
+    "condition": "No newly authorized semantic delta remains after exact-head and role-local identity reobservation.",
     "result": "NOOP",
     "noise_creation_forbidden": true
   },
   "fail_closed": [
     "stale or ambiguous exact-head binding",
     "unknown causal dependency",
+    "causally required role-local state would be erased by convergence or regeneration",
     "competing productive writer",
     "nonterminal required gate",
     "missing independent human review where required",
@@ -41,14 +52,15 @@
     "cached_state_is_proof": false,
     "chat_memory_is_authority": false,
     "repository_evidence_is_canonical": true,
+    "historical_tree_equality_implies_future_equality": false,
     "force_push": false,
     "unconditional_merge": false,
     "implicit_release_or_publication": false
   },
   "product_owner_authorization": {
     "granted": true,
-    "scope": "repository-internal implementation and activation through reviewed history-preserving changes",
-    "statement": "Lass es sich in seiner eigenen Struktur reflexiv erschöpfen und sich selbst zugleich wieder regenerieren. So wie Ikarus und Phönix aus der Asche zugleich.",
+    "scope": "repository-internal implementation and activation through reviewed history-preserving changes, including preservation and autonomous repair of causally required role-local state",
+    "statement": "Lass es sich in seiner eigenen Struktur reflexiv erschöpfen und sich selbst zugleich wieder regenerieren; passe auch die role-local identity distinction geeignet an und arbeite kognitiv und autonom damit.",
     "date": "2026-08-18"
   }
 }
