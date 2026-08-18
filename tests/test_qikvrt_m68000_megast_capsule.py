@@ -1,7 +1,7 @@
 import struct
 import unittest
 
-from tools.qikvrt_m68000_megast_capsule import ACTIONS, EXEC_MARKER, MAGIC, capsule, decision_code, tos_prg, tos_text
+from tools.qikvrt_m68000_megast_capsule import ACTIONS, MAGIC, SENTINEL_PATH, capsule, decision_code, tos_prg, tos_text
 
 
 class MegaSTCapsuleTests(unittest.TestCase):
@@ -29,13 +29,13 @@ class MegaSTCapsuleTests(unittest.TestCase):
         changed["evidence"] = "sha256:other"
         self.assertNotEqual(blob, capsule("REOBSERVE", changed))
 
-    def test_tos_program_reaches_capsule_before_observable_marker(self):
+    def test_tos_program_creates_post_capsule_sentinel(self):
         text = tos_text(ACTIONS["REQUEST_AUTHORITY"])
-        self.assertEqual(len(text), 51)
+        self.assertEqual(len(text), 53)
         self.assertTrue(text.startswith(bytes.fromhex(
-            "611641fa00162f083f3c00094e413f3c00003f3c004c4e4170034e75"
+            "612241fa00223f3c00002f083f3c003c4e413f003f3c003e4e413f3c00003f3c004c4e4170034e75"
         )))
-        self.assertTrue(text.endswith(EXEC_MARKER))
+        self.assertTrue(text.endswith(SENTINEL_PATH))
         prg = tos_prg(3)
         magic, text_len, data_len, bss_len, sym_len, reserved, flags, absflag = struct.unpack(">HLLLLLLH", prg[:28])
         self.assertEqual(magic, 0x601A)
