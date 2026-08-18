@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/qikvrt_execution_result_v1.json",
+  "title": "QIK-VRT execution result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "transaction_id", "repository", "head_sha", "tree_sha", "state", "failure_class", "request_sha256", "authorization_sha256", "completion_claims"],
+  "properties": {
+    "schema": {"const": "qikvrt_execution_result_v1"},
+    "transaction_id": {"type": "string"},
+    "repository": {"type": "string"},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "tree_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "state": {"enum": ["AUTHORIZATION_CHECKED", "WORK_STARTED", "BLOCK"]},
+    "failure_class": {"type": ["string", "null"]},
+    "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authorization_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "completion_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["PASS", "FINAL_PASS", "EFFECT_ACK_DONE"],
+      "properties": {
+        "PASS": {"const": false},
+        "FINAL_PASS": {"const": false},
+        "EFFECT_ACK_DONE": {"const": false}
+      }
+    }
+  }
+}
