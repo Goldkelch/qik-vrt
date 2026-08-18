@@ -14,22 +14,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out trusted controller from main
+      - name: Check out exact unprivileged candidate controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Resolve candidate without checking it out
+      - name: Resolve candidate without privileged identity
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
           mkdir -p .qikvrt/request
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > .qikvrt/request/pr.json
           base="$(jq -r '.base.sha' .qikvrt/request/pr.json)"
           head="$(jq -r '.head.sha' .qikvrt/request/pr.json)"
+          test "$head" = "$EXPECTED_HEAD"
           tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${head}" --jq '.tree.sha')"
           gh api -H 'Accept: application/vnd.github.diff' "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > .qikvrt/request/delta.diff
           delta="$(sha256sum .qikvrt/request/delta.diff | awk '{print $1}')"
