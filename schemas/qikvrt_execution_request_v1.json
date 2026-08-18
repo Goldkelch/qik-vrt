@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/qikvrt_execution_request_v1.json",
+  "title": "QIK-VRT execution request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "transaction_id", "repository", "source_kind", "source_number", "base_sha", "head_sha", "tree_sha", "delta_sha256", "requested_operation"],
+  "properties": {
+    "schema": {"const": "qikvrt_execution_request_v1"},
+    "transaction_id": {"type": "string", "pattern": "^[a-zA-Z0-9._:-]{8,160}$"},
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "source_kind": {"enum": ["pull_request", "issue", "repository_dispatch"]},
+    "source_number": {"type": "integer", "minimum": 0},
+    "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "tree_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "delta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "requested_operation": {"enum": ["VALIDATE", "EXECUTE"]}
+  }
+}

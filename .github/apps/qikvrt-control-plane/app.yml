@@ -1,0 +1,37 @@
+name: QIK-VRT Mesh Controller
+slug: qikvrt-control-plane
+repository_scope: authority-and-mirror
+installation:
+  repositories:
+    - Goldkelch/qik-vrt
+    - ingolf-lohmann/qik-vrt
+permissions:
+  metadata: read
+  contents: write
+  pull_requests: write
+  issues: write
+  actions: read
+  checks: write
+  workflows: none
+webhooks:
+  - pull_request
+  - pull_request_review
+  - issues
+  - issue_comment
+  - check_suite
+  - check_run
+  - workflow_run
+  - push
+  - create
+  - delete
+  - release
+  - repository_dispatch
+security:
+  short_lived_installation_tokens: true
+  candidate_code_with_installation_token: forbidden
+  untrusted_artifacts_are_data_only: true
+  foreign_repository_writes: forbidden
+bootstrap:
+  app_id_secret: QIKVRT_CONTROL_PLANE_APP_ID
+  private_key_secret: QIKVRT_CONTROL_PLANE_PRIVATE_KEY
+  handoff_key_secret: QIKVRT_CONTROL_PLANE_HANDOFF_KEY

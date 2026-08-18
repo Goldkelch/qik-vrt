@@ -1,0 +1,92 @@
+name: QIKVRT trusted execution handoff
+
+on:
+  workflow_run:
+    workflows: ["QIKVRT untrusted candidate validation"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      request_artifact_run_id:
+        description: Run containing a canonical qikvrt-execution-request artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: qikvrt-trusted-execute-${{ github.event.workflow_run.id || inputs.request_artifact_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  trusted-handoff:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted main only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Download request artifact as data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ github.event.workflow_run.id || inputs.request_artifact_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/trusted
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false and (.name | startswith("qikvrt-execution-request-")))][0].id // empty')"
+          test -n "$artifact"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact}/zip" > .qikvrt/trusted/request.zip
+          unzip -p .qikvrt/trusted/request.zip request.json > .qikvrt/trusted/request.json
+          python3 -B controller/qikvrt_trusted_handoff.py validate-request --request .qikvrt/trusted/request.json
+      - name: Reobserve live source binding before privileged identity exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="$(jq -r '.repository' .qikvrt/trusted/request.json)"
+          test "$repo" = "$GITHUB_REPOSITORY"
+          kind="$(jq -r '.source_kind' .qikvrt/trusted/request.json)"
+          test "$kind" = pull_request
+          number="$(jq -r '.source_number' .qikvrt/trusted/request.json)"
+          expected_head="$(jq -r '.head_sha' .qikvrt/trusted/request.json)"
+          expected_tree="$(jq -r '.tree_sha' .qikvrt/trusted/request.json)"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.head.sha')"
+          test "$live_head" = "$expected_head"
+          live_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${live_head}" --jq '.tree.sha')"
+          test "$live_tree" = "$expected_tree"
+      - name: Mint short-lived control-plane App token
+        id: app-token
+        uses: actions/create-github-app-token@f5733d23b83910f4e7563a8c1e8d2fe0e4e2b36a
+        with:
+          app-id: ${{ secrets.QIKVRT_CONTROL_PLANE_APP_ID }}
+          private-key: ${{ secrets.QIKVRT_CONTROL_PLANE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+      - name: Bind authorization to App principal and request
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          HANDOFF_KEY: ${{ secrets.QIKVRT_CONTROL_PLANE_HANDOFF_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_TOKEN"
+          principal="$(GH_TOKEN="$APP_TOKEN" gh api /app --jq '.slug')"
+          installation_id="$(GH_TOKEN="$APP_TOKEN" gh api "/repos/${GITHUB_REPOSITORY}/installation" --jq '.id')"
+          printf '%s' "$HANDOFF_KEY" > .qikvrt/trusted/handoff.key
+          chmod 600 .qikvrt/trusted/handoff.key
+          python3 -B controller/qikvrt_trusted_handoff.py authorize --request .qikvrt/trusted/request.json --out .qikvrt/trusted/authorization.json --key-file .qikvrt/trusted/handoff.key --principal "$principal" --installation-id "$installation_id"
+          python3 -B controller/qikvrt_trusted_handoff.py verify --request .qikvrt/trusted/request.json --authorization .qikvrt/trusted/authorization.json --result .qikvrt/trusted/result.json --key-file .qikvrt/trusted/handoff.key --principal "$principal" --installation-id "$installation_id"
+          rm -f .qikvrt/trusted/handoff.key
+      - name: Preserve non-secret authorization evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-trusted-handoff-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .qikvrt/trusted/request.json
+            .qikvrt/trusted/authorization.json
+            .qikvrt/trusted/result.json
+          if-no-files-found: error
+          retention-days: 30

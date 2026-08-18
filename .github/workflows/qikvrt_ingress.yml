@@ -1,0 +1,43 @@
+name: QIKVRT trusted-control-plane ingress
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+  repository_dispatch:
+    types: [qikvrt-execute]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  actions: read
+
+jobs:
+  normalize-untrusted-event:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out trusted controller only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Preserve event as untrusted data
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/ingress
+          cp "$EVENT_PATH" .qikvrt/ingress/event.json
+          sha256sum .qikvrt/ingress/event.json > .qikvrt/ingress/event.sha256
+      - name: Upload intake data only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-ingress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/ingress
+          if-no-files-found: error
+          retention-days: 30

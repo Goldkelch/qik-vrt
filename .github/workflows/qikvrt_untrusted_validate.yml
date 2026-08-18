@@ -1,0 +1,47 @@
+name: QIKVRT untrusted candidate validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  validate-as-data:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted controller from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Resolve candidate without checking it out
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/request
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > .qikvrt/request/pr.json
+          base="$(jq -r '.base.sha' .qikvrt/request/pr.json)"
+          head="$(jq -r '.head.sha' .qikvrt/request/pr.json)"
+          tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${head}" --jq '.tree.sha')"
+          gh api -H 'Accept: application/vnd.github.diff' "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > .qikvrt/request/delta.diff
+          delta="$(sha256sum .qikvrt/request/delta.diff | awk '{print $1}')"
+          jq -n --arg tx "pr-${PR_NUMBER}-${head}" --arg repo "$GITHUB_REPOSITORY" --argjson number "$PR_NUMBER" --arg base "$base" --arg head "$head" --arg tree "$tree" --arg delta "$delta" \
+            '{schema:"qikvrt_execution_request_v1",transaction_id:$tx,repository:$repo,source_kind:"pull_request",source_number:$number,base_sha:$base,head_sha:$head,tree_sha:$tree,delta_sha256:$delta,requested_operation:"EXECUTE"}' \
+            > .qikvrt/request/request.json
+          python3 -B controller/qikvrt_trusted_handoff.py validate-request --request .qikvrt/request/request.json
+      - name: Upload canonical request data
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-execution-request-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: .qikvrt/request
+          if-no-files-found: error
+          retention-days: 30
