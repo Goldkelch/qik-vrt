@@ -109,6 +109,21 @@ class UniversalUnderstandingAnsiCTests(unittest.TestCase):
         self.assertIn("SUBJECT_SCHEME=document", r.stdout)
         self.assertIn("TARGET_PROFILE=UNIVERSAL_FRONTEND_V1", r.stdout)
 
+    def test_validated_plan_carries_distinction_kernel_and_type_boundaries(self):
+        r = self.run_front(self.source(next_action="HOLD"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("DISTINCTION_KERNEL=1-0=1;1-1=0;x=y;z=0;x=1;y=1", r.stdout)
+        self.assertIn(
+            "SEMANTIC_CHAIN=DISTINCTION>RELATION>BINDING_CONTEXT>AUTHORITY>CAUSAL_ORDER>PERMITTED_EFFECT_OR_FAIL_CLOSED>REOBSERVATION>PROOF",
+            r.stdout,
+        )
+        self.assertIn(
+            "TYPE_INVARIANTS=DISTINCTION!=RELATION;RELATION!=CAUSALITY;CAUSALITY!=SEQUENCE;ZERO_RESULT!=NO_EFFECT",
+            r.stdout,
+        )
+        self.assertIn("ZERO_RESULT_SEMANTICS=FORMAL_ONLY", r.stdout)
+        self.assertIn("EMPIRICAL_QUANTUM_CAUSALITY=NOT_ESTABLISHED_BY_CALCULUS", r.stdout)
+
     def test_cause_is_explicit_and_preserved(self):
         r = self.run_front(self.source(rid="later", cause="earlier", next_action="HOLD"))
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -119,6 +134,12 @@ class UniversalUnderstandingAnsiCTests(unittest.TestCase):
 
     def test_megast_noop_compiles_to_existing_exact_bytes(self):
         self.assertEqual(self.target_bytes(self.source(next_action="NOOP")), bytes.fromhex("70004e75"))
+
+    def test_distinction_kernel_does_not_widen_megast_abi(self):
+        self.assertEqual(self.target_bytes(self.source(next_action="HOLD")), bytes.fromhex("70014e75"))
+        self.assertEqual(
+            self.target_bytes(self.source(next_action="REQUEST_AUTHORITY")), bytes.fromhex("70034e75")
+        )
 
     def test_megast_requires_repository_adapter(self):
         r = self.run_front(
