@@ -1,0 +1,66 @@
+{
+  "schema": "qikvrt_m68000_megast_mesh_runtime_v1",
+  "status": "PRODUCT_OWNER_AUTHORIZED_REVIEW_CANDIDATE",
+  "base_candidate": {
+    "pr": 660,
+    "head": "a4449a7acd26922f526ba98ca13fbaa3de3dc788",
+    "target": "Motorola 68000"
+  },
+  "machine_envelope": {
+    "machine": "Atari Mega ST",
+    "cpu": "Motorola 68000",
+    "cpu_clock_mhz": 8,
+    "addressing": "24-bit",
+    "floating_point_required": false,
+    "mmu_required": false,
+    "reference_ram_mib": 1,
+    "hard_upper_bound_mib": 4
+  },
+  "decision_abi": {
+    "register": "D0",
+    "actions": {
+      "NOOP": 0,
+      "HOLD": 1,
+      "REOBSERVE": 2,
+      "REQUEST_AUTHORITY": 3
+    },
+    "return": "RTS",
+    "unsupported": "HOLD_NO_CODE"
+  },
+  "capsule": {
+    "magic": "QIKM68K1",
+    "metadata_digests": [
+      "source_binding",
+      "causal_graph",
+      "authority",
+      "evidence",
+      "role_identity"
+    ],
+    "metadata_is_executable_authority": false,
+    "code_is_self_authorizing": false
+  },
+  "mesh_invariants": [
+    "Kausalitaet != Sequenz",
+    "Identitaet != Gleichheit",
+    "Integration != Einebnung",
+    "Regeneration != Kopie",
+    "Evolution != Wiederholung",
+    "Exact-head evidence does not transfer across changed head/tree",
+    "Terminal reflection is evidence input, never implicit authority",
+    "One productive repository writer",
+    "Effect acknowledgement is distinct from transport acknowledgement"
+  ],
+  "virtualization": {
+    "reference_emulator": "Hatari",
+    "machine_option": "megast",
+    "rom": "EmuTOS or compatible TOS ROM",
+    "required_probe": "execute generated TOS program under emulated Mega ST and observe the hardwired decision capsule in the CPU trace",
+    "proof_state_before_probe": "NOT_ESTABLISHED"
+  },
+  "product_owner_authorization": {
+    "granted": true,
+    "date": "2026-08-18",
+    "scope": "repository-internal implementation, test and virtualization proof candidate",
+    "statement": "Verdrahte das hard im Motorola 68000 und baue darum die QIK-VRT-Mesh-Eigenschaften; Atari Mega ST als virtualisierbare Referenzmaschine."
+  }
+}
