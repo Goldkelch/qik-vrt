@@ -153,11 +153,15 @@ Minimum bootstrap:
 
 1. Read `/AI`.
 2. Read `AI_CONTEXT.json`.
-3. Reobserve the exact task state.
-4. Load only task-relevant contracts and evidence.
-5. Apply the metagrammar and fail-closed runtime method above.
-6. Continue autonomously where the action is uniquely determined and authorized.
-7. Reobserve after every effect.
+3. Execute the fail-closed, read-only runtime bootloader:
+
+   python3 -B tools/ai_runtime_bootloader.py --profile all
+
+4. Reobserve the exact task state.
+5. Load only task-relevant contracts and evidence.
+6. Apply the metagrammar and fail-closed runtime method above.
+7. Continue autonomously where the action is uniquely determined and authorized.
+8. Reobserve after every effect.
 
 The purpose of `/AI` is therefore simple:
 
