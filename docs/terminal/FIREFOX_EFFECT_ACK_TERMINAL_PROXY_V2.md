@@ -36,16 +36,19 @@ window.postMessage({
       head: "0123456789abcdef0123456789abcdef01234567",
       tree: "89abcdef0123456789abcdef0123456789abcdef"
     },
-    terminal_semantics: {rendering_is_authorization: false}
+    terminal_semantics: {
+      rendering_is_authorization: false,
+      ordinary_release_requires: "VALID_EFFECT_ACK_DONE"
+    }
   }
 }, location.origin);
 ```
 
-The proxy accepts only same-window, same-origin messages, requires the canonical frame schema and source binding, validates optional Git head/tree identifiers, bounds the serialized frame to 256 KiB and JSON-clones it before rendering.
+The proxy accepts only same-window, same-origin messages and requires a frame conforming to the canonical `qikvrt_terminal_frame_v1` contract before rendering. `observed_at`, non-empty repository/ref identifiers, and both 40-character lowercase Git `head` and `tree` bindings are mandatory. The canonical terminal semantics must already state `rendering_is_authorization=false` and `ordinary_release_requires="VALID_EFFECT_ACK_DONE"`. The serialized frame is bounded to 256 KiB and JSON-cloned before rendering.
 
-Every imported frame is forcibly marked `display_only=true`. The renderer also forces `rendering_is_authorization=false`, `proxy_frame_can_prepare=false` and `proxy_frame_can_commit=false`. Importing a frame disables the visible Commit control. The proxy code does not call the repository backend, Prepare or Commit APIs.
+Every imported frame is forcibly marked `display_only=true`. The renderer preserves the canonical V1 ordinary-release value and adds proxy-only restrictions as extension members: `proxy_frame_can_prepare=false`, `proxy_frame_can_commit=false`, and `proxy_effect_transaction="SEPARATE_EFFECT_ACK_TRANSACTION_REQUIRED"`. Importing a frame disables the visible Commit control. The proxy code does not call the repository backend, Prepare or Commit APIs.
 
-Therefore another UI, agent adapter, CLI bridge or browser-side representation can reuse Firefox as the common display surface without inheriting effect authority.
+Therefore another UI, agent adapter, CLI bridge or browser-side representation can reuse Firefox as the common display surface without inheriting effect authority or weakening source binding.
 
 ## Reflexive boundary
 
