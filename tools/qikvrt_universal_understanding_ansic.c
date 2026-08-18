@@ -9,6 +9,7 @@
  *   is intentionally consumable by the existing M68000 lowerer/emitter.
  *
  * Causality is explicit in CAUSE. Source-line order has no causal authority.
+ * The distinction kernel is a compiler invariant, not source-redefinable data.
  */
 
 #include <stdio.h>
@@ -218,6 +219,11 @@ static int qiku_semantic(const struct qiku_unit *u, int target_megast, char *rea
 static void qiku_emit(const struct qiku_unit *u, int target_megast)
 {
     printf("QIKVRT_UNIVERSAL_PLAN_V1\n");
+    printf("DISTINCTION_KERNEL=1-0=1;1-1=0;x=y;z=0;x=1;y=1\n");
+    printf("SEMANTIC_CHAIN=DISTINCTION>RELATION>BINDING_CONTEXT>AUTHORITY>CAUSAL_ORDER>PERMITTED_EFFECT_OR_FAIL_CLOSED>REOBSERVATION>PROOF\n");
+    printf("TYPE_INVARIANTS=DISTINCTION!=RELATION;RELATION!=CAUSALITY;CAUSALITY!=SEQUENCE;ZERO_RESULT!=NO_EFFECT\n");
+    printf("ZERO_RESULT_SEMANTICS=FORMAL_ONLY\n");
+    printf("EMPIRICAL_QUANTUM_CAUSALITY=NOT_ESTABLISHED_BY_CALCULUS\n");
     printf("RID=%s\n", u->rid);
     printf("SUBJECT_SCHEME=%s\n", u->subject_scheme);
     printf("SUBJECT_ID=%s\n", u->subject_id);
