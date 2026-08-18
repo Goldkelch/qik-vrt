@@ -20,30 +20,33 @@ ACTIONS = {"NOOP": 0, "HOLD": 1, "REOBSERVE": 2, "REQUEST_AUTHORITY": 3}
 def decision_code(action: int) -> bytes:
     if action not in range(4):
         raise ValueError("unsupported QIK M68000 action")
-    # MOVEQ #action,D0 ; RTS
-    return struct.pack(">HH", 0x7000 | action, 0x4E75)
+    return struct.pack(">HH", 0x7000 | action, 0x4E75)  # MOVEQ #action,D0 ; RTS
 
 
 def tos_text(action: int) -> bytes:
     if action not in range(4):
         raise ValueError("unsupported QIK M68000 action")
-    # Observable TOS wrapper. A host-visible sentinel is created only after
-    # the hardwired capsule has executed and returned successfully.
+
+    # The wrapper proves more than mere reachability: after BSR returns it
+    # compares D0 with the expected QIK action. Only the equal path can create
+    # the host-visible sentinel and terminate with Pterm(0). Any mismatch takes
+    # the fail-closed Pterm(1) path and creates no sentinel.
     #
-    #   BSR.S capsule
-    #   LEA filename(PC),A0
-    #   MOVE.W #0,-(SP) ; MOVE.L A0,-(SP) ; MOVE.W #$3C,-(SP) ; TRAP #1
-    #   MOVE.W D0,-(SP) ; MOVE.W #$3E,-(SP) ; TRAP #1
-    #   MOVE.W #0,-(SP) ; MOVE.W #$4C,-(SP) ; TRAP #1
-    # capsule: MOVEQ #action,D0 ; RTS
-    # filename: "C:\\QIKVRT.OK\0"
-    #
-    # M68000 PC-relative d16 addressing uses the extension-word address as
-    # the PC base. The filename begins at byte offset 40 and the LEA extension
-    # word is at offset 4, therefore d16 = 36 = 0x0024.
+    # Offsets in bytes from the text start:
+    #   0  BSR.S capsule             -> capsule at 52, displacement 0x32
+    #   2  CMPI.W #action,D0
+    #   6  BNE.S fail                -> fail at 42, displacement 0x22
+    #   8  LEA filename(PC),A0       -> extension at 10; filename at 56
+    #                                  PC-relative d16 = 46 = 0x002e
+    #  12  Fcreate("C:\\QIKVRT.OK",0), then Fclose(handle), then Pterm(0)
+    #  42  fail: Pterm(1)
+    #  52  capsule: MOVEQ #action,D0 ; RTS
+    #  56  NUL-terminated filename
     words = (
-        0x6122,
-        0x41FA, 0x0024,
+        0x6132,
+        0x0C40, action,
+        0x6622,
+        0x41FA, 0x002E,
         0x3F3C, 0x0000,
         0x2F08,
         0x3F3C, 0x003C,
@@ -52,6 +55,9 @@ def tos_text(action: int) -> bytes:
         0x3F3C, 0x003E,
         0x4E41,
         0x3F3C, 0x0000,
+        0x3F3C, 0x004C,
+        0x4E41,
+        0x3F3C, 0x0001,
         0x3F3C, 0x004C,
         0x4E41,
         0x7000 | action,
@@ -83,7 +89,6 @@ def capsule(action_name: str, metadata: dict[str, str]) -> bytes:
         metadata["role_identity"],
     ]
     payload = b"".join(digest_bytes(x) for x in fields)
-    # magic + version + action + code length + metadata digest block + code
     return MAGIC + struct.pack(">BBH", 1, action, len(code)) + payload + code
 
 
