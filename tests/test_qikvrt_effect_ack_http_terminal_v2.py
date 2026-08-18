@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import textwrap
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -50,11 +52,11 @@ class EffectAckHttpTerminalV2Tests(unittest.TestCase):
         for required in (
             'FRAME_KIND = "QIKVRT_TERMINAL_FRAME"',
             'FRAME_SCHEMA = "qikvrt_terminal_frame_v1"',
+            'ORDINARY_RELEASE_REQUIRES = "VALID_EFFECT_ACK_DONE"',
             'event.source !== window',
             'event.origin !== location.origin',
             'MAX_FRAME_BYTES = 256 * 1024',
             'display_only: true',
-            'rendering_is_authorization: false',
             'proxy_frame_can_prepare: false',
             'proxy_frame_can_commit: false',
             'commit.disabled = true',
@@ -63,6 +65,104 @@ class EffectAckHttpTerminalV2Tests(unittest.TestCase):
         self.assertNotIn('runtime.sendMessage', proxy)
         self.assertNotIn('PREPARE_EFFECT', proxy)
         self.assertNotIn('COMMIT_EFFECT', proxy)
+
+    def test_firefox_proxy_executes_canonical_validation_fail_closed(self) -> None:
+        proxy_path = ROOT / "browser/firefox/qikvrt-terminal/proxy.js"
+        harness = textwrap.dedent(
+            r"""
+            const assert = require("assert");
+            const fs = require("fs");
+            const vm = require("vm");
+            const proxyPath = process.argv[1];
+            let listener = null;
+            const output = {textContent: ""};
+            const status = {textContent: "", dataset: {}};
+            const commit = {disabled: false};
+            const host = {
+              querySelector(selector) {
+                if (selector === "[data-role=output]") return output;
+                if (selector === "[data-role=status]") return status;
+                if (selector === "[data-act=commit]") return commit;
+                return null;
+              },
+              dispatchEvent() {}
+            };
+            global.window = {addEventListener(name, fn) { if (name === "message") listener = fn; }};
+            global.location = {origin: "https://github.com"};
+            global.document = {getElementById(id) { return id === "qikvrt-ai-terminal-host" ? host : null; }};
+            global.CustomEvent = function(type, init) { this.type = type; this.detail = init.detail; };
+            vm.runInThisContext(fs.readFileSync(proxyPath, "utf8"), {filename: proxyPath});
+            assert(listener, "proxy message listener not installed");
+
+            function clone(value) { return JSON.parse(JSON.stringify(value)); }
+            function send(frame) {
+              output.textContent = "";
+              status.textContent = "";
+              status.dataset = {};
+              commit.disabled = false;
+              listener({
+                source: window,
+                origin: location.origin,
+                data: {kind: "QIKVRT_TERMINAL_FRAME", frame}
+              });
+              return {state: status.dataset.state, text: output.textContent, disabled: commit.disabled};
+            }
+            const valid = {
+              schema: "qikvrt_terminal_frame_v1",
+              observed_at: "2026-08-18T03:00:00Z",
+              source: {
+                repository: "Goldkelch/qik-vrt",
+                ref: "refs/heads/main",
+                head: "0123456789abcdef0123456789abcdef01234567",
+                tree: "89abcdef0123456789abcdef0123456789abcdef"
+              },
+              terminal_semantics: {
+                rendering_is_authorization: false,
+                ordinary_release_requires: "VALID_EFFECT_ACK_DONE"
+              },
+              effect_ack: {state: "EFFECT_ACK_CONTINUE", record_hash: "abc123"}
+            };
+
+            const accepted = send(valid);
+            assert.strictEqual(accepted.state, "OBSERVE");
+            assert.strictEqual(accepted.disabled, true);
+            const rendered = JSON.parse(accepted.text);
+            assert.strictEqual(rendered.schema, "qikvrt_terminal_frame_v1");
+            assert.strictEqual(rendered.observed_at, valid.observed_at);
+            assert.deepStrictEqual(rendered.source, valid.source);
+            assert.strictEqual(rendered.effect_ack.record_hash, "abc123");
+            assert.strictEqual(rendered.terminal_semantics.rendering_is_authorization, false);
+            assert.strictEqual(rendered.terminal_semantics.ordinary_release_requires, "VALID_EFFECT_ACK_DONE");
+            assert.strictEqual(rendered.terminal_semantics.proxy_frame_can_prepare, false);
+            assert.strictEqual(rendered.terminal_semantics.proxy_frame_can_commit, false);
+            assert.strictEqual(rendered.terminal_semantics.proxy_effect_transaction, "SEPARATE_EFFECT_ACK_TRANSACTION_REQUIRED");
+            assert.strictEqual(rendered.proxy.display_only, true);
+
+            const invalid = [];
+            let x;
+            x = clone(valid); delete x.observed_at; invalid.push(x);
+            x = clone(valid); x.observed_at = "not-a-date"; invalid.push(x);
+            x = clone(valid); x.source.repository = ""; invalid.push(x);
+            x = clone(valid); x.source.ref = ""; invalid.push(x);
+            x = clone(valid); delete x.source.head; invalid.push(x);
+            x = clone(valid); delete x.source.tree; invalid.push(x);
+            x = clone(valid); x.source.head = "ABCDEF"; invalid.push(x);
+            x = clone(valid); delete x.terminal_semantics; invalid.push(x);
+            x = clone(valid); x.terminal_semantics.rendering_is_authorization = true; invalid.push(x);
+            x = clone(valid); x.terminal_semantics.ordinary_release_requires = "VALID_EFFECT_ACK_DONE_FROM_SEPARATE_EFFECT_TRANSACTION"; invalid.push(x);
+            x = clone(valid); x.workflows = {padding: "x".repeat(300 * 1024)}; invalid.push(x);
+
+            for (const frame of invalid) {
+              const rejected = send(frame);
+              assert.strictEqual(rejected.state, "HOLD");
+              assert.strictEqual(rejected.disabled, true);
+              const evidence = JSON.parse(rejected.text);
+              assert.strictEqual(evidence.state, "HOLD");
+              assert.strictEqual(evidence.ordinary_release, false);
+            }
+            """
+        )
+        subprocess.run(["node", "-e", harness, str(proxy_path)], check=True, cwd=ROOT)
 
     def test_watchdog_reinitializes_after_firefox_restart(self) -> None:
         background = (ROOT / "browser/firefox/qikvrt-terminal/background.js").read_text(encoding="utf-8")
