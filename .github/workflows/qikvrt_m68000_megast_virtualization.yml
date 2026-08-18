@@ -70,9 +70,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/qikmegast/C
+          mkdir -p /tmp/qikbuild /tmp/qikdrive/C
           tree="$(git rev-parse HEAD^{tree})"
-          cat > /tmp/qikmegast/meta.json <<EOF
+          cat > /tmp/qikbuild/meta.json <<EOF
           {
             "source_binding": "Goldkelch/qik-vrt@${HEAD_SHA}:${tree}",
             "causal_graph": "metagrammar-causal-ir-v1",
@@ -83,19 +83,20 @@ jobs:
           EOF
           python3 -B tools/qikvrt_m68000_megast_capsule.py \
             --action REOBSERVE \
-            --metadata /tmp/qikmegast/meta.json \
-            --capsule /tmp/qikmegast/QIKM68K1.bin \
-            --tos-prg /tmp/qikmegast/C/QIKVRT.TOS
-          sha256sum /tmp/qikmegast/QIKM68K1.bin /tmp/qikmegast/C/QIKVRT.TOS
-          test "$(stat -c %s /tmp/qikmegast/QIKM68K1.bin)" -lt 512
-          test "$(stat -c %s /tmp/qikmegast/C/QIKVRT.TOS)" -lt 1024
+            --metadata /tmp/qikbuild/meta.json \
+            --capsule /tmp/qikbuild/QIKM68K1.bin \
+            --tos-prg /tmp/qikdrive/C/QIKVRT.TOS
+          sha256sum /tmp/qikbuild/QIKM68K1.bin /tmp/qikdrive/C/QIKVRT.TOS
+          test "$(stat -c %s /tmp/qikbuild/QIKM68K1.bin)" -lt 512
+          test "$(stat -c %s /tmp/qikdrive/C/QIKVRT.TOS)" -lt 1024
 
       - name: Execute on virtual Atari Mega ST
         shell: bash
         run: |
           set -euo pipefail
           rom="$(cat /tmp/emutos/rom.path)"
-          trace=/tmp/qikmegast/hatari.log
+          trace=/tmp/qikbuild/hatari.log
+          rm -f /tmp/qikdrive/C/QIKVRT.OK
           set +e
           timeout 60s xvfb-run -a hatari \
             --machine megast \
@@ -106,22 +107,22 @@ jobs:
             --addr24 on \
             --memsize 1 \
             --tos "$rom" \
-            --harddrive /tmp/qikmegast \
+            --harddrive /tmp/qikdrive \
             --auto 'C:\QIKVRT.TOS' \
             --fast-forward on \
             --sound off \
             --disable-video on \
             --benchmark \
             --run-vbls 600 \
-            --conout 2 \
             --trace os_base \
             >"$trace" 2>&1
           rc=$?
           set -e
           cat "$trace"
           test "$rc" -eq 0
-          grep -F 'QIKVRT_M68K_EXECUTED' "$trace"
-          printf '%s\n' 'MEGAST_VIRTUAL_EXECUTION_OBSERVED=true' | tee /tmp/qikmegast/receipt.env
+          test -f /tmp/qikdrive/C/QIKVRT.OK
+          grep -F 'QIKVRT.OK' "$trace"
+          printf '%s\n' 'MEGAST_VIRTUAL_EXECUTION_OBSERVED=true' | tee /tmp/qikbuild/receipt.env
 
       - name: Emit virtualization receipt
         shell: bash
@@ -130,10 +131,10 @@ jobs:
         run: |
           set -euo pipefail
           tree="$(git rev-parse HEAD^{tree})"
-          capsule_sha="$(sha256sum /tmp/qikmegast/QIKM68K1.bin | awk '{print $1}')"
-          prg_sha="$(sha256sum /tmp/qikmegast/C/QIKVRT.TOS | awk '{print $1}')"
+          capsule_sha="$(sha256sum /tmp/qikbuild/QIKM68K1.bin | awk '{print $1}')"
+          prg_sha="$(sha256sum /tmp/qikdrive/C/QIKVRT.TOS | awk '{print $1}')"
           rom_sha="$(awk '{print $1}' /tmp/emutos/rom.sha256)"
-          cat > /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json <<EOF
+          cat > /tmp/qikbuild/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json <<EOF
           {
             "schema": "qikvrt_megast_virtual_execution_receipt_v1",
             "source_head": "${HEAD_SHA}",
@@ -147,20 +148,21 @@ jobs:
             "capsule_sha256": "${capsule_sha}",
             "tos_prg_sha256": "${prg_sha}",
             "emutos_rom_sha256": "${rom_sha}",
-            "execution_marker": "QIKVRT_M68K_EXECUTED",
+            "post_capsule_sentinel": "C:\\QIKVRT.OK",
             "observed": true
           }
           EOF
-          python3 -m json.tool /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
+          python3 -m json.tool /tmp/qikbuild/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: qikvrt-megast-virtualization-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
-            /tmp/qikmegast/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
-            /tmp/qikmegast/hatari.log
-            /tmp/qikmegast/QIKM68K1.bin
-            /tmp/qikmegast/C/QIKVRT.TOS
+            /tmp/qikbuild/MEGAST_VIRTUAL_EXECUTION_RECEIPT.json
+            /tmp/qikbuild/hatari.log
+            /tmp/qikbuild/QIKM68K1.bin
+            /tmp/qikdrive/C/QIKVRT.TOS
+            /tmp/qikdrive/C/QIKVRT.OK
             /tmp/emutos/archive.sha256
             /tmp/emutos/rom.sha256
