@@ -63,6 +63,7 @@ def _result(snapshot: Mapping[str, Any], state: str, blocker: str | None, detail
         "detail": detail,
         "repository": snapshot.get("repository"),
         "pr_number": snapshot.get("pr_number"),
+        "base_ref": snapshot.get("base_ref"),
         "base_sha": snapshot.get("base_sha"),
         "head_sha": snapshot.get("head_sha"),
         "tree_sha": snapshot.get("tree_sha"),
@@ -80,14 +81,16 @@ def evaluate(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(snapshot, Mapping):
         raise ReviewSnapshotError("snapshot must be an object")
 
-    current_main = _sha(snapshot.get("current_main_sha"), "current_main_sha")
+    current_base_value = snapshot.get("current_base_sha", snapshot.get("current_main_sha"))
+    current_base = _sha(current_base_value, "current_base_sha")
     base = _sha(snapshot.get("base_sha"), "base_sha")
     head = _sha(snapshot.get("head_sha"), "head_sha")
     observed_head = _sha(snapshot.get("observed_head_sha"), "observed_head_sha")
     _sha(snapshot.get("tree_sha"), "tree_sha")
 
-    if base != current_main:
-        return _result(snapshot, "COMMENT_WITH_BLOCKER", "BASE_DRIFT", f"base {base} != current main {current_main}")
+    if base != current_base:
+        base_ref = snapshot.get("base_ref") or "<unknown>"
+        return _result(snapshot, "COMMENT_WITH_BLOCKER", "BASE_DRIFT", f"base {base} != current {base_ref} {current_base}")
     if observed_head != head:
         return _result(snapshot, "COMMENT_WITH_BLOCKER", "HEAD_DRIFT", f"observed head {observed_head} != bound head {head}")
     if snapshot.get("draft") is True:
