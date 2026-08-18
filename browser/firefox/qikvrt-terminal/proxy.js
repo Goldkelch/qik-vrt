@@ -4,25 +4,47 @@
   const MAX_FRAME_BYTES = 256 * 1024;
   const FRAME_KIND = "QIKVRT_TERMINAL_FRAME";
   const FRAME_SCHEMA = "qikvrt_terminal_frame_v1";
+  const ORDINARY_RELEASE_REQUIRES = "VALID_EFFECT_ACK_DONE";
   const SHA40 = /^[0-9a-f]{40}$/;
+  const RFC3339_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
   function plainObject(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function nonEmptyString(value) {
+    return typeof value === "string" && value.length > 0;
+  }
+
+  function validObservedAt(value) {
+    return nonEmptyString(value) && RFC3339_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value));
   }
 
   function normalizeFrame(candidate) {
     if (!plainObject(candidate) || candidate.schema !== FRAME_SCHEMA) {
       throw new Error("proxy frame schema mismatch");
     }
+    if (!validObservedAt(candidate.observed_at)) {
+      throw new Error("proxy frame observed_at invalid");
+    }
+
     const source = candidate.source;
-    if (!plainObject(source) || typeof source.repository !== "string" || typeof source.ref !== "string") {
+    if (!plainObject(source) || !nonEmptyString(source.repository) || !nonEmptyString(source.ref)) {
       throw new Error("proxy frame source binding missing");
     }
-    if (source.head !== undefined && source.head !== null && !SHA40.test(source.head)) {
+    if (!SHA40.test(source.head)) {
       throw new Error("proxy frame head invalid");
     }
-    if (source.tree !== undefined && source.tree !== null && !SHA40.test(source.tree)) {
+    if (!SHA40.test(source.tree)) {
       throw new Error("proxy frame tree invalid");
+    }
+
+    const semantics = candidate.terminal_semantics;
+    if (!plainObject(semantics) || semantics.rendering_is_authorization !== false) {
+      throw new Error("proxy frame rendering authorization invariant invalid");
+    }
+    if (semantics.ordinary_release_requires !== ORDINARY_RELEASE_REQUIRES) {
+      throw new Error("proxy frame ordinary release invariant invalid");
     }
 
     const encoded = JSON.stringify(candidate);
@@ -38,11 +60,12 @@
       display_only: true
     };
     frame.terminal_semantics = {
-      ...(plainObject(frame.terminal_semantics) ? frame.terminal_semantics : {}),
+      ...frame.terminal_semantics,
       rendering_is_authorization: false,
+      ordinary_release_requires: ORDINARY_RELEASE_REQUIRES,
       proxy_frame_can_prepare: false,
       proxy_frame_can_commit: false,
-      ordinary_release_requires: "VALID_EFFECT_ACK_DONE_FROM_SEPARATE_EFFECT_TRANSACTION"
+      proxy_effect_transaction: "SEPARATE_EFFECT_ACK_TRANSACTION_REQUIRED"
     };
     return frame;
   }
