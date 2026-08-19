@@ -1,0 +1,69 @@
+{
+  "schema": "qikvrt_effect_ack_live_rest_roundtrip_v1",
+  "version": "1.0.0",
+  "product_owner": "Ingolf Lohmann",
+  "authorized_at": "2026-08-19",
+  "source_binding": {
+    "repository": "Goldkelch/qik-vrt",
+    "base_pr": 698,
+    "base_branch": "agent/known-defect-requirement-closure-v1",
+    "head": "97bab72e69173ed3f4ff6cc01e75e264fad96b2e",
+    "tree": "3864ef3ea0fc1d414e89223926c663143b497c47"
+  },
+  "semantic_scope": [
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/SerializedRemainder.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTEffectAck/SerializedRemainderAxiomAudit.lean",
+    "formalization/QIKVRT_Formalization_v2.0/tests/test_serialized_remainder_axioms.py",
+    "api/qikvrt_effect_ack_live.openapi.yaml",
+    "schemas/qikvrt_effect_ack_live_v1.schema.json",
+    "tools/qikvrt_effect_ack_live.py",
+    "tests/test_qikvrt_effect_ack_live.py",
+    "state/autonomy/EFFECT_ACK_LIVE_REST_ROUNDTRIP_V1.json"
+  ],
+  "formal_model": {
+    "lake_package": "formalization/QIKVRT_Formalization_v2.0",
+    "library": "QIKVRTEffectAck",
+    "module": "QIKVRTEffectAck.SerializedRemainder",
+    "axiom_audit": "QIKVRTEffectAck/SerializedRemainderAxiomAudit.lean",
+    "kernel_status": "FRESH_EXACT_HEAD_WORKFLOW_REQUIRED",
+    "expected_axioms_by_theorem": {
+      "QIKVRT.EffectAck.Live.V1.mem_activeRemainder_iff": [],
+      "QIKVRT.EffectAck.Live.V1.activeRemainder_subset_requirements": [],
+      "QIKVRT.EffectAck.Live.V1.closedVerified_not_active": [],
+      "QIKVRT.EffectAck.Live.V1.frameConsistent_encode": [],
+      "QIKVRT.EffectAck.Live.V1.decode_encode": [],
+      "QIKVRT.EffectAck.Live.V1.remainder_encode": [],
+      "QIKVRT.EffectAck.Live.V1.wireSequence_not_causalAuthority": [],
+      "QIKVRT.EffectAck.Live.V1.wireSequence_not_snapshotAuthority": [],
+      "QIKVRT.EffectAck.Live.V1.inconsistentRemainder_rejected": []
+    }
+  },
+  "rest_profile": {
+    "openapi": "api/qikvrt_effect_ack_live.openapi.yaml",
+    "frame_schema": "schemas/qikvrt_effect_ack_live_v1.schema.json",
+    "reference_adapter": "tools/qikvrt_effect_ack_live.py",
+    "interaction_test": "tests/test_qikvrt_effect_ack_live.py",
+    "transport": "LOOPBACK_HTTP_REFERENCE",
+    "remote_repository_mesh_interaction": "NOT_CLAIMED"
+  },
+  "invariants": [
+    "CAUSALITY != SEQUENCE",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "SERIALIZATION_ROUND_TRIP_PRESERVES_TYPED_SNAPSHOT",
+    "ACTIVE_REMAINDER_EQUALS_REQUIREMENTS_MINUS_CLOSED_VERIFIED",
+    "INCONSISTENT_REMAINDER_FAILS_CLOSED",
+    "HTTP_SUCCESS_DOES_NOT_INFER_COMPLETION",
+    "NO_ACTIVE_REMAINDER_WITH_COMPLETION_CANDIDATE",
+    "NO_ACTIVE_REMAINDER_WITH_PAIR_ACKNOWLEDGED"
+  ],
+  "boundaries": {
+    "serialization_proves_external_repository_effect": false,
+    "lean_proves_json_parser_or_http_stack": false,
+    "loopback_test_proves_remote_deployment": false,
+    "sequence_creates_causal_authority": false,
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false
+  }
+}
