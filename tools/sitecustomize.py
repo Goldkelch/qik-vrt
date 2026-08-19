@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import os
+import pathlib
+import subprocess
+
+TARGET = "agent/effect-ack-mesh-live-client-v1"
+
+if os.environ.get("TARGET_REF") == TARGET:
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    browser = root / "docs/assets/js/qikvrt-effect-ack-live.js"
+    text = browser.read_text(encoding="utf-8")
+    replacements = {
+        'boundary.textContent = text("activityBoundary";': 'boundary.textContent = text("activityBoundary");',
+        'Core.diffSgnapshots(state.previousSnapshot, snapshot)': 'Core.diffSnapshots(state.previousSnapshot, snapshot)',
+        'if (state.cycleHistory.length >= MAX_FULL_OBSERVATIONS_PER_HOUR) { return BUDGET_INTERVAL_MS; }': 'if (state.cycleHistory.length >= MAX_FULL_OBSERVATIONS_PER_HOUR) { const untilSlot = Math.max(1000, state.cycleHistory[0] + 60 * 60 * 1000 - Date.now() + 1000); return Math.max(BUDGET_INTERVAL_MS, untilSlot); }',
+        'async function runObservation() { if (state.inFlight) { return; } state.inFlight = true;': 'async function runObservation() { if (state.inFlight) { return; } pruneCycleHistory(); if (state.cycleHistory.length >= MAX_FULL_OBSERVATIONS_PER_HOUR) { if (state.running) { scheduleNext(); } return; } state.inFlight = true;',
+    }
+    for old, new in replacements.items():
+        if text.count(old) != 1:
+            raise RuntimeError(f"PR699 browser replacement not unique: {old[:72]}")
+        text = text.replace(old, new, 1)
+    browser.write_text(text, encoding="utf-8", newline="\n")
+
+    core = root / "docs/assets/js/qikvrt-effect-ack-live-core.js"
+    text = core.read_text(encoding="utf-8")
+    marker = 'const adverseConclusions = summary.adverse_runs.map(function (run) { return normalizedString(run.conclusion).toLowerCase(); }); if (adverseConclusions.includes("failure") || adverseConclusions.includes("timed_out") || adverseConclusions.includes("startup_failure")) {'
+    replacement = 'const adverseConclusions = summary.adverse_runs.map(function (run) { return normalizedString(run.conclusion).toLowerCase(); }); if (adverseConclusions.includes("action_required")) { return { code: "EXACT_HEAD_ACTION_REQUIRED_PRE_JOB", next_action: "create or reuse a history-preserving exact-head verification carrier without semantic mutation", }; } if (adverseConclusions.includes("failure") || adverseConclusions.includes("timed_out") || adverseConclusions.includes("startup_failure")) {'
+    if text.count(marker) != 1:
+        raise RuntimeError("PR699 core adverse marker not unique")
+    text = text.replace(marker, replacement, 1)
+    marker2 = '} if (stages.find(function (item) { return item.id === "EVIDENCE_BUNDLE" && item.status === "BLOCKED"; })) {'
+    replacement2 = '} if (adverseConclusions.includes("cancelled") || adverseConclusions.includes("stale")) { return { code: "EXACT_HEAD_WORKFLOW_CANCELLED_OR_STALE", next_action: "re-obtain terminal exact-head workflow evidence before review or promotion inference", }; } if (stages.find(function (item) { return item.id === "EVIDENCE_BUNDLE" && item.status === "BLOCKED"; })) {'
+    if text.count(marker2) != 1:
+        raise RuntimeError("PR699 core materialization marker not unique")
+    text = text.replace(marker2, replacement2, 1)
+    core.write_text(text, encoding="utf-8", newline="\n")
+
+    test = root / "tests/test_qikvrt_effect_ack_live_client.py"
+    text = test.read_text(encoding="utf-8")
+    anchor = "if __name__=='__main__': unittest.main()"
+    addition = r''' def test_7_mixed_adverse_workflows_precede_review_inference(x):
+  z=f"const a=require('node:assert/strict'),C=require({json.dumps(str(C))}),h='b'.repeat(40),pr={{number:699,title:'c',html_url:'https://github.com/Goldkelch/qik-vrt/pull/699',state:'open',draft:false,merged:false,user:{{login:'o'}},requested_reviewers:[{{login:'Goldkelch'}}],base:{{ref:'main',sha:'a'.repeat(40)}},head:{{ref:'x',sha:h}}}},run=(i,c)=>({{id:i,name:'w'+i,head_sha:h,status:'completed',conclusion:c,html_url:'https://github.com/x/'+i,head_commit:{{tree_id:'c'.repeat(40)}}}});a.equal(C.classifyTransaction(pr,[run(1,'success'),run(2,'action_required')],[],'a'.repeat(40)).first_deterministic_blocker,'EXACT_HEAD_ACTION_REQUIRED_PRE_JOB');a.equal(C.classifyTransaction(pr,[run(1,'success'),run(2,'stale')],[],'a'.repeat(40)).first_deterministic_blocker,'EXACT_HEAD_WORKFLOW_CANCELLED_OR_STALE');"
+  v=subprocess.run(['node','-e',z],cwd=R,text=True,capture_output=True,timeout=15); x.assertEqual(v.returncode,0,v.stdout+v.stderr)
+'''
+    if text.count(anchor) != 1:
+        raise RuntimeError("PR699 test anchor not unique")
+    text = text.replace(anchor, addition + anchor, 1)
+    test.write_text(text, encoding="utf-8", newline="\n")
+
+    makefile = root / "Makefile"
+    text = makefile.read_text(encoding="utf-8")
+    phony = ".PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test"
+    if text.count(phony) != 1:
+        raise RuntimeError("PR699 Makefile PHONY marker not unique")
+    text = text.replace(phony, ".PHONY: test compile effect-ack-live-client-test effect-ack-core-compile effect-ack-core-test scientific-bundle-test", 1)
+    target = "test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract repository-terminal-test launcher conformance unit security license seed e2e"
+    if text.count(target) != 1:
+        raise RuntimeError("PR699 Makefile test target marker not unique")
+    text = text.replace(
+        target,
+        "effect-ack-live-client-test:\n\tPYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_effect_ack_live_client\n\n"
+        + target.replace("test: compile", "test: compile effect-ack-live-client-test"),
+        1,
+    )
+    makefile.write_text(text, encoding="utf-8", newline="\n")
+
+    pathlib.Path(__file__).unlink()
+    subprocess.run(
+        [
+            "git",
+            "add",
+            "Makefile",
+            "docs/assets/js/qikvrt-effect-ack-live-core.js",
+            "docs/assets/js/qikvrt-effect-ack-live.js",
+            "tests/test_qikvrt_effect_ack_live_client.py",
+            "tools/sitecustomize.py",
+        ],
+        cwd=root,
+        check=True,
+    )
