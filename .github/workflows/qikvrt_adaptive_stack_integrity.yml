@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT adaptive stacked successor integrity materialization
+
+on:
+  pull_request:
+    branches-ignore:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-adaptive-stack-integrity-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-integrity-only:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TARGET_REF: ${{ github.event.pull_request.head.ref }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out exact stacked successor head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Reobserve exact ref and materialize only deterministic integrity projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          unexpected="$(git status --short --untracked-files=all | awk '{print $2}' | grep -Ev '^(REPOSITORY_FILE_MANIFEST\.json|REPOSITORY_FILE_MANIFEST\.json\.sha256|SHA256SUMS\.txt)$' || true)"
+          test -z "$unexpected" || { echo "BLOCK: non-integrity materialization drift" >&2; printf '%s\n' "$unexpected" >&2; exit 2; }
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+      - name: Persist history-preserving materialized successor
+        id: persist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          if git diff --cached --quiet; then
+            echo "NOOP: stacked successor integrity already current"
+            echo "materialized=false" >> "$GITHUB_OUTPUT"
+            echo "head=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ci: materialize stacked successor integrity"
+          new_head="$(git rev-parse --verify HEAD^{commit})"
+          remote_head_after="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$remote_head_after" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/$TARGET_REF"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$new_head"
+          echo "materialized=true" >> "$GITHUB_OUTPUT"
+          echo "head=$new_head" >> "$GITHUB_OUTPUT"
+      - name: Attempt exact-head continuation without coupling materialization to API quota
+        if: steps.persist.outputs.materialized == 'true'
+        id: continue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATERIALIZED_HEAD: ${{ steps.persist.outputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/stacked-successor-continuation
+          mkdir -p "$root"
+
+          # The git ref readback is already the authoritative post-write check and does
+          # not consume REST installation quota. Never re-read the PR merely to prove
+          # the same ref binding a second time.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$MATERIALIZED_HEAD"
+
+          payload="$(jq -nc \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$MATERIALIZED_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}')"
+
+          set +e
+          printf '%s' "$payload" | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input - \
+            >"$root/exact-head-dispatch.stdout" 2>"$root/exact-head-dispatch.stderr"
+          dispatch_rc=$?
+          if [ "$dispatch_rc" -eq 0 ]; then
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+              -f ref=main -F "inputs[pr]=$PR_NUMBER" \
+              >"$root/review-dispatch.stdout" 2>"$root/review-dispatch.stderr"
+            review_rc=$?
+          else
+            review_rc=125
+          fi
+          set -e
+
+          if [ "$dispatch_rc" -eq 0 ] && [ "$review_rc" -eq 0 ]; then
+            disposition=DISPATCHED_IMMEDIATE_EXACT_HEAD_CONTINUATION
+          else
+            disposition=DEFERRED_TO_AUTONOMOUS_PR_HEAD_CONTINUATION
+          fi
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$MATERIALIZED_HEAD" \
+            --arg disposition "$disposition" \
+            --argjson exact_head_dispatch_rc "$dispatch_rc" \
+            --argjson review_dispatch_rc "$review_rc" \
+            '{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,disposition:$disposition,exact_head_dispatch_rc:$exact_head_dispatch_rc,review_dispatch_rc:$review_rc}' \
+            > "$root/continuation-receipt.json"
+          cat "$root/continuation-receipt.json"
+
+          # Dispatch failure is not a materialization failure. The scheduled Authority-main
+          # continuation executor owns bounded retry of this exact workflow-authored head.
+          exit 0
+      - name: Preserve continuation handoff evidence
+        if: always() && steps.persist.outputs.materialized == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-stacked-successor-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/stacked-successor-continuation
