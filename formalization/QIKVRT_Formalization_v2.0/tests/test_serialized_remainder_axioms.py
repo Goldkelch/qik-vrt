@@ -13,6 +13,8 @@ AUDIT = FORMAL_ROOT / "QIKVRTEffectAck/SerializedRemainderAxiomAudit.lean"
 
 
 class SerializedRemainderAxiomTests(unittest.TestCase):
+    maxDiff = None
+
     def test_declared_theorems_are_kernel_checked_and_axiom_free(self):
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         expected = manifest["formal_model"]["expected_axioms_by_theorem"]
@@ -40,6 +42,7 @@ class SerializedRemainderAxiomTests(unittest.TestCase):
             axioms = [item.strip() for item in (match.group(2) or "").split(",") if item.strip()]
             observed[match.group(1)] = axioms
 
+        print("QIKVRT_SERIALIZED_REMAINDER_AXIOMS=" + json.dumps(observed, sort_keys=True))
         self.assertEqual(observed, expected)
 
 
