@@ -20,6 +20,9 @@
     "support_bounded_interaction_through_interface_specific_adapters": true,
     "continuously_improve_interface_failure_detection_and_recovery": true,
     "continuously_optimize_latency_retries_resource_use_and_manual_intervention": true,
+    "reuse_persisted_repository_and_cache_state_before_cold_work": true,
+    "measure_cache_reuse_and_cold_start_ratio": true,
+    "promote_reproducible_successful_recovery_patterns_through_reviewed_repository_changes": true,
     "preserve_complete_process_and_interaction_transparency": true,
     "retain_role_local_identity_and_authority_boundaries": true
   },
@@ -62,10 +65,22 @@
       "reduce_no_progress_retries",
       "reduce_effect_latency",
       "reduce_resource_waste",
+      "increase_cache_reuse_ratio",
+      "reduce_cold_start_ratio",
       "increase_deterministic_recovery_coverage",
       "increase_traceability",
       "increase_interface_observability"
-    ]
+    ],
+    "cumulative_runtime": {
+      "rule": "REUSE_BEFORE_CREATE",
+      "authoritative_state": "repository",
+      "accelerator_state": "runtime/toolchains and repository-defined caches",
+      "reusable_work_state": "issue-agent branches, exact receipts, verified artifacts, failure classes, recovery rules and timing evidence",
+      "cold_and_warm_semantics_equal": true,
+      "cached_results_never_replace_required_current_tree_gates": true,
+      "successful_recovery_becomes_learning_candidate": true,
+      "learning_canonization_requires_review_tests_nonregression_and_rollback": true
+    }
   },
   "state_classes": [
     "AUTO_RESOLVABLE",
@@ -82,6 +97,9 @@
     "opaque_interface_transition",
     "unbound_interaction_receipt",
     "silent_failure_or_stall",
+    "cache_as_authority",
+    "cache_hit_as_completion_claim",
+    "skip_current_tree_required_gate_because_of_cached_result",
     "optimization_by_weakening_authority_security_integrity_or_evidence_gates"
   ]
 }
