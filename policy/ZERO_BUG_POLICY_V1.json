@@ -2,7 +2,7 @@
   "schema": "qikvrt_zero_bug_policy_v1",
   "policy_id": "ZERO_BUG_POLICY_V1",
   "effective": "2026-08-19",
-  "scope": "all open issues in Goldkelch/qik-vrt",
+  "scope": "all open issues and all relevant system interfaces in Goldkelch/qik-vrt",
   "invariant": "NO_PASSIVE_OPEN_ISSUE",
   "requirements": {
     "every_open_issue_has_active_execution_path": true,
@@ -12,7 +12,60 @@
     "close_only_after_issue_acceptance_evidence": true,
     "preserve_independent_review_authority": true,
     "preserve_fail_closed_effect_guards": true,
-    "preserve_ai_entrypoint_semantics": true
+    "preserve_ai_entrypoint_semantics": true,
+    "terminal_pattern_at_every_relevant_interface": true,
+    "observe_interface_state_and_effects": true,
+    "persist_causally_bound_interaction_receipts": true,
+    "visualize_state_progress_blockers_and_next_effect": true,
+    "support_bounded_interaction_through_interface_specific_adapters": true,
+    "continuously_improve_interface_failure_detection_and_recovery": true,
+    "continuously_optimize_latency_retries_resource_use_and_manual_intervention": true,
+    "preserve_complete_process_and_interaction_transparency": true,
+    "retain_role_local_identity_and_authority_boundaries": true
+  },
+  "terminal_pattern": {
+    "cycle": [
+      "RESOLVE",
+      "OBSERVE",
+      "CLASSIFY",
+      "ACT_OR_WAIT",
+      "VERIFY_EFFECT",
+      "PERSIST",
+      "VISUALIZE",
+      "OPTIMIZE",
+      "CONTINUE"
+    ],
+    "binding": [
+      "interface_id",
+      "transaction_id",
+      "actor_role",
+      "authority_role",
+      "base",
+      "head",
+      "tree",
+      "semantic_scope",
+      "request",
+      "expected_effect",
+      "observed_effect",
+      "evidence_refs",
+      "failure_class",
+      "next_action"
+    ],
+    "state_classes": [
+      "AUTO_RESOLVABLE",
+      "WAITING",
+      "TRUE_BLOCKER"
+    ],
+    "optimization_objectives": [
+      "reduce_blocking_duration",
+      "reduce_manual_intervention",
+      "reduce_no_progress_retries",
+      "reduce_effect_latency",
+      "reduce_resource_waste",
+      "increase_deterministic_recovery_coverage",
+      "increase_traceability",
+      "increase_interface_observability"
+    ]
   },
   "state_classes": [
     "AUTO_RESOLVABLE",
@@ -25,6 +78,10 @@
     "fabricated_completion_evidence",
     "owner_reprompt_for_routine_github_state",
     "independent_review_inference_from_bot_comment",
-    "publication_or_external_effect_inference_from_issue_processing"
+    "publication_or_external_effect_inference_from_issue_processing",
+    "opaque_interface_transition",
+    "unbound_interaction_receipt",
+    "silent_failure_or_stall",
+    "optimization_by_weakening_authority_security_integrity_or_evidence_gates"
   ]
 }
