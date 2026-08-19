@@ -1,0 +1,47 @@
+name: Context Authority Meaning Invariant
+
+on:
+  pull_request:
+    paths:
+      - "policy/CONTEXT_AUTHORITY_MEANING_INVARIANT_V1.json"
+      - "docs/KAUSAL_EPISTEMISCHE_HOCHAUFLOESUNG.md"
+      - "tools/verify_context_authority_meaning_invariant.py"
+      - "tests/test_context_authority_meaning_invariant.py"
+      - ".github/workflows/context-authority-meaning-invariant.yml"
+  push:
+    paths:
+      - "policy/CONTEXT_AUTHORITY_MEANING_INVARIANT_V1.json"
+      - "docs/KAUSAL_EPISTEMISCHE_HOCHAUFLOESUNG.md"
+      - "tools/verify_context_authority_meaning_invariant.py"
+      - "tests/test_context_authority_meaning_invariant.py"
+      - ".github/workflows/context-authority-meaning-invariant.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate invariant structure
+        run: python tools/verify_context_authority_meaning_invariant.py
+      - name: Run invariant tests without undeclared third-party dependencies
+        run: |
+          python - <<'PY'
+          from tests import test_context_authority_meaning_invariant as suite
+
+          tests = [
+              getattr(suite, name)
+              for name in sorted(dir(suite))
+              if name.startswith("test_") and callable(getattr(suite, name))
+          ]
+          if not tests:
+              raise SystemExit("no invariant tests discovered")
+          for test in tests:
+              test()
+          print(f"{len(tests)} invariant tests passed")
+          PY
