@@ -34,11 +34,11 @@ class M68000FourActionRoundTripTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def source(self, action):
+    def source(self, action, rid="roundtrip-1", cause="-"):
         return (
             "QIKU1\n"
             "KIND OBSERVE\n"
-            "RID roundtrip-1\n"
+            f"RID {rid}\n"
             f"SUBJECT repo Goldkelch/qik-vrt {'a' * 40} {'b' * 40}\n"
             "INTENT OBSERVE terminal\n"
             "AUTH BOUND po-temdd\n"
@@ -47,14 +47,14 @@ class M68000FourActionRoundTripTests(unittest.TestCase):
             "EFFECT NONE none\n"
             f"NEXT {action}\n"
             f"PROOF {'d' * 64}\n"
-            "CAUSE -\n"
+            f"CAUSE {cause}\n"
             "END\n"
         )
 
-    def compile_action(self, action):
+    def compile_source(self, source):
         front = subprocess.run(
             [str(self.front), "--target-megast"],
-            input=self.source(action),
+            input=source,
             text=True,
             capture_output=True,
             cwd=ROOT,
@@ -67,6 +67,9 @@ class M68000FourActionRoundTripTests(unittest.TestCase):
         emit = subprocess.run([str(self.emit)], input=lower.stdout, capture_output=True, cwd=ROOT)
         self.assertEqual(emit.returncode, 0, emit.stderr)
         return emit.stdout
+
+    def compile_action(self, action):
+        return self.compile_source(self.source(action))
 
     def test_exact_four_action_bijection(self):
         rows = roundtrip.verify_bijection()
@@ -83,6 +86,16 @@ class M68000FourActionRoundTripTests(unittest.TestCase):
                 self.assertEqual(machine, roundtrip.encode(action))
                 self.assertEqual(roundtrip.decode(machine), action)
                 self.assertEqual(roundtrip.encode(roundtrip.decode(machine)), machine)
+
+    def test_source_to_machine_lowering_is_intentionally_many_to_one(self):
+        left = self.source("HOLD", rid="source-a", cause="cause-a")
+        right = self.source("HOLD", rid="source-b", cause="cause-b")
+        self.assertNotEqual(left, right)
+        left_machine = self.compile_source(left)
+        right_machine = self.compile_source(right)
+        self.assertEqual(left_machine, right_machine)
+        self.assertEqual(roundtrip.decode(left_machine), "HOLD")
+        self.assertEqual(roundtrip.decode(right_machine), "HOLD")
 
     def test_reverse_path_rejects_every_nearby_noncanonical_code(self):
         rejected = (
