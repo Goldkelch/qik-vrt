@@ -88,3 +88,11 @@ jobs:
           assert data['optimizer_effect_ack'] is False
           assert data['independent_review_authority_implied'] is False
           PY
+
+      - name: Persist bounded optimization receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-dynamic-simplex-receipt-${{ github.run_id }}
+          path: /tmp/qikvrt-dynamic-simplex-receipt.json
+          if-no-files-found: error
+          retention-days: 30
