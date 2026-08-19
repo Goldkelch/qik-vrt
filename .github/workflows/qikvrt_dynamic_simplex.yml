@@ -1,0 +1,45 @@
+name: QIKVRT dynamic simplex moving-target optimization
+
+on:
+  pull_request:
+    paths:
+      - 'tools/qikvrt_dynamic_simplex.py'
+      - 'tests/test_qikvrt_dynamic_simplex.py'
+      - 'policy/DYNAMIC_SIMPLEX_MOVING_TARGET_V1.json'
+      - 'docs/DYNAMIC_SIMPLEX_MOVING_TARGET.md'
+      - '.github/workflows/qikvrt_dynamic_simplex.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Bind exact head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^{commit})" = "$EXPECTED_HEAD"
+          git rev-parse HEAD^{tree}
+      - name: Compile optimizer
+        run: python3 -m py_compile tools/qikvrt_dynamic_simplex.py tests/test_qikvrt_dynamic_simplex.py
+      - name: Run deterministic regression suite
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_dynamic_simplex
+      - name: Exercise moving-target terminal frame
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/qikvrt-simplex.json <<'JSON'
+          {"schema":"qikvrt_dynamic_simplex_snapshot_v1","target_generation":"g1","observed_generation":"g1","objective":{"latency":1,"risk":4},"current_vertex":"A","vertices":{"A":{"metrics":{"latency":5,"risk":2},"feasible":true,"evidence_bound":true},"B":{"metrics":{"latency":4,"risk":1},"feasible":true,"evidence_bound":true}},"edges":[["A","B"]]}
+          JSON
+          python3 -B tools/qikvrt_dynamic_simplex.py /tmp/qikvrt-simplex.json | tee /tmp/qikvrt-simplex-decision.json
+          grep -F '"action": "PIVOT"' /tmp/qikvrt-simplex-decision.json
