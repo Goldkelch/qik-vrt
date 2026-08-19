@@ -77,52 +77,73 @@ jobs:
           test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$new_head"
           echo "materialized=true" >> "$GITHUB_OUTPUT"
           echo "head=$new_head" >> "$GITHUB_OUTPUT"
-      - name: Continue exact-head verification after workflow-authored materialization
+      - name: Attempt exact-head continuation without coupling materialization to API quota
         if: steps.persist.outputs.materialized == 'true'
+        id: continue
         env:
           GH_TOKEN: ${{ github.token }}
           MATERIALIZED_HEAD: ${{ steps.persist.outputs.head }}
         shell: bash
         run: |
           set -euo pipefail
+          root=.qikvrt/stacked-successor-continuation
+          mkdir -p "$root"
 
-          live_head=""
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-            if [ "$live_head" = "$MATERIALIZED_HEAD" ]; then
-              break
-            fi
-            echo "REOBSERVE: PR head not yet materialized (attempt ${attempt}/12): ${live_head}" >&2
-            sleep 2
-          done
-          test "$live_head" = "$MATERIALIZED_HEAD" || {
-            echo "BLOCK: PR head readback did not converge to exact materialized head $MATERIALIZED_HEAD" >&2
-            exit 2
-          }
+          # The git ref readback is already the authoritative post-write check and does
+          # not consume REST installation quota. Never re-read the PR merely to prove
+          # the same ref binding a second time.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$MATERIALIZED_HEAD"
 
-          # GITHUB_TOKEN-authored PR synchronization is intentionally approval-gated by
-          # GitHub. workflow_dispatch and repository_dispatch are the documented
-          # recursion-safe continuation events, so explicitly continue on the exact
-          # materialized head instead of depending on the approval-gated synchronize run.
-          for workflow in \
-            qikvrt_ci.yml \
-            qikvrt_collective_review.yml \
-            qikvrt_global_completion.yml
-          do
+          payload="$(jq -nc \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$MATERIALIZED_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}')"
+
+          set +e
+          printf '%s' "$payload" | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input - \
+            >"$root/exact-head-dispatch.stdout" 2>"$root/exact-head-dispatch.stderr"
+          dispatch_rc=$?
+          if [ "$dispatch_rc" -eq 0 ]; then
             gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
-              -f ref="$TARGET_REF"
-          done
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+              -f ref=main -F "inputs[pr]=$PR_NUMBER" \
+              >"$root/review-dispatch.stdout" 2>"$root/review-dispatch.stderr"
+            review_rc=$?
+          else
+            review_rc=125
+          fi
+          set -e
+
+          if [ "$dispatch_rc" -eq 0 ] && [ "$review_rc" -eq 0 ]; then
+            disposition=DISPATCHED_IMMEDIATE_EXACT_HEAD_CONTINUATION
+          else
+            disposition=DEFERRED_TO_AUTONOMOUS_PR_HEAD_CONTINUATION
+          fi
 
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$PR_NUMBER" \
             --arg ref "$TARGET_REF" \
             --arg head "$MATERIALIZED_HEAD" \
-            --arg base "$BASE_SHA" \
-            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}' \
-            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+            --arg disposition "$disposition" \
+            --argjson exact_head_dispatch_rc "$dispatch_rc" \
+            --argjson review_dispatch_rc "$review_rc" \
+            '{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,disposition:$disposition,exact_head_dispatch_rc:$exact_head_dispatch_rc,review_dispatch_rc:$review_dispatch_rc}' \
+            > "$root/continuation-receipt.json"
+          cat "$root/continuation-receipt.json"
 
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
-            -f ref=main -F "inputs[pr]=$PR_NUMBER"
+          # Dispatch failure is not a materialization failure. The scheduled Authority-main
+          # continuation executor owns bounded retry of this exact workflow-authored head.
+          exit 0
+      - name: Preserve continuation handoff evidence
+        if: always() && steps.persist.outputs.materialized == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-stacked-successor-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/stacked-successor-continuation
