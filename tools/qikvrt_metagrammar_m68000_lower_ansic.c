@@ -1,10 +1,15 @@
 /* QIK-VRT validated-plan to M68000 capsule IR lowerer - ANSI C89.
- * ABI v1: return decision code in D0, then RTS.
+ * ABI v1: return one closed non-productive decision code in D0, then RTS.
  * 0 NOOP, 1 HOLD, 2 REOBSERVE, 3 REQUEST_AUTHORITY.
  * Unsupported actions fail closed and emit no executable IR.
  */
 #include <stdio.h>
 #include <string.h>
+
+#define QIKVRT_CAPSULE_NOOP 0
+#define QIKVRT_CAPSULE_HOLD 1
+#define QIKVRT_CAPSULE_REOBSERVE 2
+#define QIKVRT_CAPSULE_REQUEST_AUTHORITY 3
 
 int main(void)
 {
@@ -31,10 +36,10 @@ int main(void)
     }
     if (!found || !admitted) { fprintf(stderr, "HOLD: PLAN_NICHT_VALIDIERT\n"); return 2; }
 
-    if (strcmp(next, "NOOP") == 0) code = 0;
-    else if (strcmp(next, "HOLD") == 0) code = 1;
-    else if (strcmp(next, "REOBSERVE") == 0) code = 2;
-    else if (strcmp(next, "REQUEST_AUTHORITY") == 0) code = 3;
+    if (strcmp(next, "NOOP") == 0) code = QIKVRT_CAPSULE_NOOP;
+    else if (strcmp(next, "HOLD") == 0) code = QIKVRT_CAPSULE_HOLD;
+    else if (strcmp(next, "REOBSERVE") == 0) code = QIKVRT_CAPSULE_REOBSERVE;
+    else if (strcmp(next, "REQUEST_AUTHORITY") == 0) code = QIKVRT_CAPSULE_REQUEST_AUTHORITY;
     else { fprintf(stderr, "HOLD: M68000_ABI_AKTION_NICHT_UNTERSTUETZT\n"); return 2; }
 
     printf("MOVEQ D0 %d\n", code);
