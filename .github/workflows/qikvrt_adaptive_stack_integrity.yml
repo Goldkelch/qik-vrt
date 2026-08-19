@@ -85,8 +85,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          test "$live_head" = "$MATERIALIZED_HEAD"
+
+          live_head=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+            if [ "$live_head" = "$MATERIALIZED_HEAD" ]; then
+              break
+            fi
+            echo "REOBSERVE: PR head not yet materialized (attempt ${attempt}/12): ${live_head}" >&2
+            sleep 2
+          done
+          test "$live_head" = "$MATERIALIZED_HEAD" || {
+            echo "BLOCK: PR head readback did not converge to exact materialized head $MATERIALIZED_HEAD" >&2
+            exit 2
+          }
 
           # GITHUB_TOKEN-authored PR synchronization is intentionally approval-gated by
           # GitHub. workflow_dispatch and repository_dispatch are the documented
