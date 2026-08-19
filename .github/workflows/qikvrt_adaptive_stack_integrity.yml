@@ -9,6 +9,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -26,6 +27,8 @@ jobs:
     env:
       TARGET_REF: ${{ github.event.pull_request.head.ref }}
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out exact stacked successor head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -50,12 +53,15 @@ jobs:
           make test
           python3 -B tools/qikvrt_integrity.py verify
       - name: Persist history-preserving materialized successor
+        id: persist
         shell: bash
         run: |
           set -euo pipefail
           git add REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
           if git diff --cached --quiet; then
             echo "NOOP: stacked successor integrity already current"
+            echo "materialized=false" >> "$GITHUB_OUTPUT"
+            echo "head=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
@@ -63,6 +69,47 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "ci: materialize stacked successor integrity"
+          new_head="$(git rev-parse --verify HEAD^{commit})"
           remote_head_after="$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')"
           test "$remote_head_after" = "$EXPECTED_HEAD"
           git push origin "HEAD:refs/heads/$TARGET_REF"
+          test "$(git ls-remote --heads origin "refs/heads/$TARGET_REF" | awk 'NR == 1 {print $1}')" = "$new_head"
+          echo "materialized=true" >> "$GITHUB_OUTPUT"
+          echo "head=$new_head" >> "$GITHUB_OUTPUT"
+      - name: Continue exact-head verification after workflow-authored materialization
+        if: steps.persist.outputs.materialized == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATERIALIZED_HEAD: ${{ steps.persist.outputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          test "$live_head" = "$MATERIALIZED_HEAD"
+
+          # GITHUB_TOKEN-authored PR synchronization is intentionally approval-gated by
+          # GitHub. workflow_dispatch and repository_dispatch are the documented
+          # recursion-safe continuation events, so explicitly continue on the exact
+          # materialized head instead of depending on the approval-gated synchronize run.
+          for workflow in \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml
+          do
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$TARGET_REF"
+          done
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$MATERIALIZED_HEAD" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+            -f ref=main -F "inputs[pr]=$PR_NUMBER"
