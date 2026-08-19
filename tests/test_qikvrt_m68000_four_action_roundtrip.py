@@ -1,19 +1,19 @@
-import importlib.util
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ROUNDTRIP_PATH = ROOT / "tools" / "qikvrt_m68000_four_action_roundtrip.py"
+TOOLS = ROOT / "tools"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+import qikvrt_m68000_four_action_roundtrip as roundtrip
+
 FRONT = ROOT / "tools" / "qikvrt_universal_understanding_ansic.c"
 LOWER = ROOT / "tools" / "qikvrt_metagrammar_m68000_lower_ansic.c"
 EMIT = ROOT / "tools" / "qikvrt_m68000_emitter_ansic.c"
-
-spec = importlib.util.spec_from_file_location("qikvrt_m68000_four_action_roundtrip", ROUNDTRIP_PATH)
-assert spec is not None and spec.loader is not None
-roundtrip = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(roundtrip)
 
 
 class M68000FourActionRoundTripTests(unittest.TestCase):
