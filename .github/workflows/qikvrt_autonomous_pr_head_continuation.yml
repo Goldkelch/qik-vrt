@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT autonomous PR-head continuation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-autonomous-pr-head-continuation-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  continue-one-stalled-internal-pr:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact current Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select at most one exact stalled internal PR head
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/autonomous-pr-head-continuation
+          mkdir -p "$root"
+          : > "$root/observations.jsonl"
+
+          selected_pr=""
+          selected_ref=""
+          selected_head=""
+          selected_base=""
+
+          # Bounded discovery: newest 30 open PRs only, one productive edge per run.
+          gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" > "$root/open-prs.json"
+          while IFS=$'\t' read -r pr ref head base head_repo; do
+            test -n "$pr" || continue
+            if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+              continue
+            fi
+
+            # Exact live ref must still bind the PR head before any classification.
+            live_ref="$(git ls-remote --heads origin "refs/heads/$ref" | awk 'NR == 1 {print $1}')"
+            if [ "$live_ref" != "$head" ]; then
+              printf '{"pr":%s,"head":"%s","disposition":"STALE_HEAD"}\n' "$pr" "$head" >> "$root/observations.jsonl"
+              continue
+            fi
+
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" > "$root/runs-${pr}.json"
+            zero_job_action_required=0
+            useful_terminal=0
+            while IFS=$'\t' read -r run_id status conclusion; do
+              test -n "$run_id" || continue
+              if [ "$status" = completed ] && [ "$conclusion" = action_required ]; then
+                jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
+                if [ "$jobs" = 0 ]; then
+                  zero_job_action_required=$((zero_job_action_required + 1))
+                fi
+              fi
+              case "$conclusion" in
+                success|failure|cancelled|timed_out) useful_terminal=$((useful_terminal + 1)) ;;
+              esac
+            done < <(jq -r '.workflow_runs[] | [.id,.status,(.conclusion // "")] | @tsv' "$root/runs-${pr}.json")
+
+            printf '{"pr":%s,"head":"%s","zero_job_action_required":%s,"useful_terminal":%s}\n' \
+              "$pr" "$head" "$zero_job_action_required" "$useful_terminal" >> "$root/observations.jsonl"
+
+            # Only the characteristic workflow-authored dead state is productive here:
+            # one or more approval-gated zero-job runs and no ordinary terminal evidence.
+            if [ "$zero_job_action_required" -gt 0 ] && [ "$useful_terminal" -eq 0 ]; then
+              selected_pr="$pr"
+              selected_ref="$ref"
+              selected_head="$head"
+              selected_base="$base"
+              break
+            fi
+          done < <(jq -r '.[] | [.number,.head.ref,.head.sha,.base.sha,.head.repo.full_name] | @tsv' "$root/open-prs.json")
+
+          if [ -z "$selected_pr" ]; then
+            echo "selected=false" >> "$GITHUB_OUTPUT"
+            echo "NOOP: no stalled internal PR head requires continuation"
+            exit 0
+          fi
+
+          # Final exact reobservation immediately before exposing the productive edge.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$selected_ref" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$selected_head"
+          echo "selected=true" >> "$GITHUB_OUTPUT"
+          echo "pr=$selected_pr" >> "$GITHUB_OUTPUT"
+          echo "ref=$selected_ref" >> "$GITHUB_OUTPUT"
+          echo "head=$selected_head" >> "$GITHUB_OUTPUT"
+          echo "base=$selected_base" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch exact-head continuation
+        if: steps.select.outputs.selected == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_REF: ${{ steps.select.outputs.ref }}
+          HEAD_SHA: ${{ steps.select.outputs.head }}
+          BASE_SHA: ${{ steps.select.outputs.base }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$HEAD_SHA"
+
+          # One repository_dispatch is the primary recovery edge. The receiver is
+          # already exact-head/base/PR fail-closed and runs repository verification.
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$HEAD_SHA" \
+            --arg base "$BASE_SHA" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          # Review execution remains separate authority and is only requested to
+          # reobserve the now-explicit exact-head evidence; it cannot fabricate approval.
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+            -f ref=main -F "inputs[pr]=$PR_NUMBER"
+
+          printf '{"pr":%s,"head":"%s","ref":"%s","disposition":"DISPATCHED_EXACT_HEAD_CONTINUATION"}\n' \
+            "$PR_NUMBER" "$HEAD_SHA" "$HEAD_REF" \
+            > .qikvrt/autonomous-pr-head-continuation/dispatch-receipt.json
+
+      - name: Preserve bounded continuation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-autonomous-pr-head-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/autonomous-pr-head-continuation
