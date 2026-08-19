@@ -95,7 +95,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          before="$(git status --porcelain)"
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
           git diff --name-only -- REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
@@ -119,3 +118,4 @@ jobs:
           test -z "$unexpected" || { echo "BLOCK: unexpected staged scope"; echo "$unexpected"; exit 2; }
           git commit -m "fix: repair Effect-Ack live observation boundaries"
           git push origin HEAD:agent/effect-ack-mesh-live-client-v1
+# trigger: existing workflow now receives this push
