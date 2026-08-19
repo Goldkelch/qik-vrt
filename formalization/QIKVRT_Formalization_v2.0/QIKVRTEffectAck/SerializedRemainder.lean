@@ -174,7 +174,7 @@ theorem decode_encode (sequence : Nat) (snapshot : LiveSnapshot) :
     decode (encode sequence snapshot) = some snapshot := by
   have hConsistent : FrameConsistent (encode sequence snapshot) :=
     frameConsistent_encode sequence snapshot
-  simp [decode, hConsistent, encode, frameInventory]
+  simp [decode, hConsistent]
 
 theorem remainder_encode (sequence : Nat) (snapshot : LiveSnapshot) :
     (encode sequence snapshot).activeRemainder =
@@ -201,6 +201,10 @@ theorem inconsistentRemainder_rejected
     (frame : SerializedFrame) (remainder : List String)
     (hInconsistent : remainder ≠ activeRemainder (frameInventory frame)) :
     decode (withRemainder frame remainder) = none := by
-  simp [decode, FrameConsistent, withRemainder, frameInventory, hInconsistent]
+  have hNotConsistent : ¬ FrameConsistent (withRemainder frame remainder) := by
+    intro hConsistent
+    apply hInconsistent
+    simpa [withRemainder, frameInventory] using hConsistent.2.2
+  simp [decode, hNotConsistent]
 
 end QIKVRT.EffectAck.Live.V1
