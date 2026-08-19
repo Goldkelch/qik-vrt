@@ -15,11 +15,23 @@ AUDIT = FORMAL_ROOT / "QIKVRTEffectAck/SerializedRemainderAxiomAudit.lean"
 class SerializedRemainderAxiomTests(unittest.TestCase):
     maxDiff = None
 
-    def test_declared_theorems_are_kernel_checked_and_axiom_free(self):
+    def test_declared_theorems_match_exact_allowed_kernel_dependencies(self):
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        expected = manifest["formal_model"]["expected_axioms_by_theorem"]
+        formal_model = manifest["formal_model"]
+        policy = formal_model["axiom_policy"]
+        expected = formal_model["expected_axioms_by_theorem"]
+        allowed = set(policy["allowed_kernel_axioms"])
+
+        self.assertTrue(policy["exact_dependency_map_required"])
+        self.assertTrue(policy["project_axioms_forbidden"])
         self.assertTrue(expected)
-        self.assertTrue(all(axioms == [] for axioms in expected.values()))
+        for theorem, axioms in expected.items():
+            self.assertEqual(len(axioms), len(set(axioms)), theorem)
+            self.assertTrue(set(axioms).issubset(allowed), theorem)
+            if policy["classical_choice_forbidden_for_this_module"]:
+                self.assertNotIn("Classical.choice", axioms, theorem)
+            if policy["sorry_admit_unsafe_forbidden"]:
+                self.assertNotIn("sorryAx", axioms, theorem)
 
         result = subprocess.run(
             ["lake", "env", "lean", str(AUDIT.relative_to(FORMAL_ROOT))],
@@ -44,6 +56,10 @@ class SerializedRemainderAxiomTests(unittest.TestCase):
 
         print("QIKVRT_SERIALIZED_REMAINDER_AXIOMS=" + json.dumps(observed, sort_keys=True))
         self.assertEqual(observed, expected)
+        self.assertTrue(
+            all(set(axioms).issubset(allowed) for axioms in observed.values()),
+            observed,
+        )
 
 
 if __name__ == "__main__":
