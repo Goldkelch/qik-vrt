@@ -115,11 +115,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          root=.qikvrt/autonomous-pr-head-continuation
           live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$HEAD_SHA"
 
-          # One repository_dispatch is the primary recovery edge. The receiver is
-          # already exact-head/base/PR fail-closed and runs repository verification.
+          # Recreate the applicable named exact-head gate surface explicitly. These are
+          # workflow_dispatch events, so a workflow-authored predecessor cannot suppress them.
+          : > "$root/dispatched-workflows.jsonl"
+          for workflow in \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml
+          do
+            live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+            test "$live_ref" = "$HEAD_SHA"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$HEAD_REF"
+            printf '{"workflow":"%s","ref":"%s","head":"%s"}\n' "$workflow" "$HEAD_REF" "$HEAD_SHA" \
+              >> "$root/dispatched-workflows.jsonl"
+          done
+
+          # The repository-native exact-head verifier remains the semantic binding layer.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$HEAD_SHA"
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$PR_NUMBER" \
@@ -129,15 +148,17 @@ jobs:
             '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base}}' \
             | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
 
-          # Review execution remains separate authority and is only requested to
-          # reobserve the now-explicit exact-head evidence; it cannot fabricate approval.
+          # Review execution remains separate authority and is requested only after the
+          # exact-head verification surface has been re-created; it cannot fabricate approval.
+          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
+          test "$live_ref" = "$HEAD_SHA"
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
             -f ref=main -F "inputs[pr]=$PR_NUMBER"
 
           printf '{"pr":%s,"head":"%s","ref":"%s","disposition":"DISPATCHED_EXACT_HEAD_CONTINUATION"}\n' \
             "$PR_NUMBER" "$HEAD_SHA" "$HEAD_REF" \
-            > .qikvrt/autonomous-pr-head-continuation/dispatch-receipt.json
+            > "$root/dispatch-receipt.json"
 
       - name: Preserve bounded continuation evidence
         if: always()
