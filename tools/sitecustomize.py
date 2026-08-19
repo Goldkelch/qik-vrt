@@ -4,7 +4,7 @@ import os
 import pathlib
 import subprocess
 
-TARGET = "agent/effect-ack-mesh-live-client-v1"
+TARGET = "agent/pr699-repair-materialize-921eb6ae"
 
 if os.environ.get("TARGET_REF") == TARGET:
     root = pathlib.Path(__file__).resolve().parents[1]
