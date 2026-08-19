@@ -143,6 +143,11 @@ def FrameConsistent (frame : SerializedFrame) : Prop :=
   frame.profileVersion = liveProfileVersion ∧
   frame.activeRemainder = activeRemainder (frameInventory frame)
 
+instance frameConsistentDecidable (frame : SerializedFrame) :
+    Decidable (FrameConsistent frame) := by
+  unfold FrameConsistent
+  infer_instance
+
 def decode (frame : SerializedFrame) : Option LiveSnapshot :=
   if _h : FrameConsistent frame then
     some {
