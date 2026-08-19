@@ -3,14 +3,14 @@
   "version": "1.0",
   "status": "NORMATIVE_CANDIDATE",
   "purpose": "Establish one compact, machine-readable, unambiguous, verifiable and auditable communication grammar for terminal users, mesh instances, terminal boundaries, and pre/post-terminal architectural layers.",
-  "core_equation": "MEANING = INTENT + BINDING + AUTHORITY + EVIDENCE + STATE + EFFECT + PROOF",
+  "core_equation": "MEANING = INTENT + BINDING + AUTHORITY + EVIDENCE + STATE + CAUSAL_ORDER + EFFECT + PROOF",
   "canonical_envelope_order": ["META", "BINDING", "INTENT", "AUTHORITY", "EVIDENCE", "STATE", "EFFECT", "PROOF"],
   "message_kinds": ["OBSERVE", "DECIDE", "REQUEST", "AUTHORIZE", "ACT", "ACK", "HOLD", "NOOP", "ERROR"],
   "verbs": ["OBSERVE", "CLASSIFY", "BIND", "DECIDE", "EXECUTE", "TEST", "REOBSERVE", "ACK", "PERSIST", "CREATE", "UPDATE", "CLOSE", "DISPATCH"],
   "truth_values": ["TRUE", "FALSE", "UNKNOWN", "NOT_APPLICABLE"],
   "effect_states": ["NONE", "REQUESTED", "EXECUTED", "OBSERVED", "ACKNOWLEDGED", "REJECTED", "UNKNOWN"],
   "understanding_rule": {
-    "understood": "A message is understood only when its syntax validates, all normative references are exact-bound, its authority is in scope, its evidence is attributable, and its effect semantics are not inferred beyond observed proof.",
+    "understood": "A message is understood only when its syntax validates, all normative references are exact-bound, its authority is in scope, its evidence is attributable, its causal dependencies are preserved, and its effect semantics are not inferred beyond observed proof.",
     "ambiguity": "HOLD",
     "missing_authority": "HOLD",
     "stale_binding": "HOLD",
@@ -23,6 +23,7 @@
     "Predecessor-head evidence is non-transferable.",
     "action_required and zero-job terminality are not trusted success.",
     "TRANSPORT_ACK is not EFFECT_ACK.",
+    "CAUSAL_ORDER is not SOURCE_ORDER or WALL_CLOCK_ORDER.",
     "HOLD and NOOP do not imply failure.",
     "A productive effect requires exact binding, applicable authority and admitted writer state.",
     "Every productive effect requires post-effect reobservation before EFFECT_ACKNOWLEDGED.",
@@ -47,8 +48,36 @@
     "completion_requires": ["effect_id", "post_effect_binding", "observed_result", "receipt", "canonical_proof"],
     "forbidden_shortcuts": ["request_implies_execution", "execution_implies_observation", "observation_implies_ack", "transport_ack_implies_effect_ack"]
   },
+  "m68000_four_capsule_kernel": {
+    "status": "CLOSED_NON_PRODUCTIVE_V1",
+    "abi_register": "D0",
+    "capsules": {
+      "NOOP": {"code": 0, "hex": "70004e75"},
+      "HOLD": {"code": 1, "hex": "70014e75"},
+      "REOBSERVE": {"code": 2, "hex": "70024e75"},
+      "REQUEST_AUTHORITY": {"code": 3, "hex": "70034e75"}
+    },
+    "instruction_shape": ["MOVEQ #code,D0", "RTS"],
+    "closed_under_reobservation": true,
+    "productive_actions": "REJECT_BEFORE_BINARY_EMISSION",
+    "portability_rule": "Preserve the four semantic outcomes and fail-closed behavior; opcode identity across target architectures is not required.",
+    "non_claims": [
+      "No physical Motorola 68000 execution is asserted by this state file.",
+      "No reduction of arbitrary external productive effects to the v1 kernel is asserted.",
+      "No identical opcode encoding across modern processors is asserted."
+    ]
+  },
+  "continuous_improvement_contract": {
+    "applies_to": ["MESH_REPOSITORY", "TERMINAL_PATTERN", "METAGRAMMAR", "COMPILER_LANGUAGE", "CAUSAL_IR", "TARGET_BACKENDS"],
+    "objectives": ["SIMPLICITY", "CONNECTIVITY", "TRACEABILITY", "PERFORMANCE", "RESOURCE_EFFICIENCY", "UNDERSTANDABILITY"],
+    "must_preserve": ["SEMANTIC_DIFFERENCES", "AUTHORITY_BOUNDARIES", "EVIDENCE_BINDINGS", "CAUSAL_DEPENDENCIES", "FAIL_CLOSED", "REOBSERVABLE_PROOF"],
+    "admission": "A change is an improvement only when at least one objective is measurably improved and all must_preserve invariants remain verified."
+  },
   "reference_schema": "schemas/qikvrt_metagrammar_envelope_v1.schema.json",
   "reference_tool": "tools/qikvrt_metagrammar.py",
   "acceptance_test": "tests/test_qikvrt_metagrammar.py",
+  "m68000_target_documentation": "docs/METAGRAMMAR_M68000_TARGET.md",
+  "m68000_emitter_test": "tests/test_qikvrt_m68000_emitter_ansic.py",
+  "m68000_end_to_end_test": "tests/test_qikvrt_metagrammar_m68000_e2e.py",
   "documentation": "docs/METAGRAMMAR_OF_UNDERSTANDING.md"
 }
