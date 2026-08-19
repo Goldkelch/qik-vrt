@@ -174,7 +174,9 @@ theorem decode_encode (sequence : Nat) (snapshot : LiveSnapshot) :
     decode (encode sequence snapshot) = some snapshot := by
   have hConsistent : FrameConsistent (encode sequence snapshot) :=
     frameConsistent_encode sequence snapshot
-  simp [decode, hConsistent]
+  simp only [decode, hConsistent]
+  cases snapshot
+  rfl
 
 theorem remainder_encode (sequence : Nat) (snapshot : LiveSnapshot) :
     (encode sequence snapshot).activeRemainder =
