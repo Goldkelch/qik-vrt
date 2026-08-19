@@ -1,0 +1,49 @@
+{
+  "schema": "qikvrt_dynamic_simplex_policy_v1",
+  "policy_id": "DYNAMIC_SIMPLEX_MOVING_TARGET_V1",
+  "purpose": "bounded deterministic optimization over a reobserved moving target",
+  "mathematical_scope": "simplex-style vertex pivots on an explicitly materialized finite feasible graph; not a claim of equivalence to every classical simplex implementation",
+  "cycle": [
+    "OBSERVE",
+    "BIND_SNAPSHOT",
+    "EVALUATE_ADMISSIBLE_VERTICES",
+    "PIVOT_IF_STRICTLY_BETTER",
+    "EXECUTE_ONLY_UNDER_SEPARATE_AUTHORITY",
+    "REOBSERVE_EFFECT",
+    "REBUILD_TARGET",
+    "REPEAT_OR_FIXPOINT"
+  ],
+  "decisions": {
+    "NOOP": "no evidence-bound feasible adjacent vertex strictly improves the current linear objective",
+    "HOLD": "required evidence or semantic precondition is absent",
+    "REOBSERVE": "target generation differs from the generation used by the current observation",
+    "PIVOT": "one deterministic evidence-bound feasible neighbor strictly improves the objective"
+  },
+  "invariants": [
+    "Kausalitaet != Sequenz",
+    "REQUESTED != EXECUTED != OBSERVED != ACKNOWLEDGED",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "Identitaet != Gleichheit",
+    "Integration != Einebnung",
+    "Regeneration != Kopie",
+    "Optimization decision is not execution authority",
+    "Snapshot evidence does not transfer across target drift",
+    "Role-local Authority/Mirror state is preserved",
+    "Unsupported or ambiguous state fails closed"
+  ],
+  "optimization_principles": [
+    "strict improvement only",
+    "deterministic tie breaking",
+    "reuse bound observations before cold recomputation",
+    "parallelize causally independent evaluation",
+    "synchronize only at explicit causal edges",
+    "reobserve after every externally relevant effect",
+    "stop at a local evidence-bound fixpoint"
+  ],
+  "product_owner_authorization": {
+    "granted": true,
+    "date": "2026-08-20",
+    "scope": "repository-internal implementation, compilation, verification, autonomous continuation and evidence-based optimization; publication preparation when scientifically warranted",
+    "publication_boundary": "Zenodo/arXiv publication still requires an actually available authenticated publication path and observed publication effect; repository preparation alone is not publication"
+  }
+}
