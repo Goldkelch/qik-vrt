@@ -4,9 +4,10 @@
 """Fail-closed, exact-request GitHub administration effect executor.
 
 The executor intentionally supports only repository ruleset pull-request review
-policy updates. It performs GET -> compare-and-swap validation -> full PUT ->
-GET verification and emits a redacted machine receipt. Credentials are read
-only from an environment variable and are never serialized.
+policy updates. It performs principal verification -> GET -> compare-and-swap
+validation -> full PUT -> GET verification and emits a redacted machine
+receipt. Credentials are read only from the exact environment variable bound by
+the request and are never serialized.
 """
 from __future__ import annotations
 
@@ -24,6 +25,8 @@ from typing import Any
 
 SCHEMA = "qikvrt_github_admin_effect_request_v1"
 RECEIPT_SCHEMA = "qikvrt_github_admin_effect_receipt_v1"
+CREDENTIAL_KIND = "FINE_GRAINED_PERSONAL_ACCESS_TOKEN"
+TOKEN_ENV = "QIKVRT_GITHUB_ADMIN_TOKEN"
 ALLOWED_PARAMETER_KEYS = {
     "required_approving_review_count",
     "require_code_owner_review",
@@ -62,11 +65,19 @@ def validate_request(request: dict[str, Any]) -> None:
     principal = request.get("admin_principal")
     if not isinstance(principal, dict):
         raise AdminEffectError("admin_principal is required")
+    if set(principal) != {
+        "account_login",
+        "credential_kind",
+        "token_env",
+        "required_repository_permission",
+    }:
+        raise AdminEffectError("admin_principal must contain exactly the bound credential fields")
     if principal.get("account_login") != repository.split("/", 1)[0]:
         raise AdminEffectError("admin_principal account must match repository owner")
-    installation_id = principal.get("installation_id")
-    if isinstance(installation_id, bool) or not isinstance(installation_id, int) or installation_id <= 0:
-        raise AdminEffectError("admin_principal installation_id must be a positive integer")
+    if principal.get("credential_kind") != CREDENTIAL_KIND:
+        raise AdminEffectError("unsupported admin_principal credential_kind")
+    if principal.get("token_env") != TOKEN_ENV:
+        raise AdminEffectError(f"admin_principal token_env must be {TOKEN_ENV}")
     if principal.get("required_repository_permission") != "administration:write":
         raise AdminEffectError("admin_principal must require administration:write")
     ruleset_id = request.get("ruleset_id")
@@ -165,11 +176,36 @@ def _api(base_url: str, token: str, method: str, path: str, payload: dict[str, A
     return value
 
 
-def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api.github.com", dry_run: bool = False, credential_source: str = "runtime") -> dict[str, Any]:
+def _verify_principal(api_base: str, token: str, request: dict[str, Any]) -> dict[str, Any]:
+    observed = _api(api_base, token, "GET", "user")
+    expected_login = request["admin_principal"]["account_login"]
+    observed_login = observed.get("login")
+    if not isinstance(observed_login, str) or observed_login.casefold() != expected_login.casefold():
+        raise AdminEffectError(
+            f"admin principal identity mismatch: expected={expected_login!r} observed={observed_login!r}"
+        )
+    return {
+        "account_login": observed_login,
+        "account_id": observed.get("id"),
+        "account_type": observed.get("type"),
+    }
+
+
+def execute(
+    request: dict[str, Any],
+    *,
+    token: str,
+    api_base: str = "https://api.github.com",
+    dry_run: bool = False,
+    credential_source: str = f"fine_grained_pat:{TOKEN_ENV}",
+) -> dict[str, Any]:
     validate_request(request)
+    if not token:
+        raise AdminEffectError(f"missing credential environment variable {TOKEN_ENV}")
     repository = request["repository"]
     ruleset_id = request["ruleset_id"]
     path = f"repos/{repository}/rulesets/{ruleset_id}"
+    observed_principal = _verify_principal(api_base, token, request)
     live_before = _api(api_base, token, "GET", path)
     plan = build_put_payload(live_before, request)
     receipt: dict[str, Any] = {
@@ -178,6 +214,7 @@ def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api
         "request_id": request["request_id"],
         "repository": repository,
         "admin_principal": copy.deepcopy(request["admin_principal"]),
+        "observed_principal": observed_principal,
         "credential_source": credential_source,
         "ruleset_id": ruleset_id,
         "before_sha256": _sha256(live_before),
@@ -191,7 +228,12 @@ def execute(request: dict[str, Any], *, token: str, api_base: str = "https://api
         receipt.update({"state": "ALREADY_APPLIED", "put_executed": False, "verified": True})
         return receipt
     if dry_run:
-        receipt.update({"state": "DRY_RUN", "put_executed": False, "verified": False, "payload_sha256": _sha256(plan["payload"])})
+        receipt.update({
+            "state": "DRY_RUN",
+            "put_executed": False,
+            "verified": False,
+            "payload_sha256": _sha256(plan["payload"]),
+        })
         return receipt
     _api(api_base, token, "PUT", path, plan["payload"])
     live_after = _api(api_base, token, "GET", path)
@@ -214,19 +256,40 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("request")
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--token-env", default="QIKVRT_GITHUB_ADMIN_TOKEN")
-    parser.add_argument("--credential-source", default=os.environ.get("QIKVRT_ADMIN_CREDENTIAL_SOURCE", "runtime"))
+    parser.add_argument("--token-env")
+    parser.add_argument("--credential-source")
     parser.add_argument("--api-base", default=os.environ.get("GITHUB_API_URL", "https://api.github.com"))
     parser.add_argument("--receipt")
     args = parser.parse_args(argv)
     try:
         request = _load(args.request)
-        token = os.environ.get(args.token_env, "")
+        validate_request(request)
+        bound_token_env = request["admin_principal"]["token_env"]
+        if args.token_env and args.token_env != bound_token_env:
+            raise AdminEffectError("token environment override differs from exact request")
+        token_env = args.token_env or bound_token_env
+        token = os.environ.get(token_env, "")
         if not token:
-            raise AdminEffectError(f"missing credential environment variable {args.token_env}")
-        receipt = execute(request, token=token, api_base=args.api_base, dry_run=not args.execute, credential_source=args.credential_source)
+            raise AdminEffectError(f"missing credential environment variable {token_env}")
+        credential_source = args.credential_source or os.environ.get(
+            "QIKVRT_ADMIN_CREDENTIAL_SOURCE",
+            f"fine_grained_pat:{token_env}",
+        )
+        receipt = execute(
+            request,
+            token=token,
+            api_base=args.api_base,
+            dry_run=not args.execute,
+            credential_source=credential_source,
+        )
     except (OSError, ValueError, json.JSONDecodeError, AdminEffectError) as exc:
-        receipt = {"schema": RECEIPT_SCHEMA, "state": "HOLD", "verified": False, "error": str(exc), "credential_serialized": False}
+        receipt = {
+            "schema": RECEIPT_SCHEMA,
+            "state": "HOLD",
+            "verified": False,
+            "error": str(exc),
+            "credential_serialized": False,
+        }
         text = json.dumps(receipt, sort_keys=True, indent=2)
         if args.receipt:
             pathlib.Path(args.receipt).write_text(text + "\n", encoding="utf-8")
