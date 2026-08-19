@@ -10,6 +10,7 @@
     "authorization_id",
     "effect_type",
     "repository",
+    "admin_principal",
     "ruleset_id",
     "ruleset_name",
     "expected_conditions",
@@ -24,6 +25,7 @@
     "authorization_id": {"type": "string", "minLength": 1},
     "effect_type": {"const": "RULESET_PULL_REQUEST_REVIEW_POLICY"},
     "repository": {"const": "Goldkelch/qik-vrt"},
+    "admin_principal": {"$ref": "#/$defs/adminPrincipal"},
     "ruleset_id": {"type": "integer", "minimum": 1},
     "ruleset_name": {"type": "string", "minLength": 1},
     "expected_conditions": {"type": "object"},
@@ -33,6 +35,22 @@
     "effect_boundary": {"type": "object"}
   },
   "$defs": {
+    "adminPrincipal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_login",
+        "credential_kind",
+        "token_env",
+        "required_repository_permission"
+      ],
+      "properties": {
+        "account_login": {"const": "Goldkelch"},
+        "credential_kind": {"const": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN"},
+        "token_env": {"const": "QIKVRT_GITHUB_ADMIN_TOKEN"},
+        "required_repository_permission": {"const": "administration:write"}
+      }
+    },
     "reviewPolicy": {
       "type": "object",
       "additionalProperties": false,
