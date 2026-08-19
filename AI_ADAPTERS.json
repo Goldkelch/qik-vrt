@@ -1,8 +1,9 @@
 {
   "schema": "qikvrt-ai-adapters/1.0",
   "canonical_entrypoint": "AI",
-  "generic_fallback": "Any system that can read repository files MUST read /AI first.",
+  "generic_fallback": "Any system that can read repository files MUST read /AI first and apply the reflexive metagrammar contract before treating interpretation as claim, effect, evidence, or authority.",
   "adapters": [
+    {"system":"Generic cognitive system","path":"policy/METAGRAMMAR_OF_UNDERSTANDING_V1.json","mode":"reflexive-contract"},
     {"system":"OpenAI Codex","path":"AGENTS.md","mode":"native"},
     {"system":"Anthropic Claude Code","path":"CLAUDE.md","mode":"native"},
     {"system":"Google Gemini CLI","path":"GEMINI.md","mode":"native"},
@@ -18,5 +19,5 @@
     {"system":"JetBrains Junie","path":".junie/guidelines.md","mode":"native"},
     {"system":"Kiro","path":".kiro/steering/qikvrt-ai-entry.md","mode":"native"}
   ],
-  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, and AGENTS.md remain authoritative."
+  "rule": "Adapter files are compatibility shims only. AI, AI_CONTEXT.json, AGENTS.md, and the reflexive metagrammar policy remain authoritative for their declared scopes."
 }
