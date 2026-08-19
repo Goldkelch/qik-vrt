@@ -52,9 +52,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
-          import json, os, subprocess, tempfile
-          from pathlib import Path
-          from tools.qikvrt_required_review_gate import evaluate_required_review
+          import json, os, subprocess
+          from tools.qikvrt_required_review_gate import (
+              STATUS_PUBLICATION_NOOP,
+              decide_status_publication,
+              evaluate_required_review,
+              status_description,
+          )
 
           repo = os.environ['REPOSITORY']
           requested = os.environ.get('REQUESTED_PR', '').strip()
@@ -79,20 +83,37 @@ jobs:
           else:
               numbers=[int(pr['number']) for pr in gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')]
 
+          # The branch rules are one repository-wide observation. Reuse the
+          # exact snapshot for every PR in this bounded sweep rather than
+          # spending one ruleset API request per candidate.
+          rules=gh_json(f'repos/{repo}/rules/branches/main')
+
           for number in numbers:
               pr=gh_json(f'repos/{repo}/pulls/{number}')
               if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main':
                   continue
               head=pr['head']['sha']
-              rules=gh_json(f'repos/{repo}/rules/branches/main')
               reviews=gh_pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
               decision=evaluate_required_review(pr, rules, reviews, required_code_owner=owner)
               state=decision['gate_state']
-              description=f"{state}: {decision.get('first_blocker') or 'CODE_OWNER_REVIEW_CURRENT'}"[:140]
+              description=status_description(decision)
+
+              combined=gh_json(f'repos/{repo}/commits/{head}/status')
+              publication=decide_status_publication(
+                  combined.get('statuses', []),
+                  context=context,
+                  state=state,
+                  description=description,
+              )
+              receipt={**decision, **publication}
+              if publication['status_publication'] == STATUS_PUBLICATION_NOOP:
+                  print(json.dumps(receipt, sort_keys=True))
+                  continue
+
               subprocess.check_call([
                   'gh','api','--method','POST',f'repos/{repo}/statuses/{head}',
                   '-f',f'state={state}','-f',f'context={context}','-f',f'description={description}',
                   '-f',f'target_url={os.environ["GITHUB_SERVER_URL"]}/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
               ])
-              print(json.dumps(decision, sort_keys=True))
+              print(json.dumps(receipt, sort_keys=True))
           PY
