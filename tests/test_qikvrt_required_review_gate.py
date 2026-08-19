@@ -45,11 +45,32 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         value.update(overrides)
         return value
 
+    def status(self, **overrides):
+        value = {
+            "id": 10,
+            "context": "QIKVRT requested review execution",
+            "state": "failure",
+            "description": "failure: CODE_OWNER_RULE_NOT_ENFORCED",
+            "target_url": "https://github.com/Goldkelch/qik-vrt/actions/runs/1",
+            "created_at": "2026-08-19T20:00:00Z",
+            "updated_at": "2026-08-19T20:00:00Z",
+        }
+        value.update(overrides)
+        return value
+
     def evaluate(self, reviews, *, rules=None, pr=None):
         return MODULE.evaluate_required_review(
             self.pr() if pr is None else pr,
             self.enforced_rules() if rules is None else rules,
             reviews,
+        )
+
+    def publish(self, statuses, *, state="failure", description="failure: CODE_OWNER_RULE_NOT_ENFORCED"):
+        return MODULE.decide_status_publication(
+            statuses,
+            context="QIKVRT requested review execution",
+            state=state,
+            description=description,
         )
 
     def test_native_rule_must_enforce_all_freshness_requirements(self):
@@ -96,6 +117,58 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     def test_pr_author_cannot_satisfy_independent_gate(self):
         result = self.evaluate([self.approval()], pr=self.pr(user={"login": "Goldkelch"}))
         self.assertEqual((result["gate_state"], result["first_blocker"]), ("failure", "CODE_OWNER_REVIEW_SELF_APPROVAL"))
+
+    def test_status_description_is_stable_and_bounded(self):
+        result = self.evaluate([], rules=[])
+        description = MODULE.status_description(result)
+        self.assertEqual(description, "failure: CODE_OWNER_RULE_NOT_ENFORCED")
+        self.assertLessEqual(len(description), 140)
+
+    def test_unchanged_head_context_state_is_noop_even_when_run_url_changed(self):
+        result = self.publish([
+            self.status(target_url="https://github.com/Goldkelch/qik-vrt/actions/runs/old"),
+        ])
+        self.assertEqual(result["status_publication"], "NOOP")
+        self.assertEqual(result["status_publication_reason"], "UNCHANGED_HEAD_CONTEXT_STATE")
+
+    def test_material_gate_transition_requires_status_write(self):
+        result = self.publish([
+            self.status(state="pending", description="pending: CODE_OWNER_REVIEW_MISSING"),
+        ])
+        self.assertEqual(result["status_publication"], "WRITE")
+        self.assertEqual(result["status_publication_reason"], "MATERIAL_GATE_TRANSITION")
+
+    def test_other_context_cannot_suppress_required_review_status(self):
+        result = self.publish([
+            self.status(context="unrelated context"),
+        ])
+        self.assertEqual(result["status_publication"], "WRITE")
+        self.assertIsNone(result["previous_status_id"])
+
+    def test_latest_matching_status_controls_publication(self):
+        result = self.publish([
+            self.status(
+                id=10,
+                state="failure",
+                description="failure: CODE_OWNER_RULE_NOT_ENFORCED",
+                updated_at="2026-08-19T19:00:00Z",
+            ),
+            self.status(
+                id=11,
+                state="pending",
+                description="pending: CODE_OWNER_REVIEW_MISSING",
+                updated_at="2026-08-19T20:00:00Z",
+            ),
+        ])
+        self.assertEqual(result["status_publication"], "WRITE")
+        self.assertEqual(result["previous_status_id"], 11)
+
+    def test_workflow_reads_combined_latest_status_and_skips_unchanged_post(self):
+        workflow = (ROOT / ".github/workflows/qikvrt_required_review_gate.yml").read_text(encoding="utf-8")
+        self.assertIn("commits/{head}/status", workflow)
+        self.assertIn("STATUS_PUBLICATION_NOOP", workflow)
+        self.assertIn("if publication['status_publication'] == STATUS_PUBLICATION_NOOP:", workflow)
+        self.assertLess(workflow.index("rules=gh_json"), workflow.index("for number in numbers:"))
 
 
 if __name__ == "__main__":
