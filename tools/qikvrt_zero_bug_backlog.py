@@ -6,6 +6,8 @@ The dispatcher treats every open issue as active work. It never closes issues an
 never infers completion. An issue with an open issue-agent PR is already owned by
 that transaction and is therefore not redispatched. Every other open issue is
 submitted to the existing trusted-main Autonomous issue processing workflow.
+Existing issue-agent branches are treated as reusable persisted work state and
+are resumed rather than conceptually restarted.
 """
 from __future__ import annotations
 
@@ -58,20 +60,56 @@ def has_active_issue_pr(repository: str, issue_number: int) -> bool:
     return bool(prs)
 
 
+def has_issue_branch(repository: str, issue_number: int) -> bool:
+    try:
+        _gh_json([f"repos/{repository}/branches/issue-agent/{issue_number}"])
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
 def plan(repository: str, issues: Iterable[Issue]) -> dict[str, Any]:
     active: list[int] = []
-    dispatch: list[int] = []
+    resume: list[int] = []
+    cold: list[int] = []
     for issue in issues:
         if has_active_issue_pr(repository, issue.number):
             active.append(issue.number)
+        elif has_issue_branch(repository, issue.number):
+            resume.append(issue.number)
         else:
-            dispatch.append(issue.number)
+            cold.append(issue.number)
+
+    dispatch = resume + cold
+    total = len(active) + len(dispatch)
+    reused = len(active) + len(resume)
+    reuse_ratio = 1.0 if total == 0 else reused / total
     return {
-        "schema": "qikvrt_zero_bug_backlog_plan_v1",
+        "schema": "qikvrt_zero_bug_backlog_plan_v2",
         "repository": repository,
-        "open_issue_count": len(active) + len(dispatch),
+        "open_issue_count": total,
         "active_issue_prs": active,
+        "resume_issue_numbers": resume,
+        "cold_dispatch_issue_numbers": cold,
         "dispatch_issue_numbers": dispatch,
+        "optimization": {
+            "policy": "REUSE_BEFORE_CREATE",
+            "reused_work_items": reused,
+            "cold_work_items": len(cold),
+            "reuse_ratio": reuse_ratio,
+            "objective": "reduce_effect_latency_without_weakening_gates",
+        },
+        "terminal_frame": {
+            "RESOLVE": "complete_open_issue_inventory",
+            "OBSERVE": "active_pr_and_persisted_issue_branch_state",
+            "CLASSIFY": "ACTIVE_OR_RESUME_OR_COLD",
+            "ACT_OR_WAIT": "dispatch_only_non_active_work",
+            "VERIFY_EFFECT": "next_run_reobserves_pr_branch_and_issue_state",
+            "PERSIST": "issue_agent_branch_and_repository_receipts",
+            "VISUALIZE": "machine_readable_plan_and_workflow_summary",
+            "OPTIMIZE": "reuse_persisted_state_before_new_work",
+            "CONTINUE": "scheduled_and_event_driven_reentry",
+        },
         "completion_claims": {
             "PASS": False,
             "FINAL_PASS": False,
