@@ -8,6 +8,14 @@ FRONT = ROOT / "tools" / "qikvrt_metagrammar_compiler_ansic.c"
 LOWER = ROOT / "tools" / "qikvrt_metagrammar_m68000_lower_ansic.c"
 EMIT = ROOT / "tools" / "qikvrt_m68000_emitter_ansic.c"
 
+CAPSULES = {
+    "NOOP": bytes.fromhex("70004e75"),
+    "HOLD": bytes.fromhex("70014e75"),
+    "REOBSERVE": bytes.fromhex("70024e75"),
+    "REQUEST_AUTHORITY": bytes.fromhex("70034e75"),
+}
+
+
 class MetagrammarM68000E2ETests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -41,23 +49,51 @@ class MetagrammarM68000E2ETests(unittest.TestCase):
         return emit.stdout
 
     def test_noop_capsule(self):
-        self.assertEqual(self.compile_message("NOOP"), bytes.fromhex("70004e75"))
+        self.assertEqual(self.compile_message("NOOP"), CAPSULES["NOOP"])
 
     def test_hold_capsule(self):
-        self.assertEqual(self.compile_message("HOLD"), bytes.fromhex("70014e75"))
+        self.assertEqual(self.compile_message("HOLD"), CAPSULES["HOLD"])
 
     def test_reobserve_capsule(self):
-        self.assertEqual(self.compile_message("REOBSERVE"), bytes.fromhex("70024e75"))
+        self.assertEqual(self.compile_message("REOBSERVE"), CAPSULES["REOBSERVE"])
 
     def test_request_authority_capsule(self):
-        self.assertEqual(self.compile_message("REQUEST_AUTHORITY"), bytes.fromhex("70034e75"))
+        self.assertEqual(self.compile_message("REQUEST_AUTHORITY"), CAPSULES["REQUEST_AUTHORITY"])
 
-    def test_unsupported_action_stops_before_binary_emission(self):
-        plan = b"QIKVRT_METAGRAMMAR_PLAN_V1\nNEXT_ACTION=EXECUTE\nADMISSION=VALIDATED\n"
-        lower = subprocess.run([str(self.lower)], input=plan, capture_output=True, cwd=ROOT)
-        self.assertEqual(lower.returncode, 2)
-        self.assertEqual(lower.stdout, b"")
-        self.assertIn(b"HOLD", lower.stderr)
+    def test_kernel_is_exactly_four_closed_capsules(self):
+        self.assertEqual(set(CAPSULES), {
+            "NOOP", "HOLD", "REOBSERVE", "REQUEST_AUTHORITY"
+        })
+        self.assertEqual(len(set(CAPSULES.values())), 4)
+        for image in CAPSULES.values():
+            self.assertEqual(len(image), 4)
+            self.assertEqual(image[-2:], bytes.fromhex("4e75"))
+
+    def test_reobservation_cycles_remain_inside_closed_kernel(self):
+        sequence = [
+            "REOBSERVE",
+            "HOLD",
+            "REQUEST_AUTHORITY",
+            "NOOP",
+            "REOBSERVE",
+        ]
+        observed = [self.compile_message(action) for action in sequence]
+        self.assertEqual(observed, [CAPSULES[action] for action in sequence])
+        self.assertTrue(all(image in CAPSULES.values() for image in observed))
+
+    def test_productive_and_unknown_actions_stop_before_binary_emission(self):
+        for action in ["EXECUTE", "MERGE", "PUBLISH", "DEPLOY", "UNKNOWN"]:
+            with self.subTest(action=action):
+                plan = (
+                    "QIKVRT_METAGRAMMAR_PLAN_V1\n"
+                    "NEXT_ACTION=" + action + "\n"
+                    "ADMISSION=VALIDATED\n"
+                ).encode("ascii")
+                lower = subprocess.run([str(self.lower)], input=plan, capture_output=True, cwd=ROOT)
+                self.assertEqual(lower.returncode, 2)
+                self.assertEqual(lower.stdout, b"")
+                self.assertIn(b"HOLD", lower.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
