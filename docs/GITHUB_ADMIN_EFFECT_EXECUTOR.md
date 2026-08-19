@@ -63,3 +63,9 @@ The request is separately bound to Product-Owner authorization `PO-2026-08-17-GI
 ## Evidence boundary
 
 `APPLIED_VERIFIED` proves only that GitHub returned the requested ruleset state after the PUT. It does not itself approve a pull request, make CI green, merge code, deploy software, publish an artifact, establish a scientific claim, or imply `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE`.
+
+## Exact continuation trigger — 2026-08-19
+
+The live requested-review gate on trusted successor PR `#723` reobserved `CODE_OWNER_RULE_NOT_ENFORCED` at exact head `766e363ddc61c7f8bdec3f3f11264521359a7cca`. The Product Owner then instructed the already authorized repository work to be completed.
+
+This documentation-only branch update deliberately triggers the bounded non-PR executor on `agent/github-admin-effect-executor-v1-trusted-successor`. It does not widen the request. The executor may act only if the bound installation credentials exist, the live Ruleset still matches `expected_before`, and the full post-effect observation matches `desired_after`; otherwise it must emit the corresponding fail-closed receipt.
