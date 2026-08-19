@@ -1,0 +1,41 @@
+name: QIKVRT Firefox proxy delegation bridge
+
+on:
+  pull_request:
+    paths:
+      - 'tools/qikvrt_firefox_proxy_delegate.py'
+      - 'tests/test_qikvrt_firefox_proxy_delegate.py'
+      - 'policy/FIREFOX_PROXY_DELEGATION_V1.json'
+      - 'docs/terminal/FIREFOX_PROXY_DELEGATION_BRIDGE_V1.md'
+      - '.github/workflows/qikvrt_firefox_proxy_delegation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run delegation bridge regression tests
+        run: python3 -B -m unittest tests.test_qikvrt_firefox_proxy_delegate -v
+      - name: Verify dry-run owner-authenticated target binding
+        run: |
+          python3 -B tools/qikvrt_firefox_proxy_delegate.py \
+            --url https://github.com/settings/personal-access-tokens \
+            --expected-owner Goldkelch \
+            --repository Goldkelch/qik-vrt \
+            --dry-run \
+            --json | tee /tmp/delegation.json
+          python3 - <<'PY'
+          import json
+          v=json.load(open('/tmp/delegation.json'))
+          assert v['secret_serialized'] is False
+          assert v['effect_executed'] is False
+          assert v['next_boundary']=='HUMAN_AUTHENTICATION_OR_SECRET_ENTRY'
+          assert v['post_boundary_requirement']=='AUTHORITATIVE_REOBSERVATION'
+          PY
