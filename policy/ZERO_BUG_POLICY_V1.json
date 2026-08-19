@@ -1,0 +1,30 @@
+{
+  "schema": "qikvrt_zero_bug_policy_v1",
+  "policy_id": "ZERO_BUG_POLICY_V1",
+  "effective": "2026-08-19",
+  "scope": "all open issues in Goldkelch/qik-vrt",
+  "invariant": "NO_PASSIVE_OPEN_ISSUE",
+  "requirements": {
+    "every_open_issue_has_active_execution_path": true,
+    "continuously_sweep_complete_open_backlog": true,
+    "dispatch_actionable_issues_without_owner_reprompt": true,
+    "resume_recoverable_stalled_work": true,
+    "close_only_after_issue_acceptance_evidence": true,
+    "preserve_independent_review_authority": true,
+    "preserve_fail_closed_effect_guards": true,
+    "preserve_ai_entrypoint_semantics": true
+  },
+  "state_classes": [
+    "AUTO_RESOLVABLE",
+    "WAITING",
+    "TRUE_BLOCKER"
+  ],
+  "forbidden": [
+    "passive_specification_archive",
+    "false_issue_closure",
+    "fabricated_completion_evidence",
+    "owner_reprompt_for_routine_github_state",
+    "independent_review_inference_from_bot_comment",
+    "publication_or_external_effect_inference_from_issue_processing"
+  ]
+}
