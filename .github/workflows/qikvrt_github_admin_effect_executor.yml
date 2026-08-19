@@ -38,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: qikvrt-github-admin-effects-${{ github.repository }}
@@ -47,6 +48,7 @@ env:
   DEFAULT_REQUEST: state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json
   EXPECTED_ADMIN_ACCOUNT: Goldkelch
   EXPECTED_ADMIN_INSTALLATION_ID: '147849532'
+  EFFECT_STATUS_CONTEXT: QIKVRT GitHub admin effect application
 
 jobs:
   contract:
@@ -167,6 +169,55 @@ jobs:
           fi
           python3 -B tools/qikvrt_github_admin_effect_executor.py \
             "$REQUEST_PATH" --execute --receipt admin-effect-receipt.json
+      - name: Publish redacted exact-effect status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          path = Path('admin-effect-receipt.json')
+          if path.is_file():
+              receipt = json.loads(path.read_text(encoding='utf-8'))
+              receipt_state = str(receipt.get('state') or 'UNKNOWN')
+              verified = bool(receipt.get('verified'))
+              first_blocker = str(receipt.get('first_blocker') or receipt.get('error') or '')
+              status_state = (
+                  'success'
+                  if verified and receipt_state in {'APPLIED_VERIFIED', 'ALREADY_APPLIED'}
+                  else 'failure'
+              )
+              detail = first_blocker or receipt_state
+              description = f'{receipt_state}: {detail}'[:140]
+          else:
+              receipt_state = 'ERROR'
+              status_state = 'error'
+              description = 'ERROR: ADMIN_EFFECT_RECEIPT_MISSING'
+
+          subprocess.check_call([
+              'gh', 'api', '--method', 'POST',
+              f"repos/{os.environ['GITHUB_REPOSITORY']}/statuses/{os.environ['GITHUB_SHA']}",
+              '-f', f'state={status_state}',
+              '-f', f"context={os.environ['EFFECT_STATUS_CONTEXT']}",
+              '-f', f'description={description}',
+              '-f', (
+                  'target_url='
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+                  f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              ),
+          ])
+          print(json.dumps({
+              'receipt_state': receipt_state,
+              'status_state': status_state,
+              'description': description,
+          }, sort_keys=True))
+          PY
       - name: Upload redacted exact-effect receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
