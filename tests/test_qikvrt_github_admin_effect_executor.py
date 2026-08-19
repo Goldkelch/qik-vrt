@@ -17,7 +17,8 @@ REQUEST = {
     "repository": "Goldkelch/qik-vrt",
     "admin_principal": {
         "account_login": "Goldkelch",
-        "installation_id": 147849532,
+        "credential_kind": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN",
+        "token_env": "QIKVRT_GITHUB_ADMIN_TOKEN",
         "required_repository_permission": "administration:write",
     },
     "ruleset_id": 19344903,
@@ -37,6 +38,10 @@ REQUEST = {
     },
     "force": False,
 }
+
+
+def principal(login: str = "Goldkelch"):
+    return {"login": login, "id": 293941403, "type": "User"}
 
 
 def live(after: bool = False):
@@ -103,39 +108,84 @@ class AdminEffectExecutorTests(unittest.TestCase):
         with self.assertRaises(AdminEffectError):
             build_put_payload(live(), request)
 
-    def test_invalid_installation_id_is_rejected(self):
+    def test_wrong_credential_kind_is_rejected(self):
         request = copy.deepcopy(REQUEST)
-        request["admin_principal"]["installation_id"] = 0
+        request["admin_principal"]["credential_kind"] = "GITHUB_APP_INSTALLATION"
         with self.assertRaises(AdminEffectError):
             build_put_payload(live(), request)
 
-    def test_execute_is_get_put_get_and_verifies(self):
+    def test_wrong_token_environment_is_rejected(self):
+        request = copy.deepcopy(REQUEST)
+        request["admin_principal"]["token_env"] = "OTHER_TOKEN"
+        with self.assertRaises(AdminEffectError):
+            build_put_payload(live(), request)
+
+    def test_execute_is_identity_get_put_get_and_verifies(self):
         calls = []
+
         def fake_api(base, token, method, path, payload=None):
             calls.append((method, path, payload))
-            if method == "GET" and len(calls) == 1:
+            if path == "user":
+                return principal()
+            if method == "GET" and len([item for item in calls if item[1] != "user"]) == 1:
                 return live()
             if method == "PUT":
                 return live(after=True)
             return live(after=True)
+
         with patch("tools.qikvrt_github_admin_effect_executor._api", side_effect=fake_api):
-            receipt = execute(REQUEST, token="secret", credential_source="github_app_installation:147849532")
-        self.assertEqual([item[0] for item in calls], ["GET", "PUT", "GET"])
+            receipt = execute(
+                REQUEST,
+                token="secret",
+                credential_source="fine_grained_pat:QIKVRT_GITHUB_ADMIN_TOKEN",
+            )
+        self.assertEqual(
+            [(item[0], item[1]) for item in calls],
+            [
+                ("GET", "user"),
+                ("GET", "repos/Goldkelch/qik-vrt/rulesets/19344903"),
+                ("PUT", "repos/Goldkelch/qik-vrt/rulesets/19344903"),
+                ("GET", "repos/Goldkelch/qik-vrt/rulesets/19344903"),
+            ],
+        )
         self.assertEqual(receipt["state"], "APPLIED_VERIFIED")
         self.assertTrue(receipt["verified"])
         self.assertFalse(receipt["credential_serialized"])
-        self.assertEqual(receipt["admin_principal"]["installation_id"], 147849532)
-        self.assertEqual(receipt["credential_source"], "github_app_installation:147849532")
+        self.assertEqual(receipt["observed_principal"]["account_login"], "Goldkelch")
+        self.assertEqual(
+            receipt["credential_source"],
+            "fine_grained_pat:QIKVRT_GITHUB_ADMIN_TOKEN",
+        )
         self.assertNotIn("secret", str(receipt))
 
-    def test_dry_run_performs_only_get(self):
-        calls = []
+    def test_execute_rejects_wrong_live_principal(self):
         def fake_api(base, token, method, path, payload=None):
-            calls.append(method)
+            if path == "user":
+                return principal("ingolf-lohmann")
             return live()
+
+        with patch("tools.qikvrt_github_admin_effect_executor._api", side_effect=fake_api):
+            with self.assertRaises(AdminEffectError):
+                execute(REQUEST, token="secret")
+
+    def test_dry_run_performs_identity_and_ruleset_get_only(self):
+        calls = []
+
+        def fake_api(base, token, method, path, payload=None):
+            calls.append((method, path))
+            if path == "user":
+                return principal()
+            return live()
+
         with patch("tools.qikvrt_github_admin_effect_executor._api", side_effect=fake_api):
             receipt = execute(REQUEST, token="secret", dry_run=True)
-        self.assertEqual(calls, ["GET"])
+        self.assertEqual(
+            calls,
+            [
+                ("GET", "user"),
+                ("GET", "repos/Goldkelch/qik-vrt/rulesets/19344903"),
+            ],
+        )
         self.assertEqual(receipt["state"], "DRY_RUN")
 
 
