@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT zero-bug backlog closure
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened, reopened, closed]
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-zero-bug-backlog-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-backlog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out trusted main dispatcher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect trusted-main activation
+        id: active
+        shell: bash
+        run: |
+          if test -f tools/qikvrt_zero_bug_backlog.py && test -f policy/ZERO_BUG_POLICY_V1.json; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+            echo 'BOOTSTRAP_NOOP: zero-bug dispatcher is not yet promoted to trusted main.'
+          fi
+
+      - name: Plan complete open backlog
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zero_bug_backlog.py plan --repository "$REPOSITORY" | tee /tmp/qikvrt-zero-bug-plan.json
+
+      - name: Dispatch every passive open issue
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zero_bug_backlog.py dispatch --repository "$REPOSITORY" | tee /tmp/qikvrt-zero-bug-dispatch.json
+
+      - name: Bootstrap NOOP before trusted-main promotion
+        if: steps.active.outputs.active != 'true'
+        run: echo 'Zero Bug Policy candidate is under review; no untrusted candidate code is executed.'
