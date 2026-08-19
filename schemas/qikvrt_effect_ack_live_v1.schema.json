@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qik-vrt.example/schemas/ikvrt_effect_ack_live_v1.schema.json",
+  "title": "QIK-VRT EFFECT_ACK Live Repository Frame V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "profile_version",
+    "sequence",
+    "authority",
+    "mirror",
+    "candidate",
+    "effect_state",
+    "causal",
+    "mandatory_gates",
+    "evidence_refs",
+    "reason_codes",
+    "next_possible_step",
+    "observed_at",
+    "closure"
+  ],
+  "properties": {
+    "protocol_version": { "const": "effect-ack-v1" },
+    "profile_version": { "const": "qikvrt-repository-live-v1" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "authority": { "$ref": "#/$defs/nodeBinding" },
+    "mirror": {
+      "oneOf": [
+        { "$ref": "#/$defs/nodeBinding" },
+        { "type": "null" }
+      ]
+    },
+    "candidate": { "$ref": "#/$defs/nodeBinding" },
+    "effect_state": {
+      "enum": [
+        "REQUEST_RECEIVED",
+        "AUTHORIZATION_CHECKED",
+        "WORK_STARTED",
+        "EFFECT_ACK_CONTINUE",
+        "BLOCK",
+        "STALL",
+        "COMPLETION_CANDIDATE",
+        "PAIR_ACKNOWLEDGED"
+      ]
+    },
+    "causal": { "$ref": "#/$defs/causalReference" },
+    "mandatory_gates": {
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": {
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failure",
+          "action_required",
+          "cancelled",
+          "skipped",
+          "not_applicable"
+        ]
+      }
+    },
+    "evidence_refs": { "$ref": "#/$defs/uniqueStrings" },
+    "reason_codes": { "$ref": "#/$defs/uniqueStrings" },
+    "next_possible_step": { "type": "string", "minLength": 1 },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "closure": { "$ref": "#/$defs/closureInventory" }
+  },
+  "$defs": {
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nodeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "head", "tree"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "head": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "causalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transaction_id", "observation_id", "predecessor_id"],
+      "properties": {
+        "transaction_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "observation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "predecessor_id": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 128 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "uniqueStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "closureInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "closed_verified", "active_remainder"],
+      "properties": {
+        "requirements": { "$ref": "#/$defs/uniqueStrings" },
+        "closed_verified": { "$ref": "#/$defs/uniqueStrings" },
+        "active_remainder": {
+          "allOf": [
+            { "$ref": "#/$defs/uniqueStrings" },
+            {
+              "description": "Order-preserving requirements minus closed_verified. Equality is enforced by the adapter and proved for the abstract frame in Lean."
+            }
+          ]
+        }
+      }
+    }
+  }
+}

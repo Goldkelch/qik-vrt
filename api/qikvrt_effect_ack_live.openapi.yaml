@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+openapi: 3.0.3
+info:
+  title: QIK-VRT EFFECT_ACK Live Repository API
+  version: 1.0.0
+  description: >
+    A fail-closed live client profile for repository-mesh observations. HTTP
+    acceptance is transport evidence only. The response effect_state, explicit
+    causal predecessor, exact head/tree bindings, mandatory gates and
+    complementary active_remainder determine the represented protocol state.
+    CAUSALITY != SEQUENCE.
+servers:
+  - url: http://127.0.0.1:8767
+    description: Loopback reference adapter and interaction test
+paths:
+  /health:
+    get:
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: The adapter is alive; no repository effect is implied.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, protocol_version, profile_version]
+                properties:
+                  status: { type: string, enum: [ALIVE] }
+                  protocol_version: { type: string, enum: [effect-ack-v1] }
+                  profile_version: { type: string, enum: [qikvrt-repository-live-v1] }
+  /effect-ack/v1/observations:
+    post:
+      operationId: acceptObservation
+      summary: Validate and persist one causally bound observation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/qikvrt_effect_ack_live_v1.schema.json'
+      responses:
+        '202':
+          description: >
+            Observation accepted as data. transport_ack=true never implies
+            COMPLETION_CANDIDATE, PAIR_ACKNOWLEDGED, PASS or repository effect.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationReceipt' }
+        '400': { description: Malformed JSON or request framing. }
+        '409': { description: Stale or conflicting causal predecessor/observation identity. }
+        '422': { description: Schema, exact-binding, state or remainder invariant rejected. }
+  /effect-ack/v1/snapshots/{transaction_id}:
+    get:
+      operationId: getSnapshot
+      summary: Return the current validated frame for one transaction.
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Current validated frame.
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/qikvrt_effect_ack_live_v1.schema.json'
+        '404': { description: Unknown transaction. }
+  /effect-ack/v1/snapshots/{transaction_id}/delta:
+    get:
+      operationId: getDelta
+      summary: Return the causal delta after a previously observed observation.
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - name: after
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: >
+            Delta with changed semantic fields and the complete current
+            complementary remainder. Wire sequence changes alone are excluded
+            from semantic changed_fields.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationDelta' }
+        '404': { description: Unknown transaction or predecessor observation. }
+        '409': { description: Stored successor is not causally linked to after. }
+components:
+  parameters:
+    TransactionId:
+      name: transaction_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  schemas:
+    ObservationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - transport_ack
+        - completion_inferred
+        - effect_state
+        - transaction_id
+        - observation_id
+        - snapshot_sha256
+        - active_remainder
+        - idempotent
+      properties:
+        transport_ack: { type: boolean, enum: [true] }
+        completion_inferred: { type: boolean, enum: [false] }
+        effect_state: { type: string }
+        transaction_id: { type: string }
+        observation_id: { type: string }
+        snapshot_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        active_remainder:
+          type: array
+          items: { type: string }
+          uniqueItems: true
+        idempotent: { type: boolean }
+    ObservationDelta:
+      type: object
+      additionalProperties: false
+      required:
+        - protocol_version
+        - profile_version
+        - transaction_id
+        - previous_observation_id
+        - observation_id
+        - causal_predecessor_valid
+        - changed_fields
+        - effect_state
+        - active_remainder
+        - current_snapshot_sha256
+      properties:
+        protocol_version: { type: string, enum: [effect-ack-v1] }
+        profile_version: { type: string, enum: [qikvrt-repository-live-v1] }
+        transaction_id: { type: string }
+        previous_observation_id: { type: string }
+        observation_id: { type: string }
+        causal_predecessor_valid: { type: boolean, enum: [true] }
+        changed_fields:
+          type: array
+          items: { type: string }
+          uniqueItems: true
+        effect_state: { type: string }
+        active_remainder:
+          type: array
+          items: { type: string }
+          uniqueItems: true
+        current_snapshot_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: Deployment profiles must provide a scoped, expiring credential. The loopback test adapter binds only to 127.0.0.1.
+security:
+  - bearerToken: []

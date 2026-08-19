@@ -5,6 +5,7 @@ import QIKVRTEffectAck.InformationBoundary
 import QIKVRTEffectAck.Claims
 import QIKVRTEffectAck.QuantumClassicalRuntime
 import QIKVRTEffectAck.CanonicalTemporalMemory
+import QIKVRTEffectAck.SerializedRemainder
 
 /-!
 # QIK-VRT EFFECT_ACK Draft-01 and quantum-classical runtime formalization
@@ -22,6 +23,11 @@ The canonical-temporal-memory article additionally proves that a validated
 future-indexed effect boundary is counterfactually relevant to present release
 while the past projection remains unchanged, and that reciprocal closure
 requires both a bound cause and an observed effect.
+
+The live-serialization module proves only typed abstract-frame round trips,
+explicit-causal-reference preservation and exact complementary-remainder
+preservation/rejection. It does not promote wire sequence into causal authority.
+
 Wire parsing, JCS/SHA-256 implementations, authentication, concrete QPU
 adapters, quantum mechanics, hardware noise, calibration, error correction,
 fresh-record discovery, complete deployment mediation and physical safety
