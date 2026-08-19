@@ -1,0 +1,98 @@
+(* QIK-VRT Universal Understanding Compiler Language V1 *)
+
+program      = magic, nl,
+               kind, nl,
+               rid, nl,
+               subject, nl,
+               intent, nl,
+               auth, nl,
+               evid, nl,
+               state, nl,
+               effect, nl,
+               next, nl,
+               proof, nl,
+               cause, nl,
+               "END", [nl] ;
+
+magic        = "QIKU1" ;
+kind         = "KIND ", message_kind ;
+rid          = "RID ", token ;
+subject      = "SUBJECT ", token, " ", token, " ", token, " ", token ;
+intent       = "INTENT ", verb, " ", text ;
+auth         = "AUTH ", auth_state, " ", token ;
+evid         = "EVID ", token, " ", sha256 ;
+state        = "STATE ", token ;
+effect       = "EFFECT ", effect_state, " ", token ;
+next         = "NEXT ", action ;
+proof        = "PROOF ", sha256 ;
+cause        = "CAUSE ", (token | "-") ;
+
+message_kind = "OBSERVE" | "DECIDE" | "REQUEST" | "AUTHORIZE" |
+               "ACT" | "ACK" | "HOLD" | "NOOP" | "ERROR" ;
+
+verb         = "OBSERVE" | "CLASSIFY" | "BIND" | "DECIDE" |
+               "EXECUTE" | "TEST" | "REOBSERVE" | "ACK" |
+               "PERSIST" | "CREATE" | "UPDATE" | "CLOSE" |
+               "DISPATCH" ;
+
+auth_state   = "BOUND" | "MISSING" | "STALE" | "OUT_OF_SCOPE" ;
+
+effect_state = "NONE" | "REQUESTED" | "EXECUTED" | "OBSERVED" |
+               "ACKNOWLEDGED" | "REJECTED" | "UNKNOWN" ;
+
+action       = "NOOP" | "HOLD" | "REOBSERVE" | "REQUEST_AUTHORITY" |
+               "OBSERVE" | "CLASSIFY" | "BIND" | "DECIDE" |
+               "EXECUTE" | "TEST" | "ACK" | "PERSIST" |
+               "CREATE" | "UPDATE" | "CLOSE" | "DISPATCH" ;
+
+sha256       = hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex,
+               hex, hex, hex, hex, hex, hex, hex, hex ;
+
+hex          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" |
+               "8" | "9" | "a" | "b" | "c" | "d" | "e" | "f" ;
+
+token        = character, { character } ;
+text         = character, { character | " " } ;
+character    = letter | digit | "_" | "-" | "." | "/" | ":" | "@" ;
+letter       = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" |
+               "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" |
+               "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" |
+               "Y" | "Z" | "a" | "b" | "c" | "d" | "e" | "f" |
+               "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" |
+               "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" |
+               "w" | "x" | "y" | "z" ;
+digit        = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+nl           = "\n" ;
+
+(* Built-in semantic kernel, not source-redefinable syntax:
+ * - 1 - 0 = 1 : preserved distinction.
+ * - 1 - 1 = 0 : eliminated difference for equal bound values.
+ * - x = y     : relation/equality only inside an explicit bound domain.
+ * - z = 0     : distinguished formal zero; it does not imply NOOP/no effect.
+ * - x = 1 and y = 1 witness one assignment satisfying x = y.
+ *
+ * Typed semantic chain:
+ * DISTINCTION -> RELATION -> BINDING/CONTEXT -> AUTHORITY -> CAUSAL_ORDER
+ * -> PERMITTED_EFFECT_OR_FAIL_CLOSED -> REOBSERVATION -> PROOF.
+ *
+ * Semantic rules:
+ * - DISTINCTION != RELATION.
+ * - RELATION != CAUSALITY.
+ * - CAUSALITY != SEQUENCE.
+ * - ZERO_RESULT != NO_EFFECT.
+ * - FORMAL_DISTINCTION_CALCULUS != EMPIRICAL_QUANTUM_CAUSALITY.
+ * - Source order is not causal authority; CAUSE binds causal dependence.
+ * - Productive intent requires AUTH BOUND.
+ * - UNKNOWN never drives productive intent.
+ * - Non-bound authority permits only HOLD/NOOP/REOBSERVE/REQUEST_AUTHORITY.
+ * - ACKNOWLEDGED effect requires KIND ACK.
+ * - Self-causation in one unit is rejected.
+ * - Mega-ST target profile additionally requires repo + exact 40-hex HEAD/TREE
+ *   and only the four bounded decision actions.
+ *)

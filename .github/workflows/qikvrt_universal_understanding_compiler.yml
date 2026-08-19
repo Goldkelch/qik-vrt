@@ -1,0 +1,85 @@
+name: QIKVRT universal understanding compiler
+
+on:
+  pull_request:
+    paths:
+      - 'docs/QIKVRT_UNIVERSAL_UNDERSTANDING_COMPILER.md'
+      - 'docs/QIKVRT_UNIVERSAL_UNDERSTANDING_COMPILER.ebnf'
+      - 'state/autonomy/UNIVERSAL_UNDERSTANDING_COMPILER_V1.json'
+      - 'tools/qikvrt_universal_understanding_ansic.c'
+      - 'tests/test_qikvrt_universal_understanding_ansic.py'
+      - '.github/workflows/qikvrt_universal_understanding_compiler.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact source head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Compile universal frontend and existing M68000 backend
+        run: |
+          set -euo pipefail
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror \
+            tools/qikvrt_universal_understanding_ansic.c -o /tmp/qiku-front
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror \
+            tools/qikvrt_metagrammar_m68000_lower_ansic.c -o /tmp/qiku-lower
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror \
+            tools/qikvrt_m68000_emitter_ansic.c -o /tmp/qiku-emit
+
+      - name: Run universal compiler regression suite
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_universal_understanding_ansic
+
+      - name: Verify target-profile exact bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/sample.qiku <<'EOF'
+          QIKU1
+          KIND OBSERVE
+          RID sample
+          SUBJECT repo Goldkelch/qik-vrt aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          INTENT OBSERVE terminal
+          AUTH BOUND po-sample
+          EVID HEAD cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          STATE OBSERVED
+          EFFECT NONE none
+          NEXT REOBSERVE
+          PROOF dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          CAUSE -
+          END
+          EOF
+          /tmp/qiku-front --target-megast /tmp/sample.qiku \
+            | /tmp/qiku-lower \
+            | /tmp/qiku-emit > /tmp/sample.bin
+          test "$(xxd -p /tmp/sample.bin | tr -d '\n')" = '70024e75'
+
+      - name: Validate normative JSON
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('state/autonomy/UNIVERSAL_UNDERSTANDING_COMPILER_V1.json')
+          json.loads(p.read_text(encoding='utf-8'))
+          print('json-ok', p)
+          PY
