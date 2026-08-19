@@ -31,10 +31,16 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn('test "$live_ref" = "$HEAD_SHA"', self.text)
 
     def test_only_characteristic_zero_job_action_required_state_is_resumed(self):
-        self.assertIn("conclusion\" = action_required", self.text)
+        self.assertIn('"$conclusion" = action_required', self.text)
         self.assertIn(".total_count", self.text)
         self.assertIn('"$zero_job_action_required" -gt 0', self.text)
         self.assertIn('"$useful_terminal" -eq 0', self.text)
+
+    def test_named_exact_head_gate_surface_is_restored(self):
+        self.assertIn("qikvrt_ci.yml", self.text)
+        self.assertIn("qikvrt_collective_review.yml", self.text)
+        self.assertIn("qikvrt_global_completion.yml", self.text)
+        self.assertIn('-f ref="$HEAD_REF"', self.text)
 
     def test_continuation_is_exact_head_bound_and_review_authority_stays_separate(self):
         self.assertIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
