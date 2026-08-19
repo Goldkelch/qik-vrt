@@ -44,19 +44,52 @@ jobs:
             echo 'BOOTSTRAP_NOOP: zero-bug dispatcher is not yet promoted to trusted main.'
           fi
 
-      - name: Plan complete open backlog
+      - name: Verify cumulative runtime cache contract
         if: steps.active.outputs.active == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_zero_bug_backlog.py plan --repository "$REPOSITORY" | tee /tmp/qikvrt-zero-bug-plan.json
+          python3 -B tools/qikvrt_tool_cache.py verify
+
+      - name: Plan complete open backlog and terminal frame
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/runtime/zero-bug
+          python3 -B tools/qikvrt_zero_bug_backlog.py plan --repository "$REPOSITORY" \
+            | tee .qikvrt/runtime/zero-bug/terminal-plan.json
+          python3 -B - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p = json.loads(Path('.qikvrt/runtime/zero-bug/terminal-plan.json').read_text())
+          o = p['optimization']
+          print('## QIK-VRT Zero Bug Terminal')
+          print(f"- open issues: {p['open_issue_count']}")
+          print(f"- active issue PRs: {len(p['active_issue_prs'])}")
+          print(f"- resumed persisted states: {len(p['resume_issue_numbers'])}")
+          print(f"- cold dispatches: {len(p['cold_dispatch_issue_numbers'])}")
+          print(f"- reuse ratio: {o['reuse_ratio']:.3f}")
+          print('- optimization: REUSE_BEFORE_CREATE')
+          PY
 
       - name: Dispatch every passive open issue
         if: steps.active.outputs.active == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_zero_bug_backlog.py dispatch --repository "$REPOSITORY" | tee /tmp/qikvrt-zero-bug-dispatch.json
+          python3 -B tools/qikvrt_zero_bug_backlog.py dispatch --repository "$REPOSITORY" \
+            | tee .qikvrt/runtime/zero-bug/dispatch-frame.json
+
+      - name: Persist terminal and optimization evidence
+        if: steps.active.outputs.active == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zero-bug-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/runtime/zero-bug/
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
 
       - name: Bootstrap NOOP before trusted-main promotion
         if: steps.active.outputs.active != 'true'
