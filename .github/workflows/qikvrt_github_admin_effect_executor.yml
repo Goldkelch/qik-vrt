@@ -1,0 +1,210 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT GitHub admin effect executor
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_github_admin_effect_executor.yml'
+      - 'tools/qikvrt_github_admin_effect_executor.py'
+      - 'tests/test_qikvrt_github_admin_effect_executor.py'
+      - 'schemas/qikvrt_github_admin_effect_request_v1.schema.json'
+      - 'state/admin_effects/requests/**'
+      - 'state/work_units/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json'
+      - 'policy/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json'
+      - 'docs/GITHUB_ADMIN_EFFECT_EXECUTOR.md'
+  push:
+    branches:
+      - main
+      - 'agent/github-admin-effect-executor-v1'
+      - 'agent/github-admin-effect-executor-v1-trusted-successor'
+    paths:
+      - '.github/workflows/qikvrt_github_admin_effect_executor.yml'
+      - 'tools/qikvrt_github_admin_effect_executor.py'
+      - 'tests/test_qikvrt_github_admin_effect_executor.py'
+      - 'schemas/qikvrt_github_admin_effect_request_v1.schema.json'
+      - 'state/admin_effects/requests/**'
+      - 'state/work_units/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json'
+      - 'policy/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json'
+      - 'docs/GITHUB_ADMIN_EFFECT_EXECUTOR.md'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: Exact repository request path
+        required: false
+        default: state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-github-admin-effects-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  DEFAULT_REQUEST: state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json
+  EXPECTED_ADMIN_ACCOUNT: Goldkelch
+  EXPECTED_CREDENTIAL_KIND: FINE_GRAINED_PERSONAL_ACCESS_TOKEN
+  EXPECTED_TOKEN_ENV: QIKVRT_GITHUB_ADMIN_TOKEN
+  EFFECT_STATUS_CONTEXT: QIKVRT GitHub admin effect application
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run admin-effect regression contract
+        run: python3 -B -m unittest -v tests.test_qikvrt_github_admin_effect_executor
+      - name: Validate bound request without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from tools.qikvrt_github_admin_effect_executor import validate_request
+          path=Path('state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json')
+          request=json.loads(path.read_text(encoding='utf-8'))
+          validate_request(request)
+          assert request['repository'] == 'Goldkelch/qik-vrt'
+          assert request['admin_principal'] == {
+              'account_login': 'Goldkelch',
+              'credential_kind': 'FINE_GRAINED_PERSONAL_ACCESS_TOKEN',
+              'token_env': 'QIKVRT_GITHUB_ADMIN_TOKEN',
+              'required_repository_permission': 'administration:write',
+          }
+          assert request['ruleset_id'] == 19344903
+          assert request['desired_after'] == {
+              'required_approving_review_count': 1,
+              'require_code_owner_review': True,
+              'dismiss_stale_reviews_on_push': True,
+              'require_last_push_approval': True,
+          }
+          print('ADMIN_EFFECT_REQUEST_VALID')
+          PY
+
+  apply:
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      QIKVRT_GITHUB_ADMIN_TOKEN: ${{ secrets.QIKVRT_GITHUB_ADMIN_TOKEN }}
+      QIKVRT_ADMIN_CREDENTIAL_SOURCE: fine_grained_pat:QIKVRT_GITHUB_ADMIN_TOKEN
+    steps:
+      - name: Check out trusted ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: false
+      - name: Select exact request
+        id: request
+        shell: bash
+        env:
+          REQUEST_INPUT: ${{ inputs.request_path || '' }}
+        run: |
+          set -euo pipefail
+          request="${REQUEST_INPUT:-$DEFAULT_REQUEST}"
+          case "$request" in
+            state/admin_effects/requests/*.json) ;;
+            *) echo 'request path outside allowlisted directory' >&2; exit 2;;
+          esac
+          test -f "$request"
+          printf 'path=%s\n' "$request" >> "$GITHUB_OUTPUT"
+      - name: Execute exact admin effect or emit bootstrap HOLD
+        id: apply
+        shell: bash
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${QIKVRT_GITHUB_ADMIN_TOKEN:-}" ]; then
+            cat > admin-effect-receipt.json <<JSON
+          {
+            "schema": "qikvrt_github_admin_effect_receipt_v1",
+            "state": "HOLD",
+            "verified": false,
+            "first_blocker": "BOUND_ADMIN_TOKEN_NOT_BOOTSTRAPPED",
+            "expected_admin_account": "$EXPECTED_ADMIN_ACCOUNT",
+            "credential_kind": "$EXPECTED_CREDENTIAL_KIND",
+            "required_repository_permission": "administration:write",
+            "required_bootstrap": [
+              "$EXPECTED_TOKEN_ENV"
+            ],
+            "put_executed": false,
+            "credential_serialized": false
+          }
+          JSON
+            cat admin-effect-receipt.json
+            exit 0
+          fi
+          python3 -B tools/qikvrt_github_admin_effect_executor.py \
+            "$REQUEST_PATH" --execute --receipt admin-effect-receipt.json
+      - name: Publish redacted exact-effect status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          path = Path('admin-effect-receipt.json')
+          if path.is_file():
+              receipt = json.loads(path.read_text(encoding='utf-8'))
+              receipt_state = str(receipt.get('state') or 'UNKNOWN')
+              verified = bool(receipt.get('verified'))
+              first_blocker = str(receipt.get('first_blocker') or receipt.get('error') or '')
+              status_state = (
+                  'success'
+                  if verified and receipt_state in {'APPLIED_VERIFIED', 'ALREADY_APPLIED'}
+                  else 'failure'
+              )
+              detail = first_blocker or receipt_state
+              description = f'{receipt_state}: {detail}'[:140]
+          else:
+              receipt_state = 'ERROR'
+              status_state = 'error'
+              description = 'ERROR: ADMIN_EFFECT_RECEIPT_MISSING'
+
+          subprocess.check_call([
+              'gh', 'api', '--method', 'POST',
+              f"repos/{os.environ['GITHUB_REPOSITORY']}/statuses/{os.environ['GITHUB_SHA']}",
+              '-f', f'state={status_state}',
+              '-f', f"context={os.environ['EFFECT_STATUS_CONTEXT']}",
+              '-f', f'description={description}',
+              '-f', (
+                  'target_url='
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+                  f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              ),
+          ])
+          print(json.dumps({
+              'receipt_state': receipt_state,
+              'status_state': status_state,
+              'description': description,
+          }, sort_keys=True))
+          PY
+      - name: Upload redacted exact-effect receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-github-admin-effect-${{ github.run_id }}
+          path: admin-effect-receipt.json
+          if-no-files-found: error
+          retention-days: 30

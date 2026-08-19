@@ -1,0 +1,75 @@
+{
+  "schema": "qikvrt_github_admin_effect_executor_policy_v1",
+  "state": "ACTIVE_CANDIDATE",
+  "purpose": "Provide a permanent repository-native transport for exact, separately authorized GitHub administration effects without substituting source commits for account or repository settings.",
+  "executor": "tools/qikvrt_github_admin_effect_executor.py",
+  "workflow": ".github/workflows/qikvrt_github_admin_effect_executor.yml",
+  "request_root": "state/admin_effects/requests",
+  "credential": {
+    "source": "runtime secret only",
+    "credential_kind": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN",
+    "secret_name": "QIKVRT_GITHUB_ADMIN_TOKEN",
+    "bound_account": "Goldkelch",
+    "bound_repository": "Goldkelch/qik-vrt",
+    "minimum_required_capability": "Repository administration: write for the exact target repository",
+    "live_identity_verification": "GET /user must resolve to Goldkelch before any ruleset request",
+    "repository_persistence": "FORBIDDEN",
+    "receipt_persistence": "REDACTED_ONLY"
+  },
+  "transaction": [
+    "EXACT_REQUEST",
+    "LIVE_PRINCIPAL_GET",
+    "PRINCIPAL_MATCH",
+    "LIVE_RULESET_GET",
+    "COMPARE_AND_SWAP",
+    "ALLOWLISTED_PATCH",
+    "FULL_PUT",
+    "LIVE_REOBSERVATION",
+    "VERIFIED_RECEIPT"
+  ],
+  "supported_effects": {
+    "RULESET_PULL_REQUEST_REVIEW_POLICY": {
+      "endpoint": "PUT /repos/{owner}/{repo}/rulesets/{ruleset_id}",
+      "allowlisted_parameters": [
+        "required_approving_review_count",
+        "require_code_owner_review",
+        "dismiss_stale_reviews_on_push",
+        "require_last_push_approval"
+      ],
+      "preserve_unmentioned_rules": true,
+      "force": false
+    }
+  },
+  "invariants": [
+    "NO_CREDENTIAL_NO_EFFECT",
+    "NO_EXACT_REQUEST_NO_EFFECT",
+    "NO_PRINCIPAL_IDENTITY_MATCH_NO_EFFECT",
+    "NO_COMPARE_AND_SWAP_MATCH_NO_EFFECT",
+    "NO_ALLOWLIST_MATCH_NO_EFFECT",
+    "NO_FORCE",
+    "NO_SOURCE_COMMIT_AS_ADMIN_EFFECT_SUBSTITUTE",
+    "NO_SUCCESS_WITHOUT_POST_EFFECT_GET",
+    "NO_CREDENTIAL_SERIALIZATION",
+    "IDEMPOTENT_ALREADY_APPLIED_IS_NOOP",
+    "ONE_ADMIN_EFFECT_WRITER"
+  ],
+  "continuous_operation": {
+    "schedule": "every five minutes",
+    "push": true,
+    "workflow_dispatch": true,
+    "pull_request_mode": "VALIDATE_ONLY"
+  },
+  "effect_acknowledgement": {
+    "success_states": ["ALREADY_APPLIED", "APPLIED_VERIFIED"],
+    "hold_states": [
+      "BOUND_ADMIN_TOKEN_NOT_BOOTSTRAPPED",
+      "ADMIN_PRINCIPAL_IDENTITY_MISMATCH",
+      "COMPARE_AND_SWAP_MISMATCH",
+      "API_FAILURE",
+      "POST_EFFECT_VERIFICATION_MISMATCH"
+    ],
+    "PASS_implied": false,
+    "FINAL_PASS_implied": false,
+    "EFFECT_ACK_DONE_implied": false
+  }
+}

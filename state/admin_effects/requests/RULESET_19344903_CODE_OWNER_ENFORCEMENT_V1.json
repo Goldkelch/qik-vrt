@@ -1,0 +1,45 @@
+{
+  "schema": "qikvrt_github_admin_effect_request_v1",
+  "request_id": "ruleset-19344903-code-owner-enforcement-v1",
+  "authorization_id": "PO-2026-08-17-GITHUB-ADMIN-EFFECT-EXECUTOR-V1",
+  "effect_type": "RULESET_PULL_REQUEST_REVIEW_POLICY",
+  "repository": "Goldkelch/qik-vrt",
+  "admin_principal": {
+    "account_login": "Goldkelch",
+    "credential_kind": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN",
+    "token_env": "QIKVRT_GITHUB_ADMIN_TOKEN",
+    "required_repository_permission": "administration:write"
+  },
+  "ruleset_id": 19344903,
+  "ruleset_name": "QIK-VRT main protection",
+  "expected_conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/main"
+      ]
+    }
+  },
+  "expected_before": {
+    "required_approving_review_count": 0,
+    "require_code_owner_review": false,
+    "dismiss_stale_reviews_on_push": false,
+    "require_last_push_approval": false
+  },
+  "desired_after": {
+    "required_approving_review_count": 1,
+    "require_code_owner_review": true,
+    "dismiss_stale_reviews_on_push": true,
+    "require_last_push_approval": true
+  },
+  "force": false,
+  "effect_boundary": {
+    "repository_content_write": false,
+    "branch_ref_write": false,
+    "review_mutation": false,
+    "merge": false,
+    "release": false,
+    "deployment": false,
+    "external_publication": false
+  }
+}

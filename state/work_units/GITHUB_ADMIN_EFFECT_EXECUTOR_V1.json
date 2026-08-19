@@ -1,0 +1,46 @@
+{
+  "schema": "qikvrt_work_unit_v1",
+  "work_unit_id": "GITHUB_ADMIN_EFFECT_EXECUTOR_V1",
+  "repository": "Goldkelch/qik-vrt",
+  "base_commit": "836a068d42b30f4df496caf4d712dbe8da45c043",
+  "branch": "agent/github-admin-effect-executor-v1-trusted-successor",
+  "product_owner_authorization": "PO-2026-08-17-GITHUB-ADMIN-EFFECT-EXECUTOR-V1",
+  "purpose": "Close the persistent transport gap for exact GitHub administration effects by implementing a fail-closed repository-native executor.",
+  "initial_effect_request": "state/admin_effects/requests/RULESET_19344903_CODE_OWNER_ENFORCEMENT_V1.json",
+  "implementation_paths": [
+    ".github/workflows/qikvrt_github_admin_effect_executor.yml",
+    "tools/qikvrt_github_admin_effect_executor.py",
+    "tests/test_qikvrt_github_admin_effect_executor.py",
+    "policy/GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json",
+    "schemas/qikvrt_github_admin_effect_request_v1.schema.json",
+    "docs/GITHUB_ADMIN_EFFECT_EXECUTOR.md",
+    "state/authorization/delegations/OWNER_GITHUB_ADMIN_EFFECT_EXECUTOR_V1.json"
+  ],
+  "credential_binding": {
+    "account_login": "Goldkelch",
+    "credential_kind": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN",
+    "token_env": "QIKVRT_GITHUB_ADMIN_TOKEN",
+    "repository": "Goldkelch/qik-vrt",
+    "required_repository_permission": "administration:write",
+    "live_identity_check": "GET /user"
+  },
+  "invariants": [
+    "GET_PRINCIPAL_GET_RULESET_COMPARE_PUT_GET_RULESET",
+    "EXACT_REQUEST_ONLY",
+    "PRINCIPAL_IDENTITY_MATCH",
+    "COMPARE_AND_SWAP",
+    "ALLOWLIST_ONLY",
+    "NO_FORCE",
+    "NO_CREDENTIAL_PERSISTENCE",
+    "IDEMPOTENT_REOBSERVATION",
+    "ONE_ADMIN_EFFECT_WRITER"
+  ],
+  "superseded_bootstrap": {
+    "installation_id": 147849532,
+    "reason": "THIRD_PARTY_APP_PRIVATE_KEY_NOT_REPOSITORY_CONTROLLED",
+    "active": false
+  },
+  "current_first_blocker": "BOUND_ADMIN_TOKEN_NOT_BOOTSTRAPPED",
+  "external_effect": "NONE_WITHOUT_BOUND_RUNTIME_TOKEN",
+  "ruleset_effect": "SEPARATELY_EXECUTED_ONLY_AFTER_RUNTIME_ADMIN_CREDENTIAL"
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qikvrt_github_admin_effect_request_v1.schema.json",
+  "title": "QIK-VRT GitHub administration effect request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "request_id",
+    "authorization_id",
+    "effect_type",
+    "repository",
+    "admin_principal",
+    "ruleset_id",
+    "ruleset_name",
+    "expected_conditions",
+    "expected_before",
+    "desired_after",
+    "force",
+    "effect_boundary"
+  ],
+  "properties": {
+    "schema": {"const": "qikvrt_github_admin_effect_request_v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "authorization_id": {"type": "string", "minLength": 1},
+    "effect_type": {"const": "RULESET_PULL_REQUEST_REVIEW_POLICY"},
+    "repository": {"const": "Goldkelch/qik-vrt"},
+    "admin_principal": {"$ref": "#/$defs/adminPrincipal"},
+    "ruleset_id": {"type": "integer", "minimum": 1},
+    "ruleset_name": {"type": "string", "minLength": 1},
+    "expected_conditions": {"type": "object"},
+    "expected_before": {"$ref": "#/$defs/reviewPolicy"},
+    "desired_after": {"$ref": "#/$defs/reviewPolicy"},
+    "force": {"const": false},
+    "effect_boundary": {"type": "object"}
+  },
+  "$defs": {
+    "adminPrincipal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_login",
+        "credential_kind",
+        "token_env",
+        "required_repository_permission"
+      ],
+      "properties": {
+        "account_login": {"const": "Goldkelch"},
+        "credential_kind": {"const": "FINE_GRAINED_PERSONAL_ACCESS_TOKEN"},
+        "token_env": {"const": "QIKVRT_GITHUB_ADMIN_TOKEN"},
+        "required_repository_permission": {"const": "administration:write"}
+      }
+    },
+    "reviewPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_approving_review_count",
+        "require_code_owner_review",
+        "dismiss_stale_reviews_on_push",
+        "require_last_push_approval"
+      ],
+      "properties": {
+        "required_approving_review_count": {"type": "integer", "minimum": 0, "maximum": 6},
+        "require_code_owner_review": {"type": "boolean"},
+        "dismiss_stale_reviews_on_push": {"type": "boolean"},
+        "require_last_push_approval": {"type": "boolean"}
+      }
+    }
+  }
+}
