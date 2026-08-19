@@ -1,0 +1,35 @@
+{
+  "schema": "qikvrt_temdd_m68000_four_action_roundtrip_v1",
+  "issue": 714,
+  "base_pr": 690,
+  "architecture": "TEMDD",
+  "target": "Motorola 68000",
+  "semantic_boundary": {
+    "cardinality": 4,
+    "actions": [
+      {"name": "NOOP", "d0": 0, "machine_hex": "70004e75", "assembly": "MOVEQ #0,D0 ; RTS"},
+      {"name": "HOLD", "d0": 1, "machine_hex": "70014e75", "assembly": "MOVEQ #1,D0 ; RTS"},
+      {"name": "REOBSERVE", "d0": 2, "machine_hex": "70024e75", "assembly": "MOVEQ #2,D0 ; RTS"},
+      {"name": "REQUEST_AUTHORITY", "d0": 3, "machine_hex": "70034e75", "assembly": "MOVEQ #3,D0 ; RTS"}
+    ]
+  },
+  "forward": "validated TEMDD/QIKU plan -> bounded M68000 lowering -> exact 4-byte machine sequence",
+  "reverse": "exact admitted 4-byte machine sequence -> unique semantic action",
+  "roundtrip_invariants": [
+    "decode(encode(action)) == action",
+    "encode(decode(machine)) == machine for admitted machine sequences",
+    "exactly four semantic actions are admitted",
+    "exactly four machine sequences are admitted",
+    "all other machine sequences fail closed"
+  ],
+  "instruction_semantics": {
+    "7000..7003": "MOVEQ #0..#3,D0",
+    "4e75": "RTS"
+  },
+  "non_claims": [
+    "The four semantic actions are not four distinct Motorola instruction mnemonics.",
+    "The target boundary uses four exact machine-code sequences composed from MOVEQ and RTS.",
+    "Reverse decoding does not reconstruct provenance that was intentionally kept outside executable authority.",
+    "This artifact alone does not imply independent review, merge, deployment, physical hardware execution, PASS, FINAL_PASS or EFFECT_ACK_DONE."
+  ]
+}
