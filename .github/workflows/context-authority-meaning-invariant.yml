@@ -29,5 +29,19 @@ jobs:
           python-version: "3.12"
       - name: Validate invariant structure
         run: python tools/verify_context_authority_meaning_invariant.py
-      - name: Run invariant tests
-        run: python -m pytest -q tests/test_context_authority_meaning_invariant.py
+      - name: Run invariant tests without undeclared third-party dependencies
+        run: |
+          python - <<'PY'
+          from tests import test_context_authority_meaning_invariant as suite
+
+          tests = [
+              getattr(suite, name)
+              for name in sorted(dir(suite))
+              if name.startswith("test_") and callable(getattr(suite, name))
+          ]
+          if not tests:
+              raise SystemExit("no invariant tests discovered")
+          for test in tests:
+              test()
+          print(f"{len(tests)} invariant tests passed")
+          PY
