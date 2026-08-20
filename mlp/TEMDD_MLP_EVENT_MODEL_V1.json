@@ -1,0 +1,39 @@
+{
+  "schema": "qikvrt_temdd_mlp_event_model_v1",
+  "name": "MLP Machine Learning Program",
+  "method": "TEMDD",
+  "method_expansion": "Tested Event Model Driven Development",
+  "purpose": "Compile an explicitly authorized semantic request through fail-closed event states into an M68000 decision capsule and a bounded host-side Firefox proxy launch without collapsing request, execution, observation, or acknowledgement.",
+  "distinctions": [
+    "CAUSALITY != SEQUENCE",
+    "REQUESTED != EXECUTED",
+    "EXECUTED != OBSERVED",
+    "OBSERVED != ACKNOWLEDGED",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "CODE != AUTHORITY",
+    "BROWSER_PERMISSION != EFFECT_AUTHORIZATION"
+  ],
+  "event_chain": [
+    {"state": "MODELLED", "actor": "compiler", "productive": false},
+    {"state": "REQUESTED", "actor": "MLP_M68000", "productive": false},
+    {"state": "REQUEST_AUTHORITY", "actor": "MLP_M68000", "productive": false},
+    {"state": "BROWSER_LAUNCH_EXECUTED", "actor": "UBUNTU_HOST", "productive": false},
+    {"state": "BROWSER_OBSERVED", "actor": "FIREFOX_PROXY", "productive": false},
+    {"state": "EFFECT_ACKNOWLEDGED", "actor": "AUTHORIZED_EFFECT_ADAPTER", "productive": true}
+  ],
+  "m68000_contract": {
+    "D0": {"0": "NOOP", "1": "HOLD", "2": "REOBSERVE", "3": "REQUEST_AUTHORITY"},
+    "D1": "semantic witness flags compatible with semantic-decision-capsule-v2",
+    "D2": {"0": "NONE", "1": "REQUESTED", "2": "EXECUTED", "3": "OBSERVED", "4": "ACKNOWLEDGED", "5": "REJECTED", "6": "UNKNOWN"},
+    "mlp_open_firefox_initial": {"D0": 3, "D1": 3, "D2": 1, "bytes_hex": "7203740170034e75"}
+  },
+  "safety": {
+    "default": "HOLD",
+    "unknown_is_productive": false,
+    "missing_authority_is_productive": false,
+    "head_or_tree_drift": "HOLD",
+    "secret_serialization": false,
+    "physical_megast_execution_claim": false,
+    "effect_ack_done_claim": false
+  }
+}

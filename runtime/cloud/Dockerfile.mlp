@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG FIREFOX_TARBALL_URL
+ARG FIREFOX_TARBALL_SHA256
+ARG QIKVRT_FIREFOX_XPI_URL
+ARG QIKVRT_FIREFOX_XPI_SHA256
+
+RUN test -n "$FIREFOX_TARBALL_URL" \
+ && test -n "$FIREFOX_TARBALL_SHA256" \
+ && test -n "$QIKVRT_FIREFOX_XPI_URL" \
+ && test -n "$QIKVRT_FIREFOX_XPI_SHA256"
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl build-essential python3 hatari xvfb x11vnc fluxbox \
+      libgtk-3-0 libdbus-glib-1-2 libasound2t64 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "$FIREFOX_TARBALL_URL" -o /tmp/firefox.tar \
+ && echo "$FIREFOX_TARBALL_SHA256  /tmp/firefox.tar" | sha256sum -c - \
+ && tar -xf /tmp/firefox.tar -C /opt \
+ && test -x /opt/firefox/firefox \
+ && rm /tmp/firefox.tar
+
+RUN mkdir -p /opt/firefox/distribution/extensions \
+ && curl -fsSL "$QIKVRT_FIREFOX_XPI_URL" -o /opt/firefox/distribution/extensions/qikvrt-ai-terminal@goldkelch.local.xpi \
+ && echo "$QIKVRT_FIREFOX_XPI_SHA256  /opt/firefox/distribution/extensions/qikvrt-ai-terminal@goldkelch.local.xpi" | sha256sum -c -
+
+WORKDIR /qik-vrt
+COPY . /qik-vrt
+
+RUN cc -std=c89 -pedantic-errors -Wall -Wextra -Werror \
+      runtime/host/mlp_host_ansic.c -o /usr/local/bin/qikvrt-mlp-host
+
+ENV QIKVRT_FIREFOX_BIN=/opt/firefox/firefox
+ENV DISPLAY=:99
+
+RUN mkdir -p /mlp/shared /mlp/profile /mlp/receipts
+
+COPY runtime/cloud/mlp_cloud_entrypoint.sh /usr/local/bin/mlp-cloud
+RUN chmod 0755 /usr/local/bin/mlp-cloud
+
+ENTRYPOINT ["/usr/local/bin/mlp-cloud"]
