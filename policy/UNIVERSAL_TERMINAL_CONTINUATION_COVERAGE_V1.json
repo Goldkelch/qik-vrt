@@ -1,0 +1,31 @@
+{
+  "schema": "qikvrt.universal-terminal-continuation-coverage.v1",
+  "failure_class": "MONITOR_ONLY_STALL",
+  "applies_to": [
+    "repository monitors",
+    "terminal/watchdog loops",
+    "self-heal and Phoenix loops",
+    "requested-review executors and observers",
+    "integrity/materialization workflows",
+    "stacked-successor continuation",
+    "issue-agent work units",
+    "compiler/TEMDD pipelines",
+    "publication-preparation workflows",
+    "Authority/Mirror role-local orchestration"
+  ],
+  "required_behavior": {
+    "stable_verified_state_with_unique_authorized_next_action": "CONTINUE",
+    "verified_fixpoint": "NOOP",
+    "stale_binding": "REOBSERVE",
+    "missing_authority": "REQUEST_AUTHORITY",
+    "ambiguous_or_unsafe_state": "HOLD"
+  },
+  "anti_patterns": [
+    "OBSERVE -> REPORT -> STOP while an authorized unique next action exists",
+    "CI_SUCCESS -> WAIT without invoking a next-action selector",
+    "DRAFT_STABLE -> WAIT when repository policy permits a bounded history-preserving continuation",
+    "MATERIALIZED_TREE -> WAIT when a trusted zero-diff carrier is uniquely required",
+    "ISSUE_CLASSIFIED -> WAIT when an authorized repository-native work unit is uniquely determined"
+  ],
+  "truth_boundary": "Continuation never manufactures external authority, independent review, merge, publication, deployment, credentials, PASS, FINAL_PASS or EFFECT_ACK_DONE."
+}
