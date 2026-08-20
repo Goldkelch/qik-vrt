@@ -1,0 +1,60 @@
+{
+  "schema": "qikvrt_temporal_causal_placement_v1",
+  "product_owner": "Ingolf Lohmann",
+  "repository": "Goldkelch/qik-vrt",
+  "human_contract": "docs/TEMPORAL_CAUSAL_PLACEMENT.md",
+  "invariants": [
+    "CAUSALITY_NE_SEQUENCE",
+    "SOURCE_ORDER_NE_RECEPTION_ORDER",
+    "RECEPTION_ORDER_NE_CAUSAL_ORDER",
+    "CAUSAL_ORDER_NE_EFFECT_ORDER",
+    "SERIALIZATION_NE_CAUSAL_GRAPH",
+    "REQUESTED_NE_EXECUTED_NE_OBSERVED_NE_ACKNOWLEDGED",
+    "TRANSPORT_ACK_NE_EFFECT_ACK"
+  ],
+  "event_binding": [
+    "EVENT_IDENTITY",
+    "OBSERVER_IDENTITY",
+    "LOCAL_ORDER",
+    "SOURCE_ORDER",
+    "CAUSAL_PREDECESSORS",
+    "STATE",
+    "AUTHORITY",
+    "EVIDENCE",
+    "EFFECT_STATUS",
+    "PROOF"
+  ],
+  "late_information": {
+    "may_be_received_after_newer_source_information": true,
+    "may_require_earlier_reconstructed_local_placement": true,
+    "placement_basis": ["SOURCE_BINDING", "OBSERVER_BINDING", "CAUSAL_BINDING", "PROVENANCE"],
+    "arbitrary_history_rewrite": false
+  },
+  "operative_proper_time": {
+    "definition": "OBSERVER_OR_PROCESS_LOCAL_MONOTONE_STATE_ORDER",
+    "unit_must_be_physical_seconds": false,
+    "equals_relativistic_proper_time_without_additional_binding": false,
+    "physical_claim_requires": ["PHYSICALLY_BOUND_WORLDLINE", "MEASUREMENT_OR_CALIBRATION"]
+  },
+  "causal_ir": {
+    "serialization_may_be_valid_topological_order": true,
+    "serialization_equals_causal_graph": false
+  },
+  "effect_lifecycle": ["REQUESTED", "EXECUTED", "OBSERVED", "ACKNOWLEDGED"],
+  "scientific_nonclaims": [
+    "PHYSICAL_TIME_MACHINE",
+    "RECEPTION_BEFORE_EMISSION",
+    "BACKWARD_RUNNING_RELATIVISTIC_PROPER_TIME",
+    "CONTROLLABLE_SIGNAL_TO_OWN_CAUSAL_PAST"
+  ],
+  "machine_boundary": {
+    "m68000_atari_megast_is_concrete_target_model": true,
+    "virtual_or_modeled_execution_implies_physical_original_hardware_execution": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "PHYSICAL_CORRESPONDENCE": false
+  }
+}
