@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/qiknet/build /tmp/qiknet/drive/C
-          m68k-linux-gnu-as -m68000 -o /tmp/qiknet/build/qiknet.o MLP.TOS/QIKNET.S
+          m68k-linux-gnu-as -m68000 --register-prefix-optional -o /tmp/qiknet/build/qiknet.o MLP.TOS/QIKNET.S
           cat > /tmp/qiknet/build/link.ld <<'EOF'
           SECTIONS { . = 0; .text : { *(.text*) } }
           EOF
