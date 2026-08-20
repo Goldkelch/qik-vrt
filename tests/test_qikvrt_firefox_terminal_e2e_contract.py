@@ -8,6 +8,8 @@ class FirefoxTerminalE2EContract(unittest.TestCase):
         self.policy = json.loads(Path('policy/MLP_FIREFOX_EFFECT_ACK_E2E_V1.json').read_text())
         self.options = Path('browser/firefox/qikvrt-terminal/options.js').read_text()
         self.harness = Path('tools/qikvrt_firefox_terminal_e2e.py').read_text()
+        self.manifest = json.loads(Path('browser/firefox/qikvrt-terminal/manifest.json').read_text())
+        self.background = Path('browser/firefox/qikvrt-terminal/background.js').read_text()
 
     def test_exact_predecessor_and_tcpip_binding(self):
         self.assertEqual(self.policy['source']['pr'], 748)
@@ -25,6 +27,17 @@ class FirefoxTerminalE2EContract(unittest.TestCase):
         self.assertIn('--allow-system-access', self.harness)
         self.assertNotIn('"args": ["-headless", "-remote-allow-system-access"]', self.harness)
         self.assertIn('moz/context', self.harness)
+
+    def test_loopback_permission_is_valid_but_runtime_port_remains_exact(self):
+        hosts = self.manifest['host_permissions']
+        self.assertIn('http://127.0.0.1/*', hosts)
+        self.assertNotIn('http://127.0.0.1:8771/*', hosts)
+        self.assertNotIn('<all_urls>', hosts)
+        self.assertNotIn('http://*/*', hosts)
+        csp = self.manifest['content_security_policy']['extension_pages']
+        self.assertIn('http://127.0.0.1:8771', csp)
+        self.assertIn('const DEFAULT_BACKEND = "http://127.0.0.1:8771";', self.background)
+        self.assertIn('new Set(["http://127.0.0.1:8771", "http://localhost:8771"])', self.background)
 
     def test_effect_ack_scope_stays_bounded(self):
         b = self.policy['boundaries']
