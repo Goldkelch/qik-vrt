@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt.universal-information-terminal.v1",
+  "version": "1.0",
+  "purpose": "Accept, preserve, display, store and forward information independently of claimed temporal relation, source identity or destination identity while keeping provenance, authority, causality and effect boundaries explicit.",
+  "acceptance_invariants": [
+    "PAST_PRESENT_FUTURE_OR_UNKNOWN_DOES_NOT_BLOCK_RECEIPT",
+    "KNOWN_UNKNOWN_OR_ANONYMOUS_SOURCE_DOES_NOT_BLOCK_RECEIPT",
+    "KNOWN_UNKNOWN_BROADCAST_OR_OPAQUE_DESTINATION_DOES_NOT_BLOCK_RECEIPT",
+    "RECEIVED_DOES_NOT_EQUAL_TRUSTED",
+    "DISPLAYED_DOES_NOT_EQUAL_AUTHORIZED",
+    "STORED_DOES_NOT_EQUAL_EXECUTED",
+    "FORWARDED_DOES_NOT_EQUAL_EFFECT_ACKNOWLEDGED",
+    "CAUSALITY_DOES_NOT_EQUAL_SEQUENCE"
+  ],
+  "temporal_relations": ["PAST", "PRESENT", "FUTURE", "UNKNOWN", "UNBOUND"],
+  "source_relations": ["AUTHENTICATED", "CLAIMED", "ANONYMOUS", "UNKNOWN"],
+  "destination_relations": ["DIRECT", "GROUP", "BROADCAST", "OPAQUE", "UNKNOWN"],
+  "canonical_envelope_fields": [
+    "schema",
+    "id",
+    "created_at",
+    "observed_at",
+    "temporal_relation",
+    "source",
+    "destination",
+    "content_type",
+    "payload_encoding",
+    "payload",
+    "payload_sha256",
+    "causal_predecessors",
+    "authority",
+    "evidence",
+    "effect_state"
+  ],
+  "effect_boundary": {
+    "receipt": "ALWAYS_ALLOWED_FOR_SCHEMA_VALID_INFORMATION",
+    "display": "ALWAYS_ALLOWED_FOR_SCHEMA_VALID_INFORMATION",
+    "local_storage": "ALLOWED_WITHIN_BROWSER_QUOTA",
+    "forwarding": "EXPLICIT_USER_ACTION_OR_BOUND_TRANSPORT_ADAPTER",
+    "execution": "SEPARATE_AUTHORITY_AND_EFFECT_ACK_GATE_REQUIRED",
+    "unknown_source": "DO_NOT_INVENT_TRUST",
+    "future_label": "DO_NOT_CLAIM_PHYSICAL_BACKWARD_CAUSATION"
+  },
+  "transport_model": {
+    "envelope_is_transport_neutral": true,
+    "adapters_may_include": ["CLIPBOARD", "FILE", "HTTP", "WEBSOCKET", "WEBEXTENSION_RUNTIME", "MESSAGE_QUEUE", "GIT", "OTHER_BOUND_ADAPTER"],
+    "transport_ack_is_not_effect_ack": true
+  },
+  "exclusions": [
+    "No source identity is erased; unknown remains unknown.",
+    "No destination identity is fabricated.",
+    "No temporal label grants authority.",
+    "No physical signal into a causal past is claimed.",
+    "No arbitrary remote write permission is introduced by this policy.",
+    "No merge, deployment, publication, PASS, FINAL_PASS or EFFECT_ACK_DONE is implied."
+  ]
+}
