@@ -322,7 +322,8 @@ def oneBitProjection : Decision → Bool
   | .requestAuthority => true
 
 /-- One bit cannot injectively encode all four boundary decisions. -/
-theorem one_bit_not_enough_for_four_states : ¬ Function.Injective oneBitProjection := by
+theorem one_bit_not_enough_for_four_states :
+    ¬ (∀ ⦃a b : Decision⦄, oneBitProjection a = oneBitProjection b → a = b) := by
   intro h
   have hEq : Decision.noop = Decision.reobserve := h rfl
   cases hEq
