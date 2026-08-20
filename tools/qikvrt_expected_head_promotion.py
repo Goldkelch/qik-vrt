@@ -4,9 +4,16 @@
 """Fail-closed decision core for expected-head-bound QIK-VRT promotion.
 
 This module intentionally does not mutate GitHub. It evaluates an exact live
-snapshot and returns either PROMOTABLE or the first deterministic blocker.
-The GitHub workflow is responsible for reobserving the same head/base again
-immediately before changing draft state or merging.
+snapshot and returns one phase of the promotion state machine:
+
+* READY_FOR_REVIEW when a marked draft has satisfied every repository-internal
+  exact-head gate that can legitimately precede human review;
+* PROMOTABLE only after the candidate is non-draft and the independently bound
+  requested-review status is successful;
+* BLOCK for the first deterministic blocker otherwise.
+
+The phase split prevents a cyclic dependency where review waits for a PR to be
+ready while promotion waits for review before making the PR ready.
 """
 from __future__ import annotations
 
@@ -17,6 +24,7 @@ import sys
 from typing import Any, Iterable, Mapping, Sequence
 
 PROMOTION_MARKER = "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
+REVIEW_GATE = "QIKVRT requested review execution"
 SUCCESS_CONCLUSIONS = {"success"}
 NON_ADVERSE_CONCLUSIONS = {"success", "skipped"}
 
@@ -61,22 +69,45 @@ def collapse_latest_runs(runs: Iterable[Mapping[str, Any]]) -> dict[str, Mapping
     return latest
 
 
-def _blocked(snapshot: Mapping[str, Any], failure_class: str, detail: str) -> dict[str, Any]:
-    return {
-        "schema": "qikvrt_expected_head_promotion_decision_v1",
-        "state": "BLOCK",
+def _decision(
+    snapshot: Mapping[str, Any],
+    state: str,
+    failure_class: str | None,
+    detail: str,
+    *,
+    latest: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    result = {
+        "schema": "qikvrt_expected_head_promotion_decision_v2",
+        "state": state,
         "first_blocker": failure_class,
         "detail": detail,
         "pr_number": snapshot.get("pr_number"),
         "expected_head_sha": snapshot.get("expected_head_sha"),
+        "current_main_sha": snapshot.get("current_main_sha"),
         "external_effect": "NONE",
         "completion_claims": {
             "PASS": False,
             "FINAL_PASS": False,
             "EFFECT_ACK_DONE": False,
             "AUTHORITY_MIRROR_EQUALITY": False,
+            "INDEPENDENT_REVIEW": False,
         },
     }
+    if latest is not None:
+        result["latest_workflows"] = {
+            name: {
+                "run_number": _run_number(run),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+            }
+            for name, run in sorted(latest.items())
+        }
+    return result
+
+
+def _blocked(snapshot: Mapping[str, Any], failure_class: str, detail: str) -> dict[str, Any]:
+    return _decision(snapshot, "BLOCK", failure_class, detail)
 
 
 def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
@@ -109,12 +140,21 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         isinstance(name, str) and name for name in required
     ):
         raise PromotionBlock("required_gates must be a non-empty list of names")
+    if REVIEW_GATE not in required:
+        raise PromotionBlock(f"required_gates must include {REVIEW_GATE!r}")
+
     runs = snapshot.get("workflow_runs")
     if not isinstance(runs, list):
         raise PromotionBlock("workflow_runs must be a list")
     latest = collapse_latest_runs(runs)
+    draft = snapshot.get("draft") is True
 
-    for gate in required:
+    # A draft cannot receive the requested-review disposition by contract.
+    # Therefore validate only gates that legitimately precede human review and,
+    # once they are green, advance exactly one phase to READY_FOR_REVIEW.
+    phase_required = [gate for gate in required if not (draft and gate == REVIEW_GATE)]
+
+    for gate in phase_required:
         run = latest.get(gate)
         if run is None:
             return _blocked(snapshot, "REQUIRED_EXACT_HEAD_GATE_MISSING", f"required workflow is absent: {gate}")
@@ -124,7 +164,7 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
             return _blocked(snapshot, "REQUIRED_EXACT_HEAD_GATE_NOT_GREEN", f"required workflow is not successful: {gate}={run.get('conclusion')}")
 
     for name, run in sorted(latest.items()):
-        if name in required:
+        if name in phase_required or (draft and name == REVIEW_GATE):
             continue
         status = run.get("status")
         conclusion = run.get("conclusion")
@@ -133,30 +173,33 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         if conclusion not in NON_ADVERSE_CONCLUSIONS:
             return _blocked(snapshot, "APPLICABLE_EXACT_HEAD_GATE_NOT_GREEN", f"workflow is adverse: {name}={conclusion}")
 
-    return {
-        "schema": "qikvrt_expected_head_promotion_decision_v1",
-        "state": "PROMOTABLE",
-        "first_blocker": None,
-        "detail": "all exact-head promotion conditions are satisfied",
-        "pr_number": snapshot.get("pr_number"),
-        "expected_head_sha": expected_head,
-        "current_main_sha": current_main,
-        "latest_workflows": {
-            name: {
-                "run_number": _run_number(run),
-                "status": run.get("status"),
-                "conclusion": run.get("conclusion"),
-            }
-            for name, run in sorted(latest.items())
-        },
-        "external_effect": "NONE",
-        "completion_claims": {
-            "PASS": False,
-            "FINAL_PASS": False,
-            "EFFECT_ACK_DONE": False,
-            "AUTHORITY_MIRROR_EQUALITY": False,
-        },
-    }
+    if draft:
+        return _decision(
+            snapshot,
+            "READY_FOR_REVIEW",
+            None,
+            "all pre-review exact-head conditions are satisfied; reclassify draft as ready and reobserve before review",
+            latest=latest,
+        )
+
+    # Non-draft candidates must now carry a successful, exact-head-bound review
+    # status. This remains distinct from and cannot imply independent Code-Owner
+    # authority.
+    review = latest.get(REVIEW_GATE)
+    if review is None:
+        return _blocked(snapshot, "REVIEW_GATE_MISSING", "requested-review exact-head status is absent")
+    if review.get("status") != "completed":
+        return _blocked(snapshot, "REVIEW_GATE_NOT_TERMINAL", "requested-review exact-head status is not terminal")
+    if review.get("conclusion") not in SUCCESS_CONCLUSIONS:
+        return _blocked(snapshot, "REVIEW_GATE_NOT_GREEN", f"requested-review exact-head status is not successful: {review.get('conclusion')}")
+
+    return _decision(
+        snapshot,
+        "PROMOTABLE",
+        None,
+        "all exact-head promotion conditions, including requested-review execution, are satisfied",
+        latest=latest,
+    )
 
 
 def _load_snapshot(path: str) -> Mapping[str, Any]:
@@ -178,14 +221,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = evaluate_promotion(_load_snapshot(args.input))
     except (OSError, ValueError, json.JSONDecodeError, PromotionBlock) as exc:
         result = {
-            "schema": "qikvrt_expected_head_promotion_decision_v1",
+            "schema": "qikvrt_expected_head_promotion_decision_v2",
             "state": "BLOCK",
             "first_blocker": "INVALID_PROMOTION_SNAPSHOT",
             "detail": str(exc),
             "external_effect": "NONE",
         }
     print(json.dumps(result, sort_keys=True, indent=2))
-    return 0 if result.get("state") == "PROMOTABLE" else 2
+    return 0 if result.get("state") in {"READY_FOR_REVIEW", "PROMOTABLE"} else 2
 
 
 if __name__ == "__main__":
