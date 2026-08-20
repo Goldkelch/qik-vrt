@@ -4,16 +4,18 @@
 """Fail-closed decision core for expected-head-bound QIK-VRT promotion.
 
 This module intentionally does not mutate GitHub. It evaluates an exact live
-snapshot and returns one phase of the promotion state machine:
+snapshot and returns PROMOTABLE or the first deterministic blocker. PROMOTABLE
+is phase-qualified:
 
-* READY_FOR_REVIEW when a marked draft has satisfied every repository-internal
-  exact-head gate that can legitimately precede human review;
-* PROMOTABLE only after the candidate is non-draft and the independently bound
-  requested-review status is successful;
-* BLOCK for the first deterministic blocker otherwise.
+* phase=READY_FOR_REVIEW when a marked draft has satisfied every repository-
+  internal exact-head gate that can legitimately precede human review;
+* phase=MERGE only after the candidate is non-draft and the independently bound
+  requested-review status is successful.
 
 The phase split prevents a cyclic dependency where review waits for a PR to be
-ready while promotion waits for review before making the PR ready.
+ready while promotion waits for review before making the PR ready. The existing
+workflow already reobserves `draft` and advances only one phase per execution,
+so this remains backward-compatible with the executor contract.
 """
 from __future__ import annotations
 
@@ -75,11 +77,13 @@ def _decision(
     failure_class: str | None,
     detail: str,
     *,
+    phase: str | None = None,
     latest: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     result = {
         "schema": "qikvrt_expected_head_promotion_decision_v2",
         "state": state,
+        "phase": phase,
         "first_blocker": failure_class,
         "detail": detail,
         "pr_number": snapshot.get("pr_number"),
@@ -150,8 +154,9 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     draft = snapshot.get("draft") is True
 
     # A draft cannot receive the requested-review disposition by contract.
-    # Therefore validate only gates that legitimately precede human review and,
-    # once they are green, advance exactly one phase to READY_FOR_REVIEW.
+    # Validate only the gates that may legitimately precede review. Once those
+    # are green, the existing workflow advances exactly one phase by marking the
+    # PR ready and then exits without merging.
     phase_required = [gate for gate in required if not (draft and gate == REVIEW_GATE)]
 
     for gate in phase_required:
@@ -176,15 +181,16 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     if draft:
         return _decision(
             snapshot,
-            "READY_FOR_REVIEW",
+            "PROMOTABLE",
             None,
-            "all pre-review exact-head conditions are satisfied; reclassify draft as ready and reobserve before review",
+            "all pre-review exact-head conditions are satisfied; advance exactly one phase to ready-for-review and reobserve",
+            phase="READY_FOR_REVIEW",
             latest=latest,
         )
 
-    # Non-draft candidates must now carry a successful, exact-head-bound review
-    # status. This remains distinct from and cannot imply independent Code-Owner
-    # authority.
+    # Once non-draft, the requested-review status is mandatory. This status may
+    # record a repository-native substantive disposition but never implies an
+    # independent Code-Owner identity or authority.
     review = latest.get(REVIEW_GATE)
     if review is None:
         return _blocked(snapshot, "REVIEW_GATE_MISSING", "requested-review exact-head status is absent")
@@ -198,6 +204,7 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "PROMOTABLE",
         None,
         "all exact-head promotion conditions, including requested-review execution, are satisfied",
+        phase="MERGE",
         latest=latest,
     )
 
@@ -223,12 +230,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = {
             "schema": "qikvrt_expected_head_promotion_decision_v2",
             "state": "BLOCK",
+            "phase": None,
             "first_blocker": "INVALID_PROMOTION_SNAPSHOT",
             "detail": str(exc),
             "external_effect": "NONE",
         }
     print(json.dumps(result, sort_keys=True, indent=2))
-    return 0 if result.get("state") in {"READY_FOR_REVIEW", "PROMOTABLE"} else 2
+    return 0 if result.get("state") == "PROMOTABLE" else 2
 
 
 if __name__ == "__main__":
