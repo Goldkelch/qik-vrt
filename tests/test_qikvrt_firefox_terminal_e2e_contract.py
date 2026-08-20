@@ -21,9 +21,9 @@ class FirefoxTerminalE2EContract(unittest.TestCase):
         self.assertIn('E2E_DONE:', self.options)
         self.assertIn('moz/addon/install', self.harness)
 
-    def test_firefox_system_context_is_explicitly_enabled(self):
+    def test_firefox_system_context_is_enabled_at_geckodriver_boundary(self):
         self.assertIn('--allow-system-access', self.harness)
-        self.assertIn('-remote-allow-system-access', self.harness)
+        self.assertNotIn('"args": ["-headless", "-remote-allow-system-access"]', self.harness)
         self.assertIn('moz/context', self.harness)
 
     def test_effect_ack_scope_stays_bounded(self):
