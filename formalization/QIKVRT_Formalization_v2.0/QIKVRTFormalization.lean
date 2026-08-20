@@ -24,7 +24,6 @@ import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
-import QIKVRTFormalization.Hardware.BitwidthCausalMachine
 import QIKVRTFormalization.Decision.ObservationSufficiency
 
 /-!
@@ -59,12 +58,6 @@ with an independent commit witness, fail-closed witnessless divergence,
 idempotent recovery, monotone epochs, and witness-bound Effect ACK semantics.
 Its mathematical digest is symbolic and injective; operational SHA-256 collision
 resistance remains an explicit external implementation assumption.
-
-The bitwidth-causal-machine tranche formalizes the four fail-closed boundary
-decisions as a stable semantic code, finite machine words, zero-extension, and
-refinement across wider word widths. It explicitly separates the one-bit binary
-distinction primitive from the two-bit capacity required to injectively encode
-all four boundary decisions.
 
 The decision-sufficiency tranche generalizes the witness theorem: evidence is
 deterministically sufficient exactly when observation fibers do not mix histories
