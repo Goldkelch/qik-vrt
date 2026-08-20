@@ -76,26 +76,34 @@ jobs:
             --guest-out /tmp/qiknet/guest.out \
             --guest-in /tmp/qiknet/guest.in \
             --receipt /tmp/qiknet/endpoint-receipt.json \
-            --timeout 18 > /tmp/qiknet/peer.log 2>&1 &
+            --timeout 25 > /tmp/qiknet/peer.log 2>&1 &
           peer_pid=$!
           rom="$(cat /tmp/qiknet/emutos/rom.path)"
           xvfb-run -a hatari \
-            --machine megast --cpulevel 0 --cpuclock 8 --memsize 1 \
-            --tos "$rom" --harddrive /tmp/qiknet/drive/C \
+            --machine megast --cpulevel 0 --cpuclock 8 \
+            --compatible on --cpu-exact on --addr24 on --memsize 1 \
+            --tos "$rom" --harddrive /tmp/qiknet/drive \
             --rs232-in /tmp/qiknet/guest.in --rs232-out /tmp/qiknet/guest.out \
             --auto 'C:\QIKNET.PRG' --confirm-quit false \
+            --fast-forward on --sound off --disable-video on --benchmark \
+            --trace os_base \
             > /tmp/qiknet/hatari.log 2>&1 &
           hatari_pid=$!
           ok=0
-          for i in $(seq 1 180); do
+          for i in $(seq 1 250); do
             if test -s /tmp/qiknet/drive/C/QIKNET.OK; then ok=1; break; fi
             if ! kill -0 "$hatari_pid" 2>/dev/null; then break; fi
             sleep 0.1
           done
           kill "$hatari_pid" 2>/dev/null || true
           wait "$hatari_pid" 2>/dev/null || true
-          wait "$peer_pid" || { cat /tmp/qiknet/peer.log; exit 1; }
+          if ! wait "$peer_pid"; then
+            cat /tmp/qiknet/peer.log
+            cat /tmp/qiknet/hatari.log
+            exit 1
+          fi
           test "$ok" -eq 1
+          grep -F 'Pexec(0, "C:\QIKNET.PRG"' /tmp/qiknet/hatari.log
           grep -F 'GUEST_TCP_IP_ROUNDTRIP_OBSERVED' /tmp/qiknet/drive/C/QIKNET.OK
           cat /tmp/qiknet/peer.log
           cat /tmp/qiknet/endpoint-receipt.json
