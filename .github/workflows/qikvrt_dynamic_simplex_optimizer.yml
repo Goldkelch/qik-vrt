@@ -1,0 +1,98 @@
+name: QIKVRT Dynamic Simplex Optimizer
+
+on:
+  pull_request:
+    paths:
+      - 'state/autonomy/DYNAMIC_SIMPLEX_OPTIMIZER_V1.json'
+      - 'tools/qikvrt_dynamic_simplex_optimizer.py'
+      - 'tests/test_qikvrt_dynamic_simplex_optimizer.py'
+      - 'docs/DYNAMIC_SIMPLEX_OPTIMIZATION_V1.md'
+      - '.github/workflows/qikvrt_dynamic_simplex_optimizer.yml'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [qikvrt-dynamic-simplex-optimize]
+  workflow_run:
+    workflows:
+      - QIKVRT CI
+      - QIKVRT Collective Proposal Review
+      - QIK-VRT global claim completion
+      - QIKVRT repository evidence materialization
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: qikvrt-dynamic-simplex-${{ github.event.pull_request.number || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify-optimizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pull-request head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Checkout default branch event state
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Compile optimizer
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m py_compile \
+            tools/qikvrt_dynamic_simplex_optimizer.py \
+            tests/test_qikvrt_dynamic_simplex_optimizer.py
+
+      - name: Verify optimizer regression contract
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_dynamic_simplex_optimizer
+
+      - name: Verify machine-readable contract
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('state/autonomy/DYNAMIC_SIMPLEX_OPTIMIZER_V1.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          assert data['schema'] == 'qikvrt.dynamic-simplex-optimizer.v1'
+          assert data['comparison'] == 'lexicographic_minimize'
+          assert data['boundedness']['maximum_selected_moves_per_cycle'] == 1
+          assert data['effect_policy']['optimizer_output_is_a_plan_not_effect_ack'] is True
+          assert data['publication_policy']['doi_or_arxiv_identifier_must_be_observed_not_invented'] is True
+          PY
+
+      - name: Emit bounded example receipt
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"binding":{"head":"example","tree":"example"},"stage_states":{"ci":"failure"},"first_blocker":"DETERMINISTIC_TEST_DEFECT","next_effect":"repair","role_local_state":{"role":"Authority"},"authority_bound":true,"candidates":[{"id":"repair-test","delta":{"correctness_defects":-1},"constraints":{"causality_preserved":true,"authority_not_widened":true,"role_local_identity_preserved":true}}]}' \
+            | python3 -B tools/qikvrt_dynamic_simplex_optimizer.py \
+            | tee /tmp/qikvrt-dynamic-simplex-receipt.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/qikvrt-dynamic-simplex-receipt.json', encoding='utf-8'))
+          assert data['selected_move']['id'] == 'repair-test'
+          assert data['d0'] == 1
+          assert data['optimizer_effect_ack'] is False
+          assert data['independent_review_authority_implied'] is False
+          PY
+
+      - name: Persist bounded optimization receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-dynamic-simplex-receipt-${{ github.run_id }}
+          path: /tmp/qikvrt-dynamic-simplex-receipt.json
+          if-no-files-found: error
+          retention-days: 30

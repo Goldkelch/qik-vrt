@@ -1,0 +1,61 @@
+{
+  "schema": "qikvrt.dynamic-simplex-optimizer.v1",
+  "purpose": "Bounded repository-native correction, improvement and optimization without collapsing authority, evidence or effect boundaries.",
+  "objective_order": [
+    "correctness_defects",
+    "unsafe_authority_or_effect_inference",
+    "self_continuation_liveness_gap",
+    "exact_head_integrity_gap",
+    "activity_without_effect",
+    "deterministic_latency_or_resource_waste",
+    "avoidable_complexity",
+    "testability_observability_durability_gap",
+    "publication_opportunity_gap"
+  ],
+  "comparison": "lexicographic_minimize",
+  "hard_invariants": [
+    "CAUSALITY != SEQUENCE",
+    "ACTIVITY != EFFECT",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "IDENTITY != EQUALITY",
+    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+    "AUTHORITY_EFFECT != MIRROR_EFFECT",
+    "MIRROR_EFFECT != PAIR_ACKNOWLEDGEMENT"
+  ],
+  "boundedness": {
+    "maximum_selected_moves_per_cycle": 1,
+    "activity_only_fields_excluded_from_causal_fingerprint": [
+      "run_id",
+      "timestamp",
+      "retry_count",
+      "comment_count",
+      "workflow_volume",
+      "commit_activity"
+    ]
+  },
+  "d0_terminal_binding": {
+    "0": {"name": "NOOP", "meaning": "No causally justified improvement remains in the bounded admissible simplex."},
+    "1": {"name": "HOLD", "meaning": "A prerequisite or already-selected bounded move is pending; wait for a causally relevant event."},
+    "2": {"name": "REOBSERVE", "meaning": "The optimization state is stale or a prior move requires fresh evidence."},
+    "3": {"name": "REQUEST_AUTHORITY", "meaning": "The best otherwise-admissible move is blocked solely by missing authority."}
+  },
+  "effect_policy": {
+    "optimizer_output_is_a_plan_not_effect_ack": true,
+    "productive_effect_requires_existing_effect_policy": true,
+    "independent_review_must_not_be_fabricated": true,
+    "authority_or_credential_scope_must_not_be_widened": true,
+    "authority_mirror_role_local_state_must_be_preserved": true
+  },
+  "publication_policy": {
+    "publication_discovery_is_separate_from_publication_effect": true,
+    "publication_worthy_requires": [
+      "novel_result_or_reusable_method",
+      "exact_repository_provenance",
+      "reproducible_evidence",
+      "explicit_formal_empirical_interpretive_boundaries",
+      "no_claim_affecting_correctness_blocker",
+      "archival_package_with_checksums_and_metadata"
+    ],
+    "doi_or_arxiv_identifier_must_be_observed_not_invented": true
+  }
+}
