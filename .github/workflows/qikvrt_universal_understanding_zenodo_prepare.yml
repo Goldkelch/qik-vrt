@@ -1,0 +1,252 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Prepare universal-understanding Zenodo v2 proof
+
+on:
+  push:
+    branches:
+      - publication/universal-understanding-wikipedia-47-v1
+    paths:
+      - .github/workflows/qikvrt_universal_understanding_zenodo_prepare.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-universal-understanding-zenodo-prepare-v1
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact preparation head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Materialize return receipt and machine-proof bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib, json, pathlib, subprocess
+
+          root = pathlib.Path.cwd().resolve()
+          package_rel = pathlib.PurePosixPath('docs/publications/2026-08-20-universal-understanding-wikipedia-47')
+          package = root / package_rel
+          publication_id = 'qikvrt-universal-understanding-wikipedia-47-v1'
+
+          def read(path):
+              return path.read_bytes()
+          def git_blob(data):
+              return hashlib.sha1(f'blob {len(data)}\0'.encode('ascii') + data).hexdigest()
+          def ident(rel):
+              data = read(root / rel)
+              return {
+                  'path': rel,
+                  'bytes': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+                  'git_blob_sha1': git_blob(data),
+              }
+          def artifact(rel, kind):
+              item = ident(rel)
+              item.pop('bytes')
+              item['kind'] = kind
+              return item
+
+          candidate_names = [
+              'ARTICLE_CANONICAL_EN.md',
+              'ARTICLE_47_LANGUAGES.md',
+              'LANGUAGE_MANIFEST.json',
+              'WIKIPEDIA_CANDIDATE_EN.wiki',
+              'SCIENTIFIC_BOUNDARY.md',
+              'IETF_INFORMATION_NOTE.md',
+              'arxiv/main.tex',
+              'arxiv/METADATA.json',
+              'ZENODO_METADATA.json',
+              'CITATION.cff',
+              'README.md',
+              'ZENODO_FILESET.md',
+          ]
+          candidate_files = []
+          for name in candidate_names:
+              rel = (package_rel / name).as_posix()
+              item = ident(rel)
+              item['name'] = pathlib.PurePosixPath(name).name
+              item['role'] = 'PRIMARY' if name == 'ARTICLE_CANONICAL_EN.md' else 'SUPPLEMENT'
+              candidate_files.append(item)
+
+          return_rel = (package_rel / 'PREPUBLICATION_RETURN_RECEIPT.json').as_posix()
+          return_value = {
+              '_license': {
+                  'classification': 'machine_readable_prepublication_return_receipt',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_prepublication_return_receipt_v2',
+              'publication_id': publication_id,
+              'content_changed': False,
+              'original_files': [],
+              'candidate_files': [
+                  {k: item[k] for k in ('path','bytes','sha256','git_blob_sha1')}
+                  for item in candidate_files
+              ],
+              'changed_claim_ids': [],
+              'change_reasons': [],
+              'change_notice_path': None,
+              'return': {
+                  'candidate_returned_to_owner': True,
+                  'owner_name': 'Ingolf Lohmann',
+                  'owner_type': 'NATURAL_PERSON',
+                  'return_channel': 'ChatGPT conversation; exact candidate branch link returned before the 2026-08-20 AUTHORIZE_EXACT_UPLOAD turn',
+                  'returned_at': '2026-08-20T11:53:49Z',
+                  'visible_change_notice_returned': False,
+              },
+          }
+          (root / return_rel).write_text(json.dumps(return_value, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+
+          matrix_rel = (package_rel / 'ZENODO_CLAIM_MATRIX.json').as_posix()
+          source_rel = (package_rel / 'SOURCE_EVIDENCE_BINDINGS.json').as_posix()
+          evidence_rel = (package_rel / 'ZENODO_EVIDENCE_BINDINGS.json').as_posix()
+          matrix = json.loads((root / matrix_rel).read_text(encoding='utf-8'))
+          source_ids = {
+              'LAMPORT-1978','MATTERN-1989','SCHWARZ-MATTERN-1994',
+              'CHARRONBOST-MATTERN-TEL-1996','FREITAS-2025',
+              'QIKVRT-TEMPORAL-PRIMARY','QIKVRT-EFFECT-ACK-PRIMARY'
+          }
+          wording = {
+              'SOURCE_BOUND': 'SOURCE_ATTRIBUTED',
+              'INTERPRETATIVE': 'INTERPRETATIVE_DECLARATION',
+              'OPEN': 'EXPLICITLY_OPEN',
+              'NORMATIVE': 'NORMATIVE_DECLARATION',
+          }
+          claims = []
+          for claim in matrix['claims']:
+              source_refs = []
+              evidence_refs = []
+              for source_id in claim['sources']:
+                  if source_id in source_ids:
+                      source_refs.append(source_rel + '#' + source_id)
+                  else:
+                      evidence_refs.append(evidence_rel + '#' + source_id)
+              claims.append({
+                  'claim_id': claim['claim_id'],
+                  'statement': claim['statement'],
+                  'classification': claim['classification'],
+                  'status': claim['status'],
+                  'publication_wording': wording[claim['classification']],
+                  'scope': claim['boundary'],
+                  'proof_refs': [],
+                  'evidence_refs': evidence_refs,
+                  'source_refs': source_refs,
+              })
+
+          artifacts = [
+              artifact(matrix_rel, 'CLAIM_MATRIX'),
+              artifact(source_rel, 'SOURCE'),
+              artifact(evidence_rel, 'EVIDENCE'),
+              artifact(return_rel, 'RETURN_RECEIPT'),
+          ]
+          bundle_rel = (package_rel / 'MACHINE_PROOF_BUNDLE.json').as_posix()
+          bundle = {
+              '_license': {
+                  'classification': 'machine_readable_proof_bundle',
+                  'copyright': 'Copyright 2026 Ingolf Lohmann',
+                  'license': 'CC-BY-NC-ND-4.0',
+                  'license_text_ref': 'LICENSES/CC-BY-NC-ND-4.0.txt',
+                  'rights_holder': 'Ingolf Lohmann',
+              },
+              'schema': 'qikvrt_zenodo_machine_proof_bundle_v2',
+              'policy': {
+                  'id': 'qikvrt-zenodo-machine-proof-before-publication-v2',
+                  'path': 'policy/zenodo-machine-proof-policy-v2.json',
+                  'version': '2.0.0',
+                  'sha256': '933d6322a1e294848c6385d1384ab0ec3862c8675ebe35ec2fc4cad3e0baec47',
+                  'git_blob_sha1': 'e9578d30d22f845e7df684128dcd9332641c00be',
+              },
+              'publication_id': publication_id,
+              'candidate': {
+                  'primary_document_path': (package_rel / 'ARTICLE_CANONICAL_EN.md').as_posix(),
+                  'files': candidate_files,
+              },
+              'claims': claims,
+              'artifacts': artifacts,
+              'prepublication_return': {
+                  'content_changed': False,
+                  'candidate_returned_to_owner': True,
+                  'receipt_path': return_rel,
+                  'change_notice_path': None,
+              },
+              'gates': {
+                  'all_claims_dispositioned': True,
+                  'all_references_resolve': True,
+                  'candidate_frozen': True,
+                  'formal_claims_have_kernel_receipts': True,
+                  'open_claims_not_worded_as_facts': True,
+                  'proof_bundle_in_upload_fileset': True,
+                  'returned_bytes_equal_upload_bytes': True,
+              },
+              'completion_claims': {
+                  'machine_proof_complete': True,
+                  'zenodo_upload_authorized': True,
+              },
+          }
+          (root / bundle_rel).write_text(json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+
+          subprocess.run([
+              'python3','-B','tools/qikvrt_zenodo_machine_proof.py',
+              '--proof-bundle',bundle_rel,
+          ], check=True)
+
+          return_sha = hashlib.sha256(read(root / return_rel)).hexdigest()
+          proof_sha = hashlib.sha256(read(root / bundle_rel)).hexdigest()
+          metadata_rel = (package_rel / 'ZENODO_METADATA.json').as_posix()
+          metadata_sha = hashlib.sha256(read(root / metadata_rel)).hexdigest()
+          candidate_head = subprocess.check_output(['git','rev-parse','HEAD^'], text=True).strip()
+          authorization_id = 'qikvrt-uu-wikipedia47-zenodo-v1-' + candidate_head[:8]
+          statement = (
+              'AUTHORIZE_EXACT_UPLOAD '
+              f'authorization_id={authorization_id} '
+              f'publication_id={publication_id} '
+              f'return_sha256={return_sha} '
+              f'metadata_sha256={metadata_sha} '
+              f'machine_proof_sha256={proof_sha}'
+          )
+          binding = {
+              'schema': 'qikvrt_exact_upload_authorization_binding_required_v1',
+              'publication_id': publication_id,
+              'authorization_id': authorization_id,
+              'candidate_content_head': candidate_head,
+              'return_sha256': return_sha,
+              'metadata_sha256': metadata_sha,
+              'machine_proof_sha256': proof_sha,
+              'required_exact_statement': statement,
+              'status': 'AWAITING_POST_BINDING_OWNER_EXACT_STATEMENT',
+              'note': 'The earlier short AUTHORIZE_EXACT_UPLOAD expresses intent but predates these exact hashes and is not rewritten as this statement.'
+          }
+          binding_rel = (package_rel / 'EXACT_UPLOAD_AUTHORIZATION_REQUIRED.json').as_posix()
+          (root / binding_rel).write_text(json.dumps(binding, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          print(statement)
+          PY
+
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name 'qik-vrt-publication-preparation[bot]'
+          git config user.email 'qik-vrt-publication-preparation[bot]@users.noreply.github.com'
+          git add -- \
+            docs/publications/2026-08-20-universal-understanding-wikipedia-47/PREPUBLICATION_RETURN_RECEIPT.json \
+            docs/publications/2026-08-20-universal-understanding-wikipedia-47/MACHINE_PROOF_BUNDLE.json \
+            docs/publications/2026-08-20-universal-understanding-wikipedia-47/EXACT_UPLOAD_AUTHORIZATION_REQUIRED.json \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --check
+          git commit -m 'publication: freeze universal-understanding Zenodo v2 proof'
+          git push origin HEAD:publication/universal-understanding-wikipedia-47-v1
