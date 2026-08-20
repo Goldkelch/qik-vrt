@@ -39,6 +39,7 @@ POST_ALPHA2_EXCLUSIONS = {
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Process/WeightedConnectability.lean",
     "formalization/QIKVRT_Formalization_v2.0/tests/test_quantum_classical_runtime_article.py",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Decision/ObservationSufficiency.lean",
+    "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Decision/PredictiveOptimality.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AuthorityMirrorWitness.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AxiomAudit.lean",
     "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/QuantumFoundations/AxiomAudit.lean",
