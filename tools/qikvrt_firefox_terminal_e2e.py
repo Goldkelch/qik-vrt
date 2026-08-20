@@ -14,12 +14,13 @@ import json
 import os
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 EXTENSION_ID = "qikvrt-ai-terminal@goldkelch.local"
-EXTENSION_UUID = "7d844896-31c8-4a82-8c53-98e473a668c7"
+PREFERRED_EXTENSION_UUID = "7d844896-31c8-4a82-8c53-98e473a668c7"
 NONCE = "QIKVRT-FIREFOX-E2E-NONCE-0001"
 
 
@@ -28,8 +29,12 @@ def request_json(method: str, url: str, body: dict[str, Any] | None = None, time
     req = urllib.request.Request(url, data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = response.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"WebDriver HTTP {exc.code} for {url}: {detail}") from exc
     return json.loads(raw.decode("utf-8")) if raw else {"value": None}
 
 
@@ -44,6 +49,29 @@ def wait_ready(base: str, deadline: float) -> None:
             last = exc
         time.sleep(0.1)
     raise RuntimeError(f"geckodriver did not become ready: {last}")
+
+
+def execute(base: str, session_id: str, script: str, timeout: float = 5.0) -> Any:
+    result = request_json("POST", f"{base}/session/{session_id}/execute/sync", {"script": script, "args": []}, timeout=timeout)
+    return result.get("value")
+
+
+def installed_extension_uuid(base: str, session_id: str) -> str:
+    request_json("POST", f"{base}/session/{session_id}/moz/context", {"context": "chrome"}, timeout=5.0)
+    try:
+        raw = execute(
+            base,
+            session_id,
+            "return Services.prefs.getStringPref('extensions.webextensions.uuids', '{}');",
+            timeout=5.0,
+        )
+    finally:
+        request_json("POST", f"{base}/session/{session_id}/moz/context", {"context": "content"}, timeout=5.0)
+    mapping = json.loads(str(raw or "{}"))
+    value = mapping.get(EXTENSION_ID)
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"installed extension UUID unavailable for {EXTENSION_ID}: {mapping}")
+    return value
 
 
 def main() -> int:
@@ -69,10 +97,7 @@ def main() -> int:
     session_id: str | None = None
     try:
         wait_ready(base, time.time() + 20)
-        uuid_pref = json.dumps({EXTENSION_ID: EXTENSION_UUID}, separators=(",", ":"))
-        # Ubuntu runner Firefox startup can take >30 seconds before Marionette
-        # completes session creation. Keep this bounded but above that observed
-        # startup envelope; a nonresponsive browser still fails closed.
+        uuid_pref = json.dumps({EXTENSION_ID: PREFERRED_EXTENSION_UUID}, separators=(",", ":"))
         created = request_json("POST", base + "/session", {
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
@@ -99,17 +124,19 @@ def main() -> int:
         if addon_id != EXTENSION_ID:
             raise RuntimeError(f"unexpected installed addon id: {addon_id!r}")
 
-        extension_url = f"moz-extension://{EXTENSION_UUID}/options.html?qikvrt_e2e=1"
+        extension_uuid = installed_extension_uuid(base, session_id)
+        extension_url = f"moz-extension://{extension_uuid}/options.html?qikvrt_e2e=1"
         request_json("POST", f"{base}/session/{session_id}/url", {"url": extension_url}, timeout=20.0)
 
         status_text = ""
         deadline = time.time() + 30
         while time.time() < deadline:
-            observed = request_json("POST", f"{base}/session/{session_id}/execute/sync", {
-                "script": "return document.getElementById('status') ? document.getElementById('status').textContent : '';",
-                "args": []
-            }, timeout=5.0)
-            status_text = str(observed.get("value") or "")
+            status_text = str(execute(
+                base,
+                session_id,
+                "return document.getElementById('status') ? document.getElementById('status').textContent : '';",
+                timeout=5.0,
+            ) or "")
             if status_text.startswith("E2E_DONE:") or status_text.startswith("E2E_FAIL:"):
                 break
             time.sleep(0.1)
@@ -131,7 +158,7 @@ def main() -> int:
             "source_tree": os.environ.get("QIKVRT_SOURCE_TREE", "UNBOUND"),
             "firefox_terminal_execution_observed": True,
             "extension_id": addon_id,
-            "extension_uuid": EXTENSION_UUID,
+            "extension_uuid": extension_uuid,
             "browser_name": capabilities.get("browserName"),
             "browser_version": capabilities.get("browserVersion"),
             "platform_name": capabilities.get("platformName"),
