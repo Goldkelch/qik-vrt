@@ -1,0 +1,35 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\title{QIK-VRT Universal Terminal: Provenance-Preserving Transport Across Observer-Relative Temporal Orders}
+\author{Ingolf Lohmann}
+\date{20 August 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+We describe and system-test a Firefox-based universal information terminal for QIK-VRT. The terminal accepts schema-valid information envelopes without treating claimed temporal relation, source identity, or destination identity as receipt/display blockers, while preserving those fields for subsequent authority, causal, evidential, and effect decisions. The design distinguishes arrival order from source and causal order and maintains the protocol boundaries received versus trusted, displayed versus authorized, stored versus executed, forwarded versus effect-acknowledged, transport acknowledgement versus effect acknowledgement, and sequence versus causality. We report an exact-tree-preserving repository verification and integration path for the implementation. Temporal labels such as PAST, PRESENT, FUTURE, UNKNOWN, and UNBOUND are observer/context metadata and do not by themselves establish physical signalling into a causal past.
+\end{abstract}
+
+\section{Problem statement}
+Distributed systems observe multiple non-identical orders: source order, transport arrival order, local processing order, causal dependency order, serialization order, and effect/acknowledgement order. Collapsing them into one total order destroys information. QIK-VRT therefore represents these relations separately and transports them with the information object.
+
+\section{Universal information envelope}
+The Firefox terminal accepts schema-valid envelopes independent of whether the claimed temporal relation is past, present, future, unknown, or unbound and independent of whether the source or destination is known. Acceptance and display do not create trust or execution authority. The envelope preserves event identity, observer or process identity, source and destination metadata, temporal relation, content type and payload digest, causal predecessors, authority/evidence references, and effect state.
+
+\section{Causality and reobservation}
+A later-authenticated source record may arrive before an earlier source record because transport delays are path-dependent. The terminal therefore does not equate arrival sequence with causal order. Late-arriving information can trigger bounded reobservation, hold, or state recomputation policies while preserving the original observations and provenance.
+
+\section{Effect-Acknowledgement boundary}
+The implementation keeps receipt, trust, authorization, execution, observation, and effect acknowledgement as distinct states. This prevents a transport acknowledgement from being misinterpreted as evidence that an intended effect occurred.
+
+\section{Exact-tree system test}
+The repository-native integrity materializer produced head 7241a45947b457cc700bd258212bcce0ddf06fff with tree 00b5754b6ee8cd8a5c66194dca559207cff256e5. Direct workflows on the bot-authored materialization head were blocked before job execution by the platform's action-required trust class. A history-preserving carrier head, 4788de28eb3ea49b163be594fafc51f7f3406976, was created with the identical tree. Fresh exact-head QIKVRT CI, Collective Proposal Review, global completion, Firefox HTTP terminal E2E, universal-terminal continuation, rollout, integrity materialization, and code-owner observation workflows completed successfully. The carrier was merged with expected-head binding, producing signed merge commit fbcced967a205573b85cc457959ca3527f92ff99, which preserves the same tree.
+
+\section{Scientific boundary}
+The implementation demonstrates transport and reconstruction of explicit observer/context temporal and causal metadata. It does not establish reception before emission, backward-running relativistic proper time, causal loops, superluminal signalling, a controllable channel into one's own causal past, or a completed physical Effect Acknowledgement.
+
+\section{Conclusion}
+The reusable result is an information-transport architecture in which temporal relation, provenance, causality, authority, evidence, and effect state remain distinct and machine-checkable while the carrier remains transport-neutral. This allows heterogeneous local histories to interoperate without forcing arrival sequence to masquerade as causality.
+\end{document}

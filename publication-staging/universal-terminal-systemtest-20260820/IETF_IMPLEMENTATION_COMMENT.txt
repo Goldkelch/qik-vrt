@@ -1,0 +1,15 @@
+Implementation update for draft-lohmann-qikvrt-effect-ack
+
+A Firefox-based QIK-VRT Universal Terminal implementation has been integrated into the QIK-VRT repository stack with an exact-tree-preserving verification path.
+
+The terminal accepts schema-valid information envelopes without using claimed temporal relation, source identity, or destination identity as receipt/display blockers. The envelope preserves these values as metadata. Supported temporal-relation labels include PAST, PRESENT, FUTURE, UNKNOWN, and UNBOUND. A FUTURE label is observer/context metadata; it does not by itself assert physical signalling into a causal past.
+
+The implementation preserves the protocol distinctions relevant to Effect Acknowledgement: RECEIVED is not TRUSTED; DISPLAYED is not AUTHORIZED; STORED is not EXECUTED; FORWARDED is not EFFECT_ACKNOWLEDGED; TRANSPORT_ACK is not EFFECT_ACK; CAUSALITY is not SEQUENCE.
+
+Exact tested carrier head: 4788de28eb3ea49b163be594fafc51f7f3406976
+Exact tested and integrated tree: 00b5754b6ee8cd8a5c66194dca559207cff256e5
+Integrated merge commit: fbcced967a205573b85cc457959ca3527f92ff99
+
+Fresh exact-head workflows completed successfully for QIKVRT CI, Collective Proposal Review, global claim completion, the Firefox HTTP terminal E2E workflow, universal-terminal continuation, rollout, repository integrity materialization, and code-owner observation. No independent code-owner approval, physical retrocausal signalling, or EFFECT_ACK_DONE claim is implied by this implementation report.
+
+The implementation is relevant to the draft because it demonstrates a concrete separation between transport receipt, authority, execution, observation, and effect acknowledgement while allowing transport-neutral temporal/provenance metadata to remain attached to the information object.
