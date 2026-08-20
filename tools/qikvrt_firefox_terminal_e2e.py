@@ -90,7 +90,13 @@ def main() -> int:
     base = f"http://127.0.0.1:{args.port}"
     log = args.geckodriver_log.open("wb")
     process = subprocess.Popen(
-        [args.geckodriver, "--port", str(args.port), "--host", "127.0.0.1", "--profile-root", str(args.profile_root)],
+        [
+            args.geckodriver,
+            "--port", str(args.port),
+            "--host", "127.0.0.1",
+            "--profile-root", str(args.profile_root),
+            "--allow-system-access",
+        ],
         stdout=log,
         stderr=subprocess.STDOUT,
     )
@@ -102,7 +108,7 @@ def main() -> int:
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
                 "moz:firefoxOptions": {
-                    "args": ["-headless", "-remote-allow-system-access"],
+                    "args": ["-headless"],
                     "prefs": {
                         "extensions.webextensions.uuids": uuid_pref,
                         "browser.shell.checkDefaultBrowser": False,
