@@ -7,8 +7,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "policy" / "SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL_V1.json"
 DOC = ROOT / "docs" / "SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL.md"
-CONTEXT = ROOT / "AI_CONTEXT.json"
+CONTEXT = ROOT / "AI_CONTEXT_SYNCHRONOUS_TERMINAL.json"
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_synchronous_repository_first_terminal.yml"
+WORK_UNIT = ROOT / "state" / "work_units" / "SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL_V1.json"
 
 CANONICAL = "INPUT -> QIK-VRT MESH REPOSITORY -> REPOSITORY OUTPUT / EVIDENCE -> OUTPUT"
 
@@ -19,6 +20,7 @@ class SynchronousRepositoryFirstTerminalTests(unittest.TestCase):
         self.doc = DOC.read_text(encoding="utf-8")
         self.context = json.loads(CONTEXT.read_text(encoding="utf-8"))
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.work_unit = json.loads(WORK_UNIT.read_text(encoding="utf-8"))
 
     def test_canonical_pipeline_is_exact_and_synchronous(self) -> None:
         self.assertEqual(self.policy["canonical_statement"], CANONICAL)
@@ -67,13 +69,23 @@ class SynchronousRepositoryFirstTerminalTests(unittest.TestCase):
         ):
             self.assertTrue(closed[key], key)
 
-    def test_context_binds_policy_and_doc(self) -> None:
-        binding = self.context["synchronous_repository_first_terminal"]
-        self.assertEqual(binding["policy"], "policy/SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL_V1.json")
-        self.assertEqual(binding["human_contract"], "docs/SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL.md")
-        self.assertEqual(binding["canonical_statement"], CANONICAL)
-        self.assertTrue(binding["synchronous"])
-        self.assertFalse(binding["delayed_automation_without_explicit_request"])
+    def test_machine_context_binds_all_layers(self) -> None:
+        self.assertEqual(self.context["policy"], "policy/SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL_V1.json")
+        self.assertEqual(self.context["human_contract"], "docs/SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL.md")
+        self.assertEqual(self.context["verification_test"], "tests/test_synchronous_repository_first_terminal.py")
+        self.assertEqual(self.context["workflow_gate"], ".github/workflows/qikvrt_synchronous_repository_first_terminal.yml")
+        self.assertEqual(self.context["work_unit"], "state/work_units/SYNCHRONOUS_REPOSITORY_FIRST_TERMINAL_V1.json")
+        self.assertEqual(self.context["canonical_statement"], CANONICAL)
+        self.assertTrue(self.context["synchronous"])
+        self.assertFalse(self.context["delayed_automation_without_explicit_request"])
+        self.assertFalse(self.context["terminal_independent_semantic_authority"])
+        self.assertFalse(self.context["entrypoint_mutated"])
+
+    def test_work_unit_binds_product_owner_receipts(self) -> None:
+        self.assertEqual(self.work_unit["authority_issue"], "Goldkelch/qik-vrt#752")
+        self.assertEqual(self.work_unit["mirror_issue"], "ingolf-lohmann/qik-vrt#362")
+        self.assertEqual(self.work_unit["canonical_statement"], CANONICAL)
+        self.assertEqual(self.work_unit["change_semantics"], "SUCCESSOR_ONLY")
 
     def test_workflow_is_read_only_and_runs_this_contract_test(self) -> None:
         self.assertIn("permissions:\n  contents: read", self.workflow)
