@@ -3,7 +3,7 @@ import argparse, json, os, select, struct, time
 from pathlib import Path
 
 END=0xC0; ESC=0xDB; ESC_END=0xDC; ESC_ESC=0xDD
-NONCE=b'QIKVRT-NONCE-0001'; REPLY=b'QIK-ACK:'+NONCE
+NONCE=b'QIKVRT-NONCE-0001'; REPLY=b'QIK-ACK:'+NONCE; GUEST_CONFIRM=b'QIKDONE'
 LOCAL_IP=b'\x0a\x00\x00\x01'; GUEST_IP=b'\x0a\x00\x00\x02'
 LOCAL_PORT=8771; GUEST_PORT=49152; PEER_SEQ=0x55667788
 
@@ -50,9 +50,10 @@ def tcp_fields(pkt):
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--guest-out',required=True); ap.add_argument('--guest-in',required=True); ap.add_argument('--receipt',required=True); ap.add_argument('--timeout',type=float,default=20)
-    a=ap.parse_args();
+    a=ap.parse_args()
     fd_out=os.open(a.guest_out,os.O_RDWR|os.O_NONBLOCK); fd_in=os.open(a.guest_in,os.O_RDWR|os.O_NONBLOCK)
     raw=bytearray(); state='WAIT_SYN'; seen=[]; start=time.time(); success=False
+    response_sent=False; guest_confirmed=False
     try:
       while time.time()-start<a.timeout and not success:
         r,_,_=select.select([fd_out],[],[],0.2)
@@ -60,19 +61,29 @@ def main():
         chunk=os.read(fd_out,4096)
         if not chunk: continue
         raw.extend(chunk)
-        # Parse all complete frames from accumulated stream, then retain tail after last END.
         if raw.count(END)<2: continue
         last=raw.rfind(bytes([END])); complete=bytes(raw[:last+1]); del raw[:last]
         for pkt in frames(complete):
+          if state=='WAIT_GUEST_CONFIRM':
+            seen.append({'kind':'guest_confirm','payload_hex':pkt.hex()})
+            if pkt==GUEST_CONFIRM:
+              guest_confirmed=True; success=True; state='DONE'
+            continue
           src,dst,sport,dport,seq,ack,flags,payload=tcp_fields(pkt)
-          seen.append({'seq':seq,'ack':ack,'flags':flags,'payload_hex':payload.hex()})
+          seen.append({'kind':'tcp','seq':seq,'ack':ack,'flags':flags,'payload_hex':payload.hex()})
           if state=='WAIT_SYN' and src==GUEST_IP and dst==LOCAL_IP and sport==GUEST_PORT and dport==LOCAL_PORT and flags&0x02 and seq==0x11223344:
             os.write(fd_in,slip_encode(packet(PEER_SEQ,seq+1,0x12,ident=0x2001))); state='WAIT_NONCE'
           elif state=='WAIT_NONCE' and src==GUEST_IP and dst==LOCAL_IP and sport==GUEST_PORT and dport==LOCAL_PORT and seq==0x11223345 and ack==PEER_SEQ+1 and payload==NONCE:
-            os.write(fd_in,slip_encode(packet(PEER_SEQ+1,seq+len(payload),0x18,REPLY,ident=0x2002))); state='REPLIED'; success=True
+            os.write(fd_in,slip_encode(packet(PEER_SEQ+1,seq+len(payload),0x18,REPLY,ident=0x2002)))
+            response_sent=True; state='WAIT_GUEST_CONFIRM'
     finally:
       os.close(fd_out); os.close(fd_in)
-    receipt={'schema':'qikvrt_slip_tcp_peer_receipt_v1','success':success,'state':state,'guest_ip':'10.0.0.2','peer_ip':'10.0.0.1','guest_port':GUEST_PORT,'peer_port':LOCAL_PORT,'nonce':NONCE.decode(),'response':REPLY.decode(),'observed_frames':seen}
+    receipt={
+      'schema':'qikvrt_slip_tcp_peer_receipt_v1','success':success,'state':state,
+      'guest_ip':'10.0.0.2','peer_ip':'10.0.0.1','guest_port':GUEST_PORT,'peer_port':LOCAL_PORT,
+      'nonce':NONCE.decode(),'response':REPLY.decode(),'response_sent':response_sent,
+      'guest_post_response_confirmation_observed':guest_confirmed,'observed_frames':seen
+    }
     Path(a.receipt).write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
     print(json.dumps(receipt,sort_keys=True))
     raise SystemExit(0 if success else 2)
