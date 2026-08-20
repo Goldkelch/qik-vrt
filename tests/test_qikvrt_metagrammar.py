@@ -1,11 +1,14 @@
 import copy
+import json
 import unittest
+from pathlib import Path
 
 from tools.qikvrt_metagrammar import MetagrammarError, bind_digest, canonical_sha256, validate
 
 
 H40 = "a" * 40
 T40 = "b" * 40
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def envelope():
@@ -120,6 +123,23 @@ class MetagrammarTests(unittest.TestCase):
         value = bind_digest(value)
         with self.assertRaisesRegex(MetagrammarError, "canonical eight sections"):
             validate(value)
+
+    def test_contiguous_output_contract_is_machine_bound(self):
+        state = json.loads((ROOT / "state" / "autonomy" / "METAGRAMMAR_OF_UNDERSTANDING_V1.json").read_text(encoding="utf-8"))
+        contract = state["contiguous_output_contract"]
+        self.assertEqual(contract["semantic_unit"], "ATOMIC_DELIVERY_OBJECT")
+        self.assertEqual(contract["default_delivery_mode"], "CONTIGUOUS")
+        self.assertIn("HARD_TRANSPORT_OR_RUNTIME_LIMIT", contract["interrupt_only_for"])
+        self.assertIn("EXPLICIT_USER_REQUEST", contract["interrupt_only_for"])
+        self.assertFalse(contract["forced_continuation"]["repeat_completed_introduction"])
+        self.assertIn("SEMANTIC_CONTEXT", contract["forced_continuation"]["must_preserve"])
+        self.assertEqual(contract["public_distribution"]["transport"], "HTTPS")
+        self.assertTrue(contract["public_distribution"]["anonymous_read"])
+        self.assertIn("RAW_GITHUB_CONTENT", contract["public_distribution"]["interfaces"])
+        self.assertEqual(
+            contract["public_distribution"]["role_local_adoption"],
+            "REOBSERVE_EXACT_AUTHORITY_BINDING_BEFORE_CONSUMPTION",
+        )
 
 
 if __name__ == "__main__":
