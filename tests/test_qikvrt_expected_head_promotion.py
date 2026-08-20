@@ -26,7 +26,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "base_sha": "a" * 40,
             "expected_head_sha": "b" * 40,
             "current_head_sha": "b" * 40,
-            "draft": True,
+            "draft": False,
             "mergeable": True,
             "external_effect": "NONE",
             "required_gates": [
@@ -34,12 +34,14 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
                 "QIKVRT repository evidence materialization",
                 "QIKVRT Collective Proposal Review",
                 "QIK-VRT global claim completion",
+                "QIKVRT requested review execution",
             ],
             "workflow_runs": [
                 {"name": "QIKVRT CI", "status": "completed", "conclusion": "success", "run_number": 10},
                 {"name": "QIKVRT repository evidence materialization", "status": "completed", "conclusion": "success", "run_number": 20},
                 {"name": "QIKVRT Collective Proposal Review", "status": "completed", "conclusion": "success", "run_number": 30},
                 {"name": "QIK-VRT global claim completion", "status": "completed", "conclusion": "success", "run_number": 40},
+                {"name": "QIKVRT requested review execution", "status": "completed", "conclusion": "success", "run_number": 50},
                 {"name": "QIKVRT conditional probe", "status": "completed", "conclusion": "skipped", "run_number": 1},
             ],
             "competing_writer_overlaps": [],
@@ -47,11 +49,46 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         value.update(overrides)
         return value
 
-    def test_terminal_green_exact_head_is_promotable(self) -> None:
+    def test_ready_green_reviewed_exact_head_is_promotable(self) -> None:
         result = MODULE.evaluate_promotion(self.snapshot())
         self.assertEqual(result["state"], "PROMOTABLE")
         self.assertEqual(result["expected_head_sha"], "b" * 40)
         self.assertEqual(result["first_blocker"], None)
+
+    def test_draft_with_green_internal_gates_advances_to_ready_before_review(self) -> None:
+        snapshot = self.snapshot(draft=True)
+        snapshot["workflow_runs"] = [
+            run for run in snapshot["workflow_runs"]
+            if run["name"] != "QIKVRT requested review execution"
+        ]
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "READY_FOR_REVIEW")
+        self.assertIsNone(result["first_blocker"])
+
+    def test_draft_ignores_pending_review_gate_but_not_internal_gate(self) -> None:
+        snapshot = self.snapshot(draft=True)
+        snapshot["workflow_runs"].append(
+            {"name": "QIKVRT requested review execution", "status": "in_progress", "conclusion": None, "run_number": 51}
+        )
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "READY_FOR_REVIEW")
+
+        snapshot["workflow_runs"].append(
+            {"name": "QIKVRT CI", "status": "completed", "conclusion": "failure", "run_number": 11}
+        )
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "REQUIRED_EXACT_HEAD_GATE_NOT_GREEN")
+
+    def test_ready_candidate_without_review_gate_blocks(self) -> None:
+        snapshot = self.snapshot()
+        snapshot["workflow_runs"] = [
+            run for run in snapshot["workflow_runs"]
+            if run["name"] != "QIKVRT requested review execution"
+        ]
+        result = MODULE.evaluate_promotion(snapshot)
+        self.assertEqual(result["state"], "BLOCK")
+        self.assertEqual(result["first_blocker"], "REQUIRED_EXACT_HEAD_GATE_MISSING")
 
     def test_old_action_required_run_is_superseded_by_newer_success(self) -> None:
         snapshot = self.snapshot()
