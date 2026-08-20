@@ -1,0 +1,81 @@
+name: QIKVRT MLP.TOS Mega ST TCP/IP proof
+
+on:
+  pull_request:
+    paths:
+      - 'policy/MLP_TOS_MEGAST_TCPIP_ROUNDTRIP_V1.json'
+      - 'tests/test_qikvrt_mlp_tos_megast_tcpip_contract.py'
+      - '.github/workflows/qikvrt_mlp_tos_megast_tcpip.yml'
+      - 'MLP.TOS/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest-tcpip-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Verify proof contract
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_mlp_tos_megast_tcpip_contract
+
+      - name: Verify bound MLP.TOS bytes
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' '5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e' 'MLP.TOS/MLP.TOS' | sha256sum -c -
+
+      - name: Probe repository-supported guest networking implementation
+        id: capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          for p in \
+            tools/qikvrt_mlp_tos_megast_tcpip.py \
+            MLP.TOS/TCPIP.TOS \
+            MLP.TOS/STING.PRG \
+            MLP.TOS/STIK.PRG \
+            MLP.TOS/MINTNET.PRG; do
+            if test -e "$p"; then
+              echo "guest_network_component=$p"
+              found=1
+            fi
+          done
+          if test "$found" -ne 1; then
+            echo 'HOLD: no repository-bound guest TCP/IP stack/driver/probe is present yet.'
+            echo 'Host/runner networking is intentionally not accepted as guest TCP/IP evidence.'
+            exit 78
+          fi
+
+      - name: Require guest-originated nonce roundtrip receipt
+        if: steps.capability.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt='MLP.TOS/MLP_TOS_MEGAST_TCPIP_RECEIPT_V1.json'
+          test -s "$receipt" || { echo 'HOLD: guest TCP/IP roundtrip receipt absent'; exit 78; }
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('MLP.TOS/MLP_TOS_MEGAST_TCPIP_RECEIPT_V1.json').read_text())
+          assert p.get('guest_tcp_connect_observed') is True
+          assert p.get('endpoint_nonce_payload_observed') is True
+          assert p.get('guest_response_observed') is True
+          assert p.get('effect_ack_done') is False
+          print('GUEST_TCP_IP_ROUNDTRIP_OBSERVED')
+          PY
