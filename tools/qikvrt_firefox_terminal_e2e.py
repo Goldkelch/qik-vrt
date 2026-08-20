@@ -59,12 +59,7 @@ def execute(base: str, session_id: str, script: str, timeout: float = 5.0) -> An
 def installed_extension_uuid(base: str, session_id: str) -> str:
     request_json("POST", f"{base}/session/{session_id}/moz/context", {"context": "chrome"}, timeout=5.0)
     try:
-        raw = execute(
-            base,
-            session_id,
-            "return Services.prefs.getStringPref('extensions.webextensions.uuids', '{}');",
-            timeout=5.0,
-        )
+        raw = execute(base, session_id, "return Services.prefs.getStringPref('extensions.webextensions.uuids', '{}');", timeout=5.0)
     finally:
         request_json("POST", f"{base}/session/{session_id}/moz/context", {"context": "content"}, timeout=5.0)
     mapping = json.loads(str(raw or "{}"))
@@ -90,13 +85,7 @@ def main() -> int:
     base = f"http://127.0.0.1:{args.port}"
     log = args.geckodriver_log.open("wb")
     process = subprocess.Popen(
-        [
-            args.geckodriver,
-            "--port", str(args.port),
-            "--host", "127.0.0.1",
-            "--profile-root", str(args.profile_root),
-            "--allow-system-access",
-        ],
+        [args.geckodriver, "--port", str(args.port), "--host", "127.0.0.1", "--profile-root", str(args.profile_root), "--allow-system-access"],
         stdout=log,
         stderr=subprocess.STDOUT,
     )
@@ -108,7 +97,7 @@ def main() -> int:
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
                 "moz:firefoxOptions": {
-                    "args": ["-headless", "-remote-allow-system-access"],
+                    "args": ["-headless"],
                     "prefs": {
                         "extensions.webextensions.uuids": uuid_pref,
                         "browser.shell.checkDefaultBrowser": False,
@@ -123,9 +112,7 @@ def main() -> int:
             raise RuntimeError(f"WebDriver session unavailable: {created}")
         capabilities = value.get("capabilities") or {}
 
-        installed = request_json("POST", f"{base}/session/{session_id}/moz/addon/install", {
-            "path": str(args.xpi), "temporary": True
-        }, timeout=20.0)
+        installed = request_json("POST", f"{base}/session/{session_id}/moz/addon/install", {"path": str(args.xpi), "temporary": True}, timeout=20.0)
         addon_id = installed.get("value")
         if addon_id != EXTENSION_ID:
             raise RuntimeError(f"unexpected installed addon id: {addon_id!r}")
@@ -137,12 +124,7 @@ def main() -> int:
         status_text = ""
         deadline = time.time() + 30
         while time.time() < deadline:
-            status_text = str(execute(
-                base,
-                session_id,
-                "return document.getElementById('status') ? document.getElementById('status').textContent : '';",
-                timeout=5.0,
-            ) or "")
+            status_text = str(execute(base, session_id, "return document.getElementById('status') ? document.getElementById('status').textContent : '';", timeout=5.0) or "")
             if status_text.startswith("E2E_DONE:") or status_text.startswith("E2E_FAIL:"):
                 break
             time.sleep(0.1)
