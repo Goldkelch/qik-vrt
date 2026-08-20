@@ -1,0 +1,91 @@
+{
+  "schema": "qikvrt_self_closing_execution_loop_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "purpose": "Close uniquely determined repository-internal repair loops automatically without weakening authority, review, exact-head, security, quota, or external-effect boundaries.",
+  "invariants": {
+    "exact_source_head_before_every_effect": true,
+    "reobserve_after_every_effect": true,
+    "productive_writer_limit": 1,
+    "competing_productive_writer_forbidden": true,
+    "force_push_forbidden": true,
+    "history_rewrite_forbidden": true,
+    "predecessor_gate_transfer_forbidden": true,
+    "failed_gate_masking_forbidden": true,
+    "permission_escalation_forbidden": true,
+    "credential_escalation_forbidden": true,
+    "platform_quota_bypass_forbidden": true,
+    "external_effect_without_separate_authority_forbidden": true,
+    "ambiguous_repair_is_hold": true
+  },
+  "closure_algorithm": [
+    "OBSERVE_EXACT_HEAD",
+    "CLASSIFY_FIRST_DETERMINISTIC_BLOCKER",
+    "PROVE_REPAIR_IS_UNIQUE_AND_REPOSITORY_INTERNAL",
+    "ACQUIRE_SINGLE_WRITER_SLOT",
+    "REOBSERVE_REMOTE_HEAD",
+    "APPLY_SMALLEST_DETERMINISTIC_REPAIR",
+    "VERIFY_REPAIR_SCOPE",
+    "APPEND_ONLY_COMMIT",
+    "FAST_FORWARD_PUSH",
+    "RELEASE_SINGLE_WRITER_SLOT",
+    "REOBSERVE_FRESH_EXACT_HEAD_GATES",
+    "REPEAT_OR_HOLD"
+  ],
+  "deterministic_repairs": {
+    "integrity_projection": {
+      "enabled": true,
+      "generator": "python3 -B tools/qikvrt_integrity.py generate",
+      "verifier": "python3 -B tools/qikvrt_integrity.py verify",
+      "allowed_paths": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt"
+      ],
+      "required_change_set": "EXACT_ALLOWED_PATH_SET",
+      "commit_is_repository_internal_effect": true,
+      "external_effect": false
+    }
+  },
+  "scaling": {
+    "parallel_read_only_observation": true,
+    "parallel_build_and_test": true,
+    "serialized_productive_write": true,
+    "fan_out_after_every_new_head": true,
+    "scheduler_capacity_is_authoritative": true,
+    "maximum_throughput_must_not_weaken_gates": true
+  },
+  "atari_vertical_delivery_invariant": {
+    "required": true,
+    "states": [
+      "M68000_SOURCE_BOUND",
+      "MLP_BINARY_DETERMINISTICALLY_BUILT",
+      "MLP_BINARY_ATTESTED",
+      "HATARI_MEGAST_PROFILE_BOUND",
+      "M68000_EXECUTION_OBSERVED",
+      "AUTHORIZED_REQUEST_EMITTED",
+      "HOST_BRIDGE_OBSERVED",
+      "FIREFOX_EFFECT_EXECUTED",
+      "EFFECT_OBSERVED",
+      "EFFECT_ACKNOWLEDGED",
+      "ACK_RETURNED_TO_AUTHORITY_CONTEXT"
+    ],
+    "completion_requires_all_states": true,
+    "requested_is_not_executed": true,
+    "executed_is_not_observed": true,
+    "observed_is_not_acknowledged": true,
+    "transport_ack_is_not_effect_ack": true,
+    "physical_hardware_claim_requires_physical_hardware_evidence": true,
+    "retrocausal_signalling_claim_requires_independent_empirical_evidence": true
+  },
+  "immutability": {
+    "this_version_may_not_be_weakened_in_place": true,
+    "semantic_weakening_requires_explicit_product_owner_authorized_successor": true,
+    "successor_must_preserve_or_strengthen_fail_closed_boundaries": true
+  },
+  "completion_claims": {
+    "PASS_without_fresh_exact_head_evidence": false,
+    "FINAL_PASS_without_fresh_exact_head_evidence": false,
+    "EFFECT_ACK_DONE_without_observed_effect_ack": false
+  }
+}
