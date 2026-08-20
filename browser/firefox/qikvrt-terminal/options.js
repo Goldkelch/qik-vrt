@@ -25,17 +25,19 @@ async function runBoundedEffectAckE2E() {
     video: null
   };
   const discovery = await browser.runtime.sendMessage({kind: "DISCOVER_EFFECT_ACK"});
-  if (!discovery || discovery.discovered !== true) throw new Error("Effect-Ack discovery failed");
+  if (!discovery || discovery.discovered !== true) {
+    throw new Error(`Effect-Ack discovery failed:${JSON.stringify(discovery)}`);
+  }
   const prepared = await browser.runtime.sendMessage({kind: "PREPARE_EFFECT", payload: request});
   if (!prepared || prepared.record_validated !== true || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
-    throw new Error("Effect-Ack prepare was not exact-bound DONE");
+    throw new Error(`Effect-Ack prepare was not exact-bound DONE:${JSON.stringify(prepared)}`);
   }
   const committed = await browser.runtime.sendMessage({
     kind: "COMMIT_EFFECT",
     payload: {confirmed: true, prepared, request}
   });
   if (!committed || committed.ordinary_release !== true || !committed.effect_ack || committed.effect_ack.state !== "EFFECT_ACK_DONE") {
-    throw new Error("Effect-Ack commit was not observed DONE");
+    throw new Error(`Effect-Ack commit was not observed DONE:${JSON.stringify(committed)}`);
   }
   const result = {
     schema: "qikvrt_firefox_terminal_effect_ack_e2e_page_v1",
