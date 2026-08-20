@@ -1,0 +1,54 @@
+{
+  "schema": "qikvrt_synchronous_repository_first_terminal_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "authority": {
+    "role": "Product Owner",
+    "source_issue": "Goldkelch/qik-vrt#752",
+    "mirror_issue": "ingolf-lohmann/qik-vrt#362"
+  },
+  "contract": {
+    "pipeline": [
+      "INPUT",
+      "QIK_VRT_MESH_REPOSITORY",
+      "REPOSITORY_OUTPUT_OR_EVIDENCE",
+      "OUTPUT"
+    ],
+    "synchronous": true,
+    "repository_first": true,
+    "terminal_is_independent_semantic_authority": false,
+    "terminal_may_substitute_independent_interpretation": false,
+    "terminal_may_substitute_independent_plan": false,
+    "terminal_may_substitute_independent_prediction": false,
+    "terminal_may_delay_delivery_via_scheduler": false,
+    "terminal_may_create_background_watch_without_explicit_request": false,
+    "repository_output_required_before_terminal_reflection": true
+  },
+  "immutability": {
+    "in_place_semantic_weakening_forbidden": true,
+    "silent_override_forbidden": true,
+    "successor_required_for_semantic_change": true,
+    "successor_requires_explicit_product_owner_authorization": true,
+    "successor_must_preserve_or_strengthen_fail_closed_boundaries": true,
+    "history_rewrite_forbidden": true,
+    "force_push_forbidden": true
+  },
+  "fail_closed": {
+    "repository_output_absent": "HOLD_NO_OUTPUT",
+    "repository_processing_ambiguous": "HOLD_AMBIGUOUS",
+    "repository_authority_absent": "HOLD_AUTHORITY",
+    "stale_evidence": "REOBSERVE",
+    "invented_pass_forbidden": true,
+    "invented_final_pass_forbidden": true,
+    "invented_effect_ack_done_forbidden": true,
+    "invented_external_effect_forbidden": true,
+    "invented_review_authority_forbidden": true
+  },
+  "role_separation": {
+    "authority_repository": "Goldkelch/qik-vrt",
+    "mirror_repository": "ingolf-lohmann/qik-vrt",
+    "mirror_preserves_role_local_identity": true,
+    "whole_tree_convergence_required": false
+  },
+  "canonical_statement": "INPUT -> QIK-VRT MESH REPOSITORY -> REPOSITORY OUTPUT / EVIDENCE -> OUTPUT"
+}
