@@ -1,0 +1,69 @@
+(* QIK-VRT Metagrammatik des Verstehens V1 - kompakte Terminalsprache *)
+
+nachricht      = art, "|", rid, "|", bindung, "|", absicht, "|",
+                 autoritaet, "|", evidenz, "|", zustand, "|",
+                 wirkung, "|", naechste_aktion, "|", beweis ;
+
+art            = "OBSERVE" | "DECIDE" | "REQUEST" | "AUTHORIZE" |
+                 "ACT" | "ACK" | "HOLD" | "NOOP" | "ERROR" ;
+
+rid            = kennung ;
+
+bindung        = repository, "@", sha40, ":", sha40 ;
+repository     = kennung, "/", kennung ;
+
+absicht        = verb, " ", objekt ;
+verb           = "OBSERVE" | "CLASSIFY" | "BIND" | "DECIDE" |
+                 "EXECUTE" | "TEST" | "REOBSERVE" | "ACK" |
+                 "PERSIST" | "CREATE" | "UPDATE" | "CLOSE" |
+                 "DISPATCH" ;
+objekt         = text ;
+
+autoritaet     = "AUTH=", autoritaetszustand, ":", kennung ;
+autoritaetszustand = "BOUND" | "MISSING" | "STALE" | "OUT_OF_SCOPE" ;
+
+evidenz        = "EVID=", evidenzart, ":", (sha256 | kennung) ;
+evidenzart     = kennung ;
+
+zustand        = "STATE=", klassifikation ;
+klassifikation = kennung ;
+
+wirkung        = "EFFECT=", wirkungszustand, ":", kennung ;
+wirkungszustand = "NONE" | "REQUESTED" | "EXECUTED" | "OBSERVED" |
+                  "ACKNOWLEDGED" | "REJECTED" | "UNKNOWN" ;
+
+naechste_aktion = "NEXT=", aktion ;
+aktion         = kennung ;
+
+beweis         = "PROOF=", sha256 ;
+
+sha40          = hex, hex, hex, hex, hex, hex, hex, hex, hex, hex,
+                 hex, hex, hex, hex, hex, hex, hex, hex, hex, hex,
+                 hex, hex, hex, hex, hex, hex, hex, hex, hex, hex,
+                 hex, hex, hex, hex, hex, hex, hex, hex, hex, hex ;
+sha256         = sha40, hex, hex, hex, hex, hex, hex, hex, hex,
+                 hex, hex, hex, hex, hex, hex, hex, hex, hex, hex,
+                 hex, hex, hex, hex, hex, hex ;
+
+hex            = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" |
+                 "8" | "9" | "a" | "b" | "c" | "d" | "e" | "f" ;
+
+kennung        = zeichen, { zeichen } ;
+text           = zeichen, { zeichen | " " } ;
+zeichen        = buchstabe | ziffer | "_" | "-" | "." | "/" | ":" ;
+buchstabe      = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" |
+                 "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" |
+                 "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" |
+                 "Y" | "Z" | "a" | "b" | "c" | "d" | "e" | "f" |
+                 "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" |
+                 "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" |
+                 "w" | "x" | "y" | "z" ;
+ziffer         = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+
+(* Semantische Zusatzregeln:
+ * 1. Produktive Verben erfordern AUTH=BOUND:<id>.
+ * 2. UNKNOWN darf keine produktive Wirkung zulassen.
+ * 3. Nicht gebundene Autoritaet erlaubt nur HOLD, NOOP, REOBSERVE oder REQUEST_AUTHORITY.
+ * 4. EFFECT=ACKNOWLEDGED erfordert Nachrichtenart ACK und nachgelagerte Effect-Ack-Evidenz.
+ * 5. Vorganger-Head-Evidenz ist nicht auf einen neuen Head uebertragbar.
+ *)

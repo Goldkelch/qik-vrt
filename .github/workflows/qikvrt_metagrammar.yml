@@ -1,0 +1,76 @@
+name: QIKVRT metagrammar protocol
+
+on:
+  pull_request:
+    paths:
+      - 'state/autonomy/METAGRAMMAR_OF_UNDERSTANDING_V1.json'
+      - 'schemas/qikvrt_metagrammar_envelope_v1.schema.json'
+      - 'docs/METAGRAMMAR_OF_UNDERSTANDING.md'
+      - 'docs/METAGRAMMAR_OF_UNDERSTANDING.ebnf'
+      - 'docs/METAGRAMMAR_M68000_TARGET.md'
+      - 'tools/qikvrt_metagrammar.py'
+      - 'tools/qikvrt_metagrammar_ansic.c'
+      - 'tools/qikvrt_metagrammar_compiler_ansic.c'
+      - 'tools/qikvrt_metagrammar_causal_ir_ansic.c'
+      - 'tools/qikvrt_metagrammar_m68000_lower_ansic.c'
+      - 'tools/qikvrt_m68000_emitter_ansic.c'
+      - 'tests/test_qikvrt_metagrammar.py'
+      - 'tests/test_qikvrt_metagrammar_ansic.py'
+      - 'tests/test_qikvrt_metagrammar_compiler_ansic.py'
+      - 'tests/test_qikvrt_metagrammar_causal_ir_ansic.py'
+      - 'tests/test_qikvrt_m68000_emitter_ansic.py'
+      - 'tests/test_qikvrt_metagrammar_m68000_e2e.py'
+      - '.github/workflows/qikvrt_metagrammar.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source head checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+      - name: Compile Python
+        run: python3 -m py_compile tools/qikvrt_metagrammar.py tests/test_qikvrt_metagrammar.py tests/test_qikvrt_metagrammar_ansic.py tests/test_qikvrt_metagrammar_compiler_ansic.py tests/test_qikvrt_metagrammar_causal_ir_ansic.py tests/test_qikvrt_m68000_emitter_ansic.py tests/test_qikvrt_metagrammar_m68000_e2e.py
+      - name: Compile ANSI C kernels
+        run: |
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_metagrammar_ansic.c -o /tmp/qikvrt-metagrammar-ansic
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_metagrammar_compiler_ansic.c -o /tmp/qikvrt-metagrammar-compiler
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_metagrammar_causal_ir_ansic.c -o /tmp/qikvrt-causal-ir
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_metagrammar_m68000_lower_ansic.c -o /tmp/qikvrt-m68000-lower
+          cc -std=c89 -pedantic-errors -Wall -Wextra -Werror tools/qikvrt_m68000_emitter_ansic.c -o /tmp/qikvrt-m68000-emitter
+      - name: Run metagrammar tests
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_metagrammar \
+            tests.test_qikvrt_metagrammar_ansic \
+            tests.test_qikvrt_metagrammar_compiler_ansic \
+            tests.test_qikvrt_metagrammar_causal_ir_ansic \
+            tests.test_qikvrt_m68000_emitter_ansic \
+            tests.test_qikvrt_metagrammar_m68000_e2e
+      - name: Validate normative JSON syntax
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for path in [
+              Path('state/autonomy/METAGRAMMAR_OF_UNDERSTANDING_V1.json'),
+              Path('schemas/qikvrt_metagrammar_envelope_v1.schema.json'),
+          ]:
+              json.loads(path.read_text(encoding='utf-8'))
+              print('json-ok', path)
+          PY
