@@ -25,6 +25,7 @@ import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Decision.ObservationSufficiency
+import QIKVRTFormalization.Decision.PredictiveOptimality
 
 /-!
 Top-level import for the checked QIK-VRT formalization v2 tranches.
@@ -63,4 +64,13 @@ The decision-sufficiency tranche generalizes the witness theorem: evidence is
 deterministically sufficient exactly when observation fibers do not mix histories
 requiring different correct actions. Equivalently, the observation kernel must
 refine the action kernel. Authority/Mirror/Witness recovery is a specialization.
+
+The predictive-optimality tranche makes the equal-information comparison
+explicit.  Admissibility and the objective preorder are independent inputs;
+under sufficient bound information, an independently certified optimal correct
+prediction transfers through the unique reachable selector, so no admissible
+comparator under the same information can be strictly preferred by that
+objective.  This remains a formal decision result, not an empirical claim for
+an unspecified loss function or a physical measurement beyond a knowledge
+boundary.
 -/
