@@ -89,9 +89,9 @@ jobs:
             --trace os_base \
             > /tmp/qiknet/hatari.log 2>&1 &
           hatari_pid=$!
-          ok=0
+          observed=0
           for i in $(seq 1 250); do
-            if test -s /tmp/qiknet/drive/C/QIKNET.OK; then ok=1; break; fi
+            if test -s /tmp/qiknet/endpoint-receipt.json; then observed=1; break; fi
             if ! kill -0 "$hatari_pid" 2>/dev/null; then break; fi
             sleep 0.1
           done
@@ -102,9 +102,17 @@ jobs:
             cat /tmp/qiknet/hatari.log
             exit 1
           fi
-          test "$ok" -eq 1
+          test "$observed" -eq 1
           grep -F 'Pexec(0, "C:\QIKNET.PRG"' /tmp/qiknet/hatari.log
-          grep -F 'GUEST_TCP_IP_ROUNDTRIP_OBSERVED' /tmp/qiknet/drive/C/QIKNET.OK
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/qiknet/endpoint-receipt.json'))
+          assert p['success'] is True
+          assert p['response_sent'] is True
+          assert p['guest_post_response_confirmation_observed'] is True
+          assert p['nonce']=='QIKVRT-NONCE-0001'
+          print('GUEST_TCP_IP_ROUNDTRIP_OBSERVED')
+          PY
           cat /tmp/qiknet/peer.log
           cat /tmp/qiknet/endpoint-receipt.json
 
@@ -117,22 +125,25 @@ jobs:
           set -euo pipefail
           export TREE_SHA="$(git rev-parse HEAD^{tree})"
           export PRG_SHA="$(sha256sum /tmp/qiknet/drive/C/QIKNET.PRG | awk '{print $1}')"
-          export SENTINEL_SHA="$(sha256sum /tmp/qiknet/drive/C/QIKNET.OK | awk '{print $1}')"
           export ENDPOINT_SHA="$(sha256sum /tmp/qiknet/endpoint-receipt.json | awk '{print $1}')"
           export HATARI_SHA="$(sha256sum /tmp/qiknet/hatari.log | awk '{print $1}')"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           endpoint=json.loads(Path('/tmp/qiknet/endpoint-receipt.json').read_text())
-          assert endpoint['success'] is True and endpoint['nonce']=='QIKVRT-NONCE-0001'
+          assert endpoint['success'] is True
+          assert endpoint['nonce']=='QIKVRT-NONCE-0001'
+          assert endpoint['response_sent'] is True
+          assert endpoint['guest_post_response_confirmation_observed'] is True
           receipt={
             'schema':'qikvrt_mlp_tos_megast_tcpip_receipt_v1',
             'repository':'Goldkelch/qik-vrt','source_head':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],
             'run_id':int(os.environ['RUN_ID']),'run_attempt':int(os.environ['RUN_ATTEMPT']),
             'transport':'SLIP over emulated Atari Mega ST BIOS AUX/RS232','guest_ip':'10.0.0.2','peer_ip':'10.0.0.1',
             'guest_tcp_connect_observed':True,'endpoint_nonce_payload_observed':True,'guest_response_observed':True,
+            'guest_post_response_confirmation_observed':True,
             'nonce':'QIKVRT-NONCE-0001','response':'QIK-ACK:QIKVRT-NONCE-0001',
-            'qiknet_prg_sha256':os.environ['PRG_SHA'],'guest_sentinel_sha256':os.environ['SENTINEL_SHA'],
+            'qiknet_prg_sha256':os.environ['PRG_SHA'],
             'endpoint_receipt_sha256':os.environ['ENDPOINT_SHA'],'hatari_trace_sha256':os.environ['HATARI_SHA'],
             'machine':'Atari Mega ST','cpu':'Motorola 68000','hatari_version':'2.4.1','emutos_version':'1.4',
             'guest_tcp_ip_roundtrip_observed':True,'internet_reachability_claimed':False,'physical_megast_execution':False,'effect_ack_done':False
@@ -149,7 +160,6 @@ jobs:
           path: |
             /tmp/qiknet/QIKNET.PRG.sha256
             /tmp/qiknet/drive/C/QIKNET.PRG
-            /tmp/qiknet/drive/C/QIKNET.OK
             /tmp/qiknet/endpoint-receipt.json
             /tmp/qiknet/MLP_TOS_MEGAST_TCPIP_RECEIPT_V1.json
             /tmp/qiknet/peer.log
