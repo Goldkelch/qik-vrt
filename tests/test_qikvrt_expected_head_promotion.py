@@ -49,20 +49,22 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         value.update(overrides)
         return value
 
-    def test_ready_green_reviewed_exact_head_is_promotable(self) -> None:
+    def test_ready_green_reviewed_exact_head_is_promotable_for_merge(self) -> None:
         result = MODULE.evaluate_promotion(self.snapshot())
         self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["phase"], "MERGE")
         self.assertEqual(result["expected_head_sha"], "b" * 40)
         self.assertEqual(result["first_blocker"], None)
 
-    def test_draft_with_green_internal_gates_advances_to_ready_before_review(self) -> None:
+    def test_draft_with_green_internal_gates_is_promotable_only_for_ready_transition(self) -> None:
         snapshot = self.snapshot(draft=True)
         snapshot["workflow_runs"] = [
             run for run in snapshot["workflow_runs"]
             if run["name"] != "QIKVRT requested review execution"
         ]
         result = MODULE.evaluate_promotion(snapshot)
-        self.assertEqual(result["state"], "READY_FOR_REVIEW")
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["phase"], "READY_FOR_REVIEW")
         self.assertIsNone(result["first_blocker"])
 
     def test_draft_ignores_pending_review_gate_but_not_internal_gate(self) -> None:
@@ -71,7 +73,8 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             {"name": "QIKVRT requested review execution", "status": "in_progress", "conclusion": None, "run_number": 51}
         )
         result = MODULE.evaluate_promotion(snapshot)
-        self.assertEqual(result["state"], "READY_FOR_REVIEW")
+        self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["phase"], "READY_FOR_REVIEW")
 
         snapshot["workflow_runs"].append(
             {"name": "QIKVRT CI", "status": "completed", "conclusion": "failure", "run_number": 11}
@@ -100,6 +103,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         )
         result = MODULE.evaluate_promotion(snapshot)
         self.assertEqual(result["state"], "PROMOTABLE")
+        self.assertEqual(result["phase"], "MERGE")
 
     def test_missing_required_gate_blocks(self) -> None:
         snapshot = self.snapshot()
