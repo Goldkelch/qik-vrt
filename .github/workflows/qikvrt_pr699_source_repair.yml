@@ -1,0 +1,64 @@
+name: QIKVRT PR699 encoded source repair
+
+on:
+  push:
+    branches:
+      - agent/effect-ack-mesh-live-client-v1
+    paths:
+      - .github/workflows/qikvrt_pr699_source_repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-pr699-encoded-source-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repair trigger
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Apply repository-encoded repair and persist exact source bytes
+        shell: bash
+        env:
+          EXPECTED_PARENT: 0bee45776fea9cd97fa94904af0d91e1704dbf9a
+          TARGET_BRANCH: agent/effect-ack-mesh-live-client-v1
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD)" = ".github/workflows/qikvrt_pr699_source_repair.yml"
+          observed="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$observed" = "$(git rev-parse HEAD)"
+
+          PYTHONPATH=tools TARGET_REF="$TARGET_BRANCH" python3 -c 'pass'
+          test ! -e tools/sitecustomize.py
+          rm .github/workflows/qikvrt_pr699_source_repair.yml
+          git add .github/workflows/qikvrt_pr699_source_repair.yml
+
+          expected="$(printf '%s\n' \
+            .github/workflows/qikvrt_pr699_source_repair.yml \
+            Makefile \
+            docs/assets/js/qikvrt-effect-ack-live-core.js \
+            docs/assets/js/qikvrt-effect-ack-live.js \
+            tests/test_qikvrt_effect_ack_live_client.py \
+            tools/sitecustomize.py | sort)"
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+
+          git diff --cached --check
+          node --check docs/assets/js/qikvrt-effect-ack-live-core.js
+          node --check docs/assets/js/qikvrt-effect-ack-live.js
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_effect_ack_live_client
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: persist effect-ack live source repairs'
+
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD^)" = "$(git rev-parse FETCH_HEAD)"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
