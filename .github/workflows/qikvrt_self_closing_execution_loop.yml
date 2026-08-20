@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT self-closing execution loop
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-self-closing-${{ github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deterministic-integrity-closure:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify immutable self-closing contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_self_closing_execution_loop
+
+      - name: Verify exact source head and clean worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain=v1)"
+          test -n "$SOURCE_REF"
+          test "$SOURCE_REF" != "$DEFAULT_BRANCH"
+
+      - name: Reobserve remote head before repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$SOURCE_REF" | awk '{print $1}')"
+          printf 'source_sha=%s\nremote_head=%s\n' "$SOURCE_SHA" "$remote_head"
+          test -n "$remote_head"
+          test "$remote_head" = "$SOURCE_SHA"
+
+      - id: repair
+        name: Materialize only deterministic integrity projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_integrity.py generate
+
+          mapfile -t changed < <(git diff --name-only | LC_ALL=C sort)
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo 'state=NOOP' >> "$GITHUB_OUTPUT"
+            echo 'SELF_CLOSING_NOOP_EXACT_HEAD_ALREADY_INTEGRAL'
+            exit 0
+          fi
+
+          expected=(
+            REPOSITORY_FILE_MANIFEST.json
+            REPOSITORY_FILE_MANIFEST.json.sha256
+            SHA256SUMS.txt
+          )
+          if [ "${#changed[@]}" -ne "${#expected[@]}" ]; then
+            printf 'BLOCK unexpected repair path count: %s\n' "${#changed[@]}" >&2
+            printf 'observed=%s\n' "${changed[*]}" >&2
+            exit 2
+          fi
+          for i in "${!expected[@]}"; do
+            test "${changed[$i]}" = "${expected[$i]}" || {
+              printf 'BLOCK unexpected repair scope: expected=%s observed=%s\n' \
+                "${expected[$i]}" "${changed[$i]}" >&2
+              exit 2
+            }
+          done
+
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_integrity.py verify
+          git diff --check
+          echo 'state=REPAIR' >> "$GITHUB_OUTPUT"
+
+      - name: Append-only commit and fast-forward push
+        if: steps.repair.outputs.state == 'REPAIR'
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$SOURCE_REF" | awk '{print $1}')"
+          test "$remote_head" = "$SOURCE_SHA"
+
+          git config user.name 'qikvrt-self-closing[bot]'
+          git config user.email 'qikvrt-self-closing[bot]@users.noreply.github.com'
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          git diff --cached --check
+          git commit -m 'chore: self-close deterministic integrity projections'
+
+          parent="$(git rev-parse HEAD^1)"
+          test "$parent" = "$SOURCE_SHA"
+          remote_head="$(git ls-remote origin "refs/heads/$SOURCE_REF" | awk '{print $1}')"
+          test "$remote_head" = "$SOURCE_SHA"
+          git push origin "HEAD:refs/heads/$SOURCE_REF"
+          echo "SELF_CLOSING_FAST_FORWARD_HEAD=$(git rev-parse HEAD)"
+
+      - name: Emit fail-closed terminal state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'source_ref=%s\nsource_sha=%s\nrepair_state=%s\n' \
+            "$SOURCE_REF" "$SOURCE_SHA" "${{ steps.repair.outputs.state || 'BLOCKED' }}"
