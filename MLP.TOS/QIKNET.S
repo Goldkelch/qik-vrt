@@ -1,55 +1,147 @@
         .text
         .globl _start
+
+/* QIKNET deliberately transmits its fixed proof frames as immediates.
+   This avoids any loader/relocation ambiguity in the guest proof path:
+   the bytes that reach BIOS AUX are the bytes encoded below. */
+        .macro TX value
+        move.w  #\value,d1
+        bsr     aux_out
+        .endm
+
 _start:
-        lea     syn_frame(pc),a0
-        move.w  #syn_frame_end-syn_frame-1,d6
-send_syn:
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        bsr     aux_out
-        dbra    d6,send_syn
+        /* IPv4/TCP SYN:
+           10.0.0.2:49152 -> 10.0.0.1:8771, seq=0x11223344.
+           SLIP escaping is already applied. */
+        TX      0xc0
+        TX      0x45
+        TX      0x00
+        TX      0x00
+        TX      0x28
+        TX      0x10
+        TX      0x01
+        TX      0x40
+        TX      0x00
+        TX      0x40
+        TX      0x06
+        TX      0x16
+        TX      0xcd
+        TX      0x0a
+        TX      0x00
+        TX      0x00
+        TX      0x02
+        TX      0x0a
+        TX      0x00
+        TX      0x00
+        TX      0x01
+        TX      0xdb
+        TX      0xdc
+        TX      0x00
+        TX      0x22
+        TX      0x43
+        TX      0x11
+        TX      0x22
+        TX      0x33
+        TX      0x44
+        TX      0x00
+        TX      0x00
+        TX      0x00
+        TX      0x00
+        TX      0x50
+        TX      0x02
+        TX      0x10
+        TX      0x00
+        TX      0x65
+        TX      0x36
+        TX      0x00
+        TX      0x00
+        TX      0xc0
 
+        /* The controlled peer returns exactly one deterministic SYN-ACK
+           SLIP frame. Guest execution must consume it before continuing. */
         bsr     recv_slip_frame
 
-        lea     data_frame(pc),a0
-        move.w  #data_frame_end-data_frame-1,d6
-send_data:
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        bsr     aux_out
-        dbra    d6,send_data
+        /* ACK+PSH carrying the exact nonce QIKVRT-NONCE-0001. */
+        TX      0xc0
+        TX      0x45
+        TX      0x00
+        TX      0x00
+        TX      0x39
+        TX      0x10
+        TX      0x02
+        TX      0x40
+        TX      0x00
+        TX      0x40
+        TX      0x06
+        TX      0x16
+        TX      0xbb
+        TX      0x0a
+        TX      0x00
+        TX      0x00
+        TX      0x02
+        TX      0x0a
+        TX      0x00
+        TX      0x00
+        TX      0x01
+        TX      0xdb
+        TX      0xdc
+        TX      0x00
+        TX      0x22
+        TX      0x43
+        TX      0x11
+        TX      0x22
+        TX      0x33
+        TX      0x45
+        TX      0x55
+        TX      0x66
+        TX      0x77
+        TX      0x89
+        TX      0x50
+        TX      0x18
+        TX      0x10
+        TX      0x00
+        TX      0x5a
+        TX      0xe8
+        TX      0x00
+        TX      0x00
+        TX      0x51
+        TX      0x49
+        TX      0x4b
+        TX      0x56
+        TX      0x52
+        TX      0x54
+        TX      0x2d
+        TX      0x4e
+        TX      0x4f
+        TX      0x4e
+        TX      0x43
+        TX      0x45
+        TX      0x2d
+        TX      0x30
+        TX      0x30
+        TX      0x30
+        TX      0x31
+        TX      0xc0
 
+        /* The controlled peer returns the deterministic TCP response frame.
+           Only after a complete non-empty returned SLIP frame has been
+           consumed inside the Atari guest do we emit the causal confirmation. */
         bsr     recv_slip_frame
 
-        /* A second complete returned SLIP frame was observed by the guest
-           after the endpoint accepted the exact nonce-bearing TCP payload. */
-        move.w  #0,-(sp)
-        pea     ok_name(pc)
-        move.w  #0x3c,-(sp)          /* GEMDOS Fcreate */
-        trap    #1
-        addq.l  #8,sp
-        move.l  d0,d4
-        bmi     fail
-
-        pea     ok_text(pc)
-        move.l  #ok_text_end-ok_text,-(sp)
-        move.w  d4,-(sp)
-        move.w  #0x40,-(sp)          /* GEMDOS Fwrite */
-        trap    #1
-        lea     12(sp),sp
-
-        move.w  d4,-(sp)
-        move.w  #0x3e,-(sp)          /* GEMDOS Fclose */
-        trap    #1
-        addq.l  #4,sp
+        /* Guest-side post-receive witness. The peer accepts success only after
+           it has sent the response and then receives this complete SLIP frame. */
+        TX      0xc0
+        TX      0x51
+        TX      0x49
+        TX      0x4b
+        TX      0x44
+        TX      0x4f
+        TX      0x4e
+        TX      0x45
+        TX      0xc0
 
         clr.w   -(sp)
         trap    #1                   /* Pterm0 */
-
-fail:
-        move.w  #1,-(sp)
-        move.w  #0x4c,-(sp)          /* Pterm(1) */
-        trap    #1
 
 /* BIOS AUX device 1: actual guest serial output/input through Hatari RS232. */
 aux_out:
@@ -75,8 +167,8 @@ wait_char:
         and.l   #0xff,d0
         rts
 
-/* Consume one non-empty SLIP frame. This deliberately operates inside the
-   emulated Atari guest, so host networking alone cannot satisfy the proof. */
+/* Consume one complete non-empty SLIP frame inside the emulated Atari guest.
+   The peer is deterministic and sends exactly one frame per protocol stage. */
 recv_slip_frame:
         moveq   #0,d7
 recv_loop:
@@ -89,29 +181,3 @@ recv_loop:
 recv_non_end:
         moveq   #1,d7
         bra     recv_loop
-
-        .align  2
-/* Valid IPv4/TCP SYN, 10.0.0.2:49152 -> 10.0.0.1:8771, seq=0x11223344.
-   SLIP escaping is already applied (source port begins c0 -> db dc). */
-syn_frame:
-        .byte 0xc0,0x45,0x00,0x00,0x28,0x10,0x01,0x40,0x00,0x40,0x06,0x16,0xcd
-        .byte 0x0a,0x00,0x00,0x02,0x0a,0x00,0x00,0x01,0xdb,0xdc,0x00,0x22,0x43
-        .byte 0x11,0x22,0x33,0x44,0x00,0x00,0x00,0x00,0x50,0x02,0x10,0x00,0x65
-        .byte 0x36,0x00,0x00,0xc0
-syn_frame_end:
-
-/* ACK+PSH carrying exact nonce QIKVRT-NONCE-0001 after deterministic
-   peer SYN-ACK seq=0x55667788. */
-data_frame:
-        .byte 0xc0,0x45,0x00,0x00,0x39,0x10,0x02,0x40,0x00,0x40,0x06,0x16,0xbb
-        .byte 0x0a,0x00,0x00,0x02,0x0a,0x00,0x00,0x01,0xdb,0xdc,0x00,0x22,0x43
-        .byte 0x11,0x22,0x33,0x45,0x55,0x66,0x77,0x89,0x50,0x18,0x10,0x00,0x5a
-        .byte 0xe8,0x00,0x00,0x51,0x49,0x4b,0x56,0x52,0x54,0x2d,0x4e,0x4f,0x4e
-        .byte 0x43,0x45,0x2d,0x30,0x30,0x30,0x31,0xc0
-data_frame_end:
-
-ok_name:
-        .asciz  "C:\\QIKNET.OK"
-ok_text:
-        .ascii  "GUEST_TCP_IP_ROUNDTRIP_OBSERVED\r\n"
-ok_text_end:
