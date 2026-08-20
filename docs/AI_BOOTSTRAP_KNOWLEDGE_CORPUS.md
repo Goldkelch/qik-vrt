@@ -104,6 +104,31 @@ VERGANGENES EREIGNIS
 There is no backward arrow that changes the historical event. A later question
 may make an earlier preserved idea newly relevant without altering the past.
 
+For distributed and causal execution the bootstrap MUST additionally preserve:
+
+```text
+QUELLENORDNUNG != EMPFANGSORDNUNG != KAUSALORDNUNG != WIRKUNGSORDNUNG
+```
+
+A later-received event may be placed earlier in a reconstructed local history
+when its bound source, observer and causal relations require that placement. This
+is reconstruction from provenance and causal bindings, not backward transport in
+physical time.
+
+`operative Eigenzeit` means a process- or observer-local monotone state order. It
+is not automatically relativistic proper time. A physical proper-time claim
+requires a physically bound worldline plus measurement or calibration.
+
+A concrete serialization may be a valid topological ordering of a causal graph;
+it is not the causal graph itself. Likewise the effect lifecycle remains:
+
+```text
+REQUESTED != EXECUTED != OBSERVED != ACKNOWLEDGED
+TRANSPORT_ACK != EFFECT_ACK
+```
+
+The full human-readable binding is `docs/TEMPORAL_CAUSAL_PLACEMENT.md`.
+
 ### 4. Information, uncertainty and the unknown remainder
 
 The supplied material uses a three-way epistemic partition:
@@ -166,7 +191,7 @@ VARIATION
 + INVARIANTENERHALTUNG
 + RÜCKBINDUNG
 + ZEIT
-→ GESTALTETE EVOLUTION
+→ GESTALTETE_EVOLUTION
 ```
 
 For repository work this means: preserve valid historical states, generate
