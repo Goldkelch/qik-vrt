@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>QIK-VRT Live Observation Terminal</title>
+<style>
+:root{--bg:#0c0e12;--panel:#15191f;--line:#343b46;--text:#edf0f4;--muted:#9aa3b1;--ok:#58cd82;--warn:#e7bd51;--bad:#e36d6d;--dim:#444b56;--blue:#66a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}main{max-width:1180px;margin:24px auto;padding:0 18px 44px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 18px 60px #0007}h1{font-size:28px;margin:0 0 4px}.sub{color:var(--muted);margin-bottom:18px}.meta{display:grid;grid-template-columns:145px 1fr;gap:5px 14px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.k{color:var(--muted)}.v{overflow-wrap:anywhere}.section{margin-top:22px}.section h2{font-size:17px;margin:0 0 11px}.row{display:grid;grid-template-columns:minmax(190px,280px) 1fr 120px;gap:12px;align-items:center;margin:8px 0}.bar{height:16px;background:var(--dim);border-radius:999px;overflow:hidden;position:relative}.fill{height:100%;width:0;background:var(--dim);border-radius:inherit;transition:width .5s ease,background .3s ease}.fill.ok{width:100%;background:var(--ok)}.fill.run{width:72%;background:var(--warn);position:relative}.fill.run:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 0 35%,#fff7 50%,transparent 65% 100%);transform:translateX(-120%);animation:scan 1.6s linear infinite}.fill.bad{width:100%;background:var(--bad)}.fill.skip{width:100%;background:#707886}.status{text-align:right}.status.ok{color:var(--ok)}.status.run{color:var(--warn)}.status.bad{color:var(--bad)}.status.skip{color:#aeb5c0}.front{height:22px;background:var(--dim);border-radius:999px;overflow:hidden;display:flex}.front .done{width:72%;background:var(--ok)}.front .active{width:16%;background:var(--warn);animation:pulse 1.5s ease-in-out infinite}.foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;color:var(--muted)}button{font:inherit;color:var(--text);background:#202630;border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer}button:hover{border-color:#596575}a{color:var(--blue)}.error{margin-top:14px;color:var(--bad);white-space:pre-wrap}.legend{font-size:13px;color:var(--muted);margin-top:7px}.badge{display:inline-block;padding:2px 7px;border-radius:999px;border:1px solid var(--line);margin-left:8px;font-size:12px}.badge.live{color:var(--ok);border-color:#397b50}.badge.hold{color:var(--warn);border-color:#7c6935}@keyframes scan{to{transform:translateX(120%)}}@keyframes pulse{50%{filter:brightness(1.45)}}@media(max-width:760px){.row{grid-template-columns:1fr}.status{text-align:left}.meta{grid-template-columns:110px 1fr}h1{font-size:21px}}
+</style>
+</head>
+<body>
+<main><div class="panel">
+<h1>QIKVRT LIVE OBSERVATION <span id="liveBadge" class="badge hold">CONNECTING</span></h1>
+<div class="sub">neutral terminal / standing animation / repository-native observation</div>
+<div class="meta">
+<div class="k">AUTHORITY</div><div class="v"><a href="https://github.com/Goldkelch/qik-vrt">Goldkelch/qik-vrt</a></div>
+<div class="k">SOURCE_PR</div><div class="v" id="source">#758</div>
+<div class="k">CARRIER_PR</div><div class="v" id="carrier">#759</div>
+<div class="k">HEAD</div><div class="v" id="head">loading…</div>
+<div class="k">TREE</div><div class="v" id="tree">bound by carrier receipt</div>
+<div class="k">OBSERVED</div><div class="v" id="observed">—</div>
+</div>
+
+<div class="section"><h2>REPOSITORY GATES</h2><div id="gates"></div></div>
+
+<div class="section"><h2>DELIVERY / PROMOTION</h2>
+<div class="row"><div>Independent review</div><div class="bar"><div id="reviewBar" class="fill"></div></div><div id="reviewStatus" class="status">OBSERVE</div></div>
+<div class="row"><div>Source/carrier disposition</div><div class="bar"><div class="fill run"></div></div><div class="status run">ACTIVE FRONT</div></div>
+<div class="row"><div>Merge</div><div class="bar"><div id="mergeBar" class="fill"></div></div><div id="mergeStatus" class="status">NOT DONE</div></div>
+<div class="row"><div>Canonical main</div><div class="bar"><div class="fill"></div></div><div class="status">OBSERVE</div></div>
+<div class="row"><div>Publication delivery</div><div class="bar"><div class="fill"></div></div><div class="status">NEXT TRANCHE</div></div>
+</div>
+
+<div class="section"><h2>CURRENT FRONT</h2><div class="front"><div class="done"></div><div class="active"></div></div><div class="legend">verified theorem/gates → source/carrier disposition → promotion/publication</div></div>
+
+<div class="foot"><div>EFFECT NONE · FAIL-CLOSED · NO GATE TRANSFER</div><div><button id="refresh">REFRESH NOW</button> · auto refresh 120 s</div></div>
+<div id="error" class="error"></div>
+</div></main>
+<script>
+const repo='Goldkelch/qik-vrt';
+const api='https://api.github.com/repos/'+repo;
+const sourcePR=758, carrierPR=759;
+const wanted=[
+ ['QIKVRT CI','CI'],
+ ['QIKVRT Collective Proposal Review','PROPOSAL REVIEW'],
+ ['QIK-VRT global claim completion','GLOBAL CLAIMS'],
+ ['QIK-VRT manuscript proof coverage','PROOF COVERAGE'],
+ ['QIK-VRT measurement-independence boundary verification','MEASUREMENT BOUND'],
+ ['QIK-VRT universal ontology finite-model verification','ONTOLOGY'],
+ ['QIK-VRT Mandelbrot 42-loop proof reproduction','MANDELBROT'],
+ ['QIKVRT repository evidence materialization','MATERIALIZATION'],
+ ['QIKVRT Batch-003 remaining subject disposition','BATCH-003'],
+ ['QIKVRT code-owner review observer','CODE-OWNER OBSERVER']
+];
+function cls(run){if(!run)return['','NOT OBSERVED'];if(run.status!=='completed')return['run',run.status.toUpperCase()];if(run.conclusion==='success')return['ok','SUCCESS'];if(run.conclusion==='skipped')return['skip','SKIPPED'];return['bad',(run.conclusion||'FAILED').toUpperCase()]}
+function renderGate(name,label,run){const [c,s]=cls(run);const row=document.createElement('div');row.className='row';row.innerHTML=`<div>${label}</div><div class="bar"><div class="fill ${c}"></div></div><div class="status ${c}">${s}</div>`;return row}
+async function json(url){const r=await fetch(url,{headers:{'Accept':'application/vnd.github+json'}});if(!r.ok)throw new Error(`${r.status} ${r.statusText} — ${url}`);return r.json()}
+async function refresh(){
+ const err=document.getElementById('error');err.textContent='';
+ try{
+  const [s,c]=await Promise.all([json(`${api}/pulls/${sourcePR}`),json(`${api}/pulls/${carrierPR}`)]);
+  const head=c.head.sha;document.getElementById('head').textContent=head;
+  document.getElementById('source').innerHTML=`<a href="${s.html_url}">#${s.number}</a> ${s.state.toUpperCase()}${s.draft?' / DRAFT':''}`;
+  document.getElementById('carrier').innerHTML=`<a href="${c.html_url}">#${c.number}</a> ${c.state.toUpperCase()}${c.draft?' / DRAFT':''}`;
+  const runs=await json(`${api}/actions/runs?head_sha=${encodeURIComponent(head)}&event=pull_request&per_page=100`);
+  const latest=new Map();
+  for(const r of runs.workflow_runs.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))){if(!latest.has(r.name))latest.set(r.name,r)}
+  const box=document.getElementById('gates');box.innerHTML='';
+  for(const [name,label] of wanted)box.appendChild(renderGate(name,label,latest.get(name)));
+  const reviews=await json(`${api}/pulls/${sourcePR}/reviews?per_page=100`);
+  const approved=reviews.some(r=>r.state==='APPROVED');
+  document.getElementById('reviewBar').className='fill '+(approved?'ok':'');
+  document.getElementById('reviewStatus').className='status '+(approved?'ok':'');
+  document.getElementById('reviewStatus').textContent=approved?'APPROVED':'NOT BOUND';
+  const merged=!!s.merged_at;
+  document.getElementById('mergeBar').className='fill '+(merged?'ok':'');
+  document.getElementById('mergeStatus').className='status '+(merged?'ok':'');
+  document.getElementById('mergeStatus').textContent=merged?'MERGED':'NOT DONE';
+  document.getElementById('observed').textContent=new Date().toISOString();
+  const badge=document.getElementById('liveBadge');badge.textContent='LIVE';badge.className='badge live';
+ }catch(e){err.textContent='OBSERVATION ERROR: '+e.message;const b=document.getElementById('liveBadge');b.textContent='HOLD';b.className='badge hold'}
+}
+document.getElementById('refresh').addEventListener('click',refresh);refresh();setInterval(refresh,120000);
+</script>
+</body></html>
