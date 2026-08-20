@@ -45,7 +45,7 @@ def wait_ready(base: str, deadline: float) -> None:
             value = request_json("GET", base + "/status", timeout=1.0)
             if value.get("value", {}).get("ready") is True:
                 return
-        except Exception as exc:  # bounded startup polling
+        except Exception as exc:
             last = exc
         time.sleep(0.1)
     raise RuntimeError(f"geckodriver did not become ready: {last}")
@@ -102,7 +102,7 @@ def main() -> int:
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
                 "moz:firefoxOptions": {
-                    "args": ["-headless"],
+                    "args": ["-headless", "-remote-allow-system-access"],
                     "prefs": {
                         "extensions.webextensions.uuids": uuid_pref,
                         "browser.shell.checkDefaultBrowser": False,
