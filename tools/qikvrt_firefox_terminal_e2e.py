@@ -14,7 +14,6 @@ import json
 import os
 import subprocess
 import time
-import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -71,6 +70,9 @@ def main() -> int:
     try:
         wait_ready(base, time.time() + 20)
         uuid_pref = json.dumps({EXTENSION_ID: EXTENSION_UUID}, separators=(",", ":"))
+        # Ubuntu runner Firefox startup can take >30 seconds before Marionette
+        # completes session creation. Keep this bounded but above that observed
+        # startup envelope; a nonresponsive browser still fails closed.
         created = request_json("POST", base + "/session", {
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
@@ -83,7 +85,7 @@ def main() -> int:
                     }
                 }
             }}
-        }, timeout=30.0)
+        }, timeout=90.0)
         value = created.get("value") or {}
         session_id = value.get("sessionId") or created.get("sessionId")
         if not session_id:
