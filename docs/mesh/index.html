@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QIK-VRT Mesh Live Terminal</title>
+<style>
+:root{color-scheme:dark;--bg:#0c0f14;--panel:#151a22;--fg:#e8edf5;--muted:#98a2b3;--ok:#5ad18b;--warn:#f0c15b;--bad:#ff6b6b;--line:#303746}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.wrap{max-width:1280px;margin:auto;padding:28px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin:0 0 18px}h1,h2{margin:.1rem 0 1rem}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:10px;padding:14px}.bar{height:13px;background:#343b49;border-radius:8px;overflow:hidden}.fill{height:100%;width:0;background:var(--warn);transition:width .35s ease,background .35s ease}.fill.ok{background:var(--ok)}.fill.bad{background:var(--bad)}code{word-break:break-all}.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warn);animation:pulse 1.3s infinite}@keyframes pulse{50%{opacity:.28}}a{color:#9ecbff}.kv{display:grid;grid-template-columns:170px 1fr;gap:5px 12px}.event{padding:7px 0;border-top:1px solid var(--line)}
+</style>
+</head>
+<body><main class="wrap">
+<section class="panel">
+<h1>QIK-VRT MESH LIVE TERMINAL</h1>
+<div class="kv">
+<div>AUTHORITY</div><div>Goldkelch/qik-vrt</div>
+<div>CANONICAL URL</div><div><code>https://goldkelch.github.io/qik-vrt/mesh/</code></div>
+<div>TRANSPORT</div><div><span id="transportDot" class="pulse"></span> <span id="transport">HOLD / PUSH_CHANNEL_UNBOUND</span></div>
+<div>LAST EVENT</div><div id="lastEvent">none observed</div>
+</div>
+<p class="muted">Event-driven only. This page contains no polling timer and does not periodically fetch GitHub. Live mutations require a bound Effect-Acknowledgement event transport.</p>
+</section>
+<section class="panel">
+<h2>Mesh topology</h2>
+<div id="nodes" class="grid"></div>
+</section>
+<section class="panel">
+<h2>Development front</h2>
+<div class="bar"><div id="front" class="fill"></div></div>
+<p id="frontText" class="muted">waiting for first authoritative event</p>
+</section>
+<section class="panel">
+<h2>Event ledger</h2><div id="events" class="muted">No event received in this browser session.</div>
+</section>
+</main>
+<script>
+'use strict';
+const topology={
+ authority:{guid:'authority',repository:'Goldkelch/qik-vrt',status:'AUTHORITY',children:['a84f157a-cef2-4c47-bca9-8f407085bdbe']},
+ nodes:{
+  'a84f157a-cef2-4c47-bca9-8f407085bdbe':{guid:'a84f157a-cef2-4c47-bca9-8f407085bdbe',repository:'ingolf-lohmann/qik-vrt',status:'ACTIVE',children:[]}
+ }
+};
+const state=new Map();
+function urlFor(id){return id==='authority'?'./':`nodes/${id}/`;}
+function render(){
+ const root=document.getElementById('nodes');root.textContent='';
+ const all=[topology.authority,...Object.values(topology.nodes)];
+ for(const n of all){
+   const s=state.get(n.guid)||{};
+   const card=document.createElement('div');card.className='node';
+   const title=document.createElement('div');
+   const a=document.createElement('a');a.href=urlFor(n.guid);a.textContent=n.repository;title.appendChild(a);card.appendChild(title);
+   const meta=document.createElement('div');meta.className='muted';meta.textContent=`GUID ${n.guid}`;card.appendChild(meta);
+   const stat=document.createElement('div');stat.textContent=`STATE ${s.state||n.status}`;card.appendChild(stat);
+   const head=document.createElement('div');head.className='muted';head.textContent=`HEAD ${s.head||'not event-bound'}`;card.appendChild(head);
+   const bar=document.createElement('div');bar.className='bar';const fill=document.createElement('div');fill.className='fill'+(s.state==='SUCCESS'?' ok':s.state==='FAILURE'?' bad':'');fill.style.width=(s.progress??0)+'%';bar.appendChild(fill);card.appendChild(bar);
+   root.appendChild(card);
+ }
+}
+function applyEvent(ev){
+ if(!ev||ev.schema!=='qikvrt_effect_ack_mesh_event_v1'||!ev.node_guid)return;
+ const previous=state.get(ev.node_guid)||{};
+ state.set(ev.node_guid,{...previous,...ev});
+ document.getElementById('lastEvent').textContent=ev.event_id||ev.observed_utc||'event';
+ const log=document.getElementById('events');
+ if(log.textContent.startsWith('No event'))log.textContent='';
+ const line=document.createElement('div');line.className='event';line.textContent=JSON.stringify(ev);log.prepend(line);
+ if(Number.isFinite(ev.mesh_progress)){
+   document.getElementById('front').style.width=Math.max(0,Math.min(100,ev.mesh_progress))+'%';
+   document.getElementById('frontText').textContent=ev.front||`mesh progress ${ev.mesh_progress}%`;
+ }
+ render();
+}
+function bindBroadcast(){
+ if(!('BroadcastChannel' in window))return false;
+ const bc=new BroadcastChannel('qikvrt-effect-ack');
+ bc.onmessage=e=>applyEvent(e.data);
+ return true;
+}
+function bindWindowMessages(){window.addEventListener('message',e=>applyEvent(e.data));return true;}
+function bindSSE(){
+ const u=new URL(location.href).searchParams.get('effect_stream');
+ if(!u)return false;
+ const es=new EventSource(u);
+ es.onopen=()=>{document.getElementById('transport').textContent='SSE / CONNECTED';document.getElementById('transportDot').style.background='var(--ok)'};
+ es.onmessage=e=>{try{applyEvent(JSON.parse(e.data))}catch(_){}};
+ es.onerror=()=>{document.getElementById('transport').textContent='HOLD / SSE_DISCONNECTED';document.getElementById('transportDot').style.background='var(--bad)'};
+ return true;
+}
+bindBroadcast();bindWindowMessages();const sse=bindSSE();
+if(!sse)document.getElementById('transport').textContent='HOLD / LOCAL_EFFECT_CHANNEL_ONLY';
+render();
+</script></body></html>
