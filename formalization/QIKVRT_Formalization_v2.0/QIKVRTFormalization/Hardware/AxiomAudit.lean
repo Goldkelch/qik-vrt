@@ -22,3 +22,7 @@ import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 #print axioms QIKVRT.V2.HardwareWitness.T20_effect_ack_is_idempotently_bound_to_witness
 #print axioms QIKVRT.V2.HardwareWitness.T21_each_successful_transaction_advances_exactly_one_epoch
 #print axioms QIKVRT.V2.HardwareWitness.T22_four_step_payload_sequences_remain_monotone
+#print axioms QIKVRT.V2.BitwidthCausalMachine.widen_preserves_code
+#print axioms QIKVRT.V2.BitwidthCausalMachine.encode_refines
+#print axioms QIKVRT.V2.BitwidthCausalMachine.standard_width_chain
+#print axioms QIKVRT.V2.BitwidthCausalMachine.one_bit_not_enough_for_four_states
