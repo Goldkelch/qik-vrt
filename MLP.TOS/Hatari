@@ -1,0 +1,175 @@
+#!/bin/sh
+# QIK-VRT MLP.TOS Hatari launcher: deterministic virtual Mega-ST observation.
+set -eu
+
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$self_dir/.." && pwd)
+mlp_tos=${MLP_TOS:-"$self_dir/MLP.TOS"}
+checksum_file=${MLP_TOS_CHECKSUM:-"$self_dir/MLP.TOS.sha256"}
+hatari_bin=${HATARI_BIN:-hatari}
+rom=${EMUTOS_ROM:-}
+timeout_seconds=${QIKVRT_HATARI_TIMEOUT_SECONDS:-60}
+
+if [ -z "$rom" ]; then
+    echo "HOLD: set EMUTOS_ROM to the exact EmuTOS 1.4 etos512ca.img path" >&2
+    exit 2
+fi
+
+for required in "$mlp_tos" "$checksum_file" "$rom"; do
+    if [ ! -f "$required" ]; then
+        echo "HOLD: missing required file: $required" >&2
+        exit 2
+    fi
+done
+for command_name in "$hatari_bin" sha256sum awk cmp grep timeout; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "HOLD: missing required command: $command_name" >&2
+        exit 2
+    fi
+done
+
+expected_tos=$(awk 'NR == 1 { print $1 }' "$checksum_file")
+actual_tos=$(sha256sum "$mlp_tos" | awk '{ print $1 }')
+if [ "$actual_tos" != "$expected_tos" ]; then
+    echo "HOLD: MLP.TOS digest mismatch" >&2
+    exit 2
+fi
+
+expected_rom=f810041373d8efe15d55ec049fd4dd9be9b0fc521bbe6416b99d833f7fd6805d
+actual_rom=$(sha256sum "$rom" | awk '{ print $1 }')
+if [ "$actual_rom" != "$expected_rom" ]; then
+    echo "HOLD: EmuTOS ROM digest mismatch" >&2
+    exit 2
+fi
+
+version=$($hatari_bin --version 2>&1 || true)
+printf '%s\n' "$version"
+printf '%s\n' "$version" | grep -F 'Hatari v2.4.1' >/dev/null
+
+remove_workdir=false
+if [ -n "${QIKVRT_MLP_WORKDIR:-}" ]; then
+    workdir=$QIKVRT_MLP_WORKDIR
+    mkdir -p "$workdir"
+else
+    workdir=$(mktemp -d)
+    remove_workdir=true
+fi
+cleanup() {
+    if [ "$remove_workdir" = true ]; then
+        rm -rf "$workdir"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
+
+drive="$workdir/drive"
+trace="$workdir/hatari.log"
+expected_frame="$workdir/MLP.OPEN.expected"
+mkdir -p "$drive/C"
+cp "$mlp_tos" "$drive/C/MLP.TOS"
+rm -f "$drive/C/MLP.OPEN" "$drive/C/MLP.TMP"
+{
+    printf 'QIKMLP1\r\n'
+    printf 'PROGRAM MLP\r\n'
+    printf 'ACTION OPEN_FIREFOX\r\n'
+    printf 'STATE REQUESTED\r\n'
+    printf 'AUTHORITY MISSING\r\n'
+    printf 'EFFECT REQUESTED\r\n'
+    printf 'END\r\n'
+} >"$expected_frame"
+
+run_hatari() {
+    "$hatari_bin" \
+        --machine megast \
+        --cpulevel 0 \
+        --cpuclock 8 \
+        --compatible on \
+        --cpu-exact on \
+        --addr24 on \
+        --memsize 1 \
+        --tos "$rom" \
+        --harddrive "$drive" \
+        --auto 'C:\MLP.TOS' \
+        --fast-forward on \
+        --sound off \
+        --disable-video on \
+        --benchmark \
+        --run-vbls 600 \
+        --trace os_base
+}
+
+set +e
+if command -v xvfb-run >/dev/null 2>&1; then
+    timeout "${timeout_seconds}s" xvfb-run -a sh -c 'exec "$@"' sh \
+        "$hatari_bin" \
+        --machine megast \
+        --cpulevel 0 \
+        --cpuclock 8 \
+        --compatible on \
+        --cpu-exact on \
+        --addr24 on \
+        --memsize 1 \
+        --tos "$rom" \
+        --harddrive "$drive" \
+        --auto 'C:\MLP.TOS' \
+        --fast-forward on \
+        --sound off \
+        --disable-video on \
+        --benchmark \
+        --run-vbls 600 \
+        --trace os_base >"$trace" 2>&1
+    rc=$?
+else
+    timeout "${timeout_seconds}s" "$hatari_bin" \
+        --machine megast \
+        --cpulevel 0 \
+        --cpuclock 8 \
+        --compatible on \
+        --cpu-exact on \
+        --addr24 on \
+        --memsize 1 \
+        --tos "$rom" \
+        --harddrive "$drive" \
+        --auto 'C:\MLP.TOS' \
+        --fast-forward on \
+        --sound off \
+        --disable-video on \
+        --benchmark \
+        --run-vbls 600 \
+        --trace os_base >"$trace" 2>&1
+    rc=$?
+fi
+set -e
+cat "$trace"
+if [ "$rc" -ne 0 ]; then
+    echo "HOLD: Hatari execution failed with status $rc" >&2
+    exit "$rc"
+fi
+
+grep -F 'Tipus CPU:          M68000' "$trace" >/dev/null
+grep -F 'Maquina:            Atari Mega ST' "$trace" >/dev/null
+grep -F 'ST-RAM:             1 MB' "$trace" >/dev/null
+grep -F 'Pexec(0, "C:\MLP.TOS"' "$trace" >/dev/null
+grep -F 'Fcreate("C:\MLP.TMP", 0x0)' "$trace" >/dev/null
+grep -F 'Pterm(0)' "$trace" >/dev/null
+
+if [ ! -f "$drive/C/MLP.OPEN" ]; then
+    echo "HOLD: Hatari did not materialize C:\\MLP.OPEN" >&2
+    exit 3
+fi
+if [ -e "$drive/C/MLP.TMP" ]; then
+    echo "HOLD: temporary request file survived finalization" >&2
+    exit 3
+fi
+cmp "$expected_frame" "$drive/C/MLP.OPEN"
+
+open_sha=$(sha256sum "$drive/C/MLP.OPEN" | awk '{ print $1 }')
+trace_sha=$(sha256sum "$trace" | awk '{ print $1 }')
+cat >"$workdir/receipt.env" <<EOF
+MLP_TOS_SHA256=$actual_tos
+MLP_OPEN_SHA256=$open_sha
+HATARI_TRACE_SHA256=$trace_sha
+MEGAST_VIRTUAL_EXECUTION_OBSERVED=true
+PHYSICAL_MEGAST_EXECUTION=false
+EFFECT_ACK_DONE=false
+EOF
+cat "$workdir/receipt.env"
