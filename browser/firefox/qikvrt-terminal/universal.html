@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT Universal Terminal</title>
+  <link rel="stylesheet" href="universal.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>QIK-VRT Universal Terminal</h1>
+      <p>Information empfangen, erhalten, prüfen und weitergeben, unabhängig davon, ob ihre behauptete zeitliche Relation Vergangenheit, Gegenwart, Zukunft oder unbekannt ist.</p>
+      <p class="boundary">Empfangen ist nicht Vertrauen. Anzeigen ist nicht Autorität. Weitergeben ist nicht Ausführen. Transportbestätigung ist nicht Wirkungsbestätigung.</p>
+    </header>
+
+    <section>
+      <h2>Neue Information</h2>
+      <label>Quelle <input id="source" value="UNKNOWN" autocomplete="off"></label>
+      <label>Ziel <input id="destination" value="UNKNOWN" autocomplete="off"></label>
+      <label>Zeitrelation
+        <select id="temporalRelation">
+          <option>UNKNOWN</option><option>PAST</option><option>PRESENT</option><option>FUTURE</option><option>UNBOUND</option>
+        </select>
+      </label>
+      <label>Inhaltstyp <input id="contentType" value="text/markdown" autocomplete="off"></label>
+      <label>Inhalt <textarea id="payload" rows="10"></textarea></label>
+      <div class="actions">
+        <button id="createEnvelope" type="button">In Outbox übernehmen</button>
+        <button id="pasteEnvelope" type="button">Umschlag aus Zwischenablage empfangen</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Inbox</h2>
+      <div id="inbox" class="stack"></div>
+    </section>
+
+    <section>
+      <h2>Outbox</h2>
+      <div id="outbox" class="stack"></div>
+    </section>
+
+    <p id="status" role="status" aria-live="polite">LOCAL_READY</p>
+  </main>
+  <script src="universal.js"></script>
+</body>
+</html>
