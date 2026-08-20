@@ -1,0 +1,193 @@
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+-->
+<!doctype html>
+<html lang="de" data-theme="dark" data-language="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QIK-VRT Effect-Acknowledgement Mesh Live</title>
+  <meta name="description" content="Read-only live visualization of causal repository-mesh progress, blockers, effect boundaries, and explicit stall acknowledgements.">
+  <meta property="og:title" content="QIK-VRT Effect-Acknowledgement Mesh Live">
+  <meta property="og:description" content="Repository activity translated into causal, evidence-bound effect states without inferring completion.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="../../assets/css/qikvrt.css">
+  <link rel="stylesheet" href="../../assets/css/qikvrt-effect-ack-live.css">
+</head>
+<body>
+<a class="skip" href="#main"><span class="de">Zum Inhalt springen</span><span class="en" lang="en">Skip to content</span></a>
+<header class="topbar">
+  <div class="wrap nav">
+    <a class="brand" href="../" aria-label="QIK-VRT Repository-Terminal"><span class="logo">Q</span><span>QIK-VRT<br><small>Effect-Acknowledgement Mesh Live</small></span></a>
+    <nav class="navlinks" aria-label="Hauptnavigation / Main navigation">
+      <a href="../"><span class="de">Repository-Terminal</span><span class="en" lang="en">Repository terminal</span></a>
+      <a href="https://github.com/Goldkelch/qik-vrt" rel="noopener">GitHub</a>
+      <button id="languageToggle" class="btn" type="button" aria-pressed="false">English</button>
+      <button id="themeToggle" class="btn" type="button"><span class="de">Hell/Dunkel</span><span class="en" lang="en">Light/Dark</span></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="effect-live-hero">
+    <div class="wrap effect-live-hero-grid">
+      <div>
+        <span class="eyebrow"><span class="de">Kausal · evidenzgebunden · fail-closed</span><span class="en" lang="en">Causal · evidence-bound · fail-closed</span></span>
+        <h1><span class="de">Repository-Aktivität wird als <span class="grad">beobachtete Wirkung</span> sichtbar.</span><span class="en" lang="en">Repository activity becomes visible as an <span class="grad">observed effect</span>.</span></h1>
+        <p class="lead de">Diese Ansicht liest ausschließlich fest verdrahtete öffentliche GitHub-GET-Endpunkte. Sie unterscheidet Transport, Kandidat, Ausführung, Evidenz, Review, Promotion, Authority-Wirkung, Mirror-Wirkung und Pair Acknowledgement.</p>
+        <p class="lead en" lang="en">This view reads only fixed public GitHub GET endpoints. It separates transport, candidate, execution, evidence, review, promotion, Authority effect, Mirror effect, and pair acknowledgement.</p>
+        <div class="effect-live-badges" aria-label="Sicherheits- und Protokollstatus / Security and protocol status">
+          <span class="terminal-badge good">READ_ONLY</span>
+          <span class="terminal-badge">PUBLIC_GET_ONLY</span>
+          <span class="terminal-badge warn">STOP_ON_STALL</span>
+          <span class="terminal-badge">CAUSALITY != SEQUENCE</span>
+        </div>
+      </div>
+      <aside class="card effect-live-boundary" aria-label="Wirkungsgrenze / Effect boundary">
+        <h2><span class="de">Keine Aktivitäts-Prozentrechnung</span><span class="en" lang="en">No activity percentage</span></h2>
+        <p class="de">Commits, Kommentare, Retries und Workflow-Anzahlen erhöhen keinen Wirkungsfortschritt. Nur neu belegte kausale Stufen verändern die Fortschrittsprojektion.</p>
+        <p class="en" lang="en">Commits, comments, retries, and workflow counts do not increase effect progress. Only newly evidenced causal stages change the progress projection.</p>
+        <p><code>TRANSPORT_ACK != EFFECT_ACK</code></p>
+        <p><code>STALL != SILENCE</code></p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section effect-live-section" aria-labelledby="observer-heading">
+    <div class="wrap">
+      <div class="effect-live-section-heading">
+        <div>
+          <h2 id="observer-heading"><span class="de">Live-Beobachter</span><span class="en" lang="en">Live observer</span></h2>
+          <p class="de">Die Beobachtung stoppt automatisch nach drei kausal identischen Snapshots und quittiert den Stillstand ausdrücklich.</p>
+          <p class="en" lang="en">Observation stops automatically after three causally identical snapshots and explicitly acknowledges the stall.</p>
+        </div>
+        <div class="effect-live-actions" aria-label="Beobachtungssteuerung / Observation controls">
+          <button id="startObservation" class="btn primary" type="button"><span class="de">Beobachtung starten</span><span class="en" lang="en">Start observation</span></button>
+          <button id="stopObservation" class="btn" type="button"><span class="de">Anhalten</span><span class="en" lang="en">Stop</span></button>
+          <button id="reobserveNow" class="btn" type="button"><span class="de">Jetzt reobservieren</span><span class="en" lang="en">Reobserve now</span></button>
+        </div>
+      </div>
+
+      <div class="effect-live-status-grid">
+        <article class="card effect-live-status-card">
+          <h3><span class="de">Kanonischer Effect-State</span><span class="en" lang="en">Canonical effect state</span></h3>
+          <p id="liveEffectState" class="effect-state-badge" data-state="EFFECT_ACK_CONTINUE">EFFECT_ACK_CONTINUE</p>
+          <p class="mini de">Nur einer der fünf kanonischen Protocol-States.</p>
+          <p class="mini en" lang="en">Only one of the five canonical protocol states.</p>
+        </article>
+        <article class="card effect-live-status-card">
+          <h3><span class="de">Darstellungszustand</span><span class="en" lang="en">View profile state</span></h3>
+          <p id="liveProfileState" class="effect-state-badge" data-state="CONTINUE">CONTINUE</p>
+          <p class="mini de"><code>STALL</code> ist ein Repository-Liveprofil, kein sechster Protocol-State.</p>
+          <p class="mini en" lang="en"><code>STALL</code> is a repository live-profile state, not a sixth protocol state.</p>
+        </article>
+        <article class="card effect-live-status-card">
+          <h3><span class="de">Beobachtungsstatus</span><span class="en" lang="en">Observer status</span></h3>
+          <p id="liveObserverStatus" role="status" aria-live="polite">INITIALIZING</p>
+          <p><strong><span class="de">Nächste Reobservation</span><span class="en" lang="en">Next reobservation</span>:</strong> <span id="liveNextObservation">NOT_STARTED</span></p>
+        </article>
+        <article class="card effect-live-status-card">
+          <h3><span class="de">Öffentliches API-Budget</span><span class="en" lang="en">Public API budget</span></h3>
+          <p id="liveRateLimit">UNOBSERVED</p>
+          <p class="mini de">Rate-Limit oder Transportfehler sind Plattform-/Beobachtungsgrenzen, nicht automatisch Source-Defekte.</p>
+          <p class="mini en" lang="en">Rate limits or transport failures are platform/observation boundaries, not automatic source defects.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section effect-live-section" aria-labelledby="binding-heading">
+    <div class="wrap">
+      <h2 id="binding-heading"><span class="de">Gebundener Mesh-Zustand</span><span class="en" lang="en">Bound mesh state</span></h2>
+      <div class="effect-live-mesh-grid">
+        <article class="card">
+          <h3>Authority — Goldkelch/qik-vrt</h3>
+          <p><strong>main:</strong> <code id="authorityHead">UNOBSERVED</code></p>
+          <p><strong>tree:</strong> <code id="authorityTree">UNOBSERVED</code></p>
+        </article>
+        <article class="card">
+          <h3>Mirror — ingolf-lohmann/qik-vrt</h3>
+          <p><strong>main:</strong> <code id="mirrorHead">UNOBSERVED</code></p>
+          <p><strong>tree:</strong> <code id="mirrorTree">UNOBSERVED</code></p>
+        </article>
+        <article class="card">
+          <h3><span class="de">Mesh-Vergleich</span><span class="en" lang="en">Mesh comparison</span></h3>
+          <p><strong>Head:</strong> <code id="meshHeadRelation">UNOBSERVED</code></p>
+          <p><strong>Tree:</strong> <code id="meshTreeRelation">UNOBSERVED</code></p>
+          <p class="mini"><code>IDENTITY != EQUALITY</code></p>
+        </article>
+      </div>
+
+      <div class="effect-live-observation-grid">
+        <article class="card">
+          <h3><span class="de">Kausaler Snapshot</span><span class="en" lang="en">Causal snapshot</span></h3>
+          <p><strong>observation_id:</strong> <code id="liveObservationId">UNOBSERVED</code></p>
+          <p><strong>causal_fingerprint:</strong> <code id="liveCausalFingerprint">UNOBSERVED</code></p>
+          <p><strong>unchanged_observations:</strong> <code id="liveObservationCount">0</code></p>
+          <p><strong>last_relevant_progress:</strong> <code id="liveLastProgress">UNOBSERVED</code></p>
+          <p><strong>stall_since:</strong> <code id="liveStallSince">NOT_STALLED</code></p>
+        </article>
+        <article class="card">
+          <h3><span class="de">Deterministische Fortsetzung</span><span class="en" lang="en">Deterministic continuation</span></h3>
+          <p><strong>FIRST_DETERMINISTIC_BLOCKER:</strong> <code id="liveFirstBlocker">UNOBSERVED</code></p>
+          <p><strong>NEXT_EFFECT:</strong> <span id="liveNextEffect">UNOBSERVED</span></p>
+          <p class="mini de">Die Ansicht führt den nächsten Effekt nicht aus. Sie beschreibt nur die kleinste evidenzgebundene Fortsetzung.</p>
+          <p class="mini en" lang="en">The view does not execute the next effect. It only describes the smallest evidence-bound continuation.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section effect-live-section" aria-labelledby="transactions-heading">
+    <div class="wrap">
+      <div class="effect-live-section-heading">
+        <div>
+          <h2 id="transactions-heading"><span class="de">Transaktions-Wirkungsketten</span><span class="en" lang="en">Transaction effect chains</span></h2>
+          <p class="de">Jeder Balken zeigt den Status genau einer kausalen Stufe. Ein gefüllter technischer Balken bedeutet weder Review-Autorität noch Promotion noch Mesh-Abschluss.</p>
+          <p class="en" lang="en">Each bar shows the status of exactly one causal stage. A filled technical bar means neither review authority, promotion, nor mesh completion.</p>
+        </div>
+      </div>
+      <div id="liveTransactions" class="effect-live-transactions" aria-live="polite" aria-busy="false">
+        <p><span class="de">Warte auf die erste Beobachtung …</span><span class="en" lang="en">Waiting for the first observation …</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section effect-live-section" aria-labelledby="delta-heading">
+    <div class="wrap effect-live-delta-grid">
+      <div>
+        <h2 id="delta-heading"><span class="de">Kausaler Delta-Stream</span><span class="en" lang="en">Causal delta stream</span></h2>
+        <p class="de">Nur gebundene Änderungen werden protokolliert. Wiederholte Aktivität ohne neue Wirkung erscheint als <code>NO_CAUSAL_DELTA</code>.</p>
+        <p class="en" lang="en">Only bound changes are logged. Repeated activity without a new effect appears as <code>NO_CAUSAL_DELTA</code>.</p>
+      </div>
+      <ol id="liveDeltaStream" class="card effect-live-delta-stream" aria-live="polite" aria-relevant="additions"></ol>
+    </div>
+  </section>
+
+  <section class="section effect-live-section" aria-labelledby="boundary-heading">
+    <div class="wrap">
+      <article class="card effect-live-final-boundary">
+        <h2 id="boundary-heading"><span class="de">Abschlussgrenze</span><span class="en" lang="en">Completion boundary</span></h2>
+        <p class="de">Diese öffentliche Client-Projektion setzt <code>PASS</code>, <code>FINAL_PASS</code> und <code>EFFECT_ACK_DONE</code> niemals aus GitHub-Aktivität allein. Ein Completion Candidate verlangt weiterhin explizite Autorisierung, Exact-Tree-Evidenz, unabhängige Review-Autorität, Authority-Wirkung, Mirror-Wirkung und Pair Acknowledgement.</p>
+        <p class="en" lang="en">This public client projection never derives <code>PASS</code>, <code>FINAL_PASS</code>, or <code>EFFECT_ACK_DONE</code> from GitHub activity alone. A completion candidate still requires explicit authorization, exact-tree evidence, independent review authority, Authority effect, Mirror effect, and pair acknowledgement.</p>
+        <p><code>PASS=false · FINAL_PASS=false · EFFECT_ACK_DONE=false</code></p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <p><strong>QIK-VRT Effect-Acknowledgement Mesh Live</strong> — <span class="de">öffentliche, lesende und kausal gebundene Repository-Beobachtung.</span><span class="en" lang="en">public, read-only, causally bound repository observation.</span></p>
+    <p class="mini">No credentials · no workflow dispatch · no repository write · no automatic review · no merge.</p>
+  </div>
+</footer>
+
+<noscript>
+  <p class="wrap notice">JavaScript is required for the read-only live visualization. No repository effect is performed.</p>
+</noscript>
+<script src="../../assets/js/qikvrt-effect-ack-live-core.js"></script>
+<script src="../../assets/js/qikvrt-effect-ack-live.js"></script>
+</body>
+</html>
