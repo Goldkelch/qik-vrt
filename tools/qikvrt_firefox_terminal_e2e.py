@@ -108,7 +108,7 @@ def main() -> int:
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
                 "moz:firefoxOptions": {
-                    "args": ["-headless"],
+                    "args": ["-headless", "-remote-allow-system-access"],
                     "prefs": {
                         "extensions.webextensions.uuids": uuid_pref,
                         "browser.shell.checkDefaultBrowser": False,
