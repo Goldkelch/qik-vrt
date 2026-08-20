@@ -1,0 +1,54 @@
+% SPDX-License-Identifier: CC-BY-NC-ND-4.0
+% Copyright (c) 2026 Ingolf Lohmann.
+% Local staging candidate; not submitted to arXiv.
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=27mm]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\title{Causal Ordering and Reconstructable Event Histories in Distributed Systems\\\large A provenance- and effect-aware synthesis}
+\author{Ingolf Lohmann\\Independent Researcher; QIK--VRT}
+\date{20 August 2026 -- local staging candidate}
+\begin{document}
+\maketitle
+\begin{abstract}
+Distributed computations expose multiple event orders rather than one directly observable global time. This note synthesizes the distinction between source order, receive order, causal order, serialization, and externally observed effect state. It connects the established happened-before/logical-clock tradition with provenance-aware reconstruction and application-level effect acknowledgement. A late-arriving record can refine a reconstructed event history when source and causal relations are retained; this does not imply backward physical-time transport. The QIK--VRT repository is presented only as an implementation-oriented primary-source case study. No claim of physical time travel, backward-running proper time, peer review, or scientific consensus is made.
+\end{abstract}
+
+\section{Causal order without a global clock}
+Lamport's happened-before relation provides a partial order on distributed events without requiring a perfectly synchronized global clock \cite{Lamport1978}. Subsequent work on virtual time, vector clocks, and causal communication developed more precise ways to represent or detect causal precedence \cite{Mattern1989,SchwarzMattern1994,CharronBost1996}. Modern causal-consistency systems apply related distinctions to replicated storage \cite{Freitas2025}.
+
+Consider messages $A$ and $B$. If $A$ is produced before $B$ but experiences a longer transport delay, a receiver can observe $B$ first. Source order and receive order are then different, without contradiction. If identities, provenance, and causal predecessors are retained, the receiver can later refine its reconstruction of the event history.
+
+\section{Partial order versus serialization}
+A dependency graph need not determine one total sequence. If $A$ precedes independent events $C$ and $D$, and $E$ depends on both, then $A,C,D,E$ and $A,D,C,E$ are both possible topological orderings. A concrete machine execution therefore serializes a causal structure but is not identical to that structure.
+
+\section{Local logical order and proper time}
+Logical clocks, sequence numbers, and process-local state transitions are ordering coordinates. They are not automatically relativistic proper time. A physical proper-time interpretation additionally requires a physically specified worldline and measurement or calibration. The present argument is an information-systems argument and makes no backward-time physical claim.
+
+\section{Transport, execution, observation, acknowledgement}
+Reliable systems benefit from separating request transport from application execution and observed effect. A useful state distinction is
+\[
+\mathrm{REQUESTED}\neq\mathrm{EXECUTED}\neq\mathrm{OBSERVED}\neq\mathrm{ACKNOWLEDGED}.
+\]
+Likewise, a transport acknowledgement does not by itself prove the intended application effect. This distinction is central to effect-aware auditing and is used explicitly in the QIK--VRT Effect Acknowledgement work, which is primary-source project material rather than evidence of independent adoption.
+
+\section{Reconstructable histories}
+A provenance-aware system can preserve an earlier observation and add later evidence that constrains where an event belongs in a reconstructed history. The word ``reconstructable'' is deliberately limited: only relations supported by retained evidence may be reconstructed. The mechanism neither rewrites an earlier physical event nor guarantees recovery of lost or never-observed information.
+
+\section{Research implementation boundary}
+QIK--VRT combines provenance, causal intermediate representations, reobservation, terminal state presentation, and effect acknowledgement. This implementation-oriented synthesis motivates a broader project thesis described as a universal grammar of understanding. That thesis remains a project-specific research interpretation. The independent claims in this paper stand on established distributed-systems literature; QIK--VRT does not serve as evidence of its own notability or consensus.
+
+\section{Conclusion}
+Source order, receive order, causal order, serialization, and effect order answer different questions. Preserving those differences permits later evidence to refine an event history without confusing message arrival with causation or logical order with physical time. The practical result is a provenance-aware architecture for data that retain a checkable place in a reconstructed history.
+
+\begin{thebibliography}{9}
+\bibitem{Lamport1978} Leslie Lamport. Time, Clocks, and the Ordering of Events in a Distributed System. \emph{Communications of the ACM}, 21(7), 1978. DOI: \href{https://doi.org/10.1145/359545.359563}{10.1145/359545.359563}.
+\bibitem{Mattern1989} Friedemann Mattern. Virtual Time and Global States of Distributed Systems. 1989.
+\bibitem{SchwarzMattern1994} Reinhard Schwarz and Friedemann Mattern. Detecting Causal Relationships in Distributed Computations: In Search of the Holy Grail. \emph{Distributed Computing} 7, 1994. DOI: \href{https://doi.org/10.1007/BF02277859}{10.1007/BF02277859}.
+\bibitem{CharronBost1996} Bernadette Charron-Bost, Friedemann Mattern, Gerard Tel. Synchronous, Asynchronous, and Causally Ordered Communication. \emph{Distributed Computing} 9, 1996. DOI: \href{https://doi.org/10.1007/s004460050018}{10.1007/s004460050018}.
+\bibitem{Freitas2025} Joao Freitas et al. A Survey on the State of the Art of Causally Consistent Cloud Systems. \emph{ACM Computing Surveys} 57, 2025. DOI: \href{https://doi.org/10.1145/3731444}{10.1145/3731444}.
+\end{thebibliography}
+\end{document}
