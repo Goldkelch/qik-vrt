@@ -1,0 +1,42 @@
+<!-- Wikipedia/AfC candidate. The author of the associated QIK-VRT project has a conflict of interest. This text is intended for transparent disclosure and independent editorial review, not direct self-publication. -->
+
+'''Causal ordering in distributed systems''' concerns methods for representing dependency relationships among events when a distributed computation has no single directly observable global clock. In such systems, the order in which messages are sent, received, processed, and observed may differ. A central problem is therefore to distinguish a mere sequence of observations from a causal or dependency relation.
+
+== Happened-before relation ==
+In 1978, Leslie Lamport introduced the ''happened-before'' relation as a partial order on events in a distributed system.<ref>{{cite journal |last=Lamport |first=Leslie |title=Time, Clocks, and the Ordering of Events in a Distributed System |journal=Communications of the ACM |volume=21 |issue=7 |pages=558–565 |year=1978 |doi=10.1145/359545.359563}}</ref> If two events occur successively within one process, or if one event sends a message that another event receives, these relations constrain the event order. Logical clocks can represent an ordering consistent with this relation without claiming to be a physical global time.
+
+Vector-clock techniques and related work were later developed to represent causal precedence more precisely.<ref>{{cite conference |last=Mattern |first=Friedemann |title=Virtual Time and Global States of Distributed Systems |year=1989}}</ref><ref>{{cite journal |last1=Schwarz |first1=Reinhard |last2=Mattern |first2=Friedemann |title=Detecting Causal Relationships in Distributed Computations: In Search of the Holy Grail |journal=Distributed Computing |volume=7 |year=1994 |doi=10.1007/BF02277859}}</ref>
+
+== Send order and receive order ==
+Different transport delays can cause a receiver to observe messages in an order different from the order in which a source produced them. This does not constitute a contradiction because source order and receive order are different relations. Causally ordered communication protocols preserve dependency constraints even when individual message delays vary.<ref>{{cite journal |last1=Charron-Bost |first1=Bernadette |last2=Mattern |first2=Friedemann |last3=Tel |first3=Gerard |title=Synchronous, Asynchronous, and Causally Ordered Communication |journal=Distributed Computing |volume=9 |pages=173–191 |year=1996 |doi=10.1007/s004460050018}}</ref>
+
+Related ideas appear in causal consistency for distributed storage systems, where operations known to be causally related are required to be observed in a compatible order while concurrent operations may be observed more flexibly.<ref>{{cite journal |title=A Survey on the State of the Art of Causally Consistent Cloud Systems |journal=ACM Computing Surveys |volume=57 |year=2025 |doi=10.1145/3731444}}</ref>
+
+== Partial orders and serialization ==
+A dependency structure may be a partial order rather than a single total sequence. If an event A precedes independent events C and D, and a later event E depends on both, both A–C–D–E and A–D–C–E may be valid topological orderings of the same dependency graph. A concrete serialization can therefore implement a causal structure without being identical to that structure.
+
+This distinction is relevant to distributed databases, workflow systems, event sourcing, compilers, and provenance-aware processing, where implementation requires concrete execution while correctness may be defined by a dependency graph.
+
+== Local logical time ==
+Distributed systems use local counters, logical clocks, sequence numbers, and process-local state transitions as ordering coordinates. These coordinates are operational representations of order. They are not, by themselves, measurements of relativistic [[proper time]]; a physical proper-time statement additionally requires a physical worldline and suitable measurement or calibration.
+
+== Event reconstruction ==
+A system that retains event identities, provenance, source order, and causal predecessors can use later-arriving evidence to refine a reconstructed event history. Such reconstruction does not alter earlier physical events. Instead, it preserves the old observation and adds relations that constrain how events can be ordered. The result is limited by the retained evidence and does not imply that every lost historical fact is recoverable.
+
+== Transport and application effects ==
+A network acknowledgement and an application-level effect acknowledgement answer different questions. A request can be transmitted without being executed, execution can occur without a later observation of the intended effect, and an observation can exist without a subsequent application acknowledgement. Distributed auditing systems may therefore model transport, execution, observation, and acknowledgement as separate states.
+
+== Scope ==
+Causal ordering and event reconstruction in distributed systems do not imply a physical time machine, reception before emission, backward-running relativistic proper time, or communication into a sender's own causal past. They concern the representation of ordering, dependency, provenance, and state in information systems.
+
+== See also ==
+* [[Distributed computing]]
+* [[Lamport timestamp]]
+* [[Vector clock]]
+* [[Causal consistency]]
+* [[Partial order]]
+* [[Topological sorting]]
+* [[Event sourcing]]
+* [[Provenance]]
+
+<!-- QIK-VRT is deliberately omitted from the proposed encyclopedic body. It is primary-source material associated with the requester and must not be used to establish its own notability. If independent secondary coverage later supports inclusion, editors can add it under ordinary Wikipedia policies. -->
