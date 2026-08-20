@@ -1,0 +1,46 @@
+{
+  "schema": "qikvrt.universal-terminal-continuation.v1",
+  "purpose": "Close monitor-only orchestration gaps by requiring deterministic continuation whenever a materially observed state admits a bounded authorized next action.",
+  "invariants": [
+    "OBSERVE != EXECUTE",
+    "REQUESTED != EXECUTED != OBSERVED != ACKNOWLEDGED",
+    "CAUSALITY != SEQUENCE",
+    "CODE != AUTHORITY",
+    "CONTEXT + AUTHORITY + MEANING -> ADMISSIBLE_NEXT_ACTION",
+    "NOOP only at evidence-bound fixpoint",
+    "HOLD only for an explicit deterministic blocker or authority boundary"
+  ],
+  "loop": [
+    "OBSERVE",
+    "BIND_CONTEXT",
+    "RESOLVE_AUTHORITY",
+    "RESOLVE_MEANING",
+    "RESOLVE_EVIDENCE",
+    "SELECT_NEXT_ADMISSIBLE_ACTION",
+    "EXECUTE_OR_NOOP_OR_HOLD",
+    "TEST",
+    "REOBSERVE_EFFECT",
+    "PERSIST",
+    "REENTER"
+  ],
+  "monitor_only_is_defect_when": {
+    "material_state_is_stable": true,
+    "next_action_is_uniquely_determined": true,
+    "required_authority_is_already_bound": true,
+    "required_evidence_is_current": true
+  },
+  "fail_closed": {
+    "stale_binding": "REOBSERVE",
+    "ambiguous_next_action": "HOLD",
+    "missing_authority": "REQUEST_AUTHORITY",
+    "missing_evidence": "HOLD",
+    "external_effect_not_authorized": "HOLD",
+    "verified_fixpoint": "NOOP"
+  },
+  "scope": "Repository-native orchestration, monitoring, review continuation, materialization continuation, issue work-unit continuation, compiler/TEMDD continuation, publication preparation, and role-local Authority/Mirror workflows.",
+  "exclusions": [
+    "No independent review authority is created.",
+    "No merge, publication, deployment, credential use, external effect, PASS, FINAL_PASS, or EFFECT_ACK_DONE is implied.",
+    "A terminal watcher may report a human or owner boundary but must not fabricate crossing it."
+  ]
+}
