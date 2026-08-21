@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT zero-bug backlog closure
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened, reopened, closed]
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-zero-bug-backlog-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-backlog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out trusted main dispatcher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect trusted-main activation
+        id: active
+        shell: bash
+        run: |
+          if test -f tools/qikvrt_zero_bug_backlog.py && test -f policy/ZERO_BUG_POLICY_V1.json; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+            echo 'BOOTSTRAP_NOOP: zero-bug dispatcher is not yet promoted to trusted main.'
+          fi
+
+      - name: Verify cumulative runtime cache contract
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_tool_cache.py verify
+
+      - name: Plan complete open backlog and terminal frame
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/runtime/zero-bug
+          python3 -B tools/qikvrt_zero_bug_backlog.py plan --repository "$REPOSITORY" \
+            | tee .qikvrt/runtime/zero-bug/terminal-plan.json
+          python3 -B - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p = json.loads(Path('.qikvrt/runtime/zero-bug/terminal-plan.json').read_text())
+          o = p['optimization']
+          print('## QIK-VRT Zero Bug Terminal')
+          print(f"- open issues: {p['open_issue_count']}")
+          print(f"- active issue PRs: {len(p['active_issue_prs'])}")
+          print(f"- resumed persisted states: {len(p['resume_issue_numbers'])}")
+          print(f"- cold dispatches: {len(p['cold_dispatch_issue_numbers'])}")
+          print(f"- reuse ratio: {o['reuse_ratio']:.3f}")
+          print('- optimization: REUSE_BEFORE_CREATE')
+          PY
+
+      - name: Dispatch every passive open issue
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zero_bug_backlog.py dispatch --repository "$REPOSITORY" \
+            | tee .qikvrt/runtime/zero-bug/dispatch-frame.json
+
+      - name: Persist terminal and optimization evidence
+        if: steps.active.outputs.active == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zero-bug-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/runtime/zero-bug/
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
+
+      - name: Bootstrap NOOP before trusted-main promotion
+        if: steps.active.outputs.active != 'true'
+        run: echo 'Zero Bug Policy candidate is under review; no untrusted candidate code is executed.'
