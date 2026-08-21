@@ -1,6 +1,7 @@
 const fields = ["accent", "fontScale", "density", "position"];
 const E2E_NONCE = "QIKVRT-FIREFOX-E2E-NONCE-0001";
 const E2E_BACKEND = "http://127.0.0.1:8771";
+const E2E_HOST_PERMISSION = "http://127.0.0.1/*";
 
 async function load() {
   const stored = await browser.storage.local.get("qikvrtTerminalPreferences");
@@ -20,7 +21,11 @@ async function e2eNetworkDiagnostic() {
   let permission = null;
   let directFetch = null;
   try {
-    permission = await browser.permissions.contains({origins: [`${E2E_BACKEND}/*`]});
+    /* WebExtension host permissions are match patterns.  Keep the runtime
+       Effect-Ack endpoint exact to :8771, but query the permission API using
+       the exact manifest-declared origin pattern rather than inventing a
+       port-bearing match pattern. */
+    permission = await browser.permissions.contains({origins: [E2E_HOST_PERMISSION]});
   } catch (error) {
     permission = `ERROR:${error.message}`;
   }
@@ -30,7 +35,7 @@ async function e2eNetworkDiagnostic() {
   } catch (error) {
     directFetch = {ok: false, error: error.message};
   }
-  return {host_permission: permission, extension_page_direct_fetch: directFetch};
+  return {host_permission: permission, host_permission_pattern: E2E_HOST_PERMISSION, extension_page_direct_fetch: directFetch};
 }
 
 async function runBoundedEffectAckE2E() {
@@ -65,6 +70,7 @@ async function runBoundedEffectAckE2E() {
     schema: "qikvrt_firefox_terminal_effect_ack_e2e_page_v1",
     nonce: E2E_NONCE,
     host_permission_observed: network.host_permission,
+    host_permission_pattern: network.host_permission_pattern,
     extension_page_direct_fetch_observed: network.extension_page_direct_fetch.ok,
     discovery_observed: true,
     prepare_record_validated: true,
