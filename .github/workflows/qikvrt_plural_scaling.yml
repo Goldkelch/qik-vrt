@@ -144,7 +144,9 @@ jobs:
           assert len(transcript_bytes) == source["source_transcript_bytes"] == 339
           assert hashlib.sha256(transcript_bytes).hexdigest() == (
               source["source_transcript_sha256"]
-              == "072bf21cea233f2471b5edfbd2163efec13e5d2a4c98af80ba7904d271b8de1d"
+          )
+          assert source["source_transcript_sha256"] == (
+              "072bf21cea233f2471b5edfbd2163efec13e5d2a4c98af80ba7904d271b8de1d"
           )
           audio = source["source_audio"]
           assert audio["filename"] == "Das bleibt Skalierung! q.e.d. Ingolf Lohmann.m4a"
