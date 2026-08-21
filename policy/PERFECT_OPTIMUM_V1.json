@@ -1,0 +1,79 @@
+{
+  "schema": "qikvrt_perfect_optimum_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "name": "Perfektes Optimum",
+  "maxim": "Eine Veraenderung ist nur dann eine Verbesserung, wenn alle harten Invarianten erhalten bleiben, mindestens eine vorab gebundene Zielgroesse streng verbessert wird und der neue Zustand nach der Wirkung frisch reobserviert wird.",
+  "causal_distinctions": [
+    "SEQUENCE_NE_CAUSALITY",
+    "MATCH_NE_SEMANTIC_BIND",
+    "REQUESTED_NE_EXECUTED",
+    "EXECUTED_NE_OBSERVED",
+    "OBSERVED_NE_ACKNOWLEDGED",
+    "TRANSPORT_ACK_NE_EFFECT_ACK"
+  ],
+  "hard_invariants": {
+    "verified_autonomy": "Use already-authorized repository-native capabilities before avoidable human delegation.",
+    "fail_closed_responsibility": "Missing authority, identity, exact head/tree, or precondition implies HOLD.",
+    "minimal_causal_effect": "Choose the smallest uniquely determined verifiable effect.",
+    "evidence_before_claim": "Claims require bound evidence; chronology alone is not causality.",
+    "reobserve_after_effect": "Every mutation invalidates predecessor evidence and requires fresh head/tree and gates.",
+    "human_attention_conservation": "Do not delegate work the authorized system can deterministically perform itself.",
+    "single_productive_writer": true,
+    "force_push": false,
+    "history_rewrite": false,
+    "external_effect_without_explicit_authority": false,
+    "independent_review_identity_may_be_fabricated": false
+  },
+  "improvement_order": {
+    "kind": "pareto_with_strict_progress",
+    "require_all_hard_invariants": true,
+    "require_non_regression_on_all_bound_metrics": true,
+    "require_strict_improvement_on_at_least_one_bound_metric": true,
+    "later_version_is_not_evidence_of_improvement": true
+  },
+  "bound_metrics": [
+    {"id": "deterministic_blockers", "direction": "minimize"},
+    {"id": "avoidable_human_interventions", "direction": "minimize"},
+    {"id": "productive_writer_count", "target": 1, "direction": "exact"},
+    {"id": "stale_evidence_reuse", "target": 0, "direction": "exact"},
+    {"id": "unbound_effect_claims", "target": 0, "direction": "exact"},
+    {"id": "fresh_exact_head_gate_coverage", "direction": "maximize"},
+    {"id": "deterministically_closed_internal_loops", "direction": "maximize"}
+  ],
+  "recursive_application": {
+    "enabled": true,
+    "self_evaluation_required": true,
+    "self_modification_policy": "REGISTERED_IMPROVERS_ONLY",
+    "arbitrary_source_self_modification": "HOLD",
+    "candidate_must_evaluate_itself_under_same_rule": true,
+    "post_effect_reobservation_required": true,
+    "predecessor_evidence_transfer": false
+  },
+  "registered_improvers": [
+    {
+      "id": "integrity_trio_materializer",
+      "effect_scope": [
+        "REPOSITORY_FILE_MANIFEST.json",
+        "REPOSITORY_FILE_MANIFEST.json.sha256",
+        "SHA256SUMS.txt"
+      ],
+      "preconditions": [
+        "defect_is_exactly_deterministic_integrity_projection_drift",
+        "source_head_revalidated_immediately_before_write",
+        "one_productive_writer_only",
+        "resulting_scope_equals_registered_effect_scope"
+      ],
+      "postconditions": [
+        "new_head_and_tree_reobserved",
+        "fresh_exact_head_gates_required",
+        "no_predecessor_gate_inheritance"
+      ]
+    }
+  ],
+  "decision": {
+    "all_invariants_hold_and_pareto_strict_progress": "ACCEPT_CANDIDATE",
+    "unique_registered_repair_available": "EXECUTE_MINIMAL_REGISTERED_REPAIR_THEN_REOBSERVE",
+    "otherwise": "HOLD"
+  }
+}
