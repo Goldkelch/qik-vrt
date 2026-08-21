@@ -25,7 +25,10 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  # GitHub's create-repository-dispatch endpoint requires Contents: write for the
+  # workflow token. This authority is used only to emit the exact bound dispatch
+  # envelope below; the workflow never checks out with credentials or mutates files.
+  contents: write
   pull-requests: read
   statuses: write
 
