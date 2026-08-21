@@ -1,0 +1,65 @@
+{
+  "schema": "qikvrt_universal_monitor_sampling_v1",
+  "status": "CANDIDATE",
+  "applies_to": [
+    "AUTHORITY",
+    "MIRROR",
+    "EVERY_FUTURE_MESH_NODE",
+    "STANDARD_TERMINAL_PATTERN",
+    "UNIVERSAL_TERMINAL",
+    "REFLEXIVE_WATCHDOG",
+    "LIVE_STATUS_WATCH",
+    "WORKFLOW_EXECUTOR_WATCHDOG",
+    "BROWSER_TERMINAL",
+    "FIREFOX_EFFECT_ACK",
+    "SSE_OR_EVENT_STREAM",
+    "POLLING_FALLBACK",
+    "HUMAN_VISIBLE_MONITOR_PROJECTION"
+  ],
+  "invariants": [
+    "CAUSALITY != SEQUENCE",
+    "ACTIVITY != EFFECT",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "SAMPLED_ORDER != CAUSAL_ORDER",
+    "LATER != BETTER",
+    "NO_DECLARED_BANDLIMIT != NYQUIST_COMPLETENESS"
+  ],
+  "sampling_rule": {
+    "condition": "FINITE_MAX_MATERIAL_TRANSITION_FREQUENCY_BOUND",
+    "source_max_hz_symbol": "f_max",
+    "minimum_sample_hz_expression": "2*f_max",
+    "recommended_guard_factor": 2.5,
+    "pass_expression": "sample_hz >= guard_factor*f_max AND guard_factor >= 2",
+    "equality_boundary": "sample_hz=2*f_max is theoretical Nyquist boundary, not robustness margin"
+  },
+  "unknown_or_unbounded_source_rule": {
+    "nyquist_completeness_claim": false,
+    "required_mode": "EVENT_DRIVEN_OR_FAIL_CLOSED",
+    "polling_only_disposition": "HOLD_SAMPLING_BOUND_UNKNOWN"
+  },
+  "event_driven_rule": {
+    "preferred": true,
+    "event_delivery_is_not_effect_ack": true,
+    "sequence_numbers_or_content_ids_required_when_available": true,
+    "gap_detection_required": true,
+    "reobservation_after_gap": true,
+    "polling_fallback_must_obey_sampling_rule_if_completeness_is_claimed": true
+  },
+  "representation_rule": {
+    "monitor_must_not_claim_more_temporal_resolution_than_observed": true,
+    "render_refresh_hz_may_exceed_observation_hz": true,
+    "render_refresh_hz_does_not_upgrade_observation_evidence": true
+  },
+  "repository_rule": {
+    "github_actions_five_minute_schedule_is_not_universal_nyquist_proof": true,
+    "event_triggers_are_primary_for_faster_repository_transitions": true,
+    "scheduled_watch_is_liveness_fallback": true,
+    "unknown_transition_bandwidth_requires_event_driven_plus_gap_reobservation": true
+  },
+  "effect_boundary": {
+    "sampling_success_implies_effect_ack": false,
+    "sampling_success_implies_causality": false,
+    "sampling_success_implies_truth": false,
+    "sampling_success_implies_physical_law": false
+  }
+}
