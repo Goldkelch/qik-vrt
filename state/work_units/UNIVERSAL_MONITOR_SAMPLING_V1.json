@@ -1,0 +1,26 @@
+{
+  "schema": "qikvrt_universal_monitor_sampling_work_unit_v1",
+  "authority_base": "main@2ea174a04dbce0d02fd09ea285f2ff5c94a003ed",
+  "scope": [
+    "policy/UNIVERSAL_MONITOR_SAMPLING_V1.json",
+    "tools/qikvrt_monitor_sampling.py",
+    "docs/assets/js/qikvrt-nyquist-monitor.js",
+    "tests/test_qikvrt_monitor_sampling.py",
+    "docs/UNIVERSAL_MONITOR_SAMPLING_V1.md",
+    ".github/workflows/qikvrt_universal_monitor_sampling.yml"
+  ],
+  "universal_application": "ALL_QIKVRT_MONITOR_PROJECTIONS_AND_FUTURE_MESH_NODES",
+  "core_rule": "FINITE_F_MAX => SAMPLE_HZ>=2*F_MAX; UNKNOWN_F_MAX => EVENT_DRIVEN_OR_HOLD",
+  "recommended_guard_factor": 2.5,
+  "boundaries": {
+    "sampling_order_is_causality": false,
+    "sampling_success_is_effect_ack": false,
+    "render_rate_is_observation_rate": false,
+    "github_schedule_is_universal_nyquist_proof": false,
+    "arbitrary_process_bandlimited": false,
+    "physical_law_claimed": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
