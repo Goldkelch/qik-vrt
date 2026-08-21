@@ -19,6 +19,7 @@ on:
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT requested review executor"
+      - "QIKVRT required code-owner review"
       - "QIK-VRT universal ontology finite-model verification"
       - "QIK-VRT measurement-independence boundary verification"
       - "QIK-VRT manuscript proof coverage"
@@ -37,6 +38,7 @@ concurrency:
 
 jobs:
   evaluate-and-promote:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -54,13 +56,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Regression-test promotion and requested-review decision cores
+      - name: Regression-test promotion and review authority decision cores
         shell: bash
         run: |
           set -euo pipefail
           python3 -B -m unittest -v \
             tests.test_qikvrt_expected_head_promotion \
-            tests.test_qikvrt_requested_review_executor
+            tests.test_qikvrt_requested_review_executor \
+            tests.test_qikvrt_required_review_gate
 
       - name: Discover one marked current-base candidate
         id: candidate
@@ -78,7 +81,7 @@ jobs:
           def gh_json(path):
               return json.loads(subprocess.check_output(['gh','api',path], text=True))
           def gh_pages(path):
-              pages = json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
@@ -99,9 +102,9 @@ jobs:
                   marked = any(marker in (c.get('body') or '') for c in comments)
               if marked:
                   candidates.append(pr)
-          candidates.sort(key=lambda pr: (pr.get('created_at') or '', pr['number']))
-          chosen = candidates[0] if candidates else None
-          print(json.dumps({'state':'CANDIDATE' if chosen else 'NOOP','current_main_sha':current_main,'pr_number':chosen['number'] if chosen else None}, sort_keys=True))
+          candidates.sort(key=lambda pr:(pr.get('created_at') or '',pr['number']))
+          chosen=candidates[0] if candidates else None
+          print(json.dumps({'state':'CANDIDATE' if chosen else 'NOOP','current_main_sha':current_main,'pr_number':chosen['number'] if chosen else None},sort_keys=True))
           PY
           cat /tmp/qikvrt-promotion-candidate.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
@@ -112,7 +115,7 @@ jobs:
           print(f"main_sha={v['current_main_sha']}")
           PY
 
-      - name: Materialize exact live promotion snapshot including review receipt
+      - name: Materialize exact live promotion snapshot with separated review authority
         if: steps.candidate.outputs.state == 'CANDIDATE'
         id: decision
         env:
@@ -122,6 +125,8 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshot.json
           import json, os, subprocess
+          from tools.qikvrt_required_review_gate import evaluate_required_review
+
           repo=os.environ['REPOSITORY']
           pr_number=int(os.environ['PR_NUMBER'])
           required=json.loads(os.environ['REQUIRED_GATES_JSON'])
@@ -139,8 +144,16 @@ jobs:
               pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
               out=[]
               for page in pages:
-                  if isinstance(page,dict): out.extend(page.get('workflow_runs',[]))
+                  if isinstance(page,dict):
+                      out.extend(page.get('workflow_runs',[]))
               return out
+          def latest_status(statuses, context):
+              matching=[s for s in statuses if s.get('context') == context]
+              if not matching:
+                  return None
+              def key(s):
+                  return (s.get('updated_at') or s.get('created_at') or '', int(s.get('id') or 0))
+              return max(matching, key=key)
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           current_main=gh_json(f'repos/{repo}/commits/main')['sha']
@@ -152,7 +165,7 @@ jobs:
           ]
 
           statuses=gh_pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
-          review_status=next((s for s in statuses if s.get('context') == review_context), None)
+          review_status=latest_status(statuses, review_context)
           if review_status is None:
               synthetic={'name':review_context,'status':'in_progress','conclusion':None,'run_number':0}
           elif review_status.get('state') == 'success':
@@ -163,6 +176,12 @@ jobs:
               synthetic={'name':review_context,'status':'completed','conclusion':'failure','run_number':int(review_status.get('id') or 0)}
           workflow_runs.append(synthetic)
 
+          rules=gh_json(f'repos/{repo}/rules/branches/main')
+          reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
+          code_owner_review_gate=evaluate_required_review(
+              pr, rules, reviews, required_code_owner='Goldkelch'
+          )
+
           candidate_files={item['filename'] for item in gh_pages(f'repos/{repo}/pulls/{pr_number}/files?per_page=100')}
           overlaps=[]
           for other in gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100'):
@@ -170,7 +189,8 @@ jobs:
                   continue
               other_files={item['filename'] for item in gh_pages(f"repos/{repo}/pulls/{other['number']}/files?per_page=100")}
               common=sorted(candidate_files & other_files)
-              if common: overlaps.append({'pr_number':other['number'],'paths':common})
+              if common:
+                  overlaps.append({'pr_number':other['number'],'paths':common})
 
           print(json.dumps({
               'pr_number':pr_number,
@@ -183,8 +203,9 @@ jobs:
               'external_effect':'NONE',
               'required_gates':required,
               'workflow_runs':workflow_runs,
+              'code_owner_review_gate':code_owner_review_gate,
               'competing_writer_overlaps':overlaps,
-          }, sort_keys=True))
+          },sort_keys=True))
           PY
 
           set +e
@@ -196,6 +217,7 @@ jobs:
           import json
           v=json.load(open('/tmp/qikvrt-promotion-decision.json'))
           print(f"state={v['state']}")
+          print(f"phase={v.get('phase') or ''}")
           print(f"head={v.get('expected_head_sha') or ''}")
           print(f"blocker={v.get('first_blocker') or ''}")
           PY
@@ -207,6 +229,7 @@ jobs:
           PR_NUMBER: ${{ steps.candidate.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
           EXPECTED_BASE: ${{ steps.candidate.outputs.main_sha }}
+          EXPECTED_PHASE: ${{ steps.decision.outputs.phase }}
         shell: bash
         run: |
           set -euo pipefail
@@ -221,10 +244,49 @@ jobs:
           test "$current_head" = "$EXPECTED_HEAD"
 
           if [ "$draft" = true ]; then
+            test "$EXPECTED_PHASE" = READY_FOR_REVIEW
             gh pr ready "$PR_NUMBER" --repo "$REPOSITORY"
             echo "READY_RECLASSIFIED_REOBSERVATION_REQUIRED" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+
+          test "$EXPECTED_PHASE" = MERGE
+
+          python3 -B - <<'PY'
+          import json, os, subprocess
+          from tools.qikvrt_required_review_gate import evaluate_required_review
+
+          repo=os.environ['REPOSITORY']
+          pr_number=int(os.environ['PR_NUMBER'])
+          expected_head=os.environ['EXPECTED_HEAD']
+          review_context=os.environ['REVIEW_STATUS_CONTEXT']
+
+          def gh_json(path):
+              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+          def gh_pages(path):
+              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              out=[]
+              for page in pages:
+                  out.extend(page if isinstance(page,list) else [page])
+              return out
+
+          pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
+          if pr['head']['sha'] != expected_head:
+              raise SystemExit('BLOCK: head drift before merge')
+          rules=gh_json(f'repos/{repo}/rules/branches/main')
+          reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
+          gate=evaluate_required_review(pr, rules, reviews, required_code_owner='Goldkelch')
+          if gate.get('gate_state') != 'success':
+              raise SystemExit(f"BLOCK: independent Code Owner gate changed: {gate.get('first_blocker')}")
+
+          statuses=gh_pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
+          matching=[s for s in statuses if s.get('context') == review_context]
+          if not matching:
+              raise SystemExit('BLOCK: requested-review execution status missing before merge')
+          latest=max(matching,key=lambda s:(s.get('updated_at') or s.get('created_at') or '',int(s.get('id') or 0)))
+          if latest.get('state') != 'success':
+              raise SystemExit(f"BLOCK: requested-review execution is {latest.get('state')}")
+          PY
 
           current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
@@ -239,7 +301,7 @@ jobs:
           test "$(python3 -c 'import json; print(str(json.load(open("/tmp/qikvrt-promotion-merge.json"))["merged"]).lower())')" = true
           promoted_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
           test "$promoted_main" != "$EXPECTED_BASE"
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body "Expected-head promotion completed by repository-native executor. Source head: \`$EXPECTED_HEAD\`; previous main: \`$EXPECTED_BASE\`; promoted main: \`$promoted_main\`. Requested-review execution was exact-head bound. No Zenodo/IETF/release/PASS/FINAL_PASS/EFFECT_ACK_DONE effect is implied."
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body "Expected-head promotion completed by repository-native executor. Source head: \`$EXPECTED_HEAD\`; previous main: \`$EXPECTED_BASE\`; promoted main: \`$promoted_main\`. Repository-native review execution and independent Code-Owner authority were separately reobserved. No Zenodo/IETF/release/PASS/FINAL_PASS/EFFECT_ACK_DONE effect is implied."
 
       - name: Persist bounded decision summary
         if: always()
@@ -256,5 +318,5 @@ jobs:
               echo "No promotion snapshot was materialized."
             fi
             echo
-            echo "Requested-review execution and external effects remain fail-closed."
+            echo "Bot review execution and independent Code-Owner authority remain separate fail-closed gates."
           } >> "$GITHUB_STEP_SUMMARY"
