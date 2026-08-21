@@ -1,0 +1,55 @@
+name: QIKVRT universal monitor sampling
+
+on:
+  pull_request:
+    paths:
+      - 'policy/UNIVERSAL_MONITOR_SAMPLING_V1.json'
+      - 'tools/qikvrt_monitor_sampling.py'
+      - 'docs/assets/js/qikvrt-nyquist-monitor.js'
+      - 'tests/test_qikvrt_monitor_sampling.py'
+      - 'docs/UNIVERSAL_MONITOR_SAMPLING_V1.md'
+      - 'state/work_units/UNIVERSAL_MONITOR_SAMPLING_V1.json'
+      - '.github/workflows/qikvrt_universal_monitor_sampling.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact head and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git rev-parse HEAD
+          git rev-parse HEAD^{tree}
+      - name: Run universal sampling tests
+        run: python3 -B -m unittest -v tests.test_qikvrt_monitor_sampling
+      - name: Positive guarded sampling witness
+        run: python3 -B tools/qikvrt_monitor_sampling.py --source-max-hz 10 --sample-hz 25
+      - name: Event-driven unknown-bandwidth witness
+        run: python3 -B tools/qikvrt_monitor_sampling.py --event-driven
+      - name: Negative below-Nyquist witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 -B tools/qikvrt_monitor_sampling.py --source-max-hz 10 --sample-hz 19.9; then
+            echo 'below-Nyquist monitor was incorrectly admitted' >&2
+            exit 1
+          fi
+      - name: Negative unknown-bandwidth polling witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 -B tools/qikvrt_monitor_sampling.py --sample-hz 1000; then
+            echo 'unknown-bandwidth polling was incorrectly admitted' >&2
+            exit 1
+          fi
