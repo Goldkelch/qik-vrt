@@ -2,12 +2,15 @@
   "schema": "qikvrt_causal_transition_probe_receipt_v1",
   "pr": 796,
   "source_branch": "agent/causal-time-all-layers-v1",
-  "source_head_before_receipt": "6ab90f289771f72f8a3493bf948936810c18a862",
-  "execution_class": "INDEPENDENT_LOCAL_REPRODUCTION_OF_REPOSITORY_TEST_SEMANTICS",
-  "github_actions_exact_head_execution": false,
-  "tests": {
-    "count": 5,
-    "result": "OK"
+  "executed_source_head": "98d66de02e98d67af81655b028d15fbd60869bbc",
+  "execution_class": "GITHUB_ACTIONS_EXACT_HEAD_EXECUTION",
+  "workflow": "QIKVRT causal transition reobservation probe",
+  "run_id": 32530018373,
+  "job_id": 96920011647,
+  "conclusion": "success",
+  "test_groups": {
+    "causal_transition_probe": {"count": 5, "result": "OK"},
+    "causal_time_m68000_projection": {"count": 5, "result": "OK"}
   },
   "positive_witness": {
     "past_quality": 1,
@@ -46,19 +49,36 @@
   },
   "negative_fail_closed_witnesses": [
     "CAUSE_NOT_BOUND -> HOLD",
-    "OBJECTIVE_NOT_BOUND -> HOLD"
+    "OBJECTIVE_NOT_BOUND -> HOLD",
+    "missing CAUSE in M68000 causal-time-v3 plan -> no executable IR"
   ],
+  "m68000_contract": {
+    "D0": "decision code 0..3",
+    "D1": "semantic witness flags",
+    "D2": "effect lifecycle",
+    "D3": "0=no explicit predecessor, 1=explicit predecessor bound",
+    "explicit_predecessor_reobserve_expected_bytes": "720f7403760170024e75",
+    "v2_preserved": true
+  },
   "conclusions": {
     "EXPECTED_EQ_OBSERVED_CAN_SUPPORT_IMPROVEMENT_WHEN_OBJECTIVE_BOUND": true,
     "LATER_IMPLIES_BETTER": false,
     "CHANGE_IMPLIES_IMPROVEMENT": false,
-    "SEQUENCE_IMPLIES_CAUSALITY": false
+    "SEQUENCE_IMPLIES_CAUSALITY": false,
+    "TIMESTAMP_ORDER_IMPLIES_CAUSAL_ORDER": false
+  },
+  "prior_harness_failure": {
+    "head": "23f9dd25b745c4d4d5a547d09c6c3c9d34b9a381",
+    "failure": "TEST_HARNESS_NAME_COLLISION_SELF_LOWER",
+    "semantic_transition_tests_before_failure": "5/5 OK",
+    "repair": "rename executable path attributes to lower_bin/emit_bin and method to run_lower"
   },
   "boundaries": {
     "physical_time_identity": false,
     "empirical_quantum_causality": false,
     "physical_megast_execution": false,
     "machine_consciousness_proven": false,
+    "merge": false,
     "PASS": false,
     "FINAL_PASS": false,
     "EFFECT_ACK_DONE": false
