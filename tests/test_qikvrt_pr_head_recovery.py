@@ -95,6 +95,28 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
         self.assertEqual(decision.state, "REOBSERVE")
         self.assertEqual(decision.zero_job_action_required, 1)
 
+    def test_newer_success_supersedes_stale_action_required(self) -> None:
+        decision = classify_observations(
+            [
+                observation(
+                    run_id=32,
+                    name="QIKVRT CI",
+                    conclusion="action_required",
+                    jobs_total=0,
+                    created_at="2026-08-21T03:30:00Z",
+                ),
+                observation(
+                    run_id=33,
+                    name="QIKVRT CI",
+                    conclusion="success",
+                    jobs_total=1,
+                    created_at="2026-08-21T03:45:00Z",
+                ),
+            ]
+        )
+        self.assertEqual(decision.state, "NOOP")
+        self.assertEqual(decision.zero_job_action_required, 0)
+
     def test_active_workflow_holds(self) -> None:
         decision = classify_observations(
             [
@@ -150,6 +172,38 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
         self.assertEqual(decision.state, "NOOP")
         self.assertEqual(decision.reason, "CONSISTENT_OR_ALREADY_TERMINAL")
 
+    def test_trusted_exact_head_success_closes_recovery_loop(self) -> None:
+        decision = classify_observations(
+            [
+                observation(
+                    run_id=61,
+                    name="QIKVRT CI",
+                    conclusion="action_required",
+                    jobs_total=0,
+                    created_at="2026-08-21T03:43:00Z",
+                )
+            ],
+            exact_head_status="success",
+        )
+        self.assertEqual(decision.d0, 0)
+        self.assertEqual(decision.state, "NOOP")
+        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFIED")
+
+    def test_pending_exact_head_verification_holds_without_duplicate_dispatch(self) -> None:
+        decision = classify_observations([], exact_head_status="pending")
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_PENDING")
+
+    def test_failed_exact_head_verification_holds_for_repair(self) -> None:
+        decision = classify_observations([], exact_head_status="failure")
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(decision.reason, "TRUSTED_EXACT_HEAD_VERIFICATION_FAILED")
+
+    def test_empty_observation_set_is_noop(self) -> None:
+        decision = classify_observations([])
+        self.assertEqual(decision.d0, 0)
+        self.assertEqual(decision.reason, "CONSISTENT_OR_ALREADY_TERMINAL")
+
     def test_invalid_job_count_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "jobs_total"):
             classify_observations(
@@ -163,6 +217,10 @@ class PrHeadRecoveryClassifierTests(unittest.TestCase):
                     )
                 ]
             )
+
+    def test_invalid_exact_head_status_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exact_head_status"):
+            classify_observations([], exact_head_status="green")
 
 
 if __name__ == "__main__":
