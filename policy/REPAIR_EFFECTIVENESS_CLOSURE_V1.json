@@ -1,0 +1,50 @@
+{
+  "schema": "qikvrt_repair_effectiveness_closure_v1",
+  "version": 1,
+  "invariants": [
+    "FIXED_ON_PR != EFFECTIVE_ON_MAIN",
+    "VERIFIED_IMPLEMENTATION != AUTHORITY_EFFECT",
+    "REPAIR_CLOSED => MAIN_EFFECT_OBSERVED",
+    "REPAIR_CLOSED => REGRESSION_PROBE_SUCCESS",
+    "KNOWN_FAILURE_CLASS_MUST_NOT_SILENTLY_RECUR",
+    "ACTIVITY_ONLY_STATUS_WRITE_FORBIDDEN"
+  ],
+  "repair_marker_prefix": "qikvrt-repair-closure:failure-class=",
+  "promotion_marker": "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->",
+  "states": [
+    "NOT_REPAIR",
+    "NEED_PROMOTION_BINDING",
+    "VERIFIED_NOT_EFFECTIVE",
+    "EFFECTIVE_UNPROBED",
+    "CLOSED"
+  ],
+  "failure_classes": {
+    "BOT_AUTHORED_ZERO_JOB_HEAD_FALSE_NOOP": {
+      "regression_modules": [
+        "tests.test_qikvrt_pr_head_recovery",
+        "tests.test_qikvrt_autonomous_pr_head_continuation"
+      ]
+    },
+    "AUTONOMOUS_EXACT_HEAD_RECOVERY_DISPATCH_FORBIDDEN": {
+      "regression_modules": [
+        "tests.test_qikvrt_autonomous_pr_head_continuation"
+      ]
+    },
+    "PROMOTION_READINESS_REVIEW_STATE_MACHINE_DEADLOCK": {
+      "regression_modules": [
+        "tests.test_qikvrt_expected_head_promotion",
+        "tests.test_qikvrt_requested_review_executor"
+      ]
+    },
+    "REQUIRED_REVIEW_STATUS_FIXED_POINT_DUPLICATION": {
+      "regression_modules": [
+        "tests.test_qikvrt_required_review_gate"
+      ]
+    },
+    "REPAIRED_FAILURE_CLASS_RECURS_BECAUSE_TRUSTED_RUNTIME_IS_STALE": {
+      "regression_modules": [
+        "tests.test_qikvrt_repair_effectiveness_guard"
+      ]
+    }
+  }
+}
