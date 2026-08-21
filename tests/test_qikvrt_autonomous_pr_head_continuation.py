@@ -70,12 +70,22 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
 
     def test_authority_is_minimal_and_does_not_merge_or_review(self) -> None:
         self.assertIn("actions: write", self.text)
-        self.assertIn("contents: read", self.text)
+        self.assertIn("contents: write", self.text)
         self.assertIn("pull-requests: read", self.text)
         self.assertIn("statuses: write", self.text)
         self.assertNotIn("pull-requests: write", self.text)
         self.assertNotIn("/merges", self.text)
         self.assertNotIn("/reviews", self.text)
+        self.assertIn("persist-credentials: false", self.text)
+
+    def test_repository_dispatch_permission_is_explicit_and_bounded(self) -> None:
+        self.assertIn('"repos/${GITHUB_REPOSITORY}/dispatches"', self.text)
+        self.assertIn("create-repository-dispatch endpoint requires Contents: write", self.text)
+        self.assertIn("used only to emit the exact bound dispatch", self.text)
+        self.assertNotIn("contents: write\n  pull-requests: write", self.text)
+        self.assertNotIn("git push", self.text)
+        self.assertNotIn("gh api --method PUT", self.text)
+        self.assertNotIn("gh api --method PATCH", self.text)
 
     def test_discovery_and_productive_edge_are_bounded(self) -> None:
         self.assertIn("per_page=30", self.text)
