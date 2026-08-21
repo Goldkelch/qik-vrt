@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import itertools
+import pathlib
+import sys
 import unittest
+
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from tools import qikvrt_iedl_for_children as iedl
 
