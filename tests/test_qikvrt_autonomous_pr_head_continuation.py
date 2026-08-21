@@ -6,6 +6,8 @@ import json
 import unittest
 from pathlib import Path
 
+from tools.qikvrt_pr_head_recovery import classify_observations
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_autonomous_pr_head_continuation.yml"
 RECOVERY_TOOL = ROOT / "tools" / "qikvrt_pr_head_recovery.py"
@@ -92,6 +94,56 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("latest run per workflow", self.recovery_text)
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
+
+    def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
+        decision = classify_observations(
+            [
+                {
+                    "id": 100,
+                    "name": "QIKVRT CI",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "jobs_total": 1,
+                    "created_at": "2026-08-21T03:30:00Z",
+                },
+                {
+                    "id": 101,
+                    "name": "QIKVRT CI",
+                    "status": "completed",
+                    "conclusion": "action_required",
+                    "jobs_total": 0,
+                    "created_at": "2026-08-21T03:40:14Z",
+                },
+            ]
+        )
+        self.assertEqual(decision.d0, 2)
+        self.assertEqual(decision.state, "REOBSERVE")
+        self.assertEqual(decision.reason, "ZERO_JOB_ACTION_REQUIRED")
+
+    def test_executed_failure_is_not_collapsed_to_noop(self) -> None:
+        decision = classify_observations(
+            [
+                {
+                    "id": 102,
+                    "name": "QIKVRT CI",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "jobs_total": 1,
+                    "created_at": "2026-08-21T03:42:00Z",
+                },
+                {
+                    "id": 103,
+                    "name": "QIKVRT Collective Proposal Review",
+                    "status": "completed",
+                    "conclusion": "action_required",
+                    "jobs_total": 0,
+                    "created_at": "2026-08-21T03:42:01Z",
+                },
+            ]
+        )
+        self.assertEqual(decision.d0, 1)
+        self.assertEqual(decision.state, "HOLD")
+        self.assertEqual(decision.reason, "EXECUTED_FAILURE_PRESENT")
 
     def test_exact_head_status_prevents_retry_loops(self) -> None:
         self.assertIn("QIKVRT autonomous exact-head verification", self.text)
