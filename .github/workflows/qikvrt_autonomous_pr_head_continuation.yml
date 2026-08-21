@@ -212,6 +212,23 @@ jobs:
         run: |
           set -euo pipefail
           root=.qikvrt/autonomous-pr-head-continuation
+          dispatch_status_published=false
+          publish_dispatch_error() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$dispatch_status_published" = true ]; then
+              set +e
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+                -f state=error \
+                -f context='QIKVRT autonomous exact-head verification' \
+                -f description='Exact-head recovery dispatch failed' \
+                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              set -e
+            fi
+            exit "$rc"
+          }
+          trap publish_dispatch_error EXIT
+
           live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
           test "$live_ref" = "$HEAD_SHA"
 
@@ -222,6 +239,7 @@ jobs:
             -f context='QIKVRT autonomous exact-head verification' \
             -f description='Trusted exact-head recovery dispatched' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          dispatch_status_published=true
 
           # D0=2 permits fresh observation/verifier execution only. It does not
           # merge, publish, deploy, or assert EFFECT_ACK_DONE.
@@ -269,6 +287,7 @@ jobs:
             --arg ref "$HEAD_REF" \
             '{pull_request:($pr|tonumber),head_sha:$head,head_ref:$ref,d0:2,state:"REOBSERVE",disposition:"DISPATCHED_EXACT_HEAD_CONTINUATION",productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
             > "$root/dispatch-receipt.json"
+          trap - EXIT
 
       - name: Preserve causal continuation evidence
         if: always()
