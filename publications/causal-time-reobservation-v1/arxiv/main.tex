@@ -1,0 +1,68 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+\title{Causality Is Not Sequence: A Typed Computational Model of Causal Order, Reobservation, and Evidence-Bound Improvement from Metagrammar to Motorola 68000}
+\author{Ingolf Lohmann}
+\date{}
+\begin{document}
+\maketitle
+\begin{abstract}
+We present a computational framework that preserves distinctions among relation, causation, temporal order, execution, observation, acknowledgement, change, and improvement. The central invariant is that causality is not sequence. The implementation spans a human-readable metagrammar, semantic validation, explicit causal binding, deterministic serialization, ANSI C89, and a Motorola 68000 machine-state projection. A repository-native reobservation probe executed two independent five-test groups successfully on exact source head \texttt{98d66de02e98d67af81655b028d15fbd60869bbc}. The resulting witnesses distinguish an observed improvement, a later but unchanged state, and a later degraded state, while the M68000 representation records an explicit causal predecessor separately from decision and effect-lifecycle state. The result is computational and repository-grounded; it does not establish an identity between physical time and the proposed causal-time projection, empirical quantum causality, machine consciousness, or physical Atari Mega ST execution.
+\end{abstract}
+
+\section{Core invariant}
+The framework treats the following as type boundaries:
+\begin{verbatim}
+DISTINCTION != RELATION
+RELATION != CAUSALITY
+CAUSALITY != SEQUENCE
+TIMESTAMP_ORDER != CAUSAL_ORDER
+LATER != CAUSED_BY
+LATER != BETTER
+REQUESTED != EXECUTED
+EXECUTED != OBSERVED
+OBSERVED != ACKNOWLEDGED
+TRANSPORT_ACK != EFFECT_ACK
+\end{verbatim}
+
+\section{Computational transition model}
+The tested transition pattern is:
+\begin{verbatim}
+PAST -> CURRENT_BOUND_STATE -> ADMISSIBLE_FUTURE
+     -> EFFECT -> REOBSERVED_STATE
+\end{verbatim}
+Improvement is not inferred from temporal succession. It requires an explicitly bound evaluation objective and a reobserved state satisfying that objective.
+
+\section{Motorola 68000 projection}
+The machine-visible state preserves separate registers for decision, semantic witnesses, effect lifecycle, and explicit causal-predecessor binding:
+\begin{verbatim}
+D0 = decision code
+D1 = semantic witness flags
+D2 = effect lifecycle
+D3 = explicit causal-predecessor witness
+\end{verbatim}
+For a validated plan with bound authority, observed effect state, explicit predecessor, and REOBSERVE, the expected big-endian bytes are:
+\begin{verbatim}
+72 0F 74 03 76 01 70 02 4E 75
+\end{verbatim}
+
+\section{Repository-native experiment}
+The dedicated workflow \texttt{QIKVRT causal transition reobservation probe} executed successfully on exact source head \texttt{98d66de02e98d67af81655b028d15fbd60869bbc}, run \texttt{32530018373}, job \texttt{96920011647}. The two test groups completed 5/5 and 5/5 successfully. The persisted repository receipt records positive, later-not-better, degraded, and fail-closed witnesses.
+
+\section{Scientific boundary}
+The experiment establishes a computational separation of causal, temporal, evaluative, and evidential relations. It does not by itself establish a physical theory of time, empirical quantum causality, machine consciousness, biological universality, or physical hardware execution. A physical extension would require operational observables, a specified physical causal relation, competing predictions, measurement procedures, an error model, and falsification conditions.
+
+\section{Conclusion}
+A responsible computational system can preserve the distinction between sequence and causality, and between temporal continuation and evaluated improvement, from human-readable semantics down to machine-visible state and back through reobservation and repository evidence. The methodological rule is: preserve the difference, bind the relation, establish the cause, observe the effect, and strengthen the claim only when the evidence permits it.
+
+\begin{thebibliography}{9}
+\bibitem{pearl2009} J. Pearl, \emph{Causality: Models, Reasoning, and Inference}, 2nd ed., Cambridge University Press, 2009.
+\bibitem{lamport1978} L. Lamport, ``Time, Clocks, and the Ordering of Events in a Distributed System,'' \emph{Communications of the ACM}, 21(7), 1978, pp. 558--565.
+\bibitem{bombelli1987} L. Bombelli, J. Lee, D. Meyer, and R. D. Sorkin, ``Space-Time as a Causal Set,'' \emph{Physical Review Letters}, 59, 1987, pp. 521--524.
+\bibitem{oreshkov2012} O. Oreshkov, F. Costa, and C. Brukner, ``Quantum correlations with no causal order,'' \emph{Nature Communications}, 3, 2012, 1092.
+\end{thebibliography}
+\end{document}
