@@ -29,6 +29,7 @@ class RepairEffectivenessGuardTests(unittest.TestCase):
         policy = json.loads(Path("policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json").read_text())
         classes = policy["failure_classes"]
         self.assertIn("BOT_AUTHORED_ZERO_JOB_HEAD_FALSE_NOOP", classes)
+        self.assertIn("AUTONOMOUS_EXACT_HEAD_RECOVERY_DISPATCH_FORBIDDEN", classes)
         self.assertIn("PROMOTION_READINESS_REVIEW_STATE_MACHINE_DEADLOCK", classes)
         self.assertIn("REQUIRED_REVIEW_STATUS_FIXED_POINT_DUPLICATION", classes)
         self.assertIn("REPAIRED_FAILURE_CLASS_RECURS_BECAUSE_TRUSTED_RUNTIME_IS_STALE", classes)
