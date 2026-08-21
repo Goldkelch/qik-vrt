@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT repair effectiveness closure
+
+on:
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT requested review executor"
+      - "QIK-VRT expected-head promotion executor"
+    types: [completed]
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-repair-effectiveness-closure-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  enforce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PROMOTION_MARKER: "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
+      STATUS_CONTEXT: "QIKVRT repair effectiveness closure"
+    steps:
+      - name: Check out executing Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bootstrap guard
+        id: active
+        shell: bash
+        run: |
+          if test -f policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json && test -f tools/qikvrt_repair_effectiveness_guard.py; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+            echo 'BOOTSTRAP_NOOP: repair-effectiveness guard is not yet on trusted main.'
+          fi
+
+      - name: Verify guard contract
+        if: steps.active.outputs.active == 'true'
+        run: python3 -B -m unittest -v tests.test_qikvrt_repair_effectiveness_guard
+
+      - name: Bind every open repair to promotion
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          post_status_if_changed() {
+            local head="$1" state="$2" description="$3" latest desired
+            latest="$(gh api "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100" --jq ".[] | select(.context == \"${STATUS_CONTEXT}\") | [.state, (.description // \"\")] | @tsv" | head -n1 || true)"
+            desired="$(printf '%s\t%s' "$state" "$description")"
+            if [ "$latest" = "$desired" ]; then
+              echo "UNCHANGED_HEAD_CONTEXT_STATE: ${head} ${state} ${description}"
+              return 0
+            fi
+            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state="$state" -f context="$STATUS_CONTEXT" -f description="${description:0:140}" >/dev/null
+          }
+          gh api --paginate "repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100" --jq '.[] | [.number,.head.sha,(.body // "")] | @base64' |
+          while IFS= read -r row; do
+            decoded="$(printf '%s' "$row" | base64 -d)"
+            pr="$(printf '%s' "$decoded" | jq -r '.[0]')"
+            head="$(printf '%s' "$decoded" | jq -r '.[1]')"
+            body="$(printf '%s' "$decoded" | jq -r '.[2]')"
+            failure_class="$(printf '%s' "$body" | sed -n 's/.*qikvrt-repair-closure:failure-class=\([^ >]*\).*/\1/p' | head -n1)"
+            test -n "$failure_class" || continue
+            jq -e --arg c "$failure_class" '.failure_classes[$c]' policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json >/dev/null || {
+              post_status_if_changed "$head" error "unregistered failure class: ${failure_class}"
+              continue
+            }
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${pr}/comments?per_page=100" --jq '.[].body' || true)"
+            if ! grep -Fq "$PROMOTION_MARKER" <<<"$body$comments"; then
+              gh api --method POST "repos/${REPOSITORY}/issues/${pr}/comments" --raw-field body="$PROMOTION_MARKER
+
+Repair-effectiveness guard bound failure class \`$failure_class\` to the trusted expected-head promotion path. This is not review authority and creates no external effect." >/dev/null
+            fi
+            post_status_if_changed "$head" pending "verified repair is not closed until effective on main + regression probe"
+          done
+
+      - name: Reobserve merged repairs on main and run registered probes
+        if: steps.active.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          post_status_if_changed() {
+            local head="$1" state="$2" description="$3" latest desired
+            latest="$(gh api "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100" --jq ".[] | select(.context == \"${STATUS_CONTEXT}\") | [.state, (.description // \"\")] | @tsv" | head -n1 || true)"
+            desired="$(printf '%s\t%s' "$state" "$description")"
+            if [ "$latest" = "$desired" ]; then
+              echo "UNCHANGED_HEAD_CONTEXT_STATE: ${head} ${state} ${description}"
+              return 0
+            fi
+            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state="$state" -f context="$STATUS_CONTEXT" -f description="${description:0:140}" >/dev/null
+          }
+          git fetch origin main --depth=1
+          : > /tmp/qikvrt-repair-closure.jsonl
+          gh api --paginate "repos/${REPOSITORY}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" --jq '.[] | select(.merged_at != null) | [.number,.head.sha,(.body // "")] | @base64' |
+          while IFS= read -r row; do
+            decoded="$(printf '%s' "$row" | base64 -d)"
+            pr="$(printf '%s' "$decoded" | jq -r '.[0]')"
+            head="$(printf '%s' "$decoded" | jq -r '.[1]')"
+            body="$(printf '%s' "$decoded" | jq -r '.[2]')"
+            failure_class="$(printf '%s' "$body" | sed -n 's/.*qikvrt-repair-closure:failure-class=\([^ >]*\).*/\1/p' | head -n1)"
+            test -n "$failure_class" || continue
+            modules="$(jq -r --arg c "$failure_class" '.failure_classes[$c].regression_modules[]?' policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json)"
+            if test -z "$modules"; then
+              state=error; detail="registered repair has no regression modules"
+            else
+              state=success; detail="effective on trusted main; registered regression probes successful"
+              while IFS= read -r module; do
+                test -n "$module" || continue
+                if ! python3 -B -m unittest -v "$module"; then
+                  state=failure; detail="failure class recurred on trusted main: ${failure_class}"; break
+                fi
+              done <<<"$modules"
+            fi
+            post_status_if_changed "$head" "$state" "$detail"
+            jq -nc --argjson pr "$pr" --arg failure_class "$failure_class" --arg head "$head" --arg state "$state" --arg detail "$detail" '{pr:$pr,failure_class:$failure_class,repair_head:$head,authority:"main",state:$state,detail:$detail}' >> /tmp/qikvrt-repair-closure.jsonl
+          done
+          {
+            echo '## Repair effectiveness closure'
+            echo
+            echo 'A repaired failure class is closed only after trusted-main effect and registered regression-probe success.'
+            echo
+            if test -s /tmp/qikvrt-repair-closure.jsonl; then
+              echo '```jsonl'; cat /tmp/qikvrt-repair-closure.jsonl; echo '```'
+            else
+              echo 'No merged registered repair required reobservation in this bounded sweep.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bootstrap NOOP before trusted-main promotion
+        if: steps.active.outputs.active != 'true'
+        run: echo 'FIXED_ON_PR != EFFECTIVE_ON_MAIN; guard candidate itself still requires promotion.'
