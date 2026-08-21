@@ -65,6 +65,14 @@ carriers, proves that one bit cannot injectively encode all four states, keeps
 `D0=3` distinct from register `D3`, and formalizes the Product-Owner fixed-point
 statement as invariance of the D3 projection across any finite control trace.
 
+The plural-scaling tranche separates horizontal unit extension from vertical
+word widening. A singleton can agree with itself but cannot supply support from
+two distinct unit identities; two units can still diverge, so plurality alone is
+not consensus. Horizontal extension preserves every existing register file and
+D3 projection, and pointwise mesh steps retain D3 while fail-closed collective
+triage maps stale evidence to REOBSERVE, divergence to HOLD, and missing shared
+authority to REQUEST_AUTHORITY.
+
 The decision-sufficiency tranche generalizes the witness theorem: evidence is
 deterministically sufficient exactly when observation fibers do not mix histories
 requiring different correct actions. Equivalently, the observation kernel must
