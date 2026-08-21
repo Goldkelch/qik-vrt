@@ -1,0 +1,46 @@
+name: QIKVRT causal transition reobservation probe
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Execute causal transition and M68000 witness tests
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_qikvrt_causal_transition_probe.py
+          python3 -B tests/test_qikvrt_causal_time_all_layers.py
+      - name: Emit deterministic positive and negative witnesses
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_causal_transition_probe.py <<'JSON' | tee positive.json
+          {"past":{"id":"past-0","quality":1,"logical_time":0},"current":{"id":"now-1","quality":1,"logical_time":1},"expected":{"id":"future-2","quality":2,"logical_time":2},"observed":{"id":"observed-2","quality":2,"logical_time":2},"cause":"past-0","objective":"HIGHER_QUALITY_IS_BETTER"}
+          JSON
+          python3 -B tools/qikvrt_causal_transition_probe.py <<'JSON' | tee later_not_better.json
+          {"past":{"id":"past-0","quality":1,"logical_time":0},"current":{"id":"now-1","quality":1,"logical_time":1},"expected":{"id":"future-2","quality":2,"logical_time":2},"observed":{"id":"observed-2","quality":1,"logical_time":2},"cause":"past-0","objective":"HIGHER_QUALITY_IS_BETTER"}
+          JSON
+          python3 -B tools/qikvrt_causal_transition_probe.py <<'JSON' | tee degraded.json
+          {"past":{"id":"past-0","quality":1,"logical_time":0},"current":{"id":"now-1","quality":1,"logical_time":1},"expected":{"id":"future-2","quality":2,"logical_time":2},"observed":{"id":"observed-2","quality":0,"logical_time":2},"cause":"past-0","objective":"HIGHER_QUALITY_IS_BETTER"}
+          JSON
+          python3 - <<'PY'
+          import json
+          p=json.load(open('positive.json'))
+          n=json.load(open('later_not_better.json'))
+          d=json.load(open('degraded.json'))
+          assert p['classification']=='IMPROVEMENT_EVIDENCED'
+          assert p['expected_equals_observed'] is True
+          assert n['later'] is True and n['improved'] is False
+          assert n['classification']=='UNCHANGED'
+          assert d['later'] is True and d['degraded'] is True
+          assert d['classification']=='CHANGED_DEGRADED'
+          assert p['later_implies_better'] is False
+          assert n['later_implies_better'] is False
+          assert d['later_implies_better'] is False
+          PY
