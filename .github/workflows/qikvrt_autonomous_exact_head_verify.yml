@@ -80,11 +80,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          qce_tmpdir="$(mktemp -d "${RUNNER_TEMP}/qikvrt-qce-exact-head.XXXXXX")"
+          cleanup_qce_tmpdir() {
+            rm -rf -- "$qce_tmpdir"
+          }
+          trap cleanup_qce_tmpdir EXIT HUP INT TERM
           lake build
           python3 -B verify_qce_package.py \
             --lean "$(command -v lean)" \
-            --axiom-output qce-autonomous-axiom-output.txt \
-            > qce-autonomous-verification.json
+            --axiom-output "$qce_tmpdir/qce-autonomous-axiom-output.txt" \
+            > "$qce_tmpdir/qce-autonomous-verification.json"
+          test -s "$qce_tmpdir/qce-autonomous-axiom-output.txt"
+          test -s "$qce_tmpdir/qce-autonomous-verification.json"
 
       - name: Publish exact-head success status
         if: success()
