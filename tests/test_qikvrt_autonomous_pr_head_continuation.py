@@ -72,6 +72,7 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("actions: write", self.text)
         self.assertIn("contents: read", self.text)
         self.assertIn("pull-requests: read", self.text)
+        self.assertIn("statuses: write", self.text)
         self.assertNotIn("pull-requests: write", self.text)
         self.assertNotIn("/merges", self.text)
         self.assertNotIn("/reviews", self.text)
@@ -150,6 +151,14 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFIED", self.recovery_text)
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_PENDING", self.recovery_text)
         self.assertIn("TRUSTED_EXACT_HEAD_VERIFICATION_FAILED", self.recovery_text)
+
+    def test_dispatch_failure_cannot_leave_a_permanent_pending_status(self) -> None:
+        self.assertIn("publish_dispatch_error", self.text)
+        self.assertIn("trap publish_dispatch_error EXIT", self.text)
+        self.assertIn("dispatch_status_published=true", self.text)
+        self.assertIn("state=error", self.text)
+        self.assertIn("Exact-head recovery dispatch failed", self.text)
+        self.assertIn("trap - EXIT", self.text)
 
     def test_named_exact_head_gate_surface_is_restored(self) -> None:
         self.assertIn("qikvrt_ci.yml", self.text)
