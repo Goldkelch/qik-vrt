@@ -36,6 +36,10 @@ class FirefoxTerminalE2EContract(unittest.TestCase):
         self.assertNotIn('http://*/*', hosts)
         csp = self.manifest['content_security_policy']['extension_pages']
         self.assertIn('http://127.0.0.1:8771', csp)
+        self.assertIn('const E2E_BACKEND = "http://127.0.0.1:8771";', self.options)
+        self.assertIn('const E2E_HOST_PERMISSION = "http://127.0.0.1/*";', self.options)
+        self.assertIn('origins: [E2E_HOST_PERMISSION]', self.options)
+        self.assertNotIn('origins: [`${E2E_BACKEND}/*`]', self.options)
         self.assertIn('const DEFAULT_BACKEND = "http://127.0.0.1:8771";', self.background)
         self.assertIn('new Set(["http://127.0.0.1:8771", "http://localhost:8771"])', self.background)
 
