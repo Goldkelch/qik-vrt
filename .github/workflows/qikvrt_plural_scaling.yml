@@ -1,0 +1,241 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT plural scaling and distinct-unit support
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_plural_scaling.yml"
+      - "docs/SCALING_MORE_THAN_ONE_EFFECT.md"
+      - "state/work_units/SCALING_MORE_THAN_ONE_EFFECT_V1.json"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPoint.lean"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-plural-scaling-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel-and-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Kernel-check plurality, horizontal scaling, D3, and source contract
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/.qikvrt/plural-scaling"
+          mkdir -p "$root"
+
+          cd formalization/QIKVRT_Formalization_v2.0
+          lake build QIKVRTFormalization
+
+          cat > "$root/PluralScalingAxiomAudit.lean" <<'LEAN'
+          import QIKVRTFormalization.Hardware.D3FixedPoint
+
+          #print axioms QIKVRT.V2.PluralScaling.one_unit_agreement_is_vacuous
+          #print axioms QIKVRT.V2.PluralScaling.one_unit_has_no_distinct_support
+          #print axioms QIKVRT.V2.PluralScaling.two_units_can_diverge
+          #print axioms QIKVRT.V2.PluralScaling.agreement_excludes_divergence
+          #print axioms QIKVRT.V2.PluralScaling.two_unit_agreement_yields_distinct_support
+          #print axioms QIKVRT.V2.PluralScaling.stale_evidence_reobserves
+          #print axioms QIKVRT.V2.PluralScaling.current_divergence_holds
+          #print axioms QIKVRT.V2.PluralScaling.current_agreement_without_authority_requests
+          #print axioms QIKVRT.V2.PluralScaling.current_bound_agreement_returns_proposal
+          #print axioms QIKVRT.V2.PluralScaling.missing_shared_authority_is_d0_three
+          #print axioms QIKVRT.V2.PluralScaling.horizontal_extension_preserves_existing_unit
+          #print axioms QIKVRT.V2.PluralScaling.horizontal_extension_preserves_existing_d3
+          #print axioms QIKVRT.V2.PluralScaling.mesh_step_preserves_each_d3
+          #print axioms QIKVRT.V2.PluralScaling.replicated_decision_preserves_code
+          LEAN
+
+          lake env lean "$root/PluralScalingAxiomAudit.lean" \
+            > "$root/axioms.txt" 2>&1
+
+          AXIOM_FILE="$root/axioms.txt" python3 -B - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path(os.environ["AXIOM_FILE"])
+          lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+          pattern = re.compile(
+              r"^'(?P<name>[^']+)' "
+              r"(?:does not depend on any axioms|depends on axioms: \[(?P<axioms>[^]]*)\])$"
+          )
+          allowed = {"propext", "Classical.choice", "Quot.sound"}
+          reports = {}
+          for line in lines:
+              match = pattern.fullmatch(line)
+              if not match:
+                  raise SystemExit(f"BLOCK unexpected axiom-audit output: {line}")
+              axioms = {
+                  value.strip()
+                  for value in (match.group("axioms") or "").split(",")
+                  if value.strip()
+              }
+              reports[match.group("name")] = axioms
+          if len(reports) != 14:
+              raise SystemExit(f"BLOCK theorem report count {len(reports)} != 14")
+          forbidden = {
+              name: sorted(axioms - allowed)
+              for name, axioms in reports.items()
+              if axioms - allowed
+          }
+          if forbidden:
+              raise SystemExit(f"BLOCK forbidden axiom dependency: {forbidden}")
+          PY
+
+          cd "$GITHUB_WORKSPACE"
+          HEAD_SHA="$HEAD_SHA" TREE_SHA="$TREE_SHA" RECEIPT_ROOT="$root" python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          work_unit_path = pathlib.Path(
+              "state/work_units/SCALING_MORE_THAN_ONE_EFFECT_V1.json"
+          )
+          work_unit = json.loads(work_unit_path.read_text(encoding="utf-8"))
+          source = work_unit["po_receipt"]
+          assert source["number"] == 221
+          assert source["id"] == "SKALIERUNG_⊕_MEHR_ALS_EINS_⊕_WIRKUNG"
+          assert source["d0"] == 3
+          assert source["status"] == "BINDUNG_BOUND"
+          assert source["tau"] == "TAU++"
+          assert source["source_transcript_provenance"] == "USER_SUPPLIED"
+          transcript_bytes = source["source_transcript"].encode("utf-8")
+          assert len(transcript_bytes) == source["source_transcript_bytes"] == 339
+          assert hashlib.sha256(transcript_bytes).hexdigest() == (
+              source["source_transcript_sha256"]
+              == "072bf21cea233f2471b5edfbd2163efec13e5d2a4c98af80ba7904d271b8de1d"
+          )
+          audio = source["source_audio"]
+          assert audio["filename"] == "Das bleibt Skalierung! q.e.d. Ingolf Lohmann.m4a"
+          assert audio["bytes"] == 374307
+          assert abs(audio["duration_seconds"] - 39.914667) < 1e-9
+          assert audio["sha256"] == (
+              "4f2416a72cb198413c5015bb95ba791d0109d8359c1244c12aa196cc37e3e22f"
+          )
+          assert audio["original_audio_bytes_in_repository"] is False
+
+          formal = work_unit["formal_binding"]
+          assert formal["decision_register"] == "D0"
+          assert formal["fixed_projection_register"] == "D3"
+          assert work_unit["result"]["theorem_count"] == 14
+          assert work_unit["result"]["formal_result"] == (
+              "DISTINCT_UNIT_SUPPORT_REQUIRES_PLURALITY_AND_HORIZONTAL_EXTENSION_PRESERVES_EXISTING_D3"
+          )
+          assert work_unit["result"]["application_to_other_life_domains"] == (
+              "INDIVIDUAL_DECISION"
+          )
+
+          distinctions = set(work_unit["required_distinctions"])
+          required = {
+              "SOURCE_OBSERVATION != UNIVERSAL_NECESSITY_THEOREM",
+              "ONE_UNIT_CAN_HAVE_EFFECT != DISTINCT_UNIT_SUPPORT",
+              "SINGLETON_AGREEMENT != DISTINCT_CORROBORATION",
+              "MORE_THAN_ONE != AUTOMATIC_AGREEMENT",
+              "MORE_THAN_ONE != AUTOMATIC_CORRECTNESS",
+              "MORE_THAN_ONE != FAULT_TOLERANCE_PROOF",
+              "DISTINCT_UNIT != INDEPENDENT_REVIEW_AUTHORITY",
+              "CONSENSUS != TRUTH",
+              "COLLECTIVE_DECISION != OBSERVED_EFFECT",
+              "UNIT_COUNT != CARRIER_BIT_WIDTH",
+              "ONE_SYSTEM_UNIT != ONE_BIT",
+              "MORE_THAN_ONE_UNITS != ONE_BYTE",
+              "HORIZONTAL_SCALING != VERTICAL_BITWIDTH_WIDENING",
+              "D0_VALUE_3 != REGISTER_D3",
+              "FORMAL_THEOREM != EMPIRICAL_MULTI_AGENT_MEASUREMENT",
+              "FORMAL_THEOREM != PHYSICAL_HARDWARE_OBSERVATION",
+              "TRANSPORT_ACK != EFFECT_ACK",
+              "QED_SIGNATURE != KERNEL_PROOF",
+              "USER_SUPPLIED_TRANSCRIPT != INDEPENDENT_ASR_VERIFICATION",
+          }
+          if not required <= distinctions:
+              raise SystemExit("BLOCK required distinction missing")
+
+          axiom_bytes = pathlib.Path(
+              os.environ["RECEIPT_ROOT"], "axioms.txt"
+          ).read_bytes()
+          receipt = {
+              "schema": "qikvrt_plural_scaling_receipt_v1",
+              "source_commit": os.environ["HEAD_SHA"],
+              "source_tree": os.environ["TREE_SHA"],
+              "po_receipt": 221,
+              "formal_result": work_unit["result"]["formal_result"],
+              "one_unit_distinct_support": False,
+              "two_unit_agreement_yields_distinct_support": True,
+              "plurality_implies_consensus": False,
+              "horizontal_extension_preserves_existing_unit": True,
+              "d3_preserved_pointwise": True,
+              "collective_decision_is_observed_effect": False,
+              "audited_theorems": 14,
+              "axiom_output_sha256": hashlib.sha256(axiom_bytes).hexdigest(),
+              "source_audio_sha256": audio["sha256"],
+              "source_transcript_sha256": source["source_transcript_sha256"],
+              "multi_agent_empirical_measurement": False,
+              "independent_review_authority": False,
+              "physical_hardware_observation": False,
+              "PASS": False,
+              "FINAL_PASS": False,
+              "EFFECT_ACK_DONE": False,
+          }
+          canonical = json.dumps(
+              receipt, sort_keys=True, separators=(",", ":")
+          ).encode()
+          receipt["receipt_payload_sha256"] = hashlib.sha256(canonical).hexdigest()
+          pathlib.Path(
+              os.environ["RECEIPT_ROOT"], "RECEIPT.json"
+          ).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Preserve exact-head formal evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-plural-scaling-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: .qikvrt/plural-scaling/**
