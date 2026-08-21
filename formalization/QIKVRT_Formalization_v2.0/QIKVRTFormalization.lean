@@ -24,6 +24,7 @@ import QIKVRTFormalization.Claims.Completion
 import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
+import QIKVRTFormalization.Hardware.D3FixedPoint
 import QIKVRTFormalization.Decision.ObservationSufficiency
 
 /-!
@@ -58,6 +59,11 @@ with an independent commit witness, fail-closed witnessless divergence,
 idempotent recovery, monotone epochs, and witness-bound Effect ACK semantics.
 Its mathematical digest is symbolic and injective; operational SHA-256 collision
 resistance remains an explicit external implementation assumption.
+
+The bitwidth/D3 tranche preserves the four-state D0 semantics across 8→16→32→64→128
+carriers, proves that one bit cannot injectively encode all four states, keeps
+`D0=3` distinct from register `D3`, and formalizes the Product-Owner fixed-point
+statement as invariance of the D3 projection across any finite control trace.
 
 The decision-sufficiency tranche generalizes the witness theorem: evidence is
 deterministically sufficient exactly when observation fibers do not mix histories

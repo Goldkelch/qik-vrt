@@ -1,0 +1,181 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT D3 fixed-point and 8-bit carrier
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_d3_fixed_point.yml"
+      - "docs/FIXPOINT_D3_8BIT_INFINITY.md"
+      - "state/work_units/FIXPOINT_D3_8BIT_INFINITY_V1.json"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AuthorityMirrorWitness.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPoint.lean"
+      - "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPointAxiomAudit.lean"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-d3-fixed-point-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel-and-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$expected"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Kernel-check fixed point, 8-bit carrier, and axiom surface
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/.qikvrt/d3-fixed-point"
+          mkdir -p "$root"
+
+          cd formalization/QIKVRT_Formalization_v2.0
+          lake build QIKVRTFormalization
+          lake env lean QIKVRTFormalization/Hardware/D3FixedPointAxiomAudit.lean \
+            > "$root/axioms.txt" 2>&1
+
+          AXIOM_FILE="$root/axioms.txt" python3 -B - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path(os.environ["AXIOM_FILE"])
+          lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+          pattern = re.compile(
+              r"^'(?P<name>[^']+)' "
+              r"(?:does not depend on any axioms|depends on axioms: \[(?P<axioms>[^]]*)\])$"
+          )
+          allowed = {"propext", "Classical.choice", "Quot.sound"}
+          reports = {}
+          for line in lines:
+              match = pattern.fullmatch(line)
+              if not match:
+                  raise SystemExit(f"BLOCK unexpected axiom-audit output: {line}")
+              axioms = {
+                  value.strip()
+                  for value in (match.group("axioms") or "").split(",")
+                  if value.strip()
+              }
+              reports[match.group("name")] = axioms
+          if len(reports) != 10:
+              raise SystemExit(f"BLOCK theorem report count {len(reports)} != 10")
+          forbidden = {
+              name: sorted(axioms - allowed)
+              for name, axioms in reports.items()
+              if axioms - allowed
+          }
+          if forbidden:
+              raise SystemExit(f"BLOCK forbidden axiom dependency: {forbidden}")
+          PY
+
+          cd "$GITHUB_WORKSPACE"
+          HEAD_SHA="$HEAD_SHA" TREE_SHA="$TREE_SHA" RECEIPT_ROOT="$root" python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          work_unit_path = pathlib.Path(
+              "state/work_units/FIXPOINT_D3_8BIT_INFINITY_V1.json"
+          )
+          work_unit = json.loads(work_unit_path.read_text(encoding="utf-8"))
+          assert work_unit["po_receipt"]["number"] == 218
+          assert work_unit["po_receipt"]["d0"] == 3
+          assert work_unit["formal_binding"]["decision_register"] == "D0"
+          assert work_unit["formal_binding"]["fixed_projection_register"] == "D3"
+          assert work_unit["formal_binding"]["carrier"]["width_bits"] == 8
+          assert (
+              work_unit["formal_binding"]["carrier"][
+                  "minimum_bits_for_four_injective_states"
+              ]
+              == 2
+          )
+          distinctions = set(work_unit["required_distinctions"])
+          required = {
+              "D0_VALUE_3 != REGISTER_D3",
+              "D3_PROJECTION_FIXED != FULL_STATE_UNCHANGED",
+              "ARBITRARY_FINITE_TRACE != COMPLETED_PHYSICAL_INFINITY",
+              "QED_SIGNATURE != KERNEL_PROOF",
+              "FORMAL_THEOREM != EMPIRICAL_HARDWARE_OBSERVATION",
+              "TRANSPORT_ACK != EFFECT_ACK",
+          }
+          if not required <= distinctions:
+              raise SystemExit("BLOCK required distinction missing")
+
+          axiom_bytes = pathlib.Path(
+              os.environ["RECEIPT_ROOT"], "axioms.txt"
+          ).read_bytes()
+          receipt = {
+              "schema": "qikvrt_d3_fixed_point_receipt_v1",
+              "source_commit": os.environ["HEAD_SHA"],
+              "source_tree": os.environ["TREE_SHA"],
+              "po_receipt": 218,
+              "formal_result": "D3_PROJECTION_FIXED_FOR_ARBITRARY_FINITE_TRACES",
+              "ied_cycle": "INTELLIGENCE_EVIDENCE_DEVELOPMENT",
+              "decision_carrier_bits": 8,
+              "minimum_injective_bits": 2,
+              "audited_theorems": 10,
+              "axiom_output_sha256": hashlib.sha256(axiom_bytes).hexdigest(),
+              "physical_hardware_observation": False,
+              "independent_review_authority": False,
+              "PASS": False,
+              "FINAL_PASS": False,
+              "EFFECT_ACK_DONE": False,
+          }
+          canonical = json.dumps(
+              receipt, sort_keys=True, separators=(",", ":")
+          ).encode()
+          receipt["receipt_payload_sha256"] = hashlib.sha256(canonical).hexdigest()
+          pathlib.Path(
+              os.environ["RECEIPT_ROOT"], "RECEIPT.json"
+          ).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Preserve exact-head formal evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-d3-fixed-point-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: .qikvrt/d3-fixed-point/**
