@@ -63,6 +63,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          post_status_if_changed() {
+            local head="$1" state="$2" description="$3" latest desired
+            latest="$(gh api "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100" --jq ".[] | select(.context == \"${STATUS_CONTEXT}\") | [.state, (.description // \"\")] | @tsv" | head -n1 || true)"
+            desired="$(printf '%s\t%s' "$state" "$description")"
+            if [ "$latest" = "$desired" ]; then
+              echo "UNCHANGED_HEAD_CONTEXT_STATE: ${head} ${state} ${description}"
+              return 0
+            fi
+            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state="$state" -f context="$STATUS_CONTEXT" -f description="${description:0:140}" >/dev/null
+          }
           gh api --paginate "repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100" --jq '.[] | [.number,.head.sha,(.body // "")] | @base64' |
           while IFS= read -r row; do
             decoded="$(printf '%s' "$row" | base64 -d)"
@@ -72,7 +82,7 @@ jobs:
             failure_class="$(printf '%s' "$body" | sed -n 's/.*qikvrt-repair-closure:failure-class=\([^ >]*\).*/\1/p' | head -n1)"
             test -n "$failure_class" || continue
             jq -e --arg c "$failure_class" '.failure_classes[$c]' policy/REPAIR_EFFECTIVENESS_CLOSURE_V1.json >/dev/null || {
-              gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state=error -f context="$STATUS_CONTEXT" -f description="unregistered failure class: ${failure_class}" >/dev/null
+              post_status_if_changed "$head" error "unregistered failure class: ${failure_class}"
               continue
             }
             comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${pr}/comments?per_page=100" --jq '.[].body' || true)"
@@ -81,7 +91,7 @@ jobs:
 
 Repair-effectiveness guard bound failure class \`$failure_class\` to the trusted expected-head promotion path. This is not review authority and creates no external effect." >/dev/null
             fi
-            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state=pending -f context="$STATUS_CONTEXT" -f description="verified repair is not closed until effective on main + regression probe" >/dev/null
+            post_status_if_changed "$head" pending "verified repair is not closed until effective on main + regression probe"
           done
 
       - name: Reobserve merged repairs on main and run registered probes
@@ -89,6 +99,16 @@ Repair-effectiveness guard bound failure class \`$failure_class\` to the trusted
         shell: bash
         run: |
           set -euo pipefail
+          post_status_if_changed() {
+            local head="$1" state="$2" description="$3" latest desired
+            latest="$(gh api "repos/${REPOSITORY}/commits/${head}/statuses?per_page=100" --jq ".[] | select(.context == \"${STATUS_CONTEXT}\") | [.state, (.description // \"\")] | @tsv" | head -n1 || true)"
+            desired="$(printf '%s\t%s' "$state" "$description")"
+            if [ "$latest" = "$desired" ]; then
+              echo "UNCHANGED_HEAD_CONTEXT_STATE: ${head} ${state} ${description}"
+              return 0
+            fi
+            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state="$state" -f context="$STATUS_CONTEXT" -f description="${description:0:140}" >/dev/null
+          }
           git fetch origin main --depth=1
           : > /tmp/qikvrt-repair-closure.jsonl
           gh api --paginate "repos/${REPOSITORY}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" --jq '.[] | select(.merged_at != null) | [.number,.head.sha,(.body // "")] | @base64' |
@@ -111,7 +131,7 @@ Repair-effectiveness guard bound failure class \`$failure_class\` to the trusted
                 fi
               done <<<"$modules"
             fi
-            gh api --method POST "repos/${REPOSITORY}/statuses/${head}" -f state="$state" -f context="$STATUS_CONTEXT" -f description="${detail:0:140}" >/dev/null
+            post_status_if_changed "$head" "$state" "$detail"
             jq -nc --argjson pr "$pr" --arg failure_class "$failure_class" --arg head "$head" --arg state "$state" --arg detail "$detail" '{pr:$pr,failure_class:$failure_class,repair_head:$head,authority:"main",state:$state,detail:$detail}' >> /tmp/qikvrt-repair-closure.jsonl
           done
           {
