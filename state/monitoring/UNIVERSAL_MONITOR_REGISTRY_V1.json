@@ -1,0 +1,84 @@
+{
+  "schema": "qikvrt_universal_monitor_registry_v1",
+  "sampling_contract": "policy/UNIVERSAL_MONITOR_SAMPLING_V1.json",
+  "default_for_unlisted_future_monitor": "HOLD_UNTIL_REGISTERED_AND_SAMPLING_MODE_BOUND",
+  "surfaces": [
+    {
+      "id": "reflexive_repository_watchdog",
+      "path": "tools/qikvrt_reflexive_repository_watchdog.py",
+      "mode": "EVENT_DRIVEN_WITH_SCHEDULED_LIVENESS_FALLBACK",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE"
+    },
+    {
+      "id": "reflexive_repository_watchdog_workflow",
+      "path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+      "mode": "EVENT_TRIGGERS_PLUS_PT5M_LIVENESS_FALLBACK",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE"
+    },
+    {
+      "id": "workflow_executor_watchdog",
+      "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+      "mode": "REPOSITORY_EVENT_DRIVEN",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE"
+    },
+    {
+      "id": "live_status_watch",
+      "path": ".github/workflows/qikvrt_live_status_watch.yml",
+      "mode": "REPOSITORY_EVENT_DRIVEN_WITH_SCHEDULED_FALLBACK",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE"
+    },
+    {
+      "id": "firefox_live_observation_pr751",
+      "path": ".github/workflows/qikvrt_mlp_firefox_live_observation.yml",
+      "source_ref": "PR#751",
+      "mode": "BOUND_TEST_OBSERVATION_NOT_CONTINUOUS_MONITOR",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "NOT_APPLICABLE_SINGLE_BOUND_RUN"
+    },
+    {
+      "id": "firefox_effect_ack_pr750",
+      "path": ".github/workflows/qikvrt_mlp_firefox_effect_ack_e2e.yml",
+      "source_ref": "PR#750",
+      "mode": "BOUND_E2E_OBSERVATION_NOT_CONTINUOUS_MONITOR",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE_EXACT_HEAD"
+    },
+    {
+      "id": "mesh_terminal_pr763",
+      "path": "docs/mesh/",
+      "source_ref": "PR#763",
+      "mode": "EVENT_DRIVEN_BROWSER_LOCAL_EFFECT_ACK_OPTIONAL_SSE",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "HOLD_THEN_REOBSERVE"
+    },
+    {
+      "id": "live_dashboard_pr760",
+      "path": "docs/terminal/live/index.html",
+      "source_ref": "PR#760",
+      "mode": "POLLING_120S_SAMPLE_VIEW_ONLY",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "HOLD_SAMPLING_BOUND_UNKNOWN",
+      "repair_requirement": "DO_NOT_CLAIM_COMPLETE_TIMELINE; MIGRATE_TO_EVENT_DRIVEN_PUSH_OR_BIND_FINITE_F_MAX"
+    },
+    {
+      "id": "human_chat_live_terminal_projection",
+      "path": "EXTERNAL_RUNTIME_PROJECTION",
+      "mode": "TOOL_REOBSERVATION_ON_ACTIVE_TURN_PLUS_SCHEDULED_AUTOMATION",
+      "finite_f_max_bound": false,
+      "nyquist_completeness_claim": false,
+      "gap_disposition": "REOBSERVE"
+    }
+  ]
+}
