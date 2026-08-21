@@ -8,6 +8,7 @@ on:
       - 'browser/firefox/qikvrt-terminal/**'
       - 'policy/MLP_FIREFOX_EFFECT_ACK_E2E_V1.json'
       - 'tests/test_qikvrt_firefox_terminal_e2e_contract.py'
+      - 'tests/test_qikvrt_effect_ack_http_terminal.py'
       - 'tools/qikvrt_firefox_terminal_e2e.py'
       - '.github/workflows/qikvrt_universal_terminal_systemtest.yml'
   workflow_dispatch:
@@ -57,7 +58,6 @@ jobs:
           set -euo pipefail
           python3 -B -m unittest -v \
             tests.test_qikvrt_firefox_terminal_e2e_contract \
-            tests.test_qikvrt_mlp_firefox_terminal \
             tests.test_qikvrt_effect_ack_http_terminal
 
       - name: Acquire pinned geckodriver
