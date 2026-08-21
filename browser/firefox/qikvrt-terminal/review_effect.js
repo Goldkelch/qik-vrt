@@ -14,50 +14,117 @@
     document.documentElement.dataset.qikvrtReviewEffect = `HOLD:${reason}`;
   };
 
-  const clickByText = (selector, text) => {
-    const node = [...document.querySelectorAll(selector)].find(el => (el.textContent || "").trim().includes(text));
-    if (!node) throw new Error(`missing control: ${text}`);
-    node.click();
-    return node;
-  };
-
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  async function waitFor(getNode, description, timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const node = getNode();
+      if (node) return node;
+      await wait(100);
+    }
+    throw new Error(`missing control: ${description}`);
+  }
+
+  const byText = (selector, pattern) =>
+    [...document.querySelectorAll(selector)].find(el => pattern.test((el.textContent || "").trim()));
+
+  async function observeJson(url, label) {
+    const response = await fetch(url, {headers: {Accept: "application/vnd.github+json"}});
+    if (!response.ok) throw new Error(`${label} HTTP ${response.status}`);
+    return response.json();
+  }
 
   async function run() {
     if (sessionStorage.getItem(key) === "submitted") return;
-    if (expectedOwner !== "Goldkelch" || expectedRepo !== "Goldkelch/qik-vrt") throw new Error("owner/repository binding mismatch");
+    if (expectedOwner !== "Goldkelch" || expectedRepo !== "Goldkelch/qik-vrt") {
+      throw new Error("owner/repository binding mismatch");
+    }
     if (!/^\d+$/.test(expectedPr || "") || !/^[0-9a-f]{40}$/.test(expectedHead || "") || !/^[0-9a-f]{40}$/.test(expectedTree || "")) {
       throw new Error("invalid exact binding");
+    }
+    if (location.pathname.replace(/\/$/, "") !== `/Goldkelch/qik-vrt/pull/${expectedPr}/files`) {
+      throw new Error("PR page binding mismatch");
     }
 
     const loginMeta = document.querySelector('meta[name="user-login"]');
     const observedLogin = loginMeta && loginMeta.getAttribute("content");
-    if (observedLogin !== expectedOwner) throw new Error(`authenticated principal mismatch: ${observedLogin || "none"}`);
+    if (observedLogin !== expectedOwner) {
+      throw new Error(`authenticated principal mismatch: ${observedLogin || "none"}`);
+    }
 
-    const pr = await fetch(`https://api.github.com/repos/Goldkelch/qik-vrt/pulls/${expectedPr}`, {headers: {Accept: "application/vnd.github+json"}}).then(r => {
-      if (!r.ok) throw new Error(`PR reobservation HTTP ${r.status}`);
-      return r.json();
-    });
-    if (!pr.head || pr.head.sha !== expectedHead) throw new Error("PR head drift");
+    const pr = await observeJson(
+      `https://api.github.com/repos/Goldkelch/qik-vrt/pulls/${expectedPr}`,
+      "PR reobservation",
+    );
+    if (pr.state !== "open" || pr.draft === true || pr.base?.ref !== "main") {
+      throw new Error("PR is not an open review-ready main candidate");
+    }
+    if (pr.head?.repo?.full_name !== expectedRepo || pr.head.sha !== expectedHead) {
+      throw new Error("PR head drift");
+    }
+    if (!(pr.requested_reviewers || []).some(reviewer => reviewer.login === expectedOwner)) {
+      throw new Error("owner review is not currently requested");
+    }
 
-    const commit = await fetch(`https://api.github.com/repos/Goldkelch/qik-vrt/git/commits/${expectedHead}`, {headers: {Accept: "application/vnd.github+json"}}).then(r => {
-      if (!r.ok) throw new Error(`tree reobservation HTTP ${r.status}`);
-      return r.json();
-    });
+    const commit = await observeJson(
+      `https://api.github.com/repos/Goldkelch/qik-vrt/git/commits/${expectedHead}`,
+      "tree reobservation",
+    );
     if (!commit.tree || commit.tree.sha !== expectedTree) throw new Error("PR tree drift");
 
-    clickByText("button,summary", "Review changes");
-    await wait(250);
-
-    const approve = [...document.querySelectorAll('input[type="radio"]')].find(el => {
-      const label = el.closest("label") || document.querySelector(`label[for="${el.id}"]`);
-      return label && /Approve/i.test(label.textContent || "");
+    const reviews = await observeJson(
+      `https://api.github.com/repos/Goldkelch/qik-vrt/pulls/${expectedPr}/reviews?per_page=100`,
+      "review disposition reobservation",
+    );
+    const marker = `<!-- qikvrt-requested-review-executor:v1 head=${expectedHead} disposition=APPROVE -->`;
+    const treeLine = `- exact tree: \`${expectedTree}\``;
+    const delegatedApprove = reviews.some(review => {
+      const body = review.body || "";
+      return review.user?.login === "github-actions[bot]" &&
+        ["COMMENTED", "APPROVED"].includes(review.state) &&
+        body.includes(marker) &&
+        body.includes(treeLine) &&
+        body.includes("independent Code-Owner approval: **not implied**");
     });
-    if (!approve) throw new Error("Approve option unavailable");
-    approve.click();
-    await wait(100);
+    if (!delegatedApprove) {
+      throw new Error("missing exact-head substantive APPROVE disposition");
+    }
 
-    clickByText('button[type="submit"],button', "Submit review");
+    const alreadyApproved = reviews.some(review =>
+      review.user?.login === expectedOwner &&
+      review.state === "APPROVED" &&
+      review.commit_id === expectedHead,
+    );
+    if (alreadyApproved) {
+      document.documentElement.dataset.qikvrtReviewEffect = "ALREADY_APPROVED_REOBSERVE_REQUIRED";
+      return;
+    }
+
+    const reviewButton = await waitFor(
+      () => document.querySelector('button[data-hotkey="v"]') ||
+        byText("button,summary", /Review changes|Änderungen überprüfen/i),
+      "review changes",
+    );
+    reviewButton.click();
+
+    const approve = await waitFor(
+      () => document.querySelector('input[name="pull_request_review[event]"][value="approve"]') ||
+        [...document.querySelectorAll('input[type="radio"]')].find(el => {
+          const label = el.closest("label") || document.querySelector(`label[for="${el.id}"]`);
+          return label && /Approve|Genehmigen/i.test(label.textContent || "");
+        }),
+      "approve option",
+    );
+    approve.click();
+
+    const form = approve.closest("form");
+    const submit = await waitFor(
+      () => form?.querySelector('button[type="submit"]') ||
+        byText('button[type="submit"],button', /Submit review|Review abgeben|Überprüfung absenden/i),
+      "submit review",
+    );
+    submit.click();
     sessionStorage.setItem(key, "submitted");
     document.documentElement.dataset.qikvrtReviewEffect = "SUBMITTED_REOBSERVE_REQUIRED";
   }

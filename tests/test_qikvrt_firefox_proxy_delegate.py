@@ -1,5 +1,6 @@
 import io
 import json
+import pathlib
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
@@ -9,6 +10,7 @@ from tools import qikvrt_firefox_proxy_delegate as bridge
 
 HEAD = "e24c343b90bf734b09201c45f9ba66d8da41a25f"
 TREE = "6574244dc78b7710352ae2a5196518b7642e76ff"
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class FirefoxProxyDelegateTests(unittest.TestCase):
@@ -45,13 +47,13 @@ class FirefoxProxyDelegateTests(unittest.TestCase):
             head=HEAD,
             tree=TREE,
         )
-        q = parse_qs(urlparse(bound).query)
-        self.assertEqual(q["qikvrt_effect"], ["review_approve"])
-        self.assertEqual(q["qikvrt_owner"], ["Goldkelch"])
-        self.assertEqual(q["qikvrt_repo"], ["Goldkelch/qik-vrt"])
-        self.assertEqual(q["qikvrt_pr"], ["727"])
-        self.assertEqual(q["qikvrt_head"], [HEAD])
-        self.assertEqual(q["qikvrt_tree"], [TREE])
+        query = parse_qs(urlparse(bound).query)
+        self.assertEqual(query["qikvrt_effect"], ["review_approve"])
+        self.assertEqual(query["qikvrt_owner"], ["Goldkelch"])
+        self.assertEqual(query["qikvrt_repo"], ["Goldkelch/qik-vrt"])
+        self.assertEqual(query["qikvrt_pr"], ["727"])
+        self.assertEqual(query["qikvrt_head"], [HEAD])
+        self.assertEqual(query["qikvrt_tree"], [TREE])
 
     def test_review_effect_rejects_wrong_owner_or_page(self):
         with self.assertRaises(ValueError):
@@ -62,6 +64,41 @@ class FirefoxProxyDelegateTests(unittest.TestCase):
             bridge.bind_review_effect(
                 "https://github.com/Goldkelch/qik-vrt/pull/728/files",
                 owner="Goldkelch", repository="Goldkelch/qik-vrt", pr=727, head=HEAD, tree=TREE)
+
+    def test_content_script_enforces_live_state_and_prior_exact_disposition(self):
+        source = (ROOT / "browser/firefox/qikvrt-terminal/review_effect.js").read_text(encoding="utf-8")
+        required = [
+            'pr.state !== "open"',
+            'pr.base?.ref !== "main"',
+            'pr.head?.repo?.full_name !== expectedRepo',
+            'reviewer.login === expectedOwner',
+            'qikvrt-requested-review-executor:v1',
+            'disposition=APPROVE',
+            'review.user?.login === "github-actions[bot]"',
+            'body.includes(treeLine)',
+            'independent Code-Owner approval: **not implied**',
+            'SUBMITTED_REOBSERVE_REQUIRED',
+        ]
+        for needle in required:
+            self.assertIn(needle, source)
+
+    def test_policy_binds_the_same_prior_disposition(self):
+        policy = json.loads((ROOT / "policy/FIREFOX_PROXY_DELEGATION_V1.json").read_text(encoding="utf-8"))
+        effect = policy["allowed_owner_authenticated_effects"][0]
+        prior = effect["required_prior_disposition"]
+        self.assertEqual(prior["review_author"], "github-actions[bot]")
+        self.assertEqual(prior["disposition"], "APPROVE")
+        self.assertTrue(prior["binds_exact_head"])
+        self.assertTrue(prior["binds_exact_tree"])
+        self.assertFalse(prior["independent_code_owner_approval_implied"])
+
+    def test_workflow_is_pinned_and_covers_browser_effect_paths(self):
+        workflow = (ROOT / ".github/workflows/qikvrt_firefox_proxy_delegation.yml").read_text(encoding="utf-8")
+        self.assertIn("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", workflow)
+        self.assertIn("actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065", workflow)
+        self.assertIn("browser/firefox/qikvrt-terminal/review_effect.js", workflow)
+        self.assertIn("browser/firefox/qikvrt-terminal/manifest.json", workflow)
+        self.assertIn("node --check browser/firefox/qikvrt-terminal/review_effect.js", workflow)
 
     @mock.patch.object(bridge.subprocess, "Popen")
     @mock.patch.object(bridge, "resolve_firefox", return_value="/usr/bin/firefox")

@@ -1,0 +1,43 @@
+{
+  "schema": "qikvrt.causal-d0-abi.v1",
+  "architecture_reference": "M68000",
+  "endianness": "big",
+  "register": "D0",
+  "states": {
+    "NOOP": {
+      "d0": 0,
+      "bytes_hex": "70004E75",
+      "instructions": ["MOVEQ #0,D0", "RTS"],
+      "meaning": "No causal reason to act; observed state is consistent."
+    },
+    "HOLD": {
+      "d0": 1,
+      "bytes_hex": "70014E75",
+      "instructions": ["MOVEQ #1,D0", "RTS"],
+      "meaning": "A prerequisite is not terminally satisfied; preserve state and await another observation edge."
+    },
+    "REOBSERVE": {
+      "d0": 2,
+      "bytes_hex": "70024E75",
+      "instructions": ["MOVEQ #2,D0", "RTS"],
+      "meaning": "Current evidence is insufficient or stale; obtain fresh exact-head evidence without productive external effect."
+    },
+    "REQUEST_AUTHORITY": {
+      "d0": 3,
+      "bytes_hex": "70034E75",
+      "instructions": ["MOVEQ #3,D0", "RTS"],
+      "meaning": "Required authority is absent; request authority without fabricating approval or productive effect."
+    }
+  },
+  "productive_effect_gate": {
+    "required_d0": 0,
+    "required_effect_ack": "DONE",
+    "expression": "D0 == 0 && EFFECT_ACK == DONE"
+  },
+  "invariants": [
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "REOBSERVE is observation-only and does not imply productive effect",
+    "REQUEST_AUTHORITY does not imply authority granted",
+    "No productive effect is released unless D0 == 0 and EFFECT_ACK == DONE"
+  ]
+}
