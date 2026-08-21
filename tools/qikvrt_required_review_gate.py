@@ -16,6 +16,8 @@ DEFAULT_CODE_OWNER = "Goldkelch"
 SUCCESS = "success"
 PENDING = "pending"
 FAILURE = "failure"
+STATUS_PUBLICATION_NOOP = "NOOP"
+STATUS_PUBLICATION_WRITE = "WRITE"
 DECISIVE_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
 
 
@@ -45,6 +47,67 @@ def _review_sort_key(review: Mapping[str, Any]) -> tuple[str, int]:
     if isinstance(identifier, bool) or not isinstance(identifier, int):
         identifier = -1
     return submitted_at, identifier
+
+
+def _status_sort_key(status: Mapping[str, Any]) -> tuple[str, int]:
+    updated_at = status.get("updated_at")
+    if not isinstance(updated_at, str):
+        updated_at = status.get("created_at")
+    if not isinstance(updated_at, str):
+        updated_at = ""
+    identifier = status.get("id", -1)
+    if isinstance(identifier, bool) or not isinstance(identifier, int):
+        identifier = -1
+    return updated_at, identifier
+
+
+def status_description(decision: Mapping[str, Any]) -> str:
+    state = decision.get("gate_state")
+    if state not in {SUCCESS, PENDING, FAILURE}:
+        raise ReviewGateInputError("decision gate_state is invalid")
+    blocker = decision.get("first_blocker")
+    if blocker is None:
+        blocker = "CODE_OWNER_REVIEW_CURRENT"
+    if not isinstance(blocker, str) or not blocker:
+        raise ReviewGateInputError("decision first_blocker is invalid")
+    return f"{state}: {blocker}"[:140]
+
+
+def decide_status_publication(
+    statuses: Sequence[Mapping[str, Any]],
+    *,
+    context: str,
+    state: str,
+    description: str,
+) -> dict[str, Any]:
+    if not isinstance(statuses, Sequence) or isinstance(statuses, (str, bytes)):
+        raise ReviewGateInputError("commit statuses observation must be a list")
+    if not all(isinstance(status, Mapping) for status in statuses):
+        raise ReviewGateInputError("commit statuses observation contains a non-object")
+    if not isinstance(context, str) or not context.strip():
+        raise ReviewGateInputError("status context is missing")
+    if state not in {SUCCESS, PENDING, FAILURE}:
+        raise ReviewGateInputError("status state is invalid")
+    if not isinstance(description, str) or not description:
+        raise ReviewGateInputError("status description is missing")
+
+    matching = [status for status in statuses if status.get("context") == context]
+    latest = max(matching, key=_status_sort_key) if matching else None
+    unchanged = (
+        latest is not None
+        and latest.get("state") == state
+        and latest.get("description") == description
+    )
+    return {
+        "status_publication": STATUS_PUBLICATION_NOOP if unchanged else STATUS_PUBLICATION_WRITE,
+        "status_publication_reason": (
+            "UNCHANGED_HEAD_CONTEXT_STATE" if unchanged else "MATERIAL_GATE_TRANSITION"
+        ),
+        "status_context": context,
+        "status_state": state,
+        "status_description": description,
+        "previous_status_id": latest.get("id") if latest is not None else None,
+    }
 
 
 def _block(*, gate_state: str, blocker: str, detail: str, pr_number: Any, head_sha: str | None, required_code_owner: str) -> dict[str, Any]:
