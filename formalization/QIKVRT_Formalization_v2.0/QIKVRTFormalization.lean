@@ -25,6 +25,7 @@ import QIKVRTFormalization.WorldFormula.Relations
 import QIKVRTFormalization.QuantumFoundations.MeasurementIndependence
 import QIKVRTFormalization.Hardware.AuthorityMirrorWitness
 import QIKVRTFormalization.Hardware.D3FixedPoint
+import QIKVRTFormalization.Hardware.M68000D3Step
 import QIKVRTFormalization.Decision.ObservationSufficiency
 
 /-!
@@ -64,6 +65,9 @@ The bitwidth/D3 tranche preserves the four-state D0 semantics across 8→16→32
 carriers, proves that one bit cannot injectively encode all four states, keeps
 `D0=3` distinct from register `D3`, and formalizes the Product-Owner fixed-point
 statement as invariance of the D3 projection across any finite control trace.
+The M68000 D3-step projection additionally binds the finite machine-visible step:
+D0 carries the next four-state decision, D3 remains unchanged, and D2 advances
+through the three-state IED cycle.
 
 The decision-sufficiency tranche generalizes the witness theorem: evidence is
 deterministically sufficient exactly when observation fibers do not mix histories
