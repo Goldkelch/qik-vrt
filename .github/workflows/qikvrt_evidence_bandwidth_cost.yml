@@ -1,0 +1,91 @@
+name: QIKVRT evidence bandwidth cost valuation
+
+on:
+  pull_request:
+    paths:
+      - 'policy/EVIDENCE_BANDWIDTH_COST_VALUATION_V1.json'
+      - 'tools/qikvrt_evidence_cost.py'
+      - 'tests/test_qikvrt_evidence_cost.py'
+      - 'docs/EVIDENCE_BANDWIDTH_COST_VALUATION_V1.md'
+      - 'evidence/audio/2026-08-22/**'
+      - '.github/workflows/qikvrt_evidence_bandwidth_cost.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Run deterministic calculator tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_evidence_cost
+
+      - name: Reproduce exact bound receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/qikvrt-evidence-cost"
+          mkdir -p "$out"
+          python3 -B tools/qikvrt_evidence_cost.py \
+            --bytes 7142895 \
+            --source-label four-owner-audio-files-2026-08-22 \
+            --temperature-k 300 \
+            --electricity-eur-per-kwh 0.1837 \
+            --clock-hz 8000000 \
+            --bandwidth-gb-s 3700 \
+            --bandwidth-gb-s 7700 \
+            --bandwidth-gb-s 8000 \
+            --storage-price-usd-per-gib-month 0.023 \
+            --storage-months 12 \
+            --storage-replicas 3 \
+            --runner-seconds 45 \
+            --runner-price-usd-per-minute 0.006 \
+            --output "$out/audio.json"
+          python3 -B tools/qikvrt_evidence_cost.py \
+            --bytes 191284224 \
+            --source-label github-api-repository-size-186801-kib-at-main-2ea174a \
+            --temperature-k 300 \
+            --electricity-eur-per-kwh 0.1837 \
+            --clock-hz 8000000 \
+            --bandwidth-gb-s 3700 \
+            --bandwidth-gb-s 7700 \
+            --bandwidth-gb-s 8000 \
+            --storage-price-usd-per-gib-month 0.023 \
+            --storage-months 12 \
+            --storage-replicas 3 \
+            --runner-seconds 45 \
+            --runner-price-usd-per-minute 0.006 \
+            --output "$out/repository.json"
+          cmp "$out/audio.json" evidence/audio/2026-08-22/AUDIO_CARRIER_COST_RECEIPT_V1.json
+          cmp "$out/repository.json" evidence/audio/2026-08-22/AUTHORITY_REPOSITORY_SIZE_SCENARIO_V1.json
+
+      - name: Verify fail-closed claim boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('policy/EVIDENCE_BANDWIDTH_COST_VALUATION_V1.json').read_text())
+          assert p['valuation_layers'][-1]['level']=='L3_MARKET_OR_IP_VALUE'
+          assert p['valuation_layers'][-1]['status']=='HOLD'
+          for name in (
+              'AUDIO_CARRIER_COST_RECEIPT_V1.json',
+              'AUTHORITY_REPOSITORY_SIZE_SCENARIO_V1.json',
+          ):
+              d=json.loads(Path('evidence/audio/2026-08-22',name).read_text())
+              assert d['boundaries']['market_value_determined'] is False
+              assert d['thermodynamic_lower_bound']['actual_energy_measured'] is False
+              assert d['carrier']['semantic_information_measured'] is False
+          PY
