@@ -1,0 +1,221 @@
+diff --git a/.github/workflows/qikvrt_audio_runtime_export_transport.yml b/.github/workflows/qikvrt_audio_runtime_export_transport.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..3121c81736e7ca94d792248bab8801e9aeb00a62
+--- /dev/null
++++ b/.github/workflows/qikvrt_audio_runtime_export_transport.yml
+@@ -0,0 +1,149 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++
++name: QIK-VRT audio runtime export transport
++
++on:
++  pull_request:
++    paths:
++      - ".github/workflows/qikvrt_audio_runtime_export_transport.yml"
++
++permissions:
++  contents: read
++
++concurrency:
++  group: qikvrt-audio-runtime-export-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: false
++
++jobs:
++  export-runtime:
++    if: >-
++      github.event.pull_request.head.repo.full_name == github.repository &&
++      startsWith(github.head_ref, 'audio-request/')
++    runs-on: ubuntu-24.04
++    timeout-minutes: 35
++    steps:
++      - name: Check out exact transport head without persisted credentials
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++        with:
++          persist-credentials: false
++
++      - name: Set up pinned Node.js runtime
++        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-07-22
++        with:
++          node-version: "24"
++          cache: npm
++          cache-dependency-path: tools/offline-audio-transcription/package-lock.json
++
++      - name: Install and test the repository-owned audio tool
++        working-directory: tools/offline-audio-transcription
++        shell: bash
++        run: |
++          set -euo pipefail
++          npm ci
++          npm test
++          node --version
++
++      - name: Install and hash-verify the declared speech model
++        working-directory: tools/offline-audio-transcription
++        env:
++          QIKVRT_AUDIO_MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
++        shell: bash
++        run: ./scripts/install-model.sh
++
++      - name: Stage a self-describing ephemeral runtime bundle
++        env:
++          MODEL_DIR: ${{ runner.temp }}/qikvrt-audio-model
++          BUNDLE_DIR: ${{ runner.temp }}/qikvrt-audio-runtime
++        shell: bash
++        run: |
++          set -euo pipefail
++          node - <<'NODE'
++          const crypto = require('node:crypto');
++          const fs = require('node:fs');
++          const path = require('node:path');
++
++          const root = process.env.GITHUB_WORKSPACE;
++          const modelDir = process.env.MODEL_DIR;
++          const bundleDir = process.env.BUNDLE_DIR;
++          const toolSource = path.join(root, 'tools', 'offline-audio-transcription');
++          const toolTarget = path.join(bundleDir, 'tool');
++          const modelTarget = path.join(bundleDir, 'model');
++          const binTarget = path.join(bundleDir, 'bin');
++
++          fs.mkdirSync(bundleDir, { recursive: true, mode: 0o700 });
++          fs.mkdirSync(binTarget, { recursive: true, mode: 0o700 });
++          fs.cpSync(toolSource, toolTarget, { recursive: true, dereference: true });
++          fs.cpSync(modelDir, modelTarget, { recursive: true, dereference: true });
++          fs.copyFileSync(process.execPath, path.join(binTarget, 'node'));
++          fs.chmodSync(path.join(binTarget, 'node'), 0o755);
++
++          const receiptPath = path.join(bundleDir, 'RUNTIME_BUNDLE_RECEIPT.json');
++          const entries = [];
++          function walk(current) {
++            for (const name of fs.readdirSync(current).sort()) {
++              const absolute = path.join(current, name);
++              const stat = fs.lstatSync(absolute);
++              if (stat.isDirectory()) walk(absolute);
++              else if (stat.isFile() && absolute !== receiptPath) {
++                const bytes = fs.readFileSync(absolute);
++                entries.push({
++                  path: path.relative(bundleDir, absolute).split(path.sep).join('/'),
++                  bytes: bytes.length,
++                  sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
++                  executable: Boolean(stat.mode & 0o111),
++                });
++              } else if (stat.isSymbolicLink()) {
++                throw new Error(`unexpected symbolic link after dereferenced copy: ${absolute}`);
++              }
++            }
++          }
++          walk(bundleDir);
++          const receipt = {
++            schema: 'qikvrt-offline-audio-runtime-bundle/1.0',
++            repository: process.env.GITHUB_REPOSITORY,
++            source_sha: process.env.GITHUB_SHA,
++            source_ref: process.env.GITHUB_HEAD_REF,
++            run_id: process.env.GITHUB_RUN_ID,
++            runner_os: process.platform,
++            runner_arch: process.arch,
++            node_version: process.version,
++            node_exec_sha256: entries.find((entry) => entry.path === 'bin/node').sha256,
++            model_authority: 'tools/offline-audio-transcription/models/whisper-base-int8/MODEL.json',
++            package_lock: 'tools/offline-audio-transcription/package-lock.json',
++            effect_state: 'EFFECT_ACK_CONTINUE',
++            ordinary_release: false,
++            files: entries,
++          };
++          fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
++          console.log(`runtime_bundle_files=${entries.length + 1}`);
++          console.log(`runtime_bundle_bytes=${entries.reduce((sum, entry) => sum + entry.bytes, 0)}`);
++          NODE
++
++      - name: Upload verified runtime bundle without source audio
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
++        with:
++          name: qikvrt-offline-audio-runtime-${{ github.run_id }}
++          retention-days: 1
++          if-no-files-found: error
++          include-hidden-files: true
++          path: ${{ runner.temp }}/qikvrt-audio-runtime/**
++
++      - name: Record bounded transport receipt
++        shell: bash
++        run: |
++          {
++            echo "## QIK-VRT offline audio runtime export"
++            echo
++            echo "- Source head: \`${GITHUB_SHA}\`"
++            echo "- Node: \`$(node --version)\`"
++            echo "- Model archive and extracted model files: SHA-256 verified by the repository installer"
++            echo "- Source audio included: no"
++            echo "- Effect state: \`EFFECT_ACK_CONTINUE\`"
++            echo "- Ordinary release: \`false\`"
++          } >> "${GITHUB_STEP_SUMMARY}"
++
++      - name: Remove staged runtime from the runner
++        if: always()
++        shell: bash
++        run: rm -rf "${RUNNER_TEMP}/qikvrt-audio-runtime" "${RUNNER_TEMP}/qikvrt-audio-model"
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index 618c5bef85f5a9cfee79afc51941bf437da73093..a14d8377c8eb077966a41ffbcdb0d88fddf026d9 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3314,
++  "file_count": 3315,
+   "files": [
+     {
+       "bytes": 47,
+@@ -199,6 +199,15 @@
+       "sha256": "e9fd50cb7c71c66d7ffcdc5a8df535b6fa684a0ec1406265192ff01ec3f450f5"
+     },
+     {
++      "bytes": 6225,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": ".github/workflows/qikvrt_audio_runtime_export_transport.yml",
++      "sha256": "6eb3b93d7a0b30cea73186459b6befd0af6761cb144989d5237e97493f689d89"
++    },
++    {
+       "bytes": 2201,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -29820,7 +29829,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3305,
++  "immutable_file_count": 3306,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -29845,7 +29854,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "cc50bdf81f4be69e9c48f56786cea05e01cf72d835a3eccf7f0cb161129ed92c",
++  "repository_content_tree_sha256": "7b736b22137df073c6750ead2e523842b01b59917828a7162c5b31eb152dceaf",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index fca066e3e0c3bb3c67ccd111d707c59febfb067d..92114d133b39dbd6419c03ab2c917837364bb388 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-0473c25cd27474b6352f33bbb4c8174c29fafde2754fa9a5086cf53453b9c8f1  REPOSITORY_FILE_MANIFEST.json
++56db4483a0d68aa807998b2d67f402308357de980db0334294c57ba407037004  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index fae33397714bc8966682f7583964bf85a0369a72..7a5ff8db49833a6028c39cf97cae2aadbaaf581e 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -19,6 +19,7 @@ ea5f6b0c20fb403a3da94f4687e2a3448ca0dd43060495e5cfda5afea63a01fb  .github/copilo
+ 5c953258a22ad855499765be43441ce192d72999505a0ae20ad19cce77f1e435  .github/workflows/publish_ontology_difference_article_zenodo_v3.yml
+ fa5950a5b8f802d9ff9b4a291a32fe91d5114f31b84f6a217c00ce54843592ea  .github/workflows/qikvrt_adaptive_runtime.yml
+ e9fd50cb7c71c66d7ffcdc5a8df535b6fa684a0ec1406265192ff01ec3f450f5  .github/workflows/qikvrt_audio_request.yml
++6eb3b93d7a0b30cea73186459b6befd0af6761cb144989d5237e97493f689d89  .github/workflows/qikvrt_audio_runtime_export_transport.yml
+ 901a6a98325f86b744b505ac8bd65774ace18e2b09056bcb691c796e7653f41c  .github/workflows/qikvrt_batch003_remaining_archive_probe.yml
+ bc0bdd936601b5bd336756201ff47f5f51bfb1fd47777e6c1e68647f2bf96a50  .github/workflows/qikvrt_batch003_remaining_disposition.yml
+ 8523f7caab65191ae63c94da3f101eee890b30a5f4a83243cf6512c85510e9c2  .github/workflows/qikvrt_batch003_subject_172dd_public_probe.yml
