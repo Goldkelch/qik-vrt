@@ -14,6 +14,7 @@ class ZeroBugContinuousTests(unittest.TestCase):
             "stale_evidence_reuse": 0,
             "registered_improvers_only": True,
             "reobserve_after_every_mutation": True,
+            "full_tracked_tree_sha256_bound": True,
         }
 
     def test_self_check_preserves_hold_after_mutation(self):
@@ -22,6 +23,8 @@ class ZeroBugContinuousTests(unittest.TestCase):
         self.assertEqual(result["after_mutation"], "HOLD_UNVERIFIED")
         self.assertFalse(result["later_is_better"])
         self.assertEqual(result["arbitrary_unregistered_self_modification"], "HOLD")
+        self.assertEqual(result["registered_improvers"], ["integrity_trio_materializer"])
+        self.assertEqual(result["bit_audit_algorithm"], "sha256")
 
     def test_fresh_exact_head_with_zero_known_defects_is_accepted_state(self):
         result = evaluate(self.good())
@@ -31,26 +34,33 @@ class ZeroBugContinuousTests(unittest.TestCase):
     def test_any_known_deterministic_defect_forces_hold(self):
         obs = self.good()
         obs["known_deterministic_defects"] = 1
-        result = evaluate(obs)
-        self.assertEqual(result["state"], "HOLD_DEFECT_IDENTIFIED")
+        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
 
     def test_stale_evidence_forces_hold(self):
         obs = self.good()
         obs["stale_evidence_reuse"] = 1
-        result = evaluate(obs)
-        self.assertEqual(result["state"], "HOLD_DEFECT_IDENTIFIED")
+        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
 
     def test_multiple_productive_writers_force_hold(self):
         obs = self.good()
         obs["productive_writer_count"] = 2
-        result = evaluate(obs)
-        self.assertEqual(result["state"], "HOLD_DEFECT_IDENTIFIED")
+        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
 
     def test_missing_reobservation_forces_hold(self):
         obs = self.good()
         obs["reobserve_after_every_mutation"] = False
-        result = evaluate(obs)
-        self.assertEqual(result["state"], "HOLD_DEFECT_IDENTIFIED")
+        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
+
+    def test_missing_full_tree_sha256_forces_hold(self):
+        obs = self.good()
+        obs["full_tracked_tree_sha256_bound"] = False
+        self.assertEqual(evaluate(obs)["state"], "HOLD_DEFECT_IDENTIFIED")
+
+    def test_missing_peer_evidence_is_incomplete_not_success(self):
+        obs = self.good()
+        obs["required_exact_head_gates_non_adverse"] = False
+        obs["evidence_incomplete"] = True
+        self.assertEqual(evaluate(obs)["state"], "HOLD_EVIDENCE_INCOMPLETE")
 
 
 if __name__ == "__main__":
