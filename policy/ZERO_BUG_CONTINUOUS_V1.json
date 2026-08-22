@@ -1,0 +1,81 @@
+{
+  "schema": "qikvrt_zero_bug_continuous_v1",
+  "definition": "No known deterministic repository or workflow defect is present on the exact observed head under the explicitly bound deterministic local audit surface. Platform runtime evidence is a separate promotion condition and is never self-asserted by the local auditor.",
+  "non_claims": [
+    "universal_absence_of_all_possible_bugs",
+    "future_bug_impossibility",
+    "external_effect_without_evidence",
+    "platform_peer_gate_success_without_platform_observation"
+  ],
+  "hard_invariants": [
+    "exact_head_and_tree_bound",
+    "known_deterministic_defects_zero",
+    "repository_integrity_verifies",
+    "bound_deterministic_gate_bundle_verifies",
+    "repository_writer_lease_contract_verifies",
+    "stale_evidence_reuse_zero",
+    "registered_improvers_only",
+    "reobserve_after_every_mutation",
+    "full_tracked_tree_sha256_bound"
+  ],
+  "audit_surface": {
+    "local_commands": [
+      "python3 -B -m unittest -v tests.test_qikvrt_zero_bug tests.test_qikvrt_perfect_optimum tests.test_qikvrt_bit_audit tests.test_qikvrt_repository_writer_lease",
+      "python3 -B tools/qikvrt_integrity.py verify",
+      "make test"
+    ],
+    "writer_workflows": [
+      "QIKVRT repository evidence materialization",
+      "QIKVRT Batch-003 remaining subject disposition"
+    ],
+    "bit_audit": {
+      "source": "git object database at exact HEAD",
+      "per_blob_digest": "sha256",
+      "canonical_index_digest": "sha256",
+      "include_mode_type_oid_path_size_and_content_digest": true,
+      "receipt_is_runtime_artifact_not_repository_input": true
+    }
+  },
+  "platform_promotion_surface": {
+    "scope": "separate live GitHub platform observation on the same exact head",
+    "required_peer_workflows": [
+      "QIKVRT CI",
+      "QIKVRT Collective Proposal Review",
+      "QIKVRT perfect optimum recursive self-application",
+      "QIKVRT repository evidence materialization"
+    ],
+    "required_runtime_invariants": [
+      "same_exact_head",
+      "required_peer_workflows_terminal_non_adverse",
+      "productive_writer_count_at_most_one",
+      "no_stale_run_substitution"
+    ],
+    "unavailable_observation": "HOLD_EVIDENCE_INCOMPLETE"
+  },
+  "state_machine": {
+    "after_mutation": "HOLD_UNVERIFIED",
+    "after_fresh_local_exact_head_success": "ZERO_KNOWN_DETERMINISTIC_BUGS_LOCAL",
+    "after_fresh_local_and_platform_success": "ZERO_KNOWN_DETERMINISTIC_BUGS",
+    "on_deterministic_failure": "HOLD_DEFECT_IDENTIFIED",
+    "on_missing_evidence": "HOLD_EVIDENCE_INCOMPLETE"
+  },
+  "repair_order": [
+    "OBSERVE_EXACT_HEAD_TREE",
+    "IDENTIFY_FIRST_DETERMINISTIC_DEFECT",
+    "SELECT_SMALLEST_REGISTERED_REPAIR",
+    "VERIFY_SOURCE_HEAD_BEFORE_WRITE",
+    "SERIALIZE_ONE_PRODUCTIVE_WRITER",
+    "APPLY_MINIMAL_EFFECT",
+    "REOBSERVE_NEW_HEAD_TREE",
+    "AUDIT_FULL_TRACKED_TREE_BYTES",
+    "RUN_BOUND_LOCAL_GATE_BUNDLE",
+    "REQUIRE_FRESH_PLATFORM_GATES",
+    "RETAIN_OR_HOLD"
+  ],
+  "continuous_revision": {
+    "allowed": true,
+    "later_is_better": false,
+    "perfect_optimum_policy": "policy/PERFECT_OPTIMUM_V1.json",
+    "arbitrary_unregistered_self_modification": "HOLD"
+  }
+}
