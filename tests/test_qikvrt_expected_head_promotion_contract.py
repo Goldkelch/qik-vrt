@@ -30,12 +30,18 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         self.assertEqual(executor["schedule_fallback"], "*/10 * * * *")
         self.assertEqual(
             executor["two_phase_promotion"],
-            ["DRAFT_TO_READY", "STOP_AND_REOBSERVE", "EXPECTED_HEAD_BOUND_MERGE"],
+            [
+                "REQUEST_READY_RECLASSIFICATION_AUTHORITY",
+                "STOP_AND_REOBSERVE",
+                "REQUEST_EXACT_BASE_CAS_AUTHORITY",
+            ],
         )
         self.assertEqual(
             executor["merge_binding"],
-            "GITHUB_PULL_MERGE_REST_SHA_PRECONDITION",
+            "DISABLED_BECAUSE_GITHUB_PULL_MERGE_SHA_DOES_NOT_BIND_REOBSERVED_BASE_AS_HEAD1",
         )
+        self.assertFalse(executor["automatic_ready_mutation"])
+        self.assertFalse(executor["automatic_merge_mutation"])
         self.assertFalse(executor["same_head_verification_proxy_is_competing_writer"])
         self.assertFalse(executor["stale_base_pull_request_is_current_competing_writer"])
         self.assertTrue(executor["current_base_overlapping_pull_request_is_competing_writer"])
@@ -45,18 +51,25 @@ class ExpectedHeadPromotionContractTests(unittest.TestCase):
         workflow = SELF_HEAL_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(MARKER, workflow)
         self.assertIn("tests.test_qikvrt_expected_head_promotion", workflow)
-        self.assertIn("This proposal workflow never merges", workflow)
+        self.assertIn("This proposal workflow never promotes or merges", workflow)
 
-    def test_executor_is_bounded_and_sha_bound(self) -> None:
+    def test_executor_is_bounded_and_fails_closed_before_merge(self) -> None:
         workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn("READY_RECLASSIFIED_REOBSERVATION_REQUIRED", workflow)
+        self.assertIn("READY_RECLASSIFICATION_CAS_UNAVAILABLE", pathlib.Path(
+            ROOT / "tools/qikvrt_expected_head_promotion.py"
+        ).read_text(encoding="utf-8"))
         self.assertIn('exit 0', workflow)
-        self.assertIn('-f sha="$EXPECTED_HEAD"', workflow)
-        self.assertIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
-        self.assertIn("if other.get('base', {}).get('sha') != current_main", workflow)
-        self.assertIn("if other.get('head', {}).get('sha') == head", workflow)
+        self.assertIn("require_unchanged_promotion_marker", workflow)
+        self.assertIn("HEAD^1", workflow)
+        self.assertNotIn('-f sha="$EXPECTED_HEAD"', workflow)
+        self.assertNotIn("repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge", workflow)
+        self.assertNotIn("gh pr ready", workflow)
+        self.assertNotIn("pull-requests: write", workflow)
+        compact = workflow.replace(" ", "")
+        self.assertIn("other.get('base',{}).get('sha')!=current_main", compact)
+        self.assertIn("other.get('head',{}).get('sha')==head", compact)
 
     def test_external_effect_claims_remain_fail_closed(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

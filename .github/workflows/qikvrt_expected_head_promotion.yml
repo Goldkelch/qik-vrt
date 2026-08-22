@@ -27,9 +27,8 @@ on:
 
 permissions:
   actions: read
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
   statuses: read
 
 concurrency:
@@ -37,7 +36,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  evaluate-and-promote:
+  evaluate-and-hold:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -46,6 +45,14 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       PROMOTION_MARKER: "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
       REVIEW_STATUS_CONTEXT: "QIKVRT requested review execution"
+      MESH_REVIEW_LEDGER_REF: qikvrt/mesh-review-ledger-v1
+      MESH_REVIEW_REQUIRED_GATES_JSON: >-
+        ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review"]
+      MESH_REVIEW_REQUIRED_GATE_PATHS_JSON: >-
+        {"QIKVRT CI":".github/workflows/qikvrt_ci.yml","QIKVRT repository evidence materialization":".github/workflows/qikvrt_batch04_integrity.yml","QIKVRT Collective Proposal Review":".github/workflows/qikvrt_collective_review.yml"}
+      MESH_REVIEW_WRITER_WORKFLOWS_JSON: >-
+        ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
+      CURRENT_RUN_ID: ${{ github.run_id }}
       REQUIRED_GATES_JSON: >-
         ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review","QIK-VRT global claim completion","QIKVRT requested review execution"]
     steps:
@@ -74,6 +81,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-candidate.json
           import json, os, subprocess
+          from tools.qikvrt_expected_head_promotion import PromotionBlock, trusted_promotion_marker
           repo = os.environ['REPOSITORY']
           marker = os.environ['PROMOTION_MARKER']
           requested = os.environ.get('REQUESTED_PR', '').strip()
@@ -95,16 +103,19 @@ jobs:
                   continue
               if pr.get('base',{}).get('sha') != current_main:
                   continue
-              body = pr.get('body') or ''
-              marked = marker in body
-              if not marked:
-                  comments = gh_pages(f"repos/{repo}/issues/{pr['number']}/comments?per_page=100")
-                  marked = any(marker in (c.get('body') or '') for c in comments)
-              if marked:
-                  candidates.append(pr)
-          candidates.sort(key=lambda pr:(pr.get('created_at') or '',pr['number']))
-          chosen=candidates[0] if candidates else None
-          print(json.dumps({'state':'CANDIDATE' if chosen else 'NOOP','current_main_sha':current_main,'pr_number':chosen['number'] if chosen else None},sort_keys=True))
+              try:
+                  marker_binding=trusted_promotion_marker(pr,repo,marker)
+              except PromotionBlock:
+                  continue
+              candidates.append((pr,marker_binding))
+          candidates.sort(key=lambda item:(item[0].get('created_at') or '',item[0]['number']))
+          chosen,binding=candidates[0] if candidates else (None,None)
+          print(json.dumps({
+              'state':'CANDIDATE' if chosen else 'NOOP',
+              'current_main_sha':current_main,
+              'pr_number':chosen['number'] if chosen else None,
+              'marker_binding':binding,
+          },sort_keys=True))
           PY
           cat /tmp/qikvrt-promotion-candidate.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
@@ -113,6 +124,7 @@ jobs:
           print(f"state={v['state']}")
           print(f"pr={v.get('pr_number') or ''}")
           print(f"main_sha={v['current_main_sha']}")
+          print(f"marker_sha256={(v.get('marker_binding') or {}).get('body_sha256') or ''}")
           PY
 
       - name: Materialize exact live promotion snapshot with separated review authority
@@ -223,12 +235,13 @@ jobs:
           PY
           exit 0
 
-      - name: Reobserve exact unchanged head and advance one promotion phase
-        if: steps.decision.outputs.state == 'PROMOTABLE'
+      - name: Reobserve exact subject and derive one bounded promotion continuation
+        if: steps.decision.outputs.blocker == 'HEAD1_BASE_CAS_UNAVAILABLE'
         env:
           PR_NUMBER: ${{ steps.candidate.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.decision.outputs.head }}
           EXPECTED_BASE: ${{ steps.candidate.outputs.main_sha }}
+          EXPECTED_MARKER_SHA256: ${{ steps.candidate.outputs.marker_sha256 }}
           EXPECTED_PHASE: ${{ steps.decision.outputs.phase }}
         shell: bash
         run: |
@@ -239,21 +252,31 @@ jobs:
           merged="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
           draft="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)"
           test "$merged" = false
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_BASE"
           test "$current_main" = "$EXPECTED_BASE"
           test "$current_base" = "$EXPECTED_BASE"
           test "$current_head" = "$EXPECTED_HEAD"
 
-          if [ "$draft" = true ]; then
-            test "$EXPECTED_PHASE" = READY_FOR_REVIEW
-            gh pr ready "$PR_NUMBER" --repo "$REPOSITORY"
-            echo "READY_RECLASSIFIED_REOBSERVATION_REQUIRED" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          test "$EXPECTED_PHASE" = MERGE
-
           python3 -B - <<'PY'
           import json, os, subprocess
+          from tools.qikvrt_expected_head_promotion import require_unchanged_promotion_marker
+
+          repo=os.environ['REPOSITORY']
+          number=int(os.environ['PR_NUMBER'])
+          pr=json.loads(subprocess.check_output(
+              ['gh','api',f'repos/{repo}/pulls/{number}'],text=True
+          ))
+          require_unchanged_promotion_marker(
+              os.environ['EXPECTED_MARKER_SHA256'],pr,repo,os.environ['PROMOTION_MARKER']
+          )
+          PY
+
+          test "$draft" = false
+          test "$EXPECTED_PHASE" = REQUEST_EXACT_BASE_CAS_AUTHORITY
+
+          python3 -B - <<'PY'
+          import base64, json, os, pathlib, subprocess, sys, urllib.parse
+          from tools.qikvrt_expected_head_promotion import mesh_review_status_projection
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
           repo=os.environ['REPOSITORY']
@@ -272,7 +295,7 @@ jobs:
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           if pr['head']['sha'] != expected_head:
-              raise SystemExit('BLOCK: head drift before merge')
+              raise SystemExit('BLOCK: head drift before exact-base-CAS authority continuation')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
           gate=evaluate_required_review(pr, rules, reviews, required_code_owner='Goldkelch')
@@ -280,28 +303,127 @@ jobs:
               raise SystemExit(f"BLOCK: independent Code Owner gate changed: {gate.get('first_blocker')}")
 
           statuses=gh_pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
-          matching=[s for s in statuses if s.get('context') == review_context]
-          if not matching:
-              raise SystemExit('BLOCK: requested-review execution status missing before merge')
-          latest=max(matching,key=lambda s:(s.get('updated_at') or s.get('created_at') or '',int(s.get('id') or 0)))
-          if latest.get('state') != 'success':
-              raise SystemExit(f"BLOCK: requested-review execution is {latest.get('state')}")
+          status_fence=mesh_review_status_projection(statuses,review_context)
+          if status_fence['state'] != 'success':
+              raise SystemExit(f"BLOCK: requested-review execution is {status_fence['state']}")
+          fingerprint=status_fence['evidence_fingerprint']
+          ledger_ref=os.environ['MESH_REVIEW_LEDGER_REF']
+          root=f'state/mesh/reviews/pr-{pr_number}/{expected_head}/{fingerprint}'
+
+          def ledger_bytes(path):
+              quoted=urllib.parse.quote(path,safe='/')
+              ref=urllib.parse.quote(ledger_ref,safe='')
+              metadata=gh_json(f'repos/{repo}/contents/{quoted}?ref={ref}')
+              blob=gh_json(f"repos/{repo}/git/blobs/{metadata['sha']}")
+              return base64.b64decode(blob['content'])
+
+          evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
+          evidence.mkdir(parents=True,exist_ok=True)
+          receipt_path=evidence/'review.json'
+          diff_path=evidence/'review.diff'
+          receipt_path.write_bytes(ledger_bytes(root+'.json'))
+          diff_path.write_bytes(ledger_bytes(root+'.diff'))
+          command=[
+              sys.executable,'-B','tools/qikvrt_requested_review_executor.py','verify',
+              '--repository',repo,'--pr-number',str(pr_number),
+              '--current-run-id',os.environ['CURRENT_RUN_ID'],
+              '--required-gates-json',os.environ['MESH_REVIEW_REQUIRED_GATES_JSON'],
+              '--required-gate-paths-json',os.environ['MESH_REVIEW_REQUIRED_GATE_PATHS_JSON'],
+              '--writer-workflows-json',os.environ['MESH_REVIEW_WRITER_WORKFLOWS_JSON'],
+              '--receipt',str(receipt_path),'--expected-diff',str(diff_path),
+              '--output-dir',str(evidence/'reobserved'),
+          ]
+          subprocess.check_call(command)
+          receipt=json.loads(receipt_path.read_text(encoding='utf-8'))
+          fresh=json.loads((evidence/'reobserved'/'review.json').read_text(encoding='utf-8'))
+          if receipt.get('evidence_fingerprint') != fingerprint:
+              raise SystemExit('BLOCK: status and ledger fingerprints differ')
+          if fresh.get('mesh_disposition') != 'APPROVE':
+              raise SystemExit('BLOCK: fresh Mesh receipt is not technically favorable')
+          if fresh.get('verification_state') != 'HOLD_UNVERIFIED':
+              raise SystemExit('BLOCK: Mesh receipt crossed its verification boundary')
+          (evidence/'promotion-fence.json').write_text(json.dumps({
+              'schema':'qikvrt_mesh_review_promotion_fence_v1',
+              'mesh_status':status_fence,
+              'verification_state':'HOLD_UNVERIFIED',
+              'completion_claims':{
+                  'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False,'MERGE':False,
+              },
+          },sort_keys=True,indent=2)+'\n',encoding='utf-8')
           PY
 
-          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
-          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
-          test "$current_main" = "$EXPECTED_BASE"
-          test "$current_base" = "$EXPECTED_BASE"
-          test "$current_head" = "$EXPECTED_HEAD"
+          python3 -B - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          from tools.qikvrt_expected_head_promotion import require_unchanged_mesh_review_status, require_unchanged_promotion_marker
+          from tools.qikvrt_required_review_gate import evaluate_required_review
 
-          gh api --method PUT "repos/${REPOSITORY}/pulls/${PR_NUMBER}/merge" \
-            -f merge_method=merge -f sha="$EXPECTED_HEAD" > /tmp/qikvrt-promotion-merge.json
-          cat /tmp/qikvrt-promotion-merge.json
-          test "$(python3 -c 'import json; print(str(json.load(open("/tmp/qikvrt-promotion-merge.json"))["merged"]).lower())')" = true
-          promoted_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
-          test "$promoted_main" != "$EXPECTED_BASE"
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body "Expected-head promotion completed by repository-native executor. Source head: \`$EXPECTED_HEAD\`; previous main: \`$EXPECTED_BASE\`; promoted main: \`$promoted_main\`. Repository-native review execution and independent Code-Owner authority were separately reobserved. No Zenodo/IETF/release/PASS/FINAL_PASS/EFFECT_ACK_DONE effect is implied."
+          repo=os.environ['REPOSITORY']
+          pr_number=int(os.environ['PR_NUMBER'])
+          expected_base=os.environ['EXPECTED_BASE']
+          expected_head=os.environ['EXPECTED_HEAD']
+          review_context=os.environ['REVIEW_STATUS_CONTEXT']
+
+          def gh_json(path):
+              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def gh_pages(path):
+              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
+              return [item for page in pages for item in page]
+
+          evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
+          fence=json.loads((evidence/'promotion-fence.json').read_text(encoding='utf-8'))
+          pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
+          rules=gh_json(f'repos/{repo}/rules/branches/main')
+          reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
+          gate=evaluate_required_review(pr,rules,reviews,required_code_owner='Goldkelch')
+          if gate.get('gate_state') != 'success':
+              raise SystemExit(f"BLOCK: independent Code Owner gate changed at final fence: {gate.get('first_blocker')}")
+
+          statuses=gh_pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
+          try:
+              require_unchanged_mesh_review_status(
+                  fence['mesh_status'],statuses,review_context
+              )
+          except ValueError as exc:
+              raise SystemExit(f'BLOCK: {exc}') from exc
+
+          final_main=gh_json(f'repos/{repo}/commits/main')['sha']
+          final_pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
+          if final_main != expected_base:
+              raise SystemExit('BLOCK: main changed at final promotion fence')
+          if final_pr.get('base',{}).get('sha') != expected_base:
+              raise SystemExit('BLOCK: candidate base changed at final promotion fence')
+          if final_pr.get('head',{}).get('sha') != expected_head:
+              raise SystemExit('BLOCK: candidate head changed at final promotion fence')
+          if final_pr.get('state') != 'open' or final_pr.get('draft') is True:
+              raise SystemExit('BLOCK: candidate state changed at final promotion fence')
+
+          command=[
+              sys.executable,'-B','tools/qikvrt_requested_review_executor.py','verify',
+              '--repository',repo,'--pr-number',str(pr_number),
+              '--current-run-id',os.environ['CURRENT_RUN_ID'],
+              '--required-gates-json',os.environ['MESH_REVIEW_REQUIRED_GATES_JSON'],
+              '--required-gate-paths-json',os.environ['MESH_REVIEW_REQUIRED_GATE_PATHS_JSON'],
+              '--writer-workflows-json',os.environ['MESH_REVIEW_WRITER_WORKFLOWS_JSON'],
+              '--receipt',str(evidence/'review.json'),
+              '--expected-diff',str(evidence/'review.diff'),
+              '--output-dir',str(evidence/'reobserved-final'),
+          ]
+          subprocess.check_call(command)
+          fresh=json.loads((evidence/'reobserved-final'/'review.json').read_text(encoding='utf-8'))
+          if fresh.get('mesh_disposition') != 'APPROVE':
+              raise SystemExit('BLOCK: final Mesh receipt is not technically favorable')
+          if fresh.get('verification_state') != 'HOLD_UNVERIFIED':
+              raise SystemExit('BLOCK: final Mesh receipt crossed its verification boundary')
+          final_marker_pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
+          require_unchanged_promotion_marker(
+              os.environ['EXPECTED_MARKER_SHA256'],final_marker_pr,repo,
+              os.environ['PROMOTION_MARKER'],
+          )
+          PY
+
+          echo 'HOLD_UNVERIFIED: no repository mutation follows. The GitHub pull-merge head precondition does not compare-and-swap the reobserved base, so it cannot prove EXPECTED_BASE as merge HEAD^1.'
+          echo 'Next action: REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY.'
+          exit 1
 
       - name: Persist bounded decision summary
         if: always()
