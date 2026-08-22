@@ -1,0 +1,72 @@
+{
+  "schema": "QIKVRT_D3_RING_LIFECYCLE_V1",
+  "status": "BOUND_UNVERIFIED",
+  "source": {
+    "kind": "product_owner_resolution",
+    "receipt": "PO-Receipt #250",
+    "start": 0,
+    "stale_evidence_transfer": false
+  },
+  "physical_m68000": {
+    "data_registers": ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7"],
+    "data_register_width_bits": 32,
+    "virtual_widths_do_not_change_physical_register_width": true
+  },
+  "lifecycle": {
+    "activation": {
+      "transition": "D3:0->1",
+      "meaning": "ACTIVATE_RING"
+    },
+    "quiescence": {
+      "transition": "D3:1->0",
+      "meaning": "RING_HAS_NO_FURTHER_EXECUTABLE_WORK",
+      "ordered_preconditions": [
+        "COLLECT_RESULT",
+        "PERSIST_RESULT",
+        "RELEASE_UNNEEDED_RESOURCES"
+      ]
+    },
+    "invariants": {
+      "quiescence_equals_failure": false,
+      "quiescence_equals_global_halt": false,
+      "d3_zero_requires_owner_interrupt": false,
+      "causally_independent_rings_may_continue": true
+    }
+  },
+  "virtual_rings": [
+    {
+      "ring": 1,
+      "width_bits": 8,
+      "derivation": "2^3",
+      "byte_count": 1,
+      "state_cardinality": 256,
+      "state_cardinality_derivation": "2^8"
+    },
+    {
+      "ring": 2,
+      "width_bits": 256,
+      "derivation": "EXPLICIT_VIRTUAL_ARCHITECTURE_RULE",
+      "distinct_from_byte_state_cardinality": true
+    },
+    {
+      "ring": 3,
+      "width_bits": 16777216,
+      "derivation": "256^3 = 2^24"
+    }
+  ],
+  "execution_equivalence": {
+    "reference_model": "tools/qikvrt_d3_ring_lifecycle.py",
+    "host_c89": "src/qikvrt_d3_ring_lifecycle.c",
+    "m68000_lowering": "MOVEQ #1,D3 / MOVEQ #0,D3 per ring, terminating in RTS",
+    "m68000_execution_kind": "REFERENCE_INTERPRETER_ONLY",
+    "physical_m68000_execution_observed": false,
+    "required_equivalence": "D3_ACTIVATE_QUIESCE_BOUNDARY_AND_RING_ORDER"
+  },
+  "closure": {
+    "pass": false,
+    "final_pass": false,
+    "merge_claimed": false,
+    "effect_ack_done": false,
+    "reason": "Fresh exact-head repository verification and independent review remain separate from semantic binding."
+  }
+}

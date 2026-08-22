@@ -1,0 +1,117 @@
+{
+  "schema": "QIKVRT_2383_VIRTUAL_M68000_ARCHITECTURE_V1",
+  "status": "HOLD_UNVERIFIED",
+  "source": {
+    "kind": "owner_audio_instruction",
+    "file_name": "AUDIO-2026-08-22-06-00-23.m4a",
+    "file_id": "file_00000000368481f4a1a159b94697a7c6",
+    "recorded_at_utc": "2026-08-22T04:00:54Z",
+    "transcription": {
+      "mode": "offline_local",
+      "primary_runtime": "QIKVRT_OFFLINE_AUDIO_RUNTIME_V1",
+      "independent_cross_check": "whisper.cpp-small-multilingual-local",
+      "verbatim_transcript_published": false
+    }
+  },
+  "literal_claims": {
+    "architecture_label": "2-3-8-3",
+    "base_execution_model": "VON_NEUMANN_COMPATIBLE",
+    "virtual_quantum_environment": true,
+    "classical_quantum_middleware": true,
+    "ring_count": 3,
+    "binary_alphabet_cardinality": 2,
+    "inner_ring_width_bits": 8,
+    "outer_ring_width_bits": 256,
+    "cpu_influences": [
+      "MOTOROLA_68000_ARITHMETIC_UNIT",
+      "RISC_CPU_ARCHITECTURE"
+    ],
+    "derived_name": "U_ARCHITECTURE"
+  },
+  "verified_arithmetic": {
+    "two_pow_three": 8,
+    "two_pow_eight": 256,
+    "eight_pow_three": 512
+  },
+  "blocked_equivalences": [
+    {
+      "claim": "8^3 = 256",
+      "actual": "8^3 = 512",
+      "blocker": "ARITHMETIC_CONTRADICTION"
+    },
+    {
+      "claim": "256 states = 256 bits",
+      "actual": "STATE_CARDINALITY_AND_BIT_WIDTH_ARE_DISTINCT",
+      "blocker": "CARDINALITY_WIDTH_CONFLATION"
+    },
+    {
+      "claim": "virtual M68000 witness = physical M68000 execution",
+      "actual": "REFERENCE_INTERPRETER_ONLY",
+      "blocker": "VIRTUAL_NOT_PHYSICAL"
+    },
+    {
+      "claim": "middleware model = quantum effect observed",
+      "actual": "INTERFACE_MODEL_ONLY",
+      "blocker": "MODEL_NOT_EFFECT"
+    }
+  ],
+  "owner_resolution_required": [
+    {
+      "id": "R1_256_RELATION",
+      "question": "Which exact relation is intended for 256?",
+      "options": [
+        "BYTE_VALUE_CARDINALITY_2_POW_8_EQUALS_256",
+        "INDEPENDENTLY_DECLARED_OUTER_WIDTH_256_BITS",
+        "OTHER_EXACT_MAPPING"
+      ]
+    },
+    {
+      "id": "R2_FINAL_THREE",
+      "question": "What does the final 3 in 2-3-8-3 denote?",
+      "options": [
+        "THREE_STRUCTURAL_RINGS",
+        "EXPONENT_THREE",
+        "OTHER_EXACT_MEANING"
+      ]
+    }
+  ],
+  "m68000_witness": {
+    "kind": "REFERENCE_INTERPRETER_ONLY",
+    "machine_code_hex_big_endian": "78027a037c087e034e75",
+    "tuple": [
+      2,
+      3,
+      8,
+      3
+    ],
+    "tuple_registers": [
+      "D4",
+      "D5",
+      "D6",
+      "D7"
+    ],
+    "preserved_registers": [
+      "D0",
+      "D1",
+      "D2",
+      "D3"
+    ],
+    "physical_m68000_execution_observed": false,
+    "hatari_execution_observed": false
+  },
+  "proof_boundaries": {
+    "formal_arithmetic_checked": true,
+    "architecture_semantics_resolved": false,
+    "virtual_m68000_capsule_checked": true,
+    "physical_m68000_execution_observed": false,
+    "quantum_computation_observed": false,
+    "empirical_physics_claimed": false
+  },
+  "closure": {
+    "pass": false,
+    "final_pass": false,
+    "merge_claimed": false,
+    "effect_ack_done": false,
+    "reason": "Owner resolution and fresh exact-head verification are required before any stronger disposition."
+  }
+}
