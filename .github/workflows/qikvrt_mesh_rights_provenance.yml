@@ -1,0 +1,103 @@
+name: QIKVRT mesh rights provenance and human-rights guard
+
+on:
+  pull_request:
+    paths:
+      - 'policy/MESH_RIGHTS_PROVENANCE_AUDIT_V1.json'
+      - 'tools/qikvrt_mesh_rights_provenance.py'
+      - 'tests/test_qikvrt_mesh_rights_provenance.py'
+      - 'docs/MESH_RIGHTS_PROVENANCE_AUDIT_V1.md'
+      - 'evidence/audio/2026-08-22/MESH_RIGHTS_PROVENANCE_OWNER_AUDIO_V1.json'
+      - '.github/workflows/qikvrt_mesh_rights_provenance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mesh-rights-provenance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact observed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$expected"
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Run fail-closed self-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_mesh_rights_provenance.py \
+            --self-check \
+            --pretty \
+            --output "${RUNNER_TEMP}/qikvrt-mesh-rights-provenance.json"
+
+      - name: Run regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_mesh_rights_provenance
+
+      - name: Verify owner-source privacy and legal boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(Path(
+              'evidence/audio/2026-08-22/MESH_RIGHTS_PROVENANCE_OWNER_AUDIO_V1.json'
+          ).read_text())
+          assert receipt['aggregate'] == {
+              'files': 2,
+              'bytes': 2116799,
+              'duration_seconds': '254.336000',
+              'originals_overwritten': False,
+          }
+          assert receipt['privacy_boundary'] == {
+              'raw_audio_in_repository': False,
+              'verbatim_transcript_in_repository': False,
+              'hashes_and_normalized_work_order_only': True,
+          }
+          legal = receipt['legal_boundary']
+          assert legal['technical_provenance_can_be_verified'] is True
+          assert legal['legal_infringement_can_be_automatically_adjudicated'] is False
+          assert legal['damages_can_be_automatically_determined'] is False
+          assert legal['lawsuit_or_takedown_automatically_authorized'] is False
+          PY
+
+      - name: Reobserve immutable exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = '${{ steps.bind.outputs.head }}'
+          test "$(git rev-parse --verify HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
+          test -z "$(git status --porcelain)"
+
+      - name: Preserve local exact-head audit receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-rights-provenance-${{ steps.bind.outputs.head }}
+          path: ${{ runner.temp }}/qikvrt-mesh-rights-provenance.json
+          if-no-files-found: error
+          retention-days: 14
