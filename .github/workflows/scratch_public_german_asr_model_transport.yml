@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: MIT
+name: Scratch public German ASR model transport
+
+on:
+  push:
+    branches:
+      - scratch/public-asr-model-link-20260822
+    paths:
+      - .github/workflows/scratch_public_german_asr_model_transport.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scratch-public-german-asr-model-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  transport-public-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Download public TorchAudio German VoxPopuli ASR weight
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/public-german-asr-model"
+          output="$RUNNER_TEMP/public-german-asr-model/wav2vec2_voxpopuli_base_10k_asr_de.pt"
+          curl --fail --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 1200 \
+            --output "$output" \
+            https://download.pytorch.org/torchaudio/models/wav2vec2_voxpopuli_base_10k_asr_de.pt
+          test -s "$output"
+          sha256sum "$output" | tee "$RUNNER_TEMP/public-german-asr-model/SHA256SUMS.txt"
+          bytes="$(stat -c %s "$output")"
+          sha256="$(sha256sum "$output" | awk '{print $1}')"
+          python3 -B - "$RUNNER_TEMP/public-german-asr-model/MODEL_SOURCE.json" "$bytes" "$sha256" <<'PY'
+          import json
+          import pathlib
+          import sys
+          import datetime
+
+          target = pathlib.Path(sys.argv[1])
+          value = {
+              "schema": "qikvrt_public_model_transport_v1",
+              "source_url": "https://download.pytorch.org/torchaudio/models/wav2vec2_voxpopuli_base_10k_asr_de.pt",
+              "model": "torchaudio.pipelines.VOXPOPULI_ASR_BASE_10K_DE",
+              "language": "de",
+              "bytes": int(sys.argv[2]),
+              "sha256": sys.argv[3],
+              "license": "CC-BY-NC-4.0",
+              "user_audio_present": False,
+              "user_transcript_present": False,
+              "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+          }
+          target.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+      - name: Upload public model transport artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-german-asr-model-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+          path: ${{ runner.temp }}/public-german-asr-model/**
