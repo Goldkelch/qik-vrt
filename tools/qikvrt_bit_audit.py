@@ -43,7 +43,6 @@ def audit(head: str):
     assert proc.stdin is not None and proc.stdout is not None
     try:
         for mode, typ, oid, path_b in entries:
-            content_digest = None
             size = 0
             object_type = typ
             if typ == "blob":
@@ -87,9 +86,9 @@ def audit(head: str):
                 "sha256": content_digest,
             })
     finally:
-        if proc.stdin:
-            proc.stdin.close()
+        proc.stdin.close()
         proc.wait(timeout=30)
+        proc.stdout.close()
         if proc.returncode != 0:
             raise RuntimeError(f"git cat-file failed: {proc.returncode}")
 
