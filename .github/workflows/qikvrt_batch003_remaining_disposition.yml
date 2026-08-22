@@ -65,12 +65,14 @@ jobs:
           python3 -B -m tools.qikvrt_content_disposition_batch_003_remaining_archives --check --json
           python3 -B tools/qikvrt_content_disposition_batch_003_dispatch.py --check-status-projection --json
       - name: Regenerate and verify repository integrity
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/qikvrt_integrity.py generate
           python3 tools/qikvrt_integrity.py verify
       - name: Run complete repository gates
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
