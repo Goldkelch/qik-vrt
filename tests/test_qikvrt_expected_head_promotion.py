@@ -19,6 +19,22 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ExpectedHeadPromotionTests(unittest.TestCase):
+    def promotion_pr(self, **overrides):
+        value = {
+            "number": 459,
+            "state": "open",
+            "body": MODULE.PROMOTION_MARKER + "\n\nExact self-heal candidate.",
+            "user": {"login": "github-actions[bot]"},
+            "base": {"ref": "main", "sha": "a" * 40},
+            "head": {
+                "ref": "automation/self-heal-1234567890abcdef",
+                "sha": "b" * 40,
+                "repo": {"full_name": "example/qik-vrt"},
+            },
+        }
+        value.update(overrides)
+        return value
+
     def code_owner_gate(self, **overrides):
         value = {
             "gate_state": "success",
@@ -60,9 +76,18 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         value.update(overrides)
         return value
 
-    def test_ready_green_exact_head_is_promotable_for_merge(self):
+    def test_ready_green_exact_head_holds_without_exact_base_cas(self):
         result = MODULE.evaluate_promotion(self.snapshot())
-        self.assertEqual((result["state"], result["phase"]), ("PROMOTABLE", "MERGE"))
+        self.assertEqual(
+            (result["state"], result["phase"], result["first_blocker"]),
+            ("BLOCK", "REQUEST_EXACT_BASE_CAS_AUTHORITY", "HEAD1_BASE_CAS_UNAVAILABLE"),
+        )
+        self.assertEqual(
+            result["next_action"],
+            "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY",
+        )
+        self.assertEqual(result["verification_state"], "HOLD_UNVERIFIED")
+        self.assertFalse(result["completion_claims"]["MERGE"])
 
     def test_bot_review_success_cannot_mask_code_owner_failure(self):
         result = MODULE.evaluate_promotion(
@@ -83,7 +108,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         )
         self.assertEqual(result["first_blocker"], "CODE_OWNER_REVIEW_STALE")
 
-    def test_draft_advances_to_ready_without_review_authority(self):
+    def test_draft_requests_ready_authority_without_mutation(self):
         snapshot = self.snapshot(
             draft=True,
             code_owner_review_gate=self.code_owner_gate(
@@ -96,7 +121,19 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             if run["name"] != "QIKVRT requested review execution"
         ]
         result = MODULE.evaluate_promotion(snapshot)
-        self.assertEqual((result["state"], result["phase"]), ("PROMOTABLE", "READY_FOR_REVIEW"))
+        self.assertEqual(
+            (result["state"], result["phase"], result["first_blocker"]),
+            (
+                "BLOCK",
+                "REQUEST_READY_RECLASSIFICATION_AUTHORITY",
+                "READY_RECLASSIFICATION_CAS_UNAVAILABLE",
+            ),
+        )
+        self.assertEqual(
+            result["next_action"],
+            "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY",
+        )
+        self.assertEqual(result["verification_state"], "HOLD_UNVERIFIED")
 
     def test_projection_only_overlap_is_not_competing_writer(self):
         result = MODULE.evaluate_promotion(
@@ -113,7 +150,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
                 ]
             )
         )
-        self.assertEqual((result["state"], result["phase"]), ("PROMOTABLE", "MERGE"))
+        self.assertEqual(result["first_blocker"], "HEAD1_BASE_CAS_UNAVAILABLE")
 
     def test_semantic_overlap_still_blocks(self):
         result = MODULE.evaluate_promotion(
@@ -141,7 +178,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             ]
         )
         result = MODULE.evaluate_promotion(snapshot)
-        self.assertEqual((result["state"], result["phase"]), ("PROMOTABLE", "MERGE"))
+        self.assertEqual(result["first_blocker"], "HEAD1_BASE_CAS_UNAVAILABLE")
 
     def test_ready_candidate_without_bot_review_gate_blocks(self):
         snapshot = self.snapshot()
@@ -176,6 +213,75 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         result = MODULE.evaluate_promotion(self.snapshot(mergeable=False))
         self.assertEqual(result["first_blocker"], "NOT_MERGEABLE")
 
+    def test_newer_pending_mesh_status_breaks_final_promotion_fence(self):
+        success = {
+            "id": 41,
+            "context": MODULE.REVIEW_GATE,
+            "state": "success",
+            "created_at": "2026-08-22T10:00:00Z",
+            "description": f"Mesh APPROVE; D0=3; fp={'a' * 64}",
+        }
+        pending = {
+            "id": 42,
+            "context": MODULE.REVIEW_GATE,
+            "state": "pending",
+            "created_at": "2026-08-22T10:01:00Z",
+            "description": f"Mesh WAIT; D0=1; fp={'b' * 64}",
+        }
+        fence = MODULE.mesh_review_status_projection([success], MODULE.REVIEW_GATE)
+
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock,
+            "requested-review execution is 'pending' at final fence",
+        ):
+            MODULE.require_unchanged_mesh_review_status(
+                fence,
+                [success, pending],
+                MODULE.REVIEW_GATE,
+            )
+
+        self.assertEqual(
+            MODULE.require_unchanged_mesh_review_status(
+                fence,
+                [success],
+                MODULE.REVIEW_GATE,
+            ),
+            fence,
+        )
+
+    def test_promotion_marker_is_trusted_body_bound_and_revocable(self):
+        pull_request = self.promotion_pr()
+        binding = MODULE.trusted_promotion_marker(
+            pull_request, "example/qik-vrt"
+        )
+        self.assertEqual(binding["source"], "TRUSTED_AUTONOMOUS_SELF_HEAL_PR_BODY")
+
+        edited = self.promotion_pr(
+            body=MODULE.PROMOTION_MARKER + "\n\nEdited candidate description."
+        )
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock, "promotion marker body changed before mutation"
+        ):
+            MODULE.require_unchanged_promotion_marker(
+                binding["body_sha256"], edited, "example/qik-vrt"
+            )
+
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock, "workflow identity"
+        ):
+            MODULE.trusted_promotion_marker(
+                self.promotion_pr(user={"login": "untrusted-user"}),
+                "example/qik-vrt",
+            )
+
+        with self.assertRaisesRegex(
+            MODULE.PromotionBlock, "has no promotion marker"
+        ):
+            MODULE.trusted_promotion_marker(
+                self.promotion_pr(body="marker exists only in an issue comment"),
+                "example/qik-vrt",
+            )
+
     def test_workflow_reobserves_independent_authority_separately(self):
         workflow = (ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml").read_text(encoding="utf-8")
         self.assertIn('REVIEW_STATUS_CONTEXT: "QIKVRT requested review execution"', workflow)
@@ -183,6 +289,28 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("evaluate_required_review", workflow)
         self.assertIn("code_owner_review_gate", workflow)
         self.assertIn("independent Code Owner gate changed", workflow)
+        self.assertIn("mesh_review_status_projection", workflow)
+        self.assertIn("MESH_REVIEW_LEDGER_REF", workflow)
+        self.assertIn("tools/qikvrt_requested_review_executor.py','verify'", workflow)
+        self.assertIn("'--expected-diff',str(diff_path)", workflow)
+        self.assertIn("status and ledger fingerprints differ", workflow)
+        self.assertIn("fresh Mesh receipt is not technically favorable", workflow)
+        self.assertIn("require_unchanged_mesh_review_status", workflow)
+        self.assertIn("require_unchanged_promotion_marker", workflow)
+        self.assertNotIn("marked = any(marker in", workflow)
+        self.assertIn("final promotion fence", workflow)
+        self.assertNotIn('gh pr ready', workflow)
+        self.assertNotIn('pull-requests: write', workflow)
+        self.assertGreater(
+            workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
+            workflow.index("require_unchanged_mesh_review_status"),
+        )
+        self.assertLess(
+            workflow.rindex("tools/qikvrt_requested_review_executor.py','verify'"),
+            workflow.index("HOLD_UNVERIFIED: no repository mutation follows"),
+        )
+        self.assertNotIn('pulls/${PR_NUMBER}/merge', workflow)
+        self.assertNotIn("gh pr merge", workflow)
 
 
 if __name__ == "__main__":

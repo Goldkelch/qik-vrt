@@ -4,9 +4,12 @@
 """Fail-closed decision core for expected-head-bound QIK-VRT promotion.
 
 Promotion is phase-qualified:
-- READY_FOR_REVIEW: a marked draft has all repository-internal exact-head gates.
-- MERGE: the non-draft candidate additionally has repository-native substantive
-  review execution and a separately observed independent Code-Owner gate.
+- REQUEST_READY_RECLASSIFICATION_AUTHORITY: a marked draft has all
+  repository-internal exact-head gates, but no automatic draft mutation follows
+  because GitHub offers no expected-base-and-head compare-and-swap for it.
+- REQUEST_EXACT_BASE_CAS_AUTHORITY: a non-draft candidate may be reobserved,
+  but no merge mutation follows because GitHub's head precondition does not
+  compare-and-swap the checked base as immediate first parent.
 
 Bot review execution and Code-Owner authority are distinct inputs. Integrity
 projection overlap is not treated as semantic competing-writer overlap.
@@ -14,8 +17,10 @@ projection overlap is not treated as semantic competing-writer overlap.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
+import re
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -34,6 +39,118 @@ NON_ADVERSE_CONCLUSIONS = {"success", "skipped"}
 
 class PromotionBlock(ValueError):
     """Raised when a snapshot is structurally invalid rather than merely blocked."""
+
+
+def mesh_review_status_projection(
+    statuses: Iterable[Mapping[str, Any]], context: str
+) -> dict[str, Any]:
+    """Return the exact latest Mesh status identity used by a promotion fence."""
+    if not isinstance(context, str) or not context:
+        raise PromotionBlock("Mesh review status context is missing")
+    matching: list[Mapping[str, Any]] = []
+    for status in statuses:
+        if not isinstance(status, Mapping):
+            raise PromotionBlock("commit status must be an object")
+        if status.get("context") == context:
+            matching.append(status)
+    if not matching:
+        raise PromotionBlock("requested-review execution status is missing")
+
+    def key(status: Mapping[str, Any]) -> tuple[str, int]:
+        identifier = status.get("id")
+        if isinstance(identifier, bool) or not isinstance(identifier, int) or identifier < 1:
+            raise PromotionBlock("requested-review status id is invalid")
+        timestamp = status.get("updated_at") or status.get("created_at")
+        if not isinstance(timestamp, str) or not timestamp:
+            raise PromotionBlock("requested-review status timestamp is missing")
+        return timestamp, identifier
+
+    latest = max(matching, key=key)
+    state = latest.get("state")
+    if not isinstance(state, str) or not state:
+        raise PromotionBlock("requested-review status state is missing")
+    match = re.search(r"\bfp=([0-9a-f]{64})\b", latest.get("description") or "")
+    if match is None:
+        raise PromotionBlock("requested-review status lacks a full evidence fingerprint")
+    return {
+        "context": context,
+        "id": latest["id"],
+        "state": state,
+        "evidence_fingerprint": match.group(1),
+    }
+
+
+def require_unchanged_mesh_review_status(
+    expected: Mapping[str, Any],
+    statuses: Iterable[Mapping[str, Any]],
+    context: str,
+) -> dict[str, Any]:
+    """Fail unless the current latest success status is the exact fenced status."""
+    observed = mesh_review_status_projection(statuses, context)
+    if observed.get("state") != "success":
+        raise PromotionBlock(
+            f"requested-review execution is {observed.get('state')!r} at final fence"
+        )
+    if dict(expected) != observed:
+        raise PromotionBlock("requested-review status changed after Mesh reobservation")
+    return observed
+
+
+def trusted_promotion_marker(
+    pull_request: Mapping[str, Any],
+    repository: str,
+    marker: str = PROMOTION_MARKER,
+) -> dict[str, str]:
+    """Bind promotion opt-in to the repository's own self-heal PR body."""
+    if not isinstance(pull_request, Mapping):
+        raise PromotionBlock("promotion marker subject is not a pull request")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise PromotionBlock("promotion marker repository is invalid")
+    if not isinstance(marker, str) or not marker:
+        raise PromotionBlock("promotion marker is missing")
+    head = pull_request.get("head")
+    base = pull_request.get("base")
+    if not isinstance(head, Mapping) or not isinstance(base, Mapping):
+        raise PromotionBlock("promotion marker subject lacks Git bindings")
+    head_repository = head.get("repo")
+    if not isinstance(head_repository, Mapping) or head_repository.get("full_name") != repository:
+        raise PromotionBlock("promotion marker is not role-local")
+    head_ref = head.get("ref")
+    if not isinstance(head_ref, str) or not head_ref.startswith("automation/self-heal-"):
+        raise PromotionBlock("promotion marker is not bound to a self-heal branch")
+    if pull_request.get("state") != "open" or base.get("ref") != "main":
+        raise PromotionBlock("promotion marker subject is not an open main pull request")
+    author = pull_request.get("user")
+    if not isinstance(author, Mapping) or author.get("login") != "github-actions[bot]":
+        raise PromotionBlock("promotion marker author is not the repository workflow identity")
+    body = pull_request.get("body")
+    if not isinstance(body, str) or marker not in body:
+        raise PromotionBlock("trusted pull-request body has no promotion marker")
+    return {
+        "source": "TRUSTED_AUTONOMOUS_SELF_HEAL_PR_BODY",
+        "author": "github-actions[bot]",
+        "head_ref": head_ref,
+        "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    }
+
+
+def require_unchanged_promotion_marker(
+    expected_body_sha256: str,
+    pull_request: Mapping[str, Any],
+    repository: str,
+    marker: str = PROMOTION_MARKER,
+) -> dict[str, str]:
+    """Fail if the trusted marker body changed before a repository mutation."""
+    if (
+        not isinstance(expected_body_sha256, str)
+        or len(expected_body_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_body_sha256)
+    ):
+        raise PromotionBlock("expected promotion marker digest is invalid")
+    observed = trusted_promotion_marker(pull_request, repository, marker)
+    if observed["body_sha256"] != expected_body_sha256:
+        raise PromotionBlock("promotion marker body changed before mutation")
+    return observed
 
 
 def _sha(value: Any, label: str) -> str:
@@ -84,12 +201,14 @@ def _decision(
         "expected_head_sha": snapshot.get("expected_head_sha"),
         "current_main_sha": snapshot.get("current_main_sha"),
         "external_effect": "NONE",
+        "verification_state": "HOLD_UNVERIFIED",
         "completion_claims": {
             "PASS": False,
             "FINAL_PASS": False,
             "EFFECT_ACK_DONE": False,
             "AUTHORITY_MIRROR_EQUALITY": False,
             "INDEPENDENT_REVIEW": False,
+            "MERGE": False,
         },
     }
     if latest is not None:
@@ -226,27 +345,33 @@ def evaluate_promotion(snapshot: Mapping[str, Any]) -> dict[str, Any]:
             return _blocked(snapshot, "APPLICABLE_EXACT_HEAD_GATE_NOT_GREEN", f"workflow is adverse: {name}={conclusion}")
 
     if draft:
-        return _decision(
+        result = _decision(
             snapshot,
-            "PROMOTABLE",
-            None,
-            "all pre-review exact-head conditions are satisfied; advance exactly one phase to ready-for-review and reobserve",
-            phase="READY_FOR_REVIEW",
+            "BLOCK",
+            "READY_RECLASSIFICATION_CAS_UNAVAILABLE",
+            "all pre-review exact-head conditions are satisfied, but automatic draft-to-ready is disabled because the mutation cannot atomically bind the reobserved base and head and its GITHUB_TOKEN event cannot establish the required follow-on gate cycle",
+            phase="REQUEST_READY_RECLASSIFICATION_AUTHORITY",
             latest=latest,
         )
+        result["next_action"] = (
+            "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY"
+        )
+        return result
 
     review_blocker = _code_owner_review_blocker(snapshot, expected_head)
     if review_blocker is not None:
         return _blocked(snapshot, *review_blocker)
 
-    return _decision(
+    result = _decision(
         snapshot,
-        "PROMOTABLE",
-        None,
-        "all exact-head gates, repository-native review execution, and independent Code Owner gate are satisfied",
-        phase="MERGE",
+        "BLOCK",
+        "HEAD1_BASE_CAS_UNAVAILABLE",
+        "technical and authority gates are favorable, but the GitHub pull-merge head precondition cannot bind the reobserved base as the immediate first parent; automated merge remains disabled",
+        phase="REQUEST_EXACT_BASE_CAS_AUTHORITY",
         latest=latest,
     )
+    result["next_action"] = "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY"
+    return result
 
 
 def _load_snapshot(path: str) -> Mapping[str, Any]:
@@ -274,6 +399,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "first_blocker": "INVALID_PROMOTION_SNAPSHOT",
             "detail": str(exc),
             "external_effect": "NONE",
+            "verification_state": "HOLD_UNVERIFIED",
+            "completion_claims": {
+                "PASS": False,
+                "FINAL_PASS": False,
+                "EFFECT_ACK_DONE": False,
+                "AUTHORITY_MIRROR_EQUALITY": False,
+                "INDEPENDENT_REVIEW": False,
+                "MERGE": False,
+            },
         }
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0 if result.get("state") == "PROMOTABLE" else 2
