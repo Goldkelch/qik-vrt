@@ -1,0 +1,234 @@
+{
+  "schema": "qikvrt_falsifiable_hypothesis_registry_v1",
+  "title": "Observation Bandwidth, Reobservation, and Causal Order",
+  "author": "Ingolf Lohmann",
+  "version": 1,
+  "registration_status": "PROPOSED_NOT_EXECUTED",
+  "created_utc": "2026-08-22T00:00:00Z",
+  "active_hypotheses": [
+    {
+      "id": "H-OBS-01",
+      "tier": "ENGINEERING_OBSERVATION",
+      "status": "PROPOSED_NOT_EXECUTED",
+      "claim": "For the registered finite-bandwidth transition generator, observation at or above the registered boundary reduces missed-transition and aliasing error relative to sub-boundary polling.",
+      "null_hypothesis": "After phase, load, jitter, duty-cycle, and event-count controls, the above-bound conditions do not improve missed-transition rate by at least 0.10 absolute compared with the strongest sub-boundary condition.",
+      "alternative_hypothesis": "The above-bound conditions improve missed-transition rate by at least 0.10 absolute and the direction survives all registered controls.",
+      "independent_variables": [
+        "sample_rate_ratio_to_f_max",
+        "phase",
+        "jitter",
+        "load",
+        "duty_cycle",
+        "capture_mode"
+      ],
+      "dependent_variables": [
+        "missed_transition_rate",
+        "state_reconstruction_error",
+        "alias_classification_rate",
+        "detection_latency_ms",
+        "gap_detection_rate"
+      ],
+      "primary_endpoint": "missed_transition_rate",
+      "controls": [
+        "same generated transitions",
+        "same event count",
+        "same seeds",
+        "same resource ceiling",
+        "phase sweep",
+        "jitter sweep"
+      ],
+      "minimum_trials": {
+        "independent_seeds": 30,
+        "transitions_per_condition_per_seed": 1000
+      },
+      "decision_rule": "Support requires an absolute missed-transition-rate reduction >= 0.10 and a two-sided 95% bootstrap confidence interval for the reduction whose lower bound is > 0 across the registered phase and jitter strata.",
+      "falsification_condition": "Reject the registered policy claim if the margin is not reached, if the confidence interval includes 0, or if the effect disappears in any preregistered phase or jitter stratum.",
+      "not_claimed": [
+        "universal applicability to arbitrary event streams",
+        "new sampling theorem",
+        "physical-time identity"
+      ]
+    },
+    {
+      "id": "H-EFF-02",
+      "tier": "ENGINEERING_EFFECT_EVIDENCE",
+      "status": "PROPOSED_NOT_EXECUTED",
+      "claim": "Post-effect reobservation reduces false completion classifications relative to transport-acknowledgement-only classification under the registered fault model.",
+      "null_hypothesis": "Reobservation does not reduce false completion rate by at least 0.05 absolute relative to transport acknowledgement alone.",
+      "alternative_hypothesis": "Reobservation reduces false completion rate by at least 0.05 absolute without unequal authority or hidden intervention information.",
+      "independent_variables": [
+        "classification_method",
+        "fault_class",
+        "delay",
+        "rollback",
+        "replay",
+        "observer_gap"
+      ],
+      "dependent_variables": [
+        "false_completion_rate",
+        "false_hold_rate",
+        "time_to_valid_completion_ms"
+      ],
+      "primary_endpoint": "false_completion_rate",
+      "controls": [
+        "same effect attempts",
+        "same fault injections",
+        "same postcondition",
+        "same non-observation inputs"
+      ],
+      "minimum_trials": {
+        "fault_classes": 8,
+        "trials_per_fault_class_per_method": 100
+      },
+      "decision_rule": "Support requires an absolute false-completion-rate reduction >= 0.05 with a two-sided 95% confidence interval whose lower bound is > 0 and no increase in false-hold rate greater than 0.05 absolute.",
+      "falsification_condition": "Reject if the error reduction margin is not reached, the interval includes 0, false holds exceed the registered bound, or unequal information explains the result.",
+      "not_claimed": [
+        "general EFFECT_ACK_DONE",
+        "external real-world effect",
+        "publication or review completion"
+      ]
+    },
+    {
+      "id": "H-CAU-03",
+      "tier": "CAUSAL_RECONSTRUCTION",
+      "status": "PROPOSED_NOT_EXECUTED",
+      "claim": "Explicit predecessor bindings reconstruct intervention-defined causal graphs more accurately than timestamp order under the registered clock and network perturbations.",
+      "null_hypothesis": "With equal admissible information, explicit predecessor bindings do not improve macro-F1 by at least 0.10 over timestamp-order reconstruction.",
+      "alternative_hypothesis": "With equal admissible information, explicit predecessor bindings improve macro-F1 by at least 0.10 and maintain edge-direction validity under all registered perturbations.",
+      "independent_variables": [
+        "reconstruction_method",
+        "clock_skew",
+        "delay",
+        "reordering",
+        "batching",
+        "duplication",
+        "omission"
+      ],
+      "dependent_variables": [
+        "edge_precision",
+        "edge_recall",
+        "macro_f1",
+        "cycle_error_rate",
+        "direction_error_rate"
+      ],
+      "primary_endpoint": "macro_f1",
+      "controls": [
+        "intervention-defined ground truth",
+        "same event payloads",
+        "same admissible metadata",
+        "frozen reconstruction algorithms"
+      ],
+      "minimum_trials": {
+        "causal_graphs": 100,
+        "perturbation_replicates_per_graph": 10
+      },
+      "decision_rule": "Support requires mean macro-F1 improvement >= 0.10 and a cluster-bootstrap 95% confidence interval by graph whose lower bound is > 0.",
+      "falsification_condition": "Reject if the margin is not reached, if a cycle is introduced in more than 1% of trials, or if the advantage depends on metadata unavailable to the baseline.",
+      "not_claimed": [
+        "complete causal discovery from observational data",
+        "absence of hidden causes",
+        "physical law"
+      ]
+    },
+    {
+      "id": "H-ORD-04",
+      "tier": "OBSERVER_RELATIVE_ORDER",
+      "status": "PROPOSED_NOT_EXECUTED",
+      "claim": "Observer-relative receive-order inversion can occur while one intervention-defined causal graph remains invariant.",
+      "null_hypothesis": "Under the registered controls, receive-order inversion necessarily changes the reconstructed causal graph.",
+      "alternative_hypothesis": "At least 95% of registered receive-order-inversion trials preserve the intervention-defined graph when explicit predecessor evidence is available.",
+      "independent_variables": [
+        "observer_path",
+        "delay_schedule",
+        "receive_order",
+        "clock_skew"
+      ],
+      "dependent_variables": [
+        "graph_invariance",
+        "causal_edge_accuracy",
+        "hidden_edge_count"
+      ],
+      "primary_endpoint": "graph_invariance",
+      "controls": [
+        "same emissions",
+        "same intervention graph",
+        "independent receive logs",
+        "no post hoc predecessor insertion"
+      ],
+      "minimum_trials": {
+        "paired_observer_scenarios": 100,
+        "delay_replicates_per_scenario": 20
+      },
+      "decision_rule": "Support requires graph invariance >= 0.95 with a one-sided 95% confidence lower bound >= 0.90.",
+      "falsification_condition": "Reject if the confidence lower bound is < 0.90 or if graph preservation requires hidden or post hoc edges.",
+      "not_claimed": [
+        "physical retrocausality",
+        "backward signalling",
+        "quantum causal-order result"
+      ]
+    },
+    {
+      "id": "H-PHY-05",
+      "tier": "PHYSICAL_BRIDGE",
+      "status": "PROPOSED_NOT_EXECUTED",
+      "claim": "In two independently instrumented physical apparatuses, explicit causal-order features add reproducible out-of-sample predictive information beyond timestamp-only features for registered postconditions.",
+      "null_hypothesis": "The causal-feature model improves held-out log loss by less than 0.01 or fails replication in either apparatus.",
+      "alternative_hypothesis": "The causal-feature model improves held-out log loss by at least 0.01 in each apparatus with a bootstrap 95% confidence interval excluding 0.",
+      "independent_variables": [
+        "model_feature_set",
+        "apparatus",
+        "intervention_class"
+      ],
+      "dependent_variables": [
+        "held_out_log_loss",
+        "brier_score",
+        "calibration_error"
+      ],
+      "primary_endpoint": "held_out_log_loss_difference",
+      "controls": [
+        "same train/test folds",
+        "same noncausal covariates",
+        "blinded held-out evaluation",
+        "timestamp leakage audit",
+        "independent acquisition path"
+      ],
+      "minimum_trials": {
+        "independent_apparatuses": 2,
+        "intervention_trials_per_apparatus": 1000
+      },
+      "decision_rule": "Support requires timestamp-only minus causal-feature held-out log loss >= 0.01 in each apparatus and a bootstrap 95% interval whose lower bound is > 0 in each apparatus.",
+      "falsification_condition": "Reject if either apparatus misses the margin, either interval includes 0, leakage is detected, or the result fails the frozen replication analysis.",
+      "not_claimed": [
+        "PHYSICAL_TIME == QIKVRT_CAUSAL_TIME",
+        "new fundamental law",
+        "quantum causality",
+        "generalization beyond registered apparatuses"
+      ]
+    }
+  ],
+  "blocked_claims": [
+    {
+      "id": "H-PHYS-00",
+      "statement": "PHYSICAL_TIME == QIKVRT_CAUSAL_TIME",
+      "status": "HOLD_NO_OPERATIONALIZATION",
+      "reason": "No registered measurement currently distinguishes this identity from weaker predictive, representational, or existing-physics alternatives.",
+      "requirements_to_activate": [
+        "discriminating measurement",
+        "serious alternative model",
+        "calibrated apparatus",
+        "preregistered rejection rule",
+        "independent replication",
+        "relativistic and measurement-uncertainty treatment"
+      ]
+    }
+  ],
+  "global_boundaries": [
+    "CAUSALITY != SEQUENCE",
+    "TIMESTAMP_ORDER != CAUSAL_ORDER",
+    "SAMPLED_ORDER != CAUSAL_ORDER",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "REPOSITORY_EVIDENCE != PHYSICAL_EVIDENCE",
+    "PROPOSED_HYPOTHESIS != EXECUTED_EXPERIMENT",
+    "LATER != BETTER"
+  ]
+}
