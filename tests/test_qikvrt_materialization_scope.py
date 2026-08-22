@@ -17,6 +17,9 @@ MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 WORKFLOW = ROOT / ".github/workflows/qikvrt_batch04_integrity.yml"
+BATCH003_WORKFLOW = (
+    ROOT / ".github/workflows/qikvrt_batch003_remaining_disposition.yml"
+)
 
 
 class MaterializationScopeTests(unittest.TestCase):
@@ -61,6 +64,7 @@ class MaterializationScopeTests(unittest.TestCase):
     def test_control_or_unsafe_path_fails_safe_to_full_materialization(self) -> None:
         for path in (
             ".github/workflows/qikvrt_batch04_integrity.yml",
+            ".github/workflows/qikvrt_batch003_remaining_disposition.yml",
             "../ambiguous",
         ):
             result = MODULE.classify([path])
@@ -102,6 +106,27 @@ class MaterializationScopeTests(unittest.TestCase):
                 f"        if: steps.scope.outputs.{output} == 'true'"
             )
             self.assertIn(token, workflow)
+
+    def test_batch003_writer_is_not_triggered_by_unrelated_pull_requests(self) -> None:
+        workflow = BATCH003_WORKFLOW.read_text(encoding="utf-8")
+        pull_request = workflow.index("  pull_request:")
+        dispatch = workflow.index("  workflow_dispatch:")
+        trigger = workflow[pull_request:dispatch]
+        self.assertIn("    paths:\n", trigger)
+        required_patterns = (
+            '      - ".github/workflows/qikvrt_batch003_remaining_disposition.yml"',
+            '      - "tools/qikvrt_content_disposition_*.py"',
+            '      - "tools/qikvrt_batch003_*.py"',
+            '      - "tests/test_content_disposition_batch_003_*.py"',
+            '      - "release/zenodo-corpus-proof-2026-07-28/canonical-union/**"',
+            '      - "work-units/**"',
+            '      - "AI_PROGRESS.json"',
+            '      - "AI_STATUS.md"',
+        )
+        for pattern in required_patterns:
+            self.assertIn(pattern, trigger)
+        self.assertNotIn('      - "**"', trigger)
+        self.assertNotIn('      - "*"', trigger)
 
     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
