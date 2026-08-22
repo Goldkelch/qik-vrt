@@ -1,0 +1,163 @@
+name: QIKVRT closure bundle source export
+
+on:
+  push:
+    branches:
+      - agent/closure-bundle-source-export-20260822-v1
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out export carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Export exact repository source snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sha in \
+            ba15d544c11dd2213df44a317b5df4f13016d65c \
+            2cd012906e781d83c1ffc66e6aee8d0ec6e23cc3 \
+            77190ae994dbbe10308c183ae490b222c084b6b3; do
+            git fetch --no-tags --force origin "$sha"
+            git cat-file -e "$sha^{commit}"
+          done
+          python3 -B - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path('closure-source-export')
+          units = {
+              'PR797-formal-causal-architecture': {
+                  'sha': 'ba15d544c11dd2213df44a317b5df4f13016d65c',
+                  'pr': 797,
+                  'paths': [
+                      'publications/causal-time-reobservation-v1/ARTICLE_EN.md',
+                      'publications/causal-time-reobservation-v1/IEEE_SUBMISSION.md',
+                      'publications/causal-time-reobservation-v1/IETF_NOTE.md',
+                      'publications/causal-time-reobservation-v1/SOURCE_BINDING.json',
+                      'publications/causal-time-reobservation-v1/SUBMISSION_STATUS.json',
+                      'publications/causal-time-reobservation-v1/SUBMISSION_ZENODO.json',
+                      'publications/causal-time-reobservation-v1/WIKIPEDIA_DRAFT.md',
+                      'publications/causal-time-reobservation-v1/arxiv/main.tex',
+                  ],
+              },
+              'PR800-physical-falsification-program': {
+                  'sha': '2cd012906e781d83c1ffc66e6aee8d0ec6e23cc3',
+                  'pr': 800,
+                  'paths': [
+                      '.github/workflows/qikvrt_physical_hypothesis_package.yml',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/CLAIM_EVIDENCE_MATRIX.json',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/EXPERIMENT_PROTOCOL.md',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/HYPOTHESIS_REGISTRY.json',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/IEEE_SUBMISSION.md',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/MANUSCRIPT_EN.md',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/SOURCE_BINDING.json',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/STATUS_QUO_DE.md',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/SUBMISSION_STATUS.json',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/SUBMISSION_ZENODO.json',
+                      'publications/observation-bandwidth-causal-order-falsification-v1/arxiv/main.tex',
+                      'tests/test_qikvrt_physical_hypothesis_package.py',
+                  ],
+              },
+              'PR799-universal-terminal-systemtest': {
+                  'sha': '77190ae994dbbe10308c183ae490b222c084b6b3',
+                  'pr': 799,
+                  'paths': [
+                      '.github/workflows/qikvrt_universal_monitor_sampling.yml',
+                      '.github/workflows/qikvrt_universal_terminal_systemtest.yml',
+                      'browser/firefox/qikvrt-terminal/manifest.json',
+                      'browser/firefox/qikvrt-terminal/options.js',
+                      'docs/UNIVERSAL_MONITOR_SAMPLING_V1.md',
+                      'docs/assets/js/qikvrt-nyquist-monitor.js',
+                      'evidence/systemtest/UNIVERSAL_TERMINAL_BACKEND_STATE_V1.json',
+                      'evidence/systemtest/UNIVERSAL_TERMINAL_FIREFOX_BROWSER_RECEIPT_V1.json',
+                      'evidence/systemtest/UNIVERSAL_TERMINAL_SYSTEMTEST_RECEIPT_V1.json',
+                      'evidence/systemtest/UNIVERSAL_TERMINAL_SYSTEMTEST_RECEIPT_V1.sha256',
+                      'evidence/systemtest/UNIVERSAL_TERMINAL_SYSTEMTEST_REPORT.md',
+                      'policy/MLP_FIREFOX_EFFECT_ACK_E2E_V1.json',
+                      'policy/UNIVERSAL_MONITOR_SAMPLING_V1.json',
+                      'state/monitoring/UNIVERSAL_MONITOR_REGISTRY_V1.json',
+                      'state/work_units/UNIVERSAL_MONITOR_SAMPLING_V1.json',
+                      'tests/test_qikvrt_effect_ack_http_terminal.py',
+                      'tests/test_qikvrt_firefox_terminal_e2e_contract.py',
+                      'tests/test_qikvrt_monitor_sampling.py',
+                      'tools/qikvrt_firefox_terminal_e2e.py',
+                      'tools/qikvrt_monitor_sampling.py',
+                  ],
+              },
+          }
+
+          def git_bytes(*args: str) -> bytes:
+              return subprocess.check_output(['git', *args])
+
+          index = {
+              'schema': 'qikvrt_closure_source_export_v1',
+              'repository': 'Goldkelch/qik-vrt',
+              'external_effect': 'NONE',
+              'authority_main_effect': False,
+              'units': [],
+          }
+          for name, unit in units.items():
+              sha = unit['sha']
+              out = root / name
+              files = []
+              for rel in unit['paths']:
+                  raw = git_bytes('show', f'{sha}:{rel}')
+                  target = out / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(raw)
+                  files.append({
+                      'path': rel,
+                      'bytes': len(raw),
+                      'sha256': hashlib.sha256(raw).hexdigest(),
+                  })
+              tree = git_bytes('rev-parse', f'{sha}^{{tree}}').decode().strip()
+              parent = git_bytes('rev-parse', f'{sha}^').decode().strip()
+              metadata = {
+                  'pr': unit['pr'],
+                  'head': sha,
+                  'tree': tree,
+                  'parent': parent,
+                  'files': files,
+              }
+              (out / 'EXACT_SOURCE_BINDING.json').write_text(
+                  json.dumps(metadata, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              )
+              index['units'].append({'name': name, **metadata})
+
+          root.mkdir(parents=True, exist_ok=True)
+          (root / 'SOURCE_EXPORT_INDEX.json').write_text(
+              json.dumps(index, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          lines = []
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              raw = path.read_bytes()
+              lines.append(f"{hashlib.sha256(raw).hexdigest()}  {path.relative_to(root).as_posix()}")
+          (root / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          tar --sort=name --mtime='UTC 2026-08-22' --owner=0 --group=0 --numeric-owner \
+            -czf qikvrt-closure-source-export.tar.gz closure-source-export
+          sha256sum qikvrt-closure-source-export.tar.gz > qikvrt-closure-source-export.tar.gz.sha256
+
+      - name: Upload exact source export
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-closure-source-export-20260822
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            closure-source-export/**
+            qikvrt-closure-source-export.tar.gz
+            qikvrt-closure-source-export.tar.gz.sha256
