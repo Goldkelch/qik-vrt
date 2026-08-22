@@ -42,13 +42,14 @@ jobs:
             | tee "$RUNNER_TEMP/qikvrt-m68000-tos-build.json"
           cmp "$RUNNER_TEMP/MLP.TOS.hex" runtime/m68000/tos/MLP.TOS.hex
 
-      - name: Install Hatari and locate open TOS ROM
+      - name: Install Hatari and provision pinned open EmuTOS ROM
         id: emulator
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends hatari xvfb
+          sudo apt-get install -y --no-install-recommends hatari xvfb unzip
           hatari --version 2>&1 | tee "$RUNNER_TEMP/hatari-version.txt" || true
+
           roots=()
           for candidate in /usr/share/hatari /usr/local/share/hatari; do
             if [ -d "$candidate" ]; then
@@ -62,16 +63,29 @@ jobs:
               \( -iname 'tos.img' -o -iname 'etos*.img' -o -iname '*emutos*.img' \) \
               -print 2>/dev/null | sort | head -n 1 || true)"
           fi
+
           if [ -z "$rom" ]; then
-            echo 'BLOCK: OPEN_EMUTOS_ROM_NOT_INSTALLED_WITH_HATARI' >&2
-            if [ "${#roots[@]}" -gt 0 ]; then
-              find "${roots[@]}" -maxdepth 3 -type f -print 2>/dev/null || true
+            archive="$RUNNER_TEMP/emutos-512k-1.4.zip"
+            archive_url='https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip'
+            archive_sha256='1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663'
+            curl --location --fail --retry 5 --retry-all-errors \
+              --output "$archive" "$archive_url"
+            printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --strict
+            entry="$(unzip -Z1 "$archive" | awk '/(^|\/)etos512us\.img$/ { print; exit }')"
+            if [ -z "$entry" ]; then
+              echo 'BLOCK: PINNED_EMUTOS_ARCHIVE_MISSING_ETOS512US_IMG' >&2
+              unzip -Z1 "$archive" >&2
+              exit 1
             fi
-            apt-cache search emutos || true
-            exit 1
+            rom="$RUNNER_TEMP/etos512us.img"
+            unzip -p "$archive" "$entry" > "$rom"
+            test "$(stat --format=%s "$rom")" -eq 524288
+            printf '%s  %s\n' "$archive_sha256" "$archive" \
+              > "$RUNNER_TEMP/emutos-archive-sha256.txt"
           fi
+
           echo "rom=$rom" >> "$GITHUB_OUTPUT"
-          sha256sum "$rom" | tee "$RUNNER_TEMP/emutos-sha256.txt"
+          sha256sum "$rom" | tee "$RUNNER_TEMP/emutos-rom-sha256.txt"
 
       - name: Execute MLP.TOS on Mega ST M68000 and create GEMDOS receipt
         env:
@@ -122,7 +136,8 @@ jobs:
             ${{ runner.temp }}/qikvrt-m68000-tos-reobservation.json
             ${{ runner.temp }}/qikvrt-m68000-tos-effects.sha256
             ${{ runner.temp }}/hatari-version.txt
-            ${{ runner.temp }}/emutos-sha256.txt
+            ${{ runner.temp }}/emutos-archive-sha256.txt
+            ${{ runner.temp }}/emutos-rom-sha256.txt
             ${{ runner.temp }}/hatari.log
           retention-days: 30
           if-no-files-found: error
