@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact head and tree
+      - name: Bind exact head, tree and causal predecessor
         id: bind
         shell: bash
         run: |
@@ -50,9 +50,12 @@ jobs:
           expected='${{ github.event.pull_request.head.sha || github.sha }}'
           head="$(git rev-parse --verify HEAD^{commit})"
           tree="$(git rev-parse --verify HEAD^{tree})"
+          predecessor="$(git rev-parse --verify HEAD^1^{commit})"
           test "$head" = "$expected"
+          test "$predecessor" != "$head"
           printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
           printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          printf 'predecessor=%s\n' "$predecessor" >> "$GITHUB_OUTPUT"
 
       - name: Verify policy self-check
         shell: bash
@@ -71,8 +74,8 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PREDECESSOR_SHA: ${{ steps.bind.outputs.predecessor }}
+          HEAD_SHA: ${{ steps.bind.outputs.head }}
         run: |
           set -euo pipefail
           python3 -B - <<'PY'
@@ -81,15 +84,12 @@ jobs:
           from tools.qikvrt_perfect_optimum import evaluate, load_policy
 
           policy = load_policy()
-          base = os.environ.get('BASE_SHA', '')
+          predecessor = os.environ['PREDECESSOR_SHA']
           head = os.environ['HEAD_SHA']
-          if base and set(base) != {'0'}:
-              before_has_policy = subprocess.run(
-                  ['git', 'cat-file', '-e', f'{base}:policy/PERFECT_OPTIMUM_V1.json'],
-                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-              ).returncode == 0
-          else:
-              before_has_policy = True
+          before_has_policy = subprocess.run(
+              ['git', 'cat-file', '-e', f'{predecessor}:policy/PERFECT_OPTIMUM_V1.json'],
+              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          ).returncode == 0
           after_has_policy = Path('policy/PERFECT_OPTIMUM_V1.json').is_file()
 
           before = {
@@ -98,7 +98,7 @@ jobs:
               'productive_writer_count': 1,
               'stale_evidence_reuse': 0,
               'unbound_effect_claims': 0,
-              'fresh_exact_head_gate_coverage': 0 if before_has_policy else 0,
+              'fresh_exact_head_gate_coverage': 0,
               'deterministically_closed_internal_loops': 1 if before_has_policy else 0,
           }
           after = dict(before)
@@ -111,13 +111,12 @@ jobs:
           result = evaluate(before, after, invariant_checks, policy)
           result.update({
               'event_name': os.environ['EVENT_NAME'],
+              'predecessor_sha': predecessor,
               'head_sha': head,
               'tree_sha': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
               'before_has_policy': before_has_policy,
               'after_has_policy': after_has_policy,
           })
-          # First materialization must be strict progress. Later self-application
-          # must converge fail-closed to HOLD rather than mutate gratuitously.
           if not before_has_policy:
               assert result['decision'] == 'ACCEPT_CANDIDATE', result
               result['recursive_outcome'] = 'STRICT_PROGRESS_ACCEPTED'
