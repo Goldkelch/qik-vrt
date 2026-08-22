@@ -1,0 +1,199 @@
+name: QIKVRT Universal Terminal System Test
+
+on:
+  pull_request:
+    paths:
+      - 'policy/UNIVERSAL_MONITOR_SAMPLING_V1.json'
+      - 'tools/qikvrt_monitor_sampling.py'
+      - 'browser/firefox/qikvrt-terminal/**'
+      - 'policy/MLP_FIREFOX_EFFECT_ACK_E2E_V1.json'
+      - 'tests/test_qikvrt_firefox_terminal_e2e_contract.py'
+      - 'tests/test_qikvrt_effect_ack_http_terminal.py'
+      - 'tools/qikvrt_firefox_terminal_e2e.py'
+      - '.github/workflows/qikvrt_universal_terminal_systemtest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  system-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CAUSAL_SOURCE_HEAD: 98d66de02e98d67af81655b028d15fbd60869bbc
+      CAUSAL_SOURCE_RUN: '32530018373'
+      CAUSAL_SOURCE_JOB: '96920011647'
+    steps:
+      - name: Check out exact integrated candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind integrated exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          test "$head" = "$expected"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Verify adaptive Nyquist and VBR-like rate-control layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_monitor_sampling
+          python3 -B tools/qikvrt_monitor_sampling.py --source-max-hz 10 --sample-hz 25
+          python3 -B tools/qikvrt_monitor_sampling.py --event-driven
+
+      - name: Verify integrated Firefox and bounded Effect-Ack contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_firefox_terminal_e2e_contract \
+            tests.test_qikvrt_effect_ack_http_terminal
+
+      - name: Acquire pinned geckodriver
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-systemtest/geckodriver
+          curl --fail --location --retry 3 \
+            'https://api.github.com/repos/mozilla/geckodriver/releases/tags/v0.37.1' \
+            -o /tmp/qikvrt-systemtest/geckodriver/release.json
+          python3 - <<'PY' > /tmp/qikvrt-systemtest/geckodriver/asset.env
+          import json
+          p=json.load(open('/tmp/qikvrt-systemtest/geckodriver/release.json'))
+          a=next(x for x in p['assets'] if x['name']=='geckodriver-v0.37.1-linux64.tar.gz')
+          assert isinstance(a.get('digest'), str) and a['digest'].startswith('sha256:')
+          print('URL='+a['browser_download_url'])
+          print('SHA256='+a['digest'].split(':',1)[1])
+          PY
+          . /tmp/qikvrt-systemtest/geckodriver/asset.env
+          curl --fail --location --retry 3 "$URL" -o /tmp/qikvrt-systemtest/geckodriver/geckodriver.tar.gz
+          printf '%s  %s\n' "$SHA256" /tmp/qikvrt-systemtest/geckodriver/geckodriver.tar.gz | sha256sum -c -
+          tar -xzf /tmp/qikvrt-systemtest/geckodriver/geckodriver.tar.gz -C /tmp/qikvrt-systemtest/geckodriver
+
+      - name: Execute integrated real Firefox Effect-Ack roundtrip
+        env:
+          QIKVRT_SOURCE_HEAD: ${{ steps.bind.outputs.head }}
+          QIKVRT_SOURCE_TREE: ${{ steps.bind.outputs.tree }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-systemtest/firefox "$HOME/qikvrt-systemtest-gecko-profiles"
+          (cd browser/firefox/qikvrt-terminal && zip -qr /tmp/qikvrt-systemtest/firefox/qikvrt-terminal.xpi .)
+          python3 -B src/qikvrt_effect_ack_http_terminal.py > /tmp/qikvrt-systemtest/firefox/backend.log 2>&1 &
+          backend_pid=$!
+          trap 'kill "$backend_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 100); do
+            if curl --fail --silent 'http://127.0.0.1:8771/.well-known/effect-ack' >/tmp/qikvrt-systemtest/firefox/discovery.json 2>/dev/null; then ready=1; break; fi
+            sleep 0.1
+          done
+          test "$ready" -eq 1
+          python3 -B tools/qikvrt_firefox_terminal_e2e.py \
+            --geckodriver /tmp/qikvrt-systemtest/geckodriver/geckodriver \
+            --xpi /tmp/qikvrt-systemtest/firefox/qikvrt-terminal.xpi \
+            --receipt /tmp/qikvrt-systemtest/firefox/browser-receipt.json \
+            --geckodriver-log /tmp/qikvrt-systemtest/firefox/geckodriver.log \
+            --profile-root "$HOME/qikvrt-systemtest-gecko-profiles"
+          curl --fail --silent 'http://127.0.0.1:8771/terminal/state' > /tmp/qikvrt-systemtest/firefox/backend-state.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          b=json.loads(Path('/tmp/qikvrt-systemtest/firefox/browser-receipt.json').read_text())
+          s=json.loads(Path('/tmp/qikvrt-systemtest/firefox/backend-state.json').read_text())
+          assert b['bounded_loopback_effect_ack_done'] is True
+          assert b['prepare_state']=='EFFECT_ACK_DONE'
+          assert b['commit_state']=='EFFECT_ACK_DONE'
+          assert b['external_effect']=='NONE'
+          assert s['events']==1
+          assert s['last_event']['kind']=='TERMINAL_INPUT_ACCEPTED'
+          assert s['last_event']['text']=='QIKVRT-FIREFOX-E2E-NONCE-0001'
+          assert s['last_event']['external_effect']=='NONE'
+          PY
+
+      - name: Re-execute exact causal-transition and M68000 source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$CAUSAL_SOURCE_HEAD"
+          git worktree add --detach /tmp/qikvrt-causal "$CAUSAL_SOURCE_HEAD"
+          cd /tmp/qikvrt-causal
+          test "$(git rev-parse HEAD)" = "$CAUSAL_SOURCE_HEAD"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_causal_transition_probe \
+            tests.test_qikvrt_causal_time_all_layers
+
+      - name: Write exact system-test receipt and report
+        env:
+          INTEGRATED_HEAD: ${{ steps.bind.outputs.head }}
+          INTEGRATED_TREE: ${{ steps.bind.outputs.tree }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-systemtest/report
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          browser=json.loads(Path('/tmp/qikvrt-systemtest/firefox/browser-receipt.json').read_text())
+          backend=json.loads(Path('/tmp/qikvrt-systemtest/firefox/backend-state.json').read_text())
+          receipt={
+            'schema':'qikvrt_universal_terminal_systemtest_receipt_v1',
+            'repository':'Goldkelch/qik-vrt',
+            'integrated_head':os.environ['INTEGRATED_HEAD'],
+            'integrated_tree':os.environ['INTEGRATED_TREE'],
+            'run_id':int(os.environ['RUN_ID']),
+            'run_attempt':int(os.environ['RUN_ATTEMPT']),
+            'sampling_vbr_tests':'EXECUTED_SUCCESS',
+            'firefox_effect_ack_contract_tests':'EXECUTED_SUCCESS',
+            'firefox_terminal_execution_observed':True,
+            'bounded_loopback_effect_ack_done':True,
+            'effect_ack_done_scope':'BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY',
+            'post_effect_reobservation_observed':True,
+            'causal_source_head':os.environ['CAUSAL_SOURCE_HEAD'],
+            'causal_source_run':int(os.environ['CAUSAL_SOURCE_RUN']),
+            'causal_source_job':int(os.environ['CAUSAL_SOURCE_JOB']),
+            'causal_m68000_reexecution':'EXECUTED_SUCCESS',
+            'external_effect':'NONE',
+            'authority_main_effect':False,
+            'physical_megast_execution':False,
+            'general_effect_ack_done':False,
+            'independent_review_authority':False,
+            'browser':browser,
+            'backend_last_event':backend['last_event'],
+            'invariants':[
+              'CAUSALITY != SEQUENCE','ACTIVITY != EFFECT','TRANSPORT_ACK != EFFECT_ACK',
+              'LATER != BETTER','SAMPLED_ORDER != CAUSAL_ORDER','VERIFIED_SUBSYSTEM != AUTHORITY_EFFECT'
+            ]
+          }
+          raw=(json.dumps(receipt,sort_keys=True,indent=2)+'\n').encode()
+          Path('/tmp/qikvrt-systemtest/report/SYSTEMTEST_RECEIPT.json').write_bytes(raw)
+          Path('/tmp/qikvrt-systemtest/report/SYSTEMTEST_RECEIPT.sha256').write_text(hashlib.sha256(raw).hexdigest()+'  SYSTEMTEST_RECEIPT.json\n')
+          report=f'''# QIK-VRT Universal Terminal System Test\n\nIntegrated head: `{receipt["integrated_head"]}`\n\nIntegrated tree: `{receipt["integrated_tree"]}`\n\nRun: `{receipt["run_id"]}` attempt `{receipt["run_attempt"]}`\n\n## Executed result\n\n- Adaptive Nyquist/VBR monitor tests: executed successfully.\n- Integrated Firefox contract tests: executed successfully.\n- Real Firefox prepare/commit roundtrip: observed successfully.\n- Bounded loopback Effect-Acknowledgement: observed DONE for `terminal_input` only.\n- Post-effect backend reobservation: observed exact terminal nonce.\n- Exact causal/M68000 source head `{receipt["causal_source_head"]}`: re-executed successfully.\n\n## Boundaries\n\nThis report does not claim Authority-main integration, physical Mega-ST execution, general EFFECT_ACK_DONE, independent review, publication, or empirical physical confirmation.\n'''
+          Path('/tmp/qikvrt-systemtest/report/SYSTEMTEST_REPORT.md').write_text(report)
+          print(json.dumps(receipt,sort_keys=True,indent=2))
+          PY
+
+      - name: Preserve system-test artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-universal-terminal-systemtest-${{ steps.bind.outputs.head }}-${{ github.run_attempt }}
+          path: |
+            /tmp/qikvrt-systemtest/report/SYSTEMTEST_RECEIPT.json
+            /tmp/qikvrt-systemtest/report/SYSTEMTEST_RECEIPT.sha256
+            /tmp/qikvrt-systemtest/report/SYSTEMTEST_REPORT.md
+            /tmp/qikvrt-systemtest/firefox/browser-receipt.json
+            /tmp/qikvrt-systemtest/firefox/backend-state.json
+            /tmp/qikvrt-systemtest/firefox/geckodriver.log
+          retention-days: 90

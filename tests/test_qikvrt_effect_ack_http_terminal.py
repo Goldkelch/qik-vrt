@@ -39,7 +39,13 @@ class EffectAckHttpTerminalContractTests(unittest.TestCase):
         ET.parse(ROOT / "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml")
         self.assertEqual(manifest["manifest_version"], 3)
         self.assertIn("alarms", manifest["permissions"])
-        self.assertIn("http://127.0.0.1:8771/*", manifest["host_permissions"])
+        # Host permissions are WebExtension match patterns and therefore remain
+        # origin-scoped; the exact :8771 endpoint is constrained separately by
+        # extension CSP and runtime/backend validation.
+        self.assertIn("http://127.0.0.1/*", manifest["host_permissions"])
+        self.assertNotIn("http://127.0.0.1:8771/*", manifest["host_permissions"])
+        csp = manifest["content_security_policy"]["extension_pages"]
+        self.assertIn("http://127.0.0.1:8771", csp)
         self.assertEqual(policy["http"]["request_field"], "Effect-Ack-Request")
         self.assertEqual(policy["http"]["response_field"], "Effect-Ack")
         self.assertEqual(policy["http"]["link_relation"], "effect-ack")
