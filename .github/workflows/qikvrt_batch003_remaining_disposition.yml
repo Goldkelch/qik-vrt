@@ -23,9 +23,10 @@ on:
 permissions:
   contents: write
 
-# Share the exact target-ref writer lease with repository evidence materialization.
+# Pull-request execution is read-only and must not displace the one pending writer.
+# Non-PR execution retains the shared exact-target repository writer lease.
 concurrency:
-  group: qikvrt-repository-evidence-${{ github.head_ref || github.ref_name }}
+  group: qikvrt-${{ github.event_name == 'pull_request' && 'batch003-remaining-readonly' || 'repository-evidence' }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
