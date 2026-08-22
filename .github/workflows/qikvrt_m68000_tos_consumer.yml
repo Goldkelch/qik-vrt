@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends hatari xvfb
-          hatari --version | tee "$RUNNER_TEMP/hatari-version.txt"
+          hatari --version 2>&1 | tee "$RUNNER_TEMP/hatari-version.txt" || true
           roots=()
           for candidate in /usr/share/hatari /usr/local/share/hatari; do
             if [ -d "$candidate" ]; then
