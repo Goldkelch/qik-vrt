@@ -1,0 +1,42 @@
+{
+  "schema": "qikvrt_zero_bug_continuous_v1",
+  "definition": "No known deterministic repository or workflow defect is present on the exact observed head, and every required invariant is freshly evidenced on that head.",
+  "non_claims": [
+    "universal_absence_of_all_possible_bugs",
+    "future_bug_impossibility",
+    "external_effect_without_evidence"
+  ],
+  "hard_invariants": [
+    "exact_head_and_tree_bound",
+    "known_deterministic_defects_zero",
+    "repository_integrity_verifies",
+    "required_exact_head_gates_non_adverse",
+    "productive_writer_count_at_most_one",
+    "stale_evidence_reuse_zero",
+    "registered_improvers_only",
+    "reobserve_after_every_mutation"
+  ],
+  "state_machine": {
+    "after_mutation": "HOLD_UNVERIFIED",
+    "after_fresh_exact_head_success": "ZERO_KNOWN_DETERMINISTIC_BUGS",
+    "on_deterministic_failure": "HOLD_DEFECT_IDENTIFIED",
+    "on_missing_evidence": "HOLD_EVIDENCE_INCOMPLETE"
+  },
+  "repair_order": [
+    "OBSERVE_EXACT_HEAD_TREE",
+    "IDENTIFY_FIRST_DETERMINISTIC_DEFECT",
+    "SELECT_SMALLEST_REGISTERED_REPAIR",
+    "VERIFY_SOURCE_HEAD_BEFORE_WRITE",
+    "SERIALIZE_ONE_PRODUCTIVE_WRITER",
+    "APPLY_MINIMAL_EFFECT",
+    "REOBSERVE_NEW_HEAD_TREE",
+    "REQUIRE_ALL_FRESH_GATES",
+    "RETAIN_OR_HOLD"
+  ],
+  "continuous_revision": {
+    "allowed": true,
+    "later_is_better": false,
+    "perfect_optimum_policy": "policy/PERFECT_OPTIMUM_V1.json",
+    "arbitrary_unregistered_self_modification": "HOLD"
+  }
+}
