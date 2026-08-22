@@ -49,13 +49,25 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends hatari xvfb
           hatari --version | tee "$RUNNER_TEMP/hatari-version.txt"
-          rom="$(find /usr/share/hatari /usr/local/share/hatari \
-            -maxdepth 3 -type f \
-            \( -iname 'tos.img' -o -iname 'etos*.img' -o -iname '*emutos*.img' \) \
-            2>/dev/null | sort | head -n 1)"
+          roots=()
+          for candidate in /usr/share/hatari /usr/local/share/hatari; do
+            if [ -d "$candidate" ]; then
+              roots+=("$candidate")
+            fi
+          done
+          rom=""
+          if [ "${#roots[@]}" -gt 0 ]; then
+            rom="$(find "${roots[@]}" \
+              -maxdepth 3 -type f \
+              \( -iname 'tos.img' -o -iname 'etos*.img' -o -iname '*emutos*.img' \) \
+              -print 2>/dev/null | sort | head -n 1 || true)"
+          fi
           if [ -z "$rom" ]; then
             echo 'BLOCK: OPEN_EMUTOS_ROM_NOT_INSTALLED_WITH_HATARI' >&2
-            find /usr/share/hatari /usr/local/share/hatari -maxdepth 3 -type f 2>/dev/null || true
+            if [ "${#roots[@]}" -gt 0 ]; then
+              find "${roots[@]}" -maxdepth 3 -type f -print 2>/dev/null || true
+            fi
+            apt-cache search emutos || true
             exit 1
           fi
           echo "rom=$rom" >> "$GITHUB_OUTPUT"
