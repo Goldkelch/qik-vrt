@@ -7,12 +7,18 @@ on:
       - scratch/public-asr-model-link-20260822
     paths:
       - .github/workflows/scratch_public_german_asr_model_transport.yml
+  pull_request:
+    branches:
+      - scratch/public-asr-model-base-20260822
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/scratch_public_german_asr_model_transport.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: scratch-public-german-asr-model-${{ github.ref }}
+  group: scratch-public-german-asr-model-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -36,10 +42,10 @@ jobs:
           bytes="$(stat -c %s "$output")"
           sha256="$(sha256sum "$output" | awk '{print $1}')"
           python3 -B - "$RUNNER_TEMP/public-german-asr-model/MODEL_SOURCE.json" "$bytes" "$sha256" <<'PY'
+          import datetime
           import json
           import pathlib
           import sys
-          import datetime
 
           target = pathlib.Path(sys.argv[1])
           value = {
