@@ -81,6 +81,13 @@ class PerfectOptimumTests(unittest.TestCase):
             ],
         )
 
+    def test_recursive_workflow_uses_immediate_predecessor_not_pr_base(self):
+        workflow = Path(".github/workflows/qikvrt_perfect_optimum_self_application.yml").read_text(encoding="utf-8")
+        self.assertIn("git rev-parse --verify HEAD^1^{commit}", workflow)
+        self.assertIn("PREDECESSOR_SHA", workflow)
+        self.assertIn("predecessor_sha", workflow)
+        self.assertNotIn("github.event.pull_request.base.sha || github.event.before", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
