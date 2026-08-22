@@ -16,9 +16,7 @@ from tools import qikvrt_autonomous_self_heal as self_heal
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "state/autonomy/AUTONOMOUS_PRE_EFFECT_POLICY_V1.json"
-PERSONAL_ORIGIN_POLICY = (
-    ROOT / "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json"
-)
+CANONICAL_UPSTREAM_POLICY = ROOT / "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
 EXPECTED_PRECONDITIONS = [
     "CURRENT_MAIN_REOBSERVED",
     "EXACT_HEAD_BOUND",
@@ -45,6 +43,7 @@ REQUIRED_EVIDENCE_PATHS = (
     "AI",
     "AI_CONTEXT.json",
     "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
+    "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
     "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
     "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
     "REPOSITORY_FILE_MANIFEST.json",
@@ -52,10 +51,59 @@ REQUIRED_EVIDENCE_PATHS = (
     "SHA256SUMS.txt",
 )
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
+REMOTE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 class PreEffectBlock(RuntimeError):
     pass
+
+
+def _canonical_upstream_contract() -> dict[str, str]:
+    try:
+        policy = json.loads(CANONICAL_UPSTREAM_POLICY.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise PreEffectBlock("canonical upstream policy cannot be loaded") from exc
+    if policy.get("schema") != "qikvrt_canonical_upstream_remote_v1":
+        raise PreEffectBlock("canonical upstream policy schema mismatch")
+    if policy.get("status") != "NORMATIVE":
+        raise PreEffectBlock("canonical upstream policy is not normative")
+    canonical = policy.get("canonical_upstream", {})
+    repository = canonical.get("repository")
+    role = canonical.get("role")
+    remote_name = canonical.get("canonical_remote_name")
+    remote_url = canonical.get("canonical_https_url")
+    default_branch = canonical.get("default_branch")
+    if (
+        not isinstance(repository, str)
+        or not repository
+        or role != "AUTHORITY"
+        or not isinstance(remote_name, str)
+        or REMOTE_NAME.fullmatch(remote_name) is None
+        or not isinstance(remote_url, str)
+        or not remote_url
+        or not isinstance(default_branch, str)
+        or not default_branch
+    ):
+        raise PreEffectBlock("canonical upstream contract mismatch")
+    expected_url = f"https://github.com/{repository}.git"
+    if remote_url != expected_url:
+        raise PreEffectBlock("canonical upstream URL/repository mismatch")
+    selection = policy.get("selection_rule", {})
+    if selection.get("source_of_truth") != "canonical_upstream.repository":
+        raise PreEffectBlock("canonical upstream selection rule mismatch")
+    if (
+        selection.get("policy_over_local_git_config") is not True
+        or selection.get("policy_over_remote_name_heuristics") is not True
+        or selection.get("policy_over_personal_origin") is not True
+        or selection.get("ambiguous_or_missing_binding") != "HOLD"
+    ):
+        raise PreEffectBlock("canonical upstream precedence weakened")
+    return {
+        "repository": repository,
+        "remote_name": remote_name,
+        "remote_url": remote_url,
+        "default_branch": default_branch,
+    }
 
 
 def load_policy() -> dict[str, Any]:
@@ -80,47 +128,44 @@ def load_policy() -> dict[str, Any]:
     owner = value.get("owner_authorization", {})
     if owner.get("state") != "ACTIVE" or owner.get("role") != "Product Owner":
         raise PreEffectBlock("Product Owner implementation authorization absent")
+    _canonical_upstream_contract()
     self_heal.load_contract()
     self_heal.load_delegation()
     return value
 
 
 def _canonical_source_remote() -> str:
-    try:
-        policy = json.loads(PERSONAL_ORIGIN_POLICY.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        raise PreEffectBlock("personal-origin policy cannot be loaded") from exc
-    if policy.get("schema") != "qikvrt_ai_personal_working_memory_origin_and_attribution_v1":
-        raise PreEffectBlock("personal-origin policy schema mismatch")
-    canonical = policy.get("personal_working_memory", {}).get("canonical_source_remote", {})
-    expected_name = canonical.get("name")
-    expected_url = canonical.get("url")
-    if expected_name != "upstream" or not isinstance(expected_url, str):
-        raise PreEffectBlock("canonical source remote contract mismatch")
+    contract = _canonical_upstream_contract()
+    expected_name = contract["remote_name"]
+    expected_url = contract["remote_url"]
 
     remotes_result = self_heal.run(("git", "remote"), timeout=60)
     if remotes_result.returncode:
         raise PreEffectBlock("cannot enumerate Git remotes")
     remotes = set(remotes_result.stdout.split())
-
-    candidate = expected_name if expected_name in remotes else "origin"
-    if candidate not in remotes:
+    if expected_name not in remotes:
         raise PreEffectBlock("canonical source remote is absent")
-    url_result = self_heal.run(("git", "remote", "get-url", candidate), timeout=60)
+    url_result = self_heal.run(
+        ("git", "remote", "get-url", expected_name),
+        timeout=60,
+    )
     if url_result.returncode or url_result.stdout.strip() != expected_url:
         raise PreEffectBlock("canonical source remote URL mismatch")
-    return candidate
+    return expected_name
 
 
 def _remote_main_revision() -> str | None:
+    contract = _canonical_upstream_contract()
     remote = _canonical_source_remote()
+    branch = contract["default_branch"]
+    ref = f"refs/heads/{branch}"
     result = self_heal.run((
-        "git", "ls-remote", "--heads", remote, "refs/heads/main",
+        "git", "ls-remote", "--heads", remote, ref,
     ), timeout=60)
     if result.returncode:
         return None
     fields = result.stdout.split()
-    if len(fields) != 2 or not SHA1.fullmatch(fields[0]):
+    if len(fields) != 2 or not SHA1.fullmatch(fields[0]) or fields[1] != ref:
         return None
     return fields[0]
 
