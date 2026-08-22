@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Lean v2 D3 M68000 compiler
+
+on:
+  pull_request:
+    paths:
+      - "formalization/QIKVRT_Formalization_v2.0/**"
+      - "src/m68000/qikvrt_lean_v2_d3_step.s"
+      - "runtime/m68000/qikvrt_lean_v2_d3_step.hex"
+      - "tools/qikvrt_lean_v2_m68000_d3_compiler.py"
+      - "tests/test_qikvrt_lean_v2_m68000_d3_compiler.py"
+      - ".github/workflows/qikvrt_lean_v2_m68000_d3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-compile-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Kernel-check v2 formal projection
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v2.0
+          test: false
+      - name: Compile and exhaustively verify finite machine projection
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_lean_v2_m68000_d3_compiler.py | tee qikvrt-lean-v2-d3-m68000-report.json
+          python3 -m unittest tests.test_qikvrt_lean_v2_m68000_d3_compiler -v
+      - name: Reject proof holes in projection
+        run: |
+          set -euo pipefail
+          target=formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/M68000D3Step.lean
+          ! grep -nE '(^|[^A-Za-z])(axiom|sorry|admit)([^A-Za-z]|$)' "$target"
+      - name: Publish compiler report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-lean-v2-d3-m68000-${{ github.sha }}
+          path: qikvrt-lean-v2-d3-m68000-report.json
+          retention-days: 30
+          if-no-files-found: error
