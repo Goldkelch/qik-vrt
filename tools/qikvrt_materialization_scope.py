@@ -13,6 +13,7 @@ from typing import Any
 
 CONTROL_PATHS = {
     ".github/workflows/qikvrt_batch04_integrity.yml",
+    ".github/workflows/qikvrt_batch003_remaining_disposition.yml",
     "tools/qikvrt_materialization_scope.py",
     "tests/test_qikvrt_materialization_scope.py",
 }
