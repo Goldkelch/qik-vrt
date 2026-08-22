@@ -10,6 +10,7 @@ from tools.qikvrt_pr_head_recovery import classify_observations
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_autonomous_pr_head_continuation.yml"
+EXACT_HEAD_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_autonomous_exact_head_verify.yml"
 RECOVERY_TOOL = ROOT / "tools" / "qikvrt_pr_head_recovery.py"
 ABI = ROOT / "state" / "autonomy" / "CAUSAL_D0_ABI_V1.json"
 
@@ -18,6 +19,7 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.text = WORKFLOW.read_text(encoding="utf-8")
+        cls.exact_head_text = EXACT_HEAD_WORKFLOW.read_text(encoding="utf-8")
         cls.recovery_text = RECOVERY_TOOL.read_text(encoding="utf-8")
         cls.abi = json.loads(ABI.read_text(encoding="utf-8"))
 
@@ -184,6 +186,14 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("qikvrt_requested_review_executor.yml/dispatches", self.text)
         self.assertIn("REQUEST_AUTHORITY/D0=3", self.text)
         self.assertIn("is not fabricated", self.text)
+
+    def test_exact_head_qce_verification_cannot_mutate_frozen_package_inventory(self) -> None:
+        self.assertIn('qce_tmpdir="$(mktemp -d "${RUNNER_TEMP}/qikvrt-qce-exact-head.XXXXXX")"', self.exact_head_text)
+        self.assertIn('--axiom-output "$qce_tmpdir/qce-autonomous-axiom-output.txt"', self.exact_head_text)
+        self.assertIn('> "$qce_tmpdir/qce-autonomous-verification.json"', self.exact_head_text)
+        self.assertIn("trap cleanup_qce_tmpdir EXIT HUP INT TERM", self.exact_head_text)
+        self.assertNotIn("--axiom-output qce-autonomous-axiom-output.txt", self.exact_head_text)
+        self.assertNotIn("> qce-autonomous-verification.json", self.exact_head_text)
 
 
 if __name__ == "__main__":
