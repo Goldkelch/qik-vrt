@@ -1,0 +1,100 @@
+name: QIKVRT zero-bug continuous invariant
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-zero-bug-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact observed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$expected"
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Verify zero-bug policy self-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_zero_bug.py --self-check | tee /tmp/qikvrt-zero-bug-self-check.json
+
+      - name: Run zero-bug and perfect-optimum regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_zero_bug tests.test_qikvrt_perfect_optimum
+
+      - name: Verify deterministic repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete deterministic repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+
+      - name: Evaluate exact-head zero-bug state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/qikvrt-zero-bug-observation.json <<'JSON'
+          {
+            "exact_head_and_tree_bound": true,
+            "known_deterministic_defects": 0,
+            "repository_integrity_verifies": true,
+            "required_exact_head_gates_non_adverse": true,
+            "productive_writer_count": 0,
+            "stale_evidence_reuse": 0,
+            "registered_improvers_only": true,
+            "reobserve_after_every_mutation": true
+          }
+          JSON
+          python3 -B tools/qikvrt_zero_bug.py --observation /tmp/qikvrt-zero-bug-observation.json | tee /tmp/qikvrt-zero-bug-receipt.json
+
+      - name: Reobserve exact head and immutable worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = '${{ steps.bind.outputs.head }}'
+          test "$(git rev-parse --verify HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
+          test -z "$(git status --porcelain)"
+
+      - name: Preserve exact-head zero-bug receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-zero-bug-${{ steps.bind.outputs.head }}
+          path: |
+            /tmp/qikvrt-zero-bug-self-check.json
+            /tmp/qikvrt-zero-bug-observation.json
+            /tmp/qikvrt-zero-bug-receipt.json
+          if-no-files-found: error
+          retention-days: 14
