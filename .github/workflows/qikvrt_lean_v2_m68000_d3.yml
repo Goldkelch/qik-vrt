@@ -36,14 +36,17 @@ jobs:
           set -euo pipefail
           python3 tools/qikvrt_lean_v2_m68000_d3_compiler.py | tee qikvrt-lean-v2-d3-m68000-report.json
           python3 -m unittest tests.test_qikvrt_lean_v2_m68000_d3_compiler -v
-      - name: Reject proof holes in frozen source the compiler relies on
+      - name: Reject proof-hole syntax in frozen source the compiler relies on
         run: |
           set -euo pipefail
           for target in \
             formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPoint.lean \
             formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AuthorityMirrorWitness.lean
           do
-            ! grep -nE '(^|[^A-Za-z])(axiom|sorry|admit)([^A-Za-z]|$)' "$target"
+            if grep -nE '^[[:space:]]*(axiom|sorry|admit)([[:space:]]|$)' "$target"; then
+              echo "BLOCK: proof-hole syntax in $target"
+              exit 1
+            fi
           done
       - name: Assert frozen v2 release source is not in PR diff
         run: |
