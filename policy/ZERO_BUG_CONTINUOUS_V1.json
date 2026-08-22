@@ -1,6 +1,6 @@
 {
   "schema": "qikvrt_zero_bug_continuous_v1",
-  "definition": "No known deterministic repository or workflow defect is present on the exact observed head, and every required invariant is freshly evidenced on that head.",
+  "definition": "No known deterministic repository or workflow defect is present on the exact observed head under the bound audit surface, and every required invariant is freshly evidenced on that head.",
   "non_claims": [
     "universal_absence_of_all_possible_bugs",
     "future_bug_impossibility",
@@ -14,8 +14,33 @@
     "productive_writer_count_at_most_one",
     "stale_evidence_reuse_zero",
     "registered_improvers_only",
-    "reobserve_after_every_mutation"
+    "reobserve_after_every_mutation",
+    "full_tracked_tree_sha256_bound"
   ],
+  "audit_surface": {
+    "local_commands": [
+      "python3 -B -m unittest -v tests.test_qikvrt_zero_bug tests.test_qikvrt_perfect_optimum tests.test_qikvrt_bit_audit",
+      "python3 -B tools/qikvrt_integrity.py verify",
+      "make test"
+    ],
+    "required_peer_workflows": [
+      "QIKVRT CI",
+      "QIKVRT Collective Proposal Review",
+      "QIKVRT perfect optimum recursive self-application",
+      "QIKVRT repository evidence materialization"
+    ],
+    "writer_workflows": [
+      "QIKVRT repository evidence materialization",
+      "QIKVRT Batch-003 remaining subject disposition"
+    ],
+    "bit_audit": {
+      "source": "git object database at exact HEAD",
+      "per_blob_digest": "sha256",
+      "canonical_index_digest": "sha256",
+      "include_mode_type_oid_path_size_and_content_digest": true,
+      "receipt_is_runtime_artifact_not_repository_input": true
+    }
+  },
   "state_machine": {
     "after_mutation": "HOLD_UNVERIFIED",
     "after_fresh_exact_head_success": "ZERO_KNOWN_DETERMINISTIC_BUGS",
@@ -31,6 +56,7 @@
     "APPLY_MINIMAL_EFFECT",
     "REOBSERVE_NEW_HEAD_TREE",
     "REQUIRE_ALL_FRESH_GATES",
+    "AUDIT_FULL_TRACKED_TREE_BYTES",
     "RETAIN_OR_HOLD"
   ],
   "continuous_revision": {
