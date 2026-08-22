@@ -5,7 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "qikvrt_lean_v2_m68000_d3_compiler.py"
-LEAN = ROOT / "formalization" / "QIKVRT_Formalization_v2.0" / "QIKVRTFormalization" / "Hardware" / "M68000D3Step.lean"
+LEAN = ROOT / "formalization" / "QIKVRT_Formalization_v2.0" / "QIKVRTFormalization" / "Hardware" / "D3FixedPoint.lean"
 
 spec = importlib.util.spec_from_file_location("qikvrt_lean_v2_m68000_d3_compiler", TOOL)
 mod = importlib.util.module_from_spec(spec)
@@ -34,11 +34,12 @@ class V2D3CompilerTests(unittest.TestCase):
             self.assertEqual(d0, 1)
             self.assertEqual(d3, 0xA5)
 
-    def test_lean_refinement_and_d3_theorems_present(self):
+    def test_frozen_lean_source_contains_required_theorems(self):
         text = LEAN.read_text(encoding="utf-8")
-        self.assertIn("theorem machineProjection_refines_step", text)
-        self.assertIn("theorem machineProjection_preserves_d3", text)
-        self.assertIn("theorem phaseCode_next_mod_three", text)
+        self.assertIn("theorem d3_projection_fixed_under_step", text)
+        self.assertIn("theorem d3_projection_fixed_under_any_finite_trace", text)
+        self.assertIn("theorem one_ied_cycle_returns_phase_and_preserves_d3", text)
+        self.assertIn("def Decision.code", (LEAN.parent / "AuthorityMirrorWitness.lean").read_text(encoding="utf-8"))
 
     def test_no_physical_claim(self):
         report = mod.verify()
