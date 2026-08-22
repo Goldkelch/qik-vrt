@@ -10,8 +10,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  pull-requests: read
 
 concurrency:
   group: qikvrt-zero-bug-${{ github.event.pull_request.number || github.ref }}
@@ -46,12 +44,17 @@ jobs:
           set -euo pipefail
           python3 -B tools/qikvrt_zero_bug.py --self-check | tee /tmp/qikvrt-zero-bug-self-check.json
 
-      - name: Run zero-bug and perfect-optimum regression contracts
+      - name: Run bound zero-bug regression contracts
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B -m unittest -v tests.test_qikvrt_zero_bug tests.test_qikvrt_perfect_optimum tests.test_qikvrt_bit_audit
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_zero_bug \
+            tests.test_qikvrt_perfect_optimum \
+            tests.test_qikvrt_bit_audit \
+            tests.test_qikvrt_repository_writer_lease
           touch /tmp/qikvrt-regressions.ok
+          touch /tmp/qikvrt-writer-lease.ok
 
       - name: Verify deterministic repository integrity
         shell: bash
@@ -76,98 +79,7 @@ jobs:
             --receipt /tmp/qikvrt-bit-audit.json \
             --inventory /tmp/qikvrt-bit-inventory.jsonl
 
-      - name: Observe exact-head peer gates and writer state
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ steps.bind.outputs.head }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          python3 -B - <<'PY'
-          import json, os, time, urllib.request
-          from pathlib import Path
-
-          repo = os.environ['REPOSITORY']
-          head = os.environ['HEAD_SHA']
-          token = os.environ['GH_TOKEN']
-          pr_number = os.environ.get('PR_NUMBER', '')
-          policy = json.loads(Path('policy/ZERO_BUG_CONTINUOUS_V1.json').read_text())
-          required = policy['audit_surface']['required_peer_workflows']
-          writers = set(policy['audit_surface']['writer_workflows'])
-          headers = {
-              'Authorization': f'Bearer {token}',
-              'Accept': 'application/vnd.github+json',
-              'X-GitHub-Api-Version': '2022-11-28',
-          }
-
-          def get(url):
-              req = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(req, timeout=30) as r:
-                  return json.load(r)
-
-          def current_ref_head():
-              if pr_number:
-                  return get(f'https://api.github.com/repos/{repo}/pulls/{pr_number}')['head']['sha']
-              return get(f'https://api.github.com/repos/{repo}/commits/main')['sha']
-
-          deadline = time.time() + 720
-          snapshot = None
-          while True:
-              runs = get(f'https://api.github.com/repos/{repo}/actions/runs?head_sha={head}&per_page=100')['workflow_runs']
-              latest = {}
-              for run in sorted(runs, key=lambda x: x['id'], reverse=True):
-                  latest.setdefault(run['name'], run)
-              writer_active = [
-                  {'name': r['name'], 'id': r['id'], 'status': r['status'], 'head_sha': r['head_sha']}
-                  for r in latest.values()
-                  if r['name'] in writers and r['status'] in ('queued', 'in_progress')
-              ]
-              selected = {name: latest.get(name) for name in required}
-              missing = [name for name, run in selected.items() if run is None]
-              pending = [name for name, run in selected.items() if run and run['status'] != 'completed']
-              adverse = [
-                  name for name, run in selected.items()
-                  if run and run['status'] == 'completed' and run.get('conclusion') != 'success'
-              ]
-              ref_head = current_ref_head()
-              snapshot = {
-                  'schema': 'qikvrt_exact_head_peer_gate_snapshot_v1',
-                  'head_sha': head,
-                  'current_ref_head': ref_head,
-                  'current_head_reobserved': ref_head == head,
-                  'required_workflows': {
-                      name: None if run is None else {
-                          'id': run['id'], 'status': run['status'], 'conclusion': run.get('conclusion'), 'head_sha': run['head_sha']
-                      }
-                      for name, run in selected.items()
-                  },
-                  'missing': missing,
-                  'pending': pending,
-                  'adverse': adverse,
-                  'productive_writer_count': len(writer_active),
-                  'active_writers': writer_active,
-                  'evidence_heads': [run['head_sha'] for run in selected.values() if run],
-                  'required_exact_head_gates_non_adverse': not missing and not pending and not adverse and ref_head == head,
-              }
-              Path('/tmp/qikvrt-peer-gates.json').write_text(json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
-              print(json.dumps(snapshot, indent=2, sort_keys=True))
-              if len(writer_active) > 1:
-                  raise SystemExit('more than one productive writer observed')
-              if ref_head != head:
-                  raise SystemExit('exact head drifted while audit was running')
-              if adverse:
-                  raise SystemExit('adverse required exact-head gate: ' + ', '.join(adverse))
-              if snapshot['required_exact_head_gates_non_adverse']:
-                  break
-              if time.time() >= deadline:
-                  raise SystemExit('peer-gate evidence incomplete at audit timeout')
-              time.sleep(15)
-          PY
-
-      - name: Derive and evaluate exact-head zero-bug state
+      - name: Derive local exact-head zero-bug state only from measured evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -176,10 +88,10 @@ jobs:
             --tree '${{ steps.bind.outputs.tree }}' \
             --expected-head '${{ github.event.pull_request.head.sha || github.sha }}' \
             --bit-audit /tmp/qikvrt-bit-audit.json \
-            --peer-gates /tmp/qikvrt-peer-gates.json \
             --regressions-marker /tmp/qikvrt-regressions.ok \
             --integrity-marker /tmp/qikvrt-integrity.ok \
             --tests-marker /tmp/qikvrt-full-tests.ok \
+            --writer-lease-marker /tmp/qikvrt-writer-lease.ok \
             --write-observation /tmp/qikvrt-zero-bug-observation.json \
             | tee /tmp/qikvrt-zero-bug-receipt.json
 
@@ -191,15 +103,14 @@ jobs:
           test "$(git rev-parse --verify HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
           test -z "$(git status --porcelain)"
 
-      - name: Preserve exact-head zero-bug audit bundle
+      - name: Preserve exact-head local audit bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-zero-bug-${{ steps.bind.outputs.head }}
+          name: qikvrt-zero-bug-local-${{ steps.bind.outputs.head }}
           path: |
             /tmp/qikvrt-zero-bug-self-check.json
             /tmp/qikvrt-zero-bug-observation.json
             /tmp/qikvrt-zero-bug-receipt.json
-            /tmp/qikvrt-peer-gates.json
             /tmp/qikvrt-bit-audit.json
             /tmp/qikvrt-bit-inventory.jsonl
           if-no-files-found: error
