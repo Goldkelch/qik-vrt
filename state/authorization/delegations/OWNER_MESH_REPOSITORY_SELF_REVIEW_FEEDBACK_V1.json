@@ -1,0 +1,75 @@
+{
+  "schema": "qikvrt_owner_mesh_repository_self_review_feedback_v1",
+  "delegation_id": "OWNER-MESH-REPOSITORY-SELF-REVIEW-FEEDBACK-V1",
+  "state": "ACTIVE",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "effective_at": "2026-08-22T11:59:02Z",
+  "repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "source_instruction": {
+    "language": "de",
+    "text": "Sorge dafür, dass Reviews ab sofort vom Mesh Repository selbst durchgeführt werden und die Ergebnisse unmittelbar im Mesh Repository selbst wieder einfließen, um die folgenden Aktionen daraus abzuleiten.",
+    "utf8_sha256": "b9006a3298ab4eab7951bc641b79943c7b8f1dd093de5eeed8253a06c164e418"
+  },
+  "policy": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+  "work_unit": "state/work_units/MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
+  "authorization_scope": {
+    "repository_mesh_reviews_every_eligible_internal_pull_request": true,
+    "human_review_request_prerequisite": false,
+    "inspect_exact_candidate_diff_and_record_findings": true,
+    "persist_role_local_exact_review_receipts": true,
+    "derive_exactly_one_d0_next_action": true,
+    "project_receipt_as_pr_comment_status_and_actions_artifact": true,
+    "reuse_existing_continuation_code_owner_and_promotion_consumers": true
+  },
+  "persistence_boundary": {
+    "ledger_ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
+    "write_protocol": "APPEND_ONLY_FAST_FORWARD_COMPARE_AND_SWAP",
+    "candidate_branch_mutation_by_review_runtime": false,
+    "main_branch_mutation_by_review_runtime": false,
+    "cross_role_receipt_transfer": false,
+    "identical_fingerprint_is_idempotent_noop": true
+  },
+  "mandatory_preconditions": [
+    "TRUSTED_MAIN_REVIEW_CODE",
+    "CURRENT_BASE_AND_TREE_REOBSERVED",
+    "EXACT_HEAD_AND_TREE_REOBSERVED",
+    "PULL_REQUEST_TITLE_AND_BODY_DIGEST_REOBSERVED",
+    "SORTED_SCOPE_AND_BLOB_BINDINGS_COMPLETE",
+    "FULL_BINARY_FULL_INDEX_DIFF_BOUND",
+    "COMMENTS_THREADS_GATES_AND_WRITERS_REOBSERVED",
+    "TRUSTED_MAIN_OBSERVER_REGENERATES_BYTE_IDENTICAL_RECEIPT",
+    "STORED_RECEIPT_AND_DIFF_RAW_BYTES_MATCH_REGENERATION",
+    "GATE_WORKFLOW_ID_PATH_EVENT_HEAD_AND_JOB_EVIDENCE_BOUND",
+    "LEDGER_PREDECESSOR_REOBSERVED_BEFORE_NON_FORCE_CAS",
+    "SUBJECT_REOBSERVED_AFTER_EVERY_REPOSITORY_MUTATION",
+    "DOWNSTREAM_EFFECT_REOBSERVES_LEDGER_RECEIPT_NOT_STATUS_ALONE"
+  ],
+  "not_authorized": [
+    "impersonate_a_human_or_code_owner",
+    "submit_bot_APPROVE_or_REQUEST_CHANGES_platform_events",
+    "treat_mesh_self_review_as_independent_review_or_consensus",
+    "write_review_evidence_to_the_candidate_or_main_branch",
+    "force_push_rewrite_or_transfer_stale_evidence",
+    "merge_promote_release_deploy_publish_or_perform_external_effects",
+    "claim_PASS_FINAL_PASS_EFFECT_ACK_DONE_or_AUTHORITY_MIRROR_EQUALITY"
+  ],
+  "revocation": {
+    "revocable": true,
+    "method": "append a later owner decision naming this delegation_id and setting state to REVOKED"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "INDEPENDENT_CODE_OWNER_APPROVAL": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "MERGE": false
+  }
+}
