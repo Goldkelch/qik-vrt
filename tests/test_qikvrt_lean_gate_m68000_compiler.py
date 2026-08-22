@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,7 @@ ASM = ROOT / "src" / "m68000" / "qikvrt_lean_gate_kernel.s"
 spec = importlib.util.spec_from_file_location("qikvrt_lean_gate_m68000_compiler", TOOL)
 mod = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
+sys.modules[spec.name] = mod
 spec.loader.exec_module(mod)
 
 
