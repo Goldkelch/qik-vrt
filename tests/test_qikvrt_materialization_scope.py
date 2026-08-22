@@ -107,7 +107,7 @@ class MaterializationScopeTests(unittest.TestCase):
             )
             self.assertIn(token, workflow)
 
-    def test_batch003_writer_is_not_triggered_by_unrelated_pull_requests(self) -> None:
+    def test_batch003_writer_is_not_triggered_or_persisted_by_unrelated_prs(self) -> None:
         workflow = BATCH003_WORKFLOW.read_text(encoding="utf-8")
         pull_request = workflow.index("  pull_request:")
         dispatch = workflow.index("  workflow_dispatch:")
@@ -127,6 +127,12 @@ class MaterializationScopeTests(unittest.TestCase):
             self.assertIn(pattern, trigger)
         self.assertNotIn('      - "**"', trigger)
         self.assertNotIn('      - "*"', trigger)
+        self.assertIn("  cancel-in-progress: true", workflow)
+        self.assertIn(
+            "- name: Persist exact evidence head\n"
+            "        if: github.event_name != 'pull_request'",
+            workflow,
+        )
 
     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
