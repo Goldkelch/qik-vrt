@@ -1,0 +1,161 @@
+{
+  "acceptance": {
+    "audio_receipt": "evidence/audio/2026-08-22/AUDIO_CARRIER_COST_RECEIPT_V1.json",
+    "calculator": "tools/qikvrt_evidence_cost.py",
+    "fail_closed_on_invalid_input": true,
+    "market_value_must_remain_hold_without_required_evidence": true,
+    "repository_scenario_receipt": "evidence/audio/2026-08-22/AUTHORITY_REPOSITORY_SIZE_SCENARIO_V1.json",
+    "tests": "tests/test_qikvrt_evidence_cost.py"
+  },
+  "base_binding": {
+    "authority_main": "2ea174a04dbce0d02fd09ea285f2ff5c94a003ed",
+    "authority_tree": "ff34c628ff54519d21c1594300bdb87538349638",
+    "deterministic_calculation_convention": "interpret the API integer as KiB only for the explicitly labeled scenario",
+    "exact_tree_payload_bytes_measured": false,
+    "github_reported_repository_size": 186801,
+    "github_reported_unit_label": "KB",
+    "scenario_bytes": 191284224
+  },
+  "claim_boundaries": [
+    "CARRIER_BYTES != SHANNON_INFORMATION",
+    "LANDAUER_LOWER_BOUND != ACTUAL_ENERGY",
+    "OPERATIONAL_COST != REPRODUCTION_COST",
+    "REPRODUCTION_COST != MARKET_VALUE",
+    "THEORETICAL_WIDTH_SCALING != MEASURED_SPEEDUP",
+    "BOUNDED_SOFTWARE_SYSTEMTEST != UNIVERSAL_HARDWARE_PROOF",
+    "REPOSITORY_EVIDENCE != PHYSICAL_NATURAL_LAW"
+  ],
+  "hardware_boundary": {
+    "mc68000_primary_source_correction": {
+      "consequence": "the audio statement that treats 4 MB as the general MC68000 direct-addressing limit is not adopted",
+      "physical_megast_execution_observed": false,
+      "verified": "32-bit data and address registers and 16 MB direct addressing range are documented by NXP"
+    },
+    "modern_accelerator_mapping": {
+      "end_to_end_speedup_measured": false,
+      "example_memory_bandwidth_gb_per_second": [
+        3700,
+        7700,
+        8000
+      ],
+      "required_next_evidence": [
+        "executable reference kernel",
+        "stable input/output corpus",
+        "baseline implementations",
+        "power and elapsed-time measurement",
+        "compiler and driver binding",
+        "repeatability and confidence intervals"
+      ],
+      "status": "THEORETICAL_CARRIER_ENVELOPE_ONLY"
+    }
+  },
+  "id": "EVIDENCE_BANDWIDTH_COST_VALUATION_V1",
+  "owner_audio_binding": {
+    "aggregate_bytes": 7142895,
+    "aggregate_duration_seconds": "865.941333",
+    "files": 4,
+    "receipt": "evidence/audio/2026-08-22/EVIDENCE_BANDWIDTH_AUDIO_RECEIPT_V1.json"
+  },
+  "physical_model": {
+    "boltzmann_j_per_kelvin_exact": "1.380649e-23",
+    "formula": "E_min = N_bits * n_irreversible_per_bit * k_B * T * ln(2)",
+    "irreversible_operations_per_carrier_bit_scenario": "1",
+    "meaning": "thermodynamic lower bound for the specified logically irreversible operations",
+    "not_meaning": [
+      "actual evidence-creation energy",
+      "Shannon information content",
+      "semantic novelty",
+      "scientific validity",
+      "market value"
+    ],
+    "temperature_kelvin_scenario": "300"
+  },
+  "repository": "Goldkelch/qik-vrt",
+  "schema": "qikvrt_evidence_bandwidth_cost_valuation_policy_v1",
+  "source_observation_date": "2026-08-22",
+  "sources": [
+    {
+      "authority": "BIPM",
+      "kind": "SI_CONSTANT",
+      "subject": "exact Boltzmann constant"
+    },
+    {
+      "citation": "R. Landauer, Irreversibility and Heat Generation in the Computing Process, IBM Journal, 1961, DOI 10.1147/rd.53.0183",
+      "kind": "THERMODYNAMICS"
+    },
+    {
+      "citation": "C. E. Shannon, A Mathematical Theory of Communication, Bell System Technical Journal, 1948",
+      "kind": "INFORMATION_THEORY"
+    },
+    {
+      "authority": "NXP",
+      "kind": "HARDWARE",
+      "subject": "MC68000 product characteristics"
+    },
+    {
+      "authority": "GitHub",
+      "kind": "PRICING_SCENARIO",
+      "subject": "Actions Linux runner list price and public-repository boundary"
+    },
+    {
+      "authority": "AWS",
+      "kind": "PRICING_SCENARIO",
+      "subject": "S3 Standard first-tier price"
+    },
+    {
+      "authority": "Eurostat",
+      "kind": "ELECTRICITY_SCENARIO",
+      "subject": "EU non-household average electricity price H2 2025"
+    },
+    {
+      "authority": "IEA",
+      "kind": "ENERGY_CONTEXT",
+      "subject": "Energy and AI/data-centre electricity demand"
+    }
+  ],
+  "transport_model": {
+    "bandwidth_envelope": "t = bytes / bytes_per_second",
+    "ideal_word_envelope": "t = (8 * bytes) / (width_bits * clock_hz * utilization)",
+    "measured_cpu_or_bus_benchmark": false,
+    "utilization_domain": "0 < utilization <= 1"
+  },
+  "valuation_layers": [
+    {
+      "examples": {
+        "four_audio_carrier_joules": "1.64056805786675126385193554805251376083425148072279870756244E-13",
+        "repository_size_scenario_joules": "4.39338374522135087953745284240129255701646723227643007330059E-12"
+      },
+      "level": "L0_PHYSICAL_LOWER_BOUND",
+      "status": "CALCULABLE_UNDER_EXPLICIT_ASSUMPTIONS"
+    },
+    {
+      "level": "L1_OPERATIONAL_CARRIER_COST",
+      "requires": [
+        "storage tariff",
+        "replica count",
+        "retention",
+        "runner duration",
+        "runner tariff",
+        "measured power where energy is claimed"
+      ],
+      "status": "SCENARIO_CALCULABLE"
+    },
+    {
+      "formula": "hours * verified blended rate + direct compute + storage + review + hardware + legal/provenance verification",
+      "level": "L2_REPRODUCTION_OR_REPLACEMENT_COST",
+      "status": "FORMULA_AVAILABLE_INPUT_LEDGER_REQUIRED"
+    },
+    {
+      "level": "L3_MARKET_OR_IP_VALUE",
+      "requires": [
+        "rights and license inventory",
+        "authorship and contribution provenance",
+        "freedom-to-operate analysis where applicable",
+        "independent reproducible benchmarks",
+        "adoption or revenue evidence",
+        "defined transaction and valuation date"
+      ],
+      "status": "HOLD"
+    }
+  ]
+}
