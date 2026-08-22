@@ -128,11 +128,16 @@ class MaterializationScopeTests(unittest.TestCase):
         self.assertNotIn('      - "**"', trigger)
         self.assertNotIn('      - "*"', trigger)
         self.assertIn("  cancel-in-progress: true", workflow)
-        self.assertIn(
-            "- name: Persist exact evidence head\n"
-            "        if: github.event_name != 'pull_request'",
-            workflow,
-        )
+        for name in (
+            "Regenerate and verify repository integrity",
+            "Run complete repository gates",
+            "Persist exact evidence head",
+        ):
+            self.assertIn(
+                f"- name: {name}\n"
+                "        if: github.event_name != 'pull_request'",
+                workflow,
+            )
 
     def test_integrity_and_complete_gates_remain_unconditional(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
