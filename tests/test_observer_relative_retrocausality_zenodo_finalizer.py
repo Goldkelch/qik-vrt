@@ -172,13 +172,24 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
     def test_write_then_committed_descendant_check_is_local_only(self) -> None:
         """Exercise the real two-commit transition in an isolated worktree."""
         source_ref = "HEAD"
+        historical_source_ref: str | None = None
         if controls.AUTHORIZATION_PATH.exists() or controls.MANIFEST_PATH.exists():
             self.assertTrue(controls.AUTHORIZATION_PATH.is_file())
             self.assertTrue(controls.MANIFEST_PATH.is_file())
-            source_ref = controls.load_json(
+            historical_source_ref = controls.load_json(
                 controls.MANIFEST_PATH.relative_to(ROOT).as_posix()
             )["source_head"]
-            self.assertIsInstance(source_ref, str)
+            self.assertIsInstance(historical_source_ref, str)
+            historical_probe = subprocess.run(
+                ["git", "cat-file", "-e", f"{historical_source_ref}^{{commit}}"],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            if historical_probe.returncode == 0:
+                source_ref = historical_source_ref
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
             isolated = temporary_root / "isolated"
@@ -187,6 +198,40 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
                 cwd=ROOT,
             )
             try:
+                isolated_authorization = (
+                    isolated / controls.AUTHORIZATION_PATH.relative_to(ROOT)
+                )
+                isolated_manifest = isolated / controls.MANIFEST_PATH.relative_to(ROOT)
+                if historical_source_ref is not None and source_ref == "HEAD":
+                    self.assertTrue(isolated_authorization.is_file())
+                    self.assertTrue(isolated_manifest.is_file())
+                    self.run_command(
+                        [
+                            "git",
+                            "rm",
+                            "--",
+                            controls.AUTHORIZATION_PATH.relative_to(ROOT).as_posix(),
+                            controls.MANIFEST_PATH.relative_to(ROOT).as_posix(),
+                        ],
+                        cwd=isolated,
+                    )
+                    self.run_command(
+                        [
+                            "git",
+                            "-c",
+                            "commit.gpgsign=false",
+                            "-c",
+                            "user.name=Zenodo Finalizer Test",
+                            "-c",
+                            "user.email=zenodo-finalizer-test@example.invalid",
+                            "commit",
+                            "--no-verify",
+                            "--no-gpg-sign",
+                            "-m",
+                            "test: create local pre-control source fixture",
+                        ],
+                        cwd=isolated,
+                    )
                 isolated_script = (
                     isolated
                     / "release/observer-relative-retrocausality-current-synthesis-zenodo-v2"
@@ -243,8 +288,8 @@ class ObserverRelativeRetrocausalityZenodoFinalizerTests(unittest.TestCase):
                     environment=environment,
                 )
                 self.assertIn("PASS materialized final controls uploads=21", written.stdout)
-                self.assertTrue((isolated / controls.AUTHORIZATION_PATH.relative_to(ROOT)).is_file())
-                self.assertTrue((isolated / controls.MANIFEST_PATH.relative_to(ROOT)).is_file())
+                self.assertTrue(isolated_authorization.is_file())
+                self.assertTrue(isolated_manifest.is_file())
                 self.run_command(
                     [
                         "git",
