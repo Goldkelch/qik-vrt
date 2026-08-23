@@ -1,0 +1,96 @@
+{
+  "schema": "QIKVRT_VIRTUAL_SPARK_ARCHITECTURE_V1",
+  "version": 1,
+  "target": "Motorola 68000",
+  "physical_register_width_bits": 32,
+  "upstream_compiled_kernel_registry": "runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json",
+  "required_upstream_kernel_ids": [
+    "lean_gate_v1",
+    "lean_v2_d3_step_v1",
+    "lean_v2_mesh_recovery_v1"
+  ],
+  "two_three_eight_three_binding": {
+    "two_power_three_bits": 8,
+    "first_ring_bytes": 1,
+    "first_ring_possible_states": 256,
+    "possible_states_relation": "2^8 = 256",
+    "outer_evidence_ring_bits": 256,
+    "outer_evidence_ring_rule": "explicit virtual architecture property; not derived from 8^3",
+    "final_three_meaning": "three structural rings; not an exponent equation"
+  },
+  "structural_rings": [
+    {
+      "id": "CONTROL_RING",
+      "width_bits": 8,
+      "carrier": "D0 low byte",
+      "purpose": "finite branch-work admission and terminal decision"
+    },
+    {
+      "id": "EVIDENCE_RING",
+      "width_bits": 256,
+      "carrier": "virtual memory SHA-256 identity",
+      "purpose": "canonical branch-work capsule identity and provenance"
+    },
+    {
+      "id": "COMPLETION_RING",
+      "carrier": "D0/D1/D2 outputs plus preserved D3 witness",
+      "purpose": "complete, reobserve, request authority, or fail-closed hold"
+    }
+  ],
+  "spark_kernel": {
+    "id": "lean_spark_branch_pass_v1",
+    "assembly_path": "src/m68000/qikvrt_spark_branch_pass.s",
+    "hex_path": "runtime/m68000/qikvrt_spark_branch_pass.hex",
+    "proof_project": "formalization/QIKVRT_Spark_v1",
+    "proof_source": "formalization/QIKVRT_Spark_v1/QIKVRTSpark.lean",
+    "machine_bytes": 82,
+    "max_dynamic_instructions": 21,
+    "input_space_flags": 256,
+    "input_space_d3": 256,
+    "exhaustive_pairs": 65536
+  },
+  "decision_abi": {
+    "0": "NOOP_COMPLETE",
+    "1": "HOLD",
+    "2": "REOBSERVE",
+    "3": "REQUEST_AUTHORITY"
+  },
+  "one_pass_contract": {
+    "processor_passes_per_admitted_branch_work_unit": 1,
+    "admission_scope": "one already bounded local branch-acceptance capsule",
+    "completion_requires": [
+      "IMPLEMENTED",
+      "VERIFIED",
+      "PERSISTED",
+      "REOBSERVED",
+      "NO_STALE_EVIDENCE",
+      "NO_UNCLASSIFIED_REMAINDER",
+      "AUTHORITY_PRESENT_IF_REQUIRED"
+    ],
+    "complete_output": "D0=0,D1=1,D2=0",
+    "d3_preserved": true,
+    "collect_persist_release_reobserve_required": true
+  },
+  "continuous_use": {
+    "workflow": ".github/workflows/qikvrt_spark_branch_runtime.yml",
+    "events": ["pull_request", "push_main", "workflow_dispatch"],
+    "compiled_kernel_loaded_once_per_batch": true,
+    "higher_level_rule_reinterpreted_per_pass": false,
+    "acceptance_batch_work_units": 256
+  },
+  "hard_boundaries": [
+    "VIRTUAL_SPARK_PASS != GIT_MERGE_EFFECT",
+    "VIRTUAL_M68000_EXECUTION != PHYSICAL_M68000_EXECUTION",
+    "BOUNDED_BRANCH_WORK_RING != ARBITRARY_UNBOUNDED_BRANCH_IMPLEMENTATION",
+    "COMPILED_BYTES != NUMERIC_PHYSICAL_SPEEDUP_EVIDENCE",
+    "QUIESCENCE != FAILURE",
+    "ONE_RING_COMPLETE != ALL_RINGS_COMPLETE"
+  ],
+  "virtual_m68000_execution_observed": false,
+  "physical_m68000_execution_observed": false,
+  "physical_atari_mega_st_execution_observed": false,
+  "numeric_physical_speedup_measured": false,
+  "pass": false,
+  "final_pass": false,
+  "effect_ack_done": false
+}
