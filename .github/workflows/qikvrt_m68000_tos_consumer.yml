@@ -47,7 +47,7 @@ jobs:
             | tee "$RUNNER_TEMP/build.json"
           cmp "$RUNNER_TEMP/MLP.TOS.hex" runtime/m68000/tos/MLP.TOS.hex
 
-      - name: Install exact Hatari/EmuTOS execution environment
+      - name: Install exact Hatari and checksum-pinned EmuTOS
         id: emulator
         run: |
           set -euo pipefail
@@ -56,42 +56,25 @@ jobs:
           hatari --version 2>&1 | tee "$RUNNER_TEMP/hatari-version.txt" || true
           hatari --trace help > "$RUNNER_TEMP/hatari-trace-help.txt" 2>&1 || true
 
-          roots=()
-          for candidate in /usr/share/hatari /usr/local/share/hatari; do
-            if [ -d "$candidate" ]; then roots+=("$candidate"); fi
-          done
-          rom=""
-          if [ "${#roots[@]}" -gt 0 ]; then
-            rom="$(find "${roots[@]}" -maxdepth 3 -type f \
-              \( -iname 'tos.img' -o -iname 'etos*.img' -o -iname '*emutos*.img' \) \
-              -print 2>/dev/null | sort | head -n 1 || true)"
+          archive="$RUNNER_TEMP/emutos-512k-1.4.zip"
+          archive_url='https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip'
+          archive_sha256='1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663'
+          curl --location --fail --retry 5 --retry-all-errors \
+            --output "$archive" "$archive_url"
+          printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --strict
+          entry="$(unzip -Z1 "$archive" | awk '/(^|\/)etos512us\.img$/ { print; exit }')"
+          if [ -z "$entry" ]; then
+            echo 'BLOCK: PINNED_EMUTOS_ARCHIVE_MISSING_ETOS512US_IMG' >&2
+            unzip -Z1 "$archive" >&2
+            exit 1
           fi
-
-          if [ -z "$rom" ]; then
-            archive="$RUNNER_TEMP/emutos-512k-1.4.zip"
-            archive_url='https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip'
-            archive_sha256='1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663'
-            curl --location --fail --retry 5 --retry-all-errors \
-              --output "$archive" "$archive_url"
-            printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --strict
-            entry="$(unzip -Z1 "$archive" | awk '/(^|\/)etos512us\.img$/ { print; exit }')"
-            if [ -z "$entry" ]; then
-              echo 'BLOCK: PINNED_EMUTOS_ARCHIVE_MISSING_ETOS512US_IMG' >&2
-              unzip -Z1 "$archive" >&2
-              exit 1
-            fi
-            rom="$RUNNER_TEMP/etos512us.img"
-            unzip -p "$archive" "$entry" > "$rom"
-            test "$(stat --format=%s "$rom")" -eq 524288
-            printf '%s  %s\n' "$archive_sha256" "$archive" \
-              > "$RUNNER_TEMP/emutos-archive.sha256"
-          fi
-
-          printf '%s  %s\n' \
-            '0b1b9346e91436688be6eb0f355f40872b2d3a08ee49c5ea5d7c145a191c88ba' \
-            "$rom" | sha256sum --check --strict
-          echo "rom=$rom" >> "$GITHUB_OUTPUT"
+          rom="$RUNNER_TEMP/etos512us.img"
+          unzip -p "$archive" "$entry" > "$rom"
+          test "$(stat --format=%s "$rom")" -eq 524288
+          printf '%s  %s\n' "$archive_sha256" "$archive" \
+            > "$RUNNER_TEMP/emutos-archive.sha256"
           sha256sum "$rom" | tee "$RUNNER_TEMP/emutos-rom.sha256"
+          echo "rom=$rom" >> "$GITHUB_OUTPUT"
 
       - name: Execute MLP.TOS on Mega ST MC68000
         env:
@@ -160,6 +143,7 @@ jobs:
               'receipt_reobserved': True,
               'tos_sha256': hashlib.sha256(tos).hexdigest(),
               'receipt_sha256': hashlib.sha256(receipt).hexdigest(),
+              'emutos_archive_sha256': (temp / 'emutos-archive.sha256').read_text().split()[0],
               'emutos_rom_sha256': (temp / 'emutos-rom.sha256').read_text().split()[0],
               'build': json.loads((temp / 'build.json').read_text()),
               'reobservation': json.loads((temp / 'reobservation.json').read_text()),
