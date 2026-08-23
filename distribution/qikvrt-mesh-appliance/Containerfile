@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.7
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ARG UBUNTU_BASE=ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+FROM ${UBUNTU_BASE} AS extension-builder
+RUN apt-get update && apt-get install --no-install-recommends -y python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY browser/firefox/qikvrt-terminal browser/firefox/qikvrt-terminal
+COPY distribution/qikvrt-mesh-appliance distribution/qikvrt-mesh-appliance
+RUN python3 distribution/qikvrt-mesh-appliance/build_extension.py --output /out/qikvrt-terminal.xpi
+
+FROM ${UBUNTU_BASE}
+ARG TARGETARCH
+ARG QIKVRT_SOURCE_SHA=UNBOUND
+ARG FIREFOX_VERSION=153.1.0esr
+ARG GECKODRIVER_VERSION=0.37.1
+ARG UBUNTU_SNAPSHOT=20260823T000000Z
+LABEL org.opencontainers.image.source="https://github.com/Goldkelch/qik-vrt" \
+      org.opencontainers.image.revision="${QIKVRT_SOURCE_SHA}" \
+      org.opencontainers.image.title="QIK-VRT Mesh Appliance" \
+      org.opencontainers.image.version="0.1.0-rc1"
+ENV DEBIAN_FRONTEND=noninteractive \
+    QIKVRT_EFFECT_ACK_HOST=127.0.0.1 \
+    QIKVRT_EFFECT_ACK_PORT=8771 \
+    QIKVRT_STATE_DIR=/var/lib/qikvrt/effect-ack \
+    QIKVRT_PROTOCOL_PROFILE=draft-lohmann-qikvrt-effect-ack-00
+RUN printf 'APT::Snapshot "%s";\n' "$UBUNTU_SNAPSHOT" > /etc/apt/apt.conf.d/50qikvrt-snapshot \
+ && apt-get update --snapshot "$UBUNTU_SNAPSHOT" \
+ && apt-get install --snapshot "$UBUNTU_SNAPSHOT" --no-install-recommends -y ca-certificates curl gnupg python3 xz-utils xvfb x11vnc novnc websockify openbox dbus-x11 libasound2t64 libdbus-glib-1-2 libgtk-3-0 libx11-xcb1 libxt6 libpci3 fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    case "$TARGETARCH" in amd64) mozarch=linux-x86_64; gdarch=linux64 ;; arm64) mozarch=linux-aarch64; gdarch=linux-aarch64 ;; *) exit 2 ;; esac; \
+    base="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}"; artifact="${mozarch}/en-US/firefox-${FIREFOX_VERSION}.tar.xz"; \
+    curl -fsSLo /tmp/MOZILLA-KEY "$base/KEY"; \
+    curl -fsSLo /tmp/SHA256SUMS "$base/SHA256SUMS"; \
+    curl -fsSLo /tmp/SHA256SUMS.asc "$base/SHA256SUMS.asc"; \
+    curl -fsSLo /tmp/firefox.tar.xz "$base/$artifact"; \
+    gpg --batch --import /tmp/MOZILLA-KEY; \
+    gpg --batch --with-colons --fingerprint | grep -q '14F26682D0916CDD81E37B6D61B7B526D98F0353'; \
+    gpg --batch --verify /tmp/SHA256SUMS.asc /tmp/SHA256SUMS; \
+    expected="$(awk -v p="$artifact" '$2 == p {print $1}' /tmp/SHA256SUMS)"; \
+    test "${#expected}" -eq 64; \
+    echo "$expected  /tmp/firefox.tar.xz" | sha256sum -c -; \
+    mkdir -p /opt; tar -xJf /tmp/firefox.tar.xz -C /opt; \
+    gd="geckodriver-v${GECKODRIVER_VERSION}-${gdarch}.tar.gz"; gdurl="https://github.com/mozilla/geckodriver/releases/download/v${GECKODRIVER_VERSION}"; \
+    curl -fsSLo /tmp/geckodriver.tgz "$gdurl/$gd"; \
+    curl -fsSLo /tmp/geckodriver.tgz.asc "$gdurl/$gd.asc"; \
+    gpg --batch --verify /tmp/geckodriver.tgz.asc /tmp/geckodriver.tgz; \
+    tar -xzf /tmp/geckodriver.tgz -C /usr/local/bin geckodriver; chmod 0755 /usr/local/bin/geckodriver; \
+    rm -f /tmp/MOZILLA-KEY /tmp/SHA256SUMS /tmp/SHA256SUMS.asc /tmp/firefox.tar.xz /tmp/geckodriver.tgz /tmp/geckodriver.tgz.asc
+RUN useradd --create-home --uid 10001 qikvrt \
+ && mkdir -p /opt/qikvrt /opt/firefox/distribution /var/lib/qikvrt/effect-ack \
+ && chown -R qikvrt:qikvrt /home/qikvrt /var/lib/qikvrt
+WORKDIR /opt/qikvrt
+COPY src src
+COPY --from=extension-builder /out/qikvrt-terminal.xpi /opt/qikvrt/qikvrt-terminal.xpi
+COPY distribution/qikvrt-mesh-appliance/effect_ack_gateway.py distribution/qikvrt-mesh-appliance/launch_firefox.py distribution/qikvrt-mesh-appliance/entrypoint.sh /opt/qikvrt/
+COPY distribution/qikvrt-mesh-appliance/firefox/policies.json /opt/firefox/distribution/policies.json
+ENV PYTHONPATH=/opt/qikvrt
+USER qikvrt
+EXPOSE 6080
+VOLUME ["/var/lib/qikvrt"]
+HEALTHCHECK --interval=10s --timeout=3s --start-period=45s --retries=6 CMD curl -fsS http://127.0.0.1:8771/healthz && test -s /run/qikvrt/firefox-session.json || exit 1
+ENTRYPOINT ["/opt/qikvrt/entrypoint.sh"]
