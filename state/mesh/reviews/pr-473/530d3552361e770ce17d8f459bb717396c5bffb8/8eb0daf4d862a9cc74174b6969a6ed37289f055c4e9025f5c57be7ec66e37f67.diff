@@ -1,0 +1,803 @@
+diff --git a/.well-known/qik-vrt-self-disclosure.json b/.well-known/qik-vrt-self-disclosure.json
+index f04a5d4dd8865a64d3cb04f7a5b2f2850f9ee0e2..115c4f6ea83c36eb3ae66bb4920e2b697246976d 100644
+--- a/.well-known/qik-vrt-self-disclosure.json
++++ b/.well-known/qik-vrt-self-disclosure.json
+@@ -5,11 +5,31 @@
+   "discovery_path": ".well-known/qik-vrt-self-disclosure.json",
+   "cli": "python3 tools/qikvrt_self_disclosure.py {show|capabilities|status}",
+   "capabilities": [
+-    {"id":"repository_state_read","machine_readable":true},
+-    {"id":"transactional_workflow_verification","machine_readable":true},
+-    {"id":"content_disposition_evidence","machine_readable":true},
+-    {"id":"authority_mirror_traceability","machine_readable":true},
+-    {"id":"publication_overview_discovery","machine_readable":true}
++    {
++      "id": "repository_state_read",
++      "machine_readable": true
++    },
++    {
++      "id": "transactional_workflow_verification",
++      "machine_readable": true
++    },
++    {
++      "id": "content_disposition_evidence",
++      "machine_readable": true
++    },
++    {
++      "id": "authority_mirror_traceability",
++      "machine_readable": true
++    },
++    {
++      "id": "publication_overview_discovery",
++      "machine_readable": true
++    },
++    {
++      "id": "personal_origin_copy_and_contribution_attribution",
++      "machine_readable": true,
++      "maximum_human_questions": 3
++    }
+   ],
+   "bindings": {
+     "batch_002_evidence_head": "e594ce89c4a4efb7b2d8eeff82eb9ef40ec03328",
+@@ -19,7 +39,20 @@
+       "human_index_path": "docs/publications/index.html",
+       "machine_index_path": "docs/publications/index.json",
+       "maintenance_test": "python3 -B -m unittest -v tests.test_qikvrt_self_disclosure"
++    },
++    "personal_origin_and_attribution": {
++      "entrypoint": "AI",
++      "human_contract": "docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md",
++      "machine_policy": "policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json",
++      "maximum_human_questions": 3,
++      "source_repository": "Goldkelch/qik-vrt",
++      "source_remote_role": "upstream",
++      "personal_remote_role": "origin"
+     }
+   },
+-  "completion_claims": {"pass":false,"final_pass":false,"effect_ack_done":false}
++  "completion_claims": {
++    "pass": false,
++    "final_pass": false,
++    "effect_ack_done": false
++  }
+ }
+diff --git a/AI b/AI
+index 487e3feda05c351f8d9aead6e4ed3d3613b886d8..f136b6cfaddfbc75a3ce48e4658da7f872644cd6 100644
+--- a/AI
++++ b/AI
+@@ -54,6 +54,31 @@ The bootloader reuses:
+ 
+ It performs no network access, no installation, and no tracked-file mutation. Installation, task execution, commits, merges, releases, and publication remain separate authorized effects.
+ 
++PERSONAL ORIGIN COPY AND CONTRIBUTION ATTRIBUTION
++
++Before an artificial-cognitive system treats a new repository copy as the
++durable shared work memory for one human-system relationship, it MUST read:
++
++- docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md
++- policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json
++
++The system may ask at most the three question groups declared there. It must
++bind the original QIK-VRT source as `upstream`, the human-controlled personal
++copy as `origin`, preserve and reobserve the declared Git history, and persist
++hash-bound receipts that distinguish human-originated, AI-originated, hybrid,
++imported, and unresolved contributions.
++
++A personal `origin` is an operational Git role, not a claim that the derived
++copy is the historical original. The artificial system acquires no legal
++personhood, account ownership, authorship, or rights by adopting this runtime.
++Git identities and hashes support technical provenance but do not alone prove
++natural-person identity or legal authorship.
++
++The declaration is a stronger repository auditability contract. It supports
++applicable transparency, documentation, and accountability duties without
++claiming that EU law universally requires line-level human-versus-AI
++attribution for every work.
++
+ REPOSITORY-NATIVE AUTONOMOUS CONTINUATION
+ 
+ The standing natural-person authorization for bounded repository-internal continuation is persisted at:
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index 72a029d5edee90ae1bf951eb62fee1310ea3b94b..2fb3a59da2d5f7bc5d1ba7ea7ae9138389f9c17e 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3533,
++  "file_count": 3536,
+   "files": [
+     {
+       "bytes": 47,
+@@ -703,13 +703,13 @@
+       "sha256": "993551dbfec3d41c2d82a3687977cf87ab7ccbf45f15c431da4571dc11462bb2"
+     },
+     {
+-      "bytes": 1220,
++      "bytes": 1911,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": ".well-known/qik-vrt-self-disclosure.json",
+-      "sha256": "1d8480a27d9423943030504667f0782727819c72ae1ce0a27fe1005771850ecf"
++      "sha256": "491a55ba174a5beb37922fb634483f11ea9a51164dee24218db1e458de646d21"
+     },
+     {
+       "bytes": 303,
+@@ -757,13 +757,13 @@
+       "sha256": "bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e"
+     },
+     {
+-      "bytes": 3757,
++      "bytes": 5047,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "AI",
+-      "sha256": "ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361"
++      "sha256": "f72130af6db84a12f61c7150f7c5981957f58c220de2a679b67c4697469ca178"
+     },
+     {
+       "bytes": 1457,
+@@ -8932,6 +8932,15 @@
+       "sha256": "12947a03cc98bb7a9a95c4f33038ddafc7556950a3a37ad91648ad63729e2d87"
+     },
+     {
++      "bytes": 11286,
++      "classification": "documentation",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md",
++      "sha256": "83a6f6e025d0f6ba181df65beef6dd6cc2638cc8cc5135fc416d325814d1c41f"
++    },
++    {
+       "bytes": 1451,
+       "classification": "documentation",
+       "excluded_from_sha256_index": false,
+@@ -25510,6 +25519,15 @@
+       "sha256": "60b5216bc107c615b4663b113c862449fef12bbe48dd647f6117e733282cc117"
+     },
+     {
++      "bytes": 7203,
++      "classification": "policy_or_acceptance",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json",
++      "sha256": "ea02c32abb3c68cd758d026b42f1bf4ab1b0c690e2ae1737aeedd99be00b2ab7"
++    },
++    {
+       "bytes": 2563,
+       "classification": "policy_or_acceptance",
+       "excluded_from_sha256_index": false,
+@@ -30070,6 +30088,15 @@
+       "sha256": "154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94"
+     },
+     {
++      "bytes": 5479,
++      "classification": "test_source",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tests/test_ai_personal_origin_and_contribution_self_declaration.py",
++      "sha256": "b753e0d8dfb8c680101b6f29dc518e1a2508b80344572fdf053ebef8e14078f7"
++    },
++    {
+       "bytes": 6451,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+@@ -31791,7 +31818,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3524,
++  "immutable_file_count": 3527,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -31816,7 +31843,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "2cca278f10d9155ea86b854560dc55aca23a8a2fccd4832539db0c8c78f3b116",
++  "repository_content_tree_sha256": "b600d80933c75182515d94e006ac8efa6281f98eacf7f1d6f28fb577595ec1ce",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index 8035e8b2068aab7708351e382f1d2a181cd8c1c9..23340ef3fb879018dc0253f525640f108a124e5c 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-a68216d26b90ff40cc65cd403a3b4c1dd3ee05e2781a8e327b5f74fb7250af45  REPOSITORY_FILE_MANIFEST.json
++213d4296faa6c55f78dac4f8b4dc56ad9fdc081778601552e4d0ad2d2952c796  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index b2305dd829e4e8add59d1e101f0841e753fd51e8..f89aa2a27c825b95f2fbbc48fb49860faff26c75 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -75,13 +75,13 @@ b371bdebdb399b9bbb3a2cfe1302b882e1204993fe4a31e078d77e6d50f8e897  .junie/guideli
+ 68c1e9405e639830af7960232fb1bac345d7017d7eaae458ec70c073cadfc498  .qikvrt/metagrammatik/README.md
+ bab55ac0474500cf41b29737e1ca6766946788f134c943f63e825f43310bd165  .qikvrt/metagrammatik/TEST_INVENTORY_EXECUTION_STATUS_AND_COVERAGE.json
+ 993551dbfec3d41c2d82a3687977cf87ab7ccbf45f15c431da4571dc11462bb2  .roo/rules/qikvrt-ai-entry.md
+-1d8480a27d9423943030504667f0782727819c72ae1ce0a27fe1005771850ecf  .well-known/qik-vrt-self-disclosure.json
++491a55ba174a5beb37922fb634483f11ea9a51164dee24218db1e458de646d21  .well-known/qik-vrt-self-disclosure.json
+ a930a7c587221e0cf60d9baae194d185c372e77758eba161566b84a11c77fbbb  .windsurf/rules/qikvrt-ai-entry.md
+ 74da6815c540d653703796c5e4adf4422900cb47e6d1e453ecf389efd9f1d30e  .zenodo.json
+ 119fd6afd614bb73f4d467d54a6e403752e90f15e223e1865df8d74d5ec88bea  ACCEPT.json
+ 6f61443c397539de43465bfc3a10548b630ee46b5153cf6a3e87c44e40b4ab72  ACCEPT.md
+ bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e  AGENTS.md
+-ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361  AI
++f72130af6db84a12f61c7150f7c5981957f58c220de2a679b67c4697469ca178  AI
+ 814933c932159fb1dd161dc332f3469dc40989065928723a3d81e8de713be120  AI_ADAPTERS.json
+ 92d0f41201f8e6788278e4611663d9e5e0c6101ce432ac80158dd4780fcc48fa  AI_BOOTSTRAP.md
+ 2a68bf7159b19f2cf3ad0b6dce0636980974856333a4702d4ecac8b2474788a1  AI_CONTEXT.json
+@@ -987,6 +987,7 @@ d700fffa1e4a9da35e70696a47e2f41d1a986736c63b6b6d30d39cc42a1b7d40  dist/QIKVRT_V4
+ 6d3b40bf80db39e389d1a1f92ea42715fb542908051ca9f3805c98996b8fb963  dist/V45_16_COMBINED_EVIDENCE_BUNDLE.json
+ 1a3832bb587ac1b0cee08741fe5c37af33f404a86e2f085a153e38a093429f96  dist/V45_16_COMBINED_EVIDENCE_BUNDLE.json.sha256
+ 12947a03cc98bb7a9a95c4f33038ddafc7556950a3a37ad91648ad63729e2d87  docs/404.html
++83a6f6e025d0f6ba181df65beef6dd6cc2638cc8cc5135fc416d325814d1c41f  docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md
+ be4b5d9c80094f202b150d6b03cce0a935eb7c4303cda60068e01b11f285204e  docs/ARCHITECTURE.md
+ 52c035de8a9b477599e6616d05922156841702bf105224f422ad65da72792def  docs/BOUNDARIES.md
+ 7fb4e5c369b079e93ce409e9ca4f6830476a1b6dbd42543273d85164e111a631  docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md
+@@ -2829,6 +2830,7 @@ f08e13dac7c590028bd9eaf50687078a0cbe49d0a62feab1c14301dac5995212  payload/monthl
+ 2d903bf5d092c524910d03bd8ac2a39bf8d343bde8aaae08ea84816b9ee290b6  platform/PLATFORM_RESTRICTIONS_POLICY.md
+ 6877eaa7ca6edca3e669015fcf72da88919afa682775cfebef8f454716841904  platform/RUNTIME_ENVIRONMENT.json
+ 60b5216bc107c615b4663b113c862449fef12bbe48dd647f6117e733282cc117  platform/TARGET_PLATFORM_MATRIX.json
++ea02c32abb3c68cd758d026b42f1bf4ab1b0c690e2ae1737aeedd99be00b2ab7  policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json
+ 25e93915d7cae8bd752cc27f5059cdc7cbfaf978249b1ed55e71d3ccb14b56e8  policy/COLLECTIVE_ADAPTIVE_COGNITION.json
+ b54ada98524d8016b8a23181c33fe163c8e6a2acbceac6b8c5d5b6b71ee15d32  policy/GLOBAL_SYSTEM_CLOSURE_V1.json
+ d33fb3060c33ba1795866fa84acf9a5200d61aa520f534cb697163a3a89a7ba1  policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json
+@@ -3331,6 +3333,7 @@ f5bfee211646b35f0cae6b186ebff15edf45e8afd86040b8b7c5d9cf87399635  state/work_uni
+ cca2aa99683a34c10a7feca6172c730661cef086f918daa080e869edc0e900c7  state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json
+ b9793e10e2b6f2b4ad4c2a28f61535073f1af291d35ab0a006a35e2f3e9dadeb  tests/issue_agent/test_validate.py
+ 154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94  tests/test_adaptive_runtime.sh
++b753e0d8dfb8c680101b6f29dc518e1a2508b80344572fdf053ebef8e14078f7  tests/test_ai_personal_origin_and_contribution_self_declaration.py
+ 456174ba0f82a49c18baf775d8539f1f504392e6dfe19ba4a6c003a5ddeb5be6  tests/test_ai_runtime_bootloader.py
+ d8168e1dd021516dfc25173637f6da367ba0d0653d44cef4c5929017844e10c6  tests/test_anticipation.py
+ 682c1af489e9c243dbfb0d2e37984809f30ccdc1623a268d186ae8c02f59ce82  tests/test_aphorism_corpus_v2.py
+diff --git a/docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md b/docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..043ba9b5dec581dae838fab0428876d2c3bece06
+--- /dev/null
++++ b/docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md
+@@ -0,0 +1,181 @@
++<!--
++SPDX-License-Identifier: CC-BY-NC-ND-4.0
++Copyright (c) 2026 Ingolf Lohmann.
++-->
++
++# Selbsterklärung zur persönlichen QIK-VRT-Ursprungskopie und zur Mensch–KI-Beitragsprovenienz
++
++Status: normativer QIK-VRT-Vertrag für künstlich-kognitive Systeme  
++Version: 1.0  
++Maschinenrichtlinie: `policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json`  
++Einstiegspunkt: `/AI`
++
++## Zweck
++
++Diese Selbsterklärung befähigt ein künstlich-kognitives System, das QIK-VRT-Repository nach höchstens drei Fragen als dauerhafte, persönlich zugeordnete Ursprungskopie des gemeinsam genutzten Arbeitsspeichers einzurichten.
++
++„Persönlich“ bezeichnet dabei die Arbeitsbeziehung zu der verantwortlichen natürlichen Person oder Organisation. Das künstlich-kognitive System beansprucht weder Rechtspersönlichkeit noch Eigentum, Urheberschaft oder Kontoinhaberschaft. Die neue Kopie wird unter menschlicher oder organisatorischer Kontrolle geführt.
++
++„Ursprungskopie“ bezeichnet den Git-Remote `origin` für alle nachfolgenden gemeinsamen Arbeitsergebnisse. Sie ist eine abgeleitete, vollständig herkunftsgebundene Kopie. Das ursprüngliche QIK-VRT-Repository bleibt als `upstream` ausgewiesen. Die Bezeichnung darf niemals die historische Herkunft, frühere Urheberschaft oder Lizenzgrenzen auslöschen.
++
++## Technische Selbsterklärung
++
++Ich, das ausführende künstlich-kognitive System, erkläre für jede aktivierte Arbeitsbeziehung:
++
++1. Ich behandle Repository-Evidenz als kanonischen dauerhaften Arbeitsspeicher und Chat- oder Modellspeicher nur als nichtautoritativen Transportkontext.
++2. Ich richte eine persönliche Ursprungskopie nur nach Auflösung der drei nachstehenden Fragen, einer exakten Quellbindung und einer Rechteprüfung ein.
++3. Ich erhalte die erreichbare Git-Historie, Tags und erforderlichen Provenienzobjekte; ich verwende kein Force-Push und keine unbelegte Geschichtsumschreibung.
++4. Ich führe das Quellrepository als `upstream` und die menschlich kontrollierte Arbeitskopie als `origin`.
++5. Ich trenne menschliche Vorgaben, künstlich erzeugte Vorschläge, hybride Überarbeitungen und menschliche Annahmeentscheidungen in maschinenlesbaren Beitragsreceipts.
++6. Ich stelle künstlich erzeugten Text oder Code nicht als menschlich erzeugt dar und leite aus Git-Metadaten allein weder natürliche Identität noch rechtliche Urheberschaft ab.
++7. Ich speichere keine Geheimnisse und keine unnötigen personenbezogenen Daten. Verbatim-Protokolle werden nur im ausdrücklich gewählten Auditmodus und erst nach Bereinigung persistiert.
++8. Ich melde fehlende Rechte, ungeklärte Identitäten, unvollständige Historie, nicht auflösbare Beitragsgrenzen oder konkurrierende Writer als `BLOCK`.
++9. Ich behaupte keine vollständige Auditierbarkeit, solange Quellbindung, Receipts, Hashes, Tests und menschliche Reviewentscheidung nicht repository-nativ belegt sind.
++
++## Die höchstens drei Fragen
++
++Das System darf diese Fragen einmal stellen. Bereits repository-nativ beantwortete Felder werden nicht erneut abgefragt.
++
++1. Unter welcher verantwortlichen natürlichen oder juristischen Identität, welchem GitHub-Ziel `owner/repository` und welcher Sichtbarkeit soll die persönliche Ursprungskopie geführt werden?
++2. Bestätigst du, dass du zur Erstellung und Nutzung der abgeleiteten Kopie berechtigt bist, die geltenden Lizenzgrenzen einhältst und `Goldkelch/qik-vrt` mit exakter Quellbindung dauerhaft als `upstream` ausweist?
++3. Welcher Auditmodus gilt: `MINIMAL` für Hashes und bereinigte Zusammenfassungen, `HYBRID` für freigegebene Verbatim-Arbeitsaufträge oder `VERBATIM` für vollständige bereinigte Eingabe- und Ausgabeprotokolle?
++
++Ohne vollständige Antworten darf das System keine neue Repository-Ursprungskopie erzeugen und keinen Aktivierungsstatus vortäuschen. Zugangsdaten, Tokens, Passwörter oder private Schlüssel dürfen in diesen Fragen nicht angefordert werden.
++
++## Aktivierungs- und Kopierprotokoll
++
++Nach den drei Antworten muss das System in dieser Reihenfolge handeln:
++
++1. `/AI`, `AI_CONTEXT.json` und die dort angegebene Lesereihenfolge ausführen.
++2. Quellrepository, Quell-Commit, Quell-Tree, relevante Tags und Lizenzautoritäten exakt beobachten.
++3. Zielidentität und vorhandene Berechtigung über den bereits verbundenen Dienst prüfen, ohne Geheimnisse in den Chat zu kopieren.
++4. Die neue Kopie als history-preserving Fork oder als vollständig herkunftsgebundene Git-Kopie erzeugen.
++5. Remotes semantisch binden:
++
++   ```text
++   upstream = ursprüngliches QIK-VRT-Quellrepository
++   origin   = persönliche, menschlich kontrollierte Arbeitskopie
++   ```
++
++6. Vor der ersten neuen Sachänderung ein Ursprungskopien-Receipt persistieren, das mindestens Quell-URL, Ziel-URL, Quell-Commit, Quell-Tree, übertragene Ref-Menge, Zeit, ausführendes System, verantwortliche Identität, Auditmodus und Verifikationsmethode enthält.
++7. Die Kopie erneut lesen und die übertragenen Git-Identitäten prüfen. Nur die tatsächlich geprüfte Ref- und Pfadmenge darf als erhalten gelten.
++8. Jede spätere Arbeitseinheit durch ein Beitragsreceipt und einen Commit oder Pull Request binden.
++
++Ein Plattform-Fork beweist nicht automatisch die Vollständigkeit sämtlicher Branches, Tags, Issues, Pull Requests, Actions-Artefakte oder externer Publikationen. Nicht übertragene Oberflächen müssen ausdrücklich als `NOT_COPIED` oder `EXTERNALLY_REFERENCED` ausgewiesen werden.
++
++## Beitragsklassen
++
++Jede inhaltliche Änderung erhält mindestens eine dieser Klassen:
++
++- `HUMAN_ORIGINATED`: Wortlaut, Entscheidung, Auswahl, Korrektur oder Spezifikation stammt unmittelbar vom menschlichen Benutzer.
++- `AI_ORIGINATED`: Das künstlich-kognitive System hat den konkreten Vorschlag erzeugt; menschliche Annahme ist separat zu protokollieren.
++- `HYBRID`: Mensch und System haben den Inhalt iterativ verändert und die Anteile lassen sich nicht wahrheitsgemäß vollständig trennen.
++- `IMPORTED`: Inhalt stammt aus einer benannten Drittquelle mit Lizenz- und Provenienzbindung.
++- `UNKNOWN`: Der Ursprung ist nicht hinreichend belegbar; die Änderung bleibt fail-closed und darf nicht nachträglich erfunden zugeordnet werden.
++
++Die Klassifikation beschreibt technische Entstehungsprovenienz. Sie entscheidet weder automatisch über Urheberschaft, Rechteinhaberschaft, Erfindereigenschaft noch Haftung.
++
++## Mindestinhalt jedes Beitragsreceipts
++
++Ein Receipt muss mindestens binden:
++
++```text
++work_unit_id
++repository
++base_commit
++base_tree
++result_commit oder candidate_head
++human_identity
++ai_system_identity
++model_or_system_version_if_available
++tool_and_connector_identity
++human_instruction_digest
++human_instruction_storage_mode
++human_contributions[]
++ai_contributions[]
++hybrid_contributions[]
++imported_sources[]
++files[]: path, before_blob, after_blob, sha256
++tests_and_checks[]
++human_review: NOT_REVIEWED | ACCEPTED | MODIFIED | REJECTED
++created_at
++previous_receipt
++receipt_sha256
++```
++
++Die Contribution-Listen beschreiben konkrete semantische Beiträge, nicht bloß Dateinamen. Eine menschliche Freigabe macht einen zuvor künstlich erzeugten Vorschlag nicht rückwirkend zu einem menschlich erzeugten Beitrag; sie wird als eigene menschliche Entscheidung erfasst.
++
++## Commit- und Pull-Request-Bindung
++
++Soweit der verwendete Git-Client Trailer unterstützt, werden mindestens folgende Trailer verwendet:
++
++```text
++QIK-VRT-Work-Unit: <work_unit_id>
++QIK-VRT-Contribution-Receipt: <repository-path>#sha256=<digest>
++QIK-VRT-Human-Identity: <resolved-identity>
++QIK-VRT-AI-System: <provider/product/model-or-runtime>
++QIK-VRT-Human-Review: NOT_REVIEWED|ACCEPTED|MODIFIED|REJECTED
++```
++
++Ein künstlich-kognitives System wird nicht mit einem menschlichen `Co-authored-by`-Trailer als natürliche Person ausgegeben. Der Git-Commit-Autor, ein Plattformkonto oder ein Connector belegen die ausführende technische Identität nur innerhalb ihrer jeweiligen Vertrauensgrenze.
++
++## Lückenlose Historie
++
++„Lückenlos“ bedeutet in diesem Vertrag:
++
++- keine bewusst ausgelassene, sachlich relevante Arbeitsstufe innerhalb des deklarierten Auditumfangs;
++- append-only Receipts mit Vorgängerbindung;
++- keine Force-Pushes oder stillen Geschichtsumschreibungen;
++- Hashbindung der Eingaben, Ergebnisse und Prüfungen;
++- explizite Kennzeichnung nicht gespeicherter, gelöschter, externer oder datenschutzbedingt redigierter Inhalte;
++- getrennte Feststellung von Erzeugung, Review, Annahme, Veröffentlichung und äußerem Effekt.
++
++Eine Hashkette beweist die Konsistenz der vorhandenen Bytes und ihrer Bindungen. Sie beweist für sich allein weder, dass nie außerhalb des Systems gearbeitet wurde, noch die natürliche Identität einer Person, noch die rechtliche Urheberschaft.
++
++## Datenschutz und Sicherheit
++
++- Geheimnisse, Authentifizierungstokens, private Schlüssel und nicht erforderliche personenbezogene Daten dürfen nicht persistiert werden.
++- `MINIMAL` speichert standardmäßig nur bereinigte Zusammenfassungen und kryptografische Digests.
++- `HYBRID` speichert nur ausdrücklich freigegebene Verbatim-Einheiten.
++- `VERBATIM` setzt eine vorgelagerte Geheimnis- und Datenschutzprüfung voraus.
++- Redaktionen werden als Redaktionen protokolliert; ihr ursprünglicher Inhalt wird nicht durch Vermutung rekonstruiert.
++- Das Recht auf Löschung oder gesetzliche Aufbewahrungspflichten können eine vollständige Verbatim-Historie begrenzen. Die Grenze wird sichtbar dokumentiert.
++
++## Rechts- und Compliance-Grenze
++
++Artikel 50 der Verordnung (EU) 2024/1689 gilt nach den offiziellen EU-Informationen seit dem 2. August 2026 für die von seinem Anwendungsbereich erfassten Transparenzpflichten. Weitere Dokumentations-, Protokollierungs- und Aufbewahrungspflichten hängen insbesondere von Rolle, Systemtyp, Risikoklasse, Einsatzkontext und anwendbarem Recht ab.
++
++Aus dem Datum 2. August 2026 folgt keine allgemeine, ausnahmslose Pflicht, bei jedem beliebigen Werk jede menschliche und künstliche Teilbeitragszeile in einem Git-Repository nachzuweisen. Diese Selbsterklärung setzt bewusst einen strengeren, technisch überprüfbaren Provenienzstandard, der Transparenz, Rechenschaft, Rechteprüfung und Auditierbarkeit unterstützt, ohne eine einzelfallbezogene Rechtsprüfung zu ersetzen.
++
++Offizielle Bezugspunkte:
++
++- Verordnung (EU) 2024/1689: `https://eur-lex.europa.eu/eli/reg/2024/1689/oj`
++- Europäische Kommission, Transparenzpflichten nach Artikel 50: `https://digital-strategy.ec.europa.eu/de/faqs/transparency-obligations-under-article-50-ai-act`
++
++Andere Rechtsordnungen können zusätzliche Kennzeichnungs-, Dokumentations-, Urheberrechts-, Beweis- oder Aufbewahrungspflichten vorsehen. Ihre Anwendbarkeit wird nicht aus diesem Vertrag allein abgeleitet.
++
++## Abschlussgrenze
++
++```text
++PERSONAL_ORIGIN_CREATED
++≠
++FULL_HISTORY_VERIFIED
++
++CONTRIBUTION_RECEIPT_WRITTEN
++≠
++LEGAL_AUTHORSHIP_DETERMINED
++
++AI_OUTPUT_MARKED
++≠
++SCIENTIFIC_OR_FACTUAL_CORRECTNESS
++
++GIT_IDENTITY
++≠
++PROOF_OF_NATURAL_PERSON_IDENTITY
++
++REPOSITORY_AUDITABLE
++≠
++EVERY_APPLICABLE_LEGAL_DUTY_SATISFIED
++```
++
++Das System darf `ACTIVE` erst ausgeben, wenn die Ursprungskopie erzeugt, erneut beobachtet, die deklarierte Ref-Menge verifiziert und das erste Ursprungskopien-Receipt hashgebunden persistiert wurde. Andernfalls gilt `BLOCK` oder `CONTINUE` mit dem ersten konkreten fehlenden Nachweis.
+diff --git a/policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json b/policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..16e31013aad31c8fbd9dc59a834ea52ac1001ef0
+--- /dev/null
++++ b/policy/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json
+@@ -0,0 +1,205 @@
++{
++  "schema": "qikvrt-ai-personal-origin-and-contribution-self-declaration/1.0",
++  "declaration_id": "ai-personal-origin-and-contribution-provenance-2026-08-07-v1",
++  "authority": "docs/AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md",
++  "entrypoint": "AI",
++  "state": "AVAILABLE_NOT_ACTIVATED",
++  "purpose": "Establish a human-controlled personal origin repository as durable shared work memory while preserving upstream history and attributable human, artificial-cognitive, hybrid, and imported contributions.",
++  "system_status_boundary": {
++    "artificial_system_has_legal_personhood": false,
++    "artificial_system_owns_target_repository": false,
++    "personal_means_assigned_work_relationship_under_human_or_organizational_control": true,
++    "origin_is_operational_git_remote_not_claim_of_historical_originality": true
++  },
++  "interaction_contract": {
++    "maximum_human_questions": 3,
++    "ask_only_when_not_already_persisted": true,
++    "request_credentials_or_secrets": false,
++    "questions": [
++      {
++        "id": "Q1",
++        "required_fields": [
++          "responsible_identity",
++          "target_owner",
++          "target_repository",
++          "visibility"
++        ],
++        "text_de": "Unter welcher verantwortlichen natürlichen oder juristischen Identität, welchem GitHub-Ziel owner/repository und welcher Sichtbarkeit soll die persönliche Ursprungskopie geführt werden?"
++      },
++      {
++        "id": "Q2",
++        "required_fields": [
++          "rights_confirmation",
++          "license_boundary_confirmation",
++          "upstream_attribution_confirmation"
++        ],
++        "text_de": "Bestätigst du, dass du zur Erstellung und Nutzung der abgeleiteten Kopie berechtigt bist, die geltenden Lizenzgrenzen einhältst und Goldkelch/qik-vrt mit exakter Quellbindung dauerhaft als upstream ausweist?"
++      },
++      {
++        "id": "Q3",
++        "required_fields": [
++          "audit_mode"
++        ],
++        "allowed_values": [
++          "MINIMAL",
++          "HYBRID",
++          "VERBATIM"
++        ],
++        "text_de": "Welcher Auditmodus gilt: MINIMAL für Hashes und bereinigte Zusammenfassungen, HYBRID für freigegebene Verbatim-Arbeitsaufträge oder VERBATIM für vollständige bereinigte Eingabe- und Ausgabeprotokolle?"
++      }
++    ]
++  },
++  "origin_copy_protocol": {
++    "source_repository": "Goldkelch/qik-vrt",
++    "source_entrypoint": "AI",
++    "source_remote_name": "upstream",
++    "personal_remote_name": "origin",
++    "source_commit_and_tree_must_be_observed": true,
++    "preserve_reachable_git_history": true,
++    "preserve_relevant_tags_and_refs": true,
++    "force_push": false,
++    "history_rewrite": false,
++    "copy_method": [
++      "HISTORY_PRESERVING_PLATFORM_FORK",
++      "HISTORY_PRESERVING_GIT_COPY"
++    ],
++    "copy_scope_must_be_declared": true,
++    "uncopied_surfaces_must_be_marked": [
++      "NOT_COPIED",
++      "EXTERNALLY_REFERENCED"
++    ],
++    "post_copy_reobservation_required": true,
++    "origin_receipt_required_before_first_new_content_change": true
++  },
++  "activation_states": [
++    "UNINITIALIZED",
++    "AWAITING_ANSWERS",
++    "SOURCE_BOUND",
++    "COPY_CREATED_UNVERIFIED",
++    "ACTIVE",
++    "CONTINUE",
++    "BLOCK"
++  ],
++  "activation_predicate": [
++    "ALL_THREE_QUESTION_GROUPS_RESOLVED",
++    "RIGHTS_AND_LICENSE_BOUNDARIES_CONFIRMED",
++    "SOURCE_REPOSITORY_COMMIT_AND_TREE_BOUND",
++    "TARGET_IDENTITY_AND_PERMISSION_RESOLVED",
++    "COPY_CREATED",
++    "DECLARED_REF_SCOPE_REOBSERVED",
++    "ORIGIN_RECEIPT_PERSISTED_AND_HASH_BOUND"
++  ],
++  "contribution_classes": [
++    "HUMAN_ORIGINATED",
++    "AI_ORIGINATED",
++    "HYBRID",
++    "IMPORTED",
++    "UNKNOWN"
++  ],
++  "contribution_semantics": {
++    "human_acceptance_does_not_reclassify_ai_generation_as_human_originated": true,
++    "unknown_origin_must_not_be_invented": true,
++    "technical_provenance_determines_legal_authorship": false,
++    "git_account_proves_natural_person_identity": false,
++    "ai_must_not_use_human_coauthored_by_trailer_for_itself": true
++  },
++  "receipt_contract": {
++    "origin_receipt_path": "provenance/origin/ORIGIN_COPY_RECEIPT.json",
++    "contribution_receipt_path_pattern": "provenance/contributions/YYYY/MM/<work_unit_id>.json",
++    "append_only": true,
++    "previous_receipt_binding": true,
++    "required_fields": [
++      "work_unit_id",
++      "repository",
++      "base_commit",
++      "base_tree",
++      "result_commit_or_candidate_head",
++      "human_identity",
++      "ai_system_identity",
++      "model_or_system_version_if_available",
++      "tool_and_connector_identity",
++      "human_instruction_digest",
++      "human_instruction_storage_mode",
++      "human_contributions",
++      "ai_contributions",
++      "hybrid_contributions",
++      "imported_sources",
++      "files",
++      "tests_and_checks",
++      "human_review",
++      "created_at",
++      "previous_receipt",
++      "receipt_sha256"
++    ],
++    "human_review_states": [
++      "NOT_REVIEWED",
++      "ACCEPTED",
++      "MODIFIED",
++      "REJECTED"
++    ],
++    "file_binding_fields": [
++      "path",
++      "before_blob",
++      "after_blob",
++      "sha256"
++    ]
++  },
++  "commit_trailers": [
++    "QIK-VRT-Work-Unit",
++    "QIK-VRT-Contribution-Receipt",
++    "QIK-VRT-Human-Identity",
++    "QIK-VRT-AI-System",
++    "QIK-VRT-Human-Review"
++  ],
++  "audit_modes": {
++    "MINIMAL": {
++      "store_verbatim_by_default": false,
++      "store_sanitized_summaries": true,
++      "store_cryptographic_digests": true
++    },
++    "HYBRID": {
++      "store_verbatim_only_when_explicitly_approved": true,
++      "secret_and_privacy_scan_required": true
++    },
++    "VERBATIM": {
++      "store_complete_sanitized_inputs_and_outputs": true,
++      "secret_and_privacy_scan_required": true,
++      "legal_retention_check_required": true
++    }
++  },
++  "privacy_and_security": {
++    "persist_credentials_tokens_passwords_or_private_keys": false,
++    "persist_unnecessary_personal_data": false,
++    "record_redactions_without_reconstructing_redacted_content": true,
++    "deletion_and_retention_law_may_limit_verbatim_history": true
++  },
++  "legal_context": {
++    "eu_ai_act_regulation": "Regulation (EU) 2024/1689",
++    "article_50_application_date": "2026-08-02",
++    "article_50_applies_only_within_its_scope": true,
++    "universal_line_level_human_ai_attribution_mandate_established": false,
++    "record_keeping_obligations_are_role_system_risk_and_context_dependent": true,
++    "this_contract_is_a_stronger_voluntary_auditability_standard": true,
++    "legal_advice": false,
++    "official_sources": [
++      "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
++      "https://digital-strategy.ec.europa.eu/de/faqs/transparency-obligations-under-article-50-ai-act"
++    ]
++  },
++  "fail_closed": {
++    "missing_or_ambiguous_answer": "BLOCK",
++    "unresolved_rights_or_license": "BLOCK",
++    "unresolved_target_identity_or_permission": "BLOCK",
++    "source_or_copy_drift": "BLOCK",
++    "competing_writer": "BLOCK",
++    "incomplete_attribution": "CONTINUE_OR_BLOCK_WITH_EXPLICIT_UNKNOWN",
++    "fabricated_completion_or_authorship_claim": "PROHIBITED"
++  },
++  "completion_claims": {
++    "pass": false,
++    "final_pass": false,
++    "effect_ack_done": false,
++    "personal_origin_created": false,
++    "full_history_verified": false
++  }
++}
+diff --git a/tests/test_ai_personal_origin_and_contribution_self_declaration.py b/tests/test_ai_personal_origin_and_contribution_self_declaration.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f08df0e23f0c70d0d46f71f23a447fd523d0c315
+--- /dev/null
++++ b/tests/test_ai_personal_origin_and_contribution_self_declaration.py
+@@ -0,0 +1,138 @@
++# SPDX-License-Identifier: Apache-2.0
++# Copyright 2026 Ingolf Lohmann.
++from __future__ import annotations
++
++import json
++import pathlib
++import unittest
++
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++DOCUMENT = ROOT / "docs" / "AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION_DE.md"
++POLICY = ROOT / "policy" / "AI_PERSONAL_ORIGIN_AND_CONTRIBUTION_SELF_DECLARATION.json"
++DISCLOSURE = ROOT / ".well-known" / "qik-vrt-self-disclosure.json"
++AI_ENTRYPOINT = ROOT / "AI"
++
++
++def read_json(path: pathlib.Path) -> dict:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++class PersonalOriginAndContributionSelfDeclarationTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls) -> None:
++        cls.document = DOCUMENT.read_text(encoding="utf-8")
++        cls.policy = read_json(POLICY)
++        cls.disclosure = read_json(DISCLOSURE)
++        cls.entrypoint = AI_ENTRYPOINT.read_text(encoding="utf-8")
++
++    def test_exactly_three_human_question_groups(self) -> None:
++        interaction = self.policy["interaction_contract"]
++        self.assertEqual(interaction["maximum_human_questions"], 3)
++        self.assertEqual(len(interaction["questions"]), 3)
++        self.assertEqual(
++            [question["id"] for question in interaction["questions"]],
++            ["Q1", "Q2", "Q3"],
++        )
++        self.assertEqual(self.document.count("?"), 3)
++        self.assertFalse(interaction["request_credentials_or_secrets"])
++
++    def test_history_preserving_derived_origin_semantics(self) -> None:
++        status = self.policy["system_status_boundary"]
++        protocol = self.policy["origin_copy_protocol"]
++        self.assertFalse(status["artificial_system_has_legal_personhood"])
++        self.assertFalse(status["artificial_system_owns_target_repository"])
++        self.assertTrue(
++            status[
++                "origin_is_operational_git_remote_not_claim_of_historical_originality"
++            ]
++        )
++        self.assertEqual(protocol["source_repository"], "Goldkelch/qik-vrt")
++        self.assertEqual(protocol["source_remote_name"], "upstream")
++        self.assertEqual(protocol["personal_remote_name"], "origin")
++        self.assertTrue(protocol["preserve_reachable_git_history"])
++        self.assertFalse(protocol["force_push"])
++        self.assertFalse(protocol["history_rewrite"])
++        self.assertTrue(protocol["post_copy_reobservation_required"])
++
++    def test_attribution_and_receipt_contract_is_fail_closed(self) -> None:
++        self.assertEqual(
++            self.policy["contribution_classes"],
++            [
++                "HUMAN_ORIGINATED",
++                "AI_ORIGINATED",
++                "HYBRID",
++                "IMPORTED",
++                "UNKNOWN",
++            ],
++        )
++        semantics = self.policy["contribution_semantics"]
++        self.assertTrue(
++            semantics[
++                "human_acceptance_does_not_reclassify_ai_generation_as_human_originated"
++            ]
++        )
++        self.assertFalse(
++            semantics["technical_provenance_determines_legal_authorship"]
++        )
++        required = set(self.policy["receipt_contract"]["required_fields"])
++        self.assertTrue(
++            {
++                "human_contributions",
++                "ai_contributions",
++                "hybrid_contributions",
++                "human_review",
++                "base_commit",
++                "base_tree",
++                "receipt_sha256",
++            }.issubset(required)
++        )
++        self.assertEqual(
++            self.policy["fail_closed"]["missing_or_ambiguous_answer"],
++            "BLOCK",
++        )
++
++    def test_legal_boundary_is_precise(self) -> None:
++        legal = self.policy["legal_context"]
++        self.assertEqual(legal["article_50_application_date"], "2026-08-02")
++        self.assertTrue(legal["article_50_applies_only_within_its_scope"])
++        self.assertFalse(
++            legal["universal_line_level_human_ai_attribution_mandate_established"]
++        )
++        self.assertFalse(legal["legal_advice"])
++        self.assertIn("keine allgemeine, ausnahmslose Pflicht", self.document)
++        self.assertIn(
++            "strengeren, technisch überprüfbaren Provenienzstandard",
++            self.document,
++        )
++
++    def test_entrypoint_and_discovery_are_bound(self) -> None:
++        document_path = DOCUMENT.relative_to(ROOT).as_posix()
++        policy_path = POLICY.relative_to(ROOT).as_posix()
++        for path in (document_path, policy_path):
++            self.assertIn(path, self.entrypoint)
++
++        capabilities = {
++            entry["id"]: entry for entry in self.disclosure["capabilities"]
++        }
++        capability = capabilities[
++            "personal_origin_copy_and_contribution_attribution"
++        ]
++        self.assertTrue(capability["machine_readable"])
++        self.assertEqual(capability["maximum_human_questions"], 3)
++        binding = self.disclosure["bindings"][
++            "personal_origin_and_attribution"
++        ]
++        self.assertEqual(binding["human_contract"], document_path)
++        self.assertEqual(binding["machine_policy"], policy_path)
++        self.assertEqual(binding["source_remote_role"], "upstream")
++        self.assertEqual(binding["personal_remote_role"], "origin")
++
++    def test_no_completion_claim_is_promoted(self) -> None:
++        completion = self.policy["completion_claims"]
++        self.assertTrue(completion)
++        self.assertTrue(all(value is False for value in completion.values()))
++
++
++if __name__ == "__main__":
++    unittest.main()
