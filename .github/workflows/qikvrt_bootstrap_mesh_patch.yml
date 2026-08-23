@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Materialize Mesh autonomy patch
+
+on:
+  push:
+    branches:
+      - agent/mesh-autonomous-publication-terminal-pattern-m68000-v1
+    paths:
+      - .qikvrt/bootstrap/mesh-patch/**
+      - .github/workflows/qikvrt_bootstrap_mesh_patch.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-bootstrap-mesh-autonomy-v1
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact bootstrap branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify and extract exact patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REF_NAME" = agent/mesh-autonomous-publication-terminal-pattern-m68000-v1
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          mapfile -t parts < <(find .qikvrt/bootstrap/mesh-patch -maxdepth 1 -type f -name 'part-*' -print | LC_ALL=C sort)
+          test "${#parts[@]}" -eq 5
+          cat "${parts[@]}" | base64 --decode > "$RUNNER_TEMP/mesh-patch.tar.xz"
+          test "$(sha256sum "$RUNNER_TEMP/mesh-patch.tar.xz" | awk '{print $1}')" = \
+            112708b32a7642957715396df59e7268578765b909741b628976f5fd7766f62c
+          tar -xJf "$RUNNER_TEMP/mesh-patch.tar.xz"
+          sha256sum --check <<'SHA256'
+          57f2a2b4366120a7aeeef8a330c347ec1d28560b156b7e7830bfd78efb4687f3  .github/workflows/issue-autonomous-processing.yml
+          522246a54e5308b27ed302765bdde9d4cfba22e673bcd2ffe6d1db6b2eaf2671  .github/workflows/qikvrt_issue_platform_publication.yml
+          755fdcda63715ba86fed778b79880f771f21b8098ad7ea0d8a1f57b3c7e08f35  .github/workflows/qikvrt_mesh_pattern_contract.yml
+          d37143566faece4a1338f74e9d1b3a66d4b87fe14217647d9acdd31bbec5795b  scripts/issue_agent/finalize.py
+          9a7fede914048f86d1a410933a2207ff61462e5222d3cb5f9dc6aff1950fe4f9  scripts/issue_agent/promote.py
+          51b6252eb9ef2e76a8a107ca43633d44c491e58a9ccbce18fec2d5bcdefd1dc9  scripts/issue_agent/validate.py
+          a3220c434c2aa4ba3542686952812e5e14c26402ed86d6e835824289ceff78f8  tools/issue_agent_work_units.py
+          ef2b3ee972c7da3063633f82fc7dbda0b5d2d39b6cc5ee8ff8ce53d4db303f14  tools/qikvrt_mesh_patterns.py
+          5884a9f20349db472280a857f35c9510759b084ff620e8ae17ec830630d9b2fc  tools/qikvrt_issue_publication_handoff.py
+          3c1097b6010373b41ed73918f8f38112aba862801841dee6844378121adbb61a  policy/MESH_AUTONOMY_TERMINAL_PUBLICATION_V1.json
+          712493172146ac04749301d988acbce0e13e141381b23bcafd6276449e130b90  tests/test_issue_agent_work_units.py
+          e59934f88ad11bfa4ba5b871ddc5c60b9cc66861853e82ef48b56c1f3b4b1324  tests/test_qikvrt_mesh_patterns.py
+          a9efefa62982cf9c7344e498cb11541ae7b7d14eae0bfb5edb0a0bd91ededaa4  tests/test_qikvrt_issue_publication_handoff.py
+          cf8ef5ff75e3204399f3064feec13e48ac2bc87d5afb99be652ede072a1211e5  docs/MESH_AUTONOMOUS_PUBLICATION_TERMINAL_PATTERN_COMPILATION_V1.md
+          91c6fc732374a983a6ca18e37872fba36ecdfb809b6f2400b62583a02243c2e7  evidence/owner_sources/QIKVRT_RELATIONAL_TIME_PDF_BINDING_2026_08_23.json
+          SHA256
+          rm -rf .qikvrt/bootstrap/mesh-patch
+          rm -f .github/workflows/qikvrt_bootstrap_mesh_patch.yml
+
+      - name: Run focused exact-tree verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            scripts/issue_agent/finalize.py \
+            scripts/issue_agent/promote.py \
+            scripts/issue_agent/validate.py \
+            tools/issue_agent_work_units.py \
+            tools/qikvrt_mesh_patterns.py \
+            tools/qikvrt_issue_publication_handoff.py
+          python3 -B -m unittest -v \
+            tests.test_issue_agent_work_units \
+            tests.test_qikvrt_mesh_patterns \
+            tests.test_qikvrt_issue_publication_handoff
+          ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p, aliases: true) }' \
+            .github/workflows/issue-autonomous-processing.yml \
+            .github/workflows/qikvrt_issue_platform_publication.yml \
+            .github/workflows/qikvrt_mesh_pattern_contract.yml
+          git diff --check
+
+      - name: Persist final history-preserving candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'qik-vrt-mesh[bot]'
+          git config user.email 'qik-vrt-mesh[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'mesh: bind autonomous publication terminal patterns and compiled capsules'
+          git push origin "HEAD:$GITHUB_REF_NAME"
