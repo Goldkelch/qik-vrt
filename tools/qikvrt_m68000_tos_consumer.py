@@ -108,8 +108,23 @@ def move_l_dn_disp_a0(assembler: Asm68k, dn: int, displacement: int) -> None:
 
 
 def load_timer(assembler: Asm68k, dn: int) -> None:
-    assembler.word(0x2038 | (dn << 9))
-    assembler.word(0x04BA)
+    """Read the protected TOS hz_200 variable through XBIOS Supexec.
+
+    Application code runs in user mode and cannot read $000004BA directly.
+    Supexec (XBIOS function 38) executes the tiny callback in supervisor mode,
+    then returns the callback's D0 result. A0 is explicitly preserved because
+    it carries the receipt-buffer pointer and XBIOS may clobber A0-A2.
+    """
+    assembler.word(0x2F08)  # MOVE.L A0,-(SP)
+    assembler.lea_pc("read_hz_200_supervisor", 1)
+    assembler.word(0x2F09)  # MOVE.L A1,-(SP)
+    assembler.word(0x3F3C)
+    assembler.word(0x0026)  # MOVE.W #Supexec,-(SP)
+    assembler.word(0x4E4E)  # TRAP #14 (XBIOS)
+    assembler.word(0x4FEF)
+    assembler.word(0x0006)  # LEA 6(SP),SP
+    assembler.word(0x205F)  # MOVEA.L (SP)+,A0
+    assembler.word(0x2000 | (dn << 9))  # MOVE.L D0,Dn
 
 
 def emit_call_benchmark(
@@ -119,9 +134,10 @@ def emit_call_benchmark(
     setup_once: Iterable[tuple[int, int]],
     receipt_offset: int,
 ) -> None:
+    load_timer(assembler, 6)
+    # Set up after Supexec, because XBIOS may clobber D0-D2.
     for immediate, dn in setup_once:
         moveq(assembler, immediate, dn)
-    load_timer(assembler, 6)
     moveq(assembler, 3, 4)  # four outer iterations
     assembler.label(f"{name}_outer")
     moveq(assembler, -1, 5)  # 65536 inner iterations
@@ -242,6 +258,12 @@ def build_text(root: pathlib.Path) -> tuple[bytes, dict]:
     assembler.word(0x0000)
     assembler.word(0x4E41)
 
+    # Called only through XBIOS Supexec, so the protected read is legal.
+    assembler.label("read_hz_200_supervisor")
+    assembler.word(0x2038)  # MOVE.L $04BA.W,D0
+    assembler.word(0x04BA)
+    assembler.word(0x4E75)  # RTS
+
     for kernel_id, raw in zip(KERNEL_IDS, kernels):
         if assembler.pc & 1:
             assembler.raw(b"\0")
@@ -266,6 +288,7 @@ def build_text(root: pathlib.Path) -> tuple[bytes, dict]:
         "iterations_per_kernel": ITERATIONS,
         "text_bytes": len(text),
         "receipt_size": RECEIPT_SIZE,
+        "timer_access": "XBIOS_SUPEXEC_HZ_200",
         "physical_hardware": False,
     }
     return text, metadata
