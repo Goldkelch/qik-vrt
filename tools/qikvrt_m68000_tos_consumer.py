@@ -14,11 +14,39 @@ KERNEL_IDS = (
     "lean_gate_v1",
     "lean_v2_d3_step_v1",
     "lean_v2_mesh_recovery_v1",
+    "lean_spark_branch_pass_v1",
+    "lean_spark_branch_plan_v1",
 )
-RECEIPT_MAGIC = b"QIKM68K1"
-RECEIPT_VERSION = 1
-RECEIPT_SIZE = 192
+RECEIPT_MAGIC = b"QIKM68K2"
+RECEIPT_VERSION = 2
+RECEIPT_SIZE = 320
 ITERATIONS = 4 * 65536
+
+REGISTRY_HASH_OFFSET = 12
+KERNEL_HASH_OFFSET = 44
+HASH_SIZE = 32
+ITERATIONS_OFFSET = KERNEL_HASH_OFFSET + HASH_SIZE * len(KERNEL_IDS)
+GATE_OFFSET = 208
+D3_OFFSET = 212
+MESH_OFFSET = 216
+SPARK_PASS_OFFSET = 224
+SPARK_PLAN_OFFSET = 240
+TICKS_OFFSET = 248
+COMPLETE_OFFSET = 268
+
+SPARK_PASS_CASES = (
+    (0x0F, (0, 1, 0, 0xA5)),
+    (0x1F, (2, 0, 1, 0xA5)),
+    (0x2F, (3, 0, 0, 0xA5)),
+    (0x8F, (1, 0, 0, 0xA5)),
+)
+SPARK_PLAN_CASES = (
+    (1, 1),
+    (2, 0),
+    (124, 11),
+    (252, 10),
+    (248, 2),
+)
 
 
 def sha256(data: bytes) -> bytes:
@@ -31,6 +59,11 @@ def be16(value: int) -> bytes:
 
 def be32(value: int) -> bytes:
     return struct.pack(">I", value & 0xFFFFFFFF)
+
+
+def moveq_immediate(value: int) -> int:
+    value &= 0xFF
+    return value - 256 if value >= 128 else value
 
 
 @dataclass
@@ -69,7 +102,6 @@ class Asm68k:
         self.word(opcode)
         offset = self.pc
         self.word(0)
-        # 68000 word branches and d16(PC) use PC at the extension word.
         self.fixups.append(Fixup(offset, start + 2, label))
 
     def bsr(self, label: str) -> None:
@@ -89,7 +121,9 @@ class Asm68k:
             displacement = self.labels[fixup.label] - fixup.base_pc
             if not -32768 <= displacement <= 32767:
                 raise ValueError(f"word displacement out of range: {fixup.label}")
-            result[fixup.displacement_offset:fixup.displacement_offset + 2] = be16(displacement)
+            result[fixup.displacement_offset:fixup.displacement_offset + 2] = be16(
+                displacement
+            )
         return bytes(result)
 
 
@@ -108,23 +142,17 @@ def move_l_dn_disp_a0(assembler: Asm68k, dn: int, displacement: int) -> None:
 
 
 def load_timer(assembler: Asm68k, dn: int) -> None:
-    """Read the protected TOS hz_200 variable through XBIOS Supexec.
-
-    Application code runs in user mode and cannot read $000004BA directly.
-    Supexec (XBIOS function 38) executes the tiny callback in supervisor mode,
-    then returns the callback's D0 result. A0 is explicitly preserved because
-    it carries the receipt-buffer pointer and XBIOS may clobber A0-A2.
-    """
-    assembler.word(0x2F08)  # MOVE.L A0,-(SP)
+    """Read protected TOS hz_200 through XBIOS Supexec."""
+    assembler.word(0x2F08)
     assembler.lea_pc("read_hz_200_supervisor", 1)
-    assembler.word(0x2F09)  # MOVE.L A1,-(SP)
+    assembler.word(0x2F09)
     assembler.word(0x3F3C)
-    assembler.word(0x0026)  # MOVE.W #Supexec,-(SP)
-    assembler.word(0x4E4E)  # TRAP #14 (XBIOS)
+    assembler.word(0x0026)
+    assembler.word(0x4E4E)
     assembler.word(0x4FEF)
-    assembler.word(0x0006)  # LEA 6(SP),SP
-    assembler.word(0x205F)  # MOVEA.L (SP)+,A0
-    assembler.word(0x2000 | (dn << 9))  # MOVE.L D0,Dn
+    assembler.word(0x0006)
+    assembler.word(0x205F)
+    assembler.word(0x2000 | (dn << 9))
 
 
 def emit_call_benchmark(
@@ -135,12 +163,11 @@ def emit_call_benchmark(
     receipt_offset: int,
 ) -> None:
     load_timer(assembler, 6)
-    # Set up after Supexec, because XBIOS may clobber D0-D2.
     for immediate, dn in setup_once:
         moveq(assembler, immediate, dn)
-    moveq(assembler, 3, 4)  # four outer iterations
+    moveq(assembler, 3, 4)
     assembler.label(f"{name}_outer")
-    moveq(assembler, -1, 5)  # 65536 inner iterations
+    moveq(assembler, -1, 5)
     assembler.label(f"{name}_inner")
     for immediate, dn in setup_each:
         moveq(assembler, immediate, dn)
@@ -148,7 +175,7 @@ def emit_call_benchmark(
     assembler.dbra(5, f"{name}_inner")
     assembler.dbra(4, f"{name}_outer")
     load_timer(assembler, 1)
-    assembler.word(0x9286)  # SUB.L D6,D1
+    assembler.word(0x9286)
     move_l_dn_disp_a0(assembler, 1, receipt_offset)
 
 
@@ -157,28 +184,39 @@ def load_registry(root: pathlib.Path) -> tuple[dict, list[bytes]]:
     registry = json.loads(registry_raw)
     if registry.get("schema") != "QIKVRT_COMPILED_M68000_KERNEL_REGISTRY_V1":
         raise ValueError("unexpected M68000 registry schema")
-    by_id = {entry["id"]: entry for entry in registry["kernels"]}
+    entries = registry.get("kernels")
+    if not isinstance(entries, list):
+        raise ValueError("registry kernels must be a list")
+    by_id = {entry["id"]: entry for entry in entries}
     if tuple(kernel_id for kernel_id in KERNEL_IDS if kernel_id not in by_id):
         raise ValueError("required compiled kernel missing from registry")
     kernels: list[bytes] = []
     for kernel_id in KERNEL_IDS:
         entry = by_id[kernel_id]
-        raw = bytes.fromhex((root / entry["hex_path"]).read_text(encoding="ascii").strip())
+        raw = bytes.fromhex(
+            (root / entry["hex_path"]).read_text(encoding="ascii").strip()
+        )
         if len(raw) != entry["machine_bytes"]:
             raise ValueError(f"registry byte length mismatch: {kernel_id}")
         kernels.append(raw)
+    if registry.get("compiled_machine_bytes_total") != sum(map(len, kernels)):
+        raise ValueError("registry total byte declaration mismatch")
     return registry, kernels
 
 
 def receipt_template(registry_raw: bytes, kernels: list[bytes]) -> bytes:
+    if len(kernels) != len(KERNEL_IDS):
+        raise ValueError("kernel count differs")
     buffer = bytearray(RECEIPT_SIZE)
     buffer[0:8] = RECEIPT_MAGIC
     buffer[8:12] = be32(RECEIPT_VERSION)
-    buffer[12:44] = sha256(registry_raw)
-    buffer[44:76] = sha256(kernels[0])
-    buffer[76:108] = sha256(kernels[1])
-    buffer[108:140] = sha256(kernels[2])
-    buffer[140:144] = be32(ITERATIONS)
+    buffer[REGISTRY_HASH_OFFSET:REGISTRY_HASH_OFFSET + HASH_SIZE] = sha256(
+        registry_raw
+    )
+    for index, kernel in enumerate(kernels):
+        start = KERNEL_HASH_OFFSET + index * HASH_SIZE
+        buffer[start:start + HASH_SIZE] = sha256(kernel)
+    buffer[ITERATIONS_OFFSET:ITERATIONS_OFFSET + 4] = be32(ITERATIONS)
     return bytes(buffer)
 
 
@@ -186,83 +224,108 @@ def build_text(root: pathlib.Path) -> tuple[bytes, dict]:
     registry_raw = (root / REGISTRY_PATH).read_bytes()
     _, kernels = load_registry(root)
     assembler = Asm68k()
-
-    # A0 permanently points at the writable receipt buffer.
     assembler.lea_pc("receipt", 0)
 
-    # Exact functional observations.
     for value in range(4):
         moveq(assembler, value, 0)
         assembler.bsr("lean_gate_v1")
-        move_b_dn_disp_a0(assembler, 0, 144 + value)
+        move_b_dn_disp_a0(assembler, 0, GATE_OFFSET + value)
 
     moveq(assembler, 3, 0)
     moveq(assembler, 0, 2)
-    moveq(assembler, 0xA5, 3)
+    moveq(assembler, moveq_immediate(0xA5), 3)
     assembler.bsr("lean_v2_d3_step_v1")
-    move_b_dn_disp_a0(assembler, 0, 148)
-    move_b_dn_disp_a0(assembler, 2, 149)
-    move_b_dn_disp_a0(assembler, 3, 150)
+    move_b_dn_disp_a0(assembler, 0, D3_OFFSET)
+    move_b_dn_disp_a0(assembler, 2, D3_OFFSET + 1)
+    move_b_dn_disp_a0(assembler, 3, D3_OFFSET + 2)
 
     for value in range(8):
         moveq(assembler, value, 0)
         assembler.bsr("lean_v2_mesh_recovery_v1")
-        move_b_dn_disp_a0(assembler, 0, 152 + value)
+        move_b_dn_disp_a0(assembler, 0, MESH_OFFSET + value)
 
-    # 262144 repeated native invocations per kernel, measured against TOS hz_200.
-    emit_call_benchmark(assembler, "lean_gate_v1", ((3, 0),), (), 160)
+    moveq(assembler, moveq_immediate(0xA5), 3)
+    for index, (flags, _expected) in enumerate(SPARK_PASS_CASES):
+        moveq(assembler, moveq_immediate(flags), 0)
+        assembler.bsr("lean_spark_branch_pass_v1")
+        start = SPARK_PASS_OFFSET + index * 4
+        move_b_dn_disp_a0(assembler, 0, start)
+        move_b_dn_disp_a0(assembler, 1, start + 1)
+        move_b_dn_disp_a0(assembler, 2, start + 2)
+        move_b_dn_disp_a0(assembler, 3, start + 3)
+
+    for index, (flags, _expected) in enumerate(SPARK_PLAN_CASES):
+        moveq(assembler, moveq_immediate(flags), 0)
+        assembler.bsr("lean_spark_branch_plan_v1")
+        move_b_dn_disp_a0(assembler, 0, SPARK_PLAN_OFFSET + index)
+
+    emit_call_benchmark(assembler, "lean_gate_v1", ((3, 0),), (), TICKS_OFFSET)
     emit_call_benchmark(
         assembler,
         "lean_v2_d3_step_v1",
         (),
-        ((3, 0), (0, 2), (0xA5, 3)),
-        164,
+        ((3, 0), (0, 2), (moveq_immediate(0xA5), 3)),
+        TICKS_OFFSET + 4,
     )
-    emit_call_benchmark(assembler, "lean_v2_mesh_recovery_v1", ((6, 0),), (), 168)
+    emit_call_benchmark(
+        assembler,
+        "lean_v2_mesh_recovery_v1",
+        ((6, 0),),
+        (),
+        TICKS_OFFSET + 8,
+    )
+    emit_call_benchmark(
+        assembler,
+        "lean_spark_branch_pass_v1",
+        ((0x0F, 0),),
+        ((moveq_immediate(0xA5), 3),),
+        TICKS_OFFSET + 12,
+    )
+    emit_call_benchmark(
+        assembler,
+        "lean_spark_branch_plan_v1",
+        ((moveq_immediate(0xFC), 0),),
+        (),
+        TICKS_OFFSET + 16,
+    )
 
     moveq(assembler, 1, 1)
-    move_l_dn_disp_a0(assembler, 1, 172)  # execution-complete marker
+    move_l_dn_disp_a0(assembler, 1, COMPLETE_OFFSET)
 
-    # GEMDOS Fcreate("QIKVRT.RCP", 0)
     assembler.lea_pc("receipt_name", 1)
     assembler.word(0x3F3C)
-    assembler.word(0x0000)  # MOVE.W #0,-(SP)
-    assembler.word(0x2F09)  # MOVE.L A1,-(SP)
+    assembler.word(0x0000)
+    assembler.word(0x2F09)
     assembler.word(0x3F3C)
-    assembler.word(0x003C)  # MOVE.W #Fcreate,-(SP)
-    assembler.word(0x4E41)  # TRAP #1
-    assembler.word(0x508F)  # ADDQ.L #8,SP
-    assembler.word(0x3E00)  # MOVE.W D0,D7
+    assembler.word(0x003C)
+    assembler.word(0x4E41)
+    assembler.word(0x508F)
+    assembler.word(0x3E00)
 
-    # GEMDOS Fwrite(handle, RECEIPT_SIZE, receipt)
     assembler.lea_pc("receipt", 0)
-    assembler.word(0x2F08)  # MOVE.L A0,-(SP)
+    assembler.word(0x2F08)
     assembler.word(0x2F3C)
     assembler.long(RECEIPT_SIZE)
-    assembler.word(0x3F07)  # MOVE.W D7,-(SP)
+    assembler.word(0x3F07)
     assembler.word(0x3F3C)
-    assembler.word(0x0040)  # MOVE.W #Fwrite,-(SP)
+    assembler.word(0x0040)
     assembler.word(0x4E41)
     assembler.word(0x4FEF)
-    assembler.word(0x000C)  # LEA 12(SP),SP
+    assembler.word(0x000C)
 
-    # GEMDOS Fclose(handle)
     assembler.word(0x3F07)
     assembler.word(0x3F3C)
     assembler.word(0x003E)
     assembler.word(0x4E41)
-    assembler.word(0x588F)  # ADDQ.L #4,SP
-
-    # GEMDOS Pterm0
+    assembler.word(0x588F)
     assembler.word(0x3F3C)
     assembler.word(0x0000)
     assembler.word(0x4E41)
 
-    # Called only through XBIOS Supexec, so the protected read is legal.
     assembler.label("read_hz_200_supervisor")
-    assembler.word(0x2038)  # MOVE.L $04BA.W,D0
+    assembler.word(0x2038)
     assembler.word(0x04BA)
-    assembler.word(0x4E75)  # RTS
+    assembler.word(0x4E75)
 
     for kernel_id, raw in zip(KERNEL_IDS, kernels):
         if assembler.pc & 1:
@@ -280,7 +343,7 @@ def build_text(root: pathlib.Path) -> tuple[bytes, dict]:
     assembler.raw(receipt_template(registry_raw, kernels))
     text = assembler.resolve()
     metadata = {
-        "schema": "QIKVRT_M68000_TOS_CONSUMER_BUILD_V1",
+        "schema": "QIKVRT_M68000_TOS_CONSUMER_BUILD_V2",
         "registry_sha256": hashlib.sha256(registry_raw).hexdigest(),
         "kernel_ids": list(KERNEL_IDS),
         "kernel_sha256": [hashlib.sha256(kernel).hexdigest() for kernel in kernels],
@@ -300,12 +363,12 @@ def build_tos(root: pathlib.Path) -> tuple[bytes, dict]:
         (
             be16(0x601A),
             be32(len(text)),
-            be32(0),  # data
-            be32(0),  # bss
-            be32(0),  # symbols
-            be32(0),  # reserved
-            be32(0),  # flags
-            be16(1),  # absolute / no relocation table
+            be32(0),
+            be32(0),
+            be32(0),
+            be32(0),
+            be32(0),
+            be16(1),
         )
     )
     if len(header) != 28:
@@ -326,16 +389,31 @@ def parse_receipt(raw: bytes, root: pathlib.Path) -> dict:
     version = struct.unpack_from(">I", raw, 8)[0]
     if version != RECEIPT_VERSION:
         raise ValueError("receipt version mismatch")
+
     expected_hashes = [sha256(registry_raw)] + [sha256(kernel) for kernel in kernels]
-    actual_hashes = [raw[12:44], raw[44:76], raw[76:108], raw[108:140]]
+    actual_hashes = [raw[REGISTRY_HASH_OFFSET:REGISTRY_HASH_OFFSET + HASH_SIZE]]
+    for index in range(len(kernels)):
+        start = KERNEL_HASH_OFFSET + index * HASH_SIZE
+        actual_hashes.append(raw[start:start + HASH_SIZE])
     if actual_hashes != expected_hashes:
         raise ValueError("registry/kernel provenance hash mismatch")
-    iterations = struct.unpack_from(">I", raw, 140)[0]
-    gate = list(raw[144:148])
-    d3 = list(raw[148:151])
-    mesh = list(raw[152:160])
-    ticks = [struct.unpack_from(">I", raw, offset)[0] for offset in (160, 164, 168)]
-    completed = struct.unpack_from(">I", raw, 172)[0]
+
+    iterations = struct.unpack_from(">I", raw, ITERATIONS_OFFSET)[0]
+    gate = list(raw[GATE_OFFSET:GATE_OFFSET + 4])
+    d3 = list(raw[D3_OFFSET:D3_OFFSET + 3])
+    mesh = list(raw[MESH_OFFSET:MESH_OFFSET + 8])
+    spark_pass_flat = list(raw[SPARK_PASS_OFFSET:SPARK_PASS_OFFSET + 16])
+    spark_pass = [
+        spark_pass_flat[index:index + 4]
+        for index in range(0, len(spark_pass_flat), 4)
+    ]
+    spark_plan = list(raw[SPARK_PLAN_OFFSET:SPARK_PLAN_OFFSET + 5])
+    ticks = [
+        struct.unpack_from(">I", raw, TICKS_OFFSET + index * 4)[0]
+        for index in range(len(KERNEL_IDS))
+    ]
+    completed = struct.unpack_from(">I", raw, COMPLETE_OFFSET)[0]
+
     if iterations != ITERATIONS:
         raise ValueError("benchmark iteration count mismatch")
     if gate != [0, 1, 2, 2]:
@@ -344,33 +422,55 @@ def parse_receipt(raw: bytes, root: pathlib.Path) -> dict:
         raise ValueError(f"D3 observation mismatch: {d3}")
     if mesh != [0, 0, 0, 0, 1, 1, 1, 2]:
         raise ValueError(f"mesh recovery observation mismatch: {mesh}")
+    expected_pass = [list(expected) for _flags, expected in SPARK_PASS_CASES]
+    if spark_pass != expected_pass:
+        raise ValueError(f"Spark pass observation mismatch: {spark_pass}")
+    expected_plan = [expected for _flags, expected in SPARK_PLAN_CASES]
+    if spark_plan != expected_plan:
+        raise ValueError(f"Spark plan observation mismatch: {spark_plan}")
     if completed != 1:
         raise ValueError("TOS execution did not reach completion marker")
     if any(value == 0 for value in ticks):
         raise ValueError(f"benchmark duration was not observable: {ticks}")
-    calls_per_second = [iterations * 200.0 / value for value in ticks]
+
+    calls_per_second = [ITERATIONS * 200.0 / value for value in ticks]
+    names = (
+        "gate",
+        "d3_step",
+        "mesh_recovery",
+        "spark_branch_pass",
+        "spark_branch_plan",
+    )
     return {
-        "schema": "QIKVRT_M68000_TOS_REOBSERVATION_V1",
+        "schema": "QIKVRT_M68000_TOS_REOBSERVATION_V2",
         "execution_observed": True,
         "tos_abi_observed": True,
         "m68000_emulator_execution_observed": True,
+        "spark_m68000_emulator_execution_observed": True,
         "physical_m68000_execution_observed": False,
         "registry_sha256": actual_hashes[0].hex(),
+        "kernel_ids": list(KERNEL_IDS),
         "kernel_sha256": [value.hex() for value in actual_hashes[1:]],
         "iterations_per_kernel": iterations,
         "gate_outputs": gate,
         "d3_output": {"d0": d3[0], "d2": d3[1], "d3": d3[2]},
         "mesh_outputs": mesh,
-        "ticks_200hz": {
-            "gate": ticks[0],
-            "d3_step": ticks[1],
-            "mesh_recovery": ticks[2],
-        },
-        "calls_per_emulated_second": {
-            "gate": calls_per_second[0],
-            "d3_step": calls_per_second[1],
-            "mesh_recovery": calls_per_second[2],
-        },
+        "spark_branch_pass_outputs": [
+            {
+                "decision_code": value[0],
+                "completion_witness": value[1],
+                "machine_owned_active": value[2],
+                "d3": value[3],
+            }
+            for value in spark_pass
+        ],
+        "spark_branch_plan_outputs": spark_plan,
+        "ticks_200hz": dict(zip(names, ticks)),
+        "calls_per_emulated_second": dict(zip(names, calls_per_second)),
+        "physical_speedup_measured": False,
+        "pass": False,
+        "final_pass": False,
+        "effect_ack_done": False,
     }
 
 
