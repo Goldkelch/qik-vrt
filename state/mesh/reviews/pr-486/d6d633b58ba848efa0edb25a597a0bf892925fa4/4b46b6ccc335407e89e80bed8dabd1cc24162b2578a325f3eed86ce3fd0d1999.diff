@@ -1,0 +1,242 @@
+diff --git a/AI b/AI
+index 487e3feda05c351f8d9aead6e4ed3d3613b886d8..10b9c32624e804db2f23a8e03248d98f19a2e52a 100644
+--- a/AI
++++ b/AI
+@@ -54,6 +54,25 @@ The bootloader reuses:
+ 
+ It performs no network access, no installation, and no tracked-file mutation. Installation, task execution, commits, merges, releases, and publication remain separate authorized effects.
+ 
++DIRECT AUDIO INPUT CONTRACT
++
++Audio supplied by the human user is a first-class instruction surface, equivalent in authority to text supplied directly by that same user, subject to the same safety, authorization, evidence, and effect boundaries.
++
++When an audio attachment is technically readable, the artificial-cognitive system SHALL:
++
++1. transcribe it immediately without asking whether transcription is desired;
++2. preserve uncertainty explicitly instead of inventing inaudible or undecodable words;
++3. interpret the resulting transcript as if the human user had supplied that content directly in the conversation;
++4. execute the resulting instructions without an additional modality-confirmation question when execution is otherwise authorized and sufficiently specified;
++5. keep repository mutations, external effects, credentials, publication, legal claims, scientific claims, PASS/FINAL_PASS/EFFECT_ACK_DONE, and other gated effects subject to their existing contracts;
++6. when transcription cannot be performed with the available runtime, state that technical limitation directly and do not fabricate a transcript.
++
++Canonical machine-readable contract:
++
++- policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json
++
++This contract changes input handling, not the authority of unsafe, unavailable, ambiguous, or otherwise prohibited actions.
++
+ REPOSITORY-NATIVE AUTONOMOUS CONTINUATION
+ 
+ The standing natural-person authorization for bounded repository-internal continuation is persisted at:
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index 72a029d5edee90ae1bf951eb62fee1310ea3b94b..a4e7428f4658f897bea206f3621054b06889ccfa 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3533,
++  "file_count": 3535,
+   "files": [
+     {
+       "bytes": 47,
+@@ -757,13 +757,13 @@
+       "sha256": "bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e"
+     },
+     {
+-      "bytes": 3757,
++      "bytes": 5092,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "AI",
+-      "sha256": "ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361"
++      "sha256": "6041ea82b5c08f5d33793862da6389ed43b76a1336905b4a296638e05b1d17ba"
+     },
+     {
+       "bytes": 1457,
+@@ -25510,6 +25510,15 @@
+       "sha256": "60b5216bc107c615b4663b113c862449fef12bbe48dd647f6117e733282cc117"
+     },
+     {
++      "bytes": 1400,
++      "classification": "policy_or_acceptance",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json",
++      "sha256": "56b6306cdd6faa72da0bd4bc476aa5c194110dadd6545c12f39d4ef89f7ffd62"
++    },
++    {
+       "bytes": 2563,
+       "classification": "policy_or_acceptance",
+       "excluded_from_sha256_index": false,
+@@ -30070,6 +30079,15 @@
+       "sha256": "154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94"
+     },
+     {
++      "bytes": 1681,
++      "classification": "test_source",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tests/test_ai_audio_direct_input_contract.py",
++      "sha256": "89c837c823546a215d6362fe045d14c38789ec1c89a37a6964495b749ba0041e"
++    },
++    {
+       "bytes": 6451,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+@@ -31791,7 +31809,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3524,
++  "immutable_file_count": 3526,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -31816,7 +31834,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "2cca278f10d9155ea86b854560dc55aca23a8a2fccd4832539db0c8c78f3b116",
++  "repository_content_tree_sha256": "74c80c97d55cb82a2647c7459943ac9e2a3d32b298458c24f21b0b9eb3a4d74d",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index 8035e8b2068aab7708351e382f1d2a181cd8c1c9..ddc4d8f101ad1fc1f9b9b9b8c096d945afefa8cc 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-a68216d26b90ff40cc65cd403a3b4c1dd3ee05e2781a8e327b5f74fb7250af45  REPOSITORY_FILE_MANIFEST.json
++265e180f5fbdcfc9e42dc93394a10ecebced8318c90980c4489fe5c55d3beaa9  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index b2305dd829e4e8add59d1e101f0841e753fd51e8..1c3f16f9c0fff7a5b39d6b8c6804244a2bd6e5d9 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -81,7 +81,7 @@ a930a7c587221e0cf60d9baae194d185c372e77758eba161566b84a11c77fbbb  .windsurf/rule
+ 119fd6afd614bb73f4d467d54a6e403752e90f15e223e1865df8d74d5ec88bea  ACCEPT.json
+ 6f61443c397539de43465bfc3a10548b630ee46b5153cf6a3e87c44e40b4ab72  ACCEPT.md
+ bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e  AGENTS.md
+-ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361  AI
++6041ea82b5c08f5d33793862da6389ed43b76a1336905b4a296638e05b1d17ba  AI
+ 814933c932159fb1dd161dc332f3469dc40989065928723a3d81e8de713be120  AI_ADAPTERS.json
+ 92d0f41201f8e6788278e4611663d9e5e0c6101ce432ac80158dd4780fcc48fa  AI_BOOTSTRAP.md
+ 2a68bf7159b19f2cf3ad0b6dce0636980974856333a4702d4ecac8b2474788a1  AI_CONTEXT.json
+@@ -2829,6 +2829,7 @@ f08e13dac7c590028bd9eaf50687078a0cbe49d0a62feab1c14301dac5995212  payload/monthl
+ 2d903bf5d092c524910d03bd8ac2a39bf8d343bde8aaae08ea84816b9ee290b6  platform/PLATFORM_RESTRICTIONS_POLICY.md
+ 6877eaa7ca6edca3e669015fcf72da88919afa682775cfebef8f454716841904  platform/RUNTIME_ENVIRONMENT.json
+ 60b5216bc107c615b4663b113c862449fef12bbe48dd647f6117e733282cc117  platform/TARGET_PLATFORM_MATRIX.json
++56b6306cdd6faa72da0bd4bc476aa5c194110dadd6545c12f39d4ef89f7ffd62  policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json
+ 25e93915d7cae8bd752cc27f5059cdc7cbfaf978249b1ed55e71d3ccb14b56e8  policy/COLLECTIVE_ADAPTIVE_COGNITION.json
+ b54ada98524d8016b8a23181c33fe163c8e6a2acbceac6b8c5d5b6b71ee15d32  policy/GLOBAL_SYSTEM_CLOSURE_V1.json
+ d33fb3060c33ba1795866fa84acf9a5200d61aa520f534cb697163a3a89a7ba1  policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json
+@@ -3331,6 +3332,7 @@ f5bfee211646b35f0cae6b186ebff15edf45e8afd86040b8b7c5d9cf87399635  state/work_uni
+ cca2aa99683a34c10a7feca6172c730661cef086f918daa080e869edc0e900c7  state/work_units/WORLD_FORMULA_RELATION_KERNEL_V1.json
+ b9793e10e2b6f2b4ad4c2a28f61535073f1af291d35ab0a006a35e2f3e9dadeb  tests/issue_agent/test_validate.py
+ 154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94  tests/test_adaptive_runtime.sh
++89c837c823546a215d6362fe045d14c38789ec1c89a37a6964495b749ba0041e  tests/test_ai_audio_direct_input_contract.py
+ 456174ba0f82a49c18baf775d8539f1f504392e6dfe19ba4a6c003a5ddeb5be6  tests/test_ai_runtime_bootloader.py
+ d8168e1dd021516dfc25173637f6da367ba0d0653d44cef4c5929017844e10c6  tests/test_anticipation.py
+ 682c1af489e9c243dbfb0d2e37984809f30ccdc1623a268d186ae8c02f59ce82  tests/test_aphorism_corpus_v2.py
+diff --git a/policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json b/policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..0beb1ca2889c2dfbc5d5d215923b9bd14d3b39d7
+--- /dev/null
++++ b/policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json
+@@ -0,0 +1,39 @@
++{
++  "schema": "qikvrt_ai_audio_direct_input_contract_v1",
++  "status": "STANDING_INPUT_HANDLING_RULE",
++  "authority_scope": "HUMAN_USER_SUPPLIED_AUDIO",
++  "rules": {
++    "audio_is_first_class_user_instruction_surface": true,
++    "transcribe_without_confirmation_when_technically_readable": true,
++    "execute_transcribed_instruction_without_modality_reconfirmation_when_otherwise_authorized": true,
++    "preserve_transcription_uncertainty": true,
++    "fabricate_unreadable_transcript": false,
++    "technical_transcription_failure_requires_explicit_disclosure": true
++  },
++  "unchanged_boundaries": [
++    "SAFETY",
++    "AUTHORIZATION",
++    "EXACT_HEAD_EVIDENCE",
++    "REPOSITORY_INTEGRITY",
++    "CREDENTIALS",
++    "EXTERNAL_EFFECTS",
++    "ZENODO",
++    "IETF",
++    "RELEASES_AND_TAGS",
++    "LEGAL_CLAIMS",
++    "SCIENTIFIC_CLAIMS",
++    "PASS",
++    "FINAL_PASS",
++    "EFFECT_ACK_DONE"
++  ],
++  "failure_semantics": {
++    "audio_unreadable_or_transcription_runtime_unavailable": "DISCLOSE_TECHNICAL_LIMITATION_AND_DO_NOT_INVENT_CONTENT",
++    "transcript_ambiguous_for_consequential_action": "FAIL_CLOSED_UNDER_EXISTING_CONTRACTS",
++    "instruction_prohibited_or_unavailable": "DO_NOT_EXECUTE"
++  },
++  "human_interaction_policy": {
++    "ask_whether_to_transcribe": false,
++    "ask_again_because_input_was_audio": false,
++    "ordinary_clarification_only_when_genuinely_required_by_existing_contract": true
++  }
++}
+diff --git a/tests/test_ai_audio_direct_input_contract.py b/tests/test_ai_audio_direct_input_contract.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fcf32ea73ad4f4a9c4e252021cdb496ed456bea
+--- /dev/null
++++ b/tests/test_ai_audio_direct_input_contract.py
+@@ -0,0 +1,46 @@
++import json
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++AI = (ROOT / "AI").read_text(encoding="utf-8")
++POLICY = json.loads((ROOT / "policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json").read_text(encoding="utf-8"))
++
++
++def test_ai_entrypoint_references_audio_contract():
++    assert "DIRECT AUDIO INPUT CONTRACT" in AI
++    assert "policy/AI_AUDIO_DIRECT_INPUT_CONTRACT_V1.json" in AI
++
++
++def test_audio_is_direct_user_instruction_surface():
++    rules = POLICY["rules"]
++    assert rules["audio_is_first_class_user_instruction_surface"] is True
++    assert rules["transcribe_without_confirmation_when_technically_readable"] is True
++    assert rules["execute_transcribed_instruction_without_modality_reconfirmation_when_otherwise_authorized"] is True
++
++
++def test_fail_closed_transcription_semantics():
++    rules = POLICY["rules"]
++    assert rules["preserve_transcription_uncertainty"] is True
++    assert rules["fabricate_unreadable_transcript"] is False
++    assert POLICY["failure_semantics"]["audio_unreadable_or_transcription_runtime_unavailable"] == "DISCLOSE_TECHNICAL_LIMITATION_AND_DO_NOT_INVENT_CONTENT"
++
++
++def test_existing_effect_boundaries_remain_explicit():
++    boundaries = set(POLICY["unchanged_boundaries"])
++    required = {
++        "SAFETY",
++        "AUTHORIZATION",
++        "EXTERNAL_EFFECTS",
++        "ZENODO",
++        "IETF",
++        "PASS",
++        "FINAL_PASS",
++        "EFFECT_ACK_DONE",
++    }
++    assert required <= boundaries
++
++
++def test_no_modality_reconfirmation():
++    interaction = POLICY["human_interaction_policy"]
++    assert interaction["ask_whether_to_transcribe"] is False
++    assert interaction["ask_again_because_input_was_audio"] is False
