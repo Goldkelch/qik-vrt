@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          sha256sum -c distribution/qikvrt-mesh-appliance-v1-source.tar.gz.sha256
+          (cd distribution && sha256sum -c qikvrt-mesh-appliance-v1-source.tar.gz.sha256)
           mkdir -p distribution/qikvrt-mesh-appliance-v1
           tar -xzf distribution/qikvrt-mesh-appliance-v1-source.tar.gz \
             -C distribution/qikvrt-mesh-appliance-v1 --strip-components=1
