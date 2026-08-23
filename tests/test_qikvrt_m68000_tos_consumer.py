@@ -10,6 +10,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "qikvrt_m68000_tos_consumer.py"
 PERSISTED_HEX = ROOT / "runtime" / "m68000" / "tos" / "MLP.TOS.hex"
+WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_m68000_tos_consumer.yml"
 
 spec = importlib.util.spec_from_file_location("qikvrt_m68000_tos_consumer", TOOL)
 mod = importlib.util.module_from_spec(spec)
@@ -71,6 +72,16 @@ class M68000TosConsumerTests(unittest.TestCase):
         receipt[12] ^= 1
         with self.assertRaisesRegex(ValueError, "provenance"):
             mod.parse_receipt(bytes(receipt), ROOT)
+
+    def test_main_effect_reobservation_is_push_bound_and_persisted(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("push:\n    branches: [main]", text)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", text)
+        self.assertIn("QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V1", text)
+        self.assertIn("qikvrt/m68000-tos-systemtest-ledger-v1", text)
+        self.assertIn("M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED", text)
+        self.assertIn("physical_m68000_execution_observed': False", text)
+        self.assertIn("physical_speedup_measured': False", text)
 
 
 if __name__ == "__main__":
