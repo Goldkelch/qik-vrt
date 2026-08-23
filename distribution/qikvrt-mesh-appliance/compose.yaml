@@ -1,0 +1,16 @@
+services:
+  appliance:
+    image: ghcr.io/goldkelch/qik-vrt-mesh-appliance@sha256:RELEASE_DIGEST_REQUIRED
+    ports:
+      - "127.0.0.1:6080:6080"
+    environment:
+      QIKVRT_VNC_PASSWORD: "change-this-password"
+    volumes:
+      - qikvrt-state:/var/lib/qikvrt
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+volumes:
+  qikvrt-state: {}
