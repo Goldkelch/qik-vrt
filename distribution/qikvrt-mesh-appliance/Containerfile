@@ -2,7 +2,15 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 ARG UBUNTU_BASE=ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
 FROM ${UBUNTU_BASE} AS builder
-RUN apt-get update && apt-get install --no-install-recommends -y build-essential ca-certificates python3 && rm -rf /var/lib/apt/lists/*
+ARG UBUNTU_SNAPSHOT=20260823T000000Z
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && printf 'APT::Snapshot "%s";\n' "$UBUNTU_SNAPSHOT" > /etc/apt/apt.conf.d/50qikvrt-snapshot \
+ && apt-get update --snapshot "$UBUNTU_SNAPSHOT" \
+ && apt-get install --snapshot "$UBUNTU_SNAPSHOT" --no-install-recommends -y build-essential python3 \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY browser/firefox/qikvrt-terminal browser/firefox/qikvrt-terminal
 COPY distribution/qikvrt-mesh-appliance distribution/qikvrt-mesh-appliance
@@ -27,10 +35,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QIKVRT_EFFECT_ACK_PORT=8771 \
     QIKVRT_STATE_DIR=/var/lib/qikvrt/effect-ack \
     QIKVRT_PROTOCOL_PROFILE=draft-lohmann-qikvrt-effect-ack-00
-RUN printf 'APT::Snapshot "%s";\n' "$UBUNTU_SNAPSHOT" > /etc/apt/apt.conf.d/50qikvrt-snapshot \
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && printf 'APT::Snapshot "%s";\n' "$UBUNTU_SNAPSHOT" > /etc/apt/apt.conf.d/50qikvrt-snapshot \
  && apt-get update --snapshot "$UBUNTU_SNAPSHOT" \
  && apt-get install --snapshot "$UBUNTU_SNAPSHOT" --no-install-recommends -y \
-      ca-certificates curl dbus-x11 fonts-dejavu-core gnupg libasound2t64 libdbus-glib-1-2 \
+      curl dbus-x11 fonts-dejavu-core gnupg libasound2t64 libdbus-glib-1-2 \
       libgtk-3-0 libnss3 libpci3 libx11-xcb1 libxcb-shm0 libxcomposite1 libxdamage1 \
       libxfixes3 libxkbcommon0 libxrandr2 libxrender1 libxt6 novnc openbox python3 \
       websockify x11vnc xauth xdg-utils xz-utils xvfb \
