@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Atari Browser C89
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_atari_browser_c89.yml'
+      - 'browser/atari-c89/**'
+      - 'include/qikvrt/atari_browser_c89.h'
+      - 'policy/ATARI_BROWSER_C89_V1.json'
+      - 'runtime/atari-megast/qikbrow.c'
+      - 'src/atari_browser_c89.c'
+      - 'tests/test_atari_browser_c89.c'
+      - 'tests/test_atari_browser_c89.sh'
+      - 'tests/test_qikvrt_atari_browser_c89_contract.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-atari-browser-c89-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind exact head and clean worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$expected"
+          test -z "$(git status --porcelain)"
+      - name: Compile and execute bounded ANSI C89 capsule
+        shell: bash
+        run: |
+          set -euo pipefail
+          CC=cc sh tests/test_atari_browser_c89.sh
+      - name: Verify portability and claim boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tests/test_qikvrt_atari_browser_c89_contract.py
+          python3 -m json.tool policy/ATARI_BROWSER_C89_V1.json >/dev/null
+          git diff --check
