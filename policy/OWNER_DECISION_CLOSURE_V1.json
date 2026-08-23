@@ -1,0 +1,83 @@
+{
+  "_license": {
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "rights_holder": "Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "classification": "policy_json"
+  },
+  "schema": "qikvrt_owner_decision_closure_policy_v1",
+  "policy_version": "1.0.0",
+  "product_owner_login": "ingolf-lohmann",
+  "required_code_owner_login": "Goldkelch",
+  "accepted_decision_body": "APPROVED",
+  "required_transition": [
+    "OWNER_DECISION",
+    "RESOLVE",
+    "VERIFY",
+    "AUTHORIZE",
+    "EXECUTE",
+    "OBSERVE",
+    "MATERIALIZE",
+    "CONTINUE"
+  ],
+  "classifications": ["AUTO_RESOLVABLE", "WAITING", "TRUE_BLOCKER", "CONTINUE"],
+  "required_exact_head_workflows": [
+    "QIKVRT CI",
+    "QIKVRT repository evidence materialization",
+    "QIKVRT Collective Proposal Review"
+  ],
+  "dispatch_contracts": {
+    "QIKVRT CI": {
+      "workflow": "qikvrt_ci.yml",
+      "ref": "exact_candidate_head_ref"
+    },
+    "QIKVRT repository evidence materialization": {
+      "workflow": "qikvrt_batch04_integrity.yml",
+      "ref": "exact_candidate_head_ref"
+    },
+    "QIKVRT Collective Proposal Review": {
+      "workflow": "qikvrt_collective_review.yml",
+      "ref": "exact_candidate_head_ref"
+    },
+    "QIKVRT required code-owner review": {
+      "workflow": "qikvrt_required_review_gate.yml",
+      "input": "pr"
+    },
+    "QIKVRT requested review executor": {
+      "workflow": "qikvrt_requested_review_executor.yml",
+      "input": "pr"
+    }
+  },
+  "binding": {
+    "fields": ["base_sha", "head_sha", "tree_sha", "complete_sorted_changed_path_set"],
+    "drift_invalidates_exact_head_evidence": true,
+    "projection_only_descendant_rebinding": true,
+    "semantic_or_divergent_drift_requires_new_owner_decision": true
+  },
+  "authority_separation": {
+    "owner_approved_is_independent_review": false,
+    "bot_comment_is_independent_review": false,
+    "workflow_disposition_is_independent_review": false,
+    "native_current_head_code_owner_approval_required": true
+  },
+  "allowed_effects_after_exact_reobservation": [
+    "request_required_code_owner_once",
+    "dispatch_declared_trusted_main_workflow_once",
+    "publish_exact_head_nonterminal_or_blocking_status",
+    "persist_append_only_or_artifact_receipt"
+  ],
+  "forbidden_effects": [
+    "self_approve",
+    "impersonate_reviewer",
+    "force_push",
+    "rewrite_history",
+    "merge",
+    "publish",
+    "deploy",
+    "tag",
+    "release",
+    "weaken_branch_protection",
+    "infer_PASS_FINAL_PASS_or_EFFECT_ACK_DONE"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "qikvrt_issue_704_owner_decision_closure_work_unit_v1",
+  "work_unit_id": "ISSUE-704-OWNER-DECISION-CLOSURE-V1",
+  "issue": "https://github.com/Goldkelch/qik-vrt/issues/704",
+  "state": "IMPLEMENTED_PENDING_EXACT_HEAD_EVIDENCE_AND_INDEPENDENT_REVIEW",
+  "transition": "OWNER_DECISION -> RESOLVE -> VERIFY -> AUTHORIZE -> EXECUTE -> OBSERVE -> MATERIALIZE -> CONTINUE",
+  "implementation": {
+    "decision_core": "tools/qikvrt_owner_decision_closure.py",
+    "workflow": ".github/workflows/qikvrt_owner_decision_closure.yml",
+    "policy": "policy/OWNER_DECISION_CLOSURE_V1.json",
+    "human_contract": "docs/OWNER_DECISION_CLOSURE.md",
+    "tests": "tests/test_qikvrt_owner_decision_closure.py"
+  },
+  "boundaries": {
+    "owner_decision_is_independent_review": false,
+    "bot_comment_is_independent_review": false,
+    "drift_invalidates_exact_head_evidence": true,
+    "merge_authorized": false,
+    "publication_authorized": false,
+    "external_effect_claimed": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
