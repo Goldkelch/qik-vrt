@@ -133,7 +133,8 @@ class MeshApplianceReleaseTests(unittest.TestCase):
     def test_release_workflow_builds_and_reobserves_public_effects(self) -> None:
         text = WORKFLOW.read_text()
         for needle in (
-            "distribution/qikvrt-mesh-appliance/Containerfile",
+            "APPLIANCE_ROOT: distribution/qikvrt-mesh-appliance",
+            '--file "$APPLIANCE_ROOT/Containerfile"',
             "Execute real Firefox prepare commit and post-effect reobservation",
             "Build QCOW2 VMDK VHDX and OVA appliance assets",
             "Publish immutable multi-architecture GHCR manifest",
