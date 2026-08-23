@@ -25,6 +25,13 @@ The consumer reads `runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json` at build tim
 
 The generated file has a real 28-byte Atari program header (`0x601A`) and position-independent Motorola 68000 text. It invokes the three registered kernels as native subroutines, measures repeated invocation with the TOS `hz_200` system timer, creates `QIKVRT.RCP` through GEMDOS `Fcreate`, writes the receipt through `Fwrite`, closes it through `Fclose`, and terminates through `Pterm0`.
 
+The 200 Hz system variable at `$000004BA` is protected low memory. The first actual Hatari execution correctly exposed a bus error when application code attempted a direct user-mode read. The consumer therefore obtains the timer only through XBIOS function 38 `Supexec`, whose tiny supervisor callback reads `hz_200` and returns the value in D0. Direct user-mode timer reads are rejected by regression tests.
+
+```text
+USER_MODE_READ($04BA) = INVALID
+XBIOS_SUPEXEC(read_hz_200) = REQUIRED
+```
+
 The receipt contains:
 
 - SHA-256 of the exact registry bytes;
@@ -38,9 +45,9 @@ Host verification rejects a missing, malformed, provenance-mismatched, semantica
 
 ## Execution environment
 
-The workflow uses Hatari in Mega ST / Motorola 68000 mode with an open-source EmuTOS image, a writable GEMDOS host directory, exact 68000 CPU selection, and automatic launch of `C:\MLP.TOS`.
+The workflow uses Hatari in Mega ST / Motorola 68000 mode with a checksum-pinned official open-source EmuTOS image, a writable GEMDOS host directory, exact 68000 CPU selection, and automatic launch of `C:\MLP.TOS`.
 
-This establishes:
+This establishes after a successful exact run:
 
 ```text
 REAL_ATARI_TOS_EXECUTABLE              = TRUE
