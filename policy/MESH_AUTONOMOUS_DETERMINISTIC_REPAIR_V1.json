@@ -1,0 +1,71 @@
+{
+  "schema": "qikvrt_mesh_autonomous_deterministic_repair_v1",
+  "state": "ACTIVE_ON_PR",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "max_open_prs_scanned": 50,
+  "max_actions_per_run": 1,
+  "productive_writer_limit": 1,
+  "writer_concurrency_group": "qikvrt-mesh-autonomous-repair-${repository}",
+  "cancel_in_progress": false,
+  "integrity_trio": [
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt"
+  ],
+  "repair_classes": {
+    "ZERO_JOB_ACTION_REQUIRED": {
+      "action": "DISPATCH_EXACT_HEAD",
+      "productive_mutation": false,
+      "requires_live_head_revalidation": true
+    },
+    "NO_EXACT_HEAD_OBSERVATION": {
+      "action": "DISPATCH_EXACT_HEAD",
+      "productive_mutation": false,
+      "requires_live_head_revalidation": true
+    },
+    "RECOVERABLE_DISPATCH_ERROR": {
+      "action": "DISPATCH_EXACT_HEAD",
+      "productive_mutation": false,
+      "requires_live_head_revalidation": true
+    },
+    "REPOSITORY_INTEGRITY_PROJECTION_DRIFT": {
+      "action": "DISPATCH_INTEGRITY_MATERIALIZER",
+      "productive_mutation": false,
+      "requires_live_head_revalidation": true
+    },
+    "STALE_BASE_CONFLICT_FREE": {
+      "action": "REBIND_CURRENT_MAIN",
+      "productive_mutation": true,
+      "requires_live_head_revalidation": true,
+      "scope_must_remain_within_original_pr_plus_integrity_trio": true
+    },
+    "EXECUTED_FAILURE_REQUIRES_REPAIR_RECIPE": {
+      "action": "HOLD",
+      "productive_mutation": false
+    },
+    "STALE_BASE_NOT_SAFELY_REBINDABLE": {
+      "action": "REQUEST_AUTHORITY",
+      "productive_mutation": false
+    }
+  },
+  "effect_boundaries": {
+    "merge_authority": false,
+    "review_authority": false,
+    "external_effect_authority": false,
+    "publication": false,
+    "deployment": false,
+    "general_effect_ack_done": false,
+    "physical_hardware_execution": false
+  },
+  "invariants": [
+    "REQUESTED != EXECUTED != OBSERVED != ACKNOWLEDGED",
+    "CAUSALITY != SEQUENCE",
+    "AUTHORITY_MAIN != MIRROR_MAIN",
+    "one repair action per controller run",
+    "latest run per workflow drives classification",
+    "executed failures never become blind retries",
+    "every productive mutation revalidates the live source ref before write and before push",
+    "history is preserved and force push is forbidden",
+    "unknown failures remain visible HOLD states"
+  ]
+}

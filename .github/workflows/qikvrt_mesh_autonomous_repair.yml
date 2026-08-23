@@ -1,0 +1,557 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT Mesh autonomous deterministic repair
+
+on:
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  workflow_run:
+    workflows:
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT CI"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT zero-bug continuous invariant"
+      - "QIKVRT autonomous PR-head continuation"
+    types: [completed]
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-mesh-autonomous-repair-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  repair-one:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ROOT: .qikvrt/mesh-autonomous-repair
+    steps:
+      - name: Check out exact current Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify bounded repair policy and planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "qikvrt_mesh_autonomous_deterministic_repair_v1" and
+            .max_actions_per_run == 1 and
+            .productive_writer_limit == 1 and
+            .cancel_in_progress == false and
+            .effect_boundaries.merge_authority == false and
+            .effect_boundaries.review_authority == false and
+            .effect_boundaries.external_effect_authority == false
+          ' policy/MESH_AUTONOMOUS_DETERMINISTIC_REPAIR_V1.json >/dev/null
+          python3 -B -m unittest -v tests.test_qikvrt_autonomous_problem_solver
+
+      - name: Discover and plan at most one exact repair edge
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROOT"
+          : > "$ROOT/candidates.jsonl"
+          : > "$ROOT/decisions.jsonl"
+          main_sha="$(git rev-parse --verify HEAD^{commit})"
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=50" \
+            > "$ROOT/open-prs.json"
+
+          while IFS=$'\t' read -r pr ref head base head_repo; do
+            test -n "$pr" || continue
+            test "$head_repo" = "$GITHUB_REPOSITORY" || continue
+
+            live_ref="$(
+              git ls-remote --heads origin "refs/heads/$ref" |
+                awk 'NR == 1 {print $1}'
+            )"
+            test "$live_ref" = "$head" || continue
+
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
+              > "$ROOT/runs-${pr}.json"
+            : > "$ROOT/observations-${pr}.jsonl"
+            while IFS=$'\t' read -r run_id name status conclusion created_at; do
+              test -n "$run_id" || continue
+              jobs_total=0
+              case "$conclusion" in
+                action_required|cancelled|failure|startup_failure|timed_out)
+                  jobs_total="$(
+                    gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" \
+                      --jq '.total_count'
+                  )"
+                  ;;
+                success)
+                  jobs_total=1
+                  ;;
+              esac
+              jq -nc \
+                --argjson id "$run_id" \
+                --arg name "$name" \
+                --arg status "$status" \
+                --arg conclusion "$conclusion" \
+                --argjson jobs_total "$jobs_total" \
+                --arg created_at "$created_at" \
+                '{
+                  id:$id,
+                  name:$name,
+                  status:$status,
+                  conclusion:(if $conclusion == "" then null else $conclusion end),
+                  jobs_total:$jobs_total,
+                  created_at:$created_at
+                }' >> "$ROOT/observations-${pr}.jsonl"
+            done < <(
+              jq -r '.workflow_runs[] |
+                [.id,.name,.status,(.conclusion // ""),.created_at] | @tsv' \
+                "$ROOT/runs-${pr}.json"
+            )
+            jq -s '.' "$ROOT/observations-${pr}.jsonl" \
+              > "$ROOT/observations-${pr}.json"
+
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
+              > "$ROOT/status-${pr}.json"
+            exact_status="$(
+              jq -r '
+                [.statuses[] |
+                  select(.context == "QIKVRT autonomous exact-head verification")] |
+                sort_by(.created_at) |
+                (last.state // "missing")
+              ' "$ROOT/status-${pr}.json"
+            )"
+            dispatch_error=false
+            if jq -e '
+              [.statuses[] |
+                select(.context == "QIKVRT autonomous exact-head verification")] |
+              sort_by(.created_at) |
+              last |
+              select(
+                .state == "error" and
+                (
+                  (.description // "") |
+                  test("dispatch (failed|could not start)"; "i")
+                )
+              )
+            ' "$ROOT/status-${pr}.json" >/dev/null 2>&1; then
+              dispatch_error=true
+            fi
+
+            behind_by=0
+            if gh api "repos/${GITHUB_REPOSITORY}/compare/${main_sha}...${head}" \
+              > "$ROOT/compare-${pr}.json" 2>/dev/null; then
+              behind_by="$(jq -r '.behind_by' "$ROOT/compare-${pr}.json")"
+            else
+              behind_by=1
+            fi
+
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" \
+              > "$ROOT/pr-${pr}.json"
+            mergeable="$(
+              jq -r '
+                if .mergeable == true then "true"
+                elif .mergeable == false then "false"
+                else "null"
+                end
+              ' "$ROOT/pr-${pr}.json"
+            )"
+
+            jq -n \
+              --slurpfile observations "$ROOT/observations-${pr}.json" \
+              --arg exact_head_status "$exact_status" \
+              --argjson dispatch_error_is_recoverable "$dispatch_error" \
+              --argjson behind_by "$behind_by" \
+              --argjson mergeable "$mergeable" \
+              '{
+                observations:$observations[0],
+                exact_head_status:$exact_head_status,
+                dispatch_error_is_recoverable:$dispatch_error_is_recoverable,
+                behind_by:$behind_by,
+                mergeable:$mergeable,
+                first_failure_class:null
+              }' > "$ROOT/input-${pr}.json"
+
+            python3 -B tools/qikvrt_autonomous_problem_solver.py \
+              --input "$ROOT/input-${pr}.json" \
+              --output "$ROOT/plan-${pr}.json"
+
+            action="$(jq -r '.action' "$ROOT/plan-${pr}.json")"
+            case "$action" in
+              DISPATCH_EXACT_HEAD) priority=10 ;;
+              DISPATCH_INTEGRITY_MATERIALIZER) priority=20 ;;
+              REBIND_CURRENT_MAIN) priority=30 ;;
+              *) priority=999 ;;
+            esac
+
+            jq -c \
+              --argjson pr "$pr" \
+              --arg ref "$ref" \
+              --arg head "$head" \
+              --arg base "$base" \
+              --argjson priority "$priority" \
+              '. + {
+                pull_request:$pr,
+                head_ref:$ref,
+                head_sha:$head,
+                base_sha:$base,
+                priority:$priority
+              }' "$ROOT/plan-${pr}.json" >> "$ROOT/decisions.jsonl"
+
+            if [ "$priority" -lt 999 ]; then
+              jq -c \
+                --argjson pr "$pr" \
+                --arg ref "$ref" \
+                --arg head "$head" \
+                --arg base "$base" \
+                --argjson priority "$priority" \
+                '. + {
+                  pull_request:$pr,
+                  head_ref:$ref,
+                  head_sha:$head,
+                  base_sha:$base,
+                  priority:$priority
+                }' "$ROOT/plan-${pr}.json" >> "$ROOT/candidates.jsonl"
+            fi
+          done < <(
+            jq -r '.[] |
+              [.number,.head.ref,.head.sha,.base.sha,.head.repo.full_name] | @tsv' \
+              "$ROOT/open-prs.json"
+          )
+
+          if [ ! -s "$ROOT/candidates.jsonl" ]; then
+            echo "selected=false" >> "$GITHUB_OUTPUT"
+            jq -n \
+              --arg event "$GITHUB_EVENT_NAME" \
+              '{
+                d0:0,
+                state:"NOOP",
+                reason:"NO_REGISTERED_REPAIR_EDGE",
+                event:$event,
+                productive_effect:false,
+                effect_ack:"NOT_REQUIRED"
+              }' > "$ROOT/decision-receipt.json"
+            exit 0
+          fi
+
+          jq -s 'sort_by(.priority,.pull_request) | .[0]' \
+            "$ROOT/candidates.jsonl" > "$ROOT/selected.json"
+
+          echo "selected=true" >> "$GITHUB_OUTPUT"
+          for field in pull_request head_ref head_sha base_sha action reason; do
+            value="$(jq -r --arg field "$field" '.[$field]' "$ROOT/selected.json")"
+            echo "${field}=${value}" >> "$GITHUB_OUTPUT"
+          done
+
+          selected_ref="$(jq -r '.head_ref' "$ROOT/selected.json")"
+          selected_head="$(jq -r '.head_sha' "$ROOT/selected.json")"
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$selected_ref" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$selected_head"
+          cp "$ROOT/selected.json" "$ROOT/decision-receipt.json"
+
+      - name: Dispatch trusted exact-head reobservation
+        if: steps.select.outputs.selected == 'true' && steps.select.outputs.action == 'DISPATCH_EXACT_HEAD'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pull_request }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
+          HEAD_SHA: ${{ steps.select.outputs.head_sha }}
+          BASE_SHA: ${{ steps.select.outputs.base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_published=false
+          publish_error() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$status_published" = true ]; then
+              set +e
+              gh api --method POST \
+                "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+                -f state=error \
+                -f context='QIKVRT autonomous exact-head verification' \
+                -f description='Exact-head recovery dispatch failed' \
+                -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              set -e
+            fi
+            exit "$rc"
+          }
+          trap publish_error EXIT
+
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context='QIKVRT autonomous exact-head verification' \
+            -f description='Trusted exact-head deterministic repair dispatched' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          status_published=true
+
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$HEAD_SHA" \
+            --arg base "$BASE_SHA" \
+            '{
+              event_type:"qikvrt_autonomous_exact_head_verify",
+              client_payload:{
+                repository:$repository,
+                pull_request:($pr|tonumber),
+                head_ref:$ref,
+                head_sha:$head,
+                base_sha:$base,
+                d0:2,
+                causal_state:"REOBSERVE"
+              }
+            }' |
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          : > "$ROOT/dispatched-workflows.jsonl"
+          for workflow in \
+            qikvrt_ci.yml \
+            qikvrt_collective_review.yml \
+            qikvrt_global_completion.yml \
+            qikvrt_zero_bug_continuous.yml
+          do
+            live_ref="$(
+              git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+                awk 'NR == 1 {print $1}'
+            )"
+            test "$live_ref" = "$HEAD_SHA"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref="$HEAD_REF"
+            jq -nc \
+              --arg workflow "$workflow" \
+              --arg ref "$HEAD_REF" \
+              --arg head "$HEAD_SHA" \
+              '{
+                workflow:$workflow,
+                ref:$ref,
+                head:$head,
+                d0:2,
+                state:"REOBSERVE",
+                productive_effect:false,
+                effect_ack:"NOT_REQUIRED"
+              }' >> "$ROOT/dispatched-workflows.jsonl"
+          done
+
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+            -f ref=main -F "inputs[pr]=$PR_NUMBER"
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg head "$HEAD_SHA" \
+            --arg ref "$HEAD_REF" \
+            '{
+              pull_request:($pr|tonumber),
+              head_sha:$head,
+              head_ref:$ref,
+              d0:2,
+              state:"REOBSERVE",
+              disposition:"DISPATCHED_EXACT_HEAD_CONTINUATION",
+              productive_effect:false,
+              effect_ack:"NOT_REQUIRED"
+            }' > "$ROOT/action-receipt.json"
+          trap - EXIT
+
+      - name: Dispatch repository Integrity materializer
+        if: steps.select.outputs.selected == 'true' && steps.select.outputs.action == 'DISPATCH_INTEGRITY_MATERIALIZER'
+        env:
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
+          HEAD_SHA: ${{ steps.select.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_batch04_integrity.yml/dispatches" \
+            -f ref="$HEAD_REF"
+          jq -n \
+            --arg ref "$HEAD_REF" \
+            --arg head "$HEAD_SHA" \
+            '{
+              head_ref:$ref,
+              head_sha:$head,
+              d0:2,
+              state:"REPAIR",
+              disposition:"DISPATCHED_INTEGRITY_MATERIALIZER",
+              productive_effect:false,
+              effect_ack:"NOT_REQUIRED"
+            }' > "$ROOT/action-receipt.json"
+
+      - name: Rebind a conflict-free stale branch to current main
+        if: steps.select.outputs.selected == 'true' && steps.select.outputs.action == 'REBIND_CURRENT_MAIN'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pull_request }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
+          HEAD_SHA: ${{ steps.select.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git fetch --no-tags origin main "$HEAD_REF"
+          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+
+          test "$(git rev-parse --verify HEAD^{commit})" = "$HEAD_SHA"
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --jq '.[].filename' |
+            sort -u > "$ROOT/allowed-paths.txt"
+          printf '%s\n' \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt >> "$ROOT/allowed-paths.txt"
+          sort -u -o "$ROOT/allowed-paths.txt" "$ROOT/allowed-paths.txt"
+
+          if ! git merge --no-commit --no-ff origin/main; then
+            git merge --abort || true
+            echo "BLOCK: current main cannot be merged without conflicts" >&2
+            exit 2
+          fi
+
+          python3 tools/qikvrt_integrity.py generate
+          python3 tools/qikvrt_integrity.py verify
+          make test
+          python3 tools/qikvrt_integrity.py verify
+
+          git diff --name-only -z origin/main -- > "$ROOT/rebound-paths.bin"
+          python3 - "$ROOT/allowed-paths.txt" "$ROOT/rebound-paths.bin" <<'PY'
+          from pathlib import Path
+          import sys
+
+          allowed = {
+              line
+              for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+              if line
+          }
+          changed = {
+              item.decode("utf-8")
+              for item in Path(sys.argv[2]).read_bytes().split(b"\0")
+              if item
+          }
+          unexpected = sorted(changed - allowed)
+          if unexpected:
+              raise SystemExit(
+                  "BLOCK: rebind widened PR scope: " + ", ".join(unexpected)
+              )
+          PY
+
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+
+          git config user.name "qikvrt-mesh-repair[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "ci: rebind exact PR head to current Authority main"
+          new_head="$(git rev-parse --verify HEAD^{commit})"
+
+          live_ref="$(
+            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$live_ref" = "$HEAD_SHA"
+          git push origin "HEAD:$HEAD_REF"
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${new_head}" \
+            -f state=pending \
+            -f context='QIKVRT autonomous exact-head verification' \
+            -f description='Trusted exact-head rebind verification dispatched' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg ref "$HEAD_REF" \
+            --arg head "$new_head" \
+            --arg base "$(git rev-parse origin/main)" \
+            '{
+              event_type:"qikvrt_autonomous_exact_head_verify",
+              client_payload:{
+                repository:$repository,
+                pull_request:($pr|tonumber),
+                head_ref:$ref,
+                head_sha:$head,
+                base_sha:$base,
+                d0:2,
+                causal_state:"REOBSERVE"
+              }
+            }' |
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg old_head "$HEAD_SHA" \
+            --arg new_head "$new_head" \
+            --arg ref "$HEAD_REF" \
+            '{
+              pull_request:($pr|tonumber),
+              old_head:$old_head,
+              new_head:$new_head,
+              head_ref:$ref,
+              d0:2,
+              state:"REPAIR",
+              disposition:"HISTORY_PRESERVING_CURRENT_MAIN_REBIND",
+              productive_effect:true,
+              effect_ack:"NOT_REQUIRED",
+              merge_authority:false,
+              review_authority:false
+            }' > "$ROOT/action-receipt.json"
+
+      - name: Preserve deterministic repair evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-autonomous-repair-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/mesh-autonomous-repair
