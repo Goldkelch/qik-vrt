@@ -61,8 +61,6 @@ jobs:
           cf8ef5ff75e3204399f3064feec13e48ac2bc87d5afb99be652ede072a1211e5  docs/MESH_AUTONOMOUS_PUBLICATION_TERMINAL_PATTERN_COMPILATION_V1.md
           91c6fc732374a983a6ca18e37872fba36ecdfb809b6f2400b62583a02243c2e7  evidence/owner_sources/QIKVRT_RELATIONAL_TIME_PDF_BINDING_2026_08_23.json
           SHA256
-          rm -rf .qikvrt/bootstrap/mesh-patch
-          rm -f .github/workflows/qikvrt_bootstrap_mesh_patch.yml
 
       - name: Run focused exact-tree verification
         shell: bash
@@ -85,12 +83,21 @@ jobs:
             .github/workflows/qikvrt_mesh_pattern_contract.yml
           git diff --check
 
-      - name: Persist final history-preserving candidate
+      - name: Persist non-workflow implementation without privileged workflow mutation
         shell: bash
         run: |
           set -euo pipefail
+          # GITHUB_TOKEN may write contents but GitHub intentionally refuses workflow-file
+          # mutation by this App identity. Keep the tested workflow bytes for the trusted
+          # connector write, and persist every non-workflow path now.
+          git checkout HEAD -- .github/workflows/issue-autonomous-processing.yml
+          rm -f \
+            .github/workflows/qikvrt_issue_platform_publication.yml \
+            .github/workflows/qikvrt_mesh_pattern_contract.yml
+          rm -rf .qikvrt/bootstrap/mesh-patch
           git config user.name 'qik-vrt-mesh[bot]'
           git config user.email 'qik-vrt-mesh[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'mesh: bind autonomous publication terminal patterns and compiled capsules'
+          git diff --cached --quiet && exit 0
+          git commit -m 'mesh: stage autonomous publication terminal pattern implementation'
           git push origin "HEAD:$GITHUB_REF_NAME"
