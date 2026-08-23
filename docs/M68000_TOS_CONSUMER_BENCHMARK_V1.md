@@ -11,6 +11,9 @@ COMPILED KERNEL REGISTRY
 → GEMDOS receipt write
 → host-side receipt reobservation
 → exact registry/kernel provenance verification
+→ Authority-main execution
+→ append-only main-effect receipt
+→ ledger reobservation
 ```
 
 The consumer reads `runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json` at build time and embeds the exact immutable bytes selected by these kernel IDs:
@@ -79,3 +82,31 @@ PHYSICAL_SPEEDUP_RATIO_PROVEN
 ```
 
 The compiled path nevertheless removes repeated higher-level rule interpretation from every applicable M68000 invocation: the already proved finite rule is loaded once as immutable machine bytes and reused directly.
+
+## Authority-main effect and durable reobservation
+
+Pull-request execution verifies the candidate. It does not prove that the same chain ran from the promoted Authority state. Therefore the workflow also runs on matching changes pushed to `main`.
+
+A successful `main` run materializes `QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V1`, binding:
+
+- repository, `refs/heads/main`, exact Head and Tree;
+- workflow run ID and attempt;
+- deterministic TOS build report;
+- exact EmuTOS ROM digest;
+- functional outputs and target-local benchmark values;
+- TOS image and GEMDOS receipt digests;
+- the boundaries `physical_m68000_execution_observed=false`, `physical_speedup_measured=false`, `pass=false`, `final_pass=false`, and `effect_ack_done=false`.
+
+The receipt is written by fast-forward compare-and-swap to the dedicated branch:
+
+```text
+refs/heads/qikvrt/m68000-tos-systemtest-ledger-v1
+```
+
+Each run-specific path is append-only:
+
+```text
+receipts/<authority-main-head>/<workflow-run-id>.json
+```
+
+`latest.json` is a convenience pointer and is not the append-only authority. The bounded system-test ring closes only after the run-specific receipt is independently read back from that ledger and its Head, Tree, registry, machine bytes, execution, benchmark, and reobservation bindings agree.

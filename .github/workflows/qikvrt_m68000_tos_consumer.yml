@@ -13,17 +13,27 @@ on:
       - "tests/test_qikvrt_m68000_tos_consumer.py"
       - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
       - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
+  push:
+    branches: [main]
+    paths:
+      - "runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json"
+      - "runtime/m68000/*.hex"
+      - "runtime/m68000/tos/MLP.TOS.hex"
+      - "tools/qikvrt_m68000_tos_consumer.py"
+      - "tests/test_qikvrt_m68000_tos_consumer.py"
+      - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
+      - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-execute-reobserve:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkoutd3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -150,6 +160,108 @@ jobs:
             "$RUNNER_TEMP/qikvrt-tos-drive/QIKVRT.RCP" \
             | tee "$RUNNER_TEMP/qikvrt-m68000-tos-effects.sha256"
 
+      - name: Materialize exact main-effect receipt
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          QIKVRT_SOURCE_TREE: ${{ github.event.head_commit.tree_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          build = json.loads((temp / 'qikvrt-m68000-tos-build.json').read_text(encoding='utf-8'))
+          observation = json.loads((temp / 'qikvrt-m68000-tos-reobservation.json').read_text(encoding='utf-8'))
+          receipt = (temp / 'qikvrt-tos-drive' / 'QIKVRT.RCP').read_bytes()
+          tos = (temp / 'qikvrt-tos-drive' / 'MLP.TOS').read_bytes()
+          tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          event_tree = os.environ.get('QIKVRT_SOURCE_TREE', '').strip()
+          if event_tree and event_tree != tree:
+              raise SystemExit(f'BLOCK: EVENT_TREE_MISMATCH:{event_tree}!={tree}')
+          rom_sha = (temp / 'emutos-rom-sha256.txt').read_text(encoding='utf-8').split()[0]
+          value = {
+              'schema': 'QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'ref': os.environ['GITHUB_REF'],
+              'head': os.environ['GITHUB_SHA'],
+              'tree': tree,
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'workflow': os.environ['GITHUB_WORKFLOW'],
+              'event': os.environ['GITHUB_EVENT_NAME'],
+              'registry_to_consumer': True,
+              'tos_execution_observed': True,
+              'benchmark_observed': True,
+              'receipt_reobserved': True,
+              'tos_sha256': hashlib.sha256(tos).hexdigest(),
+              'receipt_sha256': hashlib.sha256(receipt).hexdigest(),
+              'emutos_rom_sha256': rom_sha,
+              'build': build,
+              'reobservation': observation,
+              'physical_m68000_execution_observed': False,
+              'physical_speedup_measured': False,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          output = temp / 'qikvrt-m68000-tos-main-effect.json'
+          output.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(output.read_text(encoding='utf-8'))
+          PY
+
+      - name: Persist main-effect receipt to append-only ledger
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LEDGER_REF: refs/heads/qikvrt/m68000-tos-systemtest-ledger-v1
+        run: |
+          set -euo pipefail
+          source_receipt="$RUNNER_TEMP/qikvrt-m68000-tos-main-effect.json"
+          test -s "$source_receipt"
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          success=0
+          for attempt in 1 2 3; do
+            ledger="$RUNNER_TEMP/qikvrt-m68000-tos-ledger-$attempt"
+            rm -rf "$ledger"
+            git init -q "$ledger"
+            git -C "$ledger" config user.name 'github-actions[bot]'
+            git -C "$ledger" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C "$ledger" remote add origin "$remote"
+            if git -C "$ledger" fetch --no-tags --depth=1 origin "$LEDGER_REF"; then
+              git -C "$ledger" checkout -q -B ledger FETCH_HEAD
+            else
+              git -C "$ledger" checkout -q --orphan ledger
+            fi
+            target="receipts/${GITHUB_SHA}/${GITHUB_RUN_ID}.json"
+            mkdir -p "$ledger/$(dirname "$target")"
+            if [ -e "$ledger/$target" ]; then
+              cmp "$source_receipt" "$ledger/$target"
+            else
+              cp "$source_receipt" "$ledger/$target"
+            fi
+            cp "$source_receipt" "$ledger/latest.json"
+            git -C "$ledger" add "$target" latest.json
+            if git -C "$ledger" diff --cached --quiet; then
+              success=1
+              break
+            fi
+            git -C "$ledger" commit -q -m "evidence: M68000 TOS main reobservation ${GITHUB_SHA} run ${GITHUB_RUN_ID}"
+            if git -C "$ledger" push origin "HEAD:$LEDGER_REF"; then
+              success=1
+              break
+            fi
+            sleep "$attempt"
+          done
+          if [ "$success" -ne 1 ]; then
+            echo 'BLOCK: M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED' >&2
+            exit 1
+          fi
+
       - name: Publish TOS execution, benchmark and diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -160,6 +272,7 @@ jobs:
             ${{ runner.temp }}/qikvrt-tos-drive/QIKVRT.RCP
             ${{ runner.temp }}/qikvrt-m68000-tos-build.json
             ${{ runner.temp }}/qikvrt-m68000-tos-reobservation.json
+            ${{ runner.temp }}/qikvrt-m68000-tos-main-effect.json
             ${{ runner.temp }}/qikvrt-m68000-tos-effects.sha256
             ${{ runner.temp }}/hatari-version.txt
             ${{ runner.temp }}/hatari-trace-help.txt
