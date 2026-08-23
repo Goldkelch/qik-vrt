@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
-"""Execute the proof-bound QIK-VRT M68000 kernels as one virtual Mesh path.
+"""Execute all registered proof-bound QIK-VRT M68000 kernels as one virtual Mesh path.
 
-The repository contains three immutable Motorola 68000 programs whose finite
-semantics are bound to Lean/Lake sources. This module is their first shared
-system consumer: it loads the registry by exact kernel id and executes the
-registered bytes through the already bounded opcode interpreters.
-
-Boundaries:
-- virtual opcode execution is observed here;
-- physical Motorola 68000 / Atari Mega ST execution is not observed here;
-- no numeric physical speedup is claimed;
-- the three ABIs remain semantically distinct and are not silently coerced.
+The registry may grow monotonically, but this consumer binds an exact ordered
+inventory for architecture generation V2. Each kernel is rechecked against its
+deterministic compiler before its bounded machine bytes execute.
 """
 from __future__ import annotations
 
@@ -29,8 +22,10 @@ EXPECTED_IDS = (
     "lean_gate_v1",
     "lean_v2_d3_step_v1",
     "lean_v2_mesh_recovery_v1",
+    "lean_spark_branch_pass_v1",
+    "lean_spark_branch_plan_v1",
 )
-EXPECTED_TOTAL_BYTES = 68
+EXPECTED_TOTAL_BYTES = 284
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -62,13 +57,14 @@ def load_registry(root: Path = ROOT) -> tuple[dict[str, Any], dict[str, bytes]]:
         raise ValueError("unexpected compiled-kernel registry schema")
     if registry.get("target") != "Motorola 68000":
         raise ValueError("unexpected compiled-kernel target")
-
     entries = registry.get("kernels")
     if not isinstance(entries, list):
         raise ValueError("registry kernels must be a list")
     ids = tuple(entry.get("id") for entry in entries)
     if ids != EXPECTED_IDS:
         raise ValueError(f"compiled-kernel inventory differs: {ids!r}")
+    if len(ids) != len(set(ids)):
+        raise ValueError("compiled-kernel ids must be unique")
 
     loaded: dict[str, bytes] = {}
     for entry in entries:
@@ -88,57 +84,82 @@ def load_registry(root: Path = ROOT) -> tuple[dict[str, Any], dict[str, bytes]]:
             raise ValueError(f"machine byte count differs for {kernel_id}")
         loaded[kernel_id] = machine
 
-    if sum(len(machine) for machine in loaded.values()) != EXPECTED_TOTAL_BYTES:
+    total = sum(map(len, loaded.values()))
+    if total != EXPECTED_TOTAL_BYTES:
         raise ValueError("compiled-kernel byte total differs")
+    if registry.get("compiled_machine_bytes_total") != total:
+        raise ValueError("registry total byte declaration differs")
     return registry, loaded
 
 
-def _compiler_modules(root: Path) -> tuple[ModuleType, ModuleType, ModuleType]:
+def _compiler_modules(
+    root: Path,
+) -> tuple[ModuleType, ModuleType, ModuleType, ModuleType, ModuleType]:
     tools = root / "tools"
-    gate = _load_module(
-        "qikvrt_lean_gate_m68000_compiler_runtime",
-        tools / "qikvrt_lean_gate_m68000_compiler.py",
+    return (
+        _load_module(
+            "qikvrt_lean_gate_m68000_compiler_runtime",
+            tools / "qikvrt_lean_gate_m68000_compiler.py",
+        ),
+        _load_module(
+            "qikvrt_lean_v2_m68000_d3_compiler_runtime",
+            tools / "qikvrt_lean_v2_m68000_d3_compiler.py",
+        ),
+        _load_module(
+            "qikvrt_lean_v2_m68000_mesh_recovery_compiler_runtime",
+            tools / "qikvrt_lean_v2_m68000_mesh_recovery_compiler.py",
+        ),
+        _load_module(
+            "qikvrt_spark_branch_pass_runtime",
+            tools / "qikvrt_spark_branch.py",
+        ),
+        _load_module(
+            "qikvrt_spark_branch_plan_runtime",
+            tools / "qikvrt_spark_branch_m68000_compiler.py",
+        ),
     )
-    d3 = _load_module(
-        "qikvrt_lean_v2_m68000_d3_compiler_runtime",
-        tools / "qikvrt_lean_v2_m68000_d3_compiler.py",
-    )
-    recovery = _load_module(
-        "qikvrt_lean_v2_m68000_mesh_recovery_compiler_runtime",
-        tools / "qikvrt_lean_v2_m68000_mesh_recovery_compiler.py",
-    )
-    return gate, d3, recovery
 
 
 def execute_virtual_mesh(iterations: int = 1, root: Path = ROOT) -> dict[str, Any]:
     if iterations < 1:
         raise ValueError("iterations must be positive")
-
     registry, kernels = load_registry(root)
-    gate, d3, recovery = _compiler_modules(root)
+    gate, d3, recovery, spark_pass, spark_plan = _compiler_modules(root)
 
-    if kernels["lean_gate_v1"] != gate.compile_kernel():
-        raise ValueError("registered gate bytes differ from deterministic compiler")
-    if kernels["lean_v2_d3_step_v1"] != d3.MACHINE:
-        raise ValueError("registered D3-step bytes differ from deterministic compiler")
-    if kernels["lean_v2_mesh_recovery_v1"] != recovery.MACHINE:
-        raise ValueError("registered recovery bytes differ from deterministic compiler")
+    expected_bytes = {
+        "lean_gate_v1": gate.compile_kernel(),
+        "lean_v2_d3_step_v1": d3.MACHINE,
+        "lean_v2_mesh_recovery_v1": recovery.MACHINE,
+        "lean_spark_branch_pass_v1": spark_pass.MACHINE,
+        "lean_spark_branch_plan_v1": spark_plan.MACHINE,
+    }
+    for kernel_id, expected in expected_bytes.items():
+        if kernels[kernel_id] != expected:
+            raise ValueError(f"registered bytes differ from compiler: {kernel_id}")
+
+    plan_report = spark_plan.verify_exhaustive(
+        kernels["lean_spark_branch_plan_v1"]
+    )
+    pass_report = spark_pass.verify_exhaustive(
+        kernels["lean_spark_branch_pass_v1"]
+    )
 
     gate_instruction_count = 0
     d3_instruction_count = 0
     recovery_instruction_count = 0
+    spark_pass_instruction_count = 0
+    spark_plan_instruction_count = 0
     witness = 0xA5
     observed_recovery: list[dict[str, int]] = []
+    observed_pass: list[dict[str, int]] = []
+    observed_plan: list[dict[str, int]] = []
 
     for _ in range(iterations):
-        # Gate ABI: bit0 PASS certificate, bit1 BLOCK certificate.
         gate_result, count = gate.execute_kernel(kernels["lean_gate_v1"], 0b01)
         gate_instruction_count += count
         if gate_result != gate.GATE_PASS:
             raise AssertionError(("gate", gate.GATE_PASS, gate_result))
 
-        # D3 ABI remains separate: D0=2 is REOBSERVE in the four-state decision
-        # vocabulary; it is not inferred from the gate's numeric PASS code.
         decision = 2
         phase = 0
         for expected_phase in (1, 2, 0):
@@ -152,15 +173,17 @@ def execute_virtual_mesh(iterations: int = 1, root: Path = ROOT) -> dict[str, An
                 witness,
             ):
                 raise AssertionError(
-                    (
-                        "d3_step",
-                        (decision, expected_phase, witness),
-                        (decision_out, phase, witness_out),
-                    )
+                    ("d3_step", decision_out, phase, witness_out)
                 )
 
-        # Recovery ABI: exact cut-point classes plus invalid-input HOLD.
-        recovery_expectations = ((0, 0), (3, 0), (4, 1), (6, 1), (7, 2), (255, 2))
+        recovery_expectations = (
+            (0, 0),
+            (3, 0),
+            (4, 1),
+            (6, 1),
+            (7, 2),
+            (255, 2),
+        )
         observed_recovery = []
         for cutpoint, expected in recovery_expectations:
             actual, count = recovery.execute(
@@ -168,25 +191,67 @@ def execute_virtual_mesh(iterations: int = 1, root: Path = ROOT) -> dict[str, An
             )
             recovery_instruction_count += count
             if actual != expected:
-                raise AssertionError(("recovery", cutpoint, expected, actual))
+                raise AssertionError(
+                    ("recovery", cutpoint, expected, actual)
+                )
             observed_recovery.append(
                 {"cutpoint": cutpoint, "recovery_choice": actual}
             )
 
-    registry_bytes = (root / REGISTRY_RELATIVE).read_bytes()
-    kernel_digests = {
-        kernel_id: hashlib.sha256(machine).hexdigest()
-        for kernel_id, machine in kernels.items()
-    }
+        pass_expectations = (
+            (0x0F, (0, 1, 0, witness)),
+            (0x1F, (2, 0, 1, witness)),
+            (0x2F, (3, 0, 0, witness)),
+            (0x8F, (1, 0, 0, witness)),
+        )
+        observed_pass = []
+        for flags, expected in pass_expectations:
+            actual = spark_pass.execute(
+                kernels["lean_spark_branch_pass_v1"], flags, witness
+            )
+            spark_pass_instruction_count += actual[4]
+            if actual[:4] != expected:
+                raise AssertionError(("spark_pass", flags, expected, actual))
+            observed_pass.append(
+                {
+                    "observation_flags": flags,
+                    "decision_code": actual[0],
+                    "completion_witness": actual[1],
+                    "machine_owned_active": actual[2],
+                }
+            )
 
+        plan_expectations = (
+            (1, 1),
+            (2, 0),
+            (124, 11),
+            (252, 10),
+            (248, 2),
+        )
+        observed_plan = []
+        for flags, expected in plan_expectations:
+            actual, count = spark_plan.execute_kernel(
+                kernels["lean_spark_branch_plan_v1"], flags
+            )
+            spark_plan_instruction_count += count
+            if actual != expected:
+                raise AssertionError(("spark_plan", flags, expected, actual))
+            observed_plan.append(
+                {"observation_flags": flags, "plan_code": actual}
+            )
+
+    registry_bytes = (root / REGISTRY_RELATIVE).read_bytes()
     return {
-        "schema": "QIKVRT_VIRTUAL_MESH_M68000_ACCEPTANCE_V1",
+        "schema": "QIKVRT_VIRTUAL_MESH_M68000_ACCEPTANCE_V3",
         "iterations": iterations,
         "registry_schema": registry["schema"],
         "registry_sha256": hashlib.sha256(registry_bytes).hexdigest(),
         "kernel_ids": list(EXPECTED_IDS),
-        "kernel_sha256": kernel_digests,
-        "compiled_machine_bytes_total": sum(len(value) for value in kernels.values()),
+        "kernel_sha256": {
+            key: hashlib.sha256(value).hexdigest()
+            for key, value in kernels.items()
+        },
+        "compiled_machine_bytes_total": sum(map(len, kernels.values())),
         "gate": {
             "input_certificate_bits": 1,
             "output_gate": gate.GATE_PASS,
@@ -205,11 +270,37 @@ def execute_virtual_mesh(iterations: int = 1, root: Path = ROOT) -> dict[str, An
             "last_observations": observed_recovery,
             "dynamic_instructions": recovery_instruction_count,
         },
+        "spark_branch_pass": {
+            "observations_per_iteration": len(observed_pass),
+            "last_observations": observed_pass,
+            "exhaustive_input_pairs_verified": pass_report[
+                "input_pairs_verified"
+            ],
+            "d3_preserved": pass_report["d3_preserved"],
+            "max_dynamic_instructions": pass_report[
+                "max_dynamic_instructions"
+            ],
+            "dynamic_instructions": spark_pass_instruction_count,
+        },
+        "spark_branch_plan": {
+            "complete_plan_passes": iterations * len(observed_plan),
+            "last_observations": observed_plan,
+            "exhaustive_flag_bytes_verified": plan_report[
+                "verified_flag_bytes"
+            ],
+            "max_dynamic_instructions": plan_report[
+                "max_dynamic_instructions"
+            ],
+            "dynamic_instructions": spark_plan_instruction_count,
+        },
         "compiled_kernel_registry_loaded": True,
         "registered_machine_bytes_executed": True,
         "higher_level_rule_reinterpreted_for_decision": False,
         "semantic_abis_kept_distinct": True,
         "virtual_m68000_execution_observed": True,
+        "complete_branch_plan_selected_by_m68000": True,
+        "bounded_branch_capsule_disposition_executed_by_m68000": True,
+        "host_github_effect_executed_by_m68000": False,
         "physical_m68000_execution_observed": False,
         "physical_speedup_measured": False,
         "workflow_accelerated_by_m68000": False,
@@ -224,10 +315,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
-    report = execute_virtual_mesh(args.iterations)
     print(
         json.dumps(
-            report,
+            execute_virtual_mesh(args.iterations),
             ensure_ascii=False,
             sort_keys=True,
             indent=2 if args.json else None,
