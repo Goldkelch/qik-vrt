@@ -1,0 +1,119 @@
+{
+  "schema": "QIKVRT_SPARK_CIRCULAR_ARCHITECTURE_V1",
+  "version": 1,
+  "owner": "Ingolf Lohmann",
+  "purpose": "Alternate a bounded Motorola 68000 microkernel with compiler and interpreter stages so one validated branch-pass work unit can be classified and closed per applicable kernel invocation.",
+  "ring_ladder": [
+    {
+      "id": "R0",
+      "literal": "0",
+      "meaning": "QUIESCENT_NO_ACTIVE_WORK"
+    },
+    {
+      "id": "R1",
+      "literal": "1",
+      "meaning": "ACTIVE_WORK_RING"
+    },
+    {
+      "id": "R2",
+      "literal": "2",
+      "meaning": "BINARY_DISTINCTION_CARDINALITY"
+    },
+    {
+      "id": "R8",
+      "literal": "2^3 = 8",
+      "meaning": "EIGHT_BIT_BYTE_WIDTH"
+    },
+    {
+      "id": "R256_STATES",
+      "literal": "2^8 = 256",
+      "meaning": "POSSIBLE_VALUES_OF_ONE_BYTE"
+    },
+    {
+      "id": "R256_WIDTH",
+      "literal": "256 bits",
+      "meaning": "EXPLICIT_VIRTUAL_RING_WIDTH_INDEPENDENT_OF_BYTE_STATE_COUNT"
+    },
+    {
+      "id": "R_SYMBOLIC_OUTER",
+      "literal": "2^(256^3)",
+      "exponent": 16777216,
+      "meaning": "SYMBOLIC_STATE_CARDINALITY",
+      "materialization": "SPARSE_HASH_ADDRESSED_ONLY"
+    }
+  ],
+  "hard_distinctions": [
+    "2^8 = 256 STATES != 256 BITS",
+    "VIRTUAL_RING_WIDTH != PHYSICAL_REGISTER_WIDTH",
+    "2^(256^3) SYMBOLIC_CARDINALITY != EAGER_MEMORY_ALLOCATION",
+    "M68000_DATA_REGISTER_WIDTH = 32 BITS",
+    "QUALIFIED_EMULATOR_EXECUTION != PHYSICAL_HARDWARE_EXECUTION",
+    "BRANCH_PASS_COMPLETE != GIT_BRANCH_MERGED",
+    "TARGET_THROUGHPUT != CROSS_ARCHITECTURE_SPEEDUP_RATIO",
+    "QUIESCENCE != FAILURE != GLOBAL_HALT"
+  ],
+  "alternating_execution_cycle": [
+    "VIRTUAL_INTERPRETER_PREPARES_EXACT_BRANCH_DESCRIPTOR",
+    "COMPILER_REUSES_OR_EMITS_PROOF_BOUND_FINITE_KERNEL",
+    "M68000_MICROKERNEL_EXECUTES_ONE_BOUNDED_BRANCH_PASS",
+    "VIRTUAL_INTERPRETER_PERFORMS_NON_LOCAL_EFFECTS",
+    "OBSERVE_AND_REOBSERVE_EFFECT",
+    "COLLECT_PERSIST_RELEASE",
+    "NEXT_RING"
+  ],
+  "current_target_evidence": {
+    "qualified_emulator": "Hatari Mega ST MC68000 with checksum-pinned EmuTOS",
+    "physical_hardware_observed": false,
+    "physical_speedup_measured": false
+  },
+  "branch_pass": {
+    "descriptor_register": "D0.L",
+    "disposition_register": "D1.L",
+    "lifecycle_register": "D3.B",
+    "physical_data_register_bits": 32,
+    "required_mask_hex": "0x00001fff",
+    "required_predicates": [
+      "PROBLEM_BOUND",
+      "MODEL_BOUND",
+      "EXPLICIT_DISTINCTIONS_BOUND",
+      "INVARIANTS_BOUND",
+      "ARCHITECTURE_BOUND",
+      "IMPLEMENTATION_PRESENT",
+      "EXECUTION_OBSERVED",
+      "OBSERVATION_ADMITTED",
+      "VERIFICATION_SUCCESS",
+      "RESULT_COLLECTED",
+      "RESULT_PERSISTED",
+      "UNNEEDED_RESOURCES_RELEASED",
+      "NEXT_STATE_REOBSERVED"
+    ],
+    "dispositions": {
+      "0": "IDLE",
+      "1": "ACTIVE",
+      "2": "HOLD",
+      "3": "COMPLETE"
+    },
+    "rules": [
+      "D3 OUTSIDE 0..1 -> HOLD WITHOUT INVENTING COMPLETION",
+      "UNKNOWN D0 BITS -> HOLD",
+      "D0 = 0 AND D3 = 0 -> IDLE",
+      "PARTIAL VALID D0 -> ACTIVE AND D3 := 1",
+      "FULL REQUIRED MASK -> COMPLETE AND D3 := 0"
+    ]
+  },
+  "performance_policy": {
+    "compile_once_reuse_many": true,
+    "interpreter_fallback_required": true,
+    "stable_finite_predicates_are_compiler_candidates": true,
+    "benchmark_each_target_generation": true,
+    "numeric_speedup_claim_requires_bound_baseline": true,
+    "arbitrary_remote_effect_in_one_cpu_pass": false
+  },
+  "evidence_boundaries": {
+    "pass": false,
+    "final_pass": false,
+    "effect_ack_done": false,
+    "physical_m68000_execution_observed": false,
+    "physical_speedup_measured": false
+  }
+}
