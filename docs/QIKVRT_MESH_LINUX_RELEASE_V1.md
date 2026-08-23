@@ -8,11 +8,14 @@ artifacts for common host platforms:
 - QCOW2 and VHDX VM images for both architectures;
 - an amd64 OVA for VMware/VirtualBox;
 - an exact Firefox XPI;
-- per-asset SHA-256 and a release manifest.
+- per-asset SHA-256, architecture build receipts, bounded runtime receipts, and
+  a release manifest.
 
 The appliance is assembled from the checksum-pinned Ubuntu 24.04 LTS release
 `20260801`, Firefox `153.0.4` verified against Mozilla's signed SHA256SUMS, and
-geckodriver `0.37.1` verified against its GitHub asset digest.
+geckodriver `0.37.1` verified against its GitHub asset digest. The Ubuntu rootfs
+and cloud-image checksums are the exact values published in that release's
+signed transport namespace and are regression-tested in the repository.
 
 It binds three exact QIK-VRT source generations:
 
@@ -33,6 +36,28 @@ The VM boots the same OCI appliance as a systemd service. Its visible Firefox
 session is exposed through noVNC on TCP 6080. The Effect-Ack backend remains
 loopback-only inside the appliance.
 
+## Build acceptance
+
+Each architecture-specific OCI image must be started on its native GitHub
+runner before any artifact is accepted for publication. The build waits for a
+real Firefox/WebDriver/WebExtension session to produce
+`firefox-effect-ack-receipt.json`, copies the receipt out of the running
+container, and requires all of the following:
+
+```text
+firefox_terminal_execution_observed = true
+bounded_loopback_effect_ack_done     = true
+effect_ack_done_scope                = BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY
+external_effect                      = NONE
+physical_megast_execution            = false
+general_internet_reachability        = false
+backend event                        = TERMINAL_INPUT_ACCEPTED
+```
+
+The architecture artifact set includes that receipt and the captured container
+log. The publish job rejects either architecture if its receipt is absent or
+outside the bounded scope.
+
 ## Claim boundary
 
 The packaged browser proof is
@@ -42,6 +67,8 @@ Mega-ST/M68000 execution, general Internet reachability, independent review
 authority, `PASS`, or `FINAL_PASS`. It is a versioned software distribution,
 not evidence of physical hardware execution.
 
-The packaged Firefox component is the QIK-VRT WebExtension plus the bounded
-Effect-Ack profile. It is not a fork or complete clean-room replacement of
-Firefox, Gecko, or SpiderMonkey.
+The packaged Firefox component is Mozilla Firefox plus the QIK-VRT WebExtension
+and bounded Effect-Ack profile. It is not a fork or complete clean-room
+replacement of Firefox, Gecko, or SpiderMonkey. The separately included Atari
+ANSI C89 browser capsule is a bounded clean-room implementation and is not
+represented as Firefox-equivalent or M68000-executed in this release.

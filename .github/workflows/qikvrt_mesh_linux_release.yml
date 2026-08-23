@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/qikvrt_mesh_linux_release.yml'
       - 'tools/qikvrt_mesh_linux_release.py'
+      - 'tools/qikvrt_mesh_linux_release_v2.py'
       - 'policy/QIKVRT_MESH_LINUX_RELEASE_V1.json'
       - 'release/QIKVRT_MESH_LINUX_1_0_0_AUTHORIZATION.json'
       - 'docs/QIKVRT_MESH_LINUX_RELEASE_V1.md'
@@ -66,7 +67,8 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools
-      - run: python3 -B tools/qikvrt_mesh_linux_release.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
+      - name: Build VM/OCI and execute packaged Firefox Effect-Ack acceptance
+        run: python3 -B tools/qikvrt_mesh_linux_release_v2.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-mesh-linux-${{ matrix.arch }}
@@ -94,6 +96,8 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo 'BLOCK: immutable release exists' >&2; exit 2; fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           for arch in amd64 arm64; do
+            test -s "dist/qikvrt-mesh-linux-${VERSION}-${arch}.firefox-effect-ack.json"
+            jq -e '.bounded_loopback_effect_ack_done == true and .effect_ack_done_scope == "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY" and .external_effect == "NONE"' "dist/qikvrt-mesh-linux-${VERSION}-${arch}.firefox-effect-ack.json" >/dev/null
             zstd -d "dist/qikvrt-mesh-linux-${VERSION}-${arch}.oci.tar.zst" -o "$RUNNER_TEMP/${arch}.oci.tar"
             docker load -i "$RUNNER_TEMP/${arch}.oci.tar"
             docker tag "qikvrt-mesh-linux:${VERSION}" "${IMAGE}-${arch}"
@@ -102,11 +106,12 @@ jobs:
           docker manifest create "$IMAGE" "${IMAGE}-amd64" "${IMAGE}-arm64"
           docker manifest push "$IMAGE"
           digest="$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          python3 tools/qikvrt_mesh_linux_release.py manifest --assets dist --image "$IMAGE" --image-digest "$digest" --head "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --output dist/QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json
+          python3 tools/qikvrt_mesh_linux_release_v2.py manifest --assets dist --image "$IMAGE" --image-digest "$digest" --head "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --output dist/QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json
           (cd dist && sha256sum * > SHA256SUMS)
           cat > "$RUNNER_TEMP/notes.md" <<EOF
           QIK-VRT Mesh Linux ${VERSION}; exact source ${GITHUB_SHA}.
           OCI: ${IMAGE}@${digest}
+          Both architecture-specific appliance images executed Firefox and produced a reobserved bounded loopback terminal-input Effect-Ack receipt before publication.
           Effect-Ack scope: BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY; external_effect=NONE.
           A general EFFECT_ACK_DONE is not claimed. Physical Mega-ST execution is not claimed.
           No PASS, FINAL_PASS, independent review authority, or general Internet reachability is implied.
