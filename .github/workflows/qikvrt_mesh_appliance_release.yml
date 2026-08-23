@@ -129,7 +129,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             e2fsprogs gnupg libguestfs-tools ovmf parted qemu-system-x86 qemu-utils \
-            ubuntu-cloud-image-keyring xz-utils
+            ubuntu-keyring xz-utils
+          test -s /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg
       - name: Build exact amd64 OCI image
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -196,7 +197,6 @@ jobs:
           set -euo pipefail
           docker save "qikvrt-mesh-appliance:$VERSION" > artifacts/qikvrt-mesh-appliance-amd64.oci.tar
           gzip -n -9 -c artifacts/qikvrt-mesh-appliance-amd64.oci.tar > artifacts/qikvrt-mesh-appliance-amd64.oci.tar.gz
-          rm artifacts/qikvrt-mesh-appliance-am64.oci.tar 2>/dev/null || true
           rm artifacts/qikvrt-mesh-appliance-amd64.oci.tar
           docker run --rm --entrypoint dpkg-query "qikvrt-mesh-appliance:$VERSION" -W -f='${Package}\t${Version}\t${Architecture}\n' \
             | LC_ALL=C sort > artifacts/packages-amd64.tsv
