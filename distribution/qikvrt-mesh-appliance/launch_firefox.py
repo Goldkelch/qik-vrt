@@ -22,7 +22,7 @@ def call(method: str, path: str, body: object | None = None) -> object:
         method=method,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:
         return json.load(response)
 
 
@@ -32,30 +32,47 @@ def main() -> int:
     profile.mkdir(parents=True, exist_ok=True)
     log = open("/run/qikvrt/geckodriver.log", "w", encoding="utf-8")
     driver = subprocess.Popen(
-        ["/usr/local/bin/geckodriver", "--host", "127.0.0.1", "--port", str(PORT), "--binary", "/opt/firefox/firefox", "--log", "info"],
+        [
+            "/usr/local/bin/geckodriver",
+            "--allow-system-access",
+            "--host", "127.0.0.1",
+            "--port", str(PORT),
+            "--binary", "/opt/firefox/firefox",
+            "--log", "info",
+        ],
         stdout=log,
         stderr=subprocess.STDOUT,
     )
     session: str | None = None
     try:
-        for _ in range(100):
+        for _ in range(200):
             try:
                 status = call("GET", "/status")
                 if isinstance(status, dict) and status.get("value", {}).get("ready"):
                     break
             except Exception:
                 pass
+            if driver.poll() is not None:
+                raise RuntimeError("geckodriver exited before readiness")
             time.sleep(0.1)
+        else:
+            raise RuntimeError("geckodriver readiness timeout")
+
         uuids = json.dumps({EXTENSION_ID: UUID}, separators=(",", ":"))
         response = call("POST", "/session", {
             "capabilities": {"alwaysMatch": {
                 "browserName": "firefox",
                 "acceptInsecureCerts": False,
+                "pageLoadStrategy": "eager",
                 "moz:firefoxOptions": {
                     "binary": "/opt/firefox/firefox",
                     "args": ["-profile", str(profile), "--no-remote"],
-                    "prefs": {"extensions.webextensions.uuids": uuids, "browser.shell.checkDefaultBrowser": False}
-                }
+                    "prefs": {
+                        "extensions.webextensions.uuids": uuids,
+                        "browser.shell.checkDefaultBrowser": False,
+                        "browser.startup.page": 0,
+                    },
+                },
             }}
         })
         session = response["value"]["sessionId"]
@@ -66,9 +83,10 @@ def main() -> int:
         })["value"]
         if addon != EXTENSION_ID:
             raise RuntimeError(f"unexpected addon id {addon!r}")
+
         call("POST", f"/session/{session}/url", {"url": f"moz-extension://{UUID}/selftest.html"})
         result = None
-        for _ in range(200):
+        for _ in range(300):
             value = call("POST", f"/session/{session}/execute/sync", {
                 "script": "return document.getElementById('qikvrt-selftest')?.textContent || '';",
                 "args": [],
@@ -81,6 +99,18 @@ def main() -> int:
             time.sleep(0.1)
         if not result or result.get("state") != "EFFECT_ACK_DONE":
             raise RuntimeError("browser selftest timeout")
+        required = (
+            "browser_execution_observed",
+            "protocol_validation_observed",
+            "prepare_observed",
+            "commit_observed",
+            "post_effect_reobservation_observed",
+            "bounded_loopback_terminal_input_acknowledged",
+        )
+        if any(result.get(name) is not True for name in required):
+            raise RuntimeError("browser selftest receipt is incomplete")
+        if result.get("external_effect") != "NONE":
+            raise RuntimeError("browser selftest crossed external-effect boundary")
         result.update({
             "firefox_binary": "/opt/firefox/firefox",
             "extension_id": addon,
@@ -88,8 +118,11 @@ def main() -> int:
             "external_effect": "NONE",
         })
         receipt.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-        print("QIKVRT_FIREFOX_PROTOCOL_SELFTEST_DONE", flush=True)
-        call("POST", f"/session/{session}/url", {"url": "https://github.com/Goldkelch/qik-vrt/blob/main/AI"})
+        print("QIKVRT_FIREFOX_PREPARE_COMMIT_REOBSERVATION_DONE", flush=True)
+        try:
+            call("POST", f"/session/{session}/url", {"url": "https://github.com/Goldkelch/qik-vrt/blob/main/AI"})
+        except Exception:
+            pass
         while driver.poll() is None:
             time.sleep(1)
         return 0

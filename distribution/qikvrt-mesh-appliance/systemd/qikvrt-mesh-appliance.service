@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+[Unit]
+Description=QIK-VRT Mesh Appliance
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/qikvrt-mesh-appliance.env
+ExecStartPre=-/usr/bin/podman rm -f qikvrt-mesh-appliance
+ExecStartPre=/bin/sh -c '/usr/bin/podman image exists "$QIKVRT_IMAGE_REF" || /usr/bin/podman load -i /opt/qikvrt/appliance.oci.tar'
+ExecStart=/usr/bin/podman run --rm --name qikvrt-mesh-appliance --network=host --security-opt=no-new-privileges -e QIKVRT_VNC_PASSWORD -v /var/lib/qikvrt:/var/lib/qikvrt:Z "$QIKVRT_IMAGE_REF"
+ExecStop=/usr/bin/podman stop -t 20 qikvrt-mesh-appliance
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

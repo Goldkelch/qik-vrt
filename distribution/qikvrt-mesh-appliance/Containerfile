@@ -1,12 +1,16 @@
 # syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 ARG UBUNTU_BASE=ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
-FROM ${UBUNTU_BASE} AS extension-builder
-RUN apt-get update && apt-get install --no-install-recommends -y python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM ${UBUNTU_BASE} AS builder
+RUN apt-get update && apt-get install --no-install-recommends -y build-essential ca-certificates python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY browser/firefox/qikvrt-terminal browser/firefox/qikvrt-terminal
 COPY distribution/qikvrt-mesh-appliance distribution/qikvrt-mesh-appliance
-RUN python3 distribution/qikvrt-mesh-appliance/build_extension.py --output /out/qikvrt-terminal.xpi
+COPY include/qikvrt/effect_ack.h include/qikvrt/effect_ack.h
+COPY src/effect_ack_core.c src/effect_ack_core.c
+RUN python3 distribution/qikvrt-mesh-appliance/build_extension.py --output /out/qikvrt-terminal.xpi \
+ && cc -std=c90 -pedantic -Wall -Wextra -Werror -Iinclude -c src/effect_ack_core.c -o /out/effect_ack_core.o \
+ && ar rcs /out/libqikvrt-effect-ack.a /out/effect_ack_core.o
 
 FROM ${UBUNTU_BASE}
 ARG TARGETARCH
@@ -25,10 +29,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QIKVRT_PROTOCOL_PROFILE=draft-lohmann-qikvrt-effect-ack-00
 RUN printf 'APT::Snapshot "%s";\n' "$UBUNTU_SNAPSHOT" > /etc/apt/apt.conf.d/50qikvrt-snapshot \
  && apt-get update --snapshot "$UBUNTU_SNAPSHOT" \
- && apt-get install --snapshot "$UBUNTU_SNAPSHOT" --no-install-recommends -y ca-certificates curl gnupg python3 xz-utils xvfb x11vnc novnc websockify openbox dbus-x11 libasound2t64 libdbus-glib-1-2 libgtk-3-0 libx11-xcb1 libxt6 libpci3 fonts-dejavu-core \
+ && apt-get install --snapshot "$UBUNTU_SNAPSHOT" --no-install-recommends -y \
+      ca-certificates curl dbus-x11 fonts-dejavu-core gnupg libasound2t64 libdbus-glib-1-2 \
+      libgtk-3-0 libnss3 libpci3 libx11-xcb1 libxcb-shm0 libxcomposite1 libxdamage1 \
+      libxfixes3 libxkbcommon0 libxrandr2 libxrender1 libxt6 novnc openbox python3 \
+      websockify x11vnc xauth xdg-utils xz-utils xvfb \
  && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
-    case "$TARGETARCH" in amd64) mozarch=linux-x86_64; gdarch=linux64 ;; arm64) mozarch=linux-aarch64; gdarch=linux-aarch64 ;; *) exit 2 ;; esac; \
+    case "$TARGETARCH" in amd64) mozarch=linux-x86_64; gdarch=linux64 ;; arm64) mozarch=linux-aarch64; gdarch=linux-aarch64 ;; *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 2 ;; esac; \
     base="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}"; artifact="${mozarch}/en-US/firefox-${FIREFOX_VERSION}.tar.xz"; \
     curl -fsSLo /tmp/MOZILLA-KEY "$base/KEY"; \
     curl -fsSLo /tmp/SHA256SUMS "$base/SHA256SUMS"; \
@@ -48,16 +56,18 @@ RUN set -eux; \
     tar -xzf /tmp/geckodriver.tgz -C /usr/local/bin geckodriver; chmod 0755 /usr/local/bin/geckodriver; \
     rm -f /tmp/MOZILLA-KEY /tmp/SHA256SUMS /tmp/SHA256SUMS.asc /tmp/firefox.tar.xz /tmp/geckodriver.tgz /tmp/geckodriver.tgz.asc
 RUN useradd --create-home --uid 10001 qikvrt \
- && mkdir -p /opt/qikvrt /opt/firefox/distribution /var/lib/qikvrt/effect-ack \
- && chown -R qikvrt:qikvrt /home/qikvrt /var/lib/qikvrt
+ && mkdir -p /opt/qikvrt/include/qikvrt /opt/qikvrt/lib /opt/firefox/distribution /run/qikvrt /var/lib/qikvrt/effect-ack \
+ && chown -R qikvrt:qikvrt /home/qikvrt /run/qikvrt /var/lib/qikvrt
 WORKDIR /opt/qikvrt
 COPY src src
-COPY --from=extension-builder /out/qikvrt-terminal.xpi /opt/qikvrt/qikvrt-terminal.xpi
+COPY include/qikvrt/effect_ack.h /opt/qikvrt/include/qikvrt/effect_ack.h
+COPY --from=builder /out/libqikvrt-effect-ack.a /opt/qikvrt/lib/libqikvrt-effect-ack.a
+COPY --from=builder /out/qikvrt-terminal.xpi /opt/qikvrt/qikvrt-terminal.xpi
 COPY distribution/qikvrt-mesh-appliance/effect_ack_gateway.py distribution/qikvrt-mesh-appliance/launch_firefox.py distribution/qikvrt-mesh-appliance/entrypoint.sh /opt/qikvrt/
 COPY distribution/qikvrt-mesh-appliance/firefox/policies.json /opt/firefox/distribution/policies.json
 ENV PYTHONPATH=/opt/qikvrt
 USER qikvrt
 EXPOSE 6080
 VOLUME ["/var/lib/qikvrt"]
-HEALTHCHECK --interval=10s --timeout=3s --start-period=45s --retries=6 CMD curl -fsS http://127.0.0.1:8771/healthz && test -s /run/qikvrt/firefox-session.json || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=12 CMD curl -fsS http://127.0.0.1:8771/healthz && test -s /run/qikvrt/firefox-session.json || exit 1
 ENTRYPOINT ["/opt/qikvrt/entrypoint.sh"]

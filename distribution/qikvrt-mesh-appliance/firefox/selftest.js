@@ -3,52 +3,62 @@
   "use strict";
   const node = document.getElementById("qikvrt-selftest");
   try {
-    const payload = new TextEncoder().encode("QIK-VRT Mesh Appliance browser selftest");
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", payload)), b => b.toString(16).padStart(2, "0")).join("");
-    const evidence = `sha256:${hash}`;
     const request = {
-      protocol_root_id: "qikvrt:appliance:browser-selftest",
-      input_id: "firefox-esr-adapter-selftest",
-      payload_b64: btoa(String.fromCharCode(...payload)),
-      declared_input_hash: evidence,
-      transport_ack: true,
-      origin_checked: true,
-      context_checked: true,
-      semantics_reconstructed: true,
-      effect_anticipated: true,
-      risk_classified: true,
-      risk_level: "LOW",
-      responsibility_assigned: true,
-      responsibility_owner: "QIKVRT_MESH_APPLIANCE",
-      connection_decision: "RELEASE",
-      policy_allows_release: true,
-      evidence_refs: [evidence],
-      required_evidence_refs: [evidence],
-      open_questions: [],
-      next_required_checks: []
+      schema: "qikvrt_terminal_input_v1",
+      input_id: "qikvrt-mesh-appliance-firefox-selftest",
+      text: "QIK-VRT Mesh Appliance browser prepare commit selftest",
+      audio: null,
+      video: null
     };
-    const response = await fetch("http://127.0.0.1:8771/v1/evaluate", {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "Effect-Ack-Request": "v=1, mode=evaluate"},
-      body: JSON.stringify(request),
-      cache: "no-store"
+    const discovery = await browser.runtime.sendMessage({kind: "DISCOVER_EFFECT_ACK"});
+    if (!discovery || discovery.discovered !== true) throw new Error("Effect-Ack capability discovery failed");
+
+    const prepared = await browser.runtime.sendMessage({kind: "PREPARE_EFFECT", payload: request});
+    if (!prepared || prepared.record_validated !== true || !prepared.effect_ack || prepared.effect_ack.state !== "EFFECT_ACK_DONE") {
+      throw new Error(prepared && prepared.reason ? prepared.reason : "prepare record was not validated DONE");
+    }
+    if (prepared.ordinary_release === true) throw new Error("prepare must not itself execute the effect");
+
+    const committed = await browser.runtime.sendMessage({
+      kind: "COMMIT_EFFECT",
+      payload: {confirmed: true, prepared, request}
     });
-    const record = await response.json();
-    const verification = await globalThis.QIKVRTProtocol.verify(record.responsibility_protocol);
-    if (!response.ok || !verification.ok || record.state !== "EFFECT_ACK_DONE" || record.ordinary_release !== true) throw new Error(verification.reason || `unexpected state ${record.state}`);
+    if (!committed || committed.ordinary_release !== true || !committed.effect_ack || committed.effect_ack.state !== "EFFECT_ACK_DONE") {
+      throw new Error(committed && committed.reason ? committed.reason : "commit did not reach bounded DONE");
+    }
+    const postEffect = committed.body && committed.body.post_effect;
+    if (!postEffect || postEffect.kind !== "TERMINAL_INPUT_ACCEPTED" || postEffect.external_effect !== "NONE") {
+      throw new Error("bounded terminal-input post-effect receipt unavailable");
+    }
+
+    const observed = await browser.runtime.sendMessage({kind: "OBSERVE_EFFECT_STATE"});
+    const state = observed && observed.body;
+    if (!observed || observed.http_status !== 200 || !state || state.events < 1 || !state.last_event) {
+      throw new Error("post-effect backend state unavailable");
+    }
+    if (state.last_event.protocol_hash !== postEffect.protocol_hash || state.last_event.kind !== "TERMINAL_INPUT_ACCEPTED") {
+      throw new Error("post-effect reobservation does not bind committed event");
+    }
+    if (state.external_effect !== "NONE") throw new Error("external effect boundary changed");
+
     node.dataset.state = "EFFECT_ACK_DONE";
     node.textContent = JSON.stringify({
-      schema: "qikvrt_firefox_effect_ack_selftest_v1",
+      schema: "qikvrt_firefox_effect_ack_selftest_v2",
       browser_execution_observed: true,
       protocol_validation_observed: true,
-      state: record.state,
-      protocol_hash: record.responsibility_protocol.protocol_hash,
+      prepare_observed: true,
+      commit_observed: true,
+      post_effect_reobservation_observed: true,
+      bounded_loopback_terminal_input_acknowledged: true,
+      state: "EFFECT_ACK_DONE",
+      protocol_hash: state.last_event.protocol_hash,
+      event_id: state.last_event.event_id,
       external_effect: "NONE"
     }, null, 2);
   } catch (error) {
     node.dataset.state = "HOLD";
     node.textContent = JSON.stringify({
-      schema: "qikvrt_firefox_effect_ack_selftest_v1",
+      schema: "qikvrt_firefox_effect_ack_selftest_v2",
       state: "HOLD",
       reason: String(error),
       external_effect: "NONE"

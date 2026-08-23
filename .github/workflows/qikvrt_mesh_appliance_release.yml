@@ -1,0 +1,393 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT Mesh Appliance release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/qikvrt_mesh_appliance_release.yml
+      - distribution/qikvrt-mesh-appliance/**
+      - browser/firefox/qikvrt-terminal/**
+      - include/qikvrt/effect_ack.h
+      - src/effect_ack_core.c
+      - src/qikvrt_effect_ack.py
+      - policy/QIKVRT_MESH_APPLIANCE_V1.json
+      - tests/test_qikvrt_mesh_appliance.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/qikvrt_mesh_appliance_release.yml
+      - distribution/qikvrt-mesh-appliance/**
+      - browser/firefox/qikvrt-terminal/**
+      - include/qikvrt/effect_ack.h
+      - src/effect_ack_core.c
+      - src/qikvrt_effect_ack.py
+      - policy/QIKVRT_MESH_APPLIANCE_V1.json
+      - tests/test_qikvrt_mesh_appliance.py
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the immutable prerelease after a green exact-head build
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: qikvrt-mesh-appliance-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/goldkelch/qik-vrt-mesh-appliance
+  APPLIANCE_ROOT: distribution/qikvrt-mesh-appliance
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Bind exact source head and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$EXPECTED_HEAD"
+          test -z "$(git status --short --untracked-files=all)"
+          printf 'SOURCE_HEAD=%s\nSOURCE_TREE=%s\n' "$actual" "$(git rev-parse HEAD^{tree})" | tee "$RUNNER_TEMP/source-binding.txt"
+      - name: Verify release contracts and syntax
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_mesh_appliance
+          bash -n "$APPLIANCE_ROOT/entrypoint.sh"
+          bash -n "$APPLIANCE_ROOT/vm/build_vm_assets.sh"
+          python3 -m py_compile \
+            "$APPLIANCE_ROOT/build_extension.py" \
+            "$APPLIANCE_ROOT/effect_ack_gateway.py" \
+            "$APPLIANCE_ROOT/generate_release_manifest.py" \
+            "$APPLIANCE_ROOT/launch_firefox.py"
+      - name: Prove deterministic Firefox XPI generation
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xpi-a" "$RUNNER_TEMP/xpi-b"
+          for out in "$RUNNER_TEMP/xpi-a/qikvrt-terminal.xpi" "$RUNNER_TEMP/xpi-b/qikvrt-terminal.xpi"; do
+            python3 "$APPLIANCE_ROOT/build_extension.py" --output "$out"
+          done
+          cmp "$RUNNER_TEMP/xpi-a/qikvrt-terminal.xpi" "$RUNNER_TEMP/xpi-b/qikvrt-terminal.xpi"
+          sha256sum "$RUNNER_TEMP/xpi-a/qikvrt-terminal.xpi"
+
+  build:
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      artifact_name: ${{ steps.meta.outputs.artifact_name }}
+      source_head: ${{ steps.meta.outputs.source_head }}
+      source_tree: ${{ steps.meta.outputs.source_tree }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Derive immutable build identity
+        id: meta
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse --verify HEAD^{commit})"
+          test "$head" = "$EXPECTED_HEAD"
+          tree="$(git rev-parse HEAD^{tree})"
+          version="$(python3 -c 'import json; print(json.load(open("distribution/qikvrt-mesh-appliance/release-lock.json"))["appliance_version"])')"
+          tag="qikvrt-mesh-appliance-v$version"
+          artifact_name="qikvrt-mesh-appliance-$version-$head"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "artifact_name=$artifact_name"
+            echo "source_head=$head"
+            echo "source_tree=$tree"
+          } >> "$GITHUB_OUTPUT"
+      - name: Install VM and signature tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            e2fsprogs gnupg libguestfs-tools ovmf parted qemu-system-x86 qemu-utils \
+            ubuntu-cloud-image-keyring xz-utils
+      - name: Build exact amd64 OCI image
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SOURCE_HEAD: ${{ steps.meta.outputs.source_head }}
+        run: |
+          set -euo pipefail
+          docker build \
+            --file "$APPLIANCE_ROOT/Containerfile" \
+            --build-arg TARGETARCH=amd64 \
+            --build-arg QIKVRT_SOURCE_SHA="$SOURCE_HEAD" \
+            --tag "qikvrt-mesh-appliance:$VERSION" .
+          docker image inspect "qikvrt-mesh-appliance:$VERSION" > image-inspect.json
+      - name: Execute real Firefox prepare commit and post-effect reobservation
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf artifacts smoke-state
+          mkdir -p artifacts/receipts smoke-state
+          cid="$(docker run -d --name qikvrt-mesh-smoke \
+            -p 127.0.0.1:16080:6080 \
+            -v "$PWD/smoke-state:/var/lib/qikvrt" \
+            "qikvrt-mesh-appliance:$VERSION")"
+          cleanup(){ docker logs "$cid" > artifacts/receipts/container.log 2>&1 || true; docker rm -f "$cid" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          ready=0
+          for _ in $(seq 1 240); do
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)"
+            if [ "$state" = healthy ]; then ready=1; break; fi
+            test "$state" != unhealthy || break
+            sleep 1
+          done
+          test "$ready" -eq 1 || { docker logs "$cid" >&2; exit 2; }
+          docker cp "$cid:/run/qikvrt/firefox-session.json" artifacts/receipts/firefox-session.json
+          docker cp "$cid:/var/lib/qikvrt/effect-ack/responsibility-protocol.jsonl" artifacts/receipts/responsibility-protocol.jsonl
+          curl -fsS http://127.0.0.1:16080/vnc.html > artifacts/receipts/novnc.html
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('artifacts/receipts/firefox-session.json').read_text())
+          required = {
+              'browser_execution_observed': True,
+              'protocol_validation_observed': True,
+              'prepare_observed': True,
+              'commit_observed': True,
+              'post_effect_reobservation_observed': True,
+              'bounded_loopback_terminal_input_acknowledged': True,
+              'state': 'EFFECT_ACK_DONE',
+              'external_effect': 'NONE',
+          }
+          for key, value in required.items():
+              if receipt.get(key) != value:
+                  raise SystemExit(f'BLOCK browser receipt {key}={receipt.get(key)!r}, expected {value!r}')
+          ledger = Path('artifacts/receipts/responsibility-protocol.jsonl')
+          if not ledger.is_file() or not ledger.read_text().strip():
+              raise SystemExit('BLOCK responsibility protocol ledger missing')
+          PY
+          cleanup
+          trap - EXIT
+      - name: Preserve offline OCI archive
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker save "qikvrt-mesh-appliance:$VERSION" > artifacts/qikvrt-mesh-appliance-amd64.oci.tar
+          gzip -n -9 -c artifacts/qikvrt-mesh-appliance-amd64.oci.tar > artifacts/qikvrt-mesh-appliance-amd64.oci.tar.gz
+          rm artifacts/qikvrt-mesh-appliance-am64.oci.tar 2>/dev/null || true
+          rm artifacts/qikvrt-mesh-appliance-amd64.oci.tar
+          docker run --rm --entrypoint dpkg-query "qikvrt-mesh-appliance:$VERSION" -W -f='${Package}\t${Version}\t${Architecture}\n' \
+            | LC_ALL=C sort > artifacts/packages-amd64.tsv
+          mv image-inspect.json artifacts/container-inspect-amd64.json
+      - name: Build QCOW2 VMDK VHDX and OVA appliance assets
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          QIKVRT_SOURCE_SHA: ${{ steps.meta.outputs.source_head }}
+        run: |
+          set -euo pipefail
+          gunzip -c artifacts/qikvrt-mesh-appliance-amd64.oci.tar.gz > "$RUNNER_TEMP/appliance.oci.tar"
+          sudo env \
+            QIKVRT_OCI_ARCHIVE="$RUNNER_TEMP/appliance.oci.tar" \
+            QIKVRT_IMAGE_REF="qikvrt-mesh-appliance:$VERSION" \
+            QIKVRT_SOURCE_SHA="$QIKVRT_SOURCE_SHA" \
+            QIKVRT_APPLIANCE_VERSION="$VERSION" \
+            QIKVRT_VM_OUT="$PWD/artifacts" \
+            bash "$APPLIANCE_ROOT/vm/build_vm_assets.sh"
+      - name: Reobserve VM filesystem and bounded boot surface
+        env:
+          SOURCE_HEAD: ${{ steps.meta.outputs.source_head }}
+        run: |
+          set -euo pipefail
+          unxz -c artifacts/QIKVRT-Mesh-Appliance-*-amd64.qcow2.xz > "$RUNNER_TEMP/appliance.qcow2"
+          test "$(sudo virt-cat -a "$RUNNER_TEMP/appliance.qcow2" /etc/qikvrt-source-sha | tr -d '\r\n')" = "$SOURCE_HEAD"
+          sudo virt-cat -a "$RUNNER_TEMP/appliance.qcow2" /etc/systemd/system/qikvrt-mesh-appliance.service \
+            | grep -q 'QIK-VRT Mesh Appliance'
+          timeout 300 qemu-system-x86_64 \
+            -machine accel=tcg -m 3072 -smp 2 -nographic -no-reboot \
+            -drive "file=$RUNNER_TEMP/appliance.qcow2,format=qcow2,if=virtio" \
+            -netdev user,id=n1,hostfwd=tcp:127.0.0.1:16081-:6080 \
+            -device virtio-net-pci,netdev=n1 \
+            > artifacts/receipts/vm-serial.log 2>&1 &
+          qpid=$!
+          cleanup(){ kill "$qpid" 2>/dev/null || true; wait "$qpid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ready=0
+          for _ in $(seq 1 300); do
+            if curl -fsS http://127.0.0.1:16081/vnc.html > artifacts/receipts/vm-novnc.html 2>/dev/null; then ready=1; break; fi
+            kill -0 "$qpid" 2>/dev/null || break
+            sleep 1
+          done
+          test "$ready" -eq 1 || { tail -n 300 artifacts/receipts/vm-serial.log >&2; exit 2; }
+          cleanup
+          trap - EXIT
+      - name: Bundle exact execution evidence
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          tar --sort=name --mtime='UTC 1980-01-01' --owner=0 --group=0 --numeric-owner \
+            -czf "artifacts/QIKVRT-Mesh-Appliance-v$VERSION-evidence.tar.gz" \
+            -C artifacts receipts
+          rm -rf artifacts/receipts
+      - name: Generate content-addressed candidate manifest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          SOURCE_HEAD: ${{ steps.meta.outputs.source_head }}
+          SOURCE_TREE: ${{ steps.meta.outputs.source_tree }}
+        run: |
+          set -euo pipefail
+          python3 "$APPLIANCE_ROOT/generate_release_manifest.py" \
+            --assets artifacts \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --source-head "$SOURCE_HEAD" \
+            --source-tree "$SOURCE_TREE" \
+            --output "artifacts/QIKVRT-Mesh-Appliance-v$VERSION-release.json"
+          (cd artifacts && sha256sum $(find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort) \
+            > "QIKVRT-Mesh-Appliance-v$VERSION-SHA256SUMS.txt")
+      - name: Upload exact candidate assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: artifacts/**
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  publish:
+    needs: build
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    steps:
+      - name: Check out exact authorized publication source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Download exact build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: artifacts
+      - name: Publish immutable multi-architecture GHCR manifest
+        id: image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_HEAD: ${{ needs.build.outputs.source_head }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binfmt-support qemu-user-static
+          sudo update-binfmts --enable || true
+          docker buildx create --name qikvrt-release --use
+          docker buildx inspect --bootstrap
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file "$APPLIANCE_ROOT/Containerfile" \
+            --build-arg QIKVRT_SOURCE_SHA="$SOURCE_HEAD" \
+            --tag "$IMAGE_NAME:v$VERSION" \
+            --tag "$IMAGE_NAME:sha-${SOURCE_HEAD:0:12}" \
+            --push .
+          digest="$(docker buildx imagetools inspect "$IMAGE_NAME:v$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          test "${digest#sha256:}" != "$digest"
+          docker buildx imagetools inspect "$IMAGE_NAME@$digest" > artifacts/ghcr-inspect.txt
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Finalize immutable release manifest
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          SOURCE_HEAD: ${{ needs.build.outputs.source_head }}
+          SOURCE_TREE: ${{ needs.build.outputs.source_tree }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          python3 "$APPLIANCE_ROOT/generate_release_manifest.py" \
+            --assets artifacts \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --source-head "$SOURCE_HEAD" \
+            --source-tree "$SOURCE_TREE" \
+            --container-reference "$IMAGE_NAME:v$VERSION" \
+            --container-digest "$IMAGE_DIGEST" \
+            --output "artifacts/QIKVRT-Mesh-Appliance-v$VERSION-release.json"
+          rm -f "artifacts/QIKVRT-Mesh-Appliance-v$VERSION-SHA256SUMS.txt"
+          (cd artifacts && sha256sum $(find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort) \
+            > "QIKVRT-Mesh-Appliance-v$VERSION-SHA256SUMS.txt")
+      - name: Publish immutable GitHub prerelease assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          SOURCE_HEAD: ${{ needs.build.outputs.source_head }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "BLOCK immutable release tag already exists: $TAG" >&2
+            exit 2
+          fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          QIK-VRT Mesh Appliance v$VERSION
+
+          Source commit: $SOURCE_HEAD
+          OCI digest: $IMAGE_DIGEST
+
+          Ubuntu-based VM and multi-architecture OCI appliance containing official Mozilla Firefox ESR, the QIK-VRT Firefox adapter, the five-state Responsibility Protocol engine, and a bounded loopback prepare/commit/post-effect selftest.
+
+          Download identity is the tag-specific URL plus the published SHA-256 manifest. This prerelease does not claim physical Mega-ST execution, general Internet reachability, publication beyond these release assets, PASS, FINAL_PASS, or general EFFECT_ACK_DONE.
+          EOF
+          gh release create "$TAG" artifacts/* \
+            --target "$GITHUB_SHA" \
+            --title "QIK-VRT Mesh Appliance v$VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease
+      - name: Reobserve public assets and OCI digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/reobserved"
+          mkdir -p "$RUNNER_TEMP/reobserved"
+          gh release download "$TAG" --dir "$RUNNER_TEMP/reobserved"
+          (cd "$RUNNER_TEMP/reobserved" && sha256sum -c "QIKVRT-Mesh-Appliance-v$VERSION-SHA256SUMS.txt")
+          docker buildx imagetools inspect "$IMAGE_NAME@$IMAGE_DIGEST" >/dev/null
+          gh release view "$TAG" --json tagName,isPrerelease,targetCommitish,url,assets \
+            > "$RUNNER_TEMP/reobserved/release-reobservation.json"
+          test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tagName"])' "$RUNNER_TEMP/reobserved/release-reobservation.json")" = "$TAG"
+          gh release upload "$TAG" "$RUNNER_TEMP/reobserved/release-reobservation.json"
