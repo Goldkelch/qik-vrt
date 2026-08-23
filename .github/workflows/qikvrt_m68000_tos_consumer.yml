@@ -52,10 +52,41 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends hatari xvfb
+          sudo apt-get install -y --no-install-recommends hatari xvfb curl unzip
           hatari --version 2>&1 | tee "$RUNNER_TEMP/hatari-version.txt" || true
-          rom=/usr/share/hatari/tos.img
-          test -f "$rom"
+          hatari --trace help > "$RUNNER_TEMP/hatari-trace-help.txt" 2>&1 || true
+
+          roots=()
+          for candidate in /usr/share/hatari /usr/local/share/hatari; do
+            if [ -d "$candidate" ]; then roots+=("$candidate"); fi
+          done
+          rom=""
+          if [ "${#roots[@]}" -gt 0 ]; then
+            rom="$(find "${roots[@]}" -maxdepth 3 -type f \
+              \( -iname 'tos.img' -o -iname 'etos*.img' -o -iname '*emutos*.img' \) \
+              -print 2>/dev/null | sort | head -n 1 || true)"
+          fi
+
+          if [ -z "$rom" ]; then
+            archive="$RUNNER_TEMP/emutos-512k-1.4.zip"
+            archive_url='https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip'
+            archive_sha256='1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663'
+            curl --location --fail --retry 5 --retry-all-errors \
+              --output "$archive" "$archive_url"
+            printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --strict
+            entry="$(unzip -Z1 "$archive" | awk '/(^|\/)etos512us\.img$/ { print; exit }')"
+            if [ -z "$entry" ]; then
+              echo 'BLOCK: PINNED_EMUTOS_ARCHIVE_MISSING_ETOS512US_IMG' >&2
+              unzip -Z1 "$archive" >&2
+              exit 1
+            fi
+            rom="$RUNNER_TEMP/etos512us.img"
+            unzip -p "$archive" "$entry" > "$rom"
+            test "$(stat --format=%s "$rom")" -eq 524288
+            printf '%s  %s\n' "$archive_sha256" "$archive" \
+              > "$RUNNER_TEMP/emutos-archive.sha256"
+          fi
+
           printf '%s  %s\n' \
             '0b1b9346e91436688be6eb0f355f40872b2d3a08ee49c5ea5d7c145a191c88ba' \
             "$rom" | sha256sum --check --strict
@@ -69,6 +100,7 @@ jobs:
           set -euo pipefail
           drive="$RUNNER_TEMP/drive"
           rm -f "$drive/QIKVRT.RCP"
+          set +e
           xvfb-run -a timeout 90s hatari \
             --tos "${{ steps.emulator.outputs.rom }}" \
             --machine megast --cpulevel 0 --cpuclock 8 \
@@ -79,7 +111,21 @@ jobs:
             --auto 'C:\MLP.TOS' --run-vbls 3000 \
             --log-level debug --log-file "$RUNNER_TEMP/hatari.log" \
             --trace gemdos --trace-file "$RUNNER_TEMP/hatari-trace.log"
-          test -s "$drive/QIKVRT.RCP"
+          hatari_status=$?
+          set -e
+          printf 'hatari_status=%s\n' "$hatari_status" | tee "$RUNNER_TEMP/hatari-status.txt"
+          find "$drive" -maxdepth 2 -printf '%y %s %p\n' | sort \
+            | tee "$RUNNER_TEMP/hatari-drive-after.txt"
+          if [ -f "$RUNNER_TEMP/hatari.log" ]; then cat "$RUNNER_TEMP/hatari.log"; fi
+          if [ -f "$RUNNER_TEMP/hatari-trace.log" ]; then tail -n 400 "$RUNNER_TEMP/hatari-trace.log"; fi
+          if [ "$hatari_status" -ne 0 ]; then
+            echo "BLOCK: HATARI_EXITED_$hatari_status" >&2
+            exit "$hatari_status"
+          fi
+          if [ ! -s "$drive/QIKVRT.RCP" ]; then
+            echo 'BLOCK: MLP_TOS_DID_NOT_CREATE_QIKVRT_RCP' >&2
+            exit 1
+          fi
 
       - name: Reobserve exact TOS effect and benchmark
         run: |
@@ -175,8 +221,12 @@ jobs:
             ${{ runner.temp }}/reobservation.json
             ${{ runner.temp }}/main-effect.json
             ${{ runner.temp }}/effects.sha256
+            ${{ runner.temp }}/emutos-archive.sha256
             ${{ runner.temp }}/emutos-rom.sha256
             ${{ runner.temp }}/hatari-version.txt
+            ${{ runner.temp }}/hatari-trace-help.txt
+            ${{ runner.temp }}/hatari-status.txt
+            ${{ runner.temp }}/hatari-drive-after.txt
             ${{ runner.temp }}/hatari.log
             ${{ runner.temp }}/hatari-trace.log
           retention-days: 30
