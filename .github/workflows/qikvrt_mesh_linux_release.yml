@@ -1,0 +1,114 @@
+name: QIKVRT Mesh Linux appliance release
+
+on:
+  push:
+    branches: [release/qikvrt-mesh-linux-v1.0.0]
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_mesh_linux_release.yml'
+      - 'tools/qikvrt_mesh_linux_release.py'
+      - 'policy/QIKVRT_MESH_LINUX_RELEASE_V1.json'
+      - 'release/QIKVRT_MESH_LINUX_1_0_0_AUTHORIZATION.json'
+      - 'docs/QIKVRT_MESH_LINUX_RELEASE_V1.md'
+      - 'tests/test_qikvrt_mesh_linux_release.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mesh-linux-release-v1.0.0
+  cancel-in-progress: false
+
+env:
+  VERSION: 1.0.0
+  RELEASE_TAG: qikvrt-mesh-linux-v1.0.0
+  IMAGE: ghcr.io/goldkelch/qik-vrt-mesh-linux:1.0.0
+  RELEASE_BRANCH: release/qikvrt-mesh-linux-v1.0.0
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      publish_ready: ${{ steps.mode.outputs.publish_ready }}
+      source_tree: ${{ steps.mode.outputs.source_tree }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - id: mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m unittest -v tests.test_qikvrt_mesh_linux_release
+          python3 -B tools/qikvrt_integrity.py verify
+          echo "source_tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          ready=false
+          if [ "$GITHUB_EVENT_NAME" = push ] &&
+             [ "$GITHUB_REF" = "refs/heads/$RELEASE_BRANCH" ] &&
+             [ "$(git show -s --format=%s HEAD)" = "release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree" ]; then ready=true; fi
+          echo "publish_ready=$ready" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.publish_ready == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools
+      - run: python3 -B tools/qikvrt_mesh_linux_release.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dist/*
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish_ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions: {contents: write, packages: write}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with: {pattern: 'qikvrt-mesh-linux-*', path: dist, merge-multiple: true}
+      - env: {GH_TOKEN: '${{ github.token }}'}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "${{ needs.prepare.outputs.source_tree }}"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo 'BLOCK: immutable release exists' >&2; exit 2; fi
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for arch in amd64 arm64; do
+            zstd -d "dist/qikvrt-mesh-linux-${VERSION}-${arch}.oci.tar.zst" -o "$RUNNER_TEMP/${arch}.oci.tar"
+            docker load -i "$RUNNER_TEMP/${arch}.oci.tar"
+            docker tag "qikvrt-mesh-linux:${VERSION}" "${IMAGE}-${arch}"
+            docker push "${IMAGE}-${arch}"
+          done
+          docker manifest create "$IMAGE" "${IMAGE}-amd64" "${IMAGE}-arm64"
+          docker manifest push "$IMAGE"
+          digest="$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          python3 tools/qikvrt_mesh_linux_release.py manifest --assets dist --image "$IMAGE" --image-digest "$digest" --head "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --output dist/QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          QIK-VRT Mesh Linux ${VERSION}; exact source ${GITHUB_SHA}.
+          OCI: ${IMAGE}@${digest}
+          Effect-Ack scope: BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY; external_effect=NONE.
+          A general EFFECT_ACK_DONE is not claimed. Physical Mega-ST execution is not claimed.
+          No PASS, FINAL_PASS, independent review authority, or general Internet reachability is implied.
+          EOF
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "QIK-VRT Mesh Linux ${VERSION}" --notes-file "$RUNNER_TEMP/notes.md" dist/*
