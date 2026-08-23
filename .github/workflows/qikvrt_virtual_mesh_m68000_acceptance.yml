@@ -6,12 +6,18 @@ name: QIKVRT virtual Mesh M68000 acceptance
 on:
   pull_request:
     paths:
+      - "proofs/QIKVRTSparkBranchV1.lean"
       - "runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json"
+      - "runtime/m68000/QIKVRT_SPARK_BRANCH_PLANS_V1.json"
       - "runtime/m68000/*.hex"
       - "tools/qikvrt_lean_gate_m68000_compiler.py"
       - "tools/qikvrt_lean_v2_m68000_d3_compiler.py"
       - "tools/qikvrt_lean_v2_m68000_mesh_recovery_compiler.py"
+      - "tools/qikvrt_spark_branch_m68000_compiler.py"
+      - "tools/qikvrt_spark_branch_work_unit.py"
       - "tools/qikvrt_virtual_mesh_m68000_acceptance.py"
+      - "tests/test_qikvrt_spark_branch_m68000.py"
+      - "tests/test_qikvrt_spark_branch_work_unit.py"
       - "tests/test_qikvrt_virtual_mesh_m68000_acceptance.py"
       - "Makefile"
       - ".github/workflows/qikvrt_virtual_mesh_m68000_acceptance.yml"
@@ -19,14 +25,16 @@ on:
     branches:
       - main
     paths:
+      - "proofs/QIKVRTSparkBranchV1.lean"
       - "runtime/m68000/QIKVRT_COMPILED_KERNELS_V1.json"
+      - "runtime/m68000/QIKVRT_SPARK_BRANCH_PLANS_V1.json"
       - "runtime/m68000/*.hex"
-      - "tools/qikvrt_lean_gate_m68000_compiler.py"
-      - "tools/qikvrt_lean_v2_m68000_d3_compiler.py"
-      - "tools/qikvrt_lean_v2_m68000_mesh_recovery_compiler.py"
+      - "tools/qikvrt_spark_branch_m68000_compiler.py"
+      - "tools/qikvrt_spark_branch_work_unit.py"
       - "tools/qikvrt_virtual_mesh_m68000_acceptance.py"
+      - "tests/test_qikvrt_spark_branch_m68000.py"
+      - "tests/test_qikvrt_spark_branch_work_unit.py"
       - "tests/test_qikvrt_virtual_mesh_m68000_acceptance.py"
-      - "Makefile"
       - ".github/workflows/qikvrt_virtual_mesh_m68000_acceptance.yml"
   workflow_dispatch:
 
@@ -37,10 +45,10 @@ jobs:
   execute-registered-machine-bytes:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
       - name: Execute registered M68000 bytes through the bounded virtual Mesh
@@ -49,14 +57,16 @@ jobs:
           python3 -B tools/qikvrt_virtual_mesh_m68000_acceptance.py \
             --iterations 3 --json \
             | tee qikvrt-virtual-mesh-m68000-acceptance.json
-      - name: Verify registry, ABI separation, fail-closed recovery and boundaries
+      - name: Verify registry, ABI separation, Spark planning and boundaries
         run: |
           set -euo pipefail
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
             python3 -B -m unittest -v \
+            tests.test_qikvrt_spark_branch_m68000 \
+            tests.test_qikvrt_spark_branch_work_unit \
             tests.test_qikvrt_virtual_mesh_m68000_acceptance
       - name: Preserve virtual-execution evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-virtual-mesh-m68000-${{ github.sha }}
           path: qikvrt-virtual-mesh-m68000-acceptance.json
