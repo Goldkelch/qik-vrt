@@ -1,0 +1,55 @@
+{
+  "schema": "qikvrt_mesh_appliance_release_v1",
+  "version": 1,
+  "distribution_name": "QIK-VRT Mesh Appliance",
+  "distribution_class": "DEBIAN_BASED_REPRODUCIBLE_APPLIANCE",
+  "release_version": "1.0.0",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "base_distribution": {
+    "name": "Debian GNU/Linux",
+    "release": "12 bookworm",
+    "package_snapshot": "20260701T000000Z",
+    "base_container_must_be_digest_resolved": true
+  },
+  "browser": {
+    "implementation": "UPSTREAM_FIREFOX_ESR_PLUS_QIKVRT_WEBEXTENSION",
+    "firefox_fork_claimed": false,
+    "gecko_equivalence_claimed": false,
+    "javascript_engine_reimplementation_claimed": false,
+    "extension_id": "qikvrt-ai-terminal@goldkelch.local",
+    "startup_probe_required": true
+  },
+  "effect_ack": {
+    "draft": "draft-lohmann-qikvrt-effect-ack-01",
+    "states": ["EFFECT_NACK", "EFFECT_ACK_CONTINUE", "EFFECT_ACK_DONE", "EFFECT_ACK_ISOLATE", "EFFECT_ACK_BLOCK"],
+    "surfaces": ["ANSI_C90_CORE", "PYTHON_REFERENCE_ENGINE", "HTTP_PREPARE_COMMIT_PROFILE", "FIREFOX_ADAPTER"],
+    "protected_effect": "terminal_input",
+    "scope": "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
+    "external_effect": "NONE_AT_RUNTIME",
+    "post_effect_reobservation_required": true
+  },
+  "artifacts": {
+    "vm_architecture": "x86_64",
+    "formats": ["QCOW2", "VHDX", "OVA"],
+    "oci_platforms": ["linux/amd64", "linux/arm64"],
+    "versioned_release_tag_required": true,
+    "asset_sha256_required": true,
+    "ghcr_digest_required": true,
+    "latest_alias_is_evidence": false
+  },
+  "publication": {
+    "candidate_build_may_upload_workflow_artifacts": true,
+    "github_release_requires_explicit_tag_or_publish_dispatch": true,
+    "ghcr_push_requires_explicit_tag_or_publish_dispatch": true,
+    "release_asset_replacement_forbidden_by_policy": true
+  },
+  "claims": {
+    "physical_megast_execution": false,
+    "physical_m68000_execution": false,
+    "general_internet_reachability": false,
+    "general_effect_ack_done": false,
+    "independent_review_authority": false,
+    "pass": false,
+    "final_pass": false
+  }
+}
