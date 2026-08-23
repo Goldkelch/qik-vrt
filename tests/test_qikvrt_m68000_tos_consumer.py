@@ -40,6 +40,14 @@ class M68000TosConsumerTests(unittest.TestCase):
         for kernel in kernels:
             self.assertIn(kernel, image)
 
+    def test_protected_hz_200_read_is_bound_to_xbios_supexec(self):
+        text, report = mod.build_text(ROOT)
+        self.assertEqual(report["timer_access"], "XBIOS_SUPEXEC_HZ_200")
+        self.assertIn(bytes.fromhex("3f3c00264e4e"), text)
+        self.assertEqual(text.count(bytes.fromhex("203804ba4e75")), 1)
+        self.assertNotIn(bytes.fromhex("2c3804ba"), text)
+        self.assertNotIn(bytes.fromhex("223804ba"), text)
+
     def test_synthetic_reobservation_contract(self):
         registry_raw = (ROOT / mod.REGISTRY_PATH).read_bytes()
         _, kernels = mod.load_registry(ROOT)
