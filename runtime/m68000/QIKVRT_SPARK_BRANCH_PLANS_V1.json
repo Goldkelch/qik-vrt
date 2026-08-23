@@ -1,0 +1,96 @@
+{
+  "schema": "QIKVRT_SPARK_BRANCH_PLANS_V1",
+  "version": 1,
+  "kernel_id": "lean_spark_branch_plan_v1",
+  "input_flags": {
+    "0": "MALFORMED_OR_SCOPE_INVALID",
+    "1": "MAIN_EFFECT_OBSERVED",
+    "2": "BASE_CURRENT",
+    "3": "INTEGRITY_CURRENT",
+    "4": "GATES_TERMINAL",
+    "5": "GATES_NON_ADVERSE",
+    "6": "MERGEABLE",
+    "7": "AUTHORITY_AVAILABLE"
+  },
+  "plans": [
+    {
+      "code": 0,
+      "id": "ALREADY_COMPLETE",
+      "steps": ["REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE"
+    },
+    {
+      "code": 1,
+      "id": "HOLD_INVALID",
+      "steps": ["PERSIST_INVALID_OBSERVATION"],
+      "terminal": "HOLD_INVALID"
+    },
+    {
+      "code": 2,
+      "id": "REBASE_TO_CLOSE",
+      "steps": ["REBASE", "MATERIALIZE", "VERIFY", "MERGE", "REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE_OR_FAIL_CLOSED"
+    },
+    {
+      "code": 3,
+      "id": "REBASE_TO_AUTHORITY",
+      "steps": ["REBASE", "MATERIALIZE", "VERIFY", "REQUEST_AUTHORITY", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "PRECISE_EXTERNAL_HOLD"
+    },
+    {
+      "code": 4,
+      "id": "MATERIALIZE_TO_CLOSE",
+      "steps": ["MATERIALIZE", "VERIFY", "MERGE", "REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE_OR_FAIL_CLOSED"
+    },
+    {
+      "code": 5,
+      "id": "MATERIALIZE_TO_AUTHORITY",
+      "steps": ["MATERIALIZE", "VERIFY", "REQUEST_AUTHORITY", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "PRECISE_EXTERNAL_HOLD"
+    },
+    {
+      "code": 6,
+      "id": "VERIFY_TO_CLOSE",
+      "steps": ["VERIFY", "MERGE", "REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE_OR_FAIL_CLOSED"
+    },
+    {
+      "code": 7,
+      "id": "VERIFY_TO_AUTHORITY",
+      "steps": ["VERIFY", "REQUEST_AUTHORITY", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "PRECISE_EXTERNAL_HOLD"
+    },
+    {
+      "code": 8,
+      "id": "REPAIR_TO_CLOSE",
+      "steps": ["REPAIR", "MATERIALIZE", "VERIFY", "MERGE", "REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE_OR_FAIL_CLOSED"
+    },
+    {
+      "code": 9,
+      "id": "REPAIR_TO_AUTHORITY",
+      "steps": ["REPAIR", "MATERIALIZE", "VERIFY", "REQUEST_AUTHORITY", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "PRECISE_EXTERNAL_HOLD"
+    },
+    {
+      "code": 10,
+      "id": "MERGE_TO_CLOSE",
+      "steps": ["MERGE", "REOBSERVE_MAIN_EFFECT", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "COMPLETE_OR_FAIL_CLOSED"
+    },
+    {
+      "code": 11,
+      "id": "REQUEST_AUTHORITY",
+      "steps": ["REQUEST_AUTHORITY", "COLLECT", "PERSIST", "RELEASE"],
+      "terminal": "PRECISE_EXTERNAL_HOLD"
+    }
+  ],
+  "execution_rule": "One compiled planning pass selects the complete remaining branch ring. A host adapter executes steps serially with exact-head compare-and-swap and reobservation after every effect; divergence is HOLD, never silent continuation.",
+  "boundaries": [
+    "SPARK_PLAN_PASS != GITHUB_EFFECT",
+    "PLAN_SELECTED != EFFECT_EXECUTED",
+    "EFFECT_EXECUTED != MAIN_EFFECT_REOBSERVED",
+    "VIRTUAL_M68000 != HATARI_M68000 != PHYSICAL_M68000"
+  ]
+}

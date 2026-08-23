@@ -18,24 +18,32 @@ spec.loader.exec_module(mod)
 
 
 class VirtualMeshM68000AcceptanceTests(unittest.TestCase):
-    def test_registry_loads_exact_three_kernel_inventory(self):
+    def test_registry_loads_exact_generation_v2_kernel_inventory(self):
         registry, kernels = mod.load_registry()
         self.assertEqual(registry["target"], "Motorola 68000")
         self.assertEqual(tuple(kernels), mod.EXPECTED_IDS)
-        self.assertEqual(sum(map(len, kernels.values())), 68)
+        self.assertEqual(sum(map(len, kernels.values())), 284)
 
-    def test_virtual_mesh_executes_registered_bytes(self):
+    def test_virtual_mesh_executes_all_registered_bytes(self):
         report = mod.execute_virtual_mesh(iterations=2)
         self.assertEqual(
-            report["schema"], "QIKVRT_VIRTUAL_MESH_M68000_ACCEPTANCE_V1"
+            report["schema"], "QIKVRT_VIRTUAL_MESH_M68000_ACCEPTANCE_V3"
         )
         self.assertEqual(report["iterations"], 2)
         self.assertTrue(report["compiled_kernel_registry_loaded"])
         self.assertTrue(report["registered_machine_bytes_executed"])
         self.assertTrue(report["virtual_m68000_execution_observed"])
-        self.assertEqual(report["compiled_machine_bytes_total"], 68)
+        self.assertEqual(report["compiled_machine_bytes_total"], 284)
+        self.assertEqual(
+            report["spark_branch_pass"]["exhaustive_input_pairs_verified"],
+            65536,
+        )
+        self.assertEqual(
+            report["spark_branch_plan"]["exhaustive_flag_bytes_verified"],
+            256,
+        )
 
-    def test_gate_lifecycle_and_recovery_abis_remain_distinct(self):
+    def test_gate_lifecycle_recovery_and_spark_abis_remain_distinct(self):
         report = mod.execute_virtual_mesh()
         self.assertTrue(report["semantic_abis_kept_distinct"])
         self.assertEqual(report["gate"]["output_gate"], 1)
@@ -53,12 +61,32 @@ class VirtualMeshM68000AcceptanceTests(unittest.TestCase):
                 {"cutpoint": 255, "recovery_choice": 2},
             ],
         )
+        self.assertEqual(
+            [
+                x["decision_code"]
+                for x in report["spark_branch_pass"]["last_observations"]
+            ],
+            [0, 2, 3, 1],
+        )
+        self.assertEqual(
+            [
+                x["plan_code"]
+                for x in report["spark_branch_plan"]["last_observations"]
+            ],
+            [1, 0, 11, 10, 2],
+        )
 
-    def test_bounded_instruction_totals_are_stable(self):
+    def test_bounded_instruction_totals_are_positive_and_stable(self):
         report = mod.execute_virtual_mesh(iterations=3)
         self.assertEqual(report["gate"]["dynamic_instructions"], 18)
         self.assertEqual(report["d3_lifecycle"]["dynamic_instructions"], 45)
         self.assertEqual(report["mesh_recovery"]["dynamic_instructions"], 96)
+        self.assertGreater(
+            report["spark_branch_pass"]["dynamic_instructions"], 0
+        )
+        self.assertGreater(
+            report["spark_branch_plan"]["dynamic_instructions"], 0
+        )
 
     def test_invalid_iteration_count_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "iterations must be positive"):
@@ -84,6 +112,7 @@ class VirtualMeshM68000AcceptanceTests(unittest.TestCase):
         self.assertFalse(report["physical_m68000_execution_observed"])
         self.assertFalse(report["physical_speedup_measured"])
         self.assertFalse(report["workflow_accelerated_by_m68000"])
+        self.assertFalse(report["host_github_effect_executed_by_m68000"])
         self.assertFalse(report["pass_claimed"])
         self.assertFalse(report["final_pass_claimed"])
         self.assertFalse(report["effect_ack_done_claimed"])
