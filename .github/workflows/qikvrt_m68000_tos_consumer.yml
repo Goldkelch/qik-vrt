@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compile exact registry consumer
+      - name: Compile exact five-kernel registry consumer
         run: |
           set -euo pipefail
           python3 -m unittest tests.test_qikvrt_m68000_tos_consumer -v
@@ -76,7 +76,7 @@ jobs:
           sha256sum "$rom" | tee "$RUNNER_TEMP/emutos-rom.sha256"
           echo "rom=$rom" >> "$GITHUB_OUTPUT"
 
-      - name: Execute MLP.TOS on Mega ST MC68000
+      - name: Execute five-kernel MLP.TOS on Mega ST MC68000
         env:
           SDL_AUDIODRIVER: dummy
         run: |
@@ -110,7 +110,7 @@ jobs:
             exit 1
           fi
 
-      - name: Reobserve exact TOS effect and benchmark
+      - name: Reobserve exact five-kernel TOS effect and benchmark
         run: |
           set -euo pipefail
           python3 tools/qikvrt_m68000_tos_consumer.py \
@@ -119,7 +119,7 @@ jobs:
           sha256sum "$RUNNER_TEMP/drive/MLP.TOS" "$RUNNER_TEMP/drive/QIKVRT.RCP" \
             | tee "$RUNNER_TEMP/effects.sha256"
 
-      - name: Materialize exact Authority-main receipt
+      - name: Materialize exact Authority-main receipt V2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
@@ -128,8 +128,9 @@ jobs:
           temp = pathlib.Path(os.environ['RUNNER_TEMP'])
           tos = (temp / 'drive/MLP.TOS').read_bytes()
           receipt = (temp / 'drive/QIKVRT.RCP').read_bytes()
+          reobservation = json.loads((temp / 'reobservation.json').read_text())
           value = {
-              'schema': 'QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V1',
+              'schema': 'QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V2',
               'repository': os.environ['GITHUB_REPOSITORY'],
               'ref': os.environ['GITHUB_REF'],
               'head': os.environ['GITHUB_SHA'],
@@ -139,6 +140,7 @@ jobs:
               'workflow': os.environ['GITHUB_WORKFLOW'],
               'registry_to_consumer': True,
               'tos_execution_observed': True,
+              'spark_m68000_emulator_execution_observed': reobservation['spark_m68000_emulator_execution_observed'],
               'benchmark_observed': True,
               'receipt_reobserved': True,
               'tos_sha256': hashlib.sha256(tos).hexdigest(),
@@ -146,7 +148,7 @@ jobs:
               'emutos_archive_sha256': (temp / 'emutos-archive.sha256').read_text().split()[0],
               'emutos_rom_sha256': (temp / 'emutos-rom.sha256').read_text().split()[0],
               'build': json.loads((temp / 'build.json').read_text()),
-              'reobservation': json.loads((temp / 'reobservation.json').read_text()),
+              'reobservation': reobservation,
               'physical_m68000_execution_observed': False,
               'physical_speedup_measured': False,
               'pass': False,
