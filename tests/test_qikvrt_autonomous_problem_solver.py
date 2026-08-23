@@ -111,6 +111,7 @@ class RepositoryContractTests(unittest.TestCase):
         )
         self.assertEqual(policy["productive_writer_limit"], 1)
         self.assertEqual(policy["max_actions_per_run"], 1)
+        self.assertFalse(policy["privileged_controller_executes_candidate_code"])
         self.assertFalse(policy["effect_boundaries"]["merge_authority"])
         self.assertFalse(policy["effect_boundaries"]["review_authority"])
         self.assertFalse(policy["effect_boundaries"]["external_effect_authority"])
@@ -129,6 +130,7 @@ class RepositoryContractTests(unittest.TestCase):
             "pull_request_target:",
             "workflow_run:",
             "schedule:",
+            "pull-requests: write",
             "cancel-in-progress: false",
             "max_actions_per_run",
             "qikvrt_autonomous_problem_solver.py",
@@ -136,17 +138,25 @@ class RepositoryContractTests(unittest.TestCase):
             "REBIND_CURRENT_MAIN",
             "DISPATCH_INTEGRITY_MATERIALIZER",
             "git ls-remote --heads origin",
-            "git merge --no-commit --no-ff origin/main",
-            "git diff --name-only -z origin/main --",
-            "git push origin \"HEAD:$HEAD_REF\"",
+            "pulls/${PR_NUMBER}/update-branch",
+            "expected_head_sha",
+            "rebind-paths-before.txt",
+            "rebind-paths-after.txt",
+            "cmp -s",
+            "compare/${main_sha}...${new_head}",
             "test \"$live_ref\" = \"$HEAD_SHA\"",
             "qikvrt_autonomous_exact_head_verify",
+            "candidate_code_executed_by_controller:false",
             "productive_effect:false",
             "effect_ack:\"NOT_REQUIRED\"",
         )
         for token in required:
             self.assertIn(token, text)
         forbidden = (
+            "gh auth setup-git",
+            "git merge --no-commit",
+            "git checkout -B \"$HEAD_REF\"",
+            "git push origin \"HEAD:$HEAD_REF\"",
             "git push --force",
             "git push -f",
             "merge_pull_request",

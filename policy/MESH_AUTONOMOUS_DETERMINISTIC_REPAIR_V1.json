@@ -7,6 +7,8 @@
   "productive_writer_limit": 1,
   "writer_concurrency_group": "qikvrt-mesh-autonomous-repair-${repository}",
   "cancel_in_progress": false,
+  "privileged_controller_executes_candidate_code": false,
+  "stale_rebind_transport": "GITHUB_SERVER_UPDATE_BRANCH_EXPECTED_HEAD_CAS",
   "integrity_trio": [
     "REPOSITORY_FILE_MANIFEST.json",
     "REPOSITORY_FILE_MANIFEST.json.sha256",
@@ -36,8 +38,11 @@
     "STALE_BASE_CONFLICT_FREE": {
       "action": "REBIND_CURRENT_MAIN",
       "productive_mutation": true,
+      "transport": "GITHUB_SERVER_UPDATE_BRANCH_EXPECTED_HEAD_CAS",
       "requires_live_head_revalidation": true,
-      "scope_must_remain_within_original_pr_plus_integrity_trio": true
+      "scope_must_equal_pre_rebind_pr_scope": true,
+      "candidate_code_execution_by_controller": false,
+      "fresh_exact_head_verification_required": true
     },
     "EXECUTED_FAILURE_REQUIRES_REPAIR_RECIPE": {
       "action": "HOLD",
@@ -64,7 +69,8 @@
     "one repair action per controller run",
     "latest run per workflow drives classification",
     "executed failures never become blind retries",
-    "every productive mutation revalidates the live source ref before write and before push",
+    "the privileged controller never checks out or executes candidate code",
+    "server-side stale rebind uses expected-head compare-and-swap",
     "history is preserved and force push is forbidden",
     "unknown failures remain visible HOLD states"
   ]

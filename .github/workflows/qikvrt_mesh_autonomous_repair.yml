@@ -21,7 +21,7 @@ on:
 permissions:
   actions: write
   contents: write
-  pull-requests: read
+  pull-requests: write
   statuses: write
 
 concurrency:
@@ -57,6 +57,7 @@ jobs:
             .max_actions_per_run == 1 and
             .productive_writer_limit == 1 and
             .cancel_in_progress == false and
+            .privileged_controller_executes_candidate_code == false and
             .effect_boundaries.merge_authority == false and
             .effect_boundaries.review_authority == false and
             .effect_boundaries.external_effect_authority == false
@@ -84,7 +85,9 @@ jobs:
               git ls-remote --heads origin "refs/heads/$ref" |
                 awk 'NR == 1 {print $1}'
             )"
-            test "$live_ref" = "$head" || continue
+            if [ "$live_ref" != "$head" ]; then
+              continue
+            fi
 
             gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
               > "$ROOT/runs-${pr}.json"
@@ -419,7 +422,7 @@ jobs:
               effect_ack:"NOT_REQUIRED"
             }' > "$ROOT/action-receipt.json"
 
-      - name: Rebind a conflict-free stale branch to current main
+      - name: Rebind a conflict-free stale branch through GitHub expected-head CAS
         if: steps.select.outputs.selected == 'true' && steps.select.outputs.action == 'REBIND_CURRENT_MAIN'
         env:
           PR_NUMBER: ${{ steps.select.outputs.pull_request }}
@@ -428,78 +431,66 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh auth setup-git
-          git fetch --no-tags origin main "$HEAD_REF"
-          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+          main_sha="$(git rev-parse --verify HEAD^{commit})"
 
-          test "$(git rev-parse --verify HEAD^{commit})" = "$HEAD_SHA"
           live_ref="$(
             git ls-remote --heads origin "refs/heads/$HEAD_REF" |
               awk 'NR == 1 {print $1}'
           )"
           test "$live_ref" = "$HEAD_SHA"
+          remote_main="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 {print $1}'
+          )"
+          test "$remote_main" = "$main_sha"
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            > "$ROOT/rebind-before.json"
+          test "$(jq -r '.head.sha' "$ROOT/rebind-before.json")" = "$HEAD_SHA"
+          test "$(jq -r '.base.ref' "$ROOT/rebind-before.json")" = main
 
           gh api --paginate \
             "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
             --jq '.[].filename' |
-            sort -u > "$ROOT/allowed-paths.txt"
-          printf '%s\n' \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt >> "$ROOT/allowed-paths.txt"
-          sort -u -o "$ROOT/allowed-paths.txt" "$ROOT/allowed-paths.txt"
+            sort -u > "$ROOT/rebind-paths-before.txt"
 
-          if ! git merge --no-commit --no-ff origin/main; then
-            git merge --abort || true
-            echo "BLOCK: current main cannot be merged without conflicts" >&2
-            exit 2
-          fi
+          # GitHub performs the merge server-side.  The privileged controller does
+          # not check out or execute candidate code and cannot force-push.
+          gh api --method PUT \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/update-branch" \
+            -f expected_head_sha="$HEAD_SHA" \
+            > "$ROOT/update-branch-response.json"
 
-          python3 tools/qikvrt_integrity.py generate
-          python3 tools/qikvrt_integrity.py verify
-          make test
-          python3 tools/qikvrt_integrity.py verify
-
-          git diff --name-only -z origin/main -- > "$ROOT/rebound-paths.bin"
-          python3 - "$ROOT/allowed-paths.txt" "$ROOT/rebound-paths.bin" <<'PY'
-          from pathlib import Path
-          import sys
-
-          allowed = {
-              line
-              for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-              if line
-          }
-          changed = {
-              item.decode("utf-8")
-              for item in Path(sys.argv[2]).read_bytes().split(b"\0")
-              if item
-          }
-          unexpected = sorted(changed - allowed)
-          if unexpected:
-              raise SystemExit(
-                  "BLOCK: rebind widened PR scope: " + ", ".join(unexpected)
-              )
-          PY
+          new_head=""
+          for _ in $(seq 1 30); do
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              > "$ROOT/rebind-after.json"
+            new_head="$(jq -r '.head.sha' "$ROOT/rebind-after.json")"
+            if [ -n "$new_head" ] && [ "$new_head" != "$HEAD_SHA" ]; then
+              break
+            fi
+            sleep 1
+          done
+          test -n "$new_head"
+          test "$new_head" != "$HEAD_SHA"
 
           live_ref="$(
             git ls-remote --heads origin "refs/heads/$HEAD_REF" |
               awk 'NR == 1 {print $1}'
           )"
-          test "$live_ref" = "$HEAD_SHA"
+          test "$live_ref" = "$new_head"
 
-          git config user.name "qikvrt-mesh-repair[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "ci: rebind exact PR head to current Authority main"
-          new_head="$(git rev-parse --verify HEAD^{commit})"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --jq '.[].filename' |
+            sort -u > "$ROOT/rebind-paths-after.txt"
+          cmp -s "$ROOT/rebind-paths-before.txt" "$ROOT/rebind-paths-after.txt"
 
-          live_ref="$(
-            git ls-remote --heads origin "refs/heads/$HEAD_REF" |
-              awk 'NR == 1 {print $1}'
-          )"
-          test "$live_ref" = "$HEAD_SHA"
-          git push origin "HEAD:$HEAD_REF"
+          # The produced head must contain the exact Authority commit observed by
+          # this controller.  A moving main is handled by a later run, not guessed.
+          gh api "repos/${GITHUB_REPOSITORY}/compare/${main_sha}...${new_head}" \
+            > "$ROOT/rebind-compare.json"
+          test "$(jq -r '.behind_by' "$ROOT/rebind-compare.json")" = 0
 
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/statuses/${new_head}" \
@@ -512,7 +503,7 @@ jobs:
             --arg pr "$PR_NUMBER" \
             --arg ref "$HEAD_REF" \
             --arg head "$new_head" \
-            --arg base "$(git rev-parse origin/main)" \
+            --arg base "$main_sha" \
             '{
               event_type:"qikvrt_autonomous_exact_head_verify",
               client_payload:{
@@ -533,15 +524,18 @@ jobs:
             --arg old_head "$HEAD_SHA" \
             --arg new_head "$new_head" \
             --arg ref "$HEAD_REF" \
+            --arg base "$main_sha" \
             '{
               pull_request:($pr|tonumber),
               old_head:$old_head,
               new_head:$new_head,
               head_ref:$ref,
+              authority_base:$base,
               d0:2,
               state:"REPAIR",
-              disposition:"HISTORY_PRESERVING_CURRENT_MAIN_REBIND",
+              disposition:"SERVER_SIDE_EXPECTED_HEAD_CURRENT_MAIN_REBIND",
               productive_effect:true,
+              candidate_code_executed_by_controller:false,
               effect_ack:"NOT_REQUIRED",
               merge_authority:false,
               review_authority:false

@@ -27,26 +27,41 @@ The current policy registers four executable classes:
 3. A registered repository-integrity projection drift dispatches the existing
    repository-native materializer.
 4. A conflict-free internal PR that is behind current Authority main may receive
-   one history-preserving merge/rebind. The rebind is accepted only when its
-   resulting PR-relative file set stays within the original PR scope plus the
-   canonical Integrity trio and all repository tests pass.
+   one history-preserving server-side current-main update through GitHub's
+   `update-branch` endpoint with an exact expected-head compare-and-swap.
 
 Every run performs at most one repair action.
 
-## Productive mutation boundary
+## Privileged execution boundary
 
-Only the current-main rebind action mutates a PR branch in this controller. It:
+The `pull_request_target` controller never checks out or executes candidate code.
+This is a hard invariant. Discovery reads only GitHub metadata and exact refs from
+the trusted current-main workflow definition.
 
-- operates only on an open same-repository PR;
-- reobserves the literal remote source head before work;
-- uses a global serialized workflow lease with `cancel-in-progress: false`;
-- performs a non-force merge of current `main`;
-- regenerates and verifies repository Integrity;
-- runs the complete repository gates;
-- rejects every path outside the original PR scope plus the exact Integrity trio;
-- reobserves the original remote source head immediately before commit/push;
-- pushes only a history-preserving descendant;
-- dispatches fresh exact-head verification for the resulting head.
+For a stale, conflict-free internal PR, the controller:
+
+- verifies that the PR head repository is the Authority repository;
+- reobserves the literal remote source head;
+- records the exact pre-rebind PR file set;
+- verifies that Authority `main` still equals the trusted checked-out main commit;
+- calls GitHub's server-side `update-branch` endpoint with `expected_head_sha`;
+- reobserves the new branch head;
+- requires the PR-relative file set to remain byte-for-byte the same list;
+- verifies that the new head contains the exact Authority commit selected by the
+  controller;
+- dispatches fresh exact-head verification for the new head.
+
+The controller does not clone or run the candidate with a write token, does not
+construct the merge locally, does not force-push, and does not interpret a
+successful rebind as successful candidate tests. The resulting head must execute
+fresh repository gates in its own bounded exact-head context.
+
+## Other productive mutation boundaries
+
+Repository Integrity drift is delegated to the existing registered materializer;
+the Mesh repair controller does not write the projection files itself. The global
+controller is serialized with `cancel-in-progress: false` and permits at most one
+repair action per run.
 
 It never merges a PR into `main`, never submits an independent review, and never
 executes publication, deployment, general Effect-Acknowledgement, or physical
