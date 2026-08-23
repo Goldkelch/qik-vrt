@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Spark circular M68000 architecture
+
+on:
+  pull_request:
+    paths:
+      - "policy/SPARK_CIRCULAR_ARCHITECTURE_V1.json"
+      - "formalization/QIKVRT_Spark_Circular_v0.1/**"
+      - "src/m68000/qikvrt_spark_branch_pass.s"
+      - "runtime/m68000/qikvrt_spark_branch_pass.hex"
+      - "tools/qikvrt_spark_branch_pass_m68000.py"
+      - "tests/test_qikvrt_spark_branch_pass_m68000.py"
+      - "docs/SPARK_CIRCULAR_M68000_ARCHITECTURE_V1.md"
+      - ".github/workflows/qikvrt_spark_circular_m68000.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-compile-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Kernel-check Spark circular formal candidate
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Spark_Circular_v0.1
+          test: false
+      - name: Compile and verify bounded M68000 branch pass
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_spark_branch_pass_m68000.py \
+            | tee "$RUNNER_TEMP/qikvrt-spark-branch-pass-report.json"
+          python3 -m unittest tests.test_qikvrt_spark_branch_pass_m68000 -v
+          actual="$(python3 - <<'PY'
+          from tools.qikvrt_spark_branch_pass_m68000 import compile_kernel
+          print(compile_kernel().hex())
+          PY
+          )"
+          expected="$(tr -d '\n\r ' < runtime/m68000/qikvrt_spark_branch_pass.hex)"
+          test "$actual" = "$expected"
+      - name: Reject proof holes and eager outer-ring allocation
+        run: |
+          set -euo pipefail
+          target=formalization/QIKVRT_Spark_Circular_v0.1/QIKVRTSparkCircular.lean
+          ! grep -nE '^[[:space:]]*(axiom|sorry|admit)([^A-Za-z]|$)' "$target"
+          ! grep -RInE 'allocate[^\n]*(2\^\(256\^3\)|16777216)' \
+            policy/SPARK_CIRCULAR_ARCHITECTURE_V1.json \
+            tools/qikvrt_spark_branch_pass_m68000.py \
+            docs/SPARK_CIRCULAR_M68000_ARCHITECTURE_V1.md
+      - name: Publish exact compiler report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-spark-circular-m68000-${{ github.sha }}
+          path: ${{ runner.temp }}/qikvrt-spark-branch-pass-report.json
+          retention-days: 30
+          if-no-files-found: error
