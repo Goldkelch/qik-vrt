@@ -35,6 +35,11 @@ class T(unittest.TestCase):
             policy["build_acceptance"]["container_runtime_receipt_required"]
         )
         self.assertTrue(policy["build_acceptance"]["pr_native_build_required"])
+        self.assertTrue(
+            policy["build_acceptance"][
+                "nonroot_selftest_bytecode_write_forbidden"
+            ]
+        )
         guards = policy["publication_guards"]
         self.assertTrue(guards["single_parent_zero_diff_carrier_required"])
         self.assertTrue(guards["branch_head_compare_and_swap_required"])
@@ -114,6 +119,11 @@ class T(unittest.TestCase):
         )
         base_raw = TOOL.read_text()
         self.assertIn("LAUNCH_FIREFOX=r'''", base_raw)
+        self.assertNotIn("py_compile", base_namespace["SELFTEST"])
+        self.assertIn(
+            'compile(pathlib.Path(p).read_text(encoding="utf-8"),p,"exec")',
+            base_namespace["SELFTEST"],
+        )
         self.assertIn("qcow.unlink()", base_raw)
         self.assertIn('if arch=="amd64":shutil.copy2', base_raw)
 

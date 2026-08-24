@@ -59,7 +59,9 @@ log. Pull-request and manual preflight runs execute both native architecture
 builds even though they cannot publish. A successful preflight therefore cannot
 be produced by a prepare-only run with skipped build jobs. The generated
 Firefox launcher is compiled during the repository contract test before either
-native build starts.
+native build starts. The packaged non-root self-test performs its Python syntax
+checks entirely in memory; it must not attempt to create bytecode beneath the
+root-owned `/usr/local/bin` tree.
 
 ## Publication guards
 

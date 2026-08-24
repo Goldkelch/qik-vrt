@@ -115,7 +115,7 @@ SELFTEST='''#!/usr/bin/env bash
 set -euo pipefail
 /opt/firefox/firefox --version
 /opt/geckodriver/geckodriver --version
-python3 -m py_compile /opt/qikvrt/effect-ack-profile/src/qikvrt_effect_ack_http_terminal.py /usr/local/bin/qikvrt-launch-firefox
+python3 -c 'import pathlib,sys;[compile(pathlib.Path(p).read_text(encoding="utf-8"),p,"exec") for p in sys.argv[1:]]' /opt/qikvrt/effect-ack-profile/src/qikvrt_effect_ack_http_terminal.py /usr/local/bin/qikvrt-launch-firefox
 test -s /opt/qikvrt/qikvrt-terminal.xpi
 test -f /opt/qikvrt/source/src/effect_ack_core.c
 test -f /opt/qikvrt/atari-browser-c89/src/atari_browser_c89.c
