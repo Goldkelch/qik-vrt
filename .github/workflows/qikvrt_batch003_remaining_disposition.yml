@@ -27,7 +27,7 @@ permissions:
 # Non-PR execution retains the shared exact-target repository writer lease.
 concurrency:
   group: qikvrt-${{ github.event_name == 'pull_request' && 'batch003-remaining-readonly' || 'repository-evidence' }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   materialize:
