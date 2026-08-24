@@ -1,0 +1,1870 @@
+diff --git a/.github/workflows/qikvrt_publication_candidate_readiness.yml b/.github/workflows/qikvrt_publication_candidate_readiness.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..10d47749ab2b281a8363b4f4368d63056681a706
+--- /dev/null
++++ b/.github/workflows/qikvrt_publication_candidate_readiness.yml
+@@ -0,0 +1,319 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT publication candidate readiness observer
++
++on:
++  workflow_dispatch:
++    inputs:
++      pr:
++        description: "Open main-base PR number to observe (optional)"
++        required: false
++        type: string
++  schedule:
++    - cron: "*/10 * * * *"
++  pull_request:
++    branches: [main]
++    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
++  workflow_run:
++    workflows:
++      - "QIKVRT CI"
++      - "QIKVRT repository evidence materialization"
++      - "QIKVRT Batch-003 remaining subject disposition"
++      - "QIKVRT workflow executor watchdog"
++      - "QIK-VRT global claim completion"
++      - "QIKVRT adaptive runtime"
++      - "QIKVRT live status watch"
++      - "QIKVRT Collective Proposal Review"
++      - "QIKVRT Batch-003 subject 172dd public archive probe"
++      - "QIKVRT Batch-003 remaining archive probe"
++      - "QIKVRT PR18 integrity repair"
++    types: [completed]
++
++permissions:
++  actions: read
++  contents: read
++  pull-requests: read
++
++jobs:
++  resolve-candidates:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 5
++    outputs:
++      matrix: ${{ steps.resolve.outputs.matrix }}
++      has_candidates: ${{ steps.resolve.outputs.has_candidates }}
++    steps:
++      - name: Check out the bootstrap candidate or trusted Authority main observer
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || 'main' }}
++          fetch-depth: 1
++          persist-credentials: false
++
++      - id: resolve
++        name: Resolve eligible same-repository main-base candidates without mutation
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPOSITORY: ${{ github.repository }}
++          EVENT_NAME: ${{ github.event_name }}
++          EVENT_PATH: ${{ github.event_path }}
++          DISPATCH_PR: ${{ inputs.pr || '' }}
++          OUTPUT_PATH: ${{ github.output }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 - <<'PY'
++          import json
++          import os
++          import pathlib
++          import subprocess
++
++          root = pathlib.Path(".")
++          contract = json.loads((root / "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json").read_text(encoding="utf-8"))
++          selection = contract["candidate_selection"]
++          repository = os.environ["REPOSITORY"]
++          event = json.loads(pathlib.Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
++
++          def api(path, paginate=False):
++              command = ["gh", "api"]
++              if paginate:
++                  command.extend(["--paginate", "--slurp"])
++              command.append(path)
++              data = json.loads(subprocess.check_output(command, text=True))
++              if not paginate:
++                  return data
++              if isinstance(data, list) and data and all(isinstance(page, list) for page in data):
++                  return [item for page in data for item in page]
++              return data if isinstance(data, list) else [data]
++
++          def files(number):
++              return api(f"repos/{repository}/pulls/{number}/files?per_page=100", paginate=True)
++
++          numbers = set()
++          name = os.environ["EVENT_NAME"]
++          if name == "pull_request":
++              numbers.add(int(event["number"]))
++          elif name == "workflow_run":
++              numbers.update(int(item["number"]) for item in event["workflow_run"].get("pull_requests", []) if item.get("number"))
++          elif name == "workflow_dispatch" and os.environ.get("DISPATCH_PR"):
++              numbers.add(int(os.environ["DISPATCH_PR"]))
++          else:
++              for item in api(f"repos/{repository}/pulls?state=open&base=main&per_page=100", paginate=True):
++                  body = item.get("body") or ""
++                  paths = {file["filename"] for file in files(item["number"])}
++                  if selection["body_marker"] in body or any(path.startswith(prefix) for prefix in selection["path_prefixes"] for path in paths):
++                      numbers.add(int(item["number"]))
++
++          selected = []
++          for number in sorted(numbers):
++              pull = api(f"repos/{repository}/pulls/{number}")
++              head_repository = (pull.get("head", {}).get("repo") or {}).get("full_name")
++              if pull.get("state") != "open" or pull.get("base", {}).get("ref") != "main":
++                  continue
++              if selection["same_repository_only"] and head_repository != repository:
++                  continue
++              body = pull.get("body") or ""
++              paths = {file["filename"] for file in files(number)}
++              if selection["body_marker"] in body or any(path.startswith(prefix) for prefix in selection["path_prefixes"] for path in paths):
++                  selected.append({"pr": number})
++          selected = selected[: int(selection["maximum_candidates_per_cycle"])]
++          output = pathlib.Path(os.environ["OUTPUT_PATH"])
++          with output.open("a", encoding="utf-8") as stream:
++              stream.write("matrix=" + json.dumps({"include": selected}, separators=(",", ":")) + "\n")
++              stream.write("has_candidates=" + ("true" if selected else "false") + "\n")
++          PY
++
++  observe:
++    needs: resolve-candidates
++    if: needs.resolve-candidates.outputs.has_candidates == 'true'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 12
++    strategy:
++      fail-fast: false
++      matrix: ${{ fromJSON(needs.resolve-candidates.outputs.matrix) }}
++    concurrency:
++      group: qikvrt-publication-candidate-readiness-${{ github.repository }}-${{ matrix.pr }}
++      cancel-in-progress: true
++    steps:
++      - name: Check out the bootstrap candidate or trusted Authority main observer
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || 'main' }}
++          fetch-depth: 1
++          persist-credentials: false
++
++      - name: Capture and reobserve the exact candidate without mutation
++        env:
++          GH_TOKEN: ${{ github.token }}
++          REPOSITORY: ${{ github.repository }}
++          PR_NUMBER: ${{ matrix.pr }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          root=.qikvrt/publication-candidate-readiness
++          mkdir -p "$root"
++          python3 - <<'PY'
++          import base64
++          import hashlib
++          import json
++          import os
++          import pathlib
++          import re
++          import subprocess
++
++          root = pathlib.Path(".qikvrt/publication-candidate-readiness")
++          repository = os.environ["REPOSITORY"]
++          number = int(os.environ["PR_NUMBER"])
++          contract_path = "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
++          contract = json.loads(pathlib.Path(contract_path).read_text(encoding="utf-8"))
++
++          def api(path, paginate=False):
++              command = ["gh", "api"]
++              if paginate:
++                  command.extend(["--paginate", "--slurp"])
++              command.append(path)
++              raw = subprocess.check_output(command, text=True)
++              data = json.loads(raw)
++              if not paginate:
++                  return data
++              if isinstance(data, list) and data and all(isinstance(page, list) for page in data):
++                  return [item for page in data for item in page]
++              return data if isinstance(data, list) else [data]
++
++          def contents(path, ref):
++              try:
++                  return api(f"repos/{repository}/contents/{path}?ref={ref}")
++              except subprocess.CalledProcessError:
++                  return None
++
++          def commit(sha):
++              return api(f"repos/{repository}/commits/{sha}")
++
++          def workflow_inventory(tree):
++              payload = api(f"repos/{repository}/git/trees/{tree}?recursive=1")
++              return {
++                  item["path"]: item["sha"]
++                  for item in payload.get("tree", [])
++                  if item.get("type") == "blob" and item.get("path", "").startswith(".github/workflows/")
++              }
++
++          def changed_files(pr):
++              items = api(f"repos/{repository}/pulls/{pr}/files?per_page=100", paginate=True)
++              return [{"path": item["filename"], "sha": item["sha"]} for item in items if item.get("sha")]
++
++          def scope_sha(files):
++              encoded = (json.dumps(sorted(files, key=lambda item: item["path"]), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
++              return hashlib.sha256(encoded).hexdigest()
++
++          def inventory_sha(inventory):
++              encoded = (json.dumps(dict(sorted(inventory.items())), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
++              return hashlib.sha256(encoded).hexdigest()
++
++          def read_external(head):
++              value = {}
++              for boundary in contract["external_boundaries"]:
++                  source = contents(boundary["source_path"], head)
++                  if not source or source.get("type") != "file":
++                      value[boundary["target"]] = {"present": False}
++                      continue
++                  raw = base64.b64decode((source.get("content") or "").replace("\n", ""))
++                  value[boundary["target"]] = {
++                      "present": True,
++                      "blob_sha": source["sha"],
++                      "sha256": hashlib.sha256(raw).hexdigest(),
++                  }
++              return value
++
++          pull = api(f"repos/{repository}/pulls/{number}")
++          main_head = api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
++          base_commit = commit(main_head)
++          head_commit = commit(pull["head"]["sha"])
++          files = changed_files(number)
++          base_inventory = workflow_inventory(base_commit["commit"]["tree"]["sha"])
++          head_inventory = workflow_inventory(head_commit["commit"]["tree"]["sha"])
++          runs = api(f"repos/{repository}/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=100").get("workflow_runs", [])
++          for run in runs:
++              run["jobs"] = api(f"repos/{repository}/actions/runs/{run['id']}/jobs?per_page=100").get("jobs", [])
++          reviews = api(f"repos/{repository}/pulls/{number}/reviews?per_page=100", paginate=True)
++          comments = api(f"repos/{repository}/pulls/{number}/comments?per_page=100", paginate=True)
++          competing = []
++          candidate_paths = {item["path"] for item in files}
++          for other in api(f"repos/{repository}/pulls?state=open&base=main&per_page=100", paginate=True):
++              if int(other["number"]) == number or other.get("base", {}).get("sha") != main_head:
++                  continue
++              overlap = sorted(candidate_paths & {item["path"] for item in changed_files(other["number"])})
++              if overlap:
++                  competing.append({"number": int(other["number"]), "overlap_paths": overlap})
++          predecessor = None
++          match = re.search(r"<!-- qikvrt-publication-readiness-predecessor:(\\d+) head=([0-9a-f]{40}) -->", pull.get("body") or "")
++          if match:
++              old_number = int(match.group(1))
++              old = api(f"repos/{repository}/pulls/{old_number}")
++              predecessor = {
++                  "number": old_number,
++                  "declared_head_sha": match.group(2),
++                  "observed_head_sha": old["head"]["sha"],
++                  "state": old["state"],
++                  "changed_paths": [item["path"] for item in changed_files(old_number)],
++              }
++          base_contract = contents(contract_path, main_head)
++          candidate_contract = contents(contract_path, pull["head"]["sha"])
++          if not base_contract:
++              raise RuntimeError("Authority main lacks the observer contract")
++          snapshot = {
++              "schema": "qikvrt_publication_candidate_readiness_snapshot_v1",
++              "repository": repository,
++              "authority": {"main_head_sha": main_head, "main_tree_sha": base_commit["commit"]["tree"]["sha"]},
++              "candidate": {
++                  "number": number,
++                  "state": pull["state"],
++                  "base_ref": pull["base"]["ref"],
++                  "base_sha": pull["base"]["sha"],
++                  "head_ref": pull["head"]["ref"],
++                  "head_sha": pull["head"]["sha"],
++                  "head_tree_sha": head_commit["commit"]["tree"]["sha"],
++                  "changed_file_count": len(files),
++                  "changed_files": files,
++                  "draft": pull["draft"],
++                  "mergeable": pull.get("mergeable") is True,
++              },
++              "contract_blob_sha": base_contract["sha"],
++              "workflow_inventories": {"base": base_inventory, "head": head_inventory},
++              "workflow_runs": runs,
++              "reviews": reviews,
++              "review_comment_count": len(comments),
++              "competing_writers": competing,
++              "declared_predecessor": predecessor,
++              "external_inputs": read_external(pull["head"]["sha"]),
++          }
++          refreshed = api(f"repos/{repository}/pulls/{number}")
++          refreshed_main = api(f"repos/{repository}/git/ref/heads/main")["object"]["sha"]
++          refreshed_head = commit(refreshed["head"]["sha"])
++          refreshed_files = changed_files(number)
++          refreshed_inventory = workflow_inventory(refreshed_head["commit"]["tree"]["sha"])
++          refreshed_contract = contents(contract_path, refreshed["head"]["sha"])
++          snapshot["reobservation"] = {
++              "main_head_sha": refreshed_main,
++              "base_sha": refreshed["base"]["sha"],
++              "head_sha": refreshed["head"]["sha"],
++              "head_tree_sha": refreshed_head["commit"]["tree"]["sha"],
++              "scope_sha256": scope_sha(refreshed_files),
++              "workflow_blob_inventory_sha256": inventory_sha(refreshed_inventory),
++              "contract_blob_sha": refreshed_contract["sha"] if refreshed_contract else "0" * 40,
++          }
++          (root / "snapshot.json").write_text(json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++          PY
++
++      - name: Evaluate the snapshot without promotion or external effect
++        shell: bash
++        run: |
++          set -euo pipefail
++          root=.qikvrt/publication-candidate-readiness
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_publication_candidate_readiness
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B tools/qikvrt_publication_candidate_readiness.py evaluate --input "$root/snapshot.json" > "$root/publication-candidate-readiness-receipt.json"
++
++      - name: Upload the exact-head observation receipt
++        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
++        with:
++          name: qikvrt-publication-candidate-readiness-${{ matrix.pr }}-${{ github.run_id }}-${{ github.run_attempt }}
++          path: .qikvrt/publication-candidate-readiness
++          if-no-files-found: error
+diff --git a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+index bd28c51d30c1238a74167990485745be5e44b1bb..b08448dfe54ba1f78e511b754394d7e302049217 100644
+--- a/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
++++ b/.github/workflows/qikvrt_reflexive_repository_watchdog.yml
+@@ -13,6 +13,7 @@ on:
+       - "QIK-VRT expected-head promotion executor"
+       - "QIKVRT workflow executor"
+       - "QIKVRT live status watch"
++      - "QIKVRT publication candidate readiness observer"
+       - "QIKVRT CI"
+       - "QIKVRT repository evidence materialization"
+       - "QIKVRT Collective Proposal Review"
+@@ -27,30 +28,42 @@ on:
+       - ".github/workflows/qikvrt_workflow_executor.yml"
+       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+       - ".github/workflows/qikvrt_live_status_watch.yml"
++      - ".github/workflows/qikvrt_publication_candidate_readiness.yml"
+       - "tools/qikvrt_reflexive_repository_watchdog.py"
++      - "tools/qikvrt_publication_candidate_readiness.py"
+       - "tools/qikvrt_workflow_executor.py"
+       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
++      - "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
+       - "registry/NODE_DISCOVERY_POLICY.json"
+       - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
+       - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
+       - "qikvrt/runtime/onboarding/NODE_HEALTH.json"
+       - "tests/test_qikvrt_reflexive_repository_watchdog.py"
++      - "tests/test_qikvrt_publication_candidate_readiness.py"
+       - "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
++      - "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md"
+       - "state/work_units/CONTINUOUS_GATEWATCH_NODE_LIVENESS_V1.json"
++      - "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json"
+   pull_request:
+     paths:
+       - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
+       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
++      - ".github/workflows/qikvrt_publication_candidate_readiness.yml"
+       - "tools/qikvrt_reflexive_repository_watchdog.py"
++      - "tools/qikvrt_publication_candidate_readiness.py"
+       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
++      - "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
+       - "registry/NODE_DISCOVERY_POLICY.json"
+       - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
+       - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
+       - "qikvrt/runtime/onboarding/NODE_HEALTH.json"
+       - "tests/test_qikvrt_reflexive_repository_watchdog.py"
++      - "tests/test_qikvrt_publication_candidate_readiness.py"
+       - "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
++      - "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md"
+       - "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json"
+       - "state/work_units/CONTINUOUS_GATEWATCH_NODE_LIVENESS_V1.json"
++      - "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json"
+ 
+ permissions:
+   actions: read
+diff --git a/.github/workflows/qikvrt_workflow_executor_watchdog.yml b/.github/workflows/qikvrt_workflow_executor_watchdog.yml
+index a84f94cee96c2565f97091a5d4829c8ad25d5413..7efabe0f1b3f791838fbfe3f21bded6bf54c6333 100644
+--- a/.github/workflows/qikvrt_workflow_executor_watchdog.yml
++++ b/.github/workflows/qikvrt_workflow_executor_watchdog.yml
+@@ -9,21 +9,27 @@ on:
+       - "AI"
+       - "Makefile"
+       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
++      - "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
+       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+       - "tools/qikvrt_workflow_executor.py"
+       - "tools/qikvrt_reflexive_repository_watchdog.py"
++      - "tools/qikvrt_publication_candidate_readiness.py"
+       - "tools/qikvrt_seed_common.py"
+       - ".github/workflows/qikvrt_workflow_executor.yml"
+       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+       - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
++      - ".github/workflows/qikvrt_publication_candidate_readiness.yml"
+       - ".github/workflows/qikvrt_live_status_watch.yml"
+       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+       - "tests/test_qikvrt_reflexive_repository_watchdog.py"
++      - "tests/test_qikvrt_publication_candidate_readiness.py"
+       - "tests/test_seed_workflows.py"
+       - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
+       - "registry/NODE_DISCOVERY_POLICY.json"
+       - "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md"
++      - "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md"
+       - "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json"
++      - "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json"
+ 
+ permissions:
+   contents: read
+@@ -68,6 +74,7 @@ jobs:
+           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+             tests.test_qikvrt_workflow_executor_mesh_contract \
+             tests.test_qikvrt_reflexive_repository_watchdog \
++            tests.test_qikvrt_publication_candidate_readiness \
+             tests.test_seed_workflows
+ 
+       - name: Preserve watchdog evidence
+diff --git a/Makefile b/Makefile
+index 0ba292396845ac5d20eb2b3b06cb6a2eda6e6252..e5992958a07ffd2c16d6bae7dfa95adf50be009f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -5,10 +5,10 @@ PYTHON ?= python3
+ CC ?= cc
+ EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
+ 
+-.PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract launcher unit conformance security license seed e2e integrity run-api clean
++.PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract publication-candidate-readiness-contract launcher unit conformance security license seed e2e integrity run-api clean
+ 
+ compile: effect-ack-core-compile
+-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_workflow_executor.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_qikvrt_workflow_executor_mesh_contract.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py
++	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_workflow_executor.py tools/qikvrt_publication_candidate_readiness.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_qikvrt_workflow_executor_mesh_contract.py tests/test_qikvrt_publication_candidate_readiness.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py
+ 
+ effect-ack-core-compile:
+ 	$(CC) $(EFFECT_ACK_C90_CFLAGS) -Iinclude -fsyntax-only src/effect_ack_core.c tests/test_effect_ack_core.c
+@@ -59,6 +59,10 @@ workflow-executor-mesh-contract:
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract tests.test_seed_workflows
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$$(git rev-parse --verify HEAD^{commit})" --json >/dev/null
+ 
++publication-candidate-readiness-contract:
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_publication_candidate_readiness
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_publication_candidate_readiness.py --help >/dev/null
++
+ integrity:
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tests/test_integrity.py
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
+@@ -85,7 +89,7 @@ seed:
+ e2e:
+ 	$(PYTHON) tests/test_tcpip_e2e.py
+ 
+-test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract launcher conformance unit security license seed e2e
++test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test workflow-executor-mesh-contract publication-candidate-readiness-contract launcher conformance unit security license seed e2e
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
+ 
+ run-api:
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index 995ae2d2c7c13ebf0ee3d01b1d0b72ae31d7e7b6..161240451c278e129e6a383edcc95d8b784bc46a 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3643,
++  "file_count": 3649,
+   "files": [
+     {
+       "bytes": 47,
+@@ -496,6 +496,15 @@
+       "sha256": "69f3646881b49602f6f1b54b67f7a7d315d54096a606094c955a344e2ab81d2e"
+     },
+     {
++      "bytes": 15245,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": ".github/workflows/qikvrt_publication_candidate_readiness.yml",
++      "sha256": "699c9115e6b465fbdf6e445a80457ba6f2bed918a637780dc51abc10e24e7c33"
++    },
++    {
+       "bytes": 886,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -559,13 +568,13 @@
+       "sha256": "8329af093913f646e88b1badcd4734ada085b98d4b507402cd9a44bd551a2191"
+     },
+     {
+-      "bytes": 8909,
++      "bytes": 9787,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+-      "sha256": "79eea2a4e26a7ced4b6b01c8cc2e84132b03c862b4e6925ea1c386ac205ab66e"
++      "sha256": "bddde5fe6eb0a58dd0e6e8ea826de52e5d39d6353f142751dd9e5bcee5d3407c"
+     },
+     {
+       "bytes": 12474,
+@@ -730,13 +739,13 @@
+       "sha256": "16e5dafb4b35b09db82bc292d990764a584e13d18aebf682e7db0f7015537f83"
+     },
+     {
+-      "bytes": 3149,
++      "bytes": 3623,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+-      "sha256": "fb9efe81cecdae3219dc8ef81cb29c70a8d0f224cae25580d79c4344e680f006"
++      "sha256": "2fca4147a2844ee30685df476cb768d2e33f1c0c053d60654058cb67457cc229"
+     },
+     {
+       "bytes": 27642,
+@@ -6985,13 +6994,13 @@
+       "sha256": "f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3"
+     },
+     {
+-      "bytes": 9555,
++      "bytes": 10030,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "Makefile",
+-      "sha256": "42bf55eb6d336e60bab4e59a3ba97867bde0d8a4c20a9b15b1b5bb6d2e4150d1"
++      "sha256": "a2b452f233b8b6ace91834095b971eeb1929344272233c79d04effe8137b6684"
+     },
+     {
+       "bytes": 737,
+@@ -9220,6 +9229,15 @@
+       "sha256": "19e373f8388bad8fdfdbaefe90341a565915b97297a2cf02786c8269c065b743"
+     },
+     {
++      "bytes": 2994,
++      "classification": "documentation",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md",
++      "sha256": "b6929a98cb32b5c0691945faad95b0aad970928808fafe57dd3acdf29ba2209d"
++    },
++    {
+       "bytes": 676,
+       "classification": "documentation",
+       "excluded_from_sha256_index": false,
+@@ -30612,13 +30630,22 @@
+       "sha256": "d89b7f0c20f6de446417ded53400c46158a8aa611a20ad25cd06632a8401e942"
+     },
+     {
+-      "bytes": 8594,
++      "bytes": 6198,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
++      "sha256": "07edb5bb1d5959f5efe5fe17fc8e5df0c42f2a008e5987e943134d22ae82d9ee"
++    },
++    {
++      "bytes": 9524,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+-      "sha256": "d410b52581a0fa308a529e968aaf568e7e6bfe22675c912ad01588ed0ff28640"
++      "sha256": "995bc2212255f3035628cb993d06ced9666b54d8654f0908aca5da21ae94e57b"
+     },
+     {
+       "bytes": 991,
+@@ -30727,6 +30754,15 @@
+       "sha256": "a75a0b990a58898034e45220679d25767925ef60eeed4c88d4b3c083aa44861a"
+     },
+     {
++      "bytes": 2021,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json",
++      "sha256": "e343e90d99230164bbe2047e42f139c92df66bb4e346022136642ff4fb189c16"
++    },
++    {
+       "bytes": 2201,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -31330,6 +31366,15 @@
+       "sha256": "f0345b3de7a21591aa51a8f01dc34b1b5dcf220de017a8969bc646d5ed211ee9"
+     },
+     {
++      "bytes": 8785,
++      "classification": "test_source",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tests/test_qikvrt_publication_candidate_readiness.py",
++      "sha256": "ec92fb7b814451777cf562705424bf7e01a82ee723ea3e0be0b98a08006c460c"
++    },
++    {
+       "bytes": 6976,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+@@ -31357,13 +31402,13 @@
+       "sha256": "d3a3a4b6e9d16da3fc3b584595c14827abbdfb258bf67fbe6d018328da43d0cb"
+     },
+     {
+-      "bytes": 10283,
++      "bytes": 11396,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+-      "sha256": "e602c348a19848df6caa3b07b7abbb84a31591d1a6ac2ba142df5a047cf808e5"
++      "sha256": "0657d188fa97126e73aaf9fe2f008f90217a1863c2f2228caf76292220625bc4"
+     },
+     {
+       "bytes": 10123,
+@@ -32275,6 +32320,15 @@
+       "sha256": "fedd67380997a8865f37c43c05c10f07f4c0f5c497829777bafc8e8b296dc116"
+     },
+     {
++      "bytes": 25896,
++      "classification": "source_code",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tools/qikvrt_publication_candidate_readiness.py",
++      "sha256": "89fb2204fbbe08304fd1d869c2646897429cc62e587b0bb9afd14da0019a858d"
++    },
++    {
+       "bytes": 11733,
+       "classification": "source_code",
+       "excluded_from_sha256_index": false,
+@@ -32781,7 +32835,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3634,
++  "immutable_file_count": 3640,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -32806,7 +32860,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "f6aff21d2a535f9e14d9bbde79c5cee6a03e31d4468a3c4312f0f2244f307bfa",
++  "repository_content_tree_sha256": "4fa7046ac797389af48298ffde4168923eee770e8f35a2ffe6312efe7ab5b2e8",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index 46c6c0b7bdeafcbf48d9dc787630814f23af0255..ab4f57766f73f8df6c46ef04a8720c55ad5db5bb 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-1e9fa757c6da7149e2288c2c86135e30ef28033f25fde99db506d80bc54bd3cc  REPOSITORY_FILE_MANIFEST.json
++f5294567a548f6d7ea0d5583edfb6fb100cd0babd56b2ff3838f8011d37d36ee  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index eff9fdc3f75b3727db03644b6dfc3f799b45e22f..7dc55942ec2777f41ef6f04ea3984e257c4a4e62 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -52,6 +52,7 @@ dcfef2893b14b01699c38121769cb7f4a20d1ceb05667e56b69204d6dc9da4b2  .github/workfl
+ 87563ba087a98c909378ed6fc1b7194d295a7c6697a02068c9a677af172f999e  .github/workflows/qikvrt_pr18_integrity_repair.yml
+ 7a47a9cda08b3f728858b09e1ca47d15445552ae2b6947f15c138774fc1ad1cc  .github/workflows/qikvrt_pre_spacetime_zenodo_scoped_effect_ack.yml
+ 69f3646881b49602f6f1b54b67f7a7d315d54096a606094c955a344e2ab81d2e  .github/workflows/qikvrt_proof_persistence_integrity.yml
++699c9115e6b465fbdf6e445a80457ba6f2bed918a637780dc51abc10e24e7c33  .github/workflows/qikvrt_publication_candidate_readiness.yml
+ f8ea5912cbe41d4811df24aded4a28e1f7f02b45c185f6bced85542529edf8b4  .github/workflows/qikvrt_publication_router.yml
+ 156cc47c740f7055402474621372c1a5974e87505b02541e167365c739d9d390  .github/workflows/qikvrt_qce_c_measurement_binding.yml
+ d8ce3c07a8e968af181966900572b6b2ef9d9e78c1129d7a5559dc82879e377d  .github/workflows/qikvrt_qce_candidate.yml
+@@ -59,7 +60,7 @@ d8ce3c07a8e968af181966900572b6b2ef9d9e78c1129d7a5559dc82879e377d  .github/workfl
+ 2eef88baff1f1b09be783b9c4eae4108c0c02648ff569a58273c68d7d7cd588b  .github/workflows/qikvrt_qce_causal_axis_selection.yml
+ abc7239e18b31abf2708d6934aecfd74e6b7cdd783416683b58f135340d12b37  .github/workflows/qikvrt_qce_now_serialization.yml
+ 8329af093913f646e88b1badcd4734ada085b98d4b507402cd9a44bd551a2191  .github/workflows/qikvrt_qce_null_calibration_ratio.yml
+-79eea2a4e26a7ced4b6b01c8cc2e84132b03c862b4e6925ea1c386ac205ab66e  .github/workflows/qikvrt_reflexive_repository_watchdog.yml
++bddde5fe6eb0a58dd0e6e8ea826de52e5d39d6353f142751dd9e5bcee5d3407c  .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+ 84c34a4ec0984079a31d130ade9aaf119fc8bbd43dd3745196d41bc1070ffeda  .github/workflows/qikvrt_repository_mesh_sync_tag.yml
+ cdcef87b35d27e05ea62fdd9fd552c6de53d2cf9b3436604c13e37be3c7e12d0  .github/workflows/qikvrt_round_trip_final_byte_freeze.yml
+ ce17906eaf8879538d6ea43442e7e9d902c71395b28f0c9e82f2b9897cf1bc5a  .github/workflows/qikvrt_round_trip_prepublication_return.yml
+@@ -78,7 +79,7 @@ aedb87486a2a584bd0ebcb818045dadf82a814deef048467deaf402e9d4787c7  .github/workfl
+ 1d06ebe154db67e3ee73a080f84da5cd51e373a0d3f3f29f8a2d30692a48607c  .github/workflows/qikvrt_versioned_corrected_candidates.yml
+ 80a158501661036f0fe698f7697b56a96833aa52ccc1a83858768081867c9d85  .github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml
+ 16e5dafb4b35b09db82bc292d990764a584e13d18aebf682e7db0f7015537f83  .github/workflows/qikvrt_workflow_executor.yml
+-fb9efe81cecdae3219dc8ef81cb29c70a8d0f224cae25580d79c4344e680f006  .github/workflows/qikvrt_workflow_executor_watchdog.yml
++2fca4147a2844ee30685df476cb768d2e33f1c0c053d60654058cb67457cc229  .github/workflows/qikvrt_workflow_executor_watchdog.yml
+ 69248103773de20a670ee980678748bbf2fe17d2c2c3dcc0bdaeb85985d93a91  .github/workflows/qikvrt_zenodo_reserve.yml
+ c5f80af9d4ad0846d315771d8e1add033aa50aca55c6d7aa186fa299787ca4ab  .gitignore
+ b371bdebdb399b9bbb3a2cfe1302b882e1204993fe4a31e078d77e6d50f8e897  .junie/guidelines.md
+@@ -773,7 +774,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  LOGS/target_st
+ 4a1ab192e4e0bc824b60d52a1941bf7920f1ba1329f06e12dcb4b30dca83fe61  MANIFEST.json
+ f624f4db8867cb14b37f716e1fee4e41e9759c641c76060a31b0800ceb6486e4  MAP.json
+ f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3  MAP.md
+-42bf55eb6d336e60bab4e59a3ba97867bde0d8a4c20a9b15b1b5bb6d2e4150d1  Makefile
++a2b452f233b8b6ace91834095b971eeb1929344272233c79d04effe8137b6684  Makefile
+ cc2580944c52971c424165c3684acadcf8faa5385e73f3f67ac64dede34a28e9  NOTICE
+ 37b9b84d4a73c3462d728b633526bd63dfa5c2d617c524cc778fe864354e707a  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.json
+ d3097ea38f92df76a538103638021e6622ad0fa9cf1b81d5c19326bbf0e9ff28  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.md
+@@ -1019,6 +1020,7 @@ c84f4411ed2b2530bb6ac1ba80faef920dd8f5cf88542f2c23cabfbe24f19d3b  docs/HUMAN_MAC
+ 4a451901f3dc65b39d660bf6add2cfd2e8c74f09fdf309a2f1efbc9e60ad3a8f  docs/ISSUE_AUTONOMOUS_PROCESSING.md
+ 3e003c987b746c347a572b63868a9f7c36127ca65858ba94031b87cf41ad04b6  docs/OFFLINE_AUDIO_TRANSCRIPTION_DE.md
+ 19e373f8388bad8fdfdbaefe90341a565915b97297a2cf02786c8269c065b743  docs/PRIVACY_PRESERVING_INTERACTION_ARCHIVE.md
++b6929a98cb32b5c0691945faad95b0aad970928808fafe57dd3acdf29ba2209d  docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md
+ 47167d703ee427d1d7f0662c83bf9ec21c7382570c834389257db21ff1c5bbb4  docs/QIKVRT_4AU1_PRODUCTIZATION_RELEASE_SEED.md
+ 5895430308425515fc991a913a5d8420b08da2cc75da582dbc584607a7d0d49e  docs/QIKVRT_4AV1_OPEN_MULTI_NODE_RELEASE_FREEZE.md
+ c4934f54f442b7a06d50928891ddef393b3796466c4960b6fdb3c0e5c9f5e5bb  docs/QIKVRT_AUDIT_EXPORT.md
+@@ -3392,7 +3394,8 @@ c9ceb914e4c35313b9f954e1b0ce69b0baa548ef32bf72011283da72253b57b6  state/authoriz
+ a07b32938b7c05a1a20537413d773baa8ea9b07167dba5f9fd7d35e45ee2a70e  state/authorization/r11/R11_READ_ONLY_OBSERVATION_DISPATCH_V2.json
+ a36ec4211ce8c31a14c011372b1bc2a9e7c1c9a3279f53a61761c637d3f576ef  state/autonomy/AUTONOMOUS_PRE_EFFECT_POLICY_V1.json
+ d89b7f0c20f6de446417ded53400c46158a8aa611a20ad25cd06632a8401e942  state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json
+-d410b52581a0fa308a529e968aaf568e7e6bfe22675c912ad01588ed0ff28640  state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
++07edb5bb1d5959f5efe5fe17fc8e5df0c42f2a008e5987e943134d22ae82d9ee  state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json
++995bc2212255f3035628cb993d06ced9666b54d8654f0908aca5da21ae94e57b  state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+ ea3e78ec8fc3c4edbde30a02108c8c0cc0385516f0e4ff4fb2f1e725cb290d9f  state/interface_adaptation/EVALUATION_MATRIX.json
+ 4fa6db2ef324ab50c43e1e153fd944ec57b34207f67fbebec5102df4ea5c6b11  state/owner_acceptance_record.json
+ a92fb52a477d59121ae079c3306258273e49f46aca664bebde09d3f04c95d85d  state/owner_acceptance_record.v45.16.json
+@@ -3404,6 +3407,7 @@ b70c33f325dfb43e6b7c6cd008d99a5af10773b07ec026e508fabda935de9ece  state/work_uni
+ 8f28cbc6dd5dcea1b15e3b9187ec3cf68a2d9c9c8b4f9cebcfb363069cb58dd7  state/work_units/MANDELBROT_42_PROOF_REPRODUCTION_V1.json
+ ce07f760f392606f603fcfa31b93b9143ccda01a9d2e438beb626c11ee11cd9f  state/work_units/MEASUREMENT_DERIVED_DIMENSIONS_V2.json
+ a75a0b990a58898034e45220679d25767925ef60eeed4c88d4b3c083aa44861a  state/work_units/MINIMAL_RECOVERY_THEOREM_ORIENTATION_AND_UNIVERSALIZATION_V1.json
++e343e90d99230164bbe2047e42f139c92df66bb4e346022136642ff4fb189c16  state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json
+ e7462030141f9e2673656df1b07370671bc0bcbb7f1195f9bee57c7a70784fe1  state/work_units/QCE_CAUSAL_AXIS_BRIDGE_V1.json
+ 35527a6ab0ac0c855949a9fe5748f8211b0b2895b26f45d881e1ae66596d846c  state/work_units/QCE_CAUSAL_AXIS_SELECTION_V1.json
+ e83250125e53196233b8e6b73baf71c57f929059cb0b41502ba62743a6623d6d  state/work_units/QCE_C_MEASUREMENT_BINDING_V1.json
+@@ -3471,10 +3475,11 @@ c75bd2b7f635975886b13788569f4780fbb4507f83f12f14c388d32a9912c4b3  tests/test_qik
+ 428bb23c68de780a55201a87b0ea69d2edf8cc9e4952a0714618c0a440a25794  tests/test_qikvrt_continuous_auto_repair.py
+ 5ca39e246aefb0996cdbe25acf1db15226db91c1bdf6ab9b568a643171d46bd8  tests/test_qikvrt_expected_head_promotion.py
+ f0345b3de7a21591aa51a8f01dc34b1b5dcf220de017a8969bc646d5ed211ee9  tests/test_qikvrt_expected_head_promotion_contract.py
++ec92fb7b814451777cf562705424bf7e01a82ee723ea3e0be0b98a08006c460c  tests/test_qikvrt_publication_candidate_readiness.py
+ ddb0bab5c75a5496d88f1a3795504df86ecec5c7454025a491a39ee795e74632  tests/test_qikvrt_publication_overview.py
+ 43176362d512c6fdbaac0e37bf094b6659ce9e218b7a6f0a8e7e1bf06177bf72  tests/test_qikvrt_reflexive_repository_watchdog.py
+ d3a3a4b6e9d16da3fc3b584595c14827abbdfb258bf67fbe6d018328da43d0cb  tests/test_qikvrt_self_disclosure.py
+-e602c348a19848df6caa3b07b7abbb84a31591d1a6ac2ba142df5a047cf808e5  tests/test_qikvrt_workflow_executor_mesh_contract.py
++0657d188fa97126e73aaf9fe2f008f90217a1863c2f2228caf76292220625bc4  tests/test_qikvrt_workflow_executor_mesh_contract.py
+ 1cc4bd2ac1965d85b3a1f9b3299d70f9dce65eecfdc88afe9be3a98af0a0a158  tests/test_quantum_classical_runtime_article.py
+ 4781d30ded8216a909628bcc9de41f41eee1aaca7b0185ffe1d1b1b72187830d  tests/test_r11_read_only_observation_dispatch_contract.py
+ 7ac8d21f483037f7d6d62822e6efb33ed43519cab85fac27f0d15ee9ee025cff  tests/test_r11_read_only_observation_dispatch_contract_v2.py
+@@ -3576,6 +3581,7 @@ af8ebba67ff4e844331f46f2d34b6c03c3a4d770aa3fa59b64012e7470304640  tools/qikvrt_h
+ a0ed2edef55c88b6f04db2faa91fdabf16279cef2404ae0f8dcdef9344cf6be7  tools/qikvrt_integrity.py
+ 4c21f76c0e8b9d98cc19d6c91c78531fc7bc506885290877892c3e104e6d277c  tools/qikvrt_interaction_archive.py
+ fedd67380997a8865f37c43c05c10f07f4c0f5c497829777bafc8e8b296dc116  tools/qikvrt_master_acceptance_gate.py
++89fb2204fbbe08304fd1d869c2646897429cc62e587b0bb9afd14da0019a858d  tools/qikvrt_publication_candidate_readiness.py
+ 3bb2a04cae174527cd015a15c5d79e297e7e1897f9875f16e82e9f1342c024a5  tools/qikvrt_publication_overview.py
+ 3c6095c967dc1b27b7a14ec6e93bec347a52cc04ddef5145036003b77573b777  tools/qikvrt_publication_router.py
+ cbb8a89ad9075e20068d3f9000837c2ccc819eff895661160bd8a9f1564e23aa  tools/qikvrt_r11_read_only_observation_dispatch_v2.py
+diff --git a/docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md b/docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f40822d06cc59b4e99c27f79f40f1db40098a4b
+--- /dev/null
++++ b/docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md
+@@ -0,0 +1,54 @@
++# Publication-candidate readiness observer
++
++The publication-candidate readiness observer is a continuously scheduled,
++read-only projection for pull requests against Authority `main`. It is not a
++promotion executor. Every receipt is advisory and must be reobserved at the
++exact action-time base, head, and tree before a separately authorized person
++or controller makes any change.
++
++## What each cycle binds
++
++The observer captures one pull-request snapshot and repeats the Authority
++`main` and candidate reobservation before producing an artifact-only receipt.
++It binds the repository, pull request, base SHA and tree, head SHA and tree,
++changed-path digest, candidate and base workflow-blob inventories, and the
++observer-contract digest. Any drift invalidates the prior receipt.
++
++The gate matrix trusts only `pull_request` runs for the literal candidate head
++and branch. A required run needs terminal success and nonzero executed job
++evidence. `action_required`, cancelled runs, zero-job runs, undeclared skips,
++and skipped jobs outside the declared allowance are `HOLD`, not success.
++Branch-gated archive probes and the PR18 repair workflow are `NOT_APPLICABLE`
++only when their declared branch condition does not apply; their skip is never
++silently promoted to a pass.
++
++The receipt separately records submitted-review state, draft and mergeability,
++current-base competing writer path overlaps, and an optional structured
++predecessor declaration. Scope coverage can identify a clean current-main
++successor, but it does not close or mutate the predecessor.
++
++## Repository readiness versus external boundaries
++
++`PROMOTE_REPOSITORY_CANDIDATE` means only that the read-only repository
++projection found no repository-side blocker in that exact snapshot. It does
++not ready a draft, merge, dispatch another workflow, or authorize any effect.
++
++The same receipt always reports Zenodo, arXiv, and IETF separately. Local
++candidate files are bound by digest, but they remain `NOT_AUTHORIZED` unless
++fresh owner authorization, destination/account observation, and independently
++bound platform receipts are supplied at action time. The observer never calls
++those platforms and never emits an external-effect acknowledgement.
++
++## Placement and inheritance
++
++The contract is included in the workflow-executor mesh contract for Authority,
++Mirror, and every future mesh node. That placement preserves the observer's
++read-only boundary without widening the existing writer dispatch policy. The
++workflow uses only `actions: read`, `contents: read`, and `pull-requests:
++read`, and uploads the receipt as an Actions artifact.
++
++While this observer is itself first introduced by a pull request, its literal
++pull-request head is checked out solely to bootstrap the read-only contract and
++regression checks. Once the contract is on Authority `main`, scheduled and
++workflow-run cycles check out Authority `main` and observe candidates only by
++API reads. Neither bootstrap nor steady-state execution receives a write scope.
+diff --git a/state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json b/state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..a52f8936d5198209f50674a899cd7e6ebe6f746c
+--- /dev/null
++++ b/state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json
+@@ -0,0 +1,203 @@
++{
++  "_license": {
++    "classification": "machine_readable_repository_control",
++    "copyright": "Copyright 2026 Ingolf Lohmann",
++    "license": "PolyForm-Noncommercial-1.0.0",
++    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
++    "rights_holder": "Ingolf Lohmann"
++  },
++  "schema": "qikvrt_publication_candidate_readiness_observer_contract_v1",
++  "contract_id": "qikvrt-publication-candidate-readiness-observer-v1",
++  "authority": {
++    "repository": "Goldkelch/qik-vrt",
++    "base_ref": "main",
++    "applies_to": [
++      "AUTHORITY",
++      "MIRROR",
++      "EVERY_FUTURE_MESH_NODE"
++    ]
++  },
++  "observer": {
++    "controller_path": "tools/qikvrt_publication_candidate_readiness.py",
++    "workflow_path": ".github/workflows/qikvrt_publication_candidate_readiness.yml",
++    "acceptance_test_path": "tests/test_qikvrt_publication_candidate_readiness.py",
++    "documentation_path": "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md",
++    "work_unit_path": "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json",
++    "receipt_schema": "qikvrt_publication_candidate_readiness_receipt_v1",
++    "cadence": "PT10M",
++    "event_triggers": [
++      "PULL_REQUEST",
++      "WORKFLOW_RUN_COMPLETED",
++      "SCHEDULE",
++      "WORKFLOW_DISPATCH"
++    ],
++    "artifact_only": true,
++    "permissions": [
++      "actions:read",
++      "contents:read",
++      "pull-requests:read"
++    ],
++    "forbidden_actions": [
++      "REF_UPDATE",
++      "PULL_REQUEST_WRITE",
++      "MERGE",
++      "WORKFLOW_DISPATCH",
++      "RELEASE",
++      "DEPLOYMENT",
++      "ZENODO_MUTATION",
++      "ARXIV_SUBMISSION",
++      "IETF_SUBMISSION",
++      "CREDENTIALED_EXTERNAL_WRITE"
++    ]
++  },
++  "candidate_selection": {
++    "same_repository_only": true,
++    "body_marker": "<!-- qikvrt-publication-readiness:enabled external_effect=NONE -->",
++    "path_prefixes": [
++      "docs/publications/",
++      "publication-staging/",
++      "release/observer-relative-retrocausality-current-synthesis-zenodo-v2/"
++    ],
++    "maximum_candidates_per_cycle": 10
++  },
++  "binding": {
++    "required": [
++      "REPOSITORY",
++      "PR_NUMBER",
++      "BASE_SHA",
++      "BASE_TREE",
++      "HEAD_SHA",
++      "HEAD_TREE",
++      "DIFF_SCOPE_DIGEST",
++      "WORKFLOW_BLOB_INVENTORY_DIGEST",
++      "CONTRACT_BLOB_DIGEST",
++      "REOBSERVED_BASE_HEAD",
++      "REOBSERVED_CANDIDATE_HEAD",
++      "REOBSERVED_CANDIDATE_TREE"
++    ],
++    "invalidating_drift": [
++      "BASE_DRIFT",
++      "HEAD_DRIFT",
++      "TREE_DRIFT",
++      "SCOPE_DRIFT",
++      "WORKFLOW_BLOB_DRIFT",
++      "CONTRACT_BLOB_DRIFT"
++    ]
++  },
++  "workflow_gates": {
++    "required": [
++      {
++        "name": "QIKVRT CI",
++        "path": ".github/workflows/qikvrt_ci.yml"
++      },
++      {
++        "name": "QIKVRT repository evidence materialization",
++        "path": ".github/workflows/qikvrt_batch04_integrity.yml"
++      },
++      {
++        "name": "QIKVRT Batch-003 remaining subject disposition",
++        "path": ".github/workflows/qikvrt_batch003_remaining_disposition.yml"
++      },
++      {
++        "name": "QIKVRT workflow executor watchdog",
++        "path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
++      },
++      {
++        "name": "QIK-VRT global claim completion",
++        "path": ".github/workflows/qikvrt_global_completion.yml",
++        "permitted_skipped_job_prefixes": [
++          "materialize"
++        ]
++      },
++      {
++        "name": "QIKVRT adaptive runtime",
++        "path": ".github/workflows/qikvrt_adaptive_runtime.yml",
++        "permitted_skipped_job_prefixes": [
++          "warm-cache"
++        ]
++      },
++      {
++        "name": "QIKVRT live status watch",
++        "path": ".github/workflows/qikvrt_live_status_watch.yml"
++      },
++      {
++        "name": "QIKVRT Collective Proposal Review",
++        "path": ".github/workflows/qikvrt_collective_review.yml"
++      }
++    ],
++    "conditionally_not_applicable": [
++      {
++        "name": "QIKVRT Batch-003 subject 172dd public archive probe",
++        "path": ".github/workflows/qikvrt_batch003_subject_172dd_public_probe.yml",
++        "applicable_head_refs": [
++          "agent/batch003-subject-172dd-public-freeze-probe"
++        ]
++      },
++      {
++        "name": "QIKVRT Batch-003 remaining archive probe",
++        "path": ".github/workflows/qikvrt_batch003_remaining_archive_probe.yml",
++        "applicable_head_refs": [
++          "agent/batch003-subject-172dd-public-freeze-probe"
++        ]
++      },
++      {
++        "name": "QIKVRT PR18 integrity repair",
++        "path": ".github/workflows/qikvrt_pr18_integrity_repair.yml",
++        "applicable_head_refs": [
++          "infra/live-status-default-branch"
++        ],
++        "write_capable": true
++      }
++    ],
++    "strict_rules": [
++      "EVENT_PULL_REQUEST",
++      "EXACT_HEAD_SHA",
++      "EXACT_HEAD_REF",
++      "TERMINAL_SUCCESS_WITH_NONZERO_JOB_EVIDENCE",
++      "ACTION_REQUIRED_UNTRUSTED",
++      "ZERO_JOB_UNTRUSTED",
++      "UNDECLARED_SKIP_HOLD"
++    ]
++  },
++  "repository_readiness": {
++    "advisory_only": true,
++    "requires": [
++      "OPEN_NON_DRAFT_CLEAN_CANDIDATE",
++      "CURRENT_MAIN_BINDING",
++      "NO_COMPETING_CURRENT_BASE_WRITER_SCOPE_OVERLAP",
++      "EXACT_HEAD_WORKFLOW_GATE_MATRIX",
++      "REVIEW_STATE_REOBSERVED"
++    ],
++    "never_performs": [
++      "READY_FOR_REVIEW",
++      "MERGE",
++      "PROMOTION_EXECUTION"
++    ]
++  },
++  "external_boundaries": [
++    {
++      "target": "ZENODO",
++      "source_path": "release/observer-relative-retrocausality-current-synthesis-zenodo-v2/PRODUCTION_GATE_STATUS.json",
++      "default_state": "NOT_AUTHORIZED"
++    },
++    {
++      "target": "ARXIV",
++      "source_path": "publication-staging/arxiv-observer-relative-retrocausality-en-v2/arxiv_v2_submission_manifest.json",
++      "default_state": "NOT_AUTHORIZED"
++    },
++    {
++      "target": "IETF",
++      "source_path": "docs/publications/2026-08-12-observer-relative-retrocausality/ietf-local-change-time-provenance-00-current-synthesis-candidate/SUBMISSION_MANIFEST.json",
++      "default_state": "NOT_AUTHORIZED"
++    }
++  ],
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false,
++    "EXTERNAL_EFFECT": false,
++    "ZENODO_EFFECT": false,
++    "ARXIV_EFFECT": false,
++    "IETF_EFFECT": false
++  }
++}
+diff --git a/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json b/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+index 4d850c8fc4cacc4c7acaf6b9505a42cd3cf722d6..dece8df19e3409d8ba248242fdf19a18cb1ae76d 100644
+--- a/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
++++ b/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+@@ -139,6 +139,7 @@
+     },
+     "observer_workflow_names": [
+       "QIKVRT reflexive repository watchdog",
++      "QIKVRT publication candidate readiness observer",
+       "QIKVRT workflow executor watchdog",
+       "QIKVRT workflow executor",
+       "QIKVRT live status watch"
+@@ -217,6 +218,25 @@
+       "credentialed_external_write"
+     ]
+   },
++  "publication_candidate_readiness_observer": {
++    "enabled": true,
++    "applies_to": [
++      "AUTHORITY",
++      "MIRROR",
++      "EVERY_FUTURE_MESH_NODE"
++    ],
++    "contract_path": "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
++    "controller_path": "tools/qikvrt_publication_candidate_readiness.py",
++    "workflow_path": ".github/workflows/qikvrt_publication_candidate_readiness.yml",
++    "acceptance_test_path": "tests/test_qikvrt_publication_candidate_readiness.py",
++    "documentation_path": "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md",
++    "work_unit_path": "state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json",
++    "observation_cadence": "PT10M",
++    "artifact_only": true,
++    "external_effect": "FORBIDDEN",
++    "writer_dispatch_policy_change": "FORBIDDEN",
++    "receipt_is_promotion_authorization": false
++  },
+   "mesh_node_split_acceptance": {
+     "applies_to": "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW",
+     "queue_root": "registry/node_request_queue",
+diff --git a/state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json b/state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..47817713d3fbcfdf2077dc09220beb24ddec06e7
+--- /dev/null
++++ b/state/work_units/PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1.json
+@@ -0,0 +1,58 @@
++{
++  "_license": {
++    "classification": "machine_readable_repository_control",
++    "copyright": "Copyright 2026 Ingolf Lohmann",
++    "license": "PolyForm-Noncommercial-1.0.0",
++    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
++    "rights_holder": "Ingolf Lohmann"
++  },
++  "schema": "qikvrt_publication_candidate_readiness_observer_work_unit_v1",
++  "work_unit_id": "PUBLICATION_CANDIDATE_READINESS_OBSERVER_V1",
++  "title": "Persist a cyclic exact-head publication-candidate readiness observer",
++  "repository": "Goldkelch/qik-vrt",
++  "owner_instruction": {
++    "language": "de",
++    "decision": "IMPLEMENT_PERPETUAL_READ_ONLY_CYCLIC_READINESS_OBSERVATION",
++    "scope": "REPOSITORY_AND_ARCHITECTURALLY_RELEVANT_MESH_CONTRACTS"
++  },
++  "implementation_paths": [
++    ".github/workflows/qikvrt_publication_candidate_readiness.yml",
++    "tools/qikvrt_publication_candidate_readiness.py",
++    "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
++    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
++    "tests/test_qikvrt_publication_candidate_readiness.py",
++    "docs/PUBLICATION_CANDIDATE_READINESS_OBSERVER.md"
++  ],
++  "cyclic_observation": {
++    "cadence": "PT10M",
++    "exact_head_reobservation": true,
++    "exact_base_reobservation": true,
++    "scope_and_workflow_blob_binding": true,
++    "competing_writer_detection": true,
++    "artifact_only_receipt": true
++  },
++  "separation": {
++    "repository_readiness_is_advisory_only": true,
++    "zenodo_authorization": false,
++    "arxiv_authorization": false,
++    "ietf_authorization": false,
++    "platform_or_external_effect": false
++  },
++  "effect_boundary": {
++    "branch_or_ref_mutation": false,
++    "draft_state_mutation": false,
++    "merge": false,
++    "workflow_dispatch": false,
++    "release": false,
++    "deployment": false,
++    "zenodo": false,
++    "arxiv": false,
++    "ietf": false
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false,
++    "EXTERNAL_EFFECT": false
++  }
++}
+diff --git a/tests/test_qikvrt_publication_candidate_readiness.py b/tests/test_qikvrt_publication_candidate_readiness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fef8b10cbe8fb34f3e7c4e8a6ba759de05a8d9c
+--- /dev/null
++++ b/tests/test_qikvrt_publication_candidate_readiness.py
+@@ -0,0 +1,202 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++from __future__ import annotations
++
++import copy
++import importlib.util
++import json
++import pathlib
++import re
++import sys
++import textwrap
++import unittest
++
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++CONTRACT_PATH = ROOT / "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
++WORKFLOW_PATH = ROOT / ".github/workflows/qikvrt_publication_candidate_readiness.yml"
++SPEC = importlib.util.spec_from_file_location(
++    "qikvrt_publication_candidate_readiness",
++    ROOT / "tools/qikvrt_publication_candidate_readiness.py",
++)
++assert SPEC and SPEC.loader
++MODULE = importlib.util.module_from_spec(SPEC)
++sys.modules[SPEC.name] = MODULE
++SPEC.loader.exec_module(MODULE)
++
++
++MAIN = "a" * 40
++MAIN_TREE = "b" * 40
++HEAD = "c" * 40
++HEAD_TREE = "d" * 40
++PREDECESSOR = "e" * 40
++BLOB = "f" * 40
++
++
++def contract() -> dict[str, object]:
++    return json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
++
++
++def run(number: int, name: str, *, conclusion: str = "success", job_conclusion: str = "success") -> dict[str, object]:
++    return {
++        "id": number,
++        "name": name,
++        "run_number": number,
++        "event": "pull_request",
++        "head_sha": HEAD,
++        "head_branch": "agent/current-main-successor",
++        "status": "completed",
++        "conclusion": conclusion,
++        "jobs": [
++            {
++                "id": number * 10,
++                "name": "verify",
++                "status": "completed",
++                "conclusion": job_conclusion,
++            }
++        ],
++    }
++
++
++def snapshot() -> dict[str, object]:
++    value = contract()
++    all_gates = value["workflow_gates"]["required"] + value["workflow_gates"]["conditionally_not_applicable"]
++    inventory = {item["path"]: BLOB for item in all_gates}
++    files = [
++        {"path": "docs/publications/current.md", "sha": "1" * 40},
++        {"path": "state/current.json", "sha": "2" * 40},
++    ]
++    scope_sha = MODULE.digest(files)
++    inventory_sha = MODULE.digest(inventory)
++    return {
++        "schema": MODULE.SNAPSHOT_SCHEMA,
++        "repository": "example/qik-vrt",
++        "authority": {"main_head_sha": MAIN, "main_tree_sha": MAIN_TREE},
++        "candidate": {
++            "number": 42,
++            "state": "open",
++            "base_ref": "main",
++            "base_sha": MAIN,
++            "head_ref": "agent/current-main-successor",
++            "head_sha": HEAD,
++            "head_tree_sha": HEAD_TREE,
++            "changed_file_count": len(files),
++            "changed_files": files,
++            "draft": False,
++            "mergeable": True,
++        },
++        "reobservation": {
++            "main_head_sha": MAIN,
++            "base_sha": MAIN,
++            "head_sha": HEAD,
++            "head_tree_sha": HEAD_TREE,
++            "scope_sha256": scope_sha,
++            "workflow_blob_inventory_sha256": inventory_sha,
++            "contract_blob_sha": BLOB,
++        },
++        "contract_blob_sha": BLOB,
++        "workflow_inventories": {"base": inventory, "head": inventory},
++        "workflow_runs": [run(index, gate["name"]) for index, gate in enumerate(value["workflow_gates"]["required"], start=1)],
++        "reviews": [],
++        "review_comment_count": 0,
++        "competing_writers": [],
++        "external_inputs": {
++            target["target"]: {"present": True, "blob_sha": BLOB, "sha256": "3" * 64}
++            for target in value["external_boundaries"]
++        },
++    }
++
++
++class PublicationCandidateReadinessTests(unittest.TestCase):
++    def test_repository_candidate_is_advisory_and_external_boundaries_stay_separate(self) -> None:
++        result = MODULE.evaluate(snapshot())
++        self.assertEqual(result["state"], "PROMOTE_REPOSITORY_CANDIDATE")
++        self.assertIsNone(result["first_blocker"])
++        self.assertEqual(result["external_boundaries"]["ZENODO"]["state"], "NOT_AUTHORIZED")
++        self.assertEqual(result["external_boundaries"]["ARXIV"]["effect_evidence"], "NOT_OBSERVED_BY_READ_ONLY_OBSERVER")
++        self.assertFalse(result["completion_claims"]["EXTERNAL_EFFECT"])
++
++    def test_competing_writer_is_before_draft_or_workflow_followups(self) -> None:
++        value = snapshot()
++        value["candidate"]["draft"] = True
++        value["competing_writers"] = [{"number": 43, "overlap_paths": ["state/current.json"]}]
++        result = MODULE.evaluate(value)
++        self.assertEqual(result["state"], "HOLD")
++        self.assertEqual(result["first_blocker"], "COMPETING_WRITER_OVERLAP")
++
++    def test_declared_branch_gated_skip_is_not_applicable(self) -> None:
++        value = snapshot()
++        value["workflow_runs"].append(run(100, "QIKVRT Batch-003 subject 172dd public archive probe", conclusion="skipped", job_conclusion="skipped"))
++        result = MODULE.evaluate(value)
++        gate = next(item for item in result["workflows"]["gates"] if item["name"] == "QIKVRT Batch-003 subject 172dd public archive probe")
++        self.assertEqual(gate["state"], "NOT_APPLICABLE")
++        self.assertEqual(result["state"], "PROMOTE_REPOSITORY_CANDIDATE")
++
++    def test_unclassified_exact_head_workflow_fails_closed(self) -> None:
++        value = snapshot()
++        value["workflow_runs"].append(run(100, "unclassified exact-head workflow"))
++        result = MODULE.evaluate(value)
++        self.assertEqual(result["state"], "HOLD")
++        self.assertEqual(result["first_blocker"], "UNDECLARED_EXACT_HEAD_WORKFLOW")
++
++    def test_stale_run_is_discarded_and_cannot_satisfy_a_gate(self) -> None:
++        value = snapshot()
++        required_name = contract()["workflow_gates"]["required"][1]["name"]
++        value["workflow_runs"] = [item for item in value["workflow_runs"] if item["name"] != required_name]
++        stale = run(200, required_name)
++        stale["head_sha"] = PREDECESSOR
++        value["workflow_runs"].append(stale)
++        result = MODULE.evaluate(value)
++        self.assertEqual(result["first_blocker"], "REQUIRED_EXACT_HEAD_GATE_MISSING")
++        self.assertEqual(result["workflows"]["stale_runs_discarded"], 1)
++
++    def test_scope_workflow_and_contract_drift_invalidate_receipt(self) -> None:
++        for field, expected in (("scope_sha256", "SCOPE_DRIFT"), ("workflow_blob_inventory_sha256", "WORKFLOW_BLOB_DRIFT"), ("contract_blob_sha", "CONTRACT_BLOB_DRIFT")):
++            with self.subTest(field=field):
++                value = snapshot()
++                value["reobservation"][field] = "0" * (64 if field != "contract_blob_sha" else 40)
++                result = MODULE.evaluate(value)
++                self.assertEqual(result["first_blocker"], expected)
++
++    def test_declared_predecessor_scope_is_visible_without_lifecycle_mutation(self) -> None:
++        value = snapshot()
++        value["declared_predecessor"] = {
++            "number": 41,
++            "declared_head_sha": PREDECESSOR,
++            "observed_head_sha": PREDECESSOR,
++            "state": "open",
++            "changed_paths": ["docs/publications/current.md"],
++        }
++        result = MODULE.evaluate(value)
++        self.assertEqual(result["supersession"]["state"], "CURRENT_MAIN_SUCCESSOR_SCOPE_COVERED")
++        self.assertEqual(result["supersession"]["lifecycle_followup"], "PREDECESSOR_STILL_OPEN")
++
++    def test_contract_paths_match_exact_workflow_names(self) -> None:
++        value = contract()
++        for group in ("required", "conditionally_not_applicable"):
++            for gate in value["workflow_gates"][group]:
++                workflow = ROOT / gate["path"]
++                self.assertTrue(workflow.is_file(), gate["path"])
++                self.assertIn(f"name: {gate['name']}", workflow.read_text(encoding="utf-8"))
++
++    def test_workflow_stays_artifact_only_and_read_only(self) -> None:
++        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
++        self.assertIn("actions: read", workflow)
++        self.assertIn("contents: read", workflow)
++        self.assertIn("pull-requests: read", workflow)
++        self.assertIn("qikvrt-publication-candidate-readiness-", workflow)
++        self.assertIn("github.event.pull_request.head.sha || 'main'", workflow)
++        for forbidden in ("actions: write", "pull-requests: write", "gh pr merge", "/merge", "/dispatches", "zenodo.org", "arxiv.org", "datatracker.ietf.org"):
++            self.assertNotIn(forbidden, workflow)
++
++    def test_workflow_embedded_python_is_syntactically_valid(self) -> None:
++        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
++        blocks = re.findall(r"python3 - <<'PY'\n(.*?)\n          PY", workflow, flags=re.DOTALL)
++        self.assertEqual(len(blocks), 2)
++        for index, block in enumerate(blocks, start=1):
++            compile(textwrap.dedent(block), f"publication-readiness-workflow-{index}.py", "exec")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_qikvrt_workflow_executor_mesh_contract.py b/tests/test_qikvrt_workflow_executor_mesh_contract.py
+index 67af386a7f7485afdbd4a6df0b2b745255632be7..123d5ad2490881c7e246d7048262bfb7cc813da1 100644
+--- a/tests/test_qikvrt_workflow_executor_mesh_contract.py
++++ b/tests/test_qikvrt_workflow_executor_mesh_contract.py
+@@ -58,6 +58,27 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
+         self.assertFalse(boundaries["watchdog_terminality_is_gate_success"])
+         self.assertFalse(boundaries["action_required_is_trusted_execution"])
+         self.assertFalse(boundaries["zero_job_is_trusted_execution"])
++        readiness = contract["publication_candidate_readiness_observer"]
++        self.assertTrue(readiness["enabled"])
++        self.assertEqual(
++            readiness["applies_to"],
++            ["AUTHORITY", "MIRROR", "EVERY_FUTURE_MESH_NODE"],
++        )
++        self.assertEqual(
++            readiness["contract_path"],
++            "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json",
++        )
++        self.assertEqual(
++            readiness["controller_path"],
++            "tools/qikvrt_publication_candidate_readiness.py",
++        )
++        self.assertTrue(readiness["artifact_only"])
++        self.assertEqual(readiness["external_effect"], "FORBIDDEN")
++        self.assertFalse(readiness["receipt_is_promotion_authorization"])
++        self.assertIn(
++            "QIKVRT publication candidate readiness observer",
++            contract["reflexive_deadlock_prevention"]["observer_workflow_names"],
++        )
+         continuity = contract["mesh_node_split_acceptance"]
+         self.assertEqual(continuity["applies_to"], "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW")
+         self.assertEqual(
+@@ -199,6 +220,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
+         self.assertIn("contents: read", watchdog)
+         self.assertIn("tests.test_qikvrt_workflow_executor_mesh_contract", watchdog)
+         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
++        self.assertIn(".github/workflows/qikvrt_publication_candidate_readiness.yml", watchdog)
++        self.assertIn("tests.test_qikvrt_publication_candidate_readiness", watchdog)
+         self.assertNotIn("/dispatches", watchdog)
+         self.assertIn("github.event_name == 'pull_request'", live_watch)
+ 
+diff --git a/tools/qikvrt_publication_candidate_readiness.py b/tools/qikvrt_publication_candidate_readiness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa33992cac5fd2bbbbefd9d6303609efe4f3a77a
+--- /dev/null
++++ b/tools/qikvrt_publication_candidate_readiness.py
+@@ -0,0 +1,494 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Evaluate one read-only, exact-head publication-candidate snapshot.
++
++This module deliberately has no network client and no mutation code.  It only
++turns a complete observation captured by the companion GitHub Actions workflow
++into an artifact receipt.  A receipt is advisory: it cannot ready a pull
++request, merge, dispatch, publish, release, deploy, submit, or acknowledge an
++external effect.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import pathlib
++import sys
++from collections.abc import Mapping, Sequence
++from typing import Any
++
++
++SNAPSHOT_SCHEMA = "qikvrt_publication_candidate_readiness_snapshot_v1"
++RECEIPT_SCHEMA = "qikvrt_publication_candidate_readiness_receipt_v1"
++CONTRACT_SCHEMA = "qikvrt_publication_candidate_readiness_observer_contract_v1"
++ACTIVE = frozenset({"queued", "in_progress", "pending", "requested", "waiting"})
++ADVERSE = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure"})
++
++
++class ReadinessBlock(ValueError):
++    """A missing or contradictory observation that must fail closed."""
++
++
++def canonical_bytes(value: Any) -> bytes:
++    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
++
++
++def digest(value: Any) -> str:
++    return hashlib.sha256(canonical_bytes(value)).hexdigest()
++
++
++def _object(value: Any, label: str) -> Mapping[str, Any]:
++    if not isinstance(value, Mapping):
++        raise ReadinessBlock(f"{label} must be an object")
++    return value
++
++
++def _array(value: Any, label: str) -> list[Any]:
++    if not isinstance(value, list):
++        raise ReadinessBlock(f"{label} must be a list")
++    return value
++
++
++def _text(value: Any, label: str) -> str:
++    if not isinstance(value, str) or not value:
++        raise ReadinessBlock(f"{label} must be a non-empty string")
++    return value
++
++
++def _sha(value: Any, label: str) -> str:
++    text = _text(value, label)
++    if len(text) != 40 or any(character not in "0123456789abcdef" for character in text):
++        raise ReadinessBlock(f"{label} must be a lowercase forty-character Git SHA")
++    return text
++
++
++def _number(value: Any, label: str) -> int:
++    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
++        raise ReadinessBlock(f"{label} must be a positive integer")
++    return value
++
++
++def _strings(value: Any, label: str, *, allow_empty: bool = True) -> list[str]:
++    values = _array(value, label)
++    if not allow_empty and not values:
++        raise ReadinessBlock(f"{label} must not be empty")
++    if any(not isinstance(item, str) or not item for item in values):
++        raise ReadinessBlock(f"{label} must contain non-empty strings")
++    if len(values) != len(set(values)):
++        raise ReadinessBlock(f"{label} must not contain duplicates")
++    return list(values)
++
++
++def _root() -> pathlib.Path:
++    return pathlib.Path(__file__).resolve().parents[1]
++
++
++def load_contract(path: pathlib.Path | None = None) -> Mapping[str, Any]:
++    source = path or _root() / "state/autonomy/PUBLICATION_CANDIDATE_READINESS_OBSERVER_CONTRACT_V1.json"
++    contract = _object(json.loads(source.read_text(encoding="utf-8")), "contract")
++    if contract.get("schema") != CONTRACT_SCHEMA:
++        raise ReadinessBlock("contract schema is not publication-candidate readiness observer v1")
++    return contract
++
++
++def _files(candidate: Mapping[str, Any]) -> list[dict[str, str]]:
++    entries: list[dict[str, str]] = []
++    paths: set[str] = set()
++    for index, value in enumerate(_array(candidate.get("changed_files"), "candidate.changed_files")):
++        item = _object(value, f"candidate.changed_files[{index}]")
++        path = _text(item.get("path"), f"candidate.changed_files[{index}].path")
++        if path in paths:
++            raise ReadinessBlock("candidate.changed_files paths must be unique")
++        paths.add(path)
++        entry = {"path": path}
++        if item.get("sha") is not None:
++            entry["sha"] = _sha(item.get("sha"), f"candidate.changed_files[{index}].sha")
++        entries.append(entry)
++    if candidate.get("changed_file_count") != len(entries):
++        raise ReadinessBlock("candidate.changed_file_count does not match changed_files")
++    return sorted(entries, key=lambda item: item["path"])
++
++
++def _inventory(value: Any, label: str) -> dict[str, str]:
++    result: dict[str, str] = {}
++    for path, blob in _object(value, label).items():
++        result[_text(path, f"{label} path")] = _sha(blob, f"{label}[{path}]")
++    return dict(sorted(result.items()))
++
++
++def _workflow_config(contract: Mapping[str, Any]) -> tuple[dict[str, Mapping[str, Any]], dict[str, Mapping[str, Any]]]:
++    gates = _object(contract.get("workflow_gates"), "contract.workflow_gates")
++    required: dict[str, Mapping[str, Any]] = {}
++    conditional: dict[str, Mapping[str, Any]] = {}
++    for kind, destination in (("required", required), ("conditionally_not_applicable", conditional)):
++        for index, raw in enumerate(_array(gates.get(kind), f"contract.workflow_gates.{kind}")):
++            entry = _object(raw, f"contract.workflow_gates.{kind}[{index}]")
++            name = _text(entry.get("name"), f"contract.workflow_gates.{kind}[{index}].name")
++            _text(entry.get("path"), f"contract.workflow_gates.{kind}[{index}].path")
++            if name in required or name in conditional:
++                raise ReadinessBlock("workflow gate names must be unique")
++            if kind == "conditionally_not_applicable":
++                _strings(entry.get("applicable_head_refs"), f"conditional gate {name}.applicable_head_refs", allow_empty=False)
++            destination[name] = entry
++    return required, conditional
++
++
++def _job_state(raw: Any) -> tuple[str, str, str]:
++    job = _object(raw, "workflow job")
++    return _text(job.get("name"), "workflow job name"), _text(job.get("status"), "workflow job status"), _text(job.get("conclusion"), "workflow job conclusion")
++
++
++def _permitted_skip(job_name: str, prefixes: Sequence[str]) -> bool:
++    return any(job_name == prefix or job_name.startswith(prefix + " ") or job_name.startswith(prefix + " (") for prefix in prefixes)
++
++
++def _success_run(run: Mapping[str, Any], entry: Mapping[str, Any]) -> tuple[str, str, dict[str, int]]:
++    jobs = _array(run.get("jobs"), "workflow run jobs")
++    summary = {"total": len(jobs), "success": 0, "skipped": 0, "active": 0, "adverse": 0, "untrusted": 0}
++    prefixes = _strings(entry.get("permitted_skipped_job_prefixes", []), "permitted skipped job prefixes")
++    if run.get("status") in ACTIVE:
++        return "ACTIVE", "RUN_NOT_TERMINAL", summary
++    if run.get("status") != "completed":
++        return "UNTRUSTED", "UNRECOGNIZED_RUN_STATUS", summary
++    if run.get("conclusion") in ADVERSE:
++        return "FAILED", "ADVERSE_TERMINAL_CONCLUSION", summary
++    if run.get("conclusion") != "success":
++        return "UNTRUSTED", "TERMINAL_CONCLUSION_NOT_SUCCESS", summary
++    if not jobs:
++        return "UNTRUSTED", "ZERO_JOB_TERMINAL_RUN", summary
++    for raw in jobs:
++        name, status, conclusion = _job_state(raw)
++        if status in ACTIVE:
++            summary["active"] += 1
++        elif status != "completed":
++            summary["untrusted"] += 1
++        elif conclusion == "success":
++            summary["success"] += 1
++        elif conclusion == "skipped":
++            summary["skipped"] += 1
++            if not _permitted_skip(name, prefixes):
++                summary["untrusted"] += 1
++        elif conclusion in ADVERSE:
++            summary["adverse"] += 1
++        else:
++            summary["untrusted"] += 1
++    if summary["adverse"]:
++        return "FAILED", "ADVERSE_JOB_CONCLUSION", summary
++    if summary["active"]:
++        return "ACTIVE", "JOB_NOT_TERMINAL", summary
++    if summary["untrusted"]:
++        return "UNTRUSTED", "UNDECLARED_OR_UNTRUSTED_JOB_STATE", summary
++    if not summary["success"]:
++        return "UNTRUSTED", "NO_EXECUTED_SUCCESS_JOB", summary
++    return "SUCCESS", "TERMINAL_SUCCESS_WITH_EXECUTED_JOB_EVIDENCE", summary
++
++
++def _skipped_run(run: Mapping[str, Any], applicable: bool) -> tuple[str, str, dict[str, int]]:
++    jobs = _array(run.get("jobs"), "workflow run jobs")
++    summary = {"total": len(jobs), "success": 0, "skipped": 0, "active": 0, "adverse": 0, "untrusted": 0}
++    for raw in jobs:
++        _, status, conclusion = _job_state(raw)
++        if status in ACTIVE:
++            summary["active"] += 1
++        elif status != "completed":
++            summary["untrusted"] += 1
++        elif conclusion == "skipped":
++            summary["skipped"] += 1
++        elif conclusion in ADVERSE:
++            summary["adverse"] += 1
++        else:
++            summary["untrusted"] += 1
++    if applicable:
++        return "UNTRUSTED", "SKIPPED_WHILE_APPLICABLE", summary
++    if not jobs or summary["skipped"] != len(jobs):
++        return "UNTRUSTED", "SKIPPED_RUN_LACKS_ALL_SKIPPED_JOB_EVIDENCE", summary
++    return "NOT_APPLICABLE", "DECLARED_HEAD_REF_GATE", summary
++
++
++def _latest_runs(raw_runs: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
++    selected: dict[str, Mapping[str, Any]] = {}
++    for run in raw_runs:
++        name = _text(run.get("name"), "workflow run name")
++        number = run.get("run_number")
++        if not isinstance(number, int) or isinstance(number, bool) or number < 0:
++            raise ReadinessBlock(f"workflow run {name} lacks a valid run_number")
++        run_id = run.get("id")
++        if not isinstance(run_id, (int, str)) or isinstance(run_id, bool) or not str(run_id):
++            raise ReadinessBlock(f"workflow run {name} lacks an id")
++        old = selected.get(name)
++        if old is None or (number, str(run_id)) > (old["run_number"], str(old["id"])):
++            selected[name] = run
++    return selected
++
++
++def _workflow_observation(snapshot: Mapping[str, Any], candidate: Mapping[str, Any], contract: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
++    required, conditional = _workflow_config(contract)
++    declared = {**required, **conditional}
++    head = _sha(candidate.get("head_sha"), "candidate.head_sha")
++    head_ref = _text(candidate.get("head_ref"), "candidate.head_ref")
++    observer_name = "QIKVRT publication candidate readiness observer"
++    raw_runs = [_object(value, "workflow run") for value in _array(snapshot.get("workflow_runs"), "workflow_runs")]
++    stale = [run for run in raw_runs if run.get("head_sha") != head]
++    exact = [run for run in raw_runs if run.get("head_sha") == head and run.get("name") != observer_name]
++    selected = _latest_runs(exact)
++    gates: list[dict[str, Any]] = []
++    blockers: list[str] = []
++    for name, run in sorted(selected.items()):
++        if run.get("event") != "pull_request" or run.get("head_branch") != head_ref:
++            gates.append({"name": name, "run_id": run.get("id"), "state": "UNTRUSTED", "reason": "EXACT_HEAD_EVENT_OR_BRANCH_MISMATCH"})
++            blockers.append("EXACT_HEAD_WORKFLOW_UNTRUSTED")
++            continue
++        entry = declared.get(name)
++        if entry is None:
++            gates.append({"name": name, "run_id": run.get("id"), "state": "UNTRUSTED", "reason": "UNDECLARED_EXACT_HEAD_WORKFLOW"})
++            blockers.append("UNDECLARED_EXACT_HEAD_WORKFLOW")
++            continue
++        if name in conditional and run.get("conclusion") == "skipped":
++            state, reason, jobs = _skipped_run(run, head_ref in entry["applicable_head_refs"])
++        else:
++            state, reason, jobs = _success_run(run, entry)
++            if name in conditional and head_ref not in entry["applicable_head_refs"]:
++                state, reason = "UNTRUSTED", "EXECUTED_OUTSIDE_DECLARED_HEAD_REF_SCOPE"
++        gates.append({"name": name, "run_id": run.get("id"), "run_number": run.get("run_number"), "state": state, "reason": reason, "jobs": jobs})
++    present = {gate["name"] for gate in gates}
++    for name in sorted(required):
++        gate = next((item for item in gates if item["name"] == name), None)
++        if gate is None:
++            gates.append({"name": name, "state": "MISSING", "reason": "REQUIRED_EXACT_HEAD_WORKFLOW_MISSING"})
++            blockers.append("REQUIRED_EXACT_HEAD_GATE_MISSING")
++        elif gate["state"] != "SUCCESS":
++            blockers.append("REQUIRED_EXACT_HEAD_GATE_NOT_TRUSTED")
++    for name, entry in sorted(conditional.items()):
++        if name not in present:
++            if head_ref in entry["applicable_head_refs"]:
++                gates.append({"name": name, "state": "MISSING", "reason": "CONDITIONAL_WORKFLOW_MISSING_WHILE_APPLICABLE"})
++                blockers.append("CONDITIONAL_EXACT_HEAD_GATE_MISSING")
++            else:
++                gates.append({"name": name, "state": "NOT_APPLICABLE", "reason": "DECLARED_HEAD_REF_GATE_NO_RUN"})
++    for gate in gates:
++        if gate["state"] == "FAILED":
++            blockers.append("APPLICABLE_EXACT_HEAD_EXECUTED_FAILURE")
++        elif gate["state"] in {"ACTIVE", "UNTRUSTED"}:
++            blockers.append("EXACT_HEAD_WORKFLOW_UNTRUSTED")
++    return {
++        "gates": sorted(gates, key=lambda item: item["name"]),
++        "stale_runs_discarded": len(stale),
++        "exact_head_run_count": len(exact),
++    }, blockers
++
++
++def _workflow_blobs(snapshot: Mapping[str, Any], contract: Mapping[str, Any]) -> tuple[dict[str, Any], str | None]:
++    inventories = _object(snapshot.get("workflow_inventories"), "workflow_inventories")
++    base = _inventory(inventories.get("base"), "workflow_inventories.base")
++    head = _inventory(inventories.get("head"), "workflow_inventories.head")
++    required, conditional = _workflow_config(contract)
++    relevant = sorted({entry["path"] for entry in {**required, **conditional}.values()})
++    missing = [path for path in relevant if path not in base or path not in head]
++    changed = [path for path in relevant if path in base and path in head and base[path] != head[path]]
++    return {
++        "base_workflow_inventory_sha256": digest(base),
++        "head_workflow_inventory_sha256": digest(head),
++        "relevant_paths": relevant,
++        "missing_paths": missing,
++        "changed_paths": changed,
++    }, "WORKFLOW_BLOB_DRIFT" if missing or changed else None
++
++
++def _supersession(files: Sequence[Mapping[str, str]], value: Any) -> tuple[dict[str, Any], str | None]:
++    if value is None:
++        return {"state": "NOT_DECLARED"}, None
++    predecessor = _object(value, "declared_predecessor")
++    number = _number(predecessor.get("number"), "declared_predecessor.number")
++    declared = _sha(predecessor.get("declared_head_sha"), "declared_predecessor.declared_head_sha")
++    observed = _sha(predecessor.get("observed_head_sha"), "declared_predecessor.observed_head_sha")
++    if declared != observed:
++        return {"state": "PREDECESSOR_HEAD_DRIFT", "number": number, "declared_head_sha": declared, "observed_head_sha": observed}, "PREDECESSOR_HEAD_DRIFT"
++    paths = _strings(predecessor.get("changed_paths"), "declared_predecessor.changed_paths")
++    candidate_paths = {item["path"] for item in files}
++    missing = sorted(set(paths) - candidate_paths)
++    if missing:
++        return {"state": "PREDECESSOR_SCOPE_GAP", "number": number, "missing_paths": missing}, "PREDECESSOR_SCOPE_NOT_COVERED"
++    state = _text(predecessor.get("state"), "declared_predecessor.state")
++    if state not in {"open", "closed"}:
++        raise ReadinessBlock("declared_predecessor.state must be open or closed")
++    return {
++        "state": "CURRENT_MAIN_SUCCESSOR_SCOPE_COVERED",
++        "number": number,
++        "predecessor_state": state,
++        "covered_path_count": len(paths),
++        "lifecycle_followup": "PREDECESSOR_STILL_OPEN" if state == "open" else "NONE",
++    }, None
++
++
++def _external(snapshot: Mapping[str, Any], contract: Mapping[str, Any]) -> dict[str, Any]:
++    inputs = _object(snapshot.get("external_inputs", {}), "external_inputs")
++    result: dict[str, Any] = {}
++    for raw in _array(contract.get("external_boundaries"), "contract.external_boundaries"):
++        boundary = _object(raw, "external boundary")
++        target = _text(boundary.get("target"), "external boundary target")
++        source_path = _text(boundary.get("source_path"), "external boundary source path")
++        input_value = inputs.get(target)
++        if input_value is None:
++            result[target] = {"state": "NOT_OBSERVED", "source_path": source_path, "effect_evidence": "NOT_OBSERVED_BY_READ_ONLY_OBSERVER"}
++            continue
++        observed = _object(input_value, f"external_inputs.{target}")
++        if observed.get("present") is not True:
++            result[target] = {"state": "NOT_OBSERVED", "source_path": source_path, "effect_evidence": "NOT_OBSERVED_BY_READ_ONLY_OBSERVER"}
++            continue
++        result[target] = {
++            "state": boundary.get("default_state", "NOT_AUTHORIZED"),
++            "source_path": source_path,
++            "source_blob_sha": _sha(observed.get("blob_sha"), f"external_inputs.{target}.blob_sha"),
++            "source_sha256": _text(observed.get("sha256"), f"external_inputs.{target}.sha256"),
++            "effect_evidence": "NOT_OBSERVED_BY_READ_ONLY_OBSERVER",
++        }
++    return result
++
++
++def _reviews(snapshot: Mapping[str, Any], candidate: Mapping[str, Any]) -> dict[str, Any]:
++    reviews = [_object(item, "review") for item in _array(snapshot.get("reviews"), "reviews")]
++    states = [item.get("state") for item in reviews if isinstance(item.get("state"), str)]
++    return {
++        "draft": candidate.get("draft"),
++        "submitted_review_count": len(reviews),
++        "approved_count": sum(state == "APPROVED" for state in states),
++        "changes_requested_count": sum(state == "CHANGES_REQUESTED" for state in states),
++        "review_comment_count": snapshot.get("review_comment_count", 0),
++    }
++
++
++def _next_action(blocker: str | None) -> str:
++    actions = {
++        "BASE_DRIFT": "REOBSERVE_CURRENT_MAIN_AND_REBIND_THE_CANDIDATE",
++        "HEAD_DRIFT": "DISCARD_STALE_GATE_EVIDENCE_AND_REOBSERVE_THE_NEW_HEAD",
++        "TREE_DRIFT": "DISCARD_STALE_GATE_EVIDENCE_AND_REOBSERVE_THE_NEW_TREE",
++        "SCOPE_DRIFT": "REOBSERVE_CHANGED_PATHS_AND_RECOMPUTE_THE_SCOPE_DIGEST",
++        "WORKFLOW_BLOB_DRIFT": "REOBSERVE_THE_DECLARED_WORKFLOW_BLOBS_ON_THE_EXACT_HEAD",
++        "CONTRACT_BLOB_DRIFT": "REOBSERVE_THE_READINESS_CONTRACT_ON_THE_EXACT_HEAD",
++        "NOT_MERGEABLE": "RESOLVE_THE_CANDIDATE_MERGEABILITY_BEFORE_REOBSERVATION",
++        "COMPETING_WRITER_OVERLAP": "SERIALIZE_OR_REBASE_ONE_CURRENT_BASE_WRITER_BEFORE_PROMOTION",
++        "DRAFT_REVIEW_PENDING": "KEEP_DRAFT_AND_COMPLETE_REVIEW_REOBSERVATION_BEFORE_ANY_PROMOTION_DECISION",
++        "PREDECESSOR_HEAD_DRIFT": "REOBSERVE_THE_DECLARED_PREDECESSOR_AND_RECONSTRUCT_SCOPE_COVERAGE",
++        "PREDECESSOR_SCOPE_NOT_COVERED": "CREATE_OR_REPAIR_A_SINGLE_CURRENT_MAIN_SUCCESSOR_SCOPE",
++    }
++    return actions.get(blocker, "REOBSERVE_AND_RESOLVE_THE_FIRST_DETERMINISTIC_BLOCKER") if blocker else "REOBSERVE_BASE_HEAD_TREE_SCOPE_WORKFLOWS_AND_WRITERS_IMMEDIATELY_BEFORE_ANY_SEPARATELY_AUTHORIZED_PROMOTION"
++
++
++def evaluate(snapshot: Mapping[str, Any], contract: Mapping[str, Any] | None = None) -> dict[str, Any]:
++    if snapshot.get("schema") != SNAPSHOT_SCHEMA:
++        raise ReadinessBlock("snapshot schema is not publication-candidate readiness v1")
++    contract = contract or load_contract()
++    candidate = _object(snapshot.get("candidate"), "candidate")
++    authority = _object(snapshot.get("authority"), "authority")
++    reobserved = _object(snapshot.get("reobservation"), "reobservation")
++    if candidate.get("state") != "open" or candidate.get("base_ref") != "main":
++        raise ReadinessBlock("candidate must be an open pull request against main")
++    if not isinstance(candidate.get("draft"), bool) or not isinstance(candidate.get("mergeable"), bool):
++        raise ReadinessBlock("candidate.draft and candidate.mergeable must be booleans")
++    files = _files(candidate)
++    scope = {"changed_file_count": len(files), "scope_sha256": digest(files), "paths": [item["path"] for item in files]}
++    workflow_blobs, workflow_blob_blocker = _workflow_blobs(snapshot, contract)
++    workflows, workflow_blockers = _workflow_observation(snapshot, candidate, contract)
++    supersession, supersession_blocker = _supersession(files, snapshot.get("declared_predecessor"))
++    overlaps: list[dict[str, Any]] = []
++    for raw in _array(snapshot.get("competing_writers", []), "competing_writers"):
++        writer = _object(raw, "competing writer")
++        paths = sorted(_strings(writer.get("overlap_paths"), "competing writer overlap_paths", allow_empty=False))
++        overlaps.append({"number": _number(writer.get("number"), "competing writer number"), "overlap_paths": paths})
++    overlaps.sort(key=lambda item: item["number"])
++    binding = {
++        "authority_main_head_sha": _sha(authority.get("main_head_sha"), "authority.main_head_sha"),
++        "authority_main_tree_sha": _sha(authority.get("main_tree_sha"), "authority.main_tree_sha"),
++        "candidate_base_sha": _sha(candidate.get("base_sha"), "candidate.base_sha"),
++        "candidate_head_sha": _sha(candidate.get("head_sha"), "candidate.head_sha"),
++        "candidate_head_tree_sha": _sha(candidate.get("head_tree_sha"), "candidate.head_tree_sha"),
++        "scope_sha256": scope["scope_sha256"],
++        "workflow_blob_inventory_sha256": workflow_blobs["head_workflow_inventory_sha256"],
++        "contract_blob_sha": _sha(snapshot.get("contract_blob_sha"), "contract_blob_sha"),
++        "reobserved_main_head_sha": _sha(reobserved.get("main_head_sha"), "reobservation.main_head_sha"),
++        "reobserved_candidate_base_sha": _sha(reobserved.get("base_sha"), "reobservation.base_sha"),
++        "reobserved_candidate_head_sha": _sha(reobserved.get("head_sha"), "reobservation.head_sha"),
++        "reobserved_candidate_head_tree_sha": _sha(reobserved.get("head_tree_sha"), "reobservation.head_tree_sha"),
++        "reobserved_scope_sha256": _text(reobserved.get("scope_sha256"), "reobservation.scope_sha256"),
++        "reobserved_workflow_blob_inventory_sha256": _text(reobserved.get("workflow_blob_inventory_sha256"), "reobservation.workflow_blob_inventory_sha256"),
++        "reobserved_contract_blob_sha": _sha(reobserved.get("contract_blob_sha"), "reobservation.contract_blob_sha"),
++    }
++    blocker: str | None = None
++    if binding["authority_main_head_sha"] != binding["candidate_base_sha"] or binding["reobserved_main_head_sha"] != binding["authority_main_head_sha"] or binding["reobserved_candidate_base_sha"] != binding["candidate_base_sha"]:
++        blocker = "BASE_DRIFT"
++    elif binding["reobserved_candidate_head_sha"] != binding["candidate_head_sha"]:
++        blocker = "HEAD_DRIFT"
++    elif binding["reobserved_candidate_head_tree_sha"] != binding["candidate_head_tree_sha"]:
++        blocker = "TREE_DRIFT"
++    elif binding["reobserved_scope_sha256"] != binding["scope_sha256"]:
++        blocker = "SCOPE_DRIFT"
++    elif binding["reobserved_workflow_blob_inventory_sha256"] != binding["workflow_blob_inventory_sha256"] or workflow_blob_blocker:
++        blocker = "WORKFLOW_BLOB_DRIFT"
++    elif binding["reobserved_contract_blob_sha"] != binding["contract_blob_sha"]:
++        blocker = "CONTRACT_BLOB_DRIFT"
++    elif candidate.get("mergeable") is not True:
++        blocker = "NOT_MERGEABLE"
++    elif overlaps:
++        blocker = "COMPETING_WRITER_OVERLAP"
++    elif supersession_blocker:
++        blocker = supersession_blocker
++    elif workflow_blockers:
++        blocker = workflow_blockers[0]
++    elif candidate.get("draft"):
++        blocker = "DRAFT_REVIEW_PENDING"
++    state = "HOLD" if blocker else "PROMOTE_REPOSITORY_CANDIDATE"
++    return {
++        "schema": RECEIPT_SCHEMA,
++        "repository": _text(snapshot.get("repository"), "repository"),
++        "pr_number": _number(candidate.get("number"), "candidate.number"),
++        "state": state,
++        "first_blocker": blocker,
++        "smallest_safe_next_action": _next_action(blocker),
++        "binding": binding,
++        "scope": scope,
++        "workflow_blobs": workflow_blobs,
++        "workflows": workflows,
++        "review": _reviews(snapshot, candidate),
++        "competing_writers": overlaps,
++        "supersession": supersession,
++        "repository_readiness": state,
++        "external_boundaries": _external(snapshot, contract),
++        "completion_claims": {
++            "PASS": False,
++            "FINAL_PASS": False,
++            "EFFECT_ACK_DONE": False,
++            "EXTERNAL_EFFECT": False,
++            "ZENODO_EFFECT": False,
++            "ARXIV_EFFECT": False,
++            "IETF_EFFECT": False,
++        },
++    }
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("command", choices=("evaluate",))
++    parser.add_argument("--input", default="-", help="snapshot JSON file, or - for stdin")
++    parser.add_argument("--contract", type=pathlib.Path, help="explicit observer contract")
++    args = parser.parse_args(argv)
++    try:
++        raw = json.load(sys.stdin) if args.input == "-" else json.loads(pathlib.Path(args.input).read_text(encoding="utf-8"))
++        result = evaluate(_object(raw, "snapshot"), load_contract(args.contract))
++    except (OSError, UnicodeError, json.JSONDecodeError, ReadinessBlock) as exc:
++        result = {
++            "schema": RECEIPT_SCHEMA,
++            "state": "HOLD",
++            "first_blocker": "INVALID_PUBLICATION_CANDIDATE_READINESS_SNAPSHOT",
++            "smallest_safe_next_action": "RECONSTRUCT_A_COMPLETE_EXACT_HEAD_READ_ONLY_SNAPSHOT",
++            "detail": str(exc),
++            "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False, "EXTERNAL_EFFECT": False},
++        }
++    print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main(sys.argv[1:]))
