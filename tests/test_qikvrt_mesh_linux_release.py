@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import pathlib
 import runpy
@@ -58,6 +59,9 @@ class T(unittest.TestCase):
             "host_apt_update_error_mode_any_required",
             "apt_source_date_override_rejection_required",
             "failed_native_build_diagnostic_log_required",
+            "cloud_root_filesystem_expansion_required",
+            "vm_payload_offline_readback_required",
+            "bounded_effect_ack_event_shape_required",
             "real_virt_customize_debug_trace_required",
         ]:
             self.assertTrue(policy["build_acceptance"][key])
@@ -118,6 +122,16 @@ class T(unittest.TestCase):
         self.assertEqual(
             policy["base_distribution"]["max_supported_build_epoch_utc"],
             4102444800,
+        )
+        self.assertEqual(
+            policy["base_distribution"]["cloud_root_partition"], "/dev/sda1"
+        )
+        self.assertEqual(
+            policy["base_distribution"]["guest_disk_size_bytes"], 20 * 1024**3
+        )
+        self.assertEqual(
+            policy["base_distribution"]["guest_root_filesystem_min_bytes"],
+            18 * 1024**3,
         )
 
     def test_workflow(self):
@@ -678,6 +692,187 @@ class T(unittest.TestCase):
             "Acquire::Check-Valid-Until=0",
         ]:
             self.assertNotIn(disabled, base_raw)
+        self.assertEqual(base_namespace["VM_DISK_SIZE_BYTES"], 20 * 1024**3)
+        self.assertEqual(
+            base_namespace["VM_ROOT_FILESYSTEM_MIN_BYTES"], 18 * 1024**3
+        )
+        self.assertEqual(
+            base_namespace["UBUNTU_CLOUD_ROOT_PARTITION"],
+            policy["base_distribution"]["cloud_root_partition"],
+        )
+        self.assertEqual(
+            base_namespace["VM_DISK_SIZE_BYTES"],
+            policy["base_distribution"]["guest_disk_size_bytes"],
+        )
+        self.assertEqual(
+            base_namespace["VM_ROOT_FILESYSTEM_MIN_BYTES"],
+            policy["base_distribution"]["guest_root_filesystem_min_bytes"],
+        )
+        self.assertNotIn(
+            'shutil.copy2(cloud,qcow);run("qemu-img","resize"', base_raw
+        )
+        self.assertNotIn('"qemu-img","resize"', base_raw)
+        self.assertIn("create_expanded_cloud_image(cloud,qcow,env)", base_raw)
+        self.assertIn("cloud.unlink()", base_raw)
+        self.assertIn(
+            "validate_vm_payload_readback(qcow,plain,service,first,env)", base_raw
+        )
+        build_raw = base_raw[base_raw.index("def build(") :]
+        self.assertLess(
+            build_raw.index("create_expanded_cloud_image(cloud,qcow,env)"),
+            build_raw.index('run("virt-customize","--network"'),
+        )
+        self.assertLess(
+            build_raw.index('run("virt-customize","--network"'),
+            build_raw.index(
+                "validate_vm_payload_readback(qcow,plain,service,first,env)"
+            ),
+        )
+        self.assertLess(
+            build_raw.index(
+                "validate_vm_payload_readback(qcow,plain,service,first,env)"
+            ),
+            build_raw.index('run("qemu-img","check",str(qcow))'),
+        )
+        expanded_calls = []
+
+        def record_expansion(*args, **kwargs):
+            expanded_calls.append((args, kwargs))
+            return ""
+
+        expansion_helper = base_namespace["create_expanded_cloud_image"]
+        with mock.patch.dict(
+            expansion_helper.__globals__, {"run": record_expansion}
+        ):
+            expansion_helper(
+                pathlib.Path("pinned-cloud.qcow2"),
+                pathlib.Path("expanded.qcow2"),
+                {"LIBGUESTFS_BACKEND": "direct"},
+            )
+        self.assertEqual(
+            expanded_calls,
+            [
+                (
+                    (
+                        "qemu-img",
+                        "create",
+                        "-f",
+                        "qcow2",
+                        "-o",
+                        "preallocation=metadata",
+                        "expanded.qcow2",
+                        str(20 * 1024**3),
+                    ),
+                    {"env": {"LIBGUESTFS_BACKEND": "direct"}},
+                ),
+                (
+                    (
+                        "virt-resize",
+                        "--format",
+                        "qcow2",
+                        "--output-format",
+                        "qcow2",
+                        "--expand",
+                        "/dev/sda1",
+                        "pinned-cloud.qcow2",
+                        "expanded.qcow2",
+                    ),
+                    {"env": {"LIBGUESTFS_BACKEND": "direct"}},
+                ),
+            ],
+        )
+        payload_command = base_namespace["vm_payload_validation_command"](12345)
+        for text in [
+            f'root_bytes\" -ge {18 * 1024**3}',
+            'stat -c %s /opt/qikvrt/qikvrt-mesh-linux.oci.tar',
+            '" -eq 12345',
+            "test -s /etc/systemd/system/qikvrt-mesh.service",
+            "test -x /usr/local/sbin/qikvrt-firstboot",
+            "systemctl is-enabled --quiet docker",
+            "systemctl is-enabled --quiet qikvrt-mesh.service",
+            base_namespace["VM_PAYLOAD_RECEIPT"],
+            base_namespace["VM_PAYLOAD_RECEIPT_PATH"],
+        ]:
+            self.assertIn(text, payload_command)
+        subprocess.run(["bash", "-n", "-c", payload_command], check=True)
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            base_namespace["vm_payload_validation_command"](0)
+        readback_helper = base_namespace["validate_vm_payload_readback"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            oci = root / "payload.oci.tar"
+            service = root / "qikvrt-mesh.service"
+            first = root / "qikvrt-firstboot"
+            source_payloads = {
+                oci: b"oci payload bytes",
+                service: b"service bytes\n",
+                first: b"first-boot bytes\n",
+            }
+            for path, content in source_payloads.items():
+                path.write_bytes(content)
+            readback_command = base_namespace["vm_payload_readback_command"](
+                oci, service, first
+            )
+            for path, content in source_payloads.items():
+                self.assertIn(str(len(content)), readback_command)
+                self.assertIn(hashlib.sha256(content).hexdigest(), readback_command)
+            appliance = base_namespace["APPLIANCE_TEXT"].encode()
+            self.assertIn(str(len(appliance)), readback_command)
+            self.assertIn(hashlib.sha256(appliance).hexdigest(), readback_command)
+            self.assertIn(str(18 * 1024**3), readback_command)
+            self.assertIn("systemctl is-enabled --quiet docker.service", readback_command)
+            self.assertIn(
+                "systemctl is-enabled --quiet qikvrt-mesh.service", readback_command
+            )
+            subprocess.run(["bash", "-n", "-c", readback_command], check=True)
+
+            readback_run = mock.Mock(
+                return_value=base_namespace["VM_PAYLOAD_RECEIPT"]
+            )
+            with mock.patch.dict(
+                readback_helper.__globals__, {"run": readback_run}
+            ), mock.patch("builtins.print"):
+                readback_helper(
+                    pathlib.Path("expanded.qcow2"),
+                    oci,
+                    service,
+                    first,
+                    {"LIBGUESTFS_BACKEND": "direct"},
+                )
+            readback_run.assert_called_once_with(
+                "guestfish",
+                "--ro",
+                "--format=qcow2",
+                "-a",
+                "expanded.qcow2",
+                "-i",
+                "sh",
+                readback_command,
+                env={"LIBGUESTFS_BACKEND": "direct"},
+                capture=True,
+            )
+            with mock.patch.dict(
+                readback_helper.__globals__,
+                {"run": mock.Mock(return_value="wrong")},
+            ):
+                with self.assertRaisesRegex(RuntimeError, "receipt mismatch"):
+                    readback_helper(
+                        pathlib.Path("expanded.qcow2"),
+                        oci,
+                        service,
+                        first,
+                        {"LIBGUESTFS_BACKEND": "direct"},
+                    )
+            altered = root / "altered.oci.tar"
+            altered.write_bytes(b"OCI payload bytes")
+            self.assertEqual(altered.stat().st_size, oci.stat().st_size)
+            altered_command = base_namespace["vm_payload_readback_command"](
+                altered, service, first
+            )
+            self.assertNotEqual(readback_command, altered_command)
+            self.assertIn(
+                hashlib.sha256(altered.read_bytes()).hexdigest(), altered_command
+            )
 
         tools_path = str(TOOL.parent)
         sys.path.insert(0, tools_path)
@@ -687,6 +882,78 @@ class T(unittest.TestCase):
             )
         finally:
             sys.path.remove(tools_path)
+
+        receipt_validator = v2_namespace["validate_bounded_appliance_receipt"]
+        valid_receipt = {
+            "firefox_terminal_execution_observed": True,
+            "bounded_loopback_effect_ack_done": True,
+            "effect_ack_done_scope": "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
+            "external_effect": "NONE",
+            "physical_megast_execution": False,
+            "general_internet_reachability_claimed": False,
+            "backend_state": {
+                "events": 1,
+                "last_event": {"kind": "TERMINAL_INPUT_ACCEPTED"},
+            },
+        }
+        receipt_validator(valid_receipt)
+        invalid_receipts = [
+            None,
+            [],
+            {**valid_receipt, "external_effect": "INTERNET"},
+            {**valid_receipt, "backend_state": None},
+            {**valid_receipt, "backend_state": []},
+        ]
+        for required_key in [
+            "firefox_terminal_execution_observed",
+            "bounded_loopback_effect_ack_done",
+            "effect_ack_done_scope",
+            "external_effect",
+            "physical_megast_execution",
+            "general_internet_reachability_claimed",
+        ]:
+            invalid_receipts.append(
+                {key: value for key, value in valid_receipt.items() if key != required_key}
+            )
+        for boolean_key, integer_value in [
+            ("firefox_terminal_execution_observed", 1),
+            ("bounded_loopback_effect_ack_done", 1),
+            ("physical_megast_execution", 0),
+            ("general_internet_reachability_claimed", 0),
+        ]:
+            invalid_receipts.append(
+                {**valid_receipt, boolean_key: integer_value}
+            )
+        for event_count in [True, "1", 0, 2, []]:
+            invalid_receipts.append(
+                {
+                    **valid_receipt,
+                    "backend_state": {
+                        "events": event_count,
+                        "last_event": {"kind": "TERMINAL_INPUT_ACCEPTED"},
+                    },
+                }
+            )
+        for last_event in [None, [], {}, {"kind": "OTHER"}]:
+            invalid_receipts.append(
+                {
+                    **valid_receipt,
+                    "backend_state": {"events": 1, "last_event": last_event},
+                }
+            )
+        invalid_receipts.append(
+            {
+                **valid_receipt,
+                "backend_state": {
+                    "events": [{"effect": "TERMINAL_INPUT_ACCEPTED"}],
+                    "last_event": {"kind": "TERMINAL_INPUT_ACCEPTED"},
+                },
+            }
+        )
+        for index, invalid_receipt in enumerate(invalid_receipts):
+            with self.subTest(invalid_receipt=index):
+                with self.assertRaises(RuntimeError):
+                    receipt_validator(invalid_receipt)
 
         expected = v2_namespace["expected_release_asset_names"]()
         self.assertEqual(len(expected), 16)

@@ -51,7 +51,8 @@ effect_ack_done_scope                = BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY
 external_effect                      = NONE
 physical_megast_execution            = false
 general_internet_reachability        = false
-backend event                        = TERMINAL_INPUT_ACCEPTED
+backend_state.events                 = 1
+backend_state.last_event.kind        = TERMINAL_INPUT_ACCEPTED
 ```
 
 The architecture artifact set includes that receipt and the captured container
@@ -116,6 +117,29 @@ remain between the pinned Ubuntu `20260801` release epoch and 2100. The real
 cushioned synchronization as its first in-guest command, repeats the same
 global, binary-specific, and per-source APT checks, and only then executes
 `--install docker.io`.
+
+The pinned Noble cloud images use `/dev/sda1` as their root filesystem. The
+builder creates a fresh 20-GiB QCOW2 and uses `virt-resize --expand /dev/sda1`
+to grow both the partition and its filesystem; changing only the outer QCOW2
+capacity is not accepted. After customization, a final in-guest check requires
+the root filesystem to expose at least 18 GiB, requires the copied OCI tar,
+service, first-boot helper, and deterministic appliance description, and
+requires both service units to be enabled before writing a bounded build
+receipt. A separate read-only `guestfish` inspection verifies the same root
+minimum, exact byte counts and SHA-256 digests for all four payload files, both
+enabled-unit states, and the persisted receipt before image conversion. A
+short or equal-length corrupt copy therefore blocks even if later
+customization actions are attempted after the transfer diagnostic. These are
+offline image-assembly checks; they do not establish a VM boot, service start,
+deployment, or publication.
+
+The container receipt consumer follows the pinned producer's event-count and
+last-event shape: `backend_state.events` must be the JSON integer `1`, and
+`backend_state.last_event.kind` must be `TERMINAL_INPUT_ACCEPTED`. Missing,
+wrongly typed, or differently valued fields in that bounded shape block with a
+controlled validation error; they cannot become an incidental Python type
+error or a successful acceptance. This check does not assert every field of a
+general Effect-Ack receipt schema.
 
 The native build writes its complete command output to an
 architecture-specific runner log instead of flooding the GitHub job stream

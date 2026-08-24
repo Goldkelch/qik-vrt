@@ -143,6 +143,36 @@ def validate_release_readback(assets: Path, document: Path) -> None:
 _original_build = base.build
 
 
+def validate_bounded_appliance_receipt(document: object) -> None:
+    if not isinstance(document, dict):
+        raise RuntimeError("bounded appliance receipt is not an object")
+    required = {
+        "firefox_terminal_execution_observed": True,
+        "bounded_loopback_effect_ack_done": True,
+        "effect_ack_done_scope": "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
+        "external_effect": "NONE",
+        "physical_megast_execution": False,
+        "general_internet_reachability_claimed": False,
+    }
+    for key, expected in required.items():
+        actual = document.get(key)
+        if type(actual) is not type(expected) or actual != expected:
+            raise RuntimeError(
+                f"bounded appliance receipt mismatch: {key}={actual!r}"
+            )
+    backend_state = document.get("backend_state")
+    if not isinstance(backend_state, dict):
+        raise RuntimeError("bounded appliance backend_state is not an object")
+    event_count = backend_state.get("events")
+    if type(event_count) is not int or event_count != 1:
+        raise RuntimeError("bounded terminal-input backend event count is not one")
+    last_event = backend_state.get("last_event")
+    if not isinstance(last_event, dict):
+        raise RuntimeError("bounded terminal-input backend last_event is not an object")
+    if last_event.get("kind") != "TERMINAL_INPUT_ACCEPTED":
+        raise RuntimeError("bounded terminal-input backend event was not reobserved")
+
+
 def _run_container_acceptance(architecture: str, output: Path) -> None:
     image = f"qikvrt-mesh-linux:{base.VERSION}"
     container = f"qikvrt-mesh-linux-e2e-{architecture}"
@@ -200,22 +230,7 @@ def _run_container_acceptance(architecture: str, output: Path) -> None:
             check=True,
         )
         document = json.loads(receipt.read_text())
-        required = {
-            "firefox_terminal_execution_observed": True,
-            "bounded_loopback_effect_ack_done": True,
-            "effect_ack_done_scope": "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
-            "external_effect": "NONE",
-            "physical_megast_execution": False,
-            "general_internet_reachability_claimed": False,
-        }
-        for key, expected in required.items():
-            if document.get(key) != expected:
-                raise RuntimeError(
-                    f"bounded appliance receipt mismatch: {key}={document.get(key)!r}"
-                )
-        events = document.get("backend_state", {}).get("events", [])
-        if len(events) != 1 or events[0].get("effect") != "TERMINAL_INPUT_ACCEPTED":
-            raise RuntimeError("bounded terminal-input backend event was not reobserved")
+        validate_bounded_appliance_receipt(document)
     finally:
         captured = subprocess.run(
             ["docker", "logs", container],

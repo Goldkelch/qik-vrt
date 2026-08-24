@@ -21,6 +21,11 @@ CLOCK_OBSERVATION_WINDOW_SECONDS=30
 TRUSTED_HOST_EPOCH_BACKWARD_SKEW_SECONDS=30
 TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS=7200
 APT_SOURCE_DATE_OVERRIDE_REGEX=r'(^[[:space:]]*(Check-Date|Check-Valid-Until)[[:space:]]*:)|(^[[:space:]]*deb(-src)?[[:space:]]+\[[^]]*(check-date|check-valid-until)[[:space:]]*=)'
+VM_DISK_SIZE_BYTES=20*1024**3
+VM_ROOT_FILESYSTEM_MIN_BYTES=18*1024**3
+UBUNTU_CLOUD_ROOT_PARTITION="/dev/sda1"
+VM_PAYLOAD_RECEIPT_PATH="/etc/qikvrt/BUILD_ACCEPTANCE"
+VM_PAYLOAD_RECEIPT="QIKVRT_VM_PAYLOAD_READBACK=OK"
 UBUNTU_BASE=f"https://cloud-images.ubuntu.com/releases/noble/release-{UBUNTU_RELEASE}"
 ARCH={
  "amd64":{
@@ -145,12 +150,17 @@ ExecStop=/usr/bin/docker stop qikvrt-mesh-linux
 [Install]
 WantedBy=multi-user.target
 '''
-FIRSTBOOT='''#!/usr/bin/env bash
+APPLIANCE_TEXT='''QIK-VRT Mesh Linux 1.0.0
+Firefox/noVNC: http://<vm-address>:6080/vnc.html
+Effect-Ack backend: loopback-only
+'''
+FIRSTBOOT=f'''#!/usr/bin/env bash
 set -euo pipefail
 systemctl enable docker
 systemctl enable qikvrt-mesh.service
 install -d -m 0755 /etc/qikvrt
-printf '%s\n' 'QIK-VRT Mesh Linux 1.0.0' 'Firefox/noVNC: http://<vm-address>:6080/vnc.html' 'Effect-Ack backend: loopback-only' > /etc/qikvrt/APPLIANCE.txt
+cat > /etc/qikvrt/APPLIANCE.txt <<'QIKVRT_APPLIANCE_EOF'
+{APPLIANCE_TEXT}QIKVRT_APPLIANCE_EOF
 '''
 OVF='''<?xml version="1.0" encoding="UTF-8"?>
 <Envelope ovf:version="2.0" xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"><References><File ovf:id="file1" ovf:href="qikvrt-mesh-linux-1.0.0-amd64.vmdk" ovf:size="__VMDK_SIZE__"/></References><DiskSection><Info>Virtual disk</Info><Disk ovf:diskId="disk1" ovf:fileRef="file1" ovf:capacity="20" ovf:capacityAllocationUnits="byte * 2^30" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/></DiskSection><NetworkSection><Info>Networks</Info><Network ovf:name="NAT"><Description>NAT</Description></Network></NetworkSection><VirtualSystem ovf:id="qikvrt-mesh-linux-1.0.0"><Info>QIK-VRT Mesh Linux</Info><Name>QIK-VRT Mesh Linux 1.0.0</Name><OperatingSystemSection ovf:id="94"><Info>Ubuntu Linux 64-bit</Info></OperatingSystemSection><VirtualHardwareSection><Info>Virtual hardware</Info><System><vssd:ElementName>Virtual Hardware Family</vssd:ElementName><vssd:InstanceID>0</vssd:InstanceID><vssd:VirtualSystemIdentifier>QIK-VRT Mesh Linux</vssd:VirtualSystemIdentifier><vssd:VirtualSystemType>vmx-19</vssd:VirtualSystemType></System><Item><rasd:ElementName>2 CPUs</rasd:ElementName><rasd:InstanceID>1</rasd:InstanceID><rasd:ResourceType>3</rasd:ResourceType><rasd:VirtualQuantity>2</rasd:VirtualQuantity></Item><Item><rasd:ElementName>4096 MB</rasd:ElementName><rasd:InstanceID>2</rasd:InstanceID><rasd:ResourceType>4</rasd:ResourceType><rasd:VirtualQuantity>4096</rasd:VirtualQuantity></Item><Item><rasd:Address>0</rasd:Address><rasd:ElementName>SATA</rasd:ElementName><rasd:InstanceID>3</rasd:InstanceID><rasd:ResourceSubType>AHCI</rasd:ResourceSubType><rasd:ResourceType>20</rasd:ResourceType></Item><Item><rasd:AddressOnParent>0</rasd:AddressOnParent><rasd:ElementName>Disk 1</rasd:ElementName><rasd:HostResource>ovf:/disk/disk1</rasd:HostResource><rasd:InstanceID>4</rasd:InstanceID><rasd:Parent>3</rasd:Parent><rasd:ResourceType>17</rasd:ResourceType></Item><Item><rasd:AutomaticAllocation>true</rasd:AutomaticAllocation><rasd:Connection>NAT</rasd:Connection><rasd:ElementName>Ethernet</rasd:ElementName><rasd:InstanceID>5</rasd:InstanceID><rasd:ResourceType>10</rasd:ResourceType></Item></VirtualHardwareSection></VirtualSystem></Envelope>
@@ -178,6 +188,27 @@ def libguestfs_clock_sync_command()->str:
  target=now+CLOCK_CUSHION_SECONDS;latest=target+CLOCK_OBSERVATION_WINDOW_SECONDS
  if latest>MAX_SUPPORTED_BUILD_EPOCH:raise SystemExit(f"cushioned appliance UTC epoch exceeds supported build window: {target}")
  return f"set -eu; date -u -s '@{target}' >/dev/null; now=$(date -u +%s); [ \"$now\" -ge {target} ]; [ \"$now\" -le {latest} ]; check_date=true; check_valid_until=true; apt_get_check_date=true; apt_get_check_valid_until=true; apt_values=$(apt-config shell check_date Acquire::Check-Date/b check_valid_until Acquire::Check-Valid-Until/b apt_get_check_date Binary::apt-get::Acquire::Check-Date/b apt_get_check_valid_until Binary::apt-get::Acquire::Check-Valid-Until/b); eval \"$apt_values\"; if [ \"$check_date\" != true ] || [ \"$check_valid_until\" != true ] || [ \"$apt_get_check_date\" != true ] || [ \"$apt_get_check_valid_until\" != true ]; then echo 'BLOCK: guest APT date verification is disabled' >&2; exit 22; fi; apt_source_date_override_regex='{APT_SOURCE_DATE_OVERRIDE_REGEX}'; set +e; grep -ERisq --include='sources.list' --include='*.list' --include='*.sources' \"$apt_source_date_override_regex\" /etc/apt; apt_source_status=$?; set -e; case \"$apt_source_status\" in 0) echo 'BLOCK: guest APT source contains a per-source date-verification override' >&2; exit 22 ;; 1) ;; *) echo 'BLOCK: guest APT source date-verification configuration could not be read' >&2; exit 22 ;; esac; echo QIKVRT_LIBGUESTFS_CLOCK_SYNC=OK"
+def create_expanded_cloud_image(cloud:Path,qcow:Path,env:dict[str,str])->None:
+ run("qemu-img","create","-f","qcow2","-o","preallocation=metadata",str(qcow),str(VM_DISK_SIZE_BYTES),env=env)
+ run("virt-resize","--format","qcow2","--output-format","qcow2","--expand",UBUNTU_CLOUD_ROOT_PARTITION,str(cloud),str(qcow),env=env)
+def vm_payload_validation_command(oci_bytes:int)->str:
+ if oci_bytes<=0:raise ValueError("VM OCI payload size must be positive")
+ return f"set -eu; root_blocks=$(stat -f -c %b /); root_block_size=$(stat -f -c %S /); case \"$root_blocks:$root_block_size\" in *[!0-9:]*) exit 23 ;; esac; root_bytes=$((root_blocks * root_block_size)); [ \"$root_bytes\" -ge {VM_ROOT_FILESYSTEM_MIN_BYTES} ]; test \"$(stat -c %s /opt/qikvrt/qikvrt-mesh-linux.oci.tar)\" -eq {oci_bytes}; test -s /etc/systemd/system/qikvrt-mesh.service; test -x /usr/local/sbin/qikvrt-firstboot; test -s /etc/qikvrt/APPLIANCE.txt; systemctl is-enabled --quiet docker.service; systemctl is-enabled --quiet qikvrt-mesh.service; printf '%s\\n' '{VM_PAYLOAD_RECEIPT}' > {VM_PAYLOAD_RECEIPT_PATH}"
+def vm_payload_readback_command(oci:Path,service:Path,first:Path)->str:
+ files=[(oci,"/opt/qikvrt/qikvrt-mesh-linux.oci.tar"),(service,"/etc/systemd/system/qikvrt-mesh.service"),(first,"/usr/local/sbin/qikvrt-firstboot")]
+ checks=[]
+ for host,guest in files:
+  if not host.is_file() or host.stat().st_size<=0:raise ValueError(f"VM payload source is missing or empty: {host}")
+  checks.append(f"test \"$(stat -c %s {guest})\" -eq {host.stat().st_size}; printf '%s  %s\\n' '{sha256(host)}' '{guest}' | sha256sum --check --strict - >/dev/null")
+ appliance_bytes=len(APPLIANCE_TEXT.encode());appliance_sha=hashlib.sha256(APPLIANCE_TEXT.encode()).hexdigest()
+ checks.append(f"test \"$(stat -c %s /etc/qikvrt/APPLIANCE.txt)\" -eq {appliance_bytes}; printf '%s  %s\\n' '{appliance_sha}' '/etc/qikvrt/APPLIANCE.txt' | sha256sum --check --strict - >/dev/null")
+ checks.extend([f"test \"$(cat {VM_PAYLOAD_RECEIPT_PATH})\" = '{VM_PAYLOAD_RECEIPT}'","systemctl is-enabled --quiet docker.service","systemctl is-enabled --quiet qikvrt-mesh.service",f"printf '%s\\n' '{VM_PAYLOAD_RECEIPT}'"])
+ return f"set -eu; root_blocks=$(stat -f -c %b /); root_block_size=$(stat -f -c %S /); case \"$root_blocks:$root_block_size\" in *[!0-9:]*) exit 23 ;; esac; root_bytes=$((root_blocks * root_block_size)); [ \"$root_bytes\" -ge {VM_ROOT_FILESYSTEM_MIN_BYTES} ]; "+"; ".join(checks)
+def validate_vm_payload_readback(qcow:Path,oci:Path,service:Path,first:Path,env:dict[str,str])->None:
+ command=vm_payload_readback_command(oci,service,first)
+ observed=run("guestfish","--ro","--format=qcow2","-a",str(qcow),"-i","sh",command,env=env,capture=True)
+ if observed!=VM_PAYLOAD_RECEIPT:raise RuntimeError(f"VM payload receipt mismatch: {observed!r}")
+ print(VM_PAYLOAD_RECEIPT,flush=True)
 def archive(commit:str,paths:list[str],target:Path)->None:
  target.mkdir(parents=True,exist_ok=True);p1=subprocess.Popen(["git","archive",commit,*paths],stdout=subprocess.PIPE);subprocess.run(["tar","-x","-C",str(target)],stdin=p1.stdout,check=True);assert p1.stdout is not None;p1.stdout.close()
  if p1.wait()!=0:raise SystemExit(f"git archive failed: {commit}")
@@ -197,7 +228,7 @@ def build(arch:str,output:Path)->None:
  for p in [context/"root/opt/qikvrt",context/"root/usr/local/bin",downloads,dist,output]:p.mkdir(parents=True,exist_ok=True)
  fsha,gsha=prepare(context,downloads,cfg);write(context/"Dockerfile",DOCKERFILE);write(context/"root/usr/local/bin/qikvrt-mesh-entrypoint",ENTRYPOINT,True);write(context/"root/usr/local/bin/qikvrt-launch-firefox",LAUNCH_FIREFOX,True);write(context/"root/usr/local/bin/qikvrt-appliance-selftest",SELFTEST,True)
  image=f"qikvrt-mesh-linux:{VERSION}";run("docker","build","--platform",f"linux/{arch}","--build-arg",f"ROOTFS={cfg['rootfs']}","--build-arg",f"TARGETARCH={arch}","--build-arg",f"QIKVRT_VERSION={VERSION}","-t",image,str(context));run("docker","run","--rm","--platform",f"linux/{arch}","--entrypoint","/usr/local/bin/qikvrt-appliance-selftest",image)
- oci=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.oci.tar";run("docker","save",image,"-o",str(oci));run("zstd","-T0","-19","--rm",str(oci));cloud=downloads/cfg["cloud"];download(f"{UBUNTU_BASE}/{cfg['cloud']}",cloud);verify(cloud,cfg["cloud_sha"]);qcow=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.qcow2";shutil.copy2(cloud,qcow);run("qemu-img","resize",str(qcow),"20G");plain=work/"qikvrt-mesh-linux.oci.tar";run("zstd","-d",str(oci)+".zst","-o",str(plain));service=work/"qikvrt-mesh.service";first=work/"qikvrt-firstboot";write(service,SERVICE);write(first,FIRSTBOOT,True);env={**os.environ,"LIBGUESTFS_BACKEND":"direct","LIBGUESTFS_DEBUG":"1","LIBGUESTFS_TRACE":"1"};clock_sync=libguestfs_clock_sync_command();run("virt-customize","--network","-a",str(qcow),"--run-command",clock_sync,"--install","docker.io","--mkdir","/opt/qikvrt","--copy-in",f"{plain}:/opt/qikvrt","--copy-in",f"{service}:/etc/systemd/system","--copy-in",f"{first}:/usr/local/sbin","--run-command","chmod 0755 /usr/local/sbin/qikvrt-firstboot","--run-command","/usr/local/sbin/qikvrt-firstboot","--run-command","truncate -s 0 /etc/machine-id","--selinux-relabel",env=env);run("qemu-img","check",str(qcow));qcopy=work/f"{arch}.qcow2";shutil.copy2(qcow,qcopy);run("zstd","-T0","-19","--rm",str(qcopy));shutil.move(str(qcopy)+".zst",str(qcow)+".zst");vhdx=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.vhdx";run("qemu-img","convert","-p","-O","vhdx","-o","subformat=dynamic",str(qcow),str(vhdx));run("zstd","-T0","-19","--rm",str(vhdx))
+ oci=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.oci.tar";run("docker","save",image,"-o",str(oci));run("zstd","-T0","-19","--rm",str(oci));cloud=downloads/cfg["cloud"];download(f"{UBUNTU_BASE}/{cfg['cloud']}",cloud);verify(cloud,cfg["cloud_sha"]);qcow=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.qcow2";env={**os.environ,"LIBGUESTFS_BACKEND":"direct","LIBGUESTFS_DEBUG":"1","LIBGUESTFS_TRACE":"1"};create_expanded_cloud_image(cloud,qcow,env);cloud.unlink();plain=work/"qikvrt-mesh-linux.oci.tar";run("zstd","-d",str(oci)+".zst","-o",str(plain));service=work/"qikvrt-mesh.service";first=work/"qikvrt-firstboot";write(service,SERVICE);write(first,FIRSTBOOT,True);clock_sync=libguestfs_clock_sync_command();payload_validation=vm_payload_validation_command(plain.stat().st_size);run("virt-customize","--network","-a",str(qcow),"--run-command",clock_sync,"--install","docker.io","--mkdir","/opt/qikvrt","--copy-in",f"{plain}:/opt/qikvrt","--copy-in",f"{service}:/etc/systemd/system","--copy-in",f"{first}:/usr/local/sbin","--run-command","chmod 0755 /usr/local/sbin/qikvrt-firstboot","--run-command","/usr/local/sbin/qikvrt-firstboot","--run-command","truncate -s 0 /etc/machine-id","--run-command",payload_validation,"--selinux-relabel",env=env);validate_vm_payload_readback(qcow,plain,service,first,env);run("qemu-img","check",str(qcow));qcopy=work/f"{arch}.qcow2";shutil.copy2(qcow,qcopy);run("zstd","-T0","-19","--rm",str(qcopy));shutil.move(str(qcopy)+".zst",str(qcow)+".zst");vhdx=dist/f"qikvrt-mesh-linux-{VERSION}-{arch}.vhdx";run("qemu-img","convert","-p","-O","vhdx","-o","subformat=dynamic",str(qcow),str(vhdx));run("zstd","-T0","-19","--rm",str(vhdx))
  if arch=="amd64":
   vmdk=dist/f"qikvrt-mesh-linux-{VERSION}-amd64.vmdk";run("qemu-img","convert","-p","-O","vmdk","-o","subformat=streamOptimized",str(qcow),str(vmdk));ovf=dist/f"qikvrt-mesh-linux-{VERSION}-amd64.ovf";write(ovf,OVF.replace("__VMDK_SIZE__",str(vmdk.stat().st_size)));run("tar","-cf",str(dist/f"qikvrt-mesh-linux-{VERSION}-amd64.ova"),ovf.name,vmdk.name,cwd=dist);ovf.unlink();vmdk.unlink()
  qcow.unlink()
