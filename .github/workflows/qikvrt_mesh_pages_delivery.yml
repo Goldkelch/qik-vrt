@@ -46,6 +46,7 @@ jobs:
     timeout-minutes: 15
     env:
       QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.event.build.commit || github.sha }}
+      QIKVRT_EVIDENCE_DIR: .qikvrt/evidence/mesh-pages
     steps:
       - name: Check out literal exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -70,7 +71,7 @@ jobs:
           test "$actual_head" = "$QIKVRT_EXACT_HEAD"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'QIKVRT_EXACT_TREE=%s\n' "$actual_tree" >> "$GITHUB_ENV"
-          mkdir -p .qikvrt/mesh-pages
+          mkdir -p "$QIKVRT_EVIDENCE_DIR"
 
       - name: Verify deterministic Registry-to-Pages projection
         run: python3 -B tools/qikvrt_mesh_pages.py check
@@ -85,8 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B tools/qikvrt_mesh_pages.py system-test \
-            --output .qikvrt/mesh-pages/local-systemtest-receipt.json \
-            | tee .qikvrt/mesh-pages/local-systemtest-stdout.json
+            --output "$QIKVRT_EVIDENCE_DIR/local-systemtest-receipt.json" \
+            | tee "$QIKVRT_EVIDENCE_DIR/local-systemtest-stdout.json"
 
       - name: Verify repository-native integrity
         run: python3 -B tools/qikvrt_integrity.py verify
@@ -101,14 +102,14 @@ jobs:
             --exact-tree "$QIKVRT_EXACT_TREE" \
             --run-id "$GITHUB_RUN_ID" \
             --event "$GITHUB_EVENT_NAME" \
-            --output .qikvrt/mesh-pages/pages-reobservation-receipt.json \
-            | tee .qikvrt/mesh-pages/pages-reobservation-stdout.json
+            --output "$QIKVRT_EVIDENCE_DIR/pages-reobservation-receipt.json" \
+            | tee "$QIKVRT_EVIDENCE_DIR/pages-reobservation-stdout.json"
 
       - name: Preserve exact-run audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-mesh-pages-${{ github.run_id }}
-          path: .qikvrt/mesh-pages
+          path: ${{ env.QIKVRT_EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 30
