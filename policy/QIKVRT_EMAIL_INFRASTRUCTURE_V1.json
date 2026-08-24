@@ -1,0 +1,118 @@
+{
+  "schema": "qikvrt_email_infrastructure_policy_v1",
+  "version": "1.0.0",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "base_head": "3cb6273924f3de310e3bd1cd5b827e8e3529220a",
+    "base_tree": "864b7728c1c52687e4a11668bf0a2ee3fec08365",
+    "issue": 856,
+    "product_owner": "Ingolf Lohmann"
+  },
+  "historical_anchor": {
+    "id": "KARLSRUHE_CSNET_1984",
+    "qualified_claim": "FIRST_DIRECT_INTERNET_EMAIL_TO_A_SEPARATE_EMAIL_SERVER_ACCESSIBLE_THROUGHOUT_GERMANY",
+    "sent": "1984-08-02 12:35 US local time",
+    "received": "1984-08-03 10:14 local time in Karlsruhe",
+    "sender": "Laura Breeden",
+    "origin": "CSNET Coordination and Information Center, BBN, Boston, USA",
+    "recipients": ["Werner Zorn", "Michael Rotert"],
+    "addresses": ["zorn@germany.csnet", "rotert@germany.csnet"],
+    "path": ["CSNET-SH", "CSNET relay", "manual retrieval in Karlsruhe"],
+    "scope_guard": "EMAIL_EXISTED_IN_GERMANY_BEFORE_THIS_EVENT",
+    "sources": [
+      "https://www.kit.edu/kit/english/pi_2009_090.php",
+      "https://www.kit.edu/kit/english/pi_2014_15153.php"
+    ]
+  },
+  "protocol_lineage": [
+    {"era": "1982", "capabilities": ["SMTP", "RFC822_MESSAGE_FORMAT"], "standards": ["RFC821", "RFC822"]},
+    {"era": "1984", "capabilities": ["CSNET_RELAY", "MANUAL_RETRIEVAL"], "standards": ["CSNET"]},
+    {"era": "1986", "capabilities": ["DNS_MX", "UUCP", "X400_RFC822_GATEWAY"], "standards": ["RFC974", "RFC976", "RFC987"]},
+    {"era": "1992-1996", "capabilities": ["MIME", "POP3", "IMAP"], "standards": ["RFC2045", "RFC2046", "RFC1939"]},
+    {"era": "2008-2014", "capabilities": ["MODERN_SMTP", "MESSAGE_SUBMISSION", "SMTPUTF8", "SPF", "DKIM", "DMARC"], "standards": ["RFC5321", "RFC5322", "RFC6409", "RFC6531", "RFC7208", "RFC6376", "RFC7489"]},
+    {"era": "2018-2021", "capabilities": ["TLS_FIRST_ACCESS", "MTA_STS", "TLS_REPORTING", "ARC", "JMAP", "IMAP4REV2"], "standards": ["RFC8314", "RFC8461", "RFC8460", "RFC8617", "RFC8620", "RFC8621", "RFC9051"]},
+    {"era": "2026", "capabilities": ["SAAS_MAILBOX", "API_FIRST_MAILBOX", "CLOUD_RELAY", "TRANSACTIONAL_API", "INBOUND_WORKERS", "EVENT_NOTIFICATIONS", "HYBRID", "PRIVATE_CLOUD", "MULTI_CLOUD", "SOVEREIGN_CLOUD", "ENCRYPTED_CLOUD"], "standards": ["PROVIDER_APIS", "WEBHOOKS", "CLOUD_EVENTS"]}
+  ],
+  "standards": [
+    "RFC5321", "RFC5322", "RFC6409", "RFC2045", "RFC2046", "RFC1939",
+    "RFC9051", "RFC8620", "RFC8621", "RFC6531", "RFC6532", "RFC6186",
+    "RFC8314", "RFC7672", "RFC8461", "RFC8460", "RFC7208", "RFC6376",
+    "RFC7489", "RFC8617", "RFC3461", "RFC3464", "RFC8551", "RFC3156"
+  ],
+  "layers": [
+    "ADDRESS_AND_IDENTITY", "MESSAGE_FORMAT", "MIME_CONTENT", "MAIL_USER_AGENT",
+    "MESSAGE_SUBMISSION_AGENT", "MAIL_TRANSFER_AGENT", "DNS_MX_ROUTING",
+    "QUEUE_RETRY_AND_DSN", "MAIL_DELIVERY_AGENT", "MAILBOX_STORE",
+    "POP_IMAP_JMAP_ACCESS", "WEBMAIL_AND_MOBILE_CLIENT", "DOMAIN_AUTHENTICATION",
+    "TRANSPORT_CONFIDENTIALITY", "END_TO_END_SECURITY", "ABUSE_MALWARE_AND_POLICY",
+    "ARCHIVE_E_DISCOVERY_AND_RETENTION", "EVENTING_OBSERVABILITY_AND_EFFECT_ACK"
+  ],
+  "cloud_variants": [
+    "SAAS_MAILBOX", "HOSTED_SMTP_IMAP", "API_FIRST_MAILBOX", "TRANSACTIONAL_OUTBOUND",
+    "INBOUND_PROCESSING", "CLOUD_SMTP_RELAY", "SECURE_EMAIL_GATEWAY",
+    "HYBRID_ON_PREM_CLOUD", "PRIVATE_CLOUD_SELF_HOSTED", "CONTAINER_ORCHESTRATED",
+    "SERVERLESS_EVENT_DRIVEN", "MULTI_CLOUD_FAILOVER", "EDGE_ROUTING_WORKER",
+    "SOVEREIGN_REGULATED_CLOUD", "END_TO_END_ENCRYPTED_CLOUD", "CLOUD_ARCHIVE_E_DISCOVERY"
+  ],
+  "provider_adapters": {
+    "GOOGLE_WORKSPACE_GMAIL": ["SMTP_RELAY", "GMAIL_API", "CLOUD_PUBSUB_WATCH"],
+    "MICROSOFT_365_EXCHANGE_ONLINE": ["MAIL_FLOW", "MICROSOFT_GRAPH", "CHANGE_NOTIFICATION_WEBHOOK"],
+    "AMAZON_SES": ["SMTP_OR_API_SEND", "RECEIPT_RULE_INBOUND_PROCESSING"],
+    "CLOUDFLARE_EMAIL_SERVICE": ["MX_ROUTING", "EMAIL_WORKERS", "TRANSACTIONAL_SEND"],
+    "JMAP_PROVIDER_NEUTRAL": ["JMAP_CORE", "JMAP_MAIL", "PUSH"]
+  },
+  "event_model": {
+    "normal_operation": "EVENT_DRIVEN_ONLY",
+    "polling": "FORBIDDEN_AS_REGULAR_DOMAIN_WORK_MODE",
+    "lease_maintenance": "WATCH_OR_SUBSCRIPTION_RENEWAL_MAY_MAINTAIN_LIVENESS_BUT_MUST_NOT_START_DOMAIN_WORK",
+    "gap_recovery": "DETECTED_CURSOR_OR_HISTORY_GAP_TRIGGERS_EXACT_DELTA_RECONCILIATION",
+    "append_only_receipts": true,
+    "stages": [
+      "COMPOSED", "PREPARED", "SUBMITTED", "SMTP_ACCEPTED", "RELAYED",
+      "REMOTE_MTA_ACCEPTED", "MAILBOX_STORED", "MAILBOX_CHANGE_NOTIFIED",
+      "CLIENT_SYNCHRONIZED", "RENDERED", "OPTIONAL_READ_RECEIPT",
+      "EFFECT_PREPARED", "EFFECT_COMMITTED", "EFFECT_REOBSERVED"
+    ]
+  },
+  "invariants": [
+    "RFC5321_ENVELOPE != RFC5322_CONTENT",
+    "MESSAGE_SUBMISSION != SMTP_RELAY != FINAL_DELIVERY",
+    "SMTP_250 != MAILBOX_STORED",
+    "MAILBOX_STORED != CLIENT_SYNCHRONIZED",
+    "CLIENT_SYNCHRONIZED != RENDERED",
+    "RENDERED != HUMAN_READ",
+    "READ_RECEIPT != EFFECT_ACK",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "WEBHOOK_NOTIFICATION != MAILBOX_DELTA",
+    "CLOUD_EVENT != MESSAGE_CONTENT",
+    "SPF_DKIM_DMARC != NATURAL_PERSON_AUTHENTICATION",
+    "TLS_TRANSPORT != END_TO_END_CONTENT_CONFIDENTIALITY",
+    "M68000_ROUTE_DECISION != NETWORK_EFFECT"
+  ],
+  "security": {
+    "cleartext_submission_and_access": "FORBIDDEN",
+    "minimum_tls": "TLS_1_2_OR_NEWER_WITH_CURRENT_PLATFORM_POLICY_ALLOWED_TO_REQUIRE_NEWER",
+    "credentials": "NO_CREDENTIAL_IN_REPOSITORY_MESSAGE_RECEIPT_OR_M68000_CAPSULE",
+    "content_privacy": "NO_MESSAGE_CONTENT_IN_TELEMETRY; RECEIPTS_USE_DIGESTS_AND_MINIMUM_NECESSARY_METADATA",
+    "domain_authentication": ["SPF", "DKIM", "DMARC", "ARC_WHEN_FORWARDING_REQUIRES_IT"],
+    "relay_confidentiality": ["MTA_STS", "TLS_REPORTING", "OPTIONAL_DANE_SMTP"],
+    "content_security": ["MIME_VALIDATION", "MALWARE_SCAN", "DLP", "OPTIONAL_SMIME", "OPTIONAL_OPENPGP_MIME"]
+  },
+  "m68000": {
+    "kernel_id": "email_route_select_v1",
+    "source": "src/m68000/qikvrt_email_route_select.s",
+    "hex": "runtime/m68000/qikvrt_email_route_select.hex",
+    "input_flags": {
+      "0": "ENVELOPE_VALID", "1": "ROUTE_RESOLVED", "2": "TLS_POLICY_SATISFIED",
+      "3": "CONTENT_POLICY_CLEAR", "4": "DOMAIN_AUTH_ALIGNED",
+      "5": "RETRYABLE_DEPENDENCY_FAILURE", "6": "AUTHORITY_REQUIRED", "7": "AUTHORITY_PRESENT"
+    },
+    "decision_abi": {"0": "COMPLETE_ACCEPT_ROUTE", "1": "HOLD", "2": "REOBSERVE_RETRY", "3": "REQUEST_AUTHORITY"},
+    "d3": "PRESERVED_EXACTLY",
+    "external_effect": false
+  },
+  "boundaries": {
+    "implemented": ["LINEAGE_REGISTRY", "CLOUD_VARIANT_TAXONOMY", "EVENT_RECEIPT_CONTRACT", "M68000_ROUTE_KERNEL", "EXHAUSTIVE_REFERENCE_EQUIVALENCE", "HOST_ADAPTER_BOUNDARY", "EXACT_HEAD_WORKFLOW_GATE"],
+    "not_claimed": ["PRODUCTION_SMTP_SERVER", "PRODUCTION_IMAP_OR_JMAP_SERVER", "COMPLETE_PROVIDER_CONNECTOR_SET", "LIVE_MX_CHANGE", "LIVE_MAIL_SEND_OR_RECEIVE", "PRODUCTION_CREDENTIAL_DEPLOYMENT", "CLOUD_ACCOUNT_PROVISIONING", "PASS", "FINAL_PASS", "EFFECT_ACK_DONE"]
+  }
+}
