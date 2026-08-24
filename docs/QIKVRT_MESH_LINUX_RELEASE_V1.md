@@ -68,7 +68,11 @@ architecture builds. Only a push whose exact subject is
 `release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree` may publish. That
 carrier must have exactly one parent and the same tree as its parent. The
 publish job repeats that check and verifies repeatedly that the release branch
-still points to the workflow head.
+still points to the workflow head. A non-carrier release-branch push completes
+the native builds but ends with an explicit `HOLD`, so a green release
+workflow cannot mean merely “prepare/build succeeded while publication was
+skipped.” Eligible publication jobs share a constant, non-cancelling
+concurrency group.
 
 The merged build output must be an exact 16-file set before external effects.
 Uncompressed QCOW2 working images are removed, the XPI occurs once, every file
@@ -78,9 +82,10 @@ exact final set is 18 regular files. `SHA256SUMS` excludes itself and is
 validated against every other final asset.
 
 All namespace checks are fail-closed. Only an exact absent-ref response is
-vacant; authentication, transport, rate-limit, and server errors are
-`BLOCK`. The GitHub tag/release and the three GHCR version coordinates must
-all be vacant. Existing production coordinates are never overwritten and
+vacant; GHCR additionally requires a Distribution error document whose code is
+`MANIFEST_UNKNOWN`. Generic 404, authentication, transport, rate-limit, and
+server errors are `BLOCK`. The GitHub tag/release and the three GHCR version
+coordinates must all be vacant. Existing production coordinates are never overwritten and
 require explicit reconciliation after any partial external effect.
 
 GHCR must already be positively public before a carrier is created. Repository
@@ -95,9 +100,10 @@ Administration-read-only `QIKVRT_IMMUTABLE_ADMIN_READ_TOKEN` from the
 target changes workflow files. It verifies the immutable-release repository
 setting before mutation.
 
-After GHCR upload, an anonymous registry token must read back the top digest
-and exactly the `linux/amd64` and `linux/arm64` descriptors before the
-GitHub Release is created. The final Release must then report
+After GHCR upload, the workflow discards its earlier anonymous bearer and
+acquires a fresh credential-free bearer. That fresh token must read back the
+top digest and exactly the `linux/amd64` and `linux/arm64` descriptors
+before the GitHub Release is created. The final Release must then report
 `isImmutable=true`, pass release-attestation and per-asset verification, and
 return the exact 18 asset names and byte sizes. A failed guard is not
 publication evidence.

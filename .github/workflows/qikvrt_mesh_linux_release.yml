@@ -118,7 +118,10 @@ jobs:
     if: needs.prepare.outputs.publish_ready == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions: {contents: write, packages: write}
+    concurrency:
+      group: qikvrt-mesh-linux-publication-v1.0.0
+      cancel-in-progress: false
+    permissions: {contents: read, packages: write}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
@@ -184,12 +187,27 @@ jobs:
             esac
           }
 
-          registry_manifest_status() {
-            local bearer="$1" tag="$2"
-            curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+          assert_registry_vacant() {
+            local bearer="$1" tag="$2" audience="$3" status body
+            body="$RUNNER_TEMP/vacancy-$audience-$tag.json"
+            if ! status="$(curl --silent --show-error \
+              --output "$body" --write-out '%{http_code}' \
               --header "Authorization: Bearer $bearer" \
               --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
-              "https://ghcr.io/v2/$GHCR_REPOSITORY/manifests/$tag"
+              "https://ghcr.io/v2/$GHCR_REPOSITORY/manifests/$tag")"; then
+              block "$audience GHCR namespace transport probe failed for $tag"
+            fi
+            case "$status" in
+              404)
+                jq -e '
+                  (.errors | type == "array" and length > 0) and
+                  all(.errors[]; .code == "MANIFEST_UNKNOWN")
+                ' "$body" >/dev/null ||
+                  block "$audience GHCR target $tag returned a non-Distribution 404"
+                ;;
+              200) block "$audience GHCR target $tag exists" ;;
+              *) block "$audience GHCR target $tag returned HTTP $status" ;;
+            esac
           }
 
           fetch_manifest() {
@@ -269,16 +287,8 @@ jobs:
           fi
           authenticated_bearer="$(printf '%s' "$authenticated_token_json" | jq -er '.token')"
           for tag in "$VERSION" "$VERSION-amd64" "$VERSION-arm64"; do
-            if ! authenticated_status="$(registry_manifest_status "$authenticated_bearer" "$tag")"; then
-              block "authenticated GHCR namespace probe failed for $tag"
-            fi
-            if ! anonymous_status="$(registry_manifest_status "$anonymous_bearer" "$tag")"; then
-              block "anonymous GHCR namespace probe failed for $tag"
-            fi
-            [ "$authenticated_status" = 404 ] ||
-              block "authenticated GHCR target $tag returned HTTP $authenticated_status, not VACANT"
-            [ "$anonymous_status" = 404 ] ||
-              block "anonymous GHCR target $tag returned HTTP $anonymous_status, not VACANT"
+            assert_registry_vacant "$authenticated_bearer" "$tag" authenticated
+            assert_registry_vacant "$anonymous_bearer" "$tag" anonymous
           done
 
           assert_remote_head
@@ -296,6 +306,14 @@ jobs:
           docker manifest create "$IMAGE" "$IMAGE-amd64" "$IMAGE-arm64"
           docker manifest push "$IMAGE"
           docker logout ghcr.io
+
+          if ! anonymous_token_json="$(curl --fail --silent --show-error --get \
+            --data-urlencode 'service=ghcr.io' \
+            --data-urlencode "scope=repository:$GHCR_REPOSITORY:pull" \
+            'https://ghcr.io/token')"; then
+            block 'fresh anonymous GHCR token acquisition failed after push'
+          fi
+          anonymous_bearer="$(printf '%s' "$anonymous_token_json" | jq -er '.token')"
 
           amd64_digest="$(fetch_manifest "$anonymous_bearer" "$VERSION-amd64" published-amd64)"
           arm64_digest="$(fetch_manifest "$anonymous_bearer" "$VERSION-arm64" published-arm64)"
@@ -344,3 +362,36 @@ jobs:
             GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release verify-asset \
               "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
           done
+
+
+  disposition:
+    needs: [prepare, build, publish]
+    if: always()
+    runs-on: ubuntu-24.04
+    env:
+      PREPARE_RESULT: '${{ needs.prepare.result }}'
+      BUILD_RESULT: '${{ needs.build.result }}'
+      PUBLISH_RESULT: '${{ needs.publish.result }}'
+      BUILD_READY: '${{ needs.prepare.outputs.build_ready }}'
+      PUBLISH_READY: '${{ needs.prepare.outputs.publish_ready }}'
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PREPARE_RESULT" != success ]; then
+            echo "BLOCK: prepare result is $PREPARE_RESULT" >&2
+            exit 2
+          fi
+          if [ "$BUILD_READY" = true ] && [ "$BUILD_RESULT" != success ]; then
+            echo "BLOCK: required native build result is $BUILD_RESULT" >&2
+            exit 2
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$PUBLISH_READY" != true ]; then
+            echo 'HOLD: non-carrier release-branch head built; publication is not authorized' >&2
+            exit 2
+          fi
+          if [ "$PUBLISH_READY" = true ] && [ "$PUBLISH_RESULT" != success ]; then
+            echo "BLOCK: required publication result is $PUBLISH_RESULT" >&2
+            exit 2
+          fi
+          echo 'QIKVRT_MESH_LINUX_WORKFLOW_DISPOSITION=SUCCESS'

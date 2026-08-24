@@ -47,6 +47,10 @@ class T(unittest.TestCase):
         )
         self.assertEqual(guards["final_release_asset_count"], 18)
         self.assertEqual(guards["repository_locked_gh_cli_version"], "2.96.0")
+        self.assertEqual(guards["registry_absence_error_code"], "MANIFEST_UNKNOWN")
+        self.assertTrue(guards["fresh_anonymous_token_after_push_required"])
+        self.assertTrue(guards["constant_publication_concurrency_required"])
+        self.assertEqual(guards["noncarrier_release_branch_disposition"], "HOLD")
         self.assertEqual(guards["release_asset_max_bytes_exclusive"], 2 * 1024**3)
         self.assertEqual(
             policy["build_acceptance"]["effect_ack_scope"],
@@ -69,7 +73,6 @@ class T(unittest.TestCase):
             "qikvrt-mesh-linux-v1.0.0",
             "ghcr.io/goldkelch/qik-vrt-mesh-linux:1.0.0",
             "packages: write",
-            "contents: write",
             "release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree",
             "tools/qikvrt_mesh_linux_release_v2.py build",
             "firefox-effect-ack.json",
@@ -88,10 +91,17 @@ class T(unittest.TestCase):
             "--json isImmutable",
             "release verify-asset",
             "published-index.json",
+            "MANIFEST_UNKNOWN",
+            "fresh anonymous GHCR token acquisition failed after push",
+            "qikvrt-mesh-linux-publication-v1.0.0",
+            "permissions: {contents: read, packages: write}",
+            "HOLD: non-carrier release-branch head built",
         ]:
             self.assertIn(text, raw)
+        self.assertEqual(raw.count("anonymous_token_json="), 2)
         self.assertNotIn(":latest", raw)
         self.assertNotIn("--clobber", raw)
+        self.assertNotIn("contents: write", raw)
 
     def test_generated_launcher_and_release_asset_contract(self):
         base_namespace = runpy.run_path(
