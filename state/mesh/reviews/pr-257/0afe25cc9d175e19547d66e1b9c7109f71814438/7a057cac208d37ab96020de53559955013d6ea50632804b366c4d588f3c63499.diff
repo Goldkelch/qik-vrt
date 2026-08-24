@@ -1,0 +1,1934 @@
+diff --git a/Makefile b/Makefile
+index a23e730ba757f41812f32c5d3c308981cbb2a1cf..be851f8f0b8b0f6abc4678466da0f58d07b89707 100644
+--- a/Makefile
++++ b/Makefile
+@@ -5,10 +5,10 @@ PYTHON ?= python3
+ CC ?= cc
+ EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
+ 
+-.PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test launcher unit conformance security license seed e2e integrity run-api clean
++.PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test launcher unit conformance security license seed e2e integrity run-api clean
+ 
+ compile: effect-ack-core-compile
+-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py
++	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py
+ 
+ effect-ack-core-compile:
+ 	$(CC) $(EFFECT_ACK_C90_CFLAGS) -Iinclude -fsyntax-only src/effect_ack_core.c tests/test_effect_ack_core.c
+@@ -23,6 +23,10 @@ adaptive-cognition-test:
+ 	bash -n tools/qikvrt_adaptive_runtime.sh tests/test_adaptive_runtime.sh
+ 	bash tests/test_adaptive_runtime.sh
+ 
++anticipation-contract:
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_anticipation
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_anticipation.py check >/dev/null
++
+ tool-cache-contract:
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_tool_cache.py verify
+ 
+@@ -76,7 +80,7 @@ seed:
+ e2e:
+ 	$(PYTHON) tests/test_tcpip_e2e.py
+ 
+-test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test launcher conformance unit security license seed e2e
++test: compile integrity effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test launcher conformance unit security license seed e2e
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_integrity.py verify
+ 
+ run-api:
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index bcfa9f5f91bddf17328edbe22afa44b4dc1ebeff..55b9c1196501125447eac389e92e4c646f83d041 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3066,
++  "file_count": 3078,
+   "files": [
+     {
+       "bytes": 47,
+@@ -6724,13 +6724,13 @@
+       "sha256": "f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3"
+     },
+     {
+-      "bytes": 7919,
++      "bytes": 8246,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "Makefile",
+-      "sha256": "32c45e72414a1d31278e47892cd2801ba560d5085ccef3ec584fa33b5b53914a"
++      "sha256": "c9fd8a1f79b4e1fa090c788b184cbdfbae9d510c64b6a80242f1c3cdae48a236"
+     },
+     {
+       "bytes": 737,
+@@ -7861,6 +7861,60 @@
+       "sha256": "9ce643d3ae8b007a23c18ba8dcf903c043751e35b4303e21ed5c860d6da54121"
+     },
+     {
++      "bytes": 3697,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/INPUT.json",
++      "sha256": "b5245ba9bc8526ac9ad2a187d04d7d28cced6b9c6f3698adc26e1528ab0b8ca1"
++    },
++    {
++      "bytes": 3225,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/current.json",
++      "sha256": "5b91bb2b997dbb1a7855ceb9c12202a0fcaa06c7aae4147c0c2c61bcca60e07f"
++    },
++    {
++      "bytes": 717,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/derivatives.json",
++      "sha256": "a7b2a35da2179dfd15feac187d945b14a52ffb8b385c19ecd902ec97a774c7b0"
++    },
++    {
++      "bytes": 1416,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/history.jsonl",
++      "sha256": "7e3d18c5305a4a6e8ec843be052a91c1db5085462510dbab017a6d4c6d711211"
++    },
++    {
++      "bytes": 1005,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/next-effect.json",
++      "sha256": "841f2c2da636ccb4faf75c8785b651df4bdffd2c6bf2e782f72267a514151cf4"
++    },
++    {
++      "bytes": 339,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "anticipation/trends.json",
++      "sha256": "6b768e4541696bab4630f52199483cc4cf40f3c733f60e4a1b6ff1d1b2ce54d7"
++    },
++    {
+       "bytes": 6160,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -8500,13 +8554,13 @@
+       "sha256": "918d816a6478a34eeb2929d1af4029ad7866bee71a8d2638867803e74bf197ff"
+     },
+     {
+-      "bytes": 2369,
++      "bytes": 2793,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "capabilities/anticipation.json",
+-      "sha256": "9b4be1a434e1055a95becae2f8b951bdd2f1b232d9d4dd201f7361fba826d446"
++      "sha256": "ea8385d0c6d8e030d0b6c498c21826e70fd1c7a9aa28a7e930d3e1c3b5ba24ce"
+     },
+     {
+       "bytes": 1928,
+@@ -8788,13 +8842,13 @@
+       "sha256": "3ad7db021c2a9be4f419018ad1a56d5a532fce925c7ca48d751607f9f29153e3"
+     },
+     {
+-      "bytes": 2742,
++      "bytes": 2919,
+       "classification": "documentation",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "docs/CURRENT_AUTHORITY.md",
+-      "sha256": "dc0aa612c04ce050585796c1fcec6bb2e8d979722067d718ef8f41adada103c5"
++      "sha256": "236136e383bc504ed59a96c7656aa782e2c2da8046593446c458e86de80cf5d7"
+     },
+     {
+       "bytes": 224204,
+@@ -9004,6 +9058,15 @@
+       "sha256": "6e03146256dba163cb6121f0b545f0e25d1875044f704f1f9e00c55fc74d4cf2"
+     },
+     {
++      "bytes": 3624,
++      "classification": "documentation",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
++      "sha256": "3e82f0b0d2d390916bb7b84e6b78237d3979e44230bfb00d5a1098b33a334b26"
++    },
++    {
+       "bytes": 5421,
+       "classification": "documentation",
+       "excluded_from_sha256_index": false,
+@@ -22468,6 +22531,15 @@
+       "sha256": "25e93915d7cae8bd752cc27f5059cdc7cbfaf978249b1ed55e71d3ccb14b56e8"
+     },
+     {
++      "bytes": 2060,
++      "classification": "policy_or_acceptance",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
++      "sha256": "b54ada98524d8016b8a23181c33fe163c8e6a2acbceac6b8c5d5b6b71ee15d32"
++    },
++    {
+       "bytes": 3340,
+       "classification": "policy_or_acceptance",
+       "excluded_from_sha256_index": false,
+@@ -23116,6 +23188,24 @@
+       "sha256": "279584598ec5babed28f5b819d5c4963b5f0e0d27e1bf081f0397616bc69c95b"
+     },
+     {
++      "bytes": 1714,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "receipts/anticipation/0001-contract-bound.json",
++      "sha256": "73b48d88346e2d06c4add9b0dcbad90224d4817a9a82c2a54e946cd1b8ffd718"
++    },
++    {
++      "bytes": 1441,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "receipts/anticipation/0002-anticipation-materialized.json",
++      "sha256": "253eade6a2bab9b87afc0cb20e8124d806f971339cce9cf91bb3f1f13dc8c5b8"
++    },
++    {
+       "bytes": 330,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -26308,6 +26398,15 @@
+       "sha256": "512ae32588a9de91a2f42241719cb5a9b23a37a25dc7ce003b5aa11d9158a6ae"
+     },
+     {
++      "bytes": 8147,
++      "classification": "test_source",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tests/test_anticipation.py",
++      "sha256": "7e863834a489fc1ed40ed761ae4e1b2ab247b93705257d3b83080d0454741735"
++    },
++    {
+       "bytes": 3190,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+@@ -26929,6 +27028,15 @@
+       "sha256": "bbebdc3d19098b47964093ce2be650891927cc6864855973fbc5602ad2c05e1b"
+     },
+     {
++      "bytes": 23936,
++      "classification": "source_code",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tools/qikvrt_anticipation.py",
++      "sha256": "26a329627679464f44df9f4f7dcbf8bb64577fb115cfcde640e8433b28848029"
++    },
++    {
+       "bytes": 13300,
+       "classification": "source_code",
+       "excluded_from_sha256_index": false,
+@@ -27424,13 +27532,13 @@
+       "sha256": "b96632d5cc983c851452c0b278afdde7403b431faab9affa68665ca8ca766821"
+     },
+     {
+-      "bytes": 4044,
++      "bytes": 4774,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
+-      "sha256": "6357094720c66b63df7c5ec64280560c1bdf35102914fcb44a379b5259c1c418"
++      "sha256": "0f2e974a351c5a5c6d71cad5f15f92610f22bff67686ba9d45efec02d8179ce0"
+     },
+     {
+       "bytes": 4037,
+@@ -27588,7 +27696,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3057,
++  "immutable_file_count": 3069,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -27613,7 +27721,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "1116331256858d9b4206f9e80f6d1db2e6a67c5a8bd86a4bfba53c893655d0c0",
++  "repository_content_tree_sha256": "f95b5d23f736be3a6ff410ff07e45ff5a2c3faf9869b2c7d65ec0d79e6b5bf3c",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index 5c65be941d7927ed45f068362cf11ade031f7f99..b2e1a7a83e75d1419941db3d2312c50b673a6039 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-4443f86882381c8c7c3b1fecedfdd471a11ea6f801cec75d4f7a506b4a76f464  REPOSITORY_FILE_MANIFEST.json
++6fa4047729bf78db7b14568f5580bcba6cafa195a732f165e6acc70cd60d0003  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index 4072e5e4f165d42069e3fb913b9462b89906a9b5..af23fdc7672693689474d97d6d26d0ae64bbe481 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -744,7 +744,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  LOGS/target_st
+ 4a1ab192e4e0bc824b60d52a1941bf7920f1ba1329f06e12dcb4b30dca83fe61  MANIFEST.json
+ f624f4db8867cb14b37f716e1fee4e41e9759c641c76060a31b0800ceb6486e4  MAP.json
+ f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3  MAP.md
+-32c45e72414a1d31278e47892cd2801ba560d5085ccef3ec584fa33b5b53914a  Makefile
++c9fd8a1f79b4e1fa090c788b184cbdfbae9d510c64b6a80242f1c3cdae48a236  Makefile
+ cc2580944c52971c424165c3684acadcf8faa5385e73f3f67ac64dede34a28e9  NOTICE
+ 37b9b84d4a73c3462d728b633526bd63dfa5c2d617c524cc778fe864354e707a  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.json
+ d3097ea38f92df76a538103638021e6622ad0fa9cf1b81d5c19326bbf0e9ff28  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.md
+@@ -868,6 +868,12 @@ d3bb17508786a1811cc55d7ebad89b1012398c11f4610b8cb9530b0c907bb3d5  acceptance/VOL
+ ae32a2a7f14322544a2941f4961bc08d48b7f16b37c1b6751cec37e062786c24  acceptance/WINDOWS_UI_HOLD_AND_USER_ACKNOWLEDGEMENT_ACCEPTANCE_TEST.md
+ 2fdad68708a181c334a60c73beafa03394128363cf11f823b20879601b982c81  acceptance/WINDOWS_ZIP_EXTRACTION_COMPATIBILITY_GATE.md
+ 9ce643d3ae8b007a23c18ba8dcf903c043751e35b4303e21ed5c860d6da54121  acceptance/ZENODO_RUNTIME_PERSISTENCE_ACCEPTANCE_TEST.md
++b5245ba9bc8526ac9ad2a187d04d7d28cced6b9c6f3698adc26e1528ab0b8ca1  anticipation/INPUT.json
++5b91bb2b997dbb1a7855ceb9c12202a0fcaa06c7aae4147c0c2c61bcca60e07f  anticipation/current.json
++a7b2a35da2179dfd15feac187d945b14a52ffb8b385c19ecd902ec97a774c7b0  anticipation/derivatives.json
++7e3d18c5305a4a6e8ec843be052a91c1db5085462510dbab017a6d4c6d711211  anticipation/history.jsonl
++841f2c2da636ccb4faf75c8785b651df4bdffd2c6bf2e782f72267a514151cf4  anticipation/next-effect.json
++6b768e4541696bab4630f52199483cc4cf40f3c733f60e4a1b6ff1d1b2ce54d7  anticipation/trends.json
+ e26d46f8bacb390d855a13e47b5087503fe54c498b0d38dc1c4f5909e7a580df  api/qikvrt_github_api.openapi.yaml
+ b5782ed2f3cc88787d3cc328653ff36569850bf2065e59e39b370f53fd8c2d6e  assets/ASSET_MANIFEST.json
+ e8442e93c36d5892c76951fd2ab989143cacee7ab30c31195911b14174591f39  assets/img/future_info_frame.png
+@@ -939,7 +945,7 @@ ee67a789bdfbb251a9b0170a85791416ec9f8bad904af8ae46d060e912cac4f1  canonical/RUNT
+ 17176cfa28f85448c6c2b6fc283c76bb3a3d603fbc38d1f6ff14208e8c3083f5  canonical/VOLATILE_RUNTIME_STATE_PERSISTED_IN_DELIVERY_ZIP_GATE_V40.json
+ 016ec2d804e6a448cff704cb3ee2f3c24dcef01e17a375102c937e9586d41bfe  canonical/WINDOWS_COMMAND_START_JSON_ESCAPE_GATE_V32.json
+ 918d816a6478a34eeb2929d1af4029ad7866bee71a8d2638867803e74bf197ff  canonical/WINDOWS_ZIP_EXTRACTION_COMPATIBILITY_GATE_V36.json
+-9b4be1a434e1055a95becae2f8b951bdd2f1b232d9d4dd201f7361fba826d446  capabilities/anticipation.json
++ea8385d0c6d8e030d0b6c498c21826e70fd1c7a9aa28a7e930d3e1c3b5ba24ce  capabilities/anticipation.json
+ 966dfbf9162ffa67d541117c662dc8060685a79d3f93b0cfdac0b80c0e6e49b9  capabilities/rcp.json
+ fbe235a7812317468850a7a3b11c8ad1d2a195e282dd4700e57e4a0234f658e3  cicd/CICD_PERSISTENCE_POLICY.md
+ 69972d5bfa029c5b9b40608eb2f9664165dda2d3b9fd7159aab5a82b8cc36122  cicd/CICD_RUNTIME_PARAMETERS_SCHEMA.json
+@@ -971,7 +977,7 @@ be4b5d9c80094f202b150d6b03cce0a935eb7c4303cda60068e01b11f285204e  docs/ARCHITECT
+ 52c035de8a9b477599e6616d05922156841702bf105224f422ad65da72792def  docs/BOUNDARIES.md
+ 7fb4e5c369b079e93ce409e9ca4f6830476a1b6dbd42543273d85164e111a631  docs/CHARTA_MASCHINENPRUEFBARE_WISSENSCHAFT.md
+ 3ad7db021c2a9be4f419018ad1a56d5a532fce925c7ca48d751607f9f29153e3  docs/COLLECTIVE_ADAPTIVE_COGNITION.md
+-dc0aa612c04ce050585796c1fcec6bb2e8d979722067d718ef8f41adada103c5  docs/CURRENT_AUTHORITY.md
++236136e383bc504ed59a96c7656aa782e2c2da8046593446c458e86de80cf5d7  docs/CURRENT_AUTHORITY.md
+ d1d1c72e45fff94da2286a048271bd6f461bb18e9377c0a5c2f069429e9c0671  docs/Die_Spirale_des_entscheidenden_Unterschieds.md
+ 314a0ef6d5913311023571b882a755b648e91868176fc8f6d61677f77031ec42  docs/EFFECT_ACK_RELEASE_AUTOMATION.md
+ f84aa0a7a148377a807ca963c30507892d630e0d0bf08ed457fd85e515ebdb6e  docs/GITHUB_DEPLOYMENT.md
+@@ -995,6 +1001,7 @@ a710a17f5707fd0bfd8b701656c6bfca6b02c0a31749827f0afa895ad8d5d3c5  docs/QIKVRT_HO
+ d0bfdce3758987db23b5d2890dc66e97ce9ee1dd14d280235c4f56c8e11d14f8  docs/STATUS_REPORT_RELEASE_AUTOMATION.md
+ 872a885085ec64484d80745b4ad73d3ee3ce5cb8a0c17285959437c2a5ef8f56  docs/TEST_INVENTORY.md
+ 6e03146256dba163cb6121f0b545f0e25d1875044f704f1f9e00c55fc74d4cf2  docs/TRANSACTIONAL_GITHUB_WORKFLOW_TRIGGER_PROTOCOL.md
++3e82f0b0d2d390916bb7b84e6b78237d3979e44230bfb00d5a1098b33a334b26  docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md
+ 742e39c052c8ca71e4b02f92bad3c566948a37950d651d3b1b94f11457c8fd4c  docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md
+ 844d20074ccbcfc4b475a7c46fa0198da08b22d22c01fec63616972478b58226  docs/architecture/REPOSITORY_CAPABILITY_SELF_DISCLOSURE_SYSTEM.md
+ b2a3388dc22f6e39daf85dcb2963181c892aa650124189ad9891418e147ef113  docs/articles/a001_quantum_crypto_ai.md
+@@ -2491,6 +2498,7 @@ f08e13dac7c590028bd9eaf50687078a0cbe49d0a62feab1c14301dac5995212  payload/monthl
+ 6877eaa7ca6edca3e669015fcf72da88919afa682775cfebef8f454716841904  platform/RUNTIME_ENVIRONMENT.json
+ 60b5216bc107c615b4663b113c862449fef12bbe48dd647f6117e733282cc117  platform/TARGET_PLATFORM_MATRIX.json
+ 25e93915d7cae8bd752cc27f5059cdc7cbfaf978249b1ed55e71d3ccb14b56e8  policy/COLLECTIVE_ADAPTIVE_COGNITION.json
++b54ada98524d8016b8a23181c33fe163c8e6a2acbceac6b8c5d5b6b71ee15d32  policy/GLOBAL_SYSTEM_CLOSURE_V1.json
+ d33fb3060c33ba1795866fa84acf9a5200d61aa520f534cb697163a3a89a7ba1  policy/HUMAN_MACHINE_PROGRESS_PROTOCOL.json
+ fc2a5b2e6d71a2a90bb3c5150ee6b4282dc26041b5d1417dcf387c585bc8f27a  policy/RUNTIME_DEPENDENCIES_STATE_POLICY_V35.json
+ 3e1dc00ab45b46d5824a2c3090bbbed7ee48b2dca8bda52571e856a64e459018  policy/RUNTIME_VOLATILE_STATE_POLICY_V37.json
+@@ -2563,6 +2571,8 @@ b8c692afda832ef7b801f11912ba9930f19c98deaa7866cf47dcee5635f61a66  qikvrt/sandbox
+ f59a725fde13593049b8a0d1423e4be0edd5856bc5ed7e8059f3940818acc925  qikvrt/sandbox_git_local_execution_report_v2_5.json
+ 24a8ebc1a581cb8b904e37015b5591b21cef906bb53db81d3c39388af7edf096  qikvrt/sandbox_git_local_execution_report_v2_6.json
+ 279584598ec5babed28f5b819d5c4963b5f0e0d27e1bf081f0397616bc69c95b  qikvrt/sandbox_git_local_execution_report_v2_7.json
++73b48d88346e2d06c4add9b0dcbad90224d4817a9a82c2a54e946cd1b8ffd718  receipts/anticipation/0001-contract-bound.json
++253eade6a2bab9b87afc0cb20e8124d806f971339cce9cf91bb3f1f13dc8c5b8  receipts/anticipation/0002-anticipation-materialized.json
+ 5070a94bbac3e1c6d9ac6ee5b5431ce4233ff7b8eb9f8628a9c83d30daf2e606  registry/KNOWN_NODE_REQUESTS.tsv
+ 2b82f68672663441711881687983655394b9b15019682adf222e310c03862215  registry/NODEMESH_INDEX.json
+ 7e4ade91762cba1e968af919113835f344719a17d43b6cf2d56cdbc3731bb1d1  registry/NODEMESH_REVALIDATION.json
+@@ -2913,6 +2923,7 @@ b172c3000bff841eab01f7c552b0e456d8a3a43373605a2dce3420eff756e08f  state/owner_ac
+ b9793e10e2b6f2b4ad4c2a28f61535073f1af291d35ab0a006a35e2f3e9dadeb  tests/issue_agent/test_validate.py
+ 154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94  tests/test_adaptive_runtime.sh
+ 512ae32588a9de91a2f42241719cb5a9b23a37a25dc7ce003b5aa11d9158a6ae  tests/test_ai_runtime_bootloader.py
++7e863834a489fc1ed40ed761ae4e1b2ab247b93705257d3b83080d0454741735  tests/test_anticipation.py
+ 30944fec83d24c5d7f5d4fe2467261a29bd8e21edfb07d85b7245c8521184d64  tests/test_api_client.py
+ 93489cfd0f91814ecd7c8d6fbee539f852603632c274461cfd94968833353193  tests/test_authority_mirror_equality_receipt.py
+ 8e5981209df176e03776131f6e747b4b458d077896741aae472fcf90532320a4  tests/test_canonical_closing_status_article.py
+@@ -2982,6 +2993,7 @@ fa4e322fd9eb808e5a9b4d8e1bca1724a75c6259478a087ab4831d021dfdeaa2  tools/offline-
+ a0470db20c66bb4af4a4f82086060952b726673b056aa5139e1dd86404cc17fe  tools/offline-audio-transcription/tests/workflow-runtime.test.cjs
+ 712cae5fefde539f8438e6daefb6bfac983db62db989c5e603305f540f3fe5a7  tools/powershell_parse_check.ps1
+ bbebdc3d19098b47964093ce2be650891927cc6864855973fbc5602ad2c05e1b  tools/qikvrt_adaptive_runtime.sh
++26a329627679464f44df9f4f7dcbf8bb64577fb115cfcde640e8433b28848029  tools/qikvrt_anticipation.py
+ 68d3d93a1b264ec063adf673863d21036bb95f02ae2adcbb91adb16720032d12  tools/qikvrt_batch003_remaining_archive_probe.py
+ c74f18f40c3a08d707c1ce2c067f6fedebce713712913bbb114ba6605c196143  tools/qikvrt_batch003_subject_172dd_public_probe.py
+ 5765afcc8b5223a014f3a109836580b86bf2bf59d7ae14c6a3a80f4db570a5a2  tools/qikvrt_batch003_subject_172dd_recursive_probe.py
+@@ -3037,7 +3049,7 @@ a4e86b73f5d046082f3bd9813a0bb73bf02394a1c117e5abc9f510f608f81d1f  tools/qikvrt_z
+ 6519b6240233924727c2a87d3b667ca583680d944de56186eaa92021443bf156  tools/tools/__init__.py
+ c3f07cbd0ff2a0691b8af821f9e9002a9f8cc2249d98727d58cc2d5b08de000a  tools/verify.py
+ b96632d5cc983c851452c0b278afdde7403b431faab9affa68665ca8ca766821  work-units/ADVANCE_CANONICAL_STATUS_AND_DISPATCH_BATCH_003.json
+-6357094720c66b63df7c5ec64280560c1bdf35102914fcb44a379b5259c1c418  work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json
++0f2e974a351c5a5c6d71cad5f15f92610f22bff67686ba9d45efec02d8179ce0  work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json
+ 29496410f6c9b93ec06d86b2615c78395f0094a5e07d618509efdce371a4cc8a  work-units/BUILD_CANONICAL_UNION_CORPUS_AND_BEGIN_CONTENT_CLAIM_DISPOSITION.json
+ dd5fe9b35fd9791dc5109ad825c033f24eed01ad1b556093673f6a20bc8e2828  work-units/CREATE_CORRECTED_CANDIDATE_FOR_BATCH_002.json
+ 54f50800ab19bd883f6deb802ffe2530c8008b7a7e60e35df8b619ab8eb1ae96  work-units/CREATE_VERSIONED_CORRECTED_CANDIDATES_REMAINING_CORPUS_SUBJECTS.json
+diff --git a/anticipation/INPUT.json b/anticipation/INPUT.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..66734d1550c9ad67fb496e6f9fc2b3c646f2fbbf
+--- /dev/null
++++ b/anticipation/INPUT.json
+@@ -0,0 +1,91 @@
++{
++  "_license": {
++    "classification": "machine_readable_anticipation_input",
++    "copyright": "Copyright 2026 Ingolf Lohmann",
++    "license": "CC-BY-NC-ND-4.0",
++    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
++    "rights_holder": "Ingolf Lohmann"
++  },
++  "schema": "qikvrt_anticipation_input_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "repository": "Goldkelch/qik-vrt",
++  "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa",
++  "observed_at": "2026-07-30T07:27:10Z",
++  "source_bindings": [
++    {
++      "path": "AI_PROGRESS.json",
++      "bytes": 18654,
++      "sha256": "5f204dbb19628515e836c54efc64baeec202e6395789aa5234c415e943d4df6a"
++    },
++    {
++      "path": "AI_STATUS.md",
++      "bytes": 1065,
++      "sha256": "e1138fd1143a228d75fcebbd8a54b31e1c563da61c3e68165ae63dbeb180001a"
++    },
++    {
++      "path": "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json",
++      "bytes": 4876,
++      "sha256": "58000ba0768cab4aee06c60b625df9fdc5b422c2ed0d14dde4fc55199d1eff72"
++    },
++    {
++      "path": "work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json",
++      "bytes": 2586,
++      "sha256": "08558e34bb78111a4c3843f73318de0d8f190d68385a634f5d6ffaa9740ff6f0"
++    }
++  ],
++  "observations": [
++    {
++      "state_id": "authority-main-before-six-candidate-promotion",
++      "observed_at": "2026-07-30T07:02:31Z",
++      "classification": "TEILFORTSCHRITT",
++      "productive_chain_position": "BATCH_003_PARTIAL_AND_CORRECTED_CANDIDATES_OPEN",
++      "metrics": {
++        "authority_present_corrected_candidate_archives": 0,
++        "owner_acceptance_receipts": 0,
++        "terminally_dispositioned_claim_subjects": 14
++      },
++      "evidence": [
++        "git-commit:1f559a197e0770dc735bbd020d7cefbe9ed6acaf",
++        "git-tree:830b8dc832c6e4acafba899fa5daf166e1d169bc",
++        "AI_PROGRESS.json@1f559a197e0770dc735bbd020d7cefbe9ed6acaf"
++      ]
++    },
++    {
++      "state_id": "authority-main-six-candidates-promoted-status-open",
++      "observed_at": "2026-07-30T07:27:10Z",
++      "classification": "TEILFORTSCHRITT",
++      "productive_chain_position": "AUTHORITY_PROMOTED_STATUS_PROJECTION_RECONCILIATION_OPEN",
++      "metrics": {
++        "authority_present_corrected_candidate_archives": 6,
++        "owner_acceptance_receipts": 1,
++        "terminally_dispositioned_claim_subjects": 19
++      },
++      "evidence": [
++        "git-commit:7d87a6003135a6e3efbca34b2d898967d7f66018",
++        "git-tree:b44d849262f729977daba7b9072a6e8906667aaa",
++        "AI_PROGRESS.json",
++        "AI_STATUS.md",
++        "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json",
++        "work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json"
++      ]
++    }
++  ],
++  "next_effect": {
++    "effect_id": "RECONCILE_POST_PROMOTION_AUTHORITY_STATUS",
++    "anticipated_state_id": "global-system-closure-authority-status-reconciled",
++    "description": "Reconcile the tracked status and work-unit projections with exact Authority merge 7d87a600 while preserving Mirror synchronization, reciprocal equality and Zenodo mutation as separate unauthorized effects.",
++    "executor_capability": "qikvrt.repository.anticipation.v1",
++    "preconditions": [
++      "CURRENT_AUTHORITY_TREE_BOUND",
++      "STATUS_SOURCE_BINDINGS_VERIFIED",
++      "NO_MIRROR_OR_EQUALITY_INFERENCE",
++      "NO_ZENODO_MUTATION"
++    ],
++    "expected_receipt": "receipts/anticipation/0003-post-promotion-status-reconciled.json"
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/anticipation/current.json b/anticipation/current.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f3b86823824abd2967474e05e130e033cf050f23
+--- /dev/null
++++ b/anticipation/current.json
+@@ -0,0 +1,87 @@
++{
++  "anticipated_state": {
++    "derivation_rule": "earliest safe incomplete persistence stage",
++    "deterministic": true,
++    "state_id": "global-system-closure-authority-status-reconciled"
++  },
++  "current_state": {
++    "classification": "TEILFORTSCHRITT",
++    "effect_state": "EFFECT_ACK_CONTINUE",
++    "productive_chain_position": "AUTHORITY_PROMOTED_STATUS_PROJECTION_RECONCILIATION_OPEN",
++    "scope_id": "qikvrt-global-system-closure-v1",
++    "state_id": "authority-main-six-candidates-promoted-status-open"
++  },
++  "derivatives": [
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "authority_present_corrected_candidate_archives",
++      "order": 1,
++      "value": 6
++    },
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "owner_acceptance_receipts",
++      "order": 1,
++      "value": 1
++    },
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "terminally_dispositioned_claim_subjects",
++      "order": 1,
++      "value": 5
++    }
++  ],
++  "evidence": [
++    "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
++    "anticipation/INPUT.json",
++    "AI_PROGRESS.json",
++    "AI_STATUS.md",
++    "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json",
++    "work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json"
++  ],
++  "execution": {
++    "automatically_dispatched": false,
++    "failure_class": null,
++    "status": "PENDING"
++  },
++  "next_effect": {
++    "anticipated_state_id": "global-system-closure-authority-status-reconciled",
++    "description": "Reconcile the tracked status and work-unit projections with exact Authority merge 7d87a600 while preserving Mirror synchronization, reciprocal equality and Zenodo mutation as separate unauthorized effects.",
++    "effect_id": "RECONCILE_POST_PROMOTION_AUTHORITY_STATUS",
++    "executor_capability": "qikvrt.repository.anticipation.v1",
++    "expected_receipt": "receipts/anticipation/0003-post-promotion-status-reconciled.json",
++    "preconditions": [
++      "CURRENT_AUTHORITY_TREE_BOUND",
++      "STATUS_SOURCE_BINDINGS_VERIFIED",
++      "NO_MIRROR_OR_EQUALITY_INFERENCE",
++      "NO_ZENODO_MUTATION"
++    ]
++  },
++  "observation_id": "gsc-anticipation-current-main-0002",
++  "observed_at": "2026-07-30T07:27:10Z",
++  "provenance": {
++    "sha256": "73b60150f2544e2ecfcd783a1f9b1a626124502cfe7ec75b5df45d417a0e1c93",
++    "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa"
++  },
++  "repository": "Goldkelch/qik-vrt",
++  "schema_version": "qikvrt_anticipation_state_v1",
++  "state_history": [
++    {
++      "observed_at": "2026-07-30T07:02:31Z",
++      "state_digest": "773086535ceeb206d812d5d756a72316f44c0b152066a85f672f9f80e526e462",
++      "state_id": "authority-main-before-six-candidate-promotion"
++    },
++    {
++      "observed_at": "2026-07-30T07:27:10Z",
++      "state_digest": "73d65aae7ebb3baefa3da41a21af42e83daa3bd863f2144ca72f3e020967dcbc",
++      "state_id": "authority-main-six-candidates-promoted-status-open"
++    }
++  ],
++  "trend": {
++    "basis": [
++      "NON_REGRESSING_GATE_IMPROVEMENT"
++    ],
++    "direction": "ADVANCING",
++    "productive_progress": true
++  }
++}
+diff --git a/anticipation/derivatives.json b/anticipation/derivatives.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a73d210e423af644156ceabd926181208e5d989
+--- /dev/null
++++ b/anticipation/derivatives.json
+@@ -0,0 +1,25 @@
++{
++  "derivatives": [
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "authority_present_corrected_candidate_archives",
++      "order": 1,
++      "value": 6
++    },
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "owner_acceptance_receipts",
++      "order": 1,
++      "value": 1
++    },
++    {
++      "interpretation": "latest verified discrete metric difference",
++      "name": "terminally_dispositioned_claim_subjects",
++      "order": 1,
++      "value": 5
++    }
++  ],
++  "schema": "qikvrt_anticipation_derivatives_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa"
++}
+diff --git a/anticipation/history.jsonl b/anticipation/history.jsonl
+new file mode 100644
+index 0000000000000000000000000000000000000000..67f6ba9b1775a769b4410f80798098e5aa2f8d17
+--- /dev/null
++++ b/anticipation/history.jsonl
+@@ -0,0 +1,2 @@
++{"classification":"TEILFORTSCHRITT","evidence":["git-commit:1f559a197e0770dc735bbd020d7cefbe9ed6acaf","git-tree:830b8dc832c6e4acafba899fa5daf166e1d169bc","AI_PROGRESS.json@1f559a197e0770dc735bbd020d7cefbe9ed6acaf"],"metrics":{"authority_present_corrected_candidate_archives":0,"owner_acceptance_receipts":0,"terminally_dispositioned_claim_subjects":14},"observed_at":"2026-07-30T07:02:31Z","productive_chain_position":"BATCH_003_PARTIAL_AND_CORRECTED_CANDIDATES_OPEN","state_digest":"773086535ceeb206d812d5d756a72316f44c0b152066a85f672f9f80e526e462","state_id":"authority-main-before-six-candidate-promotion"}
++{"classification":"TEILFORTSCHRITT","evidence":["git-commit:7d87a6003135a6e3efbca34b2d898967d7f66018","git-tree:b44d849262f729977daba7b9072a6e8906667aaa","AI_PROGRESS.json","AI_STATUS.md","release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json","work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json"],"metrics":{"authority_present_corrected_candidate_archives":6,"owner_acceptance_receipts":1,"terminally_dispositioned_claim_subjects":19},"observed_at":"2026-07-30T07:27:10Z","productive_chain_position":"AUTHORITY_PROMOTED_STATUS_PROJECTION_RECONCILIATION_OPEN","state_digest":"73d65aae7ebb3baefa3da41a21af42e83daa3bd863f2144ca72f3e020967dcbc","state_id":"authority-main-six-candidates-promoted-status-open"}
+diff --git a/anticipation/next-effect.json b/anticipation/next-effect.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e35d24f37041e715170231de3ca3bdcca290a5d9
+--- /dev/null
++++ b/anticipation/next-effect.json
+@@ -0,0 +1,24 @@
++{
++  "completion_claims": {
++    "EFFECT_ACK_DONE": false,
++    "FINAL_PASS": false,
++    "PASS": false
++  },
++  "dispatch_authorized": false,
++  "effect_state": "EFFECT_ACK_CONTINUE",
++  "next_effect": {
++    "anticipated_state_id": "global-system-closure-authority-status-reconciled",
++    "description": "Reconcile the tracked status and work-unit projections with exact Authority merge 7d87a600 while preserving Mirror synchronization, reciprocal equality and Zenodo mutation as separate unauthorized effects.",
++    "effect_id": "RECONCILE_POST_PROMOTION_AUTHORITY_STATUS",
++    "executor_capability": "qikvrt.repository.anticipation.v1",
++    "expected_receipt": "receipts/anticipation/0003-post-promotion-status-reconciled.json",
++    "preconditions": [
++      "CURRENT_AUTHORITY_TREE_BOUND",
++      "STATUS_SOURCE_BINDINGS_VERIFIED",
++      "NO_MIRROR_OR_EQUALITY_INFERENCE",
++      "NO_ZENODO_MUTATION"
++    ]
++  },
++  "schema": "qikvrt_anticipation_next_effect_v1",
++  "scope_id": "qikvrt-global-system-closure-v1"
++}
+diff --git a/anticipation/trends.json b/anticipation/trends.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e2ff18757e5a156defe58a89b974e12413decf1
+--- /dev/null
++++ b/anticipation/trends.json
+@@ -0,0 +1,13 @@
++{
++  "observation_count": 2,
++  "schema": "qikvrt_anticipation_trends_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa",
++  "trend": {
++    "basis": [
++      "NON_REGRESSING_GATE_IMPROVEMENT"
++    ],
++    "direction": "ADVANCING",
++    "productive_progress": true
++  }
++}
+diff --git a/capabilities/anticipation.json b/capabilities/anticipation.json
+index 6c8ae472a47235cde6540b60832d290b5d0b1a6b..bc65f7054df34dec37cca1bc01589a1830a29109 100644
+--- a/capabilities/anticipation.json
++++ b/capabilities/anticipation.json
+@@ -3,13 +3,18 @@
+   "capability_id": "qikvrt.repository.anticipation.v1",
+   "title": "Repository Trend and Anticipation Engine",
+   "description": "Derives one canonical next valid repository state and one minimal deterministic next effect from verified ordered observations, discrete derivatives and transition rules.",
+-  "semantic_version": "1.0.0-draft",
+-  "status": "PARTIAL",
++  "semantic_version": "1.1.0-draft",
++  "status": "PARTIAL_LOCAL_PROJECTIONS_IMPLEMENTED",
+   "capability_class": "monitoring",
+   "implementation_locations": [
+     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
++    "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
++    "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
+     "schemas/qikvrt-anticipation-state.schema.json",
++    "tools/qikvrt_anticipation.py",
++    "tests/test_anticipation.py",
+     "anticipation/",
++    "receipts/anticipation/",
+     "work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json",
+     "external/ietf/draft-lohmann-repository-capability-protocol-00.md"
+   ],
+@@ -43,10 +48,13 @@
+     "activity-versus-progress test",
+     "single-next-effect invariant",
+     "post-dispatch re-observation test",
+-    "planner replacement conformance test"
++    "planner replacement conformance test",
++    "current-status source-binding tamper test",
++    "hash-linked checkpoint continuity test"
+   ],
+   "evidence": [
+-    "PR #102 branch artifacts"
++    "receipts/anticipation/0001-contract-bound.json",
++    "receipts/anticipation/0002-anticipation-materialized.json"
+   ],
+   "failure_classes": [
+     "INSUFFICIENT_VERIFIED_OBSERVATIONS",
+@@ -58,11 +66,11 @@
+     "AUTHORITY_MIRROR_STATE_DIVERGENCE",
+     "COMPONENT_IDENTITY_DEPENDENCY_DETECTED"
+   ],
+-  "next_effect": "Execute work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json on the exact PR head and materialize tested anticipation projections.",
++  "next_effect": "Reconcile the tracked post-promotion Authority status while preserving Mirror synchronization, reciprocal equality and Zenodo mutation as separate effects.",
+   "owner_only_bootstrap_actions": [],
+   "provenance": {
+     "repository": "Goldkelch/qik-vrt",
+-    "branch": "agent/repository-capability-self-disclosure-v1",
++    "branch": "agent/global-system-closure-current-v1",
+     "sha256_binding": "PENDING_INTEGRITY_MATERIALIZATION"
+   }
+ }
+diff --git a/docs/CURRENT_AUTHORITY.md b/docs/CURRENT_AUTHORITY.md
+index f4039ea4ba91d2b27e9ed2496bac36d77d5ef151..679ffcb397334c219f19cb58eb6d27ce3f1aac54 100644
+--- a/docs/CURRENT_AUTHORITY.md
++++ b/docs/CURRENT_AUTHORITY.md
+@@ -23,6 +23,9 @@ path to the current operational authority.
+   five-state core
+ - `tools/qikvrt_adaptive_runtime.sh` and `runtime/` — bounded proposal-only
+   collective adaptation and exact-key verified cache reuse
++- `tools/qikvrt_anticipation.py`, `anticipation/`, and
++  `receipts/anticipation/` — deterministic current-status projection and
++  hash-linked, effect-free closure checkpoints
+ - `tools/qikvrt_zenodo_actions.py` — hash-bound DOI reserve/finalize client
+ - `api/qikvrt_github_api.openapi.yaml` — external API contract
+ 
+diff --git a/docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md b/docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b821593959bbf017887c5d9540691a24fa138b9
+--- /dev/null
++++ b/docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md
+@@ -0,0 +1,94 @@
++<!--
++SPDX-License-Identifier: CC-BY-NC-ND-4.0
++Copyright 2026 Ingolf Lohmann.
++-->
++
++# QIK-VRT Global System Closure v1
++
++## Bounded closure contract
++
++QIK-VRT is externally treatable as one closed repository process only when
++every interaction advances the same canonical chain and produces one
++checkable successor state:
++
++`INTERACTION -> EVIDENCE -> WORK_UNIT -> CANDIDATE -> GATES -> EFFECT_ACK -> EFFECT -> RECEIPT -> OBSERVATION`
++
++“One system” means one entrypoint, one ordered productive chain, one selected
++next effect per scope, and hash-linked receipts. It does not require a
++single-file implementation. Internal implementations remain replaceable
++capabilities.
++
++This contract is a repository-control specification. It is not a theorem that
++every historical or physical claim is true, and it does not expand the finite
++`qikvrt-global-claim-scope-v1` completion receipt.
++
++## Monotone, measured advancement
++
++A candidate advances this closure scope only when:
++
++1. at least one declared integer gate metric increases and none decreases; or
++2. the canonical metric map is byte-stable and the transition is recorded as
++   `BYTE_STABLE_NO_OP`.
++
++A regression is rejected rather than made canonical. Metrics establish only
++their declared bounded comparison; they do not prove hidden quality,
++completeness, safety, consensus, or eventual termination.
++
++## Persistence and recovery
++
++Each transition is a small, content-addressed checkpoint that binds its
++predecessor:
++
++1. `CONTRACT_BOUND`
++2. `ANTICIPATION_MATERIALIZED`
++3. `EFFECT_INTENTS_GATED`
++4. `CANDIDATE_VERIFIED`
++5. `AUTHORITY_OBSERVED`
++6. `MIRROR_OBSERVED`
++7. `RECEIPT_CLOSED`
++
++Before an external mutation, a local candidate may be abandoned or reverted.
++After a possibly executed remote mutation, the system must not claim rollback.
++It observes the external state read-only and continues through idempotent replay
++or forward repair.
++
++## Effect boundary
++
++The existing five-state EFFECT_ACK implementation remains the only ordinary
++release gate. Observation and anticipation may produce evidence, projections,
++work units, and inert effect intents; they cannot manufacture
++`EFFECT_ACK_DONE`.
++
++Every external effect still requires fresh effect-specific evaluation,
++provenance and responsibility binding, the applicable gates, explicit human
++authorization, and a subsequent effect receipt. A due time, workflow success,
++transport acknowledgement, or local zero exit code is not effect permission.
++
++Target/time/payload envelope validation is deliberately separable from this
++core. A concrete target, dispatch record, or publication queue is not part of
++the closure-core projection.
++
++## Current-main projection
++
++`tools/qikvrt_anticipation.py` consumes an input bound to the current Authority
++status files and a named Git tree. It deterministically materializes:
++
++- `anticipation/current.json`
++- `anticipation/history.jsonl`
++- `anticipation/trends.json`
++- `anticipation/derivatives.json`
++- `anticipation/next-effect.json`
++- `receipts/anticipation/0001-contract-bound.json`
++- `receipts/anticipation/0002-anticipation-materialized.json`
++
++The projection is scope-qualified and remains
++`EFFECT_ACK_CONTINUE`. It does not dispatch, merge, synchronize repositories,
++publish to Zenodo, or infer repository-wide completion. The next effect is a
++proposal for the earliest safe incomplete persistence stage.
++
++## Supersession boundary
++
++The concrete PR-202 evidence, historical PR-203 trees, old live target
++envelope, old target evaluation, old Zenodo queue, and their receipts remain
++historical evidence only. Their hashes and remote gates do not transfer to this
++current-main candidate.
+diff --git a/policy/GLOBAL_SYSTEM_CLOSURE_V1.json b/policy/GLOBAL_SYSTEM_CLOSURE_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..2158a2f29c1f57c952b17fe3a1469f7b2c0de296
+--- /dev/null
++++ b/policy/GLOBAL_SYSTEM_CLOSURE_V1.json
+@@ -0,0 +1,71 @@
++{
++  "_license": {
++    "classification": "machine_readable_policy",
++    "copyright": "Copyright 2026 Ingolf Lohmann",
++    "license": "CC-BY-NC-ND-4.0",
++    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
++    "rights_holder": "Ingolf Lohmann"
++  },
++  "schema": "qikvrt_global_system_closure_policy_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "version": "1.1.0",
++  "authority": "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
++  "entrypoint": "AI",
++  "canonical_chain": [
++    "INTERACTION",
++    "EVIDENCE",
++    "WORK_UNIT",
++    "CANDIDATE",
++    "GATES",
++    "EFFECT_ACK",
++    "EFFECT",
++    "RECEIPT",
++    "OBSERVATION"
++  ],
++  "persistence_stages": [
++    "CONTRACT_BOUND",
++    "ANTICIPATION_MATERIALIZED",
++    "EFFECT_INTENTS_GATED",
++    "CANDIDATE_VERIFIED",
++    "AUTHORITY_OBSERVED",
++    "MIRROR_OBSERVED",
++    "RECEIPT_CLOSED"
++  ],
++  "monotonic_improvement": {
++    "accepted_transitions": [
++      "NON_REGRESSING_GATE_IMPROVEMENT",
++      "BYTE_STABLE_NO_OP"
++    ],
++    "regression_becomes_canonical": false,
++    "unmeasured_improvement_claim_allowed": false,
++    "adaptive_runtime_may_modify_tracked_state": false
++  },
++  "effect_boundary": {
++    "state_machine": "src/qikvrt_effect_ack.py",
++    "required_release_state": "EFFECT_ACK_DONE",
++    "default_state": "EFFECT_ACK_CONTINUE",
++    "transport_ack_is_effect_ack": false,
++    "scheduler_due_is_authorization": false,
++    "fresh_effect_specific_evaluation_required": true,
++    "adaptive_runtime_may_issue_done": false
++  },
++  "recovery": {
++    "pre_remote_effect": "SMALL_GIT_CHECKPOINT_REVERT",
++    "post_remote_effect": "OBSERVE_THEN_IDEMPOTENT_REPLAY_OR_FORWARD_REPAIR",
++    "external_state_unknown_must_not_claim_rollback": true
++  },
++  "status_projection": {
++    "source_paths": [
++      "AI_PROGRESS.json",
++      "AI_STATUS.md"
++    ],
++    "scope_separation_required": true,
++    "repository_wide_completion_inference_allowed": false,
++    "external_effects_may_be_dispatched": false
++  },
++  "completion_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/receipts/anticipation/0001-contract-bound.json b/receipts/anticipation/0001-contract-bound.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f81c37f9ae527561592749d2077a0e0ef1ffaaeb
+--- /dev/null
++++ b/receipts/anticipation/0001-contract-bound.json
+@@ -0,0 +1,40 @@
++{
++  "bindings": {
++    "input_sha256": "1beb1a630150c2009ff20ed42a284ae3cff0307eb70c7d82f8960660ab7f5ae8",
++    "policy_sha256": "14c6ad8ca1e4e6625f8dbc379368b015be2ba49b7d66ddf80df0656e126e4fde",
++    "source_bindings": {
++      "AI_PROGRESS.json": {
++        "bytes": 18654,
++        "sha256": "5f204dbb19628515e836c54efc64baeec202e6395789aa5234c415e943d4df6a"
++      },
++      "AI_STATUS.md": {
++        "bytes": 1065,
++        "sha256": "e1138fd1143a228d75fcebbd8a54b31e1c563da61c3e68165ae63dbeb180001a"
++      },
++      "release/zenodo-corpus-proof-2026-07-28/canonical-union/versioned-corrected-candidates/OWNER_ACCEPTANCE_RECEIPT.json": {
++        "bytes": 4876,
++        "sha256": "58000ba0768cab4aee06c60b625df9fdc5b422c2ed0d14dde4fc55199d1eff72"
++      },
++      "work-units/VERIFY_AND_PROMOTE_ACCEPTED_VERSIONED_CORRECTED_CANDIDATES_TO_AUTHORITY.json": {
++        "bytes": 2586,
++        "sha256": "08558e34bb78111a4c3843f73318de0d8f190d68385a634f5d6ffaa9740ff6f0"
++      }
++    },
++    "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa"
++  },
++  "checkpoint_id": "gsc-current-main-0001-contract-bound",
++  "checkpoint_sha256": "56f2c5858ab2759d31146e2f686304148d72ffaa969d56f75ca0b208940d7758",
++  "completion_claims": {
++    "EFFECT_ACK_DONE": false,
++    "FINAL_PASS": false,
++    "PASS": false
++  },
++  "effect_state": "EFFECT_ACK_CONTINUE",
++  "external_effect": "NONE",
++  "observed_at": "2026-07-30T07:27:10Z",
++  "previous_checkpoint_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
++  "schema": "qikvrt_closure_checkpoint_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa",
++  "stage": "CONTRACT_BOUND"
++}
+diff --git a/receipts/anticipation/0002-anticipation-materialized.json b/receipts/anticipation/0002-anticipation-materialized.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad51d213f6bbaa94e8b354d98c6e5eb063775618
+--- /dev/null
++++ b/receipts/anticipation/0002-anticipation-materialized.json
+@@ -0,0 +1,39 @@
++{
++  "bindings": {
++    "anticipation/current.json": {
++      "bytes": 3225,
++      "sha256": "5b91bb2b997dbb1a7855ceb9c12202a0fcaa06c7aae4147c0c2c61bcca60e07f"
++    },
++    "anticipation/derivatives.json": {
++      "bytes": 717,
++      "sha256": "a7b2a35da2179dfd15feac187d945b14a52ffb8b385c19ecd902ec97a774c7b0"
++    },
++    "anticipation/history.jsonl": {
++      "bytes": 1416,
++      "sha256": "7e3d18c5305a4a6e8ec843be052a91c1db5085462510dbab017a6d4c6d711211"
++    },
++    "anticipation/next-effect.json": {
++      "bytes": 1005,
++      "sha256": "841f2c2da636ccb4faf75c8785b651df4bdffd2c6bf2e782f72267a514151cf4"
++    },
++    "anticipation/trends.json": {
++      "bytes": 339,
++      "sha256": "6b768e4541696bab4630f52199483cc4cf40f3c733f60e4a1b6ff1d1b2ce54d7"
++    }
++  },
++  "checkpoint_id": "gsc-current-main-0002-anticipation-materialized",
++  "checkpoint_sha256": "3f54050b26650c31e3976cb5a511760caacbbee1ec801d134efc47e8cb88c003",
++  "completion_claims": {
++    "EFFECT_ACK_DONE": false,
++    "FINAL_PASS": false,
++    "PASS": false
++  },
++  "effect_state": "EFFECT_ACK_CONTINUE",
++  "external_effect": "NONE",
++  "observed_at": "2026-07-30T07:27:10Z",
++  "previous_checkpoint_sha256": "56f2c5858ab2759d31146e2f686304148d72ffaa969d56f75ca0b208940d7758",
++  "schema": "qikvrt_closure_checkpoint_v1",
++  "scope_id": "qikvrt-global-system-closure-v1",
++  "source_revision": "git-tree:b44d849262f729977daba7b9072a6e8906667aaa",
++  "stage": "ANTICIPATION_MATERIALIZED"
++}
+diff --git a/tests/test_anticipation.py b/tests/test_anticipation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..56cc781d43151486b8aa4a6a3bd492e6f2227d39
+--- /dev/null
++++ b/tests/test_anticipation.py
+@@ -0,0 +1,196 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++from __future__ import annotations
++
++import copy
++import json
++import shutil
++import tempfile
++import unittest
++from pathlib import Path
++
++from tools import qikvrt_anticipation as anticipation
++
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++class GlobalSystemClosureContractTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self.policy = anticipation.load_policy(ROOT)
++        self.input_value = anticipation.load_anticipation_input(ROOT)
++
++    def test_repository_contract_is_bounded_and_valid(self) -> None:
++        anticipation.validate_policy(self.policy)
++        anticipation.validate_input(self.input_value, ROOT)
++        self.assertEqual(
++            self.policy["completion_claims"],
++            {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
++        )
++        self.assertFalse(
++            self.policy["status_projection"]["external_effects_may_be_dispatched"]
++        )
++
++    def test_monotonic_improvement_is_measured_and_non_regressing(self) -> None:
++        previous = {"a": 2, "b": 4}
++        self.assertEqual(
++            anticipation.classify_monotonic_transition(previous, {"a": 3, "b": 4}),
++            "NON_REGRESSING_GATE_IMPROVEMENT",
++        )
++        self.assertEqual(
++            anticipation.classify_monotonic_transition(previous, previous),
++            "BYTE_STABLE_NO_OP",
++        )
++        self.assertEqual(
++            anticipation.classify_monotonic_transition(previous, {"a": 1, "b": 5}),
++            "REJECTED_REGRESSION",
++        )
++
++    def test_metric_shape_drift_fails_closed(self) -> None:
++        with self.assertRaisesRegex(anticipation.ClosureError, "metric sets"):
++            anticipation.classify_monotonic_transition({"a": 1}, {"b": 1})
++
++    def test_checkpoint_hash_binds_predecessor(self) -> None:
++        checkpoint = {"checkpoint_id": "test", "value": 1}
++        zero_hash = "0" * 64
++        first = anticipation.checkpoint_hash(
++            checkpoint, previous_checkpoint_sha256=zero_hash
++        )
++        second = anticipation.checkpoint_hash(
++            checkpoint, previous_checkpoint_sha256="1" * 64
++        )
++        self.assertNotEqual(first, second)
++        self.assertEqual(len(first), 64)
++
++    def test_false_completion_claim_in_policy_is_blocked(self) -> None:
++        policy = copy.deepcopy(self.policy)
++        policy["completion_claims"]["PASS"] = True
++        with self.assertRaisesRegex(anticipation.ClosureError, "false completion"):
++            anticipation.validate_policy(policy)
++
++    def test_bound_current_status_tamper_is_blocked(self) -> None:
++        input_value = copy.deepcopy(self.input_value)
++        input_value["source_bindings"][0]["sha256"] = "0" * 64
++        with self.assertRaisesRegex(anticipation.ClosureError, "digest drift"):
++            anticipation.validate_input(input_value, ROOT)
++
++
++class AnticipationProjectionTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self.policy = anticipation.load_policy(ROOT)
++        self.input_value = anticipation.load_anticipation_input(ROOT)
++
++    def test_repository_projections_are_byte_current(self) -> None:
++        verified = anticipation.verify_projections(ROOT)
++        self.assertEqual(set(verified), {path.as_posix() for path in anticipation.PROJECTION_PATHS})
++
++    def test_repeated_derivation_is_byte_identical(self) -> None:
++        first = anticipation.build_projections(self.policy, self.input_value)
++        second = anticipation.build_projections(self.policy, self.input_value)
++        self.assertEqual(first, second)
++
++    def test_equivalent_planner_is_replaceable(self) -> None:
++        expected = anticipation.build_projections(self.policy, self.input_value)
++
++        def replacement(value: dict[str, object]) -> dict[str, object]:
++            return dict(value["next_effect"])  # type: ignore[arg-type]
++
++        observed = anticipation.build_projections(
++            self.policy, self.input_value, planner=replacement
++        )
++        self.assertEqual(expected, observed)
++
++    def test_competing_planner_fails_closed(self) -> None:
++        def competing(value: dict[str, object]) -> dict[str, object]:
++            result = dict(value["next_effect"])  # type: ignore[arg-type]
++            result["effect_id"] = "COMPETING_EFFECT"
++            return result
++
++        with self.assertRaisesRegex(
++            anticipation.ClosureError, "TREND_DERIVATION_NONDETERMINISTIC"
++        ):
++            anticipation.build_projections(
++                self.policy, self.input_value, planner=competing
++            )
++
++    def test_insufficient_observations_fail_closed(self) -> None:
++        input_value = copy.deepcopy(self.input_value)
++        input_value["observations"] = input_value["observations"][:1]
++        with self.assertRaisesRegex(
++            anticipation.ClosureError, "INSUFFICIENT_VERIFIED_OBSERVATIONS"
++        ):
++            anticipation.validate_input(input_value)
++
++    def test_activity_without_metric_change_is_not_progress(self) -> None:
++        observations = copy.deepcopy(self.input_value["observations"])
++        observations[1]["metrics"] = copy.deepcopy(observations[0]["metrics"])
++        trend = anticipation.derive_trend(observations)
++        self.assertEqual(trend["direction"], "STABLE")
++        self.assertFalse(trend["productive_progress"])
++        self.assertEqual(trend["basis"], ["BYTE_STABLE_NO_OP"])
++
++    def test_checkpoint_chain_is_contiguous_and_false_pass_free(self) -> None:
++        outputs = anticipation.build_projections(self.policy, self.input_value)
++        first = json.loads(outputs[anticipation.CHECKPOINT_1_PATH])
++        second = json.loads(outputs[anticipation.CHECKPOINT_2_PATH])
++        self.assertEqual(
++            second["previous_checkpoint_sha256"], first["checkpoint_sha256"]
++        )
++        for checkpoint in (first, second):
++            self.assertEqual(
++                checkpoint["completion_claims"],
++                {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False},
++            )
++            self.assertEqual(checkpoint["external_effect"], "NONE")
++
++    def test_current_projection_matches_declared_schema_shape(self) -> None:
++        schema = json.loads(
++            (ROOT / "schemas/qikvrt-anticipation-state.schema.json").read_text(
++                encoding="utf-8"
++            )
++        )
++        current = json.loads(
++            anticipation.build_projections(self.policy, self.input_value)[
++                anticipation.CURRENT_PATH
++            ]
++        )
++        self.assertTrue(set(schema["required"]).issubset(current))
++        self.assertEqual(
++            current["schema_version"],
++            schema["properties"]["schema_version"]["const"],
++        )
++        self.assertFalse(current["execution"]["automatically_dispatched"])
++        self.assertEqual(
++            current["current_state"]["effect_state"], "EFFECT_ACK_CONTINUE"
++        )
++
++    def test_materialization_has_no_external_effect(self) -> None:
++        with tempfile.TemporaryDirectory() as temporary:
++            root = Path(temporary)
++            copied_paths = [
++                anticipation.POLICY_PATH,
++                anticipation.INPUT_PATH,
++                *(
++                    Path(binding["path"])
++                    for binding in self.input_value["source_bindings"]
++                ),
++            ]
++            for relative in copied_paths:
++                destination = root / relative
++                destination.parent.mkdir(parents=True, exist_ok=True)
++                shutil.copy2(ROOT / relative, destination)
++            result = anticipation.materialize(root)
++            self.assertEqual(result["external_effect"], "NONE")
++            self.assertEqual(result["effect_state"], "EFFECT_ACK_CONTINUE")
++            self.assertEqual(
++                sorted(
++                    path.relative_to(root).as_posix()
++                    for path in root.rglob("*")
++                    if path.is_file() and path.relative_to(root) not in copied_paths
++                ),
++                sorted(path.as_posix() for path in anticipation.PROJECTION_PATHS),
++            )
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/qikvrt_anticipation.py b/tools/qikvrt_anticipation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e56b186c242fa07895835268c2207cffd27d13fe
+--- /dev/null
++++ b/tools/qikvrt_anticipation.py
+@@ -0,0 +1,672 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++"""Materialize and verify the bounded QIK-VRT anticipation projection.
++
++This module is deliberately effect-free. It validates an evidence-bound input,
++derives one trend and one next effect, and writes only deterministic repository
++projections plus two hash-linked checkpoints.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import sys
++from pathlib import Path
++from typing import Any, Callable, Mapping, Sequence
++
++ROOT = Path(__file__).resolve().parents[1]
++ROOT_STRING = str(ROOT)
++if ROOT_STRING not in sys.path:
++    sys.path.insert(0, ROOT_STRING)
++
++from tools.qikvrt_seed_common import (  # noqa: E402
++    SeedError,
++    canonical_json_bytes,
++    read_json,
++    write_json,
++    write_text,
++)
++
++
++POLICY_PATH = Path("policy/GLOBAL_SYSTEM_CLOSURE_V1.json")
++INPUT_PATH = Path("anticipation/INPUT.json")
++CURRENT_PATH = Path("anticipation/current.json")
++HISTORY_PATH = Path("anticipation/history.jsonl")
++TRENDS_PATH = Path("anticipation/trends.json")
++DERIVATIVES_PATH = Path("anticipation/derivatives.json")
++NEXT_EFFECT_PATH = Path("anticipation/next-effect.json")
++CHECKPOINT_1_PATH = Path("receipts/anticipation/0001-contract-bound.json")
++CHECKPOINT_2_PATH = Path("receipts/anticipation/0002-anticipation-materialized.json")
++POLICY_SCHEMA = "qikvrt_global_system_closure_policy_v1"
++INPUT_SCHEMA = "qikvrt_anticipation_input_v1"
++STATE_SCHEMA = "qikvrt_anticipation_state_v1"
++SCOPE_ID = "qikvrt-global-system-closure-v1"
++ZERO_SHA256 = "0" * 64
++PROJECTION_PATHS = (
++    CURRENT_PATH,
++    HISTORY_PATH,
++    TRENDS_PATH,
++    DERIVATIVES_PATH,
++    NEXT_EFFECT_PATH,
++    CHECKPOINT_1_PATH,
++    CHECKPOINT_2_PATH,
++)
++
++
++class ClosureError(RuntimeError):
++    """A contract or projection violation that must fail closed."""
++
++
++def sha256_bytes(value: bytes) -> str:
++    return hashlib.sha256(value).hexdigest()
++
++
++def canonical_digest(value: Any) -> str:
++    return sha256_bytes(canonical_json_bytes(value))
++
++
++def require_exact_keys(
++    value: Any, keys: set[str], label: str
++) -> Mapping[str, Any]:
++    if not isinstance(value, Mapping) or set(value) != keys:
++        raise ClosureError(f"{label} must contain exactly {sorted(keys)}")
++    return value
++
++
++def is_sha256(value: Any) -> bool:
++    return (
++        isinstance(value, str)
++        and len(value) == 64
++        and all(character in "0123456789abcdef" for character in value)
++    )
++
++
++def safe_relative_path(raw: Any, label: str) -> Path:
++    if not isinstance(raw, str) or not raw or "\\" in raw:
++        raise ClosureError(f"{label} must be a repository-relative path")
++    path = Path(raw)
++    if path.is_absolute() or ".." in path.parts or "." in path.parts:
++        raise ClosureError(f"{label} is unsafe")
++    return path
++
++
++def read_bound_file(root: Path, raw_path: Any, label: str) -> tuple[Path, bytes]:
++    relative = safe_relative_path(raw_path, label)
++    path = root / relative
++    current = path
++    while current != root:
++        if current.is_symlink():
++            raise ClosureError(f"{label} traverses a symlink")
++        current = current.parent
++    try:
++        payload = path.read_bytes()
++    except OSError as exc:
++        raise ClosureError(f"{label} cannot be read: {exc}") from exc
++    if not path.is_file():
++        raise ClosureError(f"{label} is not a regular file")
++    return relative, payload
++
++
++def validate_policy(value: Mapping[str, Any]) -> None:
++    require_exact_keys(
++        value,
++        {
++            "_license",
++            "schema",
++            "scope_id",
++            "version",
++            "authority",
++            "entrypoint",
++            "canonical_chain",
++            "persistence_stages",
++            "monotonic_improvement",
++            "effect_boundary",
++            "recovery",
++            "status_projection",
++            "completion_claims",
++        },
++        "closure policy",
++    )
++    if value["schema"] != POLICY_SCHEMA or value["scope_id"] != SCOPE_ID:
++        raise ClosureError("closure policy identity mismatch")
++    if value["entrypoint"] != "AI":
++        raise ClosureError("closure entrypoint must remain AI")
++    if value["canonical_chain"] != [
++        "INTERACTION",
++        "EVIDENCE",
++        "WORK_UNIT",
++        "CANDIDATE",
++        "GATES",
++        "EFFECT_ACK",
++        "EFFECT",
++        "RECEIPT",
++        "OBSERVATION",
++    ]:
++        raise ClosureError("canonical chain drift")
++    if value["persistence_stages"] != [
++        "CONTRACT_BOUND",
++        "ANTICIPATION_MATERIALIZED",
++        "EFFECT_INTENTS_GATED",
++        "CANDIDATE_VERIFIED",
++        "AUTHORITY_OBSERVED",
++        "MIRROR_OBSERVED",
++        "RECEIPT_CLOSED",
++    ]:
++        raise ClosureError("persistence-stage drift")
++    monotonic = value["monotonic_improvement"]
++    if monotonic["accepted_transitions"] != [
++        "NON_REGRESSING_GATE_IMPROVEMENT",
++        "BYTE_STABLE_NO_OP",
++    ]:
++        raise ClosureError("monotonic transition contract drift")
++    if (
++        monotonic["regression_becomes_canonical"] is not False
++        or monotonic["unmeasured_improvement_claim_allowed"] is not False
++    ):
++        raise ClosureError("monotonic policy permits an unproved improvement")
++    effect = value["effect_boundary"]
++    if (
++        effect["required_release_state"] != "EFFECT_ACK_DONE"
++        or effect["default_state"] != "EFFECT_ACK_CONTINUE"
++        or effect["transport_ack_is_effect_ack"] is not False
++        or effect["adaptive_runtime_may_issue_done"] is not False
++    ):
++        raise ClosureError("EFFECT_ACK boundary drift")
++    status = value["status_projection"]
++    if (
++        status["source_paths"] != ["AI_PROGRESS.json", "AI_STATUS.md"]
++        or status["scope_separation_required"] is not True
++        or status["repository_wide_completion_inference_allowed"] is not False
++        or status["external_effects_may_be_dispatched"] is not False
++    ):
++        raise ClosureError("status-projection boundary drift")
++    if value["completion_claims"] != {
++        "PASS": False,
++        "FINAL_PASS": False,
++        "EFFECT_ACK_DONE": False,
++    }:
++        raise ClosureError("closure policy contains a false completion claim")
++
++
++def validate_source_bindings(
++    source_bindings: Any, root: Path | None = None
++) -> dict[str, dict[str, Any]]:
++    if not isinstance(source_bindings, list) or len(source_bindings) < 2:
++        raise ClosureError("source_bindings must contain at least two files")
++    result: dict[str, dict[str, Any]] = {}
++    for index, binding in enumerate(source_bindings):
++        require_exact_keys(
++            binding, {"path", "bytes", "sha256"}, f"source_bindings[{index}]"
++        )
++        relative = safe_relative_path(binding["path"], f"source_bindings[{index}].path")
++        key = relative.as_posix()
++        if key in result:
++            raise ClosureError("source binding paths must be unique")
++        if (
++            type(binding["bytes"]) is not int
++            or binding["bytes"] < 1
++            or not is_sha256(binding["sha256"])
++        ):
++            raise ClosureError(f"invalid source binding for {key}")
++        if root is not None:
++            _, payload = read_bound_file(root, key, f"source binding {key}")
++            if len(payload) != binding["bytes"]:
++                raise ClosureError(f"source binding byte count drift: {key}")
++            if sha256_bytes(payload) != binding["sha256"]:
++                raise ClosureError(f"source binding digest drift: {key}")
++        result[key] = {
++            "bytes": binding["bytes"],
++            "sha256": binding["sha256"],
++        }
++    required = {"AI_PROGRESS.json", "AI_STATUS.md"}
++    if not required.issubset(result):
++        raise ClosureError("current status source bindings are incomplete")
++    return result
++
++
++def validate_input(value: Mapping[str, Any], root: Path | None = None) -> None:
++    require_exact_keys(
++        value,
++        {
++            "_license",
++            "schema",
++            "scope_id",
++            "repository",
++            "source_revision",
++            "observed_at",
++            "source_bindings",
++            "observations",
++            "next_effect",
++            "completion_claims",
++        },
++        "anticipation input",
++    )
++    if value["schema"] != INPUT_SCHEMA or value["scope_id"] != SCOPE_ID:
++        raise ClosureError("anticipation input identity mismatch")
++    if value["repository"] != "Goldkelch/qik-vrt":
++        raise ClosureError("anticipation repository drift")
++    source_revision = value["source_revision"]
++    if (
++        not isinstance(source_revision, str)
++        or not source_revision.startswith("git-tree:")
++        or len(source_revision) != 49
++    ):
++        raise ClosureError("anticipation source revision must bind one Git tree")
++    validate_source_bindings(value["source_bindings"], root)
++    observations = value["observations"]
++    if not isinstance(observations, list) or len(observations) < 2:
++        raise ClosureError("INSUFFICIENT_VERIFIED_OBSERVATIONS")
++    state_ids: set[str] = set()
++    previous_time = ""
++    metric_keys: set[str] | None = None
++    for index, observation in enumerate(observations):
++        require_exact_keys(
++            observation,
++            {
++                "state_id",
++                "observed_at",
++                "classification",
++                "productive_chain_position",
++                "metrics",
++                "evidence",
++            },
++            f"observations[{index}]",
++        )
++        state_id = observation["state_id"]
++        if not isinstance(state_id, str) or not state_id or state_id in state_ids:
++            raise ClosureError("observation state IDs must be unique")
++        state_ids.add(state_id)
++        observed_at = observation["observed_at"]
++        if not isinstance(observed_at, str) or not observed_at.endswith("Z"):
++            raise ClosureError("observation timestamps must be RFC3339 UTC")
++        if previous_time and observed_at < previous_time:
++            raise ClosureError("observations must be ordered")
++        previous_time = observed_at
++        metrics = observation["metrics"]
++        if (
++            not isinstance(metrics, Mapping)
++            or not metrics
++            or any(type(item) is not int or item < 0 for item in metrics.values())
++        ):
++            raise ClosureError("observation metrics must be non-negative integers")
++        keys = set(metrics)
++        if metric_keys is None:
++            metric_keys = keys
++        elif keys != metric_keys:
++            raise ClosureError("observation metric sets differ")
++        evidence = observation["evidence"]
++        if (
++            not isinstance(evidence, list)
++            or not evidence
++            or any(not isinstance(item, str) or not item for item in evidence)
++        ):
++            raise ClosureError("every observation needs evidence")
++    if value["observed_at"] != observations[-1]["observed_at"]:
++        raise ClosureError("top-level observed_at must equal the latest observation")
++    next_effect = value["next_effect"]
++    require_exact_keys(
++        next_effect,
++        {
++            "effect_id",
++            "anticipated_state_id",
++            "description",
++            "executor_capability",
++            "preconditions",
++            "expected_receipt",
++        },
++        "next effect",
++    )
++    if (
++        not next_effect["effect_id"]
++        or not next_effect["anticipated_state_id"]
++        or not next_effect["expected_receipt"]
++        or not isinstance(next_effect["preconditions"], list)
++        or not next_effect["preconditions"]
++    ):
++        raise ClosureError("NEXT_EFFECT_NOT_SELECTED")
++    if value["completion_claims"] != {
++        "PASS": False,
++        "FINAL_PASS": False,
++        "EFFECT_ACK_DONE": False,
++    }:
++        raise ClosureError("anticipation input contains a false completion claim")
++
++
++def classify_monotonic_transition(
++    previous: Mapping[str, int], candidate: Mapping[str, int]
++) -> str:
++    """Classify only the declared metric map; infer no hidden quality."""
++    if set(previous) != set(candidate) or not previous:
++        raise ClosureError("metric sets must be equal and non-empty")
++    if any(type(value) is not int for value in [*previous.values(), *candidate.values()]):
++        raise ClosureError("metrics must be integers")
++    if canonical_json_bytes(previous) == canonical_json_bytes(candidate):
++        return "BYTE_STABLE_NO_OP"
++    if any(candidate[key] < previous[key] for key in previous):
++        return "REJECTED_REGRESSION"
++    if any(candidate[key] > previous[key] for key in previous):
++        return "NON_REGRESSING_GATE_IMPROVEMENT"
++    raise ClosureError("unclassifiable metric transition")
++
++
++def checkpoint_hash(
++    checkpoint: Mapping[str, Any], *, previous_checkpoint_sha256: str
++) -> str:
++    if not is_sha256(previous_checkpoint_sha256):
++        raise ClosureError("previous checkpoint SHA-256 is invalid")
++    payload = dict(checkpoint)
++    payload.pop("checkpoint_sha256", None)
++    payload["previous_checkpoint_sha256"] = previous_checkpoint_sha256
++    return canonical_digest(payload)
++
++
++def json_line(value: Any) -> str:
++    return json.dumps(
++        value,
++        ensure_ascii=False,
++        sort_keys=True,
++        separators=(",", ":"),
++        allow_nan=False,
++    )
++
++
++def observation_projection(observation: Mapping[str, Any]) -> dict[str, Any]:
++    digest_basis = {
++        "state_id": observation["state_id"],
++        "observed_at": observation["observed_at"],
++        "classification": observation["classification"],
++        "productive_chain_position": observation["productive_chain_position"],
++        "metrics": observation["metrics"],
++        "evidence": observation["evidence"],
++    }
++    return {**digest_basis, "state_digest": canonical_digest(digest_basis)}
++
++
++def derive_trend(observations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
++    if len(observations) < 2:
++        raise ClosureError("INSUFFICIENT_VERIFIED_OBSERVATIONS")
++    transition_classes = [
++        classify_monotonic_transition(
++            observations[index - 1]["metrics"], observations[index]["metrics"]
++        )
++        for index in range(1, len(observations))
++    ]
++    if "REJECTED_REGRESSION" in transition_classes:
++        direction = "REGRESSING"
++        productive_progress = False
++    elif "NON_REGRESSING_GATE_IMPROVEMENT" in transition_classes:
++        direction = "ADVANCING"
++        productive_progress = True
++    else:
++        direction = "STABLE"
++        productive_progress = False
++    return {
++        "direction": direction,
++        "basis": transition_classes,
++        "productive_progress": productive_progress,
++    }
++
++
++def derive_derivatives(
++    observations: Sequence[Mapping[str, Any]],
++) -> list[dict[str, Any]]:
++    if len(observations) < 2:
++        raise ClosureError("INSUFFICIENT_VERIFIED_OBSERVATIONS")
++    previous = observations[-2]["metrics"]
++    current = observations[-1]["metrics"]
++    return [
++        {
++            "order": 1,
++            "name": key,
++            "value": current[key] - previous[key],
++            "interpretation": "latest verified discrete metric difference",
++        }
++        for key in sorted(previous)
++    ]
++
++
++def default_planner(input_value: Mapping[str, Any]) -> dict[str, Any]:
++    return dict(input_value["next_effect"])
++
++
++def build_projections(
++    policy: Mapping[str, Any],
++    input_value: Mapping[str, Any],
++    *,
++    planner: Callable[[Mapping[str, Any]], dict[str, Any]] = default_planner,
++) -> dict[Path, bytes]:
++    validate_policy(policy)
++    validate_input(input_value)
++    observations = [
++        observation_projection(item) for item in input_value["observations"]
++    ]
++    trend = derive_trend(input_value["observations"])
++    derivatives = derive_derivatives(input_value["observations"])
++    next_effect = planner(input_value)
++    if next_effect != input_value["next_effect"]:
++        raise ClosureError("TREND_DERIVATION_NONDETERMINISTIC")
++    source_bindings = validate_source_bindings(input_value["source_bindings"])
++    basis = {
++        "policy_sha256": canonical_digest(policy),
++        "input_sha256": canonical_digest(input_value),
++        "source_revision": input_value["source_revision"],
++        "source_bindings": source_bindings,
++    }
++    current = {
++        "schema_version": STATE_SCHEMA,
++        "observation_id": "gsc-anticipation-current-main-0002",
++        "repository": input_value["repository"],
++        "observed_at": input_value["observed_at"],
++        "current_state": {
++            "state_id": observations[-1]["state_id"],
++            "classification": observations[-1]["classification"],
++            "productive_chain_position": observations[-1][
++                "productive_chain_position"
++            ],
++            "scope_id": SCOPE_ID,
++            "effect_state": "EFFECT_ACK_CONTINUE",
++        },
++        "state_history": [
++            {
++                "state_id": item["state_id"],
++                "observed_at": item["observed_at"],
++                "state_digest": item["state_digest"],
++            }
++            for item in observations
++        ],
++        "trend": trend,
++        "derivatives": derivatives,
++        "anticipated_state": {
++            "state_id": next_effect["anticipated_state_id"],
++            "derivation_rule": "earliest safe incomplete persistence stage",
++            "deterministic": True,
++        },
++        "next_effect": next_effect,
++        "execution": {
++            "status": "PENDING",
++            "automatically_dispatched": False,
++            "failure_class": None,
++        },
++        "evidence": [
++            str(POLICY_PATH),
++            str(INPUT_PATH),
++            *sorted(source_bindings),
++        ],
++        "provenance": {
++            "source_revision": input_value["source_revision"],
++            "sha256": canonical_digest(basis),
++        },
++    }
++    trends = {
++        "schema": "qikvrt_anticipation_trends_v1",
++        "scope_id": SCOPE_ID,
++        "source_revision": input_value["source_revision"],
++        "trend": trend,
++        "observation_count": len(observations),
++    }
++    derivative_projection = {
++        "schema": "qikvrt_anticipation_derivatives_v1",
++        "scope_id": SCOPE_ID,
++        "source_revision": input_value["source_revision"],
++        "derivatives": derivatives,
++    }
++    next_effect_projection = {
++        "schema": "qikvrt_anticipation_next_effect_v1",
++        "scope_id": SCOPE_ID,
++        "effect_state": "EFFECT_ACK_CONTINUE",
++        "next_effect": next_effect,
++        "dispatch_authorized": False,
++        "completion_claims": input_value["completion_claims"],
++    }
++    history_bytes = (
++        "\n".join(json_line(item) for item in observations) + "\n"
++    ).encode("utf-8")
++    primary_outputs = {
++        CURRENT_PATH: canonical_json_bytes(current),
++        HISTORY_PATH: history_bytes,
++        TRENDS_PATH: canonical_json_bytes(trends),
++        DERIVATIVES_PATH: canonical_json_bytes(derivative_projection),
++        NEXT_EFFECT_PATH: canonical_json_bytes(next_effect_projection),
++    }
++    checkpoint_1 = {
++        "schema": "qikvrt_closure_checkpoint_v1",
++        "scope_id": SCOPE_ID,
++        "checkpoint_id": "gsc-current-main-0001-contract-bound",
++        "stage": "CONTRACT_BOUND",
++        "observed_at": input_value["observed_at"],
++        "source_revision": input_value["source_revision"],
++        "previous_checkpoint_sha256": ZERO_SHA256,
++        "bindings": basis,
++        "effect_state": "EFFECT_ACK_CONTINUE",
++        "external_effect": "NONE",
++        "completion_claims": input_value["completion_claims"],
++    }
++    checkpoint_1["checkpoint_sha256"] = checkpoint_hash(
++        checkpoint_1, previous_checkpoint_sha256=ZERO_SHA256
++    )
++    output_bindings = {
++        path.as_posix(): {"bytes": len(raw), "sha256": sha256_bytes(raw)}
++        for path, raw in primary_outputs.items()
++    }
++    checkpoint_2 = {
++        "schema": "qikvrt_closure_checkpoint_v1",
++        "scope_id": SCOPE_ID,
++        "checkpoint_id": "gsc-current-main-0002-anticipation-materialized",
++        "stage": "ANTICIPATION_MATERIALIZED",
++        "observed_at": input_value["observed_at"],
++        "source_revision": input_value["source_revision"],
++        "previous_checkpoint_sha256": checkpoint_1["checkpoint_sha256"],
++        "bindings": output_bindings,
++        "effect_state": "EFFECT_ACK_CONTINUE",
++        "external_effect": "NONE",
++        "completion_claims": input_value["completion_claims"],
++    }
++    checkpoint_2["checkpoint_sha256"] = checkpoint_hash(
++        checkpoint_2,
++        previous_checkpoint_sha256=checkpoint_1["checkpoint_sha256"],
++    )
++    return {
++        **primary_outputs,
++        CHECKPOINT_1_PATH: canonical_json_bytes(checkpoint_1),
++        CHECKPOINT_2_PATH: canonical_json_bytes(checkpoint_2),
++    }
++
++
++def load_policy(root: Path = ROOT) -> dict[str, Any]:
++    try:
++        policy = read_json(root / POLICY_PATH, "closure policy")
++    except SeedError as exc:
++        raise ClosureError(str(exc)) from exc
++    validate_policy(policy)
++    return policy
++
++
++def load_anticipation_input(root: Path = ROOT) -> dict[str, Any]:
++    try:
++        value = read_json(root / INPUT_PATH, "anticipation input")
++    except SeedError as exc:
++        raise ClosureError(str(exc)) from exc
++    validate_input(value, root)
++    return value
++
++
++def expected_projections(root: Path = ROOT) -> dict[Path, bytes]:
++    return build_projections(load_policy(root), load_anticipation_input(root))
++
++
++def materialize(root: Path = ROOT) -> dict[str, Any]:
++    outputs = expected_projections(root)
++    for relative, raw in outputs.items():
++        if relative == HISTORY_PATH:
++            write_text(root / relative, raw.decode("utf-8"))
++        else:
++            write_json(root / relative, json.loads(raw))
++    return {
++        "schema": "qikvrt_anticipation_materialization_receipt_v1",
++        "state": "MATERIALIZED",
++        "paths": [path.as_posix() for path in outputs],
++        "output_count": len(outputs),
++        "effect_state": "EFFECT_ACK_CONTINUE",
++        "external_effect": "NONE",
++    }
++
++
++def verify_projections(root: Path = ROOT) -> dict[str, str]:
++    outputs = expected_projections(root)
++    verified: dict[str, str] = {}
++    for relative, expected in outputs.items():
++        try:
++            actual = (root / relative).read_bytes()
++        except OSError as exc:
++            raise ClosureError(f"missing projection {relative}: {exc}") from exc
++        if actual != expected:
++            raise ClosureError(f"projection drift: {relative}")
++        verified[relative.as_posix()] = sha256_bytes(actual)
++    return verified
++
++
++def check(root: Path = ROOT) -> dict[str, Any]:
++    policy = load_policy(root)
++    verified = verify_projections(root)
++    latest = json.loads((root / CHECKPOINT_2_PATH).read_text(encoding="utf-8"))
++    return {
++        "schema": "qikvrt_global_system_closure_check_v1",
++        "scope_id": SCOPE_ID,
++        "state": "CONTINUE",
++        "effect_state": "EFFECT_ACK_CONTINUE",
++        "policy_sha256": canonical_digest(policy),
++        "verified_projection_count": len(verified),
++        "latest_checkpoint_sha256": latest["checkpoint_sha256"],
++        "completion_claims": {
++            "PASS": False,
++            "FINAL_PASS": False,
++            "EFFECT_ACK_DONE": False,
++        },
++    }
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "command",
++        choices=("check", "materialize"),
++        help="materialize or validate deterministic closure projections",
++    )
++    return parser
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    arguments = build_parser().parse_args(argv)
++    try:
++        result = materialize() if arguments.command == "materialize" else check()
++    except (ClosureError, SeedError, OSError, ValueError) as exc:
++        print(f"BLOCK: {exc}")
++        return 2
++    print(json.dumps(result, sort_keys=True, indent=2))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json b/work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json
+index 710468ea7cee6358586c16870679497aa2372b54..9a56b72b0dfc07a489b6cee85d0182fbe25c8a88 100644
+--- a/work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json
++++ b/work-units/ANTICIPATION_001_IMPLEMENT_CLOSED_LOOP.json
+@@ -2,12 +2,14 @@
+   "schema_version": "qikvrt_work_unit_v1",
+   "work_unit_id": "ANTICIPATION-001",
+   "title": "Implement repository-native trend, anticipation and closed observation loop",
+-  "status": "READY",
++  "status": "IN_PROGRESS",
+   "priority": "HIGHEST",
+   "authority_repository": "Goldkelch/qik-vrt",
+   "mirror_repository": "ingolf-lohmann/qik-vrt",
+-  "source_branch": "agent/repository-capability-self-disclosure-v1",
++  "source_branch": "agent/global-system-closure-current-v1",
+   "inputs": [
++    "docs/architecture/GLOBAL_SYSTEM_CLOSURE_V1.md",
++    "policy/GLOBAL_SYSTEM_CLOSURE_V1.json",
+     "schemas/qikvrt-anticipation-state.schema.json",
+     "docs/architecture/QIKVRT_ANTICIPATION_AND_TREND_MODEL.md",
+     "capabilities/anticipation.json",
+@@ -62,6 +64,8 @@
+     }
+   ],
+   "required_outputs": [
++    "tools/qikvrt_anticipation.py",
++    "tests/test_anticipation.py",
+     "anticipation/current.json",
+     "anticipation/history.jsonl",
+     "anticipation/trends.json",
+@@ -75,6 +79,25 @@
+     "tests/test_component_replacement.*",
+     "receipts/anticipation/"
+   ],
++  "materialized_stages": [
++    {
++      "order": 1,
++      "stage": "CONTRACT_BOUND",
++      "receipt": "receipts/anticipation/0001-contract-bound.json"
++    },
++    {
++      "order": 2,
++      "stage": "ANTICIPATION_MATERIALIZED",
++      "receipt": "receipts/anticipation/0002-anticipation-materialized.json"
++    }
++  ],
++  "current_blockers": [
++    "POST_PROMOTION_STATUS_PROJECTION_NOT_RECONCILED",
++    "DISPATCH_AND_REOBSERVE_NOT_IMPLEMENTED",
++    "RCP_API_NOT_IMPLEMENTED",
++    "AUTHORITY_MIRROR_COMPATIBILITY_NOT_VERIFIED",
++    "PUBLICATION_PROJECTIONS_NOT_BOUND"
++  ],
+   "mandatory_gates": [
+     "SCHEMA_VALIDATION",
+     "DETERMINISTIC_REPLAY",
