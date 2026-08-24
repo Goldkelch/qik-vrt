@@ -108,6 +108,10 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
 
+    def test_workflow_uses_non_empty_timestamp_fallback_for_run_observations(self) -> None:
+        self.assertIn(".created_at // .run_started_at // .updated_at // \"\"", self.text)
+        self.assertIn("select($created_at != \"\")", self.text)
+
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(
             [
