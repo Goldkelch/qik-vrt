@@ -103,7 +103,7 @@ class MeshHeartbeatSystemTests(unittest.TestCase):
                     source_head=HEAD,
                     source_tree=TREE,
                     output_dir=output,
-                    heartbeat_count=2,
+                    heartbeat_count=4,
                     event_name="local",
                     run_id=0,
                 )
@@ -113,7 +113,8 @@ class MeshHeartbeatSystemTests(unittest.TestCase):
             self.assertEqual(receipt["scheduled_interval_ns"], HEARTBEAT_INTERVAL_NS)
             self.assertEqual(receipt["node_process_count"], 4)
             self.assertEqual(receipt["pair_count"], 2)
-            self.assertEqual(receipt["total_heartbeats"], 8)
+            self.assertEqual(receipt["heartbeats_per_node"], 4)
+            self.assertEqual(receipt["total_heartbeats"], 16)
             self.assertEqual(receipt["heartbeat_semantic_work_count"], 0)
             self.assertEqual(receipt["polling_count"], 0)
             self.assertEqual(receipt["blind_retry_count"], 0)
@@ -137,7 +138,7 @@ class MeshHeartbeatSystemTests(unittest.TestCase):
                     source_head=HEAD,
                     source_tree=TREE,
                     output_dir=pathlib.Path(directory),
-                    heartbeat_count=2,
+                    heartbeat_count=4,
                     event_name="local",
                     run_id=0,
                 )
