@@ -109,7 +109,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual dhcpcd-base ipxe-qemu
           command -v dhcpcd >/dev/null || { echo 'BLOCK: dhcpcd-base installed no dhcpcd appliance client' >&2; exit 2; }
+          [ -r /etc/dhcpcd.conf ] || { echo 'BLOCK: dhcpcd-base installed no readable dhcpcd.conf' >&2; exit 2; }
           [ -r /usr/lib/ipxe/qemu/efi-virtio.rom ] || { echo 'BLOCK: ipxe-qemu installed no efi-virtio.rom' >&2; exit 2; }
+          supermin_dirs_file="$RUNNER_TEMP/qikvrt-supermin-dirs.txt"
+          find /usr/lib -type d -path '*/guestfs/supermin.d' -print | sort > "$supermin_dirs_file"
+          mapfile -t supermin_dirs < "$supermin_dirs_file"
+          if [ "${#supermin_dirs[@]}" -eq 0 ]; then
+            echo 'BLOCK: installed libguestfs exposes no supermin.d package input' >&2
+            exit 2
+          fi
+          for supermin_dir in "${supermin_dirs[@]}"; do
+            dhcp_package_fragment="$supermin_dir/zzz-qikvrt-dhcp-packages"
+            dhcp_hostfiles_fragment="$supermin_dir/zzz-qikvrt-dhcp-hostfiles"
+            printf '%s\n' 'dhcpcd-base' | sudo tee "$dhcp_package_fragment" >/dev/null
+            printf '%s\n' '/etc/dhcpcd.conf' | sudo tee "$dhcp_hostfiles_fragment" >/dev/null
+            sudo chmod 0644 "$dhcp_package_fragment" "$dhcp_hostfiles_fragment"
+            [ -r "$dhcp_package_fragment" ] && [ -r "$dhcp_hostfiles_fragment" ] || {
+              echo "BLOCK: unprivileged supermin builder cannot read DHCP inputs in $supermin_dir" >&2
+              exit 2
+            }
+            grep -Fqx 'dhcpcd-base' "$dhcp_package_fragment" &&
+              grep -Fqx '/etc/dhcpcd.conf' "$dhcp_hostfiles_fragment" || {
+              echo "BLOCK: unprivileged supermin DHCP inputs readback failed in $supermin_dir" >&2
+              exit 2
+            }
+          done
           mapfile -t generic_kernels < <(find /boot -maxdepth 1 -type f -name 'vmlinuz-*-generic' -print | sort -V)
           if [ "${#generic_kernels[@]}" -eq 0 ]; then
             echo 'BLOCK: linux-image-virtual installed no generic supermin appliance kernel' >&2
@@ -149,6 +173,11 @@ jobs:
             '#!/bin/bash' \
             'set -euo pipefail' \
             'mirror=${1:?missing Ubuntu mirror}' \
+            'if ! test -r /etc/dhcpcd.conf; then echo "Appliance DHCP configuration missing: /etc/dhcpcd.conf" >&2; exit 15; fi' \
+            'if ! command -v dhcpcd >/dev/null; then echo "Appliance DHCP client missing: dhcpcd" >&2; exit 16; fi' \
+            'if ! ip -4 -o addr show dev eth0 scope global | grep . >/dev/null; then echo "Appliance IPv4 address missing: eth0" >&2; exit 17; fi' \
+            'if ! ip -4 route show default | grep . >/dev/null; then echo "Appliance default route missing" >&2; exit 18; fi' \
+            'if ! test -s /etc/resolv.conf; then echo "Appliance resolver configuration missing" >&2; exit 19; fi' \
             'if ! getent ahostsv4 "$mirror" >/dev/null; then echo "DNS lookup failed: $mirror" >&2; exit 20; fi' \
             'if ! exec 3<>"/dev/tcp/${mirror}/80"; then echo "TCP connect failed: $mirror:80" >&2; exit 21; fi' \
             'exec 3>&-' \

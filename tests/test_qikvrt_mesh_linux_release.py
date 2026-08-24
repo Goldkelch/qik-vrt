@@ -47,6 +47,7 @@ class T(unittest.TestCase):
             "host_libguestfs_generic_kernel_required",
             "host_libguestfs_fresh_cache_required",
             "host_libguestfs_dhcp_client_required",
+            "host_libguestfs_supermin_dhcp_package_and_config_required",
             "host_libguestfs_virtio_net_rom_required",
             "host_libguestfs_network_preflight_required",
             "real_virt_customize_debug_trace_required",
@@ -115,8 +116,26 @@ class T(unittest.TestCase):
             "HOLD: non-carrier release-branch head built",
             "linux-image-virtual",
             "dhcpcd-base",
+            "/etc/dhcpcd.conf",
             "ipxe-qemu",
             "command -v dhcpcd",
+            "zzz-qikvrt-dhcp-packages",
+            "zzz-qikvrt-dhcp-hostfiles",
+            "find /usr/lib -type d -path '*/guestfs/supermin.d'",
+            'sort > "$supermin_dirs_file"',
+            'mapfile -t supermin_dirs < "$supermin_dirs_file"',
+            "printf '%s\\n' 'dhcpcd-base' | sudo tee",
+            'sudo chmod 0644 "$dhcp_package_fragment" "$dhcp_hostfiles_fragment"',
+            "grep -Fqx 'dhcpcd-base'",
+            "grep -Fqx '/etc/dhcpcd.conf'",
+            "unprivileged supermin builder cannot read DHCP inputs",
+            "unprivileged supermin DHCP inputs readback failed",
+            "installed libguestfs exposes no supermin.d package input",
+            "Appliance DHCP configuration missing: /etc/dhcpcd.conf",
+            "Appliance DHCP client missing: dhcpcd",
+            "Appliance IPv4 address missing: eth0",
+            "Appliance default route missing",
+            "Appliance resolver configuration missing",
             "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "Provision and verify native libguestfs host appliance",
             "BLOCK: linux-image-virtual installed no generic supermin appliance kernel",
@@ -155,8 +174,26 @@ class T(unittest.TestCase):
         for text in [
             "linux-image-virtual",
             "dhcpcd-base",
+            "/etc/dhcpcd.conf",
             "ipxe-qemu",
             "command -v dhcpcd",
+            "zzz-qikvrt-dhcp-packages",
+            "zzz-qikvrt-dhcp-hostfiles",
+            "find /usr/lib -type d -path '*/guestfs/supermin.d'",
+            'sort > "$supermin_dirs_file"',
+            'mapfile -t supermin_dirs < "$supermin_dirs_file"',
+            "printf '%s\\n' 'dhcpcd-base' | sudo tee",
+            'sudo chmod 0644 "$dhcp_package_fragment" "$dhcp_hostfiles_fragment"',
+            "grep -Fqx 'dhcpcd-base'",
+            "grep -Fqx '/etc/dhcpcd.conf'",
+            "unprivileged supermin builder cannot read DHCP inputs",
+            "unprivileged supermin DHCP inputs readback failed",
+            "installed libguestfs exposes no supermin.d package input",
+            "Appliance DHCP configuration missing: /etc/dhcpcd.conf",
+            "Appliance DHCP client missing: dhcpcd",
+            "Appliance IPv4 address missing: eth0",
+            "Appliance default route missing",
+            "Appliance resolver configuration missing",
             "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "SUPERMIN_KERNEL",
             "SUPERMIN_KERNEL_VERSION",
@@ -177,6 +214,54 @@ class T(unittest.TestCase):
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, host_run)
+        self.assertNotIn("ip -4 -o addr show dev eth0 scope global | grep -q", host_run)
+        self.assertNotIn("ip -4 route show default | grep -q", host_run)
+        causal_order = [
+            "sudo apt-get install",
+            'find /usr/lib -type d -path \'*/guestfs/supermin.d\' -print | sort > "$supermin_dirs_file"',
+            'mapfile -t supermin_dirs < "$supermin_dirs_file"',
+            "printf '%s\\n' 'dhcpcd-base' | sudo tee",
+            "printf '%s\\n' '/etc/dhcpcd.conf' | sudo tee",
+            'sudo chmod 0644 "$dhcp_package_fragment" "$dhcp_hostfiles_fragment"',
+            '[ -r "$dhcp_package_fragment" ]',
+            "grep -Fqx 'dhcpcd-base'",
+            "grep -Fqx '/etc/dhcpcd.conf'",
+            'export LIBGUESTFS_CACHEDIR="$(mktemp -d',
+            "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
+            'qemu-img create -f raw "$probe_disk" 32M',
+            "Appliance DHCP configuration missing: /etc/dhcpcd.conf",
+            "Appliance DHCP client missing: dhcpcd",
+            "Appliance IPv4 address missing: eth0",
+            "Appliance default route missing",
+            "Appliance resolver configuration missing",
+            'DNS lookup failed: $mirror',
+            'TCP connect failed: $mirror:80',
+            'bash -n "$probe_script"',
+            "guestfish --network --rw --format=raw",
+            'debug-upload "$probe_script"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
+            "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
+        ]
+        positions = [host_run.index(text) for text in causal_order]
+        self.assertEqual(positions, sorted(positions))
+
+        mode_run = next(
+            step["run"]
+            for step in workflow["jobs"]["prepare"]["steps"]
+            if step.get("id") == "mode"
+        )
+        self.assertEqual(mode_run.count("publish_ready=true"), 1)
+        nonpublish_modes = mode_run[
+            mode_run.index("pull_request|workflow_dispatch)") : mode_run.index(
+                "push)"
+            )
+        ]
+        self.assertNotIn("publish_ready=true", nonpublish_modes)
+        publish_job = workflow["jobs"]["publish"]
+        self.assertEqual(publish_job["needs"], ["prepare", "build"])
+        self.assertEqual(
+            publish_job["if"], "needs.prepare.outputs.publish_ready == 'true'"
+        )
         self.assertEqual(raw.count("anonymous_token_json="), 2)
         self.assertNotIn(":latest", raw)
         self.assertNotIn("--clobber", raw)

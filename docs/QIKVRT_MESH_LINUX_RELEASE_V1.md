@@ -78,18 +78,27 @@ contract instead of allowing supermin to prefer the hosted runner's newer
 Azure kernel. It rejects a kernel with built-in `CONFIG_IPV6_SIT`, keeps a
 fresh job-local appliance cache, and requires the Noble appliance's
 `dhcpcd-base` client plus the QEMU `efi-virtio.rom` supplied by `ipxe-qemu`.
-Those host packages are verified before launch because omitting recommended
-packages otherwise leaves the appliance without DHCP/DNS or makes ARM QEMU
-abort as soon as the virtio network device is added. The gate then proves DNS
-plus an outbound TCP connection to the architecture's Ubuntu mirror with noninteractive
+The host command alone does not prove that supermin copied that client into its
+appliance, and adding a package name alone does not copy dpkg-managed
+configuration files into a prebuilt supermin base. Before creating the fresh
+cache, the gate therefore writes and read-verifies two architecture-neutral
+inputs in every installed libguestfs `supermin.d`: a package fragment naming
+the installed binary package `dhcpcd-base`, and a hostfiles fragment naming
+`/etc/dhcpcd.conf`. Omitting recommended packages otherwise leaves the
+appliance without DHCP/DNS or makes ARM QEMU abort as soon as the virtio network
+device is added. After launch, the probe independently requires the appliance's
+DHCP configuration, `dhcpcd` command, an IPv4 address on `eth0`, a default route,
+and resolver configuration. It then proves DNS plus an outbound TCP connection to the architecture's Ubuntu mirror with noninteractive
 `guestfish --network` against a real scratch disk before the expensive image
 build. The probe script is uploaded into the appliance and executed explicitly
 by Bash, so its `/dev/tcp` check cannot fall through to the appliance's POSIX
 shell; distinct exit diagnostics identify DNS and TCP failures. Debug and
 trace output are enabled for this network launch and for the
-real `virt-customize` call. This closes the observed DNS gap while preserving
-the actionable QEMU/libguestfs cause of any later appliance launch failure,
-rather than only the generic `guestfs_launch failed` wrapper.
+real `virt-customize` call. The gate makes the observed DHCP/DNS omission fail
+closed while preserving the actionable QEMU/libguestfs cause of any later
+appliance launch failure, rather than only the generic `guestfs_launch failed`
+wrapper. Only a successful amd64 and arm64 native preflight establishes the
+client, address, route, resolver, DNS, and TCP observations for that exact run.
 
 ## Publication guards
 
