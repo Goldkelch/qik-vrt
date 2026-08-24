@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Mesh Pages delivery
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'registry/NODEMESH_INDEX.json'
+      - 'docs/mesh/**'
+      - 'tools/qikvrt_mesh_pages.py'
+      - 'tests/test_qikvrt_mesh_pages.py'
+      - '.github/workflows/qikvrt_mesh_pages_delivery.yml'
+      - '.github/workflows/qikvrt_mesh_pages_main_ledger.yml'
+      - '.github/workflows/qikvrt_seed_dashboard_publish.yml'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  push:
+    branches: [main]
+    paths:
+      - 'registry/NODEMESH_INDEX.json'
+      - 'docs/mesh/**'
+      - 'tools/qikvrt_mesh_pages.py'
+      - 'tests/test_qikvrt_mesh_pages.py'
+      - '.github/workflows/qikvrt_mesh_pages_delivery.yml'
+      - '.github/workflows/qikvrt_mesh_pages_main_ledger.yml'
+      - '.github/workflows/qikvrt_seed_dashboard_publish.yml'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  page_build:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mesh-pages-${{ github.event.pull_request.head.sha || github.event.build.commit || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-systemtest-reobserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.event.build.commit || github.sha }}
+    steps:
+      - name: Check out literal exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.build.commit || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Bind exact head, tree and clean worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          actual_tree="$(git rev-parse --verify HEAD^{tree})"
+          printf 'expected_head=%s\nactual_head=%s\nactual_tree=%s\nevent=%s\n' \
+            "$QIKVRT_EXACT_HEAD" "$actual_head" "$actual_tree" "$GITHUB_EVENT_NAME"
+          test "$actual_head" = "$QIKVRT_EXACT_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'QIKVRT_EXACT_TREE=%s\n' "$actual_tree" >> "$GITHUB_ENV"
+          mkdir -p .qikvrt/mesh-pages
+
+      - name: Verify deterministic Registry-to-Pages projection
+        run: python3 -B tools/qikvrt_mesh_pages.py check
+
+      - name: Execute focused implementation and workflow tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_mesh_pages
+
+      - name: Execute and reobserve loopback HTTP system test
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_mesh_pages.py system-test \
+            --output .qikvrt/mesh-pages/local-systemtest-receipt.json \
+            | tee .qikvrt/mesh-pages/local-systemtest-stdout.json
+
+      - name: Verify repository-native integrity
+        run: python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Reobserve exact GitHub Pages routes once after page_build
+        if: github.event_name == 'page_build'
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_mesh_pages.py reobserve \
+            --site-base-url 'https://goldkelch.github.io/qik-vrt/' \
+            --exact-head "$QIKVRT_EXACT_HEAD" \
+            --exact-tree "$QIKVRT_EXACT_TREE" \
+            --run-id "$GITHUB_RUN_ID" \
+            --event "$GITHUB_EVENT_NAME" \
+            --output .qikvrt/mesh-pages/pages-reobservation-receipt.json \
+            | tee .qikvrt/mesh-pages/pages-reobservation-stdout.json
+
+      - name: Preserve exact-run audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-pages-${{ github.run_id }}
+          path: .qikvrt/mesh-pages
+          if-no-files-found: error
+          retention-days: 30
