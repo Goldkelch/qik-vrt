@@ -1,0 +1,23 @@
+{
+  "schema": "qikvrt_prevention_mechanisms_v1",
+  "issue": 854,
+  "invariants": {
+    "literal_exact_head_required": true,
+    "stale_review_transfer_forbidden": true,
+    "sibling_tip_regeneration_forbidden": true,
+    "duplicate_event_idempotence_required": true,
+    "event_reorder_tolerance_required": true,
+    "event_cycle_detection_required": true,
+    "expected_head_cas_required_for_branch_mutation": true,
+    "integrity_manifest_sha256_required": true,
+    "model_failure_must_not_block_deterministic_ready_work": true
+  },
+  "class_bindings": {
+    "ZERO_JOB_ACTION_REQUIRED": ["literal_exact_head_required","duplicate_event_idempotence_required"],
+    "REPOSITORY_INTEGRITY_PROJECTION_DRIFT": ["integrity_manifest_sha256_required"],
+    "STALE_BASE_CONFLICT_FREE": ["expected_head_cas_required_for_branch_mutation","stale_review_transfer_forbidden"],
+    "EXECUTED_FAILURE_REQUIRES_REPAIR_RECIPE": ["event_cycle_detection_required"],
+    "MODEL_FAILURE_MAY_NOT_BLOCK_DETERMINISTIC_READY_WORK": ["model_failure_must_not_block_deterministic_ready_work"]
+  },
+  "completion": "A repair class without at least one executable prevention binding remains incomplete."
+}
