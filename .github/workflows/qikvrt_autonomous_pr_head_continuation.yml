@@ -134,7 +134,7 @@ jobs:
                 '{id:$id,name:$name,status:$status,conclusion:(if $conclusion == "" then null else $conclusion end),jobs_total:$jobs_total,created_at:$created_at}' \
                 >> "$root/observations-${pr}.jsonl"
             done < <(
-              jq -r '.workflow_runs[] | [.id,.name,.status,(.conclusion // ""),.created_at] | @tsv' \
+              jq -r '.workflow_runs[] | select(.created_at != null and .created_at != "") | [.id,.name,.status,(.conclusion // ""),.created_at] | @tsv' \
                 "$root/runs-${pr}.json"
             )
             jq -s '.' "$root/observations-${pr}.jsonl" > "$root/observations-${pr}.json"
