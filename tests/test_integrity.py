@@ -49,6 +49,10 @@ class IntegrityGenerationTests(unittest.TestCase):
         )
         (root / "logs").mkdir()
         (root / "logs/runtime.jsonl").write_text("volatile\n", encoding="utf-8")
+        (root / ".qikvrt/real-mesh").mkdir(parents=True)
+        (root / ".qikvrt/real-mesh/receipt.json").write_text(
+            '{"volatile": true}\n', encoding="utf-8"
+        )
         (root / "__pycache__").mkdir()
         (root / "__pycache__/cache.pyc").write_bytes(b"cache")
         subprocess.run(
@@ -114,6 +118,7 @@ class IntegrityGenerationTests(unittest.TestCase):
                 (root / integrity.MANIFEST_NAME).write_bytes(manifest_bytes)
             self.assertIn("new_source.py", entries)
             self.assertNotIn("logs/runtime.jsonl", entries)
+            self.assertNotIn(".qikvrt/real-mesh/receipt.json", entries)
             self.assertNotIn("__pycache__/cache.pyc", entries)
             self.assertFalse(entries["state/launcher_acceptance_record.json"]["immutable"])
             self.assertEqual(entries[integrity.MANIFEST_NAME]["exclusion_reason"], "cycle_prevention")

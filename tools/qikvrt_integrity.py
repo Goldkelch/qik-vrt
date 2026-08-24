@@ -83,6 +83,7 @@ TRANSIENT_PREFIXES = (
     ".qikvrt/toolchains/",
     ".qikvrt/cache/",
     ".qikvrt/release/",
+    ".qikvrt/real-mesh/",
 )
 MAX_IMMUTABLE_FILE_BYTES = 256 * 1024 * 1024
 MAX_INTEGRITY_METADATA_BYTES = 64 * 1024 * 1024

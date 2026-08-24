@@ -1,0 +1,98 @@
+name: QIKVRT real multi-pair Mesh runtime
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_real_mesh.yml'
+      - 'tools/qikvrt_real_mesh.py'
+      - 'tests/test_qikvrt_real_mesh.py'
+      - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
+      - 'Makefile'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_real_mesh.yml'
+      - 'tools/qikvrt_real_mesh.py'
+      - 'tests/test_qikvrt_real_mesh.py'
+      - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'docs/architecture/QIKVRT_REAL_MESH_V1.md'
+      - 'Makefile'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-real-mesh-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  execute-real-mesh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and clean worktree
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain)"
+
+      - name: Execute targeted real-Mesh tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_real_mesh
+
+      - name: Execute and reobserve four-node two-pair TCP Mesh
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/real-mesh
+          python3 -B tools/qikvrt_real_mesh.py demo \
+            --source-head "$(git rev-parse --verify HEAD^{commit})" \
+            --source-tree "$(git rev-parse --verify HEAD^{tree})" \
+            --workdir .qikvrt/real-mesh/runtime \
+            --output .qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json \
+            > .qikvrt/real-mesh/stdout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          receipt=json.loads(Path('.qikvrt/real-mesh/QIKVRT_REAL_MESH_EXECUTION_RECEIPT_V1.json').read_text())
+          assert receipt['pair_count'] == 2
+          assert receipt['node_process_count'] == 4
+          assert receipt['network_scope'] == 'LOOPBACK_TCP_ONLY'
+          assert receipt['completion_claims']['real_multi_pair_mesh_runtime_executed'] is True
+          assert receipt['completion_claims']['bounded_loopback_effect_ack_done'] is True
+          assert receipt['completion_claims']['general_effect_ack_done'] is False
+          assert receipt['completion_claims']['authority_mirror_synchronization'] is False
+          assert receipt['external_effect'] == 'NONE'
+          PY
+
+      - name: Verify repository-native integrity
+        run: python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Preserve exact-head Mesh receipt and node ledgers
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-real-mesh-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/real-mesh
+          if-no-files-found: error
+          retention-days: 30
