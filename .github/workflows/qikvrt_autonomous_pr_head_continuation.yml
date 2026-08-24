@@ -282,7 +282,7 @@ jobs:
           test "$live_ref" = "$HEAD_SHA"
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
-            -f ref=main -F "inputs[pr]=$PR_NUMBER"
+            -f ref=main -f "inputs[pr]=$PR_NUMBER"
 
           jq -n \
             --arg pr "$PR_NUMBER" \
