@@ -68,6 +68,10 @@ an architecture-matched Ubuntu virtual kernel, makes that kernel readable to
 the unprivileged supermin builder, and passes `libguestfs-test-tool` with the
 direct backend. A missing or unusable host appliance kernel therefore blocks
 before the long image build reaches `virt-customize`.
+If the runner does not expose readable and writable `/dev/kvm`, the preflight
+and subsequent image customization explicitly use libguestfs `force_tcg`;
+this avoids an invalid ARM `gic-version=host` fallback while retaining KVM on
+runners that actually provide it.
 
 ## Publication guards
 

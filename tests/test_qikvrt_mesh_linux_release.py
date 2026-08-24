@@ -40,6 +40,9 @@ class T(unittest.TestCase):
                 "nonroot_selftest_bytecode_write_forbidden"
             ]
         )
+        self.assertTrue(
+            policy["build_acceptance"]["host_libguestfs_tcg_fallback_required"]
+        )
         guards = policy["publication_guards"]
         self.assertTrue(guards["single_parent_zero_diff_carrier_required"])
         self.assertTrue(guards["branch_head_compare_and_swap_required"])
@@ -72,7 +75,7 @@ class T(unittest.TestCase):
 
     def test_workflow(self):
         raw = WF.read_text()
-        yaml.safe_load(raw)
+        workflow = yaml.safe_load(raw)
         for text in [
             "ubuntu-24.04-arm",
             "qikvrt-mesh-linux-v1.0.0",
@@ -105,9 +108,32 @@ class T(unittest.TestCase):
             "Provision and verify native libguestfs host appliance",
             "BLOCK: linux-image-virtual installed no supermin appliance kernel",
             'sudo chmod a+r "${kernels[@]}"',
+            "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
         ]:
             self.assertIn(text, raw)
+        build_steps = workflow["jobs"]["build"]["steps"]
+        host_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if step.get("name")
+            == "Provision and verify native libguestfs host appliance"
+        )
+        appliance_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if step.get("name")
+            == "Build VM/OCI and execute packaged Firefox Effect-Ack acceptance"
+        )
+        self.assertLess(host_index, appliance_index)
+        host_run = build_steps[host_index]["run"]
+        for text in [
+            "linux-image-virtual",
+            'sudo chmod a+r "${kernels[@]}"',
+            "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
+            "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
+        ]:
+            self.assertIn(text, host_run)
         self.assertEqual(raw.count("anonymous_token_json="), 2)
         self.assertNotIn(":latest", raw)
         self.assertNotIn("--clobber", raw)
