@@ -118,9 +118,19 @@ cushioned synchronization as its first in-guest command, repeats the same
 global, binary-specific, and per-source APT checks, and only then executes
 `--install docker.io`.
 
-The pinned Noble cloud images use `/dev/sda1` as their root filesystem. The
-builder creates a fresh 20-GiB QCOW2 and uses `virt-resize --expand /dev/sda1`
-to grow both the partition and its filesystem; changing only the outer QCOW2
+The pinned Noble cloud images use `/dev/sda1` as their source root partition.
+That source name is not treated as a destination-device identity: physical
+partition ordering can renumber it in the output image. The builder creates a
+fresh 20-GiB QCOW2 and uses
+`virt-resize --no-expand-content --expand /dev/sda1` to grow the partition
+without invoking the clock-sensitive offline filesystem resizer. Immediately
+after the anchored guest clock synchronization, and before package
+installation, `virt-customize` resolves the preserved `cloudimg-rootfs` label,
+runs the ext4 online resizer only after verifying that the labeled block device
+is the mounted guest root and that its filesystem type is ext4, and requires at
+least 18 GiB. This avoids relying on an offline `e2fsck`/`resize2fs` sequence
+before the libguestfs appliance clock has been anchored; neither retrying that
+check nor forcing `resize2fs` is accepted. Changing only the outer QCOW2
 capacity is not accepted. After customization, a final in-guest check requires
 the root filesystem to expose at least 18 GiB, requires the copied OCI tar,
 service, first-boot helper, and deterministic appliance description, and

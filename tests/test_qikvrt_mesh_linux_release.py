@@ -60,6 +60,9 @@ class T(unittest.TestCase):
             "apt_source_date_override_rejection_required",
             "failed_native_build_diagnostic_log_required",
             "cloud_root_filesystem_expansion_required",
+            "offline_partition_only_expansion_required",
+            "clock_synced_online_root_filesystem_expansion_required",
+            "mounted_root_device_identity_required",
             "vm_payload_offline_readback_required",
             "bounded_effect_ack_event_shape_required",
             "real_virt_customize_debug_trace_required",
@@ -124,7 +127,15 @@ class T(unittest.TestCase):
             4102444800,
         )
         self.assertEqual(
-            policy["base_distribution"]["cloud_root_partition"], "/dev/sda1"
+            policy["base_distribution"]["cloud_root_source_partition"],
+            "/dev/sda1",
+        )
+        self.assertEqual(
+            policy["base_distribution"]["cloud_root_filesystem_label"],
+            "cloudimg-rootfs",
+        )
+        self.assertEqual(
+            policy["base_distribution"]["cloud_root_filesystem_type"], "ext4"
         )
         self.assertEqual(
             policy["base_distribution"]["guest_disk_size_bytes"], 20 * 1024**3
@@ -683,7 +694,8 @@ class T(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "exceeds supported build window"):
                 helper()
         self.assertIn(
-            '"--run-command",clock_sync,"--install","docker.io"', base_raw
+            '"--run-command",clock_sync,"--run-command",root_expansion,"--install","docker.io"',
+            base_raw,
         )
         for disabled in [
             "Acquire::Check-Date=false",
@@ -697,8 +709,16 @@ class T(unittest.TestCase):
             base_namespace["VM_ROOT_FILESYSTEM_MIN_BYTES"], 18 * 1024**3
         )
         self.assertEqual(
-            base_namespace["UBUNTU_CLOUD_ROOT_PARTITION"],
-            policy["base_distribution"]["cloud_root_partition"],
+            base_namespace["UBUNTU_CLOUD_ROOT_SOURCE_PARTITION"],
+            policy["base_distribution"]["cloud_root_source_partition"],
+        )
+        self.assertEqual(
+            base_namespace["UBUNTU_CLOUD_ROOT_FILESYSTEM_LABEL"],
+            policy["base_distribution"]["cloud_root_filesystem_label"],
+        )
+        self.assertEqual(
+            base_namespace["UBUNTU_CLOUD_ROOT_FILESYSTEM_TYPE"],
+            policy["base_distribution"]["cloud_root_filesystem_type"],
         )
         self.assertEqual(
             base_namespace["VM_DISK_SIZE_BYTES"],
@@ -772,6 +792,7 @@ class T(unittest.TestCase):
                         "qcow2",
                         "--output-format",
                         "qcow2",
+                        "--no-expand-content",
                         "--expand",
                         "/dev/sda1",
                         "pinned-cloud.qcow2",
@@ -780,6 +801,34 @@ class T(unittest.TestCase):
                     {"env": {"LIBGUESTFS_BACKEND": "direct"}},
                 ),
             ],
+        )
+        root_expansion = base_namespace["vm_root_filesystem_expansion_command"]()
+        for text in [
+            "findfs 'LABEL=cloudimg-rootfs'",
+            'test -b "$root_device"',
+            "findmnt -n -o SOURCE --target /",
+            '"$root_device" = "$mounted_root"',
+            "findmnt -n -o FSTYPE --target /",
+            '"$root_fstype" = ext4',
+            'resize2fs "$root_device"',
+            str(18 * 1024**3),
+            base_namespace["VM_ROOT_FILESYSTEM_EXPANSION_RECEIPT"],
+        ]:
+            self.assertIn(text, root_expansion)
+        self.assertNotIn("e2fsck", root_expansion)
+        self.assertNotIn("resize2fs -f", root_expansion)
+        subprocess.run(["bash", "-n", "-c", root_expansion], check=True)
+        self.assertIn(
+            '"--run-command",clock_sync,"--run-command",root_expansion,',
+            build_raw,
+        )
+        self.assertLess(
+            build_raw.index('"--run-command",clock_sync'),
+            build_raw.index('"--run-command",root_expansion'),
+        )
+        self.assertLess(
+            build_raw.index('"--run-command",root_expansion'),
+            build_raw.index('"--install","docker.io"'),
         )
         payload_command = base_namespace["vm_payload_validation_command"](12345)
         for text in [
