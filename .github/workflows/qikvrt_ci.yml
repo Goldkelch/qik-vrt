@@ -23,6 +23,48 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Verify requested-review dispatch input contract
+        shell: bash
+        env:
+          QIKVRT_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          audit_dir="audit/requested-review-dispatch"
+          mkdir -p "$audit_dir"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v \
+              tests.test_qikvrt_requested_review_dispatch_type \
+              2>&1 | tee "$audit_dir/TEST.log"
+          python3 -B - <<'PY' > "$audit_dir/receipt.json"
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/qikvrt_autonomous_pr_head_continuation.yml')
+          contract = Path('tests/test_qikvrt_requested_review_dispatch_type.py')
+          value = {
+              'schema': 'QIKVRT_REQUESTED_REVIEW_DISPATCH_TYPE_TEST_V1',
+              'expected_head': os.environ['QIKVRT_EXPECTED_HEAD'],
+              'checkout_head': subprocess.check_output(
+                  ['git', 'rev-parse', '--verify', 'HEAD^{commit}'], text=True
+              ).strip(),
+              'workflow_sha256': hashlib.sha256(workflow.read_bytes()).hexdigest(),
+              'contract_sha256': hashlib.sha256(contract.read_bytes()).hexdigest(),
+              'target_input_type': 'string',
+              'dispatch_form_field_flag': '-f',
+              'typed_field_flag_forbidden_for_pr': True,
+              'review_authority_separate': True,
+              'productive_effect': False,
+              'external_effect': 'NONE',
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          print(json.dumps(value, sort_keys=True, indent=2))
+          PY
+          cat "$audit_dir/receipt.json"
       - name: Full compile, launcher, protocol, handler, security and TCP/IP tests
         id: full_test
         continue-on-error: true
