@@ -108,6 +108,9 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
 
+    def test_null_created_at_runs_are_skipped_before_tsv_extraction(self) -> None:
+        self.assertIn("select(.created_at != null)", self.text)
+
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(
             [
