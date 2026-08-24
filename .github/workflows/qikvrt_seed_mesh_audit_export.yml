@@ -35,10 +35,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          run_allow_continue() {
+            set +e
+            "$@"
+            rc=$?
+            set -e
+            case "$rc" in
+              0|10) return 0 ;;
+              *) return "$rc" ;;
+            esac
+          }
           mkdir -p .qikvrt/seed-workflow
           {
-            sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
+            run_allow_continue sh tools/qikvrt_seed_mesh_maintenance.sh
+            run_allow_continue sh tools/qikvrt_seed_node_revalidation.sh
             sh tools/qikvrt_seed_mesh_audit_export.sh
           } 2>&1 | tee .qikvrt/seed-workflow/audit-export.log
       - name: Preserve local audit evidence without mutating the repository

@@ -1043,7 +1043,13 @@ def run_revalidation(
     return result
 
 
-def validate_revalidation(root: Path, source_status: Mapping[str, Any], seed_repository: str) -> dict[str, Any]:
+def validate_revalidation(
+    root: Path,
+    source_status: Mapping[str, Any],
+    seed_repository: str,
+    *,
+    allowed_statuses: tuple[str, ...] = ("PASS",),
+) -> dict[str, Any]:
     result = read_json(root / "registry/NODEMESH_REVALIDATION.json")
     _require_exact(result, "schema", "qikvrt_nodemesh_revalidation_v2", "mesh revalidation")
     _require_exact(result, "seed_repository", seed_repository, "mesh revalidation")
@@ -1059,8 +1065,9 @@ def validate_revalidation(root: Path, source_status: Mapping[str, Any], seed_rep
     ):
         if result.get(key) != source_status.get(key):
             raise SeedError(f"mesh revalidation: {key} disagrees with source status")
-    if result.get("status") != "PASS":
-        raise SeedError("mesh revalidation is not PASS")
+    if result.get("status") not in allowed_statuses:
+        expected = " or ".join(allowed_statuses)
+        raise SeedError(f"mesh revalidation is not {expected}")
     return result
 
 
@@ -1074,7 +1081,12 @@ def run_dashboard(
     now = now or _utc_now()
     run_id, utc = _run_metadata(run_id, now)
     _, status = validate_aggregate_pair(root, seed_repository)
-    revalidation = validate_revalidation(root, status, seed_repository)
+    revalidation = validate_revalidation(
+        root,
+        status,
+        seed_repository,
+        allowed_statuses=("PASS", "CONTINUE"),
+    )
     safe = {key: html.escape(str(value), quote=True) for key, value in {
         "utc": utc,
         "run_id": run_id,
@@ -1082,6 +1094,7 @@ def run_dashboard(
         "nodes": status["node_count"],
         "active": status["active_count"],
         "stale": status["stale_count"],
+        "revalidation_status": revalidation["status"],
     }.items()}
     dashboard_html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>QIK-VRT Mesh Dashboard</title>
@@ -1089,7 +1102,7 @@ def run_dashboard(
 <body>
 <h1>QIK-VRT Mesh Dashboard</h1>
 <div class="card"><strong>Generated UTC:</strong> {safe['utc']}<br><strong>Run ID:</strong> {safe['run_id']}<br><strong>Seed:</strong> {safe['seed']}</div>
-<div class="card"><strong>Nodes:</strong> {safe['nodes']}<br><strong>Active:</strong> {safe['active']}<br><strong>Stale:</strong> {safe['stale']}</div>
+<div class="card"><strong>Nodes:</strong> {safe['nodes']}<br><strong>Active:</strong> {safe['active']}<br><strong>Stale:</strong> {safe['stale']}<br><strong>Revalidation:</strong> {safe['revalidation_status']}</div>
 <h2>Evidence</h2>
 <ul><li><code>registry/NODEMESH_INDEX.json</code></li><li><code>registry/NODEMESH_STATUS.json</code></li><li><code>registry/NODEMESH_REVALIDATION.json</code></li><li><code>audit/QIKVRT_MESH_AUDIT_REPORT.md</code></li></ul>
 <p>Boundary: authorized known nodes only, seed writes only to seed repository, no global scanning, no self propagation, no remote mutation without authorization.</p>
@@ -1104,7 +1117,8 @@ node_count: {status['node_count']}<br>
 active_count: {status['active_count']}<br>
 stale_count: {status['stale_count']}<br>
 source_status_run_id: {status['run_id']}<br>
-source_revalidation_run_id: {revalidation['run_id']}
+source_revalidation_run_id: {revalidation['run_id']}<br>
+source_revalidation_status: {revalidation['status']}
 
 HTML dashboard: docs/qikvrt_mesh_dashboard.html
 """
@@ -1118,6 +1132,7 @@ HTML dashboard: docs/qikvrt_mesh_dashboard.html
         "status": "PASS",
         "source_status_run_id": status["run_id"],
         "source_revalidation_run_id": revalidation["run_id"],
+        "source_revalidation_status": revalidation["status"],
         "dashboard_html": "docs/qikvrt_mesh_dashboard.html",
         "dashboard_md": "docs/QIKVRT_MESH_DASHBOARD.md",
     }
@@ -1135,7 +1150,12 @@ def run_audit_export(
     now = now or _utc_now()
     run_id, utc = _run_metadata(run_id, now)
     _, status = validate_aggregate_pair(root, seed_repository)
-    revalidation = validate_revalidation(root, status, seed_repository)
+    revalidation = validate_revalidation(
+        root,
+        status,
+        seed_repository,
+        allowed_statuses=("PASS", "CONTINUE"),
+    )
     report_path = "audit/QIKVRT_MESH_AUDIT_REPORT.md"
     report = f"""# QIK-VRT Mesh Audit Report
 
@@ -1144,6 +1164,7 @@ def run_audit_export(
 - seed_repository: {seed_repository}
 - source_status_run_id: {status['run_id']}
 - source_revalidation_run_id: {revalidation['run_id']}
+- source_revalidation_status: {revalidation['status']}
 - node_count: {status['node_count']}
 - active_count: {status['active_count']}
 - stale_count: {status['stale_count']}
@@ -1172,6 +1193,7 @@ The Seed reads only explicitly policy-authorized Node entries. The Seed writes o
         "seed_repository": seed_repository,
         "source_status_run_id": status["run_id"],
         "source_revalidation_run_id": revalidation["run_id"],
+        "source_revalidation_status": revalidation["status"],
         "node_count": status["node_count"],
         "active_count": status["active_count"],
         "stale_count": status["stale_count"],

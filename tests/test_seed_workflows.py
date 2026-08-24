@@ -343,6 +343,40 @@ class SeedWorkflowTests(unittest.TestCase):
             read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")["schema"],
         )
 
+    def test_dashboard_and_audit_can_render_continue_revalidation(self) -> None:
+        self.accept()
+        later = NOW + dt.timedelta(days=2)
+        maintenance = run_maintenance(
+            self.root,
+            "maint-stale",
+            FakeFetcher(remote_documents()),
+            now=later,
+        )
+        self.assertEqual("PASS", maintenance["status"])
+        self.assertEqual(1, maintenance["stale_count"])
+        revalidation = run_revalidation(self.root, "revalidate-stale", now=later)
+        self.assertEqual("CONTINUE", revalidation["status"])
+        dashboard = run_dashboard(self.root, "dashboard-stale", now=later)
+        audit = run_audit_export(self.root, "audit-stale", now=later)
+        self.assertEqual("PASS", dashboard["status"])
+        self.assertEqual("PASS", audit["status"])
+        self.assertIn(
+            "source_revalidation_status: CONTINUE",
+            (self.root / "docs/QIKVRT_MESH_DASHBOARD.md").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            "CONTINUE",
+            read_json(self.root / "evidence/seed_dashboard/runs/dashboard-stale.json")[
+                "source_revalidation_status"
+            ],
+        )
+        self.assertEqual(
+            "CONTINUE",
+            read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")[
+                "source_revalidation_status"
+            ],
+        )
+
     def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         workflow = (
@@ -357,6 +391,8 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+        self.assertIn("run_allow_continue()", workflow)
+        self.assertIn("0|10) return 0", workflow)
 
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]
