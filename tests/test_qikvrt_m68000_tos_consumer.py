@@ -11,6 +11,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "qikvrt_m68000_tos_consumer.py"
 PERSISTED_HEX = ROOT / "runtime" / "m68000" / "tos" / "MLP.TOS.hex"
 WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_m68000_tos_consumer.yml"
+LEDGER_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "qikvrt_m68000_tos_main_ledger.yml"
+)
 
 spec = importlib.util.spec_from_file_location("qikvrt_m68000_tos_consumer", TOOL)
 mod = importlib.util.module_from_spec(spec)
@@ -108,18 +111,39 @@ class M68000TosConsumerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Spark plan"):
             mod.parse_receipt(bytes(receipt), ROOT)
 
-    def test_main_effect_reobservation_is_push_bound_and_persisted(self):
+    def test_candidate_executor_is_literal_head_bound_and_read_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("push:\n    branches: [main]", text)
         self.assertIn(
-            "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
             text,
         )
-        self.assertIn("QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V2", text)
-        self.assertIn("qikvrt/m68000-tos-systemtest-ledger-v1", text)
-        self.assertIn("M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED", text)
-        self.assertIn("physical_m68000_execution_observed': False", text)
-        self.assertIn("physical_speedup_measured': False", text)
+        self.assertIn(
+            "QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            text,
+        )
+        self.assertIn('test "$actual_head" = "$QIKVRT_EXACT_HEAD"', text)
+        self.assertIn("QIKVRT_M68000_TOS_EXECUTION_RECEIPT_V3", text)
+        self.assertIn("literal_head_commit_checkout_observed", text)
+        self.assertIn("permissions:\n  contents: read", text)
+        self.assertNotIn("permissions:\n  contents: write", text)
+        self.assertNotIn("\n  schedule:", text)
+        self.assertNotIn("qikvrt/m68000-tos-systemtest-ledger-v1", text)
+
+    def test_main_ledger_writer_is_trusted_serialized_and_source_cas_bound(self):
+        text = LEDGER_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("workflow_run:", text)
+        self.assertIn("github.event.workflow_run.event == 'push'", text)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", text)
+        self.assertIn("actions: read\n  contents: write", text)
+        self.assertIn("cancel-in-progress: false", text)
+        self.assertIn("qikvrt/m68000-tos-systemtest-ledger-v2", text)
+        self.assertIn("QIKVRT_M68000_TOS_EXECUTION_RECEIPT_V3", text)
+        self.assertIn("AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_WRITE", text)
+        self.assertIn("AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_PUSH", text)
+        self.assertIn("LEDGER_REF_ADVANCED_BEFORE_PUSH", text)
+        self.assertIn("physical_m68000_execution_observed", text)
+        self.assertIn("effect_ack_done", text)
+        self.assertNotIn("\n  schedule:", text)
 
 
 if __name__ == "__main__":
