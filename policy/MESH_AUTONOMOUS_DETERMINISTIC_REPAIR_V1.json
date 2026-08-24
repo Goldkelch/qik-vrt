@@ -1,0 +1,42 @@
+{
+  "schema": "qikvrt_mesh_autonomous_deterministic_repair_v1",
+  "issue": 854,
+  "state": "CANDIDATE",
+  "completion_rule": [
+    "KNOWN_ERROR",
+    "REGISTERED_FAILURE_CLASS",
+    "BOUNDED_REPAIR",
+    "PREVENTION_MECHANISM",
+    "FRESH_LITERAL_EXACT_HEAD_EVIDENCE",
+    "TRANSPARENT_RECEIPT"
+  ],
+  "failure_classes": {
+    "ZERO_JOB_ACTION_REQUIRED": {"action":"DISPATCH_EXACT_HEAD","prevention_mechanism":"EXACT_HEAD_STATUS_REOBSERVATION_AND_IDEMPOTENT_PENDING_STATUS"},
+    "NO_EXACT_HEAD_OBSERVATION": {"action":"DISPATCH_EXACT_HEAD","prevention_mechanism":"LITERAL_HEAD_OBSERVATION_REQUIRED_BEFORE_TERMINAL_DISPOSITION"},
+    "RECOVERABLE_DISPATCH_ERROR": {"action":"DISPATCH_EXACT_HEAD","prevention_mechanism":"TYPED_RECOVERY_EVENT_WITH_EXPECTED_HEAD"},
+    "REPOSITORY_INTEGRITY_PROJECTION_DRIFT": {"action":"DISPATCH_INTEGRITY_MATERIALIZER","prevention_mechanism":"DETERMINISTIC_INTEGRITY_MATERIALIZATION_AND_SHA256_VERIFICATION"},
+    "STALE_BASE_CONFLICT_FREE": {"action":"REBIND_CURRENT_MAIN","prevention_mechanism":"EXPECTED_HEAD_CAS_SCOPE_GUARD_AND_LIVE_REF_REVALIDATION"},
+    "STALE_BASE_NOT_SAFELY_REBINDABLE": {"action":"REQUEST_AUTHORITY","prevention_mechanism":"FAIL_CLOSED_SCOPE_AND_CONFLICT_CLASSIFICATION"},
+    "EXECUTED_FAILURE_REQUIRES_REPAIR_RECIPE": {"action":"HOLD","prevention_mechanism":"NO_BLIND_RETRY_AND_EXPLICIT_RECIPE_REGISTRATION"},
+    "ACTIVE_WORKFLOW": {"action":"HOLD","prevention_mechanism":"ONE_PRODUCTIVE_WRITER_AND_EVENT_TERMINALITY_GUARD"},
+    "TRUSTED_EXACT_HEAD_VERIFICATION_PENDING": {"action":"HOLD","prevention_mechanism":"PENDING_STATUS_IS_NONTERMINAL"},
+    "EXECUTED_OR_UNCLASSIFIED_EXACT_HEAD_FAILURE": {"action":"HOLD","prevention_mechanism":"UNKNOWN_FAILURE_REMAINS_VISIBLE_UNTIL_CLASSIFIED"},
+    "MODEL_FAILURE_MAY_NOT_BLOCK_DETERMINISTIC_READY_WORK": {"action":"CONTINUE_DETERMINISTIC_READY_WORK","prevention_mechanism":"SEPARATE_MODEL_DEPENDENT_FROM_DETERMINISTIC_WORK_UNITS"}
+  },
+  "event_model": {
+    "semantic_work_requires_authenticated_content_bound_event": true,
+    "timer_only_semantic_work_forbidden": true,
+    "blind_retry_forbidden": true,
+    "watchdog_may_only_emit_typed_recovery_event": true
+  },
+  "effect_boundaries": {
+    "merge_authority": false,
+    "review_authority": false,
+    "publication": false,
+    "deployment": false,
+    "physical_hardware_execution": false,
+    "pass": false,
+    "final_pass": false,
+    "general_effect_ack_done": false
+  }
+}
