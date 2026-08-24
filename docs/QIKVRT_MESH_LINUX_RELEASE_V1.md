@@ -99,6 +99,30 @@ closed while preserving the actionable QEMU/libguestfs cause of any later
 appliance launch failure, rather than only the generic `guestfs_launch failed`
 wrapper. Only a successful amd64 and arm64 native preflight establishes the
 client, address, route, resolver, DNS, and TCP observations for that exact run.
+On native ARM, QEMU may boot the libguestfs appliance with `efi-rtc=noprobe`
+and an epoch clock even though networking is healthy. Because Ubuntu Noble's
+signed archive metadata does not itself provide a bounded current-time source,
+the preflight first obtains a TLS-authenticated `Date` header from the GitHub
+API and requires runner UTC to agree within 30 seconds. It then runs the host
+APT update with date and `Valid-Until` verification explicitly enabled and
+`APT::Update::Error-Mode=any`, so a partial or cached-index warning cannot
+silently validate the anchor. Global or `apt-get`-specific settings that
+disable either date check, and every per-source override of those checks, are
+rejected. Subsequent job time is bounded to two hours from that checked epoch.
+The appliance clock is set to current runner UTC plus a five-minute rotation
+cushion; the immediate observation may advance by at most 30 seconds and must
+remain between the pinned Ubuntu `20260801` release epoch and 2100. The real
+`virt-customize` action repeats the anchored,
+cushioned synchronization as its first in-guest command, repeats the same
+global, binary-specific, and per-source APT checks, and only then executes
+`--install docker.io`.
+
+The native build writes its complete command output to an
+architecture-specific runner log instead of flooding the GitHub job stream
+with repetitive libguestfs transfer traces. On failure the job emits a bounded
+4,000-line tail and uploads only that diagnostic log under a `-diagnostics`
+artifact name. The ordinary release-asset artifact remains success-only, and
+publication still requires both successful native builds.
 
 ## Publication guards
 

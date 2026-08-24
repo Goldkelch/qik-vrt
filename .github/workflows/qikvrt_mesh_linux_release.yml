@@ -33,6 +33,12 @@ env:
   GHCR_PUBLIC_PROBE_TAG: ${{ vars.QIKVRT_GHCR_PUBLIC_PROBE_TAG }}
   GHCR_PUBLIC_PROBE_DIGEST: ${{ vars.QIKVRT_GHCR_PUBLIC_PROBE_DIGEST }}
   RELEASE_BRANCH: release/qikvrt-mesh-linux-v1.0.0
+  MIN_UBUNTU_RELEASE_EPOCH: '1785542400'
+  MAX_SUPPORTED_BUILD_EPOCH: '4102444800'
+  TRUSTED_HOST_CLOCK_SKEW_SECONDS: '30'
+  TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS: '7200'
+  LIBGUESTFS_CLOCK_CUSHION_SECONDS: '300'
+  LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS: '30'
 
 jobs:
   prepare:
@@ -104,9 +110,89 @@ jobs:
       - name: Provision and verify native libguestfs host appliance
         env:
           QIKVRT_BUILD_ARCH: ${{ matrix.arch }}
+          GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          sudo apt-get update
+          trusted_time_headers="$RUNNER_TEMP/qikvrt-trusted-time.headers"
+          if ! curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --max-time 30 --retry 4 --retry-all-errors \
+            --dump-header "$trusted_time_headers" --output /dev/null \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'Cache-Control: no-cache' \
+            --header "Authorization: Bearer $GITHUB_API_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/rate_limit?qikvrt_clock=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$QIKVRT_BUILD_ARCH"; then
+            echo 'BLOCK: trusted GitHub API time probe failed' >&2
+            exit 2
+          fi
+          trusted_http_date="$(awk '
+            tolower(substr($0, 1, 5)) == "date:" {
+              line=$0
+              sub(/\r$/, "", line)
+              sub(/^[^:]*:[[:space:]]*/, "", line)
+              value=line
+            }
+            END {print value}
+          ' "$trusted_time_headers")"
+          if ! trusted_remote_epoch="$(LC_ALL=C date -u -d "$trusted_http_date" +%s)"; then
+            echo 'BLOCK: trusted GitHub API Date header is missing or invalid' >&2
+            exit 2
+          fi
+          runner_epoch="$(date -u +%s)"
+          case "$trusted_remote_epoch:$runner_epoch" in
+            *[!0-9:]*) echo 'BLOCK: trusted or runner UTC epoch is invalid' >&2; exit 2 ;;
+          esac
+          if (( trusted_remote_epoch < MIN_UBUNTU_RELEASE_EPOCH || trusted_remote_epoch > MAX_SUPPORTED_BUILD_EPOCH || runner_epoch < MIN_UBUNTU_RELEASE_EPOCH || runner_epoch > MAX_SUPPORTED_BUILD_EPOCH )); then
+            echo "BLOCK: trusted or runner UTC epoch outside supported build window: $trusted_remote_epoch/$runner_epoch" >&2
+            exit 2
+          fi
+          if (( runner_epoch < trusted_remote_epoch - TRUSTED_HOST_CLOCK_SKEW_SECONDS || runner_epoch > trusted_remote_epoch + TRUSTED_HOST_CLOCK_SKEW_SECONDS )); then
+            echo "BLOCK: runner UTC epoch disagrees with trusted GitHub API time: $runner_epoch/$trusted_remote_epoch" >&2
+            exit 2
+          fi
+          check_date=true
+          check_valid_until=true
+          apt_get_check_date=true
+          apt_get_check_valid_until=true
+          if ! apt_values="$(apt-config shell \
+            check_date Acquire::Check-Date/b \
+            check_valid_until Acquire::Check-Valid-Until/b \
+            apt_get_check_date Binary::apt-get::Acquire::Check-Date/b \
+            apt_get_check_valid_until Binary::apt-get::Acquire::Check-Valid-Until/b)"; then
+            echo 'BLOCK: host APT date-verification configuration could not be read' >&2
+            exit 2
+          fi
+          eval "$apt_values"
+          if [ "$check_date" != true ] || [ "$check_valid_until" != true ] ||
+             [ "$apt_get_check_date" != true ] || [ "$apt_get_check_valid_until" != true ]; then
+            echo 'BLOCK: host APT date verification is disabled' >&2
+            exit 2
+          fi
+          apt_source_date_override_regex='(^[[:space:]]*(Check-Date|Check-Valid-Until)[[:space:]]*:)|(^[[:space:]]*deb(-src)?[[:space:]]+\[[^]]*(check-date|check-valid-until)[[:space:]]*=)'
+          set +e
+          grep -ERisq --include='sources.list' --include='*.list' --include='*.sources' \
+            "$apt_source_date_override_regex" /etc/apt
+          apt_source_status=$?
+          set -e
+          case "$apt_source_status" in
+            0) echo 'BLOCK: host APT source contains a per-source date-verification override' >&2; exit 2 ;;
+            1) ;;
+            *) echo 'BLOCK: host APT source date-verification configuration could not be read' >&2; exit 2 ;;
+          esac
+          sudo apt-get -o APT::Update::Error-Mode=any -o Acquire::Check-Date=true -o Acquire::Check-Valid-Until=true update
+          trusted_host_epoch="$(date -u +%s)"
+          case "$trusted_host_epoch" in
+            ''|*[!0-9]*) echo "BLOCK: trusted runner UTC epoch is invalid: $trusted_host_epoch" >&2; exit 2 ;;
+          esac
+          if (( trusted_host_epoch < MIN_UBUNTU_RELEASE_EPOCH || trusted_host_epoch > MAX_SUPPORTED_BUILD_EPOCH )); then
+            echo "BLOCK: trusted runner UTC epoch outside supported build window: $trusted_host_epoch" >&2
+            exit 2
+          fi
+          if (( trusted_host_epoch < trusted_remote_epoch - TRUSTED_HOST_CLOCK_SKEW_SECONDS || trusted_host_epoch > trusted_remote_epoch + TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS )); then
+            echo "BLOCK: post-APT runner UTC epoch escaped trusted GitHub API time: $trusted_host_epoch/$trusted_remote_epoch" >&2
+            exit 2
+          fi
+          echo "QIKVRT_TRUSTED_HOST_EPOCH=$trusted_host_epoch" >> "$GITHUB_ENV"
           sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual dhcpcd-base ipxe-qemu
           command -v dhcpcd >/dev/null || { echo 'BLOCK: dhcpcd-base installed no dhcpcd appliance client' >&2; exit 2; }
           [ -r /etc/dhcpcd.conf ] || { echo 'BLOCK: dhcpcd-base installed no readable dhcpcd.conf' >&2; exit 2; }
@@ -168,11 +254,38 @@ jobs:
           esac
           probe_disk="$RUNNER_TEMP/qikvrt-libguestfs-network-probe.raw"
           probe_script="$RUNNER_TEMP/qikvrt-libguestfs-network-probe.sh"
+          host_epoch="$(date -u +%s)"
+          case "$host_epoch" in
+            ''|*[!0-9]*) echo "BLOCK: runner UTC epoch is invalid: $host_epoch" >&2; exit 2 ;;
+          esac
+          if (( host_epoch < MIN_UBUNTU_RELEASE_EPOCH || host_epoch > MAX_SUPPORTED_BUILD_EPOCH )); then
+            echo "BLOCK: runner UTC epoch outside supported build window: $host_epoch" >&2
+            exit 2
+          fi
+          if (( host_epoch < trusted_host_epoch - TRUSTED_HOST_CLOCK_SKEW_SECONDS || host_epoch > trusted_host_epoch + TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS )); then
+            echo "BLOCK: runner UTC epoch escaped trusted post-APT anchor: $host_epoch" >&2
+            exit 2
+          fi
+          target_epoch=$((host_epoch + LIBGUESTFS_CLOCK_CUSHION_SECONDS))
+          if (( target_epoch + LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS > MAX_SUPPORTED_BUILD_EPOCH )); then
+            echo "BLOCK: cushioned appliance UTC epoch exceeds supported build window: $target_epoch" >&2
+            exit 2
+          fi
           qemu-img create -f raw "$probe_disk" 32M
           printf '%s\n' \
             '#!/bin/bash' \
             'set -euo pipefail' \
             'mirror=${1:?missing Ubuntu mirror}' \
+            'host_epoch=${2:?missing runner UTC epoch}' \
+            'minimum_epoch=${3:?missing Ubuntu release epoch}' \
+            'maximum_epoch=${4:?missing maximum build epoch}' \
+            'clock_window=${5:?missing appliance clock window}' \
+            'case "$host_epoch:$minimum_epoch:$maximum_epoch:$clock_window" in *[!0-9:]*) echo "Appliance received invalid UTC epoch bounds" >&2; exit 13 ;; esac' \
+            'if (( host_epoch < minimum_epoch || host_epoch > maximum_epoch )); then echo "Appliance received UTC epoch outside supported build window: $host_epoch" >&2; exit 13; fi' \
+            'if ! date -u -s "@$host_epoch" >/dev/null; then echo "Appliance UTC clock synchronization failed" >&2; exit 14; fi' \
+            'guest_epoch=$(date -u +%s)' \
+            'if (( guest_epoch < host_epoch || guest_epoch > host_epoch + clock_window )); then echo "Appliance UTC clock outside synchronized window: $guest_epoch" >&2; exit 14; fi' \
+            'echo QIKVRT_LIBGUESTFS_CLOCK_PREFLIGHT=OK' \
             'if ! test -r /etc/dhcpcd.conf; then echo "Appliance DHCP configuration missing: /etc/dhcpcd.conf" >&2; exit 15; fi' \
             'if ! command -v dhcpcd >/dev/null; then echo "Appliance DHCP client missing: dhcpcd" >&2; exit 16; fi' \
             'if ! ip -4 -o addr show dev eth0 scope global | grep . >/dev/null; then echo "Appliance IPv4 address missing: eth0" >&2; exit 17; fi' \
@@ -187,17 +300,40 @@ jobs:
             timeout --kill-after=15s 180s \
             guestfish --network --rw --format=raw -a "$probe_disk" run : \
             debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384 : \
-            debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"; then
+            debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror $target_epoch $MIN_UBUNTU_RELEASE_EPOCH $MAX_SUPPORTED_BUILD_EPOCH $LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS"; then
             echo "BLOCK: libguestfs appliance DNS/TCP preflight failed for $mirror" >&2
             exit 2
           fi
           echo 'QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK'
       - name: Build VM/OCI and execute packaged Firefox Effect-Ack acceptance
-        run: python3 -B tools/qikvrt_mesh_linux_release_v2.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
+        env:
+          QIKVRT_BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          build_log="$RUNNER_TEMP/qikvrt-mesh-linux-$QIKVRT_BUILD_ARCH-build.log"
+          if python3 -B tools/qikvrt_mesh_linux_release_v2.py build \
+            --arch "$QIKVRT_BUILD_ARCH" --output "$RUNNER_TEMP/dist" \
+            > "$build_log" 2>&1; then
+            grep -E 'QIKVRT_[A-Z0-9_]+=.*' "$build_log" || true
+            tail -n 200 "$build_log"
+          else
+            build_status=$?
+            echo "BLOCK: native $QIKVRT_BUILD_ARCH build failed; bounded diagnostic tail follows" >&2
+            tail -n 4000 "$build_log" >&2
+            exit "$build_status"
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-mesh-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/dist/*
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload failed native-build diagnostic log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-linux-${{ matrix.arch }}-diagnostics
+          path: ${{ runner.temp }}/qikvrt-mesh-linux-${{ matrix.arch }}-build.log
           retention-days: 30
           if-no-files-found: error
 

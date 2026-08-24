@@ -1,9 +1,12 @@
 import json
+import os
 import pathlib
 import runpy
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -50,9 +53,36 @@ class T(unittest.TestCase):
             "host_libguestfs_supermin_dhcp_package_and_config_required",
             "host_libguestfs_virtio_net_rom_required",
             "host_libguestfs_network_preflight_required",
+            "host_libguestfs_clock_sync_required",
+            "host_https_time_anchor_required",
+            "host_apt_update_error_mode_any_required",
+            "apt_source_date_override_rejection_required",
+            "failed_native_build_diagnostic_log_required",
             "real_virt_customize_debug_trace_required",
         ]:
             self.assertTrue(policy["build_acceptance"][key])
+        self.assertEqual(
+            policy["build_acceptance"]["host_libguestfs_clock_cushion_seconds"],
+            300,
+        )
+        self.assertEqual(
+            policy["build_acceptance"][
+                "host_libguestfs_clock_observation_window_seconds"
+            ],
+            30,
+        )
+        self.assertEqual(
+            policy["build_acceptance"]["trusted_host_epoch_max_age_seconds"],
+            7200,
+        )
+        self.assertEqual(
+            policy["build_acceptance"]["trusted_host_clock_skew_seconds"],
+            30,
+        )
+        self.assertEqual(
+            policy["build_acceptance"]["failed_native_build_log_tail_lines"],
+            4000,
+        )
         guards = policy["publication_guards"]
         self.assertTrue(guards["single_parent_zero_diff_carrier_required"])
         self.assertTrue(guards["branch_head_compare_and_swap_required"])
@@ -82,10 +112,45 @@ class T(unittest.TestCase):
         }
         for key, value in official.items():
             self.assertEqual(policy["base_distribution"][key], value)
+        self.assertEqual(
+            policy["base_distribution"]["release_min_epoch_utc"], 1785542400
+        )
+        self.assertEqual(
+            policy["base_distribution"]["max_supported_build_epoch_utc"],
+            4102444800,
+        )
 
     def test_workflow(self):
         raw = WF.read_text()
         workflow = yaml.safe_load(raw)
+        policy = json.loads(POLICY.read_text())
+        workflow_env = workflow["env"]
+        self.assertEqual(
+            int(workflow_env["MIN_UBUNTU_RELEASE_EPOCH"]),
+            policy["base_distribution"]["release_min_epoch_utc"],
+        )
+        self.assertEqual(
+            int(workflow_env["MAX_SUPPORTED_BUILD_EPOCH"]),
+            policy["base_distribution"]["max_supported_build_epoch_utc"],
+        )
+        self.assertEqual(
+            int(workflow_env["TRUSTED_HOST_CLOCK_SKEW_SECONDS"]),
+            policy["build_acceptance"]["trusted_host_clock_skew_seconds"],
+        )
+        self.assertEqual(
+            int(workflow_env["TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS"]),
+            policy["build_acceptance"]["trusted_host_epoch_max_age_seconds"],
+        )
+        self.assertEqual(
+            int(workflow_env["LIBGUESTFS_CLOCK_CUSHION_SECONDS"]),
+            policy["build_acceptance"]["host_libguestfs_clock_cushion_seconds"],
+        )
+        self.assertEqual(
+            int(workflow_env["LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS"]),
+            policy["build_acceptance"][
+                "host_libguestfs_clock_observation_window_seconds"
+            ],
+        )
         for text in [
             "ubuntu-24.04-arm",
             "qikvrt-mesh-linux-v1.0.0",
@@ -136,6 +201,36 @@ class T(unittest.TestCase):
             "Appliance IPv4 address missing: eth0",
             "Appliance default route missing",
             "Appliance resolver configuration missing",
+            "runner UTC epoch is invalid",
+            "runner UTC epoch outside supported build window",
+            "trusted runner UTC epoch is invalid",
+            "trusted runner UTC epoch outside supported build window",
+            "runner UTC epoch escaped trusted post-APT anchor",
+            "trusted GitHub API time probe failed",
+            "trusted GitHub API Date header is missing or invalid",
+            "runner UTC epoch disagrees with trusted GitHub API time",
+            "post-APT runner UTC epoch escaped trusted GitHub API time",
+            "QIKVRT_TRUSTED_HOST_EPOCH",
+            "https://api.github.com/rate_limit?qikvrt_clock=",
+            "--proto '=https'",
+            "APT::Update::Error-Mode=any",
+            "host APT date verification is disabled",
+            "host APT source contains a per-source date-verification override",
+            "Binary::apt-get::Acquire::Check-Date/b",
+            "Binary::apt-get::Acquire::Check-Valid-Until/b",
+            "--include='*.list'",
+            "--include='*.sources'",
+            "Acquire::Check-Date=true",
+            "Acquire::Check-Valid-Until=true",
+            "MIN_UBUNTU_RELEASE_EPOCH: '1785542400'",
+            "MAX_SUPPORTED_BUILD_EPOCH: '4102444800'",
+            "TRUSTED_HOST_CLOCK_SKEW_SECONDS: '30'",
+            "TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS: '7200'",
+            "LIBGUESTFS_CLOCK_CUSHION_SECONDS: '300'",
+            "LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS: '30'",
+            "Appliance UTC clock synchronization failed",
+            "Appliance UTC clock outside synchronized window",
+            "QIKVRT_LIBGUESTFS_CLOCK_PREFLIGHT=OK",
             "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "Provision and verify native libguestfs host appliance",
             "BLOCK: linux-image-virtual installed no generic supermin appliance kernel",
@@ -152,8 +247,12 @@ class T(unittest.TestCase):
             'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
             'DNS lookup failed: $mirror',
             'TCP connect failed: $mirror:80',
-            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror $target_epoch $MIN_UBUNTU_RELEASE_EPOCH $MAX_SUPPORTED_BUILD_EPOCH $LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
+            "bounded diagnostic tail follows",
+            'tail -n 4000 "$build_log"',
+            "Upload failed native-build diagnostic log",
+            "qikvrt-mesh-linux-${{ matrix.arch }}-diagnostics",
         ]:
             self.assertIn(text, raw)
         build_steps = workflow["jobs"]["build"]["steps"]
@@ -170,6 +269,10 @@ class T(unittest.TestCase):
             == "Build VM/OCI and execute packaged Firefox Effect-Ack acceptance"
         )
         self.assertLess(host_index, appliance_index)
+        self.assertEqual(
+            build_steps[host_index]["env"]["GITHUB_API_TOKEN"],
+            "${{ github.token }}",
+        )
         host_run = build_steps[host_index]["run"]
         for text in [
             "linux-image-virtual",
@@ -194,6 +297,28 @@ class T(unittest.TestCase):
             "Appliance IPv4 address missing: eth0",
             "Appliance default route missing",
             "Appliance resolver configuration missing",
+            "runner UTC epoch is invalid",
+            "runner UTC epoch outside supported build window",
+            "trusted runner UTC epoch is invalid",
+            "trusted runner UTC epoch outside supported build window",
+            "runner UTC epoch escaped trusted post-APT anchor",
+            "trusted GitHub API time probe failed",
+            "trusted GitHub API Date header is missing or invalid",
+            "runner UTC epoch disagrees with trusted GitHub API time",
+            "post-APT runner UTC epoch escaped trusted GitHub API time",
+            "QIKVRT_TRUSTED_HOST_EPOCH",
+            "https://api.github.com/rate_limit?qikvrt_clock=",
+            "--proto '=https'",
+            "APT::Update::Error-Mode=any",
+            "host APT date verification is disabled",
+            "host APT source contains a per-source date-verification override",
+            "Binary::apt-get::Acquire::Check-Date/b",
+            "Binary::apt-get::Acquire::Check-Valid-Until/b",
+            "Acquire::Check-Date=true",
+            "Acquire::Check-Valid-Until=true",
+            "Appliance UTC clock synchronization failed",
+            "Appliance UTC clock outside synchronized window",
+            "QIKVRT_LIBGUESTFS_CLOCK_PREFLIGHT=OK",
             "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "SUPERMIN_KERNEL",
             "SUPERMIN_KERNEL_VERSION",
@@ -210,13 +335,24 @@ class T(unittest.TestCase):
             'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
             'DNS lookup failed: $mirror',
             'TCP connect failed: $mirror:80',
-            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror $target_epoch $MIN_UBUNTU_RELEASE_EPOCH $MAX_SUPPORTED_BUILD_EPOCH $LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, host_run)
         self.assertNotIn("ip -4 -o addr show dev eth0 scope global | grep -q", host_run)
         self.assertNotIn("ip -4 route show default | grep -q", host_run)
         causal_order = [
+            'trusted_time_headers="$RUNNER_TEMP/qikvrt-trusted-time.headers"',
+            "https://api.github.com/rate_limit?qikvrt_clock=",
+            'trusted_http_date="$(awk',
+            'trusted_remote_epoch="$(LC_ALL=C date -u -d',
+            "runner UTC epoch disagrees with trusted GitHub API time",
+            "apt-config shell",
+            "host APT source contains a per-source date-verification override",
+            "sudo apt-get -o APT::Update::Error-Mode=any -o Acquire::Check-Date=true -o Acquire::Check-Valid-Until=true update",
+            'trusted_host_epoch="$(date -u +%s)"',
+            "post-APT runner UTC epoch escaped trusted GitHub API time",
+            'echo "QIKVRT_TRUSTED_HOST_EPOCH=$trusted_host_epoch"',
             "sudo apt-get install",
             'find /usr/lib -type d -path \'*/guestfs/supermin.d\' -print | sort > "$supermin_dirs_file"',
             'mapfile -t supermin_dirs < "$supermin_dirs_file"',
@@ -229,6 +365,8 @@ class T(unittest.TestCase):
             'export LIBGUESTFS_CACHEDIR="$(mktemp -d',
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
             'qemu-img create -f raw "$probe_disk" 32M',
+            "Appliance UTC clock synchronization failed",
+            "QIKVRT_LIBGUESTFS_CLOCK_PREFLIGHT=OK",
             "Appliance DHCP configuration missing: /etc/dhcpcd.conf",
             "Appliance DHCP client missing: dhcpcd",
             "Appliance IPv4 address missing: eth0",
@@ -239,11 +377,95 @@ class T(unittest.TestCase):
             'bash -n "$probe_script"',
             "guestfish --network --rw --format=raw",
             'debug-upload "$probe_script"',
-            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror $target_epoch $MIN_UBUNTU_RELEASE_EPOCH $MAX_SUPPORTED_BUILD_EPOCH $LIBGUESTFS_CLOCK_OBSERVATION_WINDOW_SECONDS"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]
         positions = [host_run.index(text) for text in causal_order]
         self.assertEqual(positions, sorted(positions))
+
+        appliance_step = build_steps[appliance_index]
+        self.assertEqual(
+            appliance_step["env"]["QIKVRT_BUILD_ARCH"], "${{ matrix.arch }}"
+        )
+        appliance_run = appliance_step["run"]
+        for text in [
+            'build_log="$RUNNER_TEMP/qikvrt-mesh-linux-$QIKVRT_BUILD_ARCH-build.log"',
+            "tools/qikvrt_mesh_linux_release_v2.py build",
+            '> "$build_log" 2>&1',
+            'tail -n 4000 "$build_log" >&2',
+            'exit "$build_status"',
+        ]:
+            self.assertIn(text, appliance_run)
+        with tempfile.TemporaryDirectory() as directory:
+            runner_temp = pathlib.Path(directory)
+            stub_bin = runner_temp / "bin"
+            stub_bin.mkdir()
+            python_stub = stub_bin / "python3"
+            python_stub.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$QIKVRT_STUB_LINE\"\n"
+                "exit \"$QIKVRT_STUB_STATUS\"\n"
+            )
+            python_stub.chmod(0o755)
+            wrapper_env = {
+                **os.environ,
+                "PATH": f"{stub_bin}:{os.environ['PATH']}",
+                "RUNNER_TEMP": str(runner_temp),
+                "QIKVRT_BUILD_ARCH": "amd64",
+                "QIKVRT_STUB_LINE": "QIKVRT_WRAPPER_SENTINEL=FAILURE",
+                "QIKVRT_STUB_STATUS": "37",
+            }
+            failed_wrapper = subprocess.run(
+                ["bash", "-c", appliance_run],
+                env=wrapper_env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(failed_wrapper.returncode, 37)
+            self.assertIn("bounded diagnostic tail follows", failed_wrapper.stderr)
+            self.assertIn("QIKVRT_WRAPPER_SENTINEL=FAILURE", failed_wrapper.stderr)
+            wrapper_env.update(
+                {
+                    "QIKVRT_STUB_LINE": "QIKVRT_WRAPPER_SENTINEL=OK",
+                    "QIKVRT_STUB_STATUS": "0",
+                }
+            )
+            successful_wrapper = subprocess.run(
+                ["bash", "-c", appliance_run],
+                env=wrapper_env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(successful_wrapper.returncode, 0)
+            self.assertIn("QIKVRT_WRAPPER_SENTINEL=OK", successful_wrapper.stdout)
+
+        release_upload_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+            and step.get("with", {}).get("name")
+            == "qikvrt-mesh-linux-${{ matrix.arch }}"
+        )
+        release_upload = build_steps[release_upload_index]
+        self.assertNotIn("if", release_upload)
+        self.assertEqual(release_upload["with"]["path"], "${{ runner.temp }}/dist/*")
+
+        diagnostic_index = next(
+            index
+            for index, step in enumerate(build_steps)
+            if step.get("name") == "Upload failed native-build diagnostic log"
+        )
+        diagnostic_step = build_steps[diagnostic_index]
+        self.assertGreater(diagnostic_index, release_upload_index)
+        self.assertEqual(diagnostic_step["if"], "failure()")
+        self.assertEqual(
+            diagnostic_step["with"]["name"],
+            "qikvrt-mesh-linux-${{ matrix.arch }}-diagnostics",
+        )
+        self.assertEqual(
+            diagnostic_step["with"]["path"],
+            "${{ runner.temp }}/qikvrt-mesh-linux-${{ matrix.arch }}-build.log",
+        )
+        self.assertEqual(diagnostic_step["with"]["if-no-files-found"], "error")
 
         mode_run = next(
             step["run"]
@@ -290,6 +512,172 @@ class T(unittest.TestCase):
         self.assertIn('"LIBGUESTFS_DEBUG":"1"', base_raw)
         self.assertIn('"LIBGUESTFS_TRACE":"1"', base_raw)
         self.assertIn('run("virt-customize","--network"', base_raw)
+        accepted_now = base_namespace["UBUNTU_RELEASE_MIN_EPOCH"] + 1000
+        trusted_epoch = str(accepted_now)
+        with mock.patch.dict(
+            os.environ, {"QIKVRT_TRUSTED_HOST_EPOCH": trusted_epoch}
+        ), mock.patch.object(
+            base_namespace["time"], "time", return_value=accepted_now
+        ):
+            clock_sync = base_namespace["libguestfs_clock_sync_command"]()
+        self.assertRegex(
+            clock_sync,
+            r"^set -eu; date -u -s '@\d+' >/dev/null; now=\$\(date -u \+%s\)",
+        )
+        self.assertIn("QIKVRT_LIBGUESTFS_CLOCK_SYNC=OK", clock_sync)
+        self.assertIn("guest APT date verification is disabled", clock_sync)
+        self.assertIn(
+            "guest APT source contains a per-source date-verification override",
+            clock_sync,
+        )
+        self.assertIn(
+            "apt-config shell check_date Acquire::Check-Date/b "
+            "check_valid_until Acquire::Check-Valid-Until/b",
+            clock_sync,
+        )
+        self.assertIn("Binary::apt-get::Acquire::Check-Date/b", clock_sync)
+        self.assertIn("Binary::apt-get::Acquire::Check-Valid-Until/b", clock_sync)
+        self.assertIn("--include='*.list'", clock_sync)
+        self.assertIn("--include='*.sources'", clock_sync)
+        self.assertIn('[ "$check_date" != true ]', clock_sync)
+        self.assertIn('[ "$check_valid_until" != true ]', clock_sync)
+        apt_source_regex = base_namespace["APT_SOURCE_DATE_OVERRIDE_REGEX"]
+        self.assertIn(
+            f"apt_source_date_override_regex='{apt_source_regex}'", clock_sync
+        )
+        workflow = yaml.safe_load(WF.read_text())
+        host_run = next(
+            step["run"]
+            for step in workflow["jobs"]["build"]["steps"]
+            if step.get("name")
+            == "Provision and verify native libguestfs host appliance"
+        )
+        self.assertIn(
+            f"apt_source_date_override_regex='{apt_source_regex}'", host_run
+        )
+        for source_override in [
+            "Check-Date: no\n",
+            "Check-Date: disable\n",
+            "Check-Valid-Until: without\n",
+            "Check-Date:\n disable\n",
+            "deb [check-date=disable] http://archive.ubuntu.com/ubuntu noble main\n",
+            "deb [check-valid-until=without] http://archive.ubuntu.com/ubuntu noble main\n",
+            "Check-Date: yes\n",
+        ]:
+            self.assertEqual(
+                subprocess.run(
+                    ["grep", "-Eiq", apt_source_regex],
+                    input=source_override,
+                    text=True,
+                ).returncode,
+                0,
+                source_override,
+            )
+        for default_source in [
+            "# Check-Date: no\n",
+            "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\n",
+            "deb http://archive.ubuntu.com/ubuntu noble main\n",
+        ]:
+            self.assertEqual(
+                subprocess.run(
+                    ["grep", "-Eiq", apt_source_regex],
+                    input=default_source,
+                    text=True,
+                ).returncode,
+                1,
+                default_source,
+            )
+        subprocess.run(["bash", "-n", "-c", clock_sync], check=True)
+        policy = json.loads(POLICY.read_text())
+        self.assertEqual(
+            base_namespace["UBUNTU_RELEASE_MIN_EPOCH"],
+            policy["base_distribution"]["release_min_epoch_utc"],
+        )
+        self.assertEqual(
+            base_namespace["MAX_SUPPORTED_BUILD_EPOCH"],
+            policy["base_distribution"]["max_supported_build_epoch_utc"],
+        )
+        self.assertEqual(
+            base_namespace["CLOCK_CUSHION_SECONDS"],
+            policy["build_acceptance"]["host_libguestfs_clock_cushion_seconds"],
+        )
+        self.assertEqual(
+            base_namespace["TRUSTED_HOST_EPOCH_BACKWARD_SKEW_SECONDS"],
+            policy["build_acceptance"]["trusted_host_clock_skew_seconds"],
+        )
+        self.assertEqual(
+            base_namespace["CLOCK_OBSERVATION_WINDOW_SECONDS"],
+            policy["build_acceptance"][
+                "host_libguestfs_clock_observation_window_seconds"
+            ],
+        )
+        self.assertEqual(
+            base_namespace["TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS"],
+            policy["build_acceptance"]["trusted_host_epoch_max_age_seconds"],
+        )
+        helper = base_namespace["libguestfs_clock_sync_command"]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(SystemExit, "missing or invalid"):
+                helper()
+        with mock.patch.dict(
+            os.environ,
+            {
+                "QIKVRT_TRUSTED_HOST_EPOCH": str(
+                    base_namespace["UBUNTU_RELEASE_MIN_EPOCH"] - 1
+                )
+            },
+            clear=True,
+        ), mock.patch.object(
+            base_namespace["time"],
+            "time",
+            return_value=base_namespace["UBUNTU_RELEASE_MIN_EPOCH"],
+        ):
+            with self.assertRaisesRegex(SystemExit, "outside supported build window"):
+                helper()
+        anchor = base_namespace["UBUNTU_RELEASE_MIN_EPOCH"] + 10000
+        for escaped_now in [
+            anchor - base_namespace["TRUSTED_HOST_EPOCH_BACKWARD_SKEW_SECONDS"] - 1,
+            anchor + base_namespace["TRUSTED_HOST_EPOCH_MAX_AGE_SECONDS"] + 1,
+        ]:
+            with mock.patch.dict(
+                os.environ, {"QIKVRT_TRUSTED_HOST_EPOCH": str(anchor)}, clear=True
+            ), mock.patch.object(
+                base_namespace["time"], "time", return_value=escaped_now
+            ):
+                with self.assertRaisesRegex(SystemExit, "escaped trusted post-APT"):
+                    helper()
+        latest_valid_now = (
+            base_namespace["MAX_SUPPORTED_BUILD_EPOCH"]
+            - base_namespace["CLOCK_CUSHION_SECONDS"]
+            - base_namespace["CLOCK_OBSERVATION_WINDOW_SECONDS"]
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"QIKVRT_TRUSTED_HOST_EPOCH": str(latest_valid_now)},
+            clear=True,
+        ), mock.patch.object(
+            base_namespace["time"], "time", return_value=latest_valid_now
+        ):
+            helper()
+        with mock.patch.dict(
+            os.environ,
+            {"QIKVRT_TRUSTED_HOST_EPOCH": str(latest_valid_now + 1)},
+            clear=True,
+        ), mock.patch.object(
+            base_namespace["time"], "time", return_value=latest_valid_now + 1
+        ):
+            with self.assertRaisesRegex(SystemExit, "exceeds supported build window"):
+                helper()
+        self.assertIn(
+            '"--run-command",clock_sync,"--install","docker.io"', base_raw
+        )
+        for disabled in [
+            "Acquire::Check-Date=false",
+            "Acquire::Check-Valid-Until=false",
+            "Acquire::Check-Date=0",
+            "Acquire::Check-Valid-Until=0",
+        ]:
+            self.assertNotIn(disabled, base_raw)
 
         tools_path = str(TOOL.parent)
         sys.path.insert(0, tools_path)
