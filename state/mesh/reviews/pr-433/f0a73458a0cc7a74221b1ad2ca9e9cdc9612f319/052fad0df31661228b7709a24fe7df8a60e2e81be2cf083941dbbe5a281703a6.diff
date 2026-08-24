@@ -1,0 +1,496 @@
+diff --git a/.github/ISSUE_TEMPLATE/ai_onboarding.yml b/.github/ISSUE_TEMPLATE/ai_onboarding.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2bdb63fea03e742c93d5de5ed4cfcfd9412cc08
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/ai_onboarding.yml
+@@ -0,0 +1,53 @@
++# SPDX-License-Identifier: CC-BY-NC-ND-4.0
++# Copyright 2026 Ingolf Lohmann.
++
++name: AI working-memory onboarding
++description: Bind the three choices used by the root AI clone gate.
++title: "[AI onboarding]: "
++labels: [documentation]
++body:
++  - type: markdown
++    attributes:
++      value: |
++        Answer exactly three questions. The canonical root file `AI` converts
++        these values into one clone command, one fork URL, and one start command.
++        This form does not clone, fork, publish, deploy, or upload anything.
++  - type: dropdown
++    id: purpose
++    attributes:
++      label: 1. Purpose
++      description: What should QIK-VRT serve as working memory for?
++      options:
++        - proofs
++        - experiments
++        - production
++    validations:
++      required: true
++  - type: dropdown
++    id: runtime
++    attributes:
++      label: 2. Runtime
++      description: Which language or environment should the working memory speak?
++      options:
++        - python
++        - lean4
++        - docker
++        - cli
++    validations:
++      required: true
++  - type: dropdown
++    id: persistence
++    attributes:
++      label: 3. Persistence
++      description: Where should the working memory persist?
++      options:
++        - local
++        - github
++        - zenodo
++    validations:
++      required: true
++  - type: markdown
++    attributes:
++      value: |
++        After the third choice, substitute the selected tokens into the
++        `FINAL_OUTPUT_TEMPLATE` at the top of the root `AI` file.
+diff --git a/AI b/AI
+index 487e3feda05c351f8d9aead6e4ed3d3613b886d8..5d4f714390b9e8eec45044e72b6f4b956da7eead 100644
+--- a/AI
++++ b/AI
+@@ -1,5 +1,63 @@
+ QIK-VRT AI RUNTIME ENTRYPOINT
+ 
++THREE-QUESTION WORKING-MEMORY GATE
++
++This first screen is the bounded onboarding contract for an AI agent or human
++operator. Repository evidence remains canonical; this gate only selects a local
++working-memory configuration.
++
++SYSTEM
++
++You are an AI agent. Lead the visitor to a QIK-VRT working-memory clone with no
++more than three questions.
++
++RULES
++
++1. Ask each numbered question at most once and in the declared order.
++2. Normalize the answer to one declared token. When an answer is absent or
++   ambiguous, use the declared default instead of asking a fourth question.
++3. After question 3, emit exactly one clone command, one fork URL, and one start
++   command using the normalized tokens. Do not execute them.
++4. The start command prints a non-secret .env template. It does not fork, push,
++   publish, upload to Zenodo, deploy, or certify a scientific claim.
++
++QUESTION_1_PURPOSE
++
++Will QIK-VRT be used as working memory for formal proofs, experiments, or
++production?
++
++Tokens: proofs | experiments | production
++Default: experiments
++
++QUESTION_2_RUNTIME
++
++Which runtime should the working memory speak?
++
++Tokens: python | lean4 | docker | cli
++Default: cli
++
++QUESTION_3_PERSISTENCE
++
++Where should the working memory persist?
++
++Tokens: local | github | zenodo
++Default: local
++
++FINAL_OUTPUT_TEMPLATE
++
++Replace the three brace expressions with the normalized answers and emit only
++these three lines:
++
++git clone https://github.com/Goldkelch/qik-vrt.git
++https://github.com/Goldkelch/qik-vrt/fork
++cd qik-vrt && ./scripts/init_working_memory.sh --mode={proofs|experiments|production} --runtime={python|lean4|docker|cli} --backup={local|github|zenodo}
++
++The start command prints the selected .env template to standard output. The
++`github` and `zenodo` tokens express persistence intent only; they do not
++perform an external effect.
++
++REPOSITORY EVIDENCE BOUNDARY
++
+ Repository evidence is canonical. Chat and model memory are non-authoritative transport context.
+ 
+ PUBLICATION AND REFERENCE OVERVIEW
+diff --git a/Makefile b/Makefile
+index 816502645b42c22879c28a8870be722b6f33fbfa..020154998018dd0abf301c39868c22887df8f5d0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -8,7 +8,7 @@ EFFECT_ACK_C90_CFLAGS ?= -std=c90 -pedantic -Wall -Wextra -Werror
+ .PHONY: test compile effect-ack-core-compile effect-ack-core-test scientific-bundle-test adaptive-cognition-test anticipation-contract runtime-contract tool-cache-contract ai-runtime-contract interaction-archive-test release-automation evidence-contract-test launcher unit conformance security license seed e2e integrity run-api clean
+ 
+ compile: effect-ack-core-compile
+-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py
++	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m py_compile qikvrt.py tools/qikvrt_runtime_logger.py tools/qikvrt_subprocess.py tools/qikvrt_initial_acceptance_gate.py tools/qikvrt_integrity.py tools/qikvrt_tool_cache.py tools/ai_runtime_bootloader.py tools/qikvrt_master_acceptance_gate.py tools/qikvrt_cicd_publish.py tools/qikvrt_seed_common.py tools/qikvrt_anticipation.py tools/qikvrt_validate_state_run.py tools/qikvrt_zenodo_actions.py tools/qikvrt_formalization_v2_zenodo.py tools/qikvrt_build_zenodo_manifest.py tools/qikvrt_status_zenodo.py tools/qikvrt_interaction_archive.py tools/qikvrt_global_completion.py tools/qikvrt_canonical_temporal_memory_kernel_evidence.py tools/qikvrt_vrtcore_zenodo_candidate.py tools/qikvrt_content_disposition_batch_001.py tools/qikvrt_content_disposition_batch_002_terminal.py tools/qikvrt_content_disposition_batch_002_corrected_candidate.py tools/qikvrt_content_disposition_batch_002_owner_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance.py tools/qikvrt_content_disposition_status_after_batch_002_acceptance_compat.py tools/qikvrt_content_disposition_batch_003_dispatch.py tools/qikvrt_zenodo_union_disposition.py src/qikvrt_effect_ack.py src/qikvrt_api_handler.py src/qikvrt_github_api_shim.py scripts/qikvrt_api_client.py tests/test_integrity.py tests/test_ai_runtime_bootloader.py tests/test_ai_onboarding.py tests/test_launcher_runtime.py tests/test_effect_ack_conformance.py tests/test_effect_ack_release_workflows.py tests/test_formalization_v2_release_workflow.py tests/test_formalization_v2_zenodo.py tests/test_status_release_workflows.py tests/test_zenodo_actions.py tests/test_status_zenodo.py tests/test_zenodo_manifest_builder.py tests/test_status_clarification_bundle.py tests/test_global_completion.py tests/test_content_disposition_batch_001.py tests/test_content_disposition_batch_002_terminal.py tests/test_content_disposition_batch_002_corrected_candidate.py tests/test_content_disposition_batch_002_owner_acceptance.py tests/test_content_disposition_status_after_batch_002_acceptance.py tests/test_content_disposition_batch_003_dispatch.py tests/test_zenodo_union_disposition.py tests/test_handler_unit.py tests/test_handler_security.py tests/test_api_client.py tests/test_interaction_archive.py tests/test_anticipation.py tests/test_license_transition.py tests/test_ietf_offline_render.py tests/test_seed_workflows.py tests/test_tcpip_e2e.py tests/test_canonical_temporal_memory_publication.py
+ 
+ effect-ack-core-compile:
+ 	$(CC) $(EFFECT_ACK_C90_CFLAGS) -Iinclude -fsyntax-only src/effect_ack_core.c tests/test_effect_ack_core.c
+@@ -38,7 +38,7 @@ runtime-contract: tool-cache-contract
+ 	PYTHON="$(PYTHON)" sh tests/test_runtime_bootstrap.sh
+ 
+ ai-runtime-contract:
+-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_ai_runtime_bootloader
++	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_ai_runtime_bootloader tests.test_ai_onboarding
+ 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/ai_runtime_bootloader.py --help >/dev/null
+ 
+ interaction-archive-test:
+diff --git a/REPOSITORY_FILE_MANIFEST.json b/REPOSITORY_FILE_MANIFEST.json
+index 8c60dfcd5c969c9c0c4caa7d77662138487264c8..f5895ef689e0d68f90fe73a2ebd0ac4abe2b0c19 100644
+--- a/REPOSITORY_FILE_MANIFEST.json
++++ b/REPOSITORY_FILE_MANIFEST.json
+@@ -7,7 +7,7 @@
+     "rights_holder": "Ingolf Lohmann"
+   },
+   "excluded_file_count": 9,
+-  "file_count": 3414,
++  "file_count": 3417,
+   "files": [
+     {
+       "bytes": 47,
+@@ -73,6 +73,15 @@
+       "sha256": "f5b22524c3207f45a8e9440642e706a831373ca22f27e43ea2e63c50da4bbec1"
+     },
+     {
++      "bytes": 1488,
++      "classification": "repository_content",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": ".github/ISSUE_TEMPLATE/ai_onboarding.yml",
++      "sha256": "e89fc0be0c0c853fd91ef8bf3bbf87af2e7806e5612871299b5ebe666829935c"
++    },
++    {
+       "bytes": 1299,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+@@ -703,13 +712,13 @@
+       "sha256": "bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e"
+     },
+     {
+-      "bytes": 3757,
++      "bytes": 5600,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "AI",
+-      "sha256": "ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361"
++      "sha256": "72543416c089b97381ed0bcbdb31209003f134c8a0a314d18c7a0f6e37bcfb84"
+     },
+     {
+       "bytes": 1457,
+@@ -6796,13 +6805,13 @@
+       "sha256": "f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3"
+     },
+     {
+-      "bytes": 9043,
++      "bytes": 9096,
+       "classification": "repository_content",
+       "excluded_from_sha256_index": false,
+       "file_type": "regular",
+       "immutable": true,
+       "path": "Makefile",
+-      "sha256": "c31d2328e95954af9a2f6fbaa23717031923ee2a92833c918fc6735a5e28c1a9"
++      "sha256": "1f1da5fed7352bb47f423d2a8091a6f8e12d912fd40bb75fdbee72e096a44098"
+     },
+     {
+       "bytes": 737,
+@@ -28857,6 +28866,15 @@
+       "sha256": "3671bf7bdd453ed4ac8513775945d51fed7f37bd70343fae62c1467380870ffd"
+     },
+     {
++      "bytes": 1655,
++      "classification": "source_code",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "scripts/init_working_memory.sh",
++      "sha256": "4b96f6fa997197ae8bc45a2aa6216c3843f62ed04e8af6ce26d4c24d75b9e78f"
++    },
++    {
+       "bytes": 1308,
+       "classification": "source_code",
+       "excluded_from_sha256_index": false,
+@@ -29089,6 +29107,15 @@
+       "sha256": "154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94"
+     },
+     {
++      "bytes": 3730,
++      "classification": "test_source",
++      "excluded_from_sha256_index": false,
++      "file_type": "regular",
++      "immutable": true,
++      "path": "tests/test_ai_onboarding.py",
++      "sha256": "b2fbf072c3dbaf554609aaec069ffcae3597e1fd9cb997381f1a526444cbbc13"
++    },
++    {
+       "bytes": 6451,
+       "classification": "test_source",
+       "excluded_from_sha256_index": false,
+@@ -30720,7 +30747,7 @@
+   ],
+   "generator": "tools/qikvrt_integrity.py",
+   "generator_version": "3.1",
+-  "immutable_file_count": 3405,
++  "immutable_file_count": 3408,
+   "immutable_file_max_bytes": 268435456,
+   "includes_deliberate_untracked_sources": true,
+   "integrity_authority": {
+@@ -30745,7 +30772,7 @@
+   },
+   "integrity_metadata_max_bytes": 67108864,
+   "repository_content_tree_digest_specification": "sha256(canonical-json-v1 immutable records: path,file_type,bytes,sha256; integrity outputs excluded)",
+-  "repository_content_tree_sha256": "84dc173d8d817d9c5a21270160bebbce17c306830a4dc3ba0fe896829afc00a2",
++  "repository_content_tree_sha256": "d943070e085e0fadafad32ef026a3e446c36e17b497450ad116fe6b480b28bb8",
+   "schema": "qikvrt_repository_integrity_manifest_v3",
+   "source_command": "git ls-files -z --cached --others --exclude-standard -- .; subtract git ls-files -z --deleted -- .",
+   "transient_exclusion_rules": [
+diff --git a/REPOSITORY_FILE_MANIFEST.json.sha256 b/REPOSITORY_FILE_MANIFEST.json.sha256
+index 7a3ad96740060ea9c1a93997dd7750ac0d4a5038..a8d42085fbfafd7c89af3c40394e65fc238827b0 100644
+--- a/REPOSITORY_FILE_MANIFEST.json.sha256
++++ b/REPOSITORY_FILE_MANIFEST.json.sha256
+@@ -1 +1 @@
+-03b21b2393ac28c2f5f4063f2e21ad684c4b7da76880c2cb78e63a0dde0630fe  REPOSITORY_FILE_MANIFEST.json
++0126a1fef1592a03dcdf8a2bbebb6f7f1b38b80da9ce26e026f5b6cd7ab4afe7  REPOSITORY_FILE_MANIFEST.json
+diff --git a/SHA256SUMS.txt b/SHA256SUMS.txt
+index 89c7e18375e851471515a19d04bbd7b9c0c2d105..3a7110d2c03cfb7f735ba06294dbcceb6a2ffd2b 100644
+--- a/SHA256SUMS.txt
++++ b/SHA256SUMS.txt
+@@ -5,6 +5,7 @@ e29bc50e4be00b8f32bfcd79e1ae903dfae39ae9b214a42363e73c2ecded8f40  .continue/rule
+ 2af0341945928695996c669b353acfedcf4a76e0e2c40fbeefedcff767049c2f  .cursor/rules/qikvrt-ai-entry.mdc
+ 72b86a3a08c6f641b4678abc65d216dabdb859f1d8a75b55b05c2b6ddea5c2c2  .gitattributes
+ f5b22524c3207f45a8e9440642e706a831373ca22f27e43ea2e63c50da4bbec1  .github/CODEOWNERS
++e89fc0be0c0c853fd91ef8bf3bbf87af2e7806e5612871299b5ebe666829935c  .github/ISSUE_TEMPLATE/ai_onboarding.yml
+ 3377319f632835926a55669aa5441ee1d8e49743baa07adac94c2f3caad1660b  .github/ISSUE_TEMPLATE/bug_report.yml
+ 54e50f7be2a375571b9ca896d58dfbc26b46a1703560caa6335ee23a3fa233c9  .github/ISSUE_TEMPLATE/config.yml
+ 4c5285303be8a0d58d2bb329ba9a7e35aa161b10052dc97ba73c442d27752e5c  .github/ISSUE_TEMPLATE/documentation.yml
+@@ -75,7 +76,7 @@ a930a7c587221e0cf60d9baae194d185c372e77758eba161566b84a11c77fbbb  .windsurf/rule
+ 119fd6afd614bb73f4d467d54a6e403752e90f15e223e1865df8d74d5ec88bea  ACCEPT.json
+ 6f61443c397539de43465bfc3a10548b630ee46b5153cf6a3e87c44e40b4ab72  ACCEPT.md
+ bfc8ef292f4b72eab2923b1fd18de45303bdc81ac1ac66dc6fcb258f918fcc2e  AGENTS.md
+-ce9d47fb080c1a471c972da2c916ebae07470a6fd4adbb4e54bf81a3effa5361  AI
++72543416c089b97381ed0bcbdb31209003f134c8a0a314d18c7a0f6e37bcfb84  AI
+ 814933c932159fb1dd161dc332f3469dc40989065928723a3d81e8de713be120  AI_ADAPTERS.json
+ 92d0f41201f8e6788278e4611663d9e5e0c6101ce432ac80158dd4780fcc48fa  AI_BOOTSTRAP.md
+ 2a68bf7159b19f2cf3ad0b6dce0636980974856333a4702d4ecac8b2474788a1  AI_CONTEXT.json
+@@ -752,7 +753,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  LOGS/target_st
+ 4a1ab192e4e0bc824b60d52a1941bf7920f1ba1329f06e12dcb4b30dca83fe61  MANIFEST.json
+ f624f4db8867cb14b37f716e1fee4e41e9759c641c76060a31b0800ceb6486e4  MAP.json
+ f02435f99f6507597cb8fb8fee26b7361e2ac25aac0c2e8e641bb5a3f757b1b3  MAP.md
+-c31d2328e95954af9a2f6fbaa23717031923ee2a92833c918fc6735a5e28c1a9  Makefile
++1f1da5fed7352bb47f423d2a8091a6f8e12d912fd40bb75fdbee72e096a44098  Makefile
+ cc2580944c52971c424165c3684acadcf8faa5385e73f3f67ac64dede34a28e9  NOTICE
+ 37b9b84d4a73c3462d728b633526bd63dfa5c2d617c524cc778fe864354e707a  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.json
+ d3097ea38f92df76a538103638021e6622ad0fa9cf1b81d5c19326bbf0e9ff28  OFFICIAL_LICENSE_REFRESH_AND_FILE_ENRICHMENT_GATE.md
+@@ -3197,6 +3198,7 @@ a11a25b71e4b02f80ed5505217de38fc81e9c0e8caa0cb241c29b821bfeb6998  schemas/human_
+ ecbe51e62754bbcfabc30c1a9206e7ba0f1dd203b15286175d541df528c93f2b  schemas/owner_acceptance_record.schema.json
+ 56e11358c63cb357c0e131c744565ba8cdf0ae04c28d38bc9bd33319dca26d1d  schemas/qikvrt-anticipation-state.schema.json
+ 3671bf7bdd453ed4ac8513775945d51fed7f37bd70343fae62c1467380870ffd  schemas/qikvrt-capability-record.schema.json
++4b96f6fa997197ae8bc45a2aa6216c3843f62ed04e8af6ce26d4c24d75b9e78f  scripts/init_working_memory.sh
+ d23b3e9fb475db65e70cbafc48332be92020d86f3faf9cdd3477f5388ac31b7b  scripts/issue_agent/finalize.py
+ 06824f8291dddc42dd1d9620f5a697321eb3ae4728e005f89b181fb740a4ddea  scripts/issue_agent/infer.py
+ 59bf9c5794470a2ae64cb6583ee226c3d1395332b1ca46ac96b126781e689a63  scripts/issue_agent/materialize.py
+@@ -3222,6 +3224,7 @@ a92fb52a477d59121ae079c3306258273e49f46aca664bebde09d3f04c95d85d  state/owner_ac
+ b172c3000bff841eab01f7c552b0e456d8a3a43373605a2dce3420eff756e08f  state/owner_acceptance_record.v45.20.json
+ b9793e10e2b6f2b4ad4c2a28f61535073f1af291d35ab0a006a35e2f3e9dadeb  tests/issue_agent/test_validate.py
+ 154e66d303aa99591f177049bb1f99566037cd6524c2899248100af71d42de94  tests/test_adaptive_runtime.sh
++b2fbf072c3dbaf554609aaec069ffcae3597e1fd9cb997381f1a526444cbbc13  tests/test_ai_onboarding.py
+ 456174ba0f82a49c18baf775d8539f1f504392e6dfe19ba4a6c003a5ddeb5be6  tests/test_ai_runtime_bootloader.py
+ d8168e1dd021516dfc25173637f6da367ba0d0653d44cef4c5929017844e10c6  tests/test_anticipation.py
+ 682c1af489e9c243dbfb0d2e37984809f30ccdc1623a268d186ae8c02f59ce82  tests/test_aphorism_corpus_v2.py
+diff --git a/scripts/init_working_memory.sh b/scripts/init_working_memory.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..565d0f0ff7717e18e18377dbfeacc8873f69ccbc
+--- /dev/null
++++ b/scripts/init_working_memory.sh
+@@ -0,0 +1,71 @@
++#!/bin/sh
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++
++set -eu
++
++usage() {
++  cat <<'USAGE'
++Usage:
++  ./scripts/init_working_memory.sh \
++    --mode={proofs|experiments|production} \
++    --runtime={python|lean4|docker|cli} \
++    --backup={local|github|zenodo}
++
++Prints a non-secret .env template to standard output.
++Performs no network access and no repository or external mutation.
++USAGE
++}
++
++fail() {
++  printf 'QIKVRT_WORKING_MEMORY_BLOCK: %s\n' "$1" >&2
++  usage >&2
++  exit 2
++}
++
++mode=''
++runtime=''
++backup=''
++
++while [ "$#" -gt 0 ]; do
++  case "$1" in
++    --mode=*) mode=${1#--mode=} ;;
++    --runtime=*) runtime=${1#--runtime=} ;;
++    --backup=*) backup=${1#--backup=} ;;
++    -h|--help) usage; exit 0 ;;
++    *) fail "unknown argument: $1" ;;
++  esac
++  shift
++done
++
++case "$mode" in
++  proofs|experiments|production) ;;
++  *) fail 'mode must be proofs, experiments, or production' ;;
++esac
++
++case "$runtime" in
++  python|lean4|docker|cli) ;;
++  *) fail 'runtime must be python, lean4, docker, or cli' ;;
++esac
++
++case "$backup" in
++  local|github|zenodo) ;;
++  *) fail 'backup must be local, github, or zenodo' ;;
++esac
++
++script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
++repo_root=$(CDPATH= cd "$script_dir/.." && pwd -P)
++
++if [ ! -f "$repo_root/AI" ] || [ ! -f "$repo_root/AI_CONTEXT.json" ]; then
++  fail 'run the repository-owned script from a complete QIK-VRT checkout'
++fi
++
++cat <<ENV
++# QIK-VRT working-memory .env template
++QIKVRT_REPOSITORY=Goldkelch/qik-vrt
++QIKVRT_WORKING_MEMORY_MODE=$mode
++QIKVRT_WORKING_MEMORY_RUNTIME=$runtime
++QIKVRT_WORKING_MEMORY_BACKUP=$backup
++QIKVRT_BOOT_PROFILE=all
++QIKVRT_EXTERNAL_EFFECTS=disabled
++ENV
+diff --git a/tests/test_ai_onboarding.py b/tests/test_ai_onboarding.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3576fedf53f80a333ff6209329be314a4c2c66db
+--- /dev/null
++++ b/tests/test_ai_onboarding.py
+@@ -0,0 +1,100 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++
++from __future__ import annotations
++
++import pathlib
++import re
++import subprocess
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++AI = ROOT / "AI"
++FORM = ROOT / ".github/ISSUE_TEMPLATE/ai_onboarding.yml"
++SCRIPT = ROOT / "scripts/init_working_memory.sh"
++
++
++class AIOnboardingTests(unittest.TestCase):
++    def test_root_entrypoint_has_exactly_three_questions(self) -> None:
++        source = AI.read_text(encoding="utf-8")
++        questions = re.findall(r"^QUESTION_[123]_[A-Z]+$", source, flags=re.MULTILINE)
++        self.assertEqual(
++            questions,
++            [
++                "QUESTION_1_PURPOSE",
++                "QUESTION_2_RUNTIME",
++                "QUESTION_3_PERSISTENCE",
++            ],
++        )
++        self.assertNotRegex(source, r"^QUESTION_[4-9]_", msg="a fourth question is forbidden")
++        self.assertIn("Default: experiments", source)
++        self.assertIn("Default: cli", source)
++        self.assertIn("Default: local", source)
++
++    def test_root_entrypoint_emits_one_clone_fork_and_start_binding(self) -> None:
++        source = AI.read_text(encoding="utf-8")
++        template = source.split("FINAL_OUTPUT_TEMPLATE", 1)[1].split(
++            "REPOSITORY EVIDENCE BOUNDARY", 1
++        )[0]
++        self.assertEqual(template.count("git clone https://github.com/Goldkelch/qik-vrt.git"), 1)
++        self.assertEqual(template.count("https://github.com/Goldkelch/qik-vrt/fork"), 1)
++        self.assertEqual(template.count("./scripts/init_working_memory.sh"), 1)
++
++    def test_issue_form_contains_only_the_three_choice_fields(self) -> None:
++        source = FORM.read_text(encoding="utf-8")
++        self.assertEqual(source.count("  - type: dropdown\n"), 3)
++        self.assertIn("id: purpose", source)
++        self.assertIn("id: runtime", source)
++        self.assertIn("id: persistence", source)
++
++    def test_initializer_is_posix_parseable_and_effect_free(self) -> None:
++        syntax = subprocess.run(
++            ["sh", "-n", str(SCRIPT)],
++            cwd=ROOT,
++            text=True,
++            capture_output=True,
++            check=False,
++        )
++        self.assertEqual(syntax.returncode, 0, syntax.stderr)
++        source = SCRIPT.read_text(encoding="utf-8")
++        self.assertIn("Performs no network access", source)
++        self.assertIn("QIKVRT_EXTERNAL_EFFECTS=disabled", source)
++
++    def test_initializer_prints_bound_env_template(self) -> None:
++        completed = subprocess.run(
++            [
++                str(SCRIPT),
++                "--mode=proofs",
++                "--runtime=lean4",
++                "--backup=github",
++            ],
++            cwd=ROOT,
++            text=True,
++            capture_output=True,
++            check=False,
++        )
++        self.assertEqual(completed.returncode, 0, completed.stderr)
++        self.assertIn("QIKVRT_WORKING_MEMORY_MODE=proofs", completed.stdout)
++        self.assertIn("QIKVRT_WORKING_MEMORY_RUNTIME=lean4", completed.stdout)
++        self.assertIn("QIKVRT_WORKING_MEMORY_BACKUP=github", completed.stdout)
++        self.assertIn("QIKVRT_EXTERNAL_EFFECTS=disabled", completed.stdout)
++
++    def test_initializer_fails_closed_on_invalid_choice(self) -> None:
++        completed = subprocess.run(
++            [
++                str(SCRIPT),
++                "--mode=unknown",
++                "--runtime=cli",
++                "--backup=local",
++            ],
++            cwd=ROOT,
++            text=True,
++            capture_output=True,
++            check=False,
++        )
++        self.assertEqual(completed.returncode, 2)
++        self.assertIn("QIKVRT_WORKING_MEMORY_BLOCK", completed.stderr)
++
++
++if __name__ == "__main__":
++    unittest.main()
