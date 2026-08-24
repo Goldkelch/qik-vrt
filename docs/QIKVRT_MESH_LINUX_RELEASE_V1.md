@@ -78,12 +78,13 @@ contract instead of allowing supermin to prefer the hosted runner's newer
 Azure kernel. It rejects a kernel with built-in `CONFIG_IPV6_SIT`, keeps a
 fresh job-local appliance cache, and then proves DNS plus an outbound TCP
 connection to the architecture's Ubuntu mirror with noninteractive
-`guestfish --network` before the
-expensive image build. This closes the observed gap where the basic appliance
-booted but the later in-appliance package installation could not resolve the
-Ubuntu mirrors. The real `virt-customize` call also enables libguestfs debug
-and trace output so any later appliance launch failure retains its actionable
-cause rather than only the generic `guestfs_launch failed` wrapper.
+`guestfish --network` against a real scratch disk before the expensive image
+build. The probe script is uploaded into the appliance and executed explicitly
+by Bash, so its `/dev/tcp` check cannot fall through to the appliance's POSIX
+shell. Debug and trace output are enabled for this network launch and for the
+real `virt-customize` call. This closes the observed DNS gap while preserving
+the actionable QEMU/libguestfs cause of any later appliance launch failure,
+rather than only the generic `guestfs_launch failed` wrapper.
 
 ## Publication guards
 

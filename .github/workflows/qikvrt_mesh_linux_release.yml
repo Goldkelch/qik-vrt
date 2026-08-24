@@ -140,9 +140,23 @@ jobs:
             arm64) mirror=ports.ubuntu.com ;;
             *) echo "BLOCK: unsupported native architecture $QIKVRT_BUILD_ARCH" >&2; exit 2 ;;
           esac
-          if ! LIBGUESTFS_BACKEND=direct timeout --kill-after=15s 180s \
-            guestfish --network --ro -a /dev/null run : \
-            debug sh "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80; exec 3>&-; exec 3<&-'"; then
+          probe_disk="$RUNNER_TEMP/qikvrt-libguestfs-network-probe.raw"
+          probe_script="$RUNNER_TEMP/qikvrt-libguestfs-network-probe.sh"
+          qemu-img create -f raw "$probe_disk" 32M
+          printf '%s\n' \
+            '#!/bin/bash' \
+            'set -euo pipefail' \
+            'mirror=${1:?missing Ubuntu mirror}' \
+            'getent ahostsv4 "$mirror" >/dev/null' \
+            'exec 3<>"/dev/tcp/${mirror}/80"' \
+            'exec 3>&-' \
+            'exec 3<&-' > "$probe_script"
+          bash -n "$probe_script"
+          if ! LIBGUESTFS_BACKEND=direct LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1 \
+            timeout --kill-after=15s 180s \
+            guestfish --network --rw --format=raw -a "$probe_disk" run : \
+            debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384 : \
+            debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"; then
             echo "BLOCK: libguestfs appliance DNS/TCP preflight failed for $mirror" >&2
             exit 2
           fi

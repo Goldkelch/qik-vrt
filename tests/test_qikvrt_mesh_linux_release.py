@@ -120,8 +120,14 @@ class T(unittest.TestCase):
             'mktemp -d "$RUNNER_TEMP/qikvrt-libguestfs-cache.XXXXXX"',
             "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
-            "guestfish --network --ro -a /dev/null",
-            "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80",
+            'qemu-img create -f raw "$probe_disk" 32M',
+            "LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1",
+            'bash -n "$probe_script"',
+            'guestfish --network --rw --format=raw -a "$probe_disk"',
+            'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
+            'getent ahostsv4 "$mirror" >/dev/null',
+            'exec 3<>"/dev/tcp/${mirror}/80"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, raw)
@@ -150,8 +156,14 @@ class T(unittest.TestCase):
             'mktemp -d "$RUNNER_TEMP/qikvrt-libguestfs-cache.XXXXXX"',
             "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
-            "guestfish --network --ro -a /dev/null",
-            "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80",
+            'qemu-img create -f raw "$probe_disk" 32M',
+            "LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1",
+            'bash -n "$probe_script"',
+            'guestfish --network --rw --format=raw -a "$probe_disk"',
+            'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
+            'getent ahostsv4 "$mirror" >/dev/null',
+            'exec 3<>"/dev/tcp/${mirror}/80"',
+            'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, host_run)
@@ -159,6 +171,8 @@ class T(unittest.TestCase):
         self.assertNotIn(":latest", raw)
         self.assertNotIn("--clobber", raw)
         self.assertNotIn("contents: write", raw)
+        self.assertNotIn("guestfish --network --ro -a /dev/null", raw)
+        self.assertNotIn('debug sh "/bin/bash -c', raw)
 
     def test_generated_launcher_and_release_asset_contract(self):
         base_namespace = runpy.run_path(
