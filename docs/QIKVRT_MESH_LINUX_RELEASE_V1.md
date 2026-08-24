@@ -55,8 +55,52 @@ backend event                        = TERMINAL_INPUT_ACCEPTED
 ```
 
 The architecture artifact set includes that receipt and the captured container
-log. The publish job rejects either architecture if its receipt is absent or
-outside the bounded scope.
+log. Pull-request and manual preflight runs execute both native architecture
+builds even though they cannot publish. A successful preflight therefore cannot
+be produced by a prepare-only run with skipped build jobs. The generated
+Firefox launcher is compiled during the repository contract test before either
+native build starts.
+
+## Publication guards
+
+Pull-request, manual, and release-branch push runs execute both native
+architecture builds. Only a push whose exact subject is
+`release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree` may publish. That
+carrier must have exactly one parent and the same tree as its parent. The
+publish job repeats that check and verifies repeatedly that the release branch
+still points to the workflow head.
+
+The merged build output must be an exact 16-file set before external effects.
+Uncompressed QCOW2 working images are removed, the XPI occurs once, every file
+must be regular and nonempty, and every release asset must be smaller than
+2 GiB. After the release manifest and global checksum file are generated, the
+exact final set is 18 regular files. `SHA256SUMS` excludes itself and is
+validated against every other final asset.
+
+All namespace checks are fail-closed. Only an exact absent-ref response is
+vacant; authentication, transport, rate-limit, and server errors are
+`BLOCK`. The GitHub tag/release and the three GHCR version coordinates must
+all be vacant. Existing production coordinates are never overwritten and
+require explicit reconciliation after any partial external effect.
+
+GHCR must already be positively public before a carrier is created. Repository
+variables `QIKVRT_GHCR_PUBLIC_PROBE_TAG` and
+`QIKVRT_GHCR_PUBLIC_PROBE_DIGEST` bind an anonymously readable probe in the
+same package. The first GHCR package version is not used as a visibility
+experiment by the release run.
+
+The workflow uses repository-locked GitHub CLI 2.96.0. It separates an
+Administration-read-only `QIKVRT_IMMUTABLE_ADMIN_READ_TOKEN` from the
+`QIKVRT_RELEASE_WRITE_WORKFLOWS_TOKEN` needed to create a Release whose
+target changes workflow files. It verifies the immutable-release repository
+setting before mutation.
+
+After GHCR upload, an anonymous registry token must read back the top digest
+and exactly the `linux/amd64` and `linux/arm64` descriptors before the
+GitHub Release is created. The final Release must then report
+`isImmutable=true`, pass release-attestation and per-asset verification, and
+return the exact 18 asset names and byte sizes. A failed guard is not
+publication evidence.
 
 ## Claim boundary
 

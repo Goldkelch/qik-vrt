@@ -12,47 +12,84 @@ on:
       - 'release/QIKVRT_MESH_LINUX_1_0_0_AUTHORIZATION.json'
       - 'docs/QIKVRT_MESH_LINUX_RELEASE_V1.md'
       - 'tests/test_qikvrt_mesh_linux_release.py'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-mesh-linux-release-v1.0.0
+  group: qikvrt-mesh-linux-release-v1.0.0-${{ github.event_name }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
 
 env:
   VERSION: 1.0.0
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   RELEASE_TAG: qikvrt-mesh-linux-v1.0.0
   IMAGE: ghcr.io/goldkelch/qik-vrt-mesh-linux:1.0.0
+  GHCR_REPOSITORY: goldkelch/qik-vrt-mesh-linux
+  GHCR_PUBLIC_PROBE_TAG: ${{ vars.QIKVRT_GHCR_PUBLIC_PROBE_TAG }}
+  GHCR_PUBLIC_PROBE_DIGEST: ${{ vars.QIKVRT_GHCR_PUBLIC_PROBE_DIGEST }}
   RELEASE_BRANCH: release/qikvrt-mesh-linux-v1.0.0
 
 jobs:
   prepare:
     runs-on: ubuntu-24.04
     outputs:
+      build_ready: ${{ steps.mode.outputs.build_ready }}
       publish_ready: ${{ steps.mode.outputs.publish_ready }}
       source_tree: ${{ steps.mode.outputs.source_tree }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: {fetch-depth: 0, persist-credentials: false}
+        with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
       - id: mode
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           python3 -B -m unittest -v tests.test_qikvrt_mesh_linux_release
           python3 -B tools/qikvrt_integrity.py verify
-          echo "source_tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
-          ready=false
-          if [ "$GITHUB_EVENT_NAME" = push ] &&
-             [ "$GITHUB_REF" = "refs/heads/$RELEASE_BRANCH" ] &&
-             [ "$(git show -s --format=%s HEAD)" = "release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree" ]; then ready=true; fi
-          echo "publish_ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "source_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          build_ready=false
+          publish_ready=false
+          carrier_subject='release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree'
+          case "$GITHUB_EVENT_NAME" in
+            pull_request|workflow_dispatch)
+              build_ready=true
+              ;;
+            push)
+              if [ "$GITHUB_REF" != "refs/heads/$RELEASE_BRANCH" ]; then
+                echo "BLOCK: release push is not on $RELEASE_BRANCH" >&2
+                exit 2
+              fi
+              build_ready=true
+              if [ "$(git show -s --format=%s HEAD)" = "$carrier_subject" ]; then
+                parent_count="$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')"
+                if [ "$parent_count" -ne 1 ]; then
+                  echo 'BLOCK: exact release carrier must have one parent' >&2
+                  exit 2
+                fi
+                if [ "$(git rev-parse 'HEAD^1^{tree}')" != "$(git rev-parse 'HEAD^{tree}')" ]; then
+                  echo 'BLOCK: exact release carrier must be zero-diff' >&2
+                  exit 2
+                fi
+                build_ready=true
+                publish_ready=true
+              fi
+              ;;
+            *)
+              echo "BLOCK: unsupported event $GITHUB_EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          echo "build_ready=$build_ready" >> "$GITHUB_OUTPUT"
+          echo "publish_ready=$publish_ready" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
-    if: needs.prepare.outputs.publish_ready == 'true'
+    if: needs.prepare.outputs.build_ready == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +100,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: {fetch-depth: 0, persist-credentials: false}
+        with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
       - run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools
@@ -84,36 +121,226 @@ jobs:
     permissions: {contents: write, packages: write}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: {fetch-depth: 0, persist-credentials: false}
+        with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with: {pattern: 'qikvrt-mesh-linux-*', path: dist, merge-multiple: true}
-      - env: {GH_TOKEN: '${{ github.token }}'}
+      - name: Install repository-locked GitHub CLI 2.96.0
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^{tree})" = "${{ needs.prepare.outputs.source_tree }}"
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo 'BLOCK: immutable release exists' >&2; exit 2; fi
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for arch in amd64 arm64; do
-            test -s "dist/qikvrt-mesh-linux-${VERSION}-${arch}.firefox-effect-ack.json"
-            jq -e '.bounded_loopback_effect_ack_done == true and .effect_ack_done_scope == "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY" and .external_effect == "NONE"' "dist/qikvrt-mesh-linux-${VERSION}-${arch}.firefox-effect-ack.json" >/dev/null
-            zstd -d "dist/qikvrt-mesh-linux-${VERSION}-${arch}.oci.tar.zst" -o "$RUNNER_TEMP/${arch}.oci.tar"
-            docker load -i "$RUNNER_TEMP/${arch}.oci.tar"
-            docker tag "qikvrt-mesh-linux:${VERSION}" "${IMAGE}-${arch}"
-            docker push "${IMAGE}-${arch}"
+          cache="$RUNNER_TEMP/qikvrt-toolchains"
+          QIKVRT_TOOLCHAIN_CACHE="$cache" sh tools/bootstrap-gh.sh --install --accept-third-party
+          qikvrt_gh="$(QIKVRT_TOOLCHAIN_CACHE="$cache" sh tools/bootstrap-gh.sh --check-only --print-path)"
+          echo "QIKVRT_GH=$qikvrt_gh" >> "$GITHUB_ENV"
+      - env:
+          IMMUTABILITY_TOKEN: '${{ secrets.QIKVRT_IMMUTABLE_ADMIN_READ_TOKEN }}'
+          RELEASE_TOKEN: '${{ secrets.QIKVRT_RELEASE_WRITE_WORKFLOWS_TOKEN }}'
+          REGISTRY_TOKEN: '${{ github.token }}'
+          PREPARED_TREE: '${{ needs.prepare.outputs.source_tree }}'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          block() {
+            echo "BLOCK: $*" >&2
+            exit 2
+          }
+
+          assert_remote_head() {
+            local rows status head
+            set +e
+            rows="$(git ls-remote --exit-code origin "refs/heads/$RELEASE_BRANCH" 2>&1)"
+            status=$?
+            set -e
+            [ "$status" -eq 0 ] || block "release-branch probe failed with status $status"
+            head="$(printf '%s\n' "$rows" | awk 'NR == 1 {print $1}')"
+            [ "$head" = "$GITHUB_SHA" ] ||
+              block "branch moved from workflow head $GITHUB_SHA to $head"
+          }
+
+          assert_release_namespace_vacant() {
+            local rows status release_status
+            set +e
+            rows="$(git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" 2>&1)"
+            status=$?
+            set -e
+            case "$status" in
+              0) block "release tag $RELEASE_TAG exists" ;;
+              2) ;;
+              *) block "release-tag probe failed with status $status" ;;
+            esac
+            if ! release_status="$(curl --silent --show-error \
+              --output "$RUNNER_TEMP/release-probe.json" --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer $RELEASE_TOKEN" \
+              --header 'X-GitHub-Api-Version: 2026-03-10' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"; then
+              block 'release namespace transport probe failed'
+            fi
+            case "$release_status" in
+              404) ;;
+              200) block "release $RELEASE_TAG exists" ;;
+              *) block "release namespace probe returned HTTP $release_status" ;;
+            esac
+          }
+
+          registry_manifest_status() {
+            local bearer="$1" tag="$2"
+            curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              --header "Authorization: Bearer $bearer" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/$GHCR_REPOSITORY/manifests/$tag"
+          }
+
+          fetch_manifest() {
+            local bearer="$1" tag="$2" stem="$3" status digest body_digest
+            if ! status="$(curl --silent --show-error \
+              --dump-header "$RUNNER_TEMP/$stem.headers" \
+              --output "$RUNNER_TEMP/$stem.json" \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer $bearer" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/$GHCR_REPOSITORY/manifests/$tag")"; then
+              block "anonymous GHCR transport readback failed for $tag"
+            fi
+            [ "$status" = 200 ] || block "anonymous GHCR readback for $tag returned HTTP $status"
+            digest="$(awk 'tolower($1) == "docker-content-digest:" {gsub("\r", "", $2); print $2}' "$RUNNER_TEMP/$stem.headers" | tail -n 1)"
+            body_digest="sha256:$(sha256sum "$RUNNER_TEMP/$stem.json" | awk '{print $1}')"
+            [ "$digest" = "$body_digest" ] || block "GHCR header/body digest mismatch for $tag"
+            printf '%s\n' "$digest"
+          }
+
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$PREPARED_TREE"
+          test "$(git show -s --format=%s HEAD)" = 'release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree'
+          parent_count="$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')"
+          if [ "$parent_count" -ne 1 ] ||
+             [ "$(git rev-parse 'HEAD^1^{tree}')" != "$(git rev-parse 'HEAD^{tree}')" ]; then
+            block 'publication requires a single-parent zero-diff carrier'
+          fi
+          assert_remote_head
+          python3 -B tools/qikvrt_mesh_linux_release_v2.py validate-build-assets dist
+
+          [ -n "$IMMUTABILITY_TOKEN" ] ||
+            block 'QIKVRT_IMMUTABLE_ADMIN_READ_TOKEN is not configured'
+          [ -n "$RELEASE_TOKEN" ] ||
+            block 'QIKVRT_RELEASE_WRITE_WORKFLOWS_TOKEN is not configured'
+          if ! immutable="$(GH_TOKEN="$IMMUTABILITY_TOKEN" "$QIKVRT_GH" api \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "/repos/$GITHUB_REPOSITORY/immutable-releases" --jq '.enabled')"; then
+            block 'immutable-release setting could not be verified'
+          fi
+          [ "$immutable" = true ] || block 'immutable releases are not enabled'
+          if ! release_repo="$(curl --fail --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $RELEASE_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY")"; then
+            block 'release-token repository probe failed'
+          fi
+          printf '%s' "$release_repo" | jq -e '.permissions.push == true' >/dev/null ||
+            block 'release token lacks repository push permission'
+          assert_release_namespace_vacant
+
+          case "$GHCR_PUBLIC_PROBE_TAG" in
+            ''|*[!A-Za-z0-9_.-]*) block 'QIKVRT_GHCR_PUBLIC_PROBE_TAG is missing or invalid' ;;
+          esac
+          [[ "$GHCR_PUBLIC_PROBE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+            block 'QIKVRT_GHCR_PUBLIC_PROBE_DIGEST is missing or invalid'
+
+          if ! anonymous_token_json="$(curl --fail --silent --show-error --get \
+            --data-urlencode 'service=ghcr.io' \
+            --data-urlencode "scope=repository:$GHCR_REPOSITORY:pull" \
+            'https://ghcr.io/token')"; then
+            block 'anonymous GHCR token acquisition failed; package is not positively public'
+          fi
+          anonymous_bearer="$(printf '%s' "$anonymous_token_json" | jq -er '.token')"
+          probe_digest="$(fetch_manifest "$anonymous_bearer" "$GHCR_PUBLIC_PROBE_TAG" public-probe)"
+          [ "$probe_digest" = "$GHCR_PUBLIC_PROBE_DIGEST" ] ||
+            block "public GHCR probe digest $probe_digest does not match bound digest"
+
+          if ! authenticated_token_json="$(curl --fail --silent --show-error --get \
+            --user "$GITHUB_ACTOR:$REGISTRY_TOKEN" \
+            --data-urlencode 'service=ghcr.io' \
+            --data-urlencode "scope=repository:$GHCR_REPOSITORY:pull,push" \
+            'https://ghcr.io/token')"; then
+            block 'authenticated GHCR token acquisition failed'
+          fi
+          authenticated_bearer="$(printf '%s' "$authenticated_token_json" | jq -er '.token')"
+          for tag in "$VERSION" "$VERSION-amd64" "$VERSION-arm64"; do
+            if ! authenticated_status="$(registry_manifest_status "$authenticated_bearer" "$tag")"; then
+              block "authenticated GHCR namespace probe failed for $tag"
+            fi
+            if ! anonymous_status="$(registry_manifest_status "$anonymous_bearer" "$tag")"; then
+              block "anonymous GHCR namespace probe failed for $tag"
+            fi
+            [ "$authenticated_status" = 404 ] ||
+              block "authenticated GHCR target $tag returned HTTP $authenticated_status, not VACANT"
+            [ "$anonymous_status" = 404 ] ||
+              block "anonymous GHCR target $tag returned HTTP $anonymous_status, not VACANT"
           done
-          docker manifest create "$IMAGE" "${IMAGE}-amd64" "${IMAGE}-arm64"
+
+          assert_remote_head
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for arch in amd64 arm64; do
+            test -s "dist/qikvrt-mesh-linux-$VERSION-$arch.firefox-effect-ack.json"
+            jq -e \
+              '.bounded_loopback_effect_ack_done == true and .effect_ack_done_scope == "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY" and .external_effect == "NONE"' \
+              "dist/qikvrt-mesh-linux-$VERSION-$arch.firefox-effect-ack.json" >/dev/null
+            zstd -d "dist/qikvrt-mesh-linux-$VERSION-$arch.oci.tar.zst" -o "$RUNNER_TEMP/$arch.oci.tar"
+            docker load -i "$RUNNER_TEMP/$arch.oci.tar"
+            docker tag "qikvrt-mesh-linux:$VERSION" "$IMAGE-$arch"
+            docker push "$IMAGE-$arch"
+          done
+          docker manifest create "$IMAGE" "$IMAGE-amd64" "$IMAGE-arm64"
           docker manifest push "$IMAGE"
-          digest="$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          python3 tools/qikvrt_mesh_linux_release_v2.py manifest --assets dist --image "$IMAGE" --image-digest "$digest" --head "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --output dist/QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json
-          (cd dist && sha256sum * > SHA256SUMS)
+          docker logout ghcr.io
+
+          amd64_digest="$(fetch_manifest "$anonymous_bearer" "$VERSION-amd64" published-amd64)"
+          arm64_digest="$(fetch_manifest "$anonymous_bearer" "$VERSION-arm64" published-arm64)"
+          digest="$(fetch_manifest "$anonymous_bearer" "$VERSION" published-index)"
+          jq -e --arg amd64 "$amd64_digest" --arg arm64 "$arm64_digest" '
+            .manifests | length == 2 and
+            ([.[] | .platform.os + "/" + .platform.architecture] | sort) ==
+              ["linux/amd64", "linux/arm64"] and
+            ([.[] | .digest] | sort) == ([$amd64, $arm64] | sort)
+          ' "$RUNNER_TEMP/published-index.json" >/dev/null ||
+            block 'anonymous GHCR index descriptors do not exactly bind amd64 and arm64'
+
+          assert_remote_head
+          python3 tools/qikvrt_mesh_linux_release_v2.py manifest \
+            --assets dist --image "$IMAGE" --image-digest "$digest" \
+            --head "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" \
+            --output dist/QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json
+          (cd dist && find . -mindepth 1 -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          python3 -B tools/qikvrt_mesh_linux_release_v2.py validate-release-assets dist
+
           cat > "$RUNNER_TEMP/notes.md" <<EOF
-          QIK-VRT Mesh Linux ${VERSION}; exact source ${GITHUB_SHA}.
-          OCI: ${IMAGE}@${digest}
+          QIK-VRT Mesh Linux $VERSION; exact source $GITHUB_SHA.
+          OCI: $IMAGE@$digest
           Both architecture-specific appliance images executed Firefox and produced a reobserved bounded loopback terminal-input Effect-Ack receipt before publication.
           Effect-Ack scope: BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY; external_effect=NONE.
           A general EFFECT_ACK_DONE is not claimed. Physical Mega-ST execution is not claimed.
           No PASS, FINAL_PASS, independent review authority, or general Internet reachability is implied.
           EOF
-          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "QIK-VRT Mesh Linux ${VERSION}" --notes-file "$RUNNER_TEMP/notes.md" dist/*
+
+          assert_remote_head
+          assert_release_namespace_vacant
+          GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "QIK-VRT Mesh Linux $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" dist/*
+          immutable="$(GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --json isImmutable --jq '.isImmutable')"
+          [ "$immutable" = true ] || block 'published release is not reported immutable'
+          GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release verify "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY"
+          GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/release-assets.json"
+          python3 -B tools/qikvrt_mesh_linux_release_v2.py validate-release-readback \
+            dist "$RUNNER_TEMP/release-assets.json"
+          for asset in dist/*; do
+            GH_TOKEN="$RELEASE_TOKEN" "$QIKVRT_GH" release verify-asset \
+              "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+          done

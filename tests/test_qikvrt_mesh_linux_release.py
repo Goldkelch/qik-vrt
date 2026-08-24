@@ -1,5 +1,8 @@
 import json
 import pathlib
+import runpy
+import sys
+import tempfile
 import unittest
 
 import yaml
@@ -31,6 +34,20 @@ class T(unittest.TestCase):
         self.assertTrue(
             policy["build_acceptance"]["container_runtime_receipt_required"]
         )
+        self.assertTrue(policy["build_acceptance"]["pr_native_build_required"])
+        guards = policy["publication_guards"]
+        self.assertTrue(guards["single_parent_zero_diff_carrier_required"])
+        self.assertTrue(guards["branch_head_compare_and_swap_required"])
+        self.assertTrue(guards["immutable_github_releases_setting_required"])
+        self.assertTrue(guards["anonymous_ghcr_readback_required"])
+        self.assertTrue(guards["fail_closed_namespace_probes_required"])
+        self.assertTrue(guards["public_ghcr_namespace_precondition_required"])
+        self.assertTrue(
+            guards["anonymous_ghcr_readback_before_github_release_required"]
+        )
+        self.assertEqual(guards["final_release_asset_count"], 18)
+        self.assertEqual(guards["repository_locked_gh_cli_version"], "2.96.0")
+        self.assertEqual(guards["release_asset_max_bytes_exclusive"], 2 * 1024**3)
         self.assertEqual(
             policy["build_acceptance"]["effect_ack_scope"],
             "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
@@ -56,10 +73,108 @@ class T(unittest.TestCase):
             "release: reattest QIK-VRT Mesh Linux v1.0.0 exact tree",
             "tools/qikvrt_mesh_linux_release_v2.py build",
             "firefox-effect-ack.json",
+            "needs.prepare.outputs.build_ready == 'true'",
+            "github.event.pull_request.head.sha || github.sha",
+            "validate-build-assets dist",
+            "validate-release-assets dist",
+            "validate-release-readback",
+            "single-parent zero-diff carrier",
+            "git ls-remote --exit-code",
+            "immutable-releases",
+            "QIKVRT_IMMUTABLE_ADMIN_READ_TOKEN",
+            "QIKVRT_RELEASE_WRITE_WORKFLOWS_TOKEN",
+            "QIKVRT_GHCR_PUBLIC_PROBE_DIGEST",
+            "bootstrap-gh.sh --install --accept-third-party",
+            "--json isImmutable",
+            "release verify-asset",
+            "published-index.json",
         ]:
             self.assertIn(text, raw)
         self.assertNotIn(":latest", raw)
         self.assertNotIn("--clobber", raw)
+
+    def test_generated_launcher_and_release_asset_contract(self):
+        base_namespace = runpy.run_path(
+            str(TOOL), run_name="qikvrt_mesh_linux_release_contract"
+        )
+        compile(
+            base_namespace["LAUNCH_FIREFOX"],
+            "qikvrt-launch-firefox",
+            "exec",
+        )
+        base_raw = TOOL.read_text()
+        self.assertIn("LAUNCH_FIREFOX=r'''", base_raw)
+        self.assertIn("qcow.unlink()", base_raw)
+        self.assertIn('if arch=="amd64":shutil.copy2', base_raw)
+
+        tools_path = str(TOOL.parent)
+        sys.path.insert(0, tools_path)
+        try:
+            v2_namespace = runpy.run_path(
+                str(TOOL2), run_name="qikvrt_mesh_linux_release_v2_contract"
+            )
+        finally:
+            sys.path.remove(tools_path)
+
+        expected = v2_namespace["expected_release_asset_names"]()
+        self.assertEqual(len(expected), 16)
+        self.assertNotIn("qikvrt-mesh-linux-1.0.0-amd64.qcow2", expected)
+        self.assertNotIn("qikvrt-mesh-linux-1.0.0-arm64.qcow2", expected)
+        self.assertEqual(
+            [name for name in expected if name == "qikvrt-terminal-1.0.0.xpi"],
+            ["qikvrt-terminal-1.0.0.xpi"],
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = pathlib.Path(temporary)
+            assets = temporary_root / "assets"
+            assets.mkdir()
+            for name in expected:
+                (assets / name).write_bytes(b"x")
+            v2_namespace["validate_release_assets"](assets)
+            first = assets / sorted(expected)[0]
+            first.write_bytes(b"")
+            with self.assertRaises(RuntimeError):
+                v2_namespace["validate_release_assets"](assets)
+            first.write_bytes(b"x")
+            unexpected = assets / "unexpected"
+            unexpected.write_bytes(b"x")
+            with self.assertRaises(RuntimeError):
+                v2_namespace["validate_release_assets"](assets)
+            unexpected.unlink()
+            unexpected.mkdir()
+            with self.assertRaises(RuntimeError):
+                v2_namespace["validate_release_assets"](assets)
+            unexpected.rmdir()
+
+            manifest_name = v2_namespace["RELEASE_MANIFEST_NAME"]
+            sums_name = v2_namespace["RELEASE_SUMS_NAME"]
+            (assets / manifest_name).write_bytes(b"x")
+            checksum_targets = sorted(
+                path for path in assets.iterdir() if path.name != sums_name
+            )
+            (assets / sums_name).write_text(
+                "".join(
+                    f"{base_namespace['sha256'](path)}  {path.name}\n"
+                    for path in checksum_targets
+                )
+            )
+            v2_namespace["validate_release_assets"](assets, final=True)
+            bad_readback = temporary_root / "bad-release-readback.json"
+            bad_readback.write_text(json.dumps({"assets": []}))
+            with self.assertRaises(RuntimeError):
+                v2_namespace["validate_release_readback"](assets, bad_readback)
+            readback = temporary_root / "release-readback.json"
+            readback.write_text(
+                json.dumps(
+                    {
+                        "assets": [
+                            {"name": path.name, "size": path.stat().st_size}
+                            for path in assets.iterdir()
+                        ]
+                    }
+                )
+            )
+            v2_namespace["validate_release_readback"](assets, readback)
 
     def test_exact_sources_and_runtime_acceptance(self):
         raw = TOOL.read_text() + "\n" + TOOL2.read_text()

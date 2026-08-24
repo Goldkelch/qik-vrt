@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -23,6 +25,120 @@ OFFICIAL_UBUNTU_SHA256 = {
 
 for architecture, checksums in OFFICIAL_UBUNTU_SHA256.items():
     base.ARCH[architecture].update(checksums)
+
+MAX_RELEASE_ASSET_BYTES = 2 * 1024**3
+RELEASE_MANIFEST_NAME = "QIKVRT_MESH_LINUX_RELEASE_MANIFEST.json"
+RELEASE_SUMS_NAME = "SHA256SUMS"
+
+
+def expected_release_asset_names(final: bool = False) -> set[str]:
+    names = {f"qikvrt-terminal-{base.VERSION}.xpi"}
+    for architecture in base.ARCH:
+        prefix = f"qikvrt-mesh-linux-{base.VERSION}-{architecture}"
+        names.update(
+            {
+                f"{prefix}.oci.tar.zst",
+                f"{prefix}.qcow2.zst",
+                f"{prefix}.vhdx.zst",
+                f"{prefix}.build.json",
+                f"{prefix}.firefox-effect-ack.json",
+                f"{prefix}.container.log",
+                f"SHA256SUMS-{architecture}",
+            }
+        )
+    names.add(f"qikvrt-mesh-linux-{base.VERSION}-amd64.ova")
+    if final:
+        names.update({RELEASE_MANIFEST_NAME, RELEASE_SUMS_NAME})
+    return names
+
+
+def _regular_entries(assets: Path) -> dict[str, Path]:
+    entries = list(assets.iterdir())
+    irregular = sorted(
+        path.name
+        for path in entries
+        if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode)
+    )
+    if irregular:
+        raise RuntimeError(f"release asset entries are not regular files: {irregular}")
+    return {path.name: path for path in entries}
+
+
+def _validate_global_sums(assets: Path, expected: set[str]) -> None:
+    sums = assets / RELEASE_SUMS_NAME
+    records: dict[str, str] = {}
+    for line in sums.read_text().splitlines():
+        digest, separator, name = line.partition("  ")
+        if (
+            separator != "  "
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or not name
+            or name in records
+        ):
+            raise RuntimeError(f"invalid global SHA256SUMS record: {line!r}")
+        records[name] = digest
+    checksum_targets = expected - {RELEASE_SUMS_NAME}
+    if set(records) != checksum_targets:
+        raise RuntimeError(
+            "global SHA256SUMS name set mismatch: "
+            f"expected={sorted(checksum_targets)}, actual={sorted(records)}"
+        )
+    mismatches = sorted(
+        name for name, digest in records.items() if base.sha256(assets / name) != digest
+    )
+    if mismatches:
+        raise RuntimeError(f"global SHA256SUMS digest mismatch: {mismatches}")
+
+
+def validate_release_assets(assets: Path, final: bool = False) -> None:
+    if not assets.is_dir():
+        raise RuntimeError(f"release asset directory is missing: {assets}")
+    expected = expected_release_asset_names(final)
+    files = _regular_entries(assets)
+    missing = sorted(expected - set(files))
+    unexpected = sorted(set(files) - expected)
+    if missing or unexpected:
+        raise RuntimeError(
+            f"release asset set mismatch: missing={missing}, unexpected={unexpected}"
+        )
+    empty = sorted(name for name, path in files.items() if path.stat().st_size == 0)
+    oversized = sorted(
+        name
+        for name, path in files.items()
+        if path.stat().st_size >= MAX_RELEASE_ASSET_BYTES
+    )
+    if empty or oversized:
+        raise RuntimeError(
+            f"release asset size violation: empty={empty}, oversized={oversized}"
+        )
+    if final:
+        _validate_global_sums(assets, expected)
+
+
+def validate_release_readback(assets: Path, document: Path) -> None:
+    validate_release_assets(assets, final=True)
+    payload = json.loads(document.read_text())
+    remote_assets = payload.get("assets")
+    if not isinstance(remote_assets, list):
+        raise RuntimeError("release readback has no asset list")
+    expected = {
+        path.name: path.stat().st_size for path in _regular_entries(assets).values()
+    }
+    actual: dict[str, int] = {}
+    for item in remote_assets:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not isinstance(item.get("size"), int)
+            or item["name"] in actual
+        ):
+            raise RuntimeError(f"invalid release asset readback entry: {item!r}")
+        actual[item["name"]] = item["size"]
+    if actual != expected:
+        raise RuntimeError(
+            f"release asset readback mismatch: expected={expected}, actual={actual}"
+        )
 
 _original_build = base.build
 
@@ -129,5 +245,18 @@ def build(architecture: str, output: Path) -> None:
 base.build = build
 
 
+def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "validate-build-assets":
+        validate_release_assets(Path(sys.argv[2]), final=False)
+        return 0
+    if len(sys.argv) == 3 and sys.argv[1] == "validate-release-assets":
+        validate_release_assets(Path(sys.argv[2]), final=True)
+        return 0
+    if len(sys.argv) == 4 and sys.argv[1] == "validate-release-readback":
+        validate_release_readback(Path(sys.argv[2]), Path(sys.argv[3]))
+        return 0
+    return base.main()
+
+
 if __name__ == "__main__":
-    raise SystemExit(base.main())
+    raise SystemExit(main())
