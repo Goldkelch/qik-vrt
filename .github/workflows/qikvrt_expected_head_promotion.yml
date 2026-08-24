@@ -95,7 +95,10 @@ jobs:
                   out.extend(page if isinstance(page,list) else [page])
               return out
 
-          current_main = gh_json(f'repos/{repo}/commits/main')['sha']
+          current_main = subprocess.check_output(
+              ['git', 'rev-parse', '--verify', 'HEAD^{commit}'],
+              text=True,
+          ).strip()
           prs = [gh_json(f'repos/{repo}/pulls/{int(requested)}')] if requested else gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')
           candidates=[]
           for pr in prs:
@@ -168,7 +171,10 @@ jobs:
               return max(matching, key=key)
 
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
-          current_main=gh_json(f'repos/{repo}/commits/main')['sha']
+          current_main=subprocess.check_output(
+              ['git','rev-parse','--verify','HEAD^{commit}'],
+              text=True,
+          ).strip()
           head=pr['head']['sha']
           runs=gh_runs(f'repos/{repo}/actions/runs?head_sha={head}&event=pull_request&per_page=100')
           workflow_runs=[
@@ -246,7 +252,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_main="$(git ls-remote --exit-code origin refs/heads/main | awk 'NR==1 {print $1}')"
           current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
           current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
           merged="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
@@ -386,7 +392,10 @@ jobs:
           except ValueError as exc:
               raise SystemExit(f'BLOCK: {exc}') from exc
 
-          final_main=gh_json(f'repos/{repo}/commits/main')['sha']
+          final_main=subprocess.check_output(
+              ['git','ls-remote','--exit-code','origin','refs/heads/main'],
+              text=True,
+          ).strip().split()[0]
           final_pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           if final_main != expected_base:
               raise SystemExit('BLOCK: main changed at final promotion fence')
