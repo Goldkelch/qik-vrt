@@ -63,6 +63,12 @@ native build starts. The packaged non-root self-test performs its Python syntax
 checks entirely in memory; it must not attempt to create bytecode beneath the
 root-owned `/usr/local/bin` tree.
 
+Before the appliance modifies either cloud image, each native runner installs
+an architecture-matched Ubuntu virtual kernel, makes that kernel readable to
+the unprivileged supermin builder, and passes `libguestfs-test-tool` with the
+direct backend. A missing or unusable host appliance kernel therefore blocks
+before the long image build reaches `virt-customize`.
+
 ## Publication guards
 
 Pull-request, manual, and release-branch push runs execute both native

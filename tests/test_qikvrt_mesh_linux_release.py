@@ -101,6 +101,11 @@ class T(unittest.TestCase):
             "qikvrt-mesh-linux-publication-v1.0.0",
             "permissions: {contents: read, packages: write}",
             "HOLD: non-carrier release-branch head built",
+            "linux-image-virtual",
+            "Provision and verify native libguestfs host appliance",
+            "BLOCK: linux-image-virtual installed no supermin appliance kernel",
+            'sudo chmod a+r "${kernels[@]}"',
+            "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
         ]:
             self.assertIn(text, raw)
         self.assertEqual(raw.count("anonymous_token_json="), 2)

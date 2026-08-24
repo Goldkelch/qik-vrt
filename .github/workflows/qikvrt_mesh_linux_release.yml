@@ -101,9 +101,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
-      - run: |
+      - name: Provision and verify native libguestfs host appliance
+        run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools
+          sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual
+          kernels=(/boot/vmlinuz-*)
+          if [ ! -e "${kernels[0]}" ]; then
+            echo 'BLOCK: linux-image-virtual installed no supermin appliance kernel' >&2
+            exit 2
+          fi
+          sudo chmod a+r "${kernels[@]}"
+          for kernel in "${kernels[@]}"; do
+            [ -r "$kernel" ] || { echo "BLOCK: supermin appliance kernel is unreadable: $kernel" >&2; exit 2; }
+          done
+          LIBGUESTFS_BACKEND=direct libguestfs-test-tool
       - name: Build VM/OCI and execute packaged Firefox Effect-Ack acceptance
         run: python3 -B tools/qikvrt_mesh_linux_release_v2.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
