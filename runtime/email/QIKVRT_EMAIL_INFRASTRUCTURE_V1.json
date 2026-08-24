@@ -1,0 +1,34 @@
+{
+  "schema": "qikvrt_email_runtime_registry_v1",
+  "policy": "policy/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json",
+  "architecture": "KARLSRUHE_CSNET_TO_CLOUD_NATIVE_MAIL",
+  "kernel": {
+    "id": "email_route_select_v1",
+    "assembly_path": "src/m68000/qikvrt_email_route_select.s",
+    "hex_path": "runtime/m68000/qikvrt_email_route_select.hex",
+    "compiler": "tools/qikvrt_email_infrastructure.py",
+    "finite_flag_values": 256,
+    "finite_d3_values": 256,
+    "required_pairs": 65536,
+    "virtual_execution_required": true,
+    "physical_execution_required_for_this_gate": false
+  },
+  "host_adapters": [
+    "SMTP_TRANSFER",
+    "MESSAGE_SUBMISSION",
+    "DNS_MX",
+    "MAILBOX_STORE",
+    "IMAP4REV2",
+    "JMAP_MAIL",
+    "GMAIL_API_PUBSUB",
+    "MICROSOFT_GRAPH_WEBHOOK",
+    "AWS_SES_SMTP_API_INBOUND_RULES",
+    "CLOUDFLARE_EMAIL_WORKER",
+    "PRIVATE_CLOUD_OCI"
+  ],
+  "normal_operation": "EVENT_DRIVEN_ONLY",
+  "external_effect": "NONE",
+  "pass": false,
+  "final_pass": false,
+  "effect_ack_done": false
+}
