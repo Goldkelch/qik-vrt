@@ -1,0 +1,53 @@
+{
+  "schema": "qikvrt_real_mesh_contract_v1",
+  "mesh_id": "QIKVRT_REAL_MULTI_PAIR_MESH_V1",
+  "purpose": "Execute a bounded multi-pair QIK-VRT runtime over independent event-driven TCP node processes instead of treating a static Authority/Mirror pair projection as a complete mesh.",
+  "minimum_topology": {
+    "pair_count": 2,
+    "node_process_count": 4,
+    "pair_shape": "EXACTLY_ONE_AUTHORITY_AND_ONE_MIRROR",
+    "peer_graph": "CONNECTED_CYCLIC_EVERY_NODE_DEGREE_AT_LEAST_TWO",
+    "redundant_routes_required": true
+  },
+  "transport": {
+    "protocol": "CANONICAL_NEWLINE_DELIMITED_JSON_OVER_TCP",
+    "network_scope": "LOOPBACK_TCP_ONLY",
+    "event_model": "SOCKET_EVENT_DRIVEN_NO_DOMAIN_POLLING",
+    "maximum_frame_bytes": 1048576,
+    "watchdog_timeout_is_domain_work": false,
+    "general_internet_reachability": false
+  },
+  "node_contract": {
+    "independent_process": true,
+    "append_only_hash_linked_ledger": true,
+    "restart_reconstruction": true,
+    "idempotent_exact_replay": true,
+    "message_id_rebinding": "EFFECT_ACK_BLOCK",
+    "payload_hash_tamper": "EFFECT_ACK_BLOCK",
+    "partition": "EFFECT_ACK_CONTINUE_WITHOUT_ORDINARY_RELEASE"
+  },
+  "pair_contract": {
+    "DIVERGED_is_observable": true,
+    "DIVERGED_authorizes_synchronization": false,
+    "tree_equality_implied_by_transport": false,
+    "repository_roles_remain_distinct": true
+  },
+  "effect_ack": {
+    "state_machine": "src/qikvrt_effect_ack.py",
+    "completion_scope": "BOUNDED_LOOPBACK_MULTI_PAIR_MESSAGE_DELIVERY_ONLY",
+    "all_hop_ledgers_must_be_reobserved": true,
+    "transport_ack_is_effect_ack": false
+  },
+  "effect_boundary": {
+    "external_effect": "NONE",
+    "general_effect_ack_done": false,
+    "general_internet_reachability": false,
+    "production_deployment": false,
+    "physical_hardware_execution": false,
+    "authority_mirror_synchronization": false,
+    "authority_mirror_equality_claimed": false,
+    "merge": false,
+    "PASS": false,
+    "FINAL_PASS": false
+  }
+}
