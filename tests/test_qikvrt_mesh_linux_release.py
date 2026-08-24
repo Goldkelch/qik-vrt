@@ -43,6 +43,13 @@ class T(unittest.TestCase):
         self.assertTrue(
             policy["build_acceptance"]["host_libguestfs_tcg_fallback_required"]
         )
+        for key in [
+            "host_libguestfs_generic_kernel_required",
+            "host_libguestfs_fresh_cache_required",
+            "host_libguestfs_network_preflight_required",
+            "real_virt_customize_debug_trace_required",
+        ]:
+            self.assertTrue(policy["build_acceptance"][key])
         guards = policy["publication_guards"]
         self.assertTrue(guards["single_parent_zero_diff_carrier_required"])
         self.assertTrue(guards["branch_head_compare_and_swap_required"])
@@ -106,10 +113,16 @@ class T(unittest.TestCase):
             "HOLD: non-carrier release-branch head built",
             "linux-image-virtual",
             "Provision and verify native libguestfs host appliance",
-            "BLOCK: linux-image-virtual installed no supermin appliance kernel",
-            'sudo chmod a+r "${kernels[@]}"',
+            "BLOCK: linux-image-virtual installed no generic supermin appliance kernel",
+            "SUPERMIN_KERNEL_VERSION",
+            "CONFIG_IPV6_SIT=y",
+            "LIBGUESTFS_CACHEDIR",
+            'mktemp -d "$RUNNER_TEMP/qikvrt-libguestfs-cache.XXXXXX"',
             "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
+            "guestfish --network --ro -a /dev/null",
+            "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80",
+            "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, raw)
         build_steps = workflow["jobs"]["build"]["steps"]
@@ -129,9 +142,17 @@ class T(unittest.TestCase):
         host_run = build_steps[host_index]["run"]
         for text in [
             "linux-image-virtual",
-            'sudo chmod a+r "${kernels[@]}"',
+            "SUPERMIN_KERNEL",
+            "SUPERMIN_KERNEL_VERSION",
+            "SUPERMIN_MODULES",
+            "CONFIG_IPV6_SIT=y",
+            "LIBGUESTFS_CACHEDIR",
+            'mktemp -d "$RUNNER_TEMP/qikvrt-libguestfs-cache.XXXXXX"',
             "LIBGUESTFS_BACKEND_SETTINGS=force_tcg",
             "LIBGUESTFS_BACKEND=direct libguestfs-test-tool",
+            "guestfish --network --ro -a /dev/null",
+            "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80",
+            "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
             self.assertIn(text, host_run)
         self.assertEqual(raw.count("anonymous_token_json="), 2)
@@ -157,6 +178,9 @@ class T(unittest.TestCase):
         )
         self.assertIn("qcow.unlink()", base_raw)
         self.assertIn('if arch=="amd64":shutil.copy2', base_raw)
+        self.assertIn('"LIBGUESTFS_DEBUG":"1"', base_raw)
+        self.assertIn('"LIBGUESTFS_TRACE":"1"', base_raw)
+        self.assertIn('run("virt-customize","--network"', base_raw)
 
         tools_path = str(TOOL.parent)
         sys.path.insert(0, tools_path)

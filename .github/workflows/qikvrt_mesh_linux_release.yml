@@ -102,24 +102,51 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {ref: '${{ env.SOURCE_SHA }}', fetch-depth: 0, persist-credentials: false}
       - name: Provision and verify native libguestfs host appliance
+        env:
+          QIKVRT_BUILD_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual
-          kernels=(/boot/vmlinuz-*)
-          if [ ! -e "${kernels[0]}" ]; then
-            echo 'BLOCK: linux-image-virtual installed no supermin appliance kernel' >&2
+          mapfile -t generic_kernels < <(find /boot -maxdepth 1 -type f -name 'vmlinuz-*-generic' -print | sort -V)
+          if [ "${#generic_kernels[@]}" -eq 0 ]; then
+            echo 'BLOCK: linux-image-virtual installed no generic supermin appliance kernel' >&2
             exit 2
           fi
-          sudo chmod a+r "${kernels[@]}"
-          for kernel in "${kernels[@]}"; do
-            [ -r "$kernel" ] || { echo "BLOCK: supermin appliance kernel is unreadable: $kernel" >&2; exit 2; }
+          export SUPERMIN_KERNEL="${generic_kernels[${#generic_kernels[@]}-1]}"
+          export SUPERMIN_KERNEL_VERSION="${SUPERMIN_KERNEL#/boot/vmlinuz-}"
+          export SUPERMIN_MODULES="/lib/modules/$SUPERMIN_KERNEL_VERSION"
+          generic_config="/boot/config-$SUPERMIN_KERNEL_VERSION"
+          [ -e "$generic_config" ] || { echo "BLOCK: generic supermin kernel config is missing: $generic_config" >&2; exit 2; }
+          sudo chmod a+r "$SUPERMIN_KERNEL" "$generic_config"
+          [ -r "$SUPERMIN_KERNEL" ] || { echo "BLOCK: generic supermin kernel is unreadable: $SUPERMIN_KERNEL" >&2; exit 2; }
+          [ -d "$SUPERMIN_MODULES" ] || { echo "BLOCK: generic supermin modules are missing: $SUPERMIN_MODULES" >&2; exit 2; }
+          [ -r "$generic_config" ] || { echo "BLOCK: generic supermin kernel config is unreadable: $generic_config" >&2; exit 2; }
+          if grep -qx 'CONFIG_IPV6_SIT=y' "$generic_config"; then
+            echo "BLOCK: generic supermin kernel has CONFIG_IPV6_SIT built in: $generic_config" >&2
+            exit 2
+          fi
+          export LIBGUESTFS_CACHEDIR="$(mktemp -d "$RUNNER_TEMP/qikvrt-libguestfs-cache.XXXXXX")"
+          for variable in SUPERMIN_KERNEL SUPERMIN_KERNEL_VERSION SUPERMIN_MODULES LIBGUESTFS_CACHEDIR; do
+            printf '%s=%s\n' "$variable" "${!variable}" >> "$GITHUB_ENV"
           done
           if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
             export LIBGUESTFS_BACKEND_SETTINGS=force_tcg
             echo 'LIBGUESTFS_BACKEND_SETTINGS=force_tcg' >> "$GITHUB_ENV"
           fi
           LIBGUESTFS_BACKEND=direct libguestfs-test-tool
+          case "$QIKVRT_BUILD_ARCH" in
+            amd64) mirror=archive.ubuntu.com ;;
+            arm64) mirror=ports.ubuntu.com ;;
+            *) echo "BLOCK: unsupported native architecture $QIKVRT_BUILD_ARCH" >&2; exit 2 ;;
+          esac
+          if ! LIBGUESTFS_BACKEND=direct timeout --kill-after=15s 180s \
+            guestfish --network --ro -a /dev/null run : \
+            debug sh "/bin/bash -c 'set -e; exec 3<>/dev/tcp/$mirror/80; exec 3>&-; exec 3<&-'"; then
+            echo "BLOCK: libguestfs appliance DNS/TCP preflight failed for $mirror" >&2
+            exit 2
+          fi
+          echo 'QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK'
       - name: Build VM/OCI and execute packaged Firefox Effect-Ack acceptance
         run: python3 -B tools/qikvrt_mesh_linux_release_v2.py build --arch '${{ matrix.arch }}' --output "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
