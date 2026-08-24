@@ -26,6 +26,7 @@ from tools.qikvrt_mesh_heartbeat import (
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+LIVE_STATUS = ROOT / ".github/workflows/qikvrt_live_status_watch.yml"
 HEAD = "1" * 40
 TREE = "2" * 40
 
@@ -165,6 +166,11 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
             policy["semantic_work_trigger"],
             "AUTHENTICATED_CONTENT_BOUND_EVENT_ONLY",
         )
+        projection = policy["live_status_projection"]
+        self.assertEqual(projection["trigger"], "REPOSITORY_EVENT_ONLY")
+        self.assertFalse(projection["repository_api_polling"])
+        self.assertFalse(projection["sleep_loop"])
+        self.assertTrue(projection["artifact_required"])
 
     def test_candidate_workflow_is_event_driven_read_only_and_audited(self) -> None:
         workflow = (ROOT / ".github/workflows/qikvrt_mesh_heartbeat.yml").read_text(
@@ -176,6 +182,29 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         self.assertIn("--heartbeat-count 4", workflow)
         self.assertIn("qikvrt-mesh-heartbeat-${{ env.QIKVRT_EXACT_HEAD }}", workflow)
         self.assertIn("Verify repository-native integrity", workflow)
+
+    def test_live_status_projection_is_event_driven_and_api_poll_free(self) -> None:
+        workflow = LIVE_STATUS.read_text(encoding="utf-8")
+        self.assertIn("workflow_run:", workflow)
+        self.assertIn("types: [requested, in_progress, completed]", workflow)
+        self.assertIn("GITHUB_STEP_SUMMARY", workflow)
+        self.assertIn("REPOSITORY_EVENT_ONLY", workflow)
+        self.assertIn("polling: false", workflow)
+        self.assertIn("blind_retry: false", workflow)
+        self.assertIn("Upload exact event-bound status evidence", workflow)
+        self.assertIn("actions: read", workflow)
+        self.assertIn("pull-requests: read", workflow)
+        for forbidden in (
+            "schedule:",
+            "while :",
+            "sleep 5",
+            "MAX_CYCLES",
+            "gh api",
+            "actions/runs?branch=",
+            "issues: write",
+            "pull-requests: write",
+        ):
+            self.assertNotIn(forbidden, workflow)
 
     def test_trusted_writer_is_main_only_serialized_and_cas_bound(self) -> None:
         workflow = (

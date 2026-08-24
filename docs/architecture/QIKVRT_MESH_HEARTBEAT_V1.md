@@ -54,12 +54,31 @@ The execution receipt binds:
 
 `.github/workflows/qikvrt_mesh_heartbeat_main_ledger.yml` is a separate trusted writer. It is eligible only after a successful `push` run on Authority `main`. It downloads the exact source-run artifact, verifies head, tree, run ID and fail-closed boundaries, revalidates live Authority `main` before the ledger write and again before push, compares the ledger head and performs only an ordinary fast-forward push. The writer is globally serialized with `cancel-in-progress:false`.
 
+## Event-driven live status projection
+
+The former bounded API polling loop is removed. `.github/workflows/qikvrt_live_status_watch.yml` now reacts once to a repository event and materializes one exact event-bound status snapshot. Relevant `workflow_run` transitions (`requested`, `in_progress`, `completed`), pull-request lifecycle events, an explicit command, or manual dispatch are the only triggers.
+
+The projection performs no `gh api` crawl, no sleep loop and no repeated workflow discovery. It consumes the authenticated GitHub event envelope, writes one job summary and uploads one exact JSON artifact. The projection explicitly records:
+
+```text
+trigger = REPOSITORY_EVENT_ONLY
+polling = false
+blind_retry = false
+semantic_work_triggered = false
+external_effect = NONE
+```
+
+A later repository event creates a new projection; a timer does not repeatedly ask whether the state changed. This closes the observed API-rate-limit failure of the previous polling implementation without weakening the fail-closed evidence boundary.
+
 ```text
 CANDIDATE_EXECUTION
 != REPOSITORY_WRITE_AUTHORITY
 
 HEARTBEAT_LIVENESS
 != SEMANTIC_WORK_TRIGGER
+
+EVENT_BOUND_STATUS_PROJECTION
+!= POLLING
 
 LOCAL_TEST_AUTHORITY_EFFECT
 != AUTHORITY_MAIN_EFFECT

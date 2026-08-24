@@ -1,157 +1,150 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
 name: QIKVRT live status watch
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
     paths:
       - ".github/workflows/qikvrt_live_status_watch.yml"
       - ".github/workflows/qikvrt_workflow_executor.yml"
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+      - ".github/workflows/qikvrt_mesh_heartbeat.yml"
+      - ".github/workflows/qikvrt_mesh_heartbeat_main_ledger.yml"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "tools/qikvrt_workflow_executor.py"
       - "tools/qikvrt_seed_common.py"
+      - "tools/qikvrt_mesh_heartbeat.py"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+      - "tests/test_qikvrt_mesh_heartbeat.py"
       - "tests/test_seed_workflows.py"
+      - "policy/QIKVRT_MESH_HEARTBEAT_V1.json"
+      - "docs/architecture/QIKVRT_MESH_HEARTBEAT_V1.md"
       - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
       - "registry/NODE_DISCOVERY_POLICY.json"
       - "AI"
       - "Makefile"
+  workflow_run:
+    workflows:
+      - "QIKVRT Mesh heartbeat"
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT real multi-pair Mesh runtime"
+      - "QIKVRT virtual Mesh M68000 acceptance"
+      - "QIKVRT code-owner review observer"
+      - "QIKVRT Collective Proposal Review"
+      - "QIKVRT zero-bug continuous invariant"
+      - "QIKVRT Spark branch work-unit core"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT adaptive runtime"
+      - "QIKVRT workflow executor watchdog"
+    types: [requested, in_progress, completed]
   issue_comment:
     types: [created]
   workflow_dispatch:
     inputs:
       pr:
         description: "Pull request number to observe"
-        required: true
+        required: false
         type: string
 
 permissions:
   actions: read
   contents: read
-  issues: write
-  pull-requests: write
+  issues: read
+  pull-requests: read
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: true
+  group: qikvrt-live-status-event-${{ github.repository }}-${{ github.event.workflow_run.id || github.run_id }}-${{ github.event.action || github.event_name }}
+  cancel-in-progress: false
 
 jobs:
-  watch:
+  observe-event:
     if: >-
       github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_run' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '/qikvrt-status-watch'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_ACTION: ${{ github.event.action }}
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number || github.event.issue.number || inputs.pr || '' }}
+      OBSERVED_WORKFLOW: ${{ github.event.workflow_run.name || 'repository-event' }}
+      OBSERVED_STATUS: ${{ github.event.workflow_run.status || 'event-received' }}
+      OBSERVED_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+      OBSERVED_RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
+      OBSERVED_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
+      OBSERVED_BRANCH: ${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref || github.ref_name }}
+      EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-live-status-event
+
     steps:
-      - name: Observe repository workflow, job, and step transitions serially
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number || github.event.issue.number }}
-          WATCH_WORKFLOW: QIKVRT live status watch
-          MARKER: '<!-- qikvrt-live-status-watch -->'
-          MAX_CYCLES: "12"
+      - name: Project one event-bound status snapshot without polling
+        shell: bash
         run: |
           set -euo pipefail
-          pr="$EVENT_PR"
-          test -n "$pr"
-          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+          mkdir -p "$EVIDENCE_DIR"
+          observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          jq -n \
+            --arg schema 'qikvrt_event_bound_live_status_v1' \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg event_name "$EVENT_NAME" \
+            --arg event_action "$EVENT_ACTION" \
+            --arg pull_request_number "$PR_NUMBER" \
+            --arg observed_workflow "$OBSERVED_WORKFLOW" \
+            --arg observed_status "$OBSERVED_STATUS" \
+            --arg observed_conclusion "$OBSERVED_CONCLUSION" \
+            --arg observed_run_id "$OBSERVED_RUN_ID" \
+            --arg observed_head "$OBSERVED_HEAD" \
+            --arg observed_branch "$OBSERVED_BRANCH" \
+            --arg observed_at "$observed_at" \
+            '{
+              schema: $schema,
+              repository: $repository,
+              event_name: $event_name,
+              event_action: $event_action,
+              pull_request_number: $pull_request_number,
+              observed_workflow: $observed_workflow,
+              observed_status: $observed_status,
+              observed_conclusion: $observed_conclusion,
+              observed_run_id: $observed_run_id,
+              observed_head: $observed_head,
+              observed_branch: $observed_branch,
+              observed_at: $observed_at,
+              trigger: "REPOSITORY_EVENT_ONLY",
+              polling: false,
+              blind_retry: false,
+              semantic_work_triggered: false,
+              external_effect: "NONE"
+            }' | tee "$EVIDENCE_DIR/status-event.json"
 
-          update_status() {
-            body="$1"
-            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" |
-              jq -r --arg marker "$MARKER" \
-                '.[] | select(.body | contains($marker)) | .id' |
-              tail -n 1)"
-            if [ -n "$comment_id" ]; then
-              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
+          {
+            echo '## QIKVRT event-bound repository status projection'
+            echo
+            echo '- Trigger: `REPOSITORY_EVENT_ONLY`'
+            echo '- Polling: `false`'
+            echo '- Blind retry: `false`'
+            echo '- Semantic work triggered: `false`'
+            echo "- Repository: \`$GITHUB_REPOSITORY\`"
+            echo "- Pull request: \`${PR_NUMBER:-none}\`"
+            echo "- Workflow: \`$OBSERVED_WORKFLOW\`"
+            echo "- State: \`$OBSERVED_STATUS${OBSERVED_CONCLUSION:+/$OBSERVED_CONCLUSION}\`"
+            echo "- Exact head: \`$OBSERVED_HEAD\`"
+            echo "- Branch: \`$OBSERVED_BRANCH\`"
+            echo "- Observed at: \`$observed_at\`"
+            echo
+            echo '`HEARTBEAT != POLLING != BLIND_RETRY`'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          $body" >/dev/null
-            else
-              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
-
-          $body" >/dev/null
-            fi
-          }
-
-          state_signature=""
-          cycle=0
-          while :; do
-            cycle=$((cycle + 1))
-            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
-            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
-            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
-            active_count="$(printf '%s' "$active" | jq 'length')"
-
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end')"
-            step_rows=''
-            total_steps=0
-            completed_steps=0
-            while IFS= read -r run_id; do
-              [ -n "$run_id" ] || continue
-              jobs="$(gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100")"
-              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv')"
-              while IFS=$'\t' read -r job step status conclusion; do
-                [ -n "$step" ] || continue
-                total_steps=$((total_steps + 1))
-                marker='⟳'
-                effective="$status"
-                if [ "$status" = completed ]; then
-                  completed_steps=$((completed_steps + 1))
-                  effective="$conclusion"
-                  if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then marker='✓'; else marker='✗'; fi
-                elif [ "$status" = queued ] || [ "$status" = pending ]; then
-                  marker='□'
-                fi
-                step_rows="$step_rows
-          | $marker | $job | $step | $effective |"
-              done <<< "$rows"
-            done < <(printf '%s' "$latest" | jq -r '.[].id')
-
-            if [ "$total_steps" -eq 0 ]; then
-              percent=0
-              step_rows='| □ | none | awaiting workflow jobs | PENDING |'
-            else
-              percent=$((completed_steps * 100 / total_steps))
-            fi
-            filled=$((percent / 5))
-            empty=$((20 - filled))
-            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
-            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
-
-            if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT bounded repository runtime observation
-
-          **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
-
-          - Repository: \`$REPOSITORY\`
-          - Branch: \`$branch\`
-          - Observation cycle: \`$cycle/$MAX_CYCLES\`
-          - Observed at: \`$now\`
-          - Active external runs: \`$active_count\`
-
-          ### Workflows
-
-          | Workflow | State | Run | Run ID |
-          |---|---|---:|---:|
-          $workflow_lines
-
-          ### Jobs and steps
-
-          | | Job | Step | State |
-          |---|---|---|---|
-          $step_rows
-
-          Observation is opt-in and bounded so the watcher cannot monopolize a runner while the observed jobs wait behind it. A new explicit invocation supersedes any older invocation for the same pull request."
-              state_signature="$signature"
-            fi
-
-            if [ "$active_count" -eq 0 ] || [ "$cycle" -ge "$MAX_CYCLES" ]; then
-              break
-            fi
-            sleep 5
-          done
+      - name: Upload exact event-bound status evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-live-status-event-${{ env.OBSERVED_RUN_ID }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/status-event.json
+          if-no-files-found: error
+          retention-days: 30
