@@ -107,7 +107,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual
+          sudo apt-get install -y --no-install-recommends curl jq zip unzip xz-utils zstd gnupg qemu-utils libguestfs-tools guestfs-tools linux-image-virtual dhcpcd-base ipxe-qemu
+          command -v dhcpcd >/dev/null || { echo 'BLOCK: dhcpcd-base installed no dhcpcd appliance client' >&2; exit 2; }
+          [ -r /usr/lib/ipxe/qemu/efi-virtio.rom ] || { echo 'BLOCK: ipxe-qemu installed no efi-virtio.rom' >&2; exit 2; }
           mapfile -t generic_kernels < <(find /boot -maxdepth 1 -type f -name 'vmlinuz-*-generic' -print | sort -V)
           if [ "${#generic_kernels[@]}" -eq 0 ]; then
             echo 'BLOCK: linux-image-virtual installed no generic supermin appliance kernel' >&2
@@ -147,8 +149,8 @@ jobs:
             '#!/bin/bash' \
             'set -euo pipefail' \
             'mirror=${1:?missing Ubuntu mirror}' \
-            'getent ahostsv4 "$mirror" >/dev/null' \
-            'exec 3<>"/dev/tcp/${mirror}/80"' \
+            'if ! getent ahostsv4 "$mirror" >/dev/null; then echo "DNS lookup failed: $mirror" >&2; exit 20; fi' \
+            'if ! exec 3<>"/dev/tcp/${mirror}/80"; then echo "TCP connect failed: $mirror:80" >&2; exit 21; fi' \
             'exec 3>&-' \
             'exec 3<&-' > "$probe_script"
           bash -n "$probe_script"

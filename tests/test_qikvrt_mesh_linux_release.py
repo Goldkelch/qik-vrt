@@ -46,6 +46,8 @@ class T(unittest.TestCase):
         for key in [
             "host_libguestfs_generic_kernel_required",
             "host_libguestfs_fresh_cache_required",
+            "host_libguestfs_dhcp_client_required",
+            "host_libguestfs_virtio_net_rom_required",
             "host_libguestfs_network_preflight_required",
             "real_virt_customize_debug_trace_required",
         ]:
@@ -112,6 +114,10 @@ class T(unittest.TestCase):
             "permissions: {contents: read, packages: write}",
             "HOLD: non-carrier release-branch head built",
             "linux-image-virtual",
+            "dhcpcd-base",
+            "ipxe-qemu",
+            "command -v dhcpcd",
+            "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "Provision and verify native libguestfs host appliance",
             "BLOCK: linux-image-virtual installed no generic supermin appliance kernel",
             "SUPERMIN_KERNEL_VERSION",
@@ -125,8 +131,8 @@ class T(unittest.TestCase):
             'bash -n "$probe_script"',
             'guestfish --network --rw --format=raw -a "$probe_disk"',
             'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
-            'getent ahostsv4 "$mirror" >/dev/null',
-            'exec 3<>"/dev/tcp/${mirror}/80"',
+            'DNS lookup failed: $mirror',
+            'TCP connect failed: $mirror:80',
             'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
@@ -148,6 +154,10 @@ class T(unittest.TestCase):
         host_run = build_steps[host_index]["run"]
         for text in [
             "linux-image-virtual",
+            "dhcpcd-base",
+            "ipxe-qemu",
+            "command -v dhcpcd",
+            "/usr/lib/ipxe/qemu/efi-virtio.rom",
             "SUPERMIN_KERNEL",
             "SUPERMIN_KERNEL_VERSION",
             "SUPERMIN_MODULES",
@@ -161,8 +171,8 @@ class T(unittest.TestCase):
             'bash -n "$probe_script"',
             'guestfish --network --rw --format=raw -a "$probe_disk"',
             'debug-upload "$probe_script" /tmp/qikvrt-libguestfs-network-probe.sh 384',
-            'getent ahostsv4 "$mirror" >/dev/null',
-            'exec 3<>"/dev/tcp/${mirror}/80"',
+            'DNS lookup failed: $mirror',
+            'TCP connect failed: $mirror:80',
             'debug sh "/bin/bash /tmp/qikvrt-libguestfs-network-probe.sh $mirror"',
             "QIKVRT_LIBGUESTFS_NETWORK_PREFLIGHT=OK",
         ]:
