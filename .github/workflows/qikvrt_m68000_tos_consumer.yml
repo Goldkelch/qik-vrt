@@ -5,12 +5,14 @@ name: QIKVRT M68000 TOS consumer benchmark
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - "runtime/m68000/**"
       - "tools/qikvrt_m68000_tos_consumer.py"
       - "tests/test_qikvrt_m68000_tos_consumer.py"
       - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
       - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
+      - ".github/workflows/qikvrt_m68000_tos_main_ledger.yml"
   push:
     branches: [main]
     paths:
@@ -19,29 +21,52 @@ on:
       - "tests/test_qikvrt_m68000_tos_consumer.py"
       - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
       - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
+      - ".github/workflows/qikvrt_m68000_tos_main_ledger.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: qikvrt-m68000-tos-consumer-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   build-execute-reobserve:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out literal exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
           persist-credentials: false
+
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
+      - name: Bind literal source head and exact tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          actual_tree="$(git rev-parse --verify HEAD^{tree})"
+          printf 'expected_head=%s\nactual_head=%s\nactual_tree=%s\ngithub_sha=%s\n' \
+            "$QIKVRT_EXACT_HEAD" "$actual_head" "$actual_tree" "$GITHUB_SHA"
+          test "$actual_head" = "$QIKVRT_EXACT_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'QIKVRT_EXACT_TREE=%s\n' "$actual_tree" >> "$GITHUB_ENV"
+
       - name: Compile exact five-kernel registry consumer
         run: |
           set -euo pipefail
-          python3 -m unittest tests.test_qikvrt_m68000_tos_consumer -v
+          python3 -B -m unittest tests.test_qikvrt_m68000_tos_consumer -v
           mkdir -p "$RUNNER_TEMP/drive"
-          python3 tools/qikvrt_m68000_tos_consumer.py \
+          python3 -B tools/qikvrt_m68000_tos_consumer.py \
             --output "$RUNNER_TEMP/drive/MLP.TOS" \
             --hex-output "$RUNNER_TEMP/MLP.TOS.hex" \
             | tee "$RUNNER_TEMP/build.json"
@@ -110,102 +135,78 @@ jobs:
             exit 1
           fi
 
-      - name: Reobserve exact five-kernel TOS effect and benchmark
+      - name: Reobserve exact TOS effect, benchmark and bind execution receipt
+        shell: bash
         run: |
           set -euo pipefail
-          python3 tools/qikvrt_m68000_tos_consumer.py \
+          python3 -B tools/qikvrt_m68000_tos_consumer.py \
             --verify-receipt "$RUNNER_TEMP/drive/QIKVRT.RCP" \
             | tee "$RUNNER_TEMP/reobservation.json"
           sha256sum "$RUNNER_TEMP/drive/MLP.TOS" "$RUNNER_TEMP/drive/QIKVRT.RCP" \
             | tee "$RUNNER_TEMP/effects.sha256"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Materialize exact Authority-main receipt V2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib, json, os, pathlib, subprocess
-          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          temp = Path(os.environ['RUNNER_TEMP'])
           tos = (temp / 'drive/MLP.TOS').read_bytes()
-          receipt = (temp / 'drive/QIKVRT.RCP').read_bytes()
-          reobservation = json.loads((temp / 'reobservation.json').read_text())
+          effect = (temp / 'drive/QIKVRT.RCP').read_bytes()
+          build = json.loads((temp / 'build.json').read_text(encoding='utf-8'))
+          reobservation = json.loads(
+              (temp / 'reobservation.json').read_text(encoding='utf-8')
+          )
+          assert reobservation['execution_observed'] is True
+          assert reobservation['m68000_emulator_execution_observed'] is True
+          assert reobservation['spark_m68000_emulator_execution_observed'] is True
+          assert reobservation['physical_m68000_execution_observed'] is False
+
           value = {
-              'schema': 'QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V2',
+              'schema': 'QIKVRT_M68000_TOS_EXECUTION_RECEIPT_V3',
               'repository': os.environ['GITHUB_REPOSITORY'],
-              'ref': os.environ['GITHUB_REF'],
-              'head': os.environ['GITHUB_SHA'],
-              'tree': subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip(),
+              'event': os.environ['GITHUB_EVENT_NAME'],
+              'exact_head': os.environ['QIKVRT_EXACT_HEAD'],
+              'exact_tree': os.environ['QIKVRT_EXACT_TREE'],
+              'github_event_sha': os.environ['GITHUB_SHA'],
+              'literal_head_commit_checkout_observed': True,
               'run_id': int(os.environ['GITHUB_RUN_ID']),
               'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
-              'workflow': os.environ['GITHUB_WORKFLOW'],
               'registry_to_consumer': True,
               'tos_execution_observed': True,
-              'spark_m68000_emulator_execution_observed': reobservation['spark_m68000_emulator_execution_observed'],
               'benchmark_observed': True,
               'receipt_reobserved': True,
               'tos_sha256': hashlib.sha256(tos).hexdigest(),
-              'receipt_sha256': hashlib.sha256(receipt).hexdigest(),
-              'emutos_archive_sha256': (temp / 'emutos-archive.sha256').read_text().split()[0],
-              'emutos_rom_sha256': (temp / 'emutos-rom.sha256').read_text().split()[0],
-              'build': json.loads((temp / 'build.json').read_text()),
+              'effect_receipt_sha256': hashlib.sha256(effect).hexdigest(),
+              'build': build,
               'reobservation': reobservation,
+              'external_effect': 'NONE',
               'physical_m68000_execution_observed': False,
               'physical_speedup_measured': False,
+              'publication_observed': False,
+              'deployment_observed': False,
               'pass': False,
               'final_pass': False,
               'effect_ack_done': False,
           }
-          (temp / 'main-effect.json').write_text(
-              json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          (temp / 'execution-receipt.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(value, indent=2, sort_keys=True))
           PY
-
-      - name: Persist main receipt by fast-forward CAS
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          LEDGER_REF: refs/heads/qikvrt/m68000-tos-systemtest-ledger-v1
-        run: |
-          set -euo pipefail
-          source="$RUNNER_TEMP/main-effect.json"
-          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          success=0
-          for attempt in 1 2 3; do
-            ledger="$RUNNER_TEMP/ledger-$attempt"
-            rm -rf "$ledger" && git init -q "$ledger"
-            git -C "$ledger" config user.name 'github-actions[bot]'
-            git -C "$ledger" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git -C "$ledger" remote add origin "$remote"
-            if git -C "$ledger" fetch --no-tags --depth=1 origin "$LEDGER_REF"; then
-              git -C "$ledger" checkout -q -B ledger FETCH_HEAD
-            else
-              git -C "$ledger" checkout -q --orphan ledger
-            fi
-            target="receipts/${GITHUB_SHA}/${GITHUB_RUN_ID}.json"
-            mkdir -p "$ledger/$(dirname "$target")"
-            if [ -e "$ledger/$target" ]; then cmp "$source" "$ledger/$target"; else cp "$source" "$ledger/$target"; fi
-            cp "$source" "$ledger/latest.json"
-            git -C "$ledger" add "$target" latest.json
-            if git -C "$ledger" diff --cached --quiet; then success=1; break; fi
-            git -C "$ledger" commit -q -m "evidence: M68000 TOS main ${GITHUB_SHA} run ${GITHUB_RUN_ID}"
-            if git -C "$ledger" push origin "HEAD:$LEDGER_REF"; then success=1; break; fi
-            sleep "$attempt"
-          done
-          if [ "$success" -ne 1 ]; then
-            echo 'BLOCK: M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED' >&2
-            exit 1
-          fi
 
       - name: Upload exact execution evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-m68000-tos-${{ github.sha }}
+          name: qikvrt-m68000-tos-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ${{ runner.temp }}/drive/MLP.TOS
             ${{ runner.temp }}/drive/QIKVRT.RCP
             ${{ runner.temp }}/build.json
             ${{ runner.temp }}/reobservation.json
-            ${{ runner.temp }}/main-effect.json
+            ${{ runner.temp }}/execution-receipt.json
             ${{ runner.temp }}/effects.sha256
             ${{ runner.temp }}/emutos-archive.sha256
             ${{ runner.temp }}/emutos-rom.sha256
