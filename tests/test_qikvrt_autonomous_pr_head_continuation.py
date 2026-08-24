@@ -108,6 +108,13 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
 
+    def test_null_created_at_runs_are_excluded_from_tsv_observation_stream(self) -> None:
+        # Regression: @tsv strips trailing null fields, so a run with null
+        # created_at would produce a short TSV row and the bash read would leave
+        # $created_at empty, causing "BLOCK: created_at must be a non-empty
+        # ISO-8601 string" from qikvrt_pr_head_recovery.py classify.
+        self.assertIn("select(.created_at != null)", self.text)
+
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(
             [
