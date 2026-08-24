@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+# external_effect=NONE
+
+name: QIKVRT email infrastructure lineage and M68000 route core
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_email_infrastructure.yml'
+      - 'docs/QIKVRT_EMAIL_INFRASTRUCTURE_KARLSRUHE_TO_CLOUD_V1.md'
+      - 'policy/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json'
+      - 'runtime/email/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json'
+      - 'runtime/m68000/qikvrt_email_route_select.hex'
+      - 'src/m68000/qikvrt_email_route_select.s'
+      - 'state/work_units/PO_RECEIPT_2026_08_24_EMAIL_INFRASTRUCTURE_KARLSRUHE_TO_CLOUD_V1.json'
+      - 'tests/test_qikvrt_email_infrastructure.py'
+      - 'tools/qikvrt_email_infrastructure.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_email_infrastructure.yml'
+      - 'docs/QIKVRT_EMAIL_INFRASTRUCTURE_KARLSRUHE_TO_CLOUD_V1.md'
+      - 'policy/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json'
+      - 'runtime/email/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json'
+      - 'runtime/m68000/qikvrt_email_route_select.hex'
+      - 'src/m68000/qikvrt_email_route_select.s'
+      - 'state/work_units/PO_RECEIPT_2026_08_24_EMAIL_INFRASTRUCTURE_KARLSRUHE_TO_CLOUD_V1.json'
+      - 'tests/test_qikvrt_email_infrastructure.py'
+      - 'tools/qikvrt_email_infrastructure.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-email-infrastructure-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify JSON contracts and event-only workflow shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          for raw in (
+              'policy/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json',
+              'runtime/email/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json',
+              'state/work_units/PO_RECEIPT_2026_08_24_EMAIL_INFRASTRUCTURE_KARLSRUHE_TO_CLOUD_V1.json',
+          ):
+              value = json.loads(Path(raw).read_text(encoding='utf-8'))
+              if not isinstance(value, dict):
+                  raise SystemExit(f'BLOCK: {raw} is not a JSON object')
+          workflow = Path('.github/workflows/qikvrt_email_infrastructure.yml').read_text(encoding='utf-8')
+          if re.search(r'(?m)^  schedule:', workflow):
+              raise SystemExit('BLOCK: regular polling schedule is forbidden')
+          if 'external_effect=NONE' not in workflow:
+              raise SystemExit('BLOCK: effect boundary missing')
+          print('EMAIL_JSON_AND_EVENT_MODEL=VALID')
+          PY
+
+      - name: Compile and exhaustively verify M68000 route core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_email_infrastructure.py verify \
+            --output "$RUNNER_TEMP/qikvrt-email-verification.json"
+
+      - name: Run focused regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover \
+            -s tests \
+            -p 'test_qikvrt_email_infrastructure.py' \
+            -v
+
+      - name: Reobserve clean exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'HEAD=%s\n' "$(git rev-parse --verify HEAD^{commit})"
+          printf 'TREE=%s\n' "$(git rev-parse --verify HEAD^{tree})"
+
+      - name: Upload bounded verification receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-email-infrastructure-${{ github.sha }}
+          path: |
+            policy/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json
+            runtime/email/QIKVRT_EMAIL_INFRASTRUCTURE_V1.json
+            runtime/m68000/qikvrt_email_route_select.hex
+            ${{ runner.temp }}/qikvrt-email-verification.json
+          if-no-files-found: error
+          retention-days: 30
