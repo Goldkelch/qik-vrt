@@ -60,10 +60,19 @@ jobs:
        github.event.workflow_run.pull_requests[0].number) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/qikvrt-status-watch'))
+       contains(github.event.comment.body, '/qikvrt-status-watch') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                github.event.comment.author_association))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/pull/${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}/head
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Observe one exact event-bound repository snapshot
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,8 +94,12 @@ jobs:
             *) pr="" ;;
           esac
           test -n "$pr"
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
           printf '%s\n' "$pr" > "$root/pull-request-number.txt"
           printf '%s\n' "$GITHUB_EVENT_NAME" > "$root/causal-event.txt"
+          printf '%s\n' "$head" > "$root/observed-head.txt"
+          printf '%s\n' "$tree" > "$root/observed-tree.txt"
 
           platform_hold() {
             error_file="$1"
@@ -96,6 +109,8 @@ jobs:
               --arg repository "$REPOSITORY" \
               --arg event "$GITHUB_EVENT_NAME" \
               --arg pr "$pr" \
+              --arg head "$head" \
+              --arg tree "$tree" \
               --arg observed_at "$observed_at" \
               --arg error_sha "$error_sha" \
               '{
@@ -107,6 +122,8 @@ jobs:
                 repository: $repository,
                 event: $event,
                 pull_request: ($pr | tonumber),
+                head_sha: $head,
+                tree_sha: $tree,
                 observed_at: $observed_at,
                 platform_error_sha256: $error_sha,
                 semantic_work_performed: false,
@@ -122,7 +139,7 @@ jobs:
               echo
               echo '`HOLD_EXTERNAL_PLATFORM / GITHUB_API_RATE_LIMIT`'
               echo
-              echo 'The one-shot event-bound observation performed no polling, blind retry, semantic work, mutation inference, or terminal claim.'
+              echo 'The exact-head/tree one-shot observation performed no polling, blind retry, semantic work, mutation inference, or terminal claim.'
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           }
@@ -135,7 +152,7 @@ jobs:
               rm -f "$error_file"
               return 0
             fi
-            if grep -Eiq 'rate limit exceeded|secondary rate limit|HTTP 403' "$error_file"; then
+            if grep -Eiq 'API rate limit exceeded|secondary rate limit' "$error_file"; then
               platform_hold "$error_file"
             fi
             cat "$error_file" >&2
@@ -148,7 +165,7 @@ jobs:
               rm -f "$error_file"
               return 0
             fi
-            if grep -Eiq 'rate limit exceeded|secondary rate limit|HTTP 403' "$error_file"; then
+            if grep -Eiq 'API rate limit exceeded|secondary rate limit' "$error_file"; then
               platform_hold "$error_file"
             fi
             cat "$error_file" >&2
@@ -157,9 +174,9 @@ jobs:
 
           api_to_file "repos/$REPOSITORY/pulls/$pr" "$root/pull-request.json"
           branch="$(jq -r '.head.ref' "$root/pull-request.json")"
-          head="$(jq -r '.head.sha' "$root/pull-request.json")"
+          api_head="$(jq -r '.head.sha' "$root/pull-request.json")"
+          test "$api_head" = "$head"
           printf '%s\n' "$branch" > "$root/observed-branch.txt"
-          printf '%s\n' "$head" > "$root/observed-head.txt"
 
           api_to_file "repos/$REPOSITORY/actions/runs?head_sha=$head&per_page=50" "$root/current-runs.json"
           jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:12]' "$root/current-runs.json" > "$root/latest-runs.json"
@@ -206,6 +223,7 @@ jobs:
             --arg pr "$pr" \
             --arg branch "$branch" \
             --arg head "$head" \
+            --arg tree "$tree" \
             --arg observed_at "$now" \
             --argjson active "$active_count" \
             --argjson completed "$completed_steps" \
@@ -218,6 +236,7 @@ jobs:
               pull_request: ($pr | tonumber),
               branch: $branch,
               head_sha: $head,
+              tree_sha: $tree,
               observed_at: $observed_at,
               active_runs: $active,
               completed_steps: $completed,
@@ -235,6 +254,7 @@ jobs:
           - Pull request: \`#$pr\`
           - Branch: \`$branch\`
           - Exact head: \`$head\`
+          - Exact tree: \`$tree\`
           - Causal event: \`$GITHUB_EVENT_NAME\`
           - Observed at: \`$now\`
           - Active external runs: \`$active_count\`
