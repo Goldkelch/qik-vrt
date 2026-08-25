@@ -221,5 +221,52 @@
     "EFFECT_ACK_DONE": false,
     "FULL_SYNC": false,
     "SYMMETRIC_CANONICALITY": false
+  },
+  "terminal_assignment_backpressure": {
+    "schema": "qikvrt_terminal_assignment_backpressure_v1",
+    "repository": "Goldkelch/qik-vrt",
+    "carrier_pr": 885,
+    "anchor_assignment": {
+      "display_id": "A56",
+      "comment_id": 5415958931
+    },
+    "states": [
+      "PENDING",
+      "MATERIALIZED",
+      "VERIFIED",
+      "AUTHORITY_REQUIRED"
+    ],
+    "canonical_identity": [
+      "repository",
+      "carrier_pr",
+      "comment_id",
+      "subject_digest"
+    ],
+    "subject_digest": "sha256(canonical_utf8_comment_body)",
+    "candidate_marker": "<!-- qikvrt-terminal-repair-candidate:assignment=A56 comment=5415958931 -->",
+    "candidate_requirements": {
+      "same_repository": true,
+      "state": "open",
+      "draft": true,
+      "base_ref": "main",
+      "exact_base_sha": true,
+      "exact_opt_in_marker": "<!-- qikvrt-autonomous-self-heal:enabled -->",
+      "maximum_open_candidates": 1
+    },
+    "operational_rules": {
+      "noop_only_when_no_unresolved_assignment": true,
+      "legacy_display_id_is_not_identity": true,
+      "duplicate_display_id_with_distinct_comment_or_subject": "RECORDED_COLLISION",
+      "ineligible_carrier_without_bound_candidate": "AUTHORITY_REQUIRED",
+      "residual_assignment_requires_prior_disposition": true
+    },
+    "source_observation": {
+      "comment_pages": "complete",
+      "open_pull_requests": "complete",
+      "bind_source_run_and_attempt": true,
+      "receipt": "immutable_workflow_artifact"
+    },
+    "external_effect": "NONE"
   }
 }
+
