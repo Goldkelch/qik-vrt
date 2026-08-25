@@ -42,7 +42,7 @@ class EventDrivenMonitorPlatformHoldTests(unittest.TestCase):
         self.assertIn("head_sha=$head", workflow)
         self.assertIn("GITHUB_API_RATE_LIMIT", workflow)
         self.assertIn("platform-hold.json", workflow)
-        self.assertIn('"polling": false', workflow)
+        self.assertIn("polling: false", workflow)
         self.assertIn("include-hidden-files: true", workflow)
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
