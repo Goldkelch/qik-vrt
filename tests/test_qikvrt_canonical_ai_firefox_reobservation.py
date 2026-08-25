@@ -9,6 +9,7 @@ AI_HTML = ROOT / "docs/AI/index.html"
 AI_JS = ROOT / "docs/assets/js/qikvrt-ai-entrypoint.js"
 MANIFEST = ROOT / "browser/firefox/qikvrt-terminal/manifest.json"
 OPTIONS = ROOT / "browser/firefox/qikvrt-terminal/options.js"
+BACKEND = ROOT / "src/qikvrt_effect_ack_http_terminal.py"
 POLICY = ROOT / "policy/CANONICAL_AI_FIREFOX_TERMINAL_V1.json"
 HARNESS = ROOT / "tools/qikvrt_canonical_ai_firefox_reobservation.py"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_canonical_ai_firefox_reobservation.yml"
@@ -32,16 +33,15 @@ class CanonicalAIFirefoxTerminalContractTests(unittest.TestCase):
     def test_extension_e2e_reuses_exact_declared_loopback_permissions(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         options = OPTIONS.read_text(encoding="utf-8")
+        backend = BACKEND.read_text(encoding="utf-8")
         self.assertEqual(manifest["version"], "1.0.1")
         self.assertIn("http://127.0.0.1:8771/*", manifest["host_permissions"])
         self.assertIn("http://localhost:8771/*", manifest["host_permissions"])
         self.assertNotIn("http://127.0.0.1/*", manifest["host_permissions"])
         self.assertNotIn("http://localhost/*", manifest["host_permissions"])
-        csp = manifest["content_security_policy"]["extension_pages"]
-        self.assertIn("connect-src", csp)
-        self.assertIn("http://127.0.0.1:8771", csp)
-        self.assertIn("http://localhost:8771", csp)
-        self.assertNotIn("upgrade-insecure-requests", csp)
+        self.assertIn("Access-Control-Allow-Origin", backend)
+        self.assertIn("Access-Control-Allow-Private-Network", backend)
+        self.assertIn("NON_CREDENTIALED_LOOPBACK_ONLY", backend)
         self.assertIn('searchParams.get("qikvrt_e2e") === "1"', options)
         self.assertIn("QIKVRT-FIREFOX-E2E-NONCE-0001", options)
         self.assertIn(
