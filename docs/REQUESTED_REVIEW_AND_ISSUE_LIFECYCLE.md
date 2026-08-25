@@ -186,6 +186,15 @@ The substantive automated finding is persisted accurately together with the
 platform state. It never satisfies, replaces, weakens or transfers the separate
 exact-head independent Code-Owner gate.
 
+The platform-effective repository-reviewer set is `Goldkelch` and
+`ingolf-lohmann`.  The pull-request author is removed from the eligible set for
+that pull request, so the other configured account is the required counterpart.
+Ingolf Lohmann as a natural person does not perform these reviews.  ChatGPT may
+produce a clearly attributed technical disposition but does not normally supply
+the native repository-account approval.  Account labels establish only the
+platform signer recorded by GitHub; they do not prove distinct natural persons
+or organizational independence.
+
 Review completion and feedback persistence do not themselves authorize merge,
 promotion, release, deployment, Zenodo, DOI, IETF, `PASS`, `FINAL_PASS`,
 `EFFECT_ACK_DONE`, Authority/Mirror equality, scientific confirmation or an

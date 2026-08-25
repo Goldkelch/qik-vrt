@@ -32,7 +32,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
-      REQUIRED_CODE_OWNER: Goldkelch
+      REQUIRED_CODE_OWNERS_JSON: '["Goldkelch","ingolf-lohmann"]'
       STATUS_CONTEXT: QIKVRT required code-owner review
       REQUESTED_PR: ${{ inputs.pr || '' }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
@@ -107,7 +107,7 @@ jobs:
 
           repo = os.environ['REPOSITORY']
           number = int(os.environ['PR_NUMBER'])
-          owner = os.environ['REQUIRED_CODE_OWNER']
+          owners = json.loads(os.environ['REQUIRED_CODE_OWNERS_JSON'])
           context = os.environ['STATUS_CONTEXT']
 
           def gh_json(path):
@@ -153,7 +153,7 @@ jobs:
 
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
-          decision=evaluate_required_review(pr, rules, reviews, required_code_owner=owner)
+          decision=evaluate_required_review(pr, rules, reviews, required_code_owners=owners)
           state=decision['gate_state']
           description=status_description(decision)
 

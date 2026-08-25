@@ -53,6 +53,9 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         value.update(overrides)
         return value
 
+    def ingolf_approval(self, **overrides):
+        return self.approval(user={"login": "ingolf-lohmann"}, **overrides)
+
     def status(self, **overrides):
         value = {
             "id": 10,
@@ -107,6 +110,24 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         result = self.evaluate([self.approval()], pr=self.pr(user={"login": "Goldkelch"}))
         self.assertEqual((result["gate_state"], result["first_blocker"]), ("failure", "CODE_OWNER_REVIEW_SELF_APPROVAL"))
 
+    def test_goldkelch_author_requires_ingolf_counterpart(self):
+        result = self.evaluate(
+            [self.ingolf_approval()],
+            pr=self.pr(user={"login": "Goldkelch"}),
+        )
+        self.assertEqual(result["gate_state"], "success")
+        self.assertEqual(result["review_author"], "ingolf-lohmann")
+        self.assertEqual(result["eligible_code_owners"], ["ingolf-lohmann"])
+
+    def test_ingolf_author_requires_goldkelch_counterpart(self):
+        result = self.evaluate(
+            [self.approval()],
+            pr=self.pr(user={"login": "ingolf-lohmann"}),
+        )
+        self.assertEqual(result["gate_state"], "success")
+        self.assertEqual(result["review_author"], "Goldkelch")
+        self.assertEqual(result["eligible_code_owners"], ["Goldkelch"])
+
     def test_unchanged_head_context_state_is_noop_even_when_run_url_changed(self):
         result = self.publish([self.status(target_url="https://github.com/Goldkelch/qik-vrt/actions/runs/old")])
         self.assertEqual(result["status_publication"], "NOOP")
@@ -136,6 +157,7 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
     def test_workflow_uses_distinct_idempotent_code_owner_context(self):
         workflow = (ROOT / ".github/workflows/qikvrt_required_review_gate.yml").read_text(encoding="utf-8")
         self.assertIn("STATUS_CONTEXT: QIKVRT required code-owner review", workflow)
+        self.assertIn("REQUIRED_CODE_OWNERS_JSON: '[\"Goldkelch\",\"ingolf-lohmann\"]'", workflow)
         self.assertNotIn("STATUS_CONTEXT: QIKVRT requested review execution", workflow)
         self.assertIn("commits/{head}/status", workflow)
         self.assertIn("STATUS_PUBLICATION_NOOP", workflow)

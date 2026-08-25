@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 SCHEMA = "qikvrt_required_code_owner_review_gate_v1"
-DEFAULT_CODE_OWNER = "Goldkelch"
+DEFAULT_CODE_OWNERS = ("Goldkelch", "ingolf-lohmann")
 SUCCESS = "success"
 PENDING = "pending"
 FAILURE = "failure"
@@ -297,7 +297,22 @@ def decide_status_publication(
     }
 
 
-def _block(*, gate_state: str, blocker: str, detail: str, pr_number: Any, head_sha: str | None, required_code_owner: str) -> dict[str, Any]:
+def _code_owners(values: Sequence[str]) -> tuple[str, ...]:
+    owners: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        owner = _login(value, "required code owner")
+        folded = owner.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        owners.append(owner)
+    if len(owners) < 2:
+        raise ReviewGateInputError("at least two distinct repository code owners are required")
+    return tuple(owners)
+
+
+def _block(*, gate_state: str, blocker: str, detail: str, pr_number: Any, head_sha: str | None, required_code_owners: Sequence[str], eligible_code_owners: Sequence[str]) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
         "gate_state": gate_state,
@@ -305,7 +320,8 @@ def _block(*, gate_state: str, blocker: str, detail: str, pr_number: Any, head_s
         "detail": detail,
         "pr_number": pr_number,
         "head_sha": head_sha,
-        "required_code_owner": required_code_owner,
+        "required_code_owners": list(required_code_owners),
+        "eligible_code_owners": list(eligible_code_owners),
         "external_effect": "NONE",
         "review_mutation": "FORBIDDEN",
     }
@@ -331,7 +347,7 @@ def native_code_owner_rule_is_enforced(rules: Sequence[Mapping[str, Any]]) -> bo
     return False
 
 
-def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str, Any]], reviews: Sequence[Mapping[str, Any]], *, required_code_owner: str = DEFAULT_CODE_OWNER) -> dict[str, Any]:
+def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str, Any]], reviews: Sequence[Mapping[str, Any]], *, required_code_owners: Sequence[str] = DEFAULT_CODE_OWNERS) -> dict[str, Any]:
     if not isinstance(pr, Mapping):
         raise ReviewGateInputError("pull request observation must be an object")
     if not isinstance(rules, Sequence) or isinstance(rules, (str, bytes)):
@@ -349,7 +365,20 @@ def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str,
         raise ReviewGateInputError("pull request must contain head and user objects")
     head_sha = _sha(head.get("sha"), "pull request head.sha")
     author_login = _login(author.get("login"), "pull request user.login")
-    owner_login = _login(required_code_owner, "required code owner")
+    owner_logins = _code_owners(required_code_owners)
+    eligible_owners = tuple(
+        owner for owner in owner_logins if owner.casefold() != author_login.casefold()
+    )
+    if not eligible_owners:
+        return _block(
+            gate_state=FAILURE,
+            blocker="CODE_OWNER_COUNTERPART_UNAVAILABLE",
+            detail="the pull-request author excludes every configured repository code owner",
+            pr_number=pr_number,
+            head_sha=head_sha,
+            required_code_owners=owner_logins,
+            eligible_code_owners=eligible_owners,
+        )
     pr_number = pr.get("number")
 
     if not native_code_owner_rule_is_enforced(rules):
@@ -359,48 +388,61 @@ def evaluate_required_review(pr: Mapping[str, Any], rules: Sequence[Mapping[str,
             detail="main must require one approval, Code Owner review, stale-review dismissal, and last-push approval",
             pr_number=pr_number,
             head_sha=head_sha,
-            required_code_owner=owner_login,
+            required_code_owners=owner_logins,
+            eligible_code_owners=eligible_owners,
         )
 
     owner_reviews = [
         review for review in reviews
         if isinstance(review.get("user"), Mapping)
         and isinstance(review["user"].get("login"), str)
-        and review["user"]["login"].casefold() == owner_login.casefold()
+        and review["user"]["login"].casefold() in {
+            owner.casefold() for owner in eligible_owners
+        }
     ]
     if not owner_reviews:
-        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_MISSING", detail=f"no review from @{owner_login} is present", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
+        self_reviews = [
+            review for review in reviews
+            if isinstance(review.get("user"), Mapping)
+            and isinstance(review["user"].get("login"), str)
+            and review["user"]["login"].casefold() == author_login.casefold()
+            and author_login.casefold() in {owner.casefold() for owner in owner_logins}
+        ]
+        if self_reviews:
+            return _block(gate_state=FAILURE, blocker="CODE_OWNER_REVIEW_SELF_APPROVAL", detail="the pull-request author cannot satisfy the repository Code Owner counterpart gate", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
+        names = ", ".join(f"@{owner}" for owner in eligible_owners)
+        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_MISSING", detail=f"no review from eligible counterpart {names} is present", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
 
     exact_head_reviews = [review for review in owner_reviews if review.get("commit_id") == head_sha]
     if not exact_head_reviews:
-        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_STALE", detail=f"@{owner_login} has no review bound to current head {head_sha}", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
+        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_STALE", detail=f"no eligible repository Code Owner has a review bound to current head {head_sha}", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
 
     decisive = [
         review for review in exact_head_reviews
         if isinstance(review.get("state"), str) and review["state"].upper() in DECISIVE_REVIEW_STATES
     ]
     if not decisive:
-        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_NOT_APPROVED", detail=f"@{owner_login} has no decisive current-head review", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
+        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_NOT_APPROVED", detail="no eligible repository Code Owner has a decisive current-head review", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
 
     latest = max(decisive, key=_review_sort_key)
     latest_state = latest["state"].upper()
+    reviewer_login = _login(latest["user"].get("login"), "review user.login")
     if latest_state == "CHANGES_REQUESTED":
-        return _block(gate_state=FAILURE, blocker="CODE_OWNER_REVIEW_CHANGES_REQUESTED", detail=f"@{owner_login} requested changes on current head {head_sha}", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
+        return _block(gate_state=FAILURE, blocker="CODE_OWNER_REVIEW_CHANGES_REQUESTED", detail=f"@{reviewer_login} requested changes on current head {head_sha}", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
     if latest_state == "DISMISSED":
-        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_DISMISSED", detail=f"@{owner_login}'s current-head review was dismissed", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
+        return _block(gate_state=PENDING, blocker="CODE_OWNER_REVIEW_DISMISSED", detail=f"@{reviewer_login}'s current-head review was dismissed", pr_number=pr_number, head_sha=head_sha, required_code_owners=owner_logins, eligible_code_owners=eligible_owners)
     if latest_state != "APPROVED":
         raise ReviewGateInputError(f"unsupported decisive review state: {latest_state}")
-    if author_login.casefold() == owner_login.casefold():
-        return _block(gate_state=FAILURE, blocker="CODE_OWNER_REVIEW_SELF_APPROVAL", detail="the pull-request author cannot satisfy the independent Code Owner review gate", pr_number=pr_number, head_sha=head_sha, required_code_owner=owner_login)
-
     return {
         "schema": SCHEMA,
         "gate_state": SUCCESS,
         "first_blocker": None,
-        "detail": f"@{owner_login} approved the current head",
+        "detail": f"@{reviewer_login} approved the current head as the non-author repository Code Owner",
         "pr_number": pr_number,
         "head_sha": head_sha,
-        "required_code_owner": owner_login,
+        "required_code_owners": list(owner_logins),
+        "eligible_code_owners": list(eligible_owners),
+        "review_author": reviewer_login,
         "review_id": latest.get("id"),
         "external_effect": "NONE",
         "review_mutation": "FORBIDDEN",
@@ -417,12 +459,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pr", required=True)
     parser.add_argument("--rules", required=True)
     parser.add_argument("--reviews", required=True)
-    parser.add_argument("--required-code-owner", default=DEFAULT_CODE_OWNER)
+    parser.add_argument("--required-code-owner", action="append", dest="required_code_owners")
     args = parser.parse_args(argv)
     try:
-        result = evaluate_required_review(_load_json(args.pr), _load_json(args.rules), _load_json(args.reviews), required_code_owner=args.required_code_owner)
+        result = evaluate_required_review(_load_json(args.pr), _load_json(args.rules), _load_json(args.reviews), required_code_owners=args.required_code_owners or DEFAULT_CODE_OWNERS)
     except (OSError, ValueError, json.JSONDecodeError, ReviewGateInputError) as exc:
-        result = _block(gate_state=FAILURE, blocker="INVALID_REVIEW_GATE_SNAPSHOT", detail=str(exc), pr_number=None, head_sha=None, required_code_owner=args.required_code_owner)
+        owners = args.required_code_owners or DEFAULT_CODE_OWNERS
+        result = _block(gate_state=FAILURE, blocker="INVALID_REVIEW_GATE_SNAPSHOT", detail=str(exc), pr_number=None, head_sha=None, required_code_owners=owners, eligible_code_owners=())
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0 if result["gate_state"] == SUCCESS else 2
 

@@ -191,7 +191,7 @@ jobs:
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
           code_owner_review_gate=evaluate_required_review(
-              pr, rules, reviews, required_code_owner='Goldkelch'
+              pr, rules, reviews, required_code_owners=('Goldkelch','ingolf-lohmann')
           )
 
           candidate_files={item['filename'] for item in gh_pages(f'repos/{repo}/pulls/{pr_number}/files?per_page=100')}
@@ -302,7 +302,7 @@ jobs:
               raise SystemExit('BLOCK: head drift before exact-base-CAS authority continuation')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
-          gate=evaluate_required_review(pr, rules, reviews, required_code_owner='Goldkelch')
+          gate=evaluate_required_review(pr, rules, reviews, required_code_owners=('Goldkelch','ingolf-lohmann'))
           if gate.get('gate_state') != 'success':
               raise SystemExit(f"BLOCK: independent Code Owner gate changed: {gate.get('first_blocker')}")
 
@@ -441,7 +441,7 @@ jobs:
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
-          gate=evaluate_required_review(pr,rules,reviews,required_code_owner='Goldkelch')
+          gate=evaluate_required_review(pr,rules,reviews,required_code_owners=('Goldkelch','ingolf-lohmann'))
           if gate.get('gate_state') != 'success':
               raise SystemExit(f"BLOCK: independent Code Owner gate changed at final fence: {gate.get('first_blocker')}")
 
