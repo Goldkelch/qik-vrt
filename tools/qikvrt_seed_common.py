@@ -1059,8 +1059,8 @@ def validate_revalidation(root: Path, source_status: Mapping[str, Any], seed_rep
     ):
         if result.get(key) != source_status.get(key):
             raise SeedError(f"mesh revalidation: {key} disagrees with source status")
-    if result.get("status") != "PASS":
-        raise SeedError("mesh revalidation is not PASS")
+    if result.get("status") not in {"PASS", "CONTINUE"}:
+        raise SeedError("mesh revalidation is neither PASS nor CONTINUE")
     return result
 
 
@@ -1082,6 +1082,7 @@ def run_dashboard(
         "nodes": status["node_count"],
         "active": status["active_count"],
         "stale": status["stale_count"],
+        "revalidation_status": revalidation["status"],
     }.items()}
     dashboard_html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>QIK-VRT Mesh Dashboard</title>
@@ -1090,6 +1091,7 @@ def run_dashboard(
 <h1>QIK-VRT Mesh Dashboard</h1>
 <div class="card"><strong>Generated UTC:</strong> {safe['utc']}<br><strong>Run ID:</strong> {safe['run_id']}<br><strong>Seed:</strong> {safe['seed']}</div>
 <div class="card"><strong>Nodes:</strong> {safe['nodes']}<br><strong>Active:</strong> {safe['active']}<br><strong>Stale:</strong> {safe['stale']}</div>
+<div class="card"><strong>Semantic status:</strong> {safe['revalidation_status']}</div>
 <h2>Evidence</h2>
 <ul><li><code>registry/NODEMESH_INDEX.json</code></li><li><code>registry/NODEMESH_STATUS.json</code></li><li><code>registry/NODEMESH_REVALIDATION.json</code></li><li><code>audit/QIKVRT_MESH_AUDIT_REPORT.md</code></li></ul>
 <p>Boundary: authorized known nodes only, seed writes only to seed repository, no global scanning, no self propagation, no remote mutation without authorization.</p>
@@ -1105,6 +1107,7 @@ active_count: {status['active_count']}<br>
 stale_count: {status['stale_count']}<br>
 source_status_run_id: {status['run_id']}<br>
 source_revalidation_run_id: {revalidation['run_id']}
+source_revalidation_status: {revalidation['status']}
 
 HTML dashboard: docs/qikvrt_mesh_dashboard.html
 """
@@ -1115,9 +1118,11 @@ HTML dashboard: docs/qikvrt_mesh_dashboard.html
         "qikvrt_event": "SEED_DASHBOARD_PUBLISH",
         "generated_utc": utc,
         "run_id": run_id,
-        "status": "PASS",
+        "status": revalidation["status"],
+        "render_status": "COMPLETE",
         "source_status_run_id": status["run_id"],
         "source_revalidation_run_id": revalidation["run_id"],
+        "source_revalidation_status": revalidation["status"],
         "dashboard_html": "docs/qikvrt_mesh_dashboard.html",
         "dashboard_md": "docs/QIKVRT_MESH_DASHBOARD.md",
     }
@@ -1144,6 +1149,7 @@ def run_audit_export(
 - seed_repository: {seed_repository}
 - source_status_run_id: {status['run_id']}
 - source_revalidation_run_id: {revalidation['run_id']}
+- source_revalidation_status: {revalidation['status']}
 - node_count: {status['node_count']}
 - active_count: {status['active_count']}
 - stale_count: {status['stale_count']}
@@ -1154,8 +1160,8 @@ def run_audit_export(
 - registry/NODEMESH_INDEX.json
 - registry/NODEMESH_STATUS.json
 - registry/NODEMESH_REVALIDATION.json
-- evidence/seed_mesh_maintenance/LATEST.json
-- evidence/seed_node_revalidation/LATEST.json
+- evidence/seed_mesh_maintenance/runs/{run_id}.json
+- evidence/seed_node_revalidation/runs/{run_id}.json
 
 ## Boundary statement
 
@@ -1168,10 +1174,12 @@ The Seed reads only explicitly policy-authorized Node entries. The Seed writes o
         "qikvrt_event": "SEED_MESH_AUDIT_EXPORT",
         "generated_utc": utc,
         "run_id": run_id,
-        "status": "PASS",
+        "status": revalidation["status"],
+        "render_status": "COMPLETE",
         "seed_repository": seed_repository,
         "source_status_run_id": status["run_id"],
         "source_revalidation_run_id": revalidation["run_id"],
+        "source_revalidation_status": revalidation["status"],
         "node_count": status["node_count"],
         "active_count": status["active_count"],
         "stale_count": status["stale_count"],
@@ -1186,7 +1194,14 @@ The Seed reads only explicitly policy-authorized Node entries. The Seed writes o
 
 
 def _result_exit_code(result: Mapping[str, Any]) -> int:
-    return 0 if result.get("status") == "PASS" else 10
+    status = result.get("status")
+    if status == "PASS":
+        return 0
+    if status == "CONTINUE":
+        return 20
+    if status == "BLOCK":
+        return 1
+    raise SeedError(f"unclassified Seed result status: {status!r}")
 
 
 def main(argv: Iterable[str] | None = None) -> int:
