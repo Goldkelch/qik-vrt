@@ -107,6 +107,14 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
 
+    def test_workflow_preserves_timestamp_when_conclusion_is_empty(self) -> None:
+        self.assertIn("while IFS= read -r run", self.text)
+        self.assertIn('created_at:(.created_at // "")', self.text)
+        self.assertNotIn(
+            '.workflow_runs[] | [.id,.name,.status,(.conclusion // ""),.created_at] | @tsv',
+            self.text,
+        )
+
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(
             [
