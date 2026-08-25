@@ -8,6 +8,7 @@ import argparse
 import json
 import pathlib
 import sys
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -19,10 +20,171 @@ FAILURE = "failure"
 STATUS_PUBLICATION_NOOP = "NOOP"
 STATUS_PUBLICATION_WRITE = "WRITE"
 DECISIVE_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
+SELECTION_SCHEMA = "qikvrt_required_code_owner_review_selection_v1"
 
 
 class ReviewGateInputError(ValueError):
     pass
+
+
+def _positive_pr_number(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdecimal():
+            number = int(text)
+            return number if number > 0 else None
+    return None
+
+
+def _selection(
+    state: str,
+    *,
+    source: str,
+    first_blocker: str | None = None,
+    pr_numbers: Sequence[int] = (),
+    expected_head: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": SELECTION_SCHEMA,
+        "state": state,
+        "source": source,
+        "first_blocker": first_blocker,
+        "pr_numbers": list(pr_numbers),
+        "expected_head": expected_head,
+        "status_publication": "FORBIDDEN" if state != "CANDIDATE" else "PENDING_EXACT_REOBSERVATION",
+    }
+
+
+def _selector_sha(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) != 40:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
+def _workflow_run_pr_number(
+    item: Mapping[str, Any], repository: str
+) -> tuple[int | None, str | None]:
+    number = _positive_pr_number(item.get("number"))
+    if number is None:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    url = item.get("url")
+    if not isinstance(url, str) or not url:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    parsed = urllib.parse.urlparse(url)
+    expected_path = f"/repos/{repository}/pulls/{number}"
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "api.github.com"
+        or parsed.path != expected_path
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    return number, None
+
+
+def select_required_review_targets(
+    *,
+    repository: str,
+    requested_pr: str,
+    workflow_event: str,
+    expected_head: str,
+    event_prs: Any,
+) -> dict[str, Any]:
+    """Resolve exactly one status subject without a scheduled repository scan."""
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewGateInputError("selector repository is invalid")
+    bound_head = expected_head.strip()
+    if bound_head and _selector_sha(bound_head) is None:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="WORKFLOW_RUN",
+            first_blocker="INVALID_EVENT_EXPECTED_HEAD",
+            expected_head=bound_head,
+        )
+    if requested_pr.strip():
+        number = _positive_pr_number(requested_pr)
+        if number is None:
+            return _selection(
+                "INELIGIBLE_EVENT_TARGET",
+                source="WORKFLOW_DISPATCH_PR",
+                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
+            )
+        return _selection(
+            "CANDIDATE", source="WORKFLOW_DISPATCH_PR", pr_numbers=[number]
+        )
+
+    if workflow_event in {"schedule", "workflow_dispatch"}:
+        return _selection(
+            "INELIGIBLE_EVENT_TARGET",
+            source="WORKFLOW_RUN",
+            first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
+            expected_head=bound_head or None,
+        )
+    if not workflow_event:
+        return _selection(
+            "NO_EVENT_SUBJECT",
+            source="NONE",
+            first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
+            expected_head=bound_head or None,
+        )
+    if workflow_event and not bound_head:
+        return _selection(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            source="WORKFLOW_RUN",
+            first_blocker="WORKFLOW_RUN_HEAD_MISSING",
+        )
+    if not event_prs:
+        return _selection(
+            "NO_EVENT_SUBJECT",
+            source="NONE",
+            first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
+            expected_head=bound_head or None,
+        )
+    if not isinstance(event_prs, Sequence) or isinstance(event_prs, (str, bytes)):
+        return _selection(
+            "INELIGIBLE_EVENT_TARGET",
+            source="WORKFLOW_RUN_PULL_REQUESTS",
+            first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+        )
+    numbers: set[int] = set()
+    for item in event_prs:
+        if not isinstance(item, Mapping):
+            return _selection(
+                "INELIGIBLE_EVENT_TARGET",
+                source="WORKFLOW_RUN_PULL_REQUESTS",
+                first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+            )
+        number, blocker = _workflow_run_pr_number(item, repository)
+        if blocker is not None:
+            return _selection(
+                "INELIGIBLE_EVENT_TARGET",
+                source="WORKFLOW_RUN_PULL_REQUESTS",
+                first_blocker=blocker,
+                expected_head=bound_head or None,
+            )
+        assert number is not None
+        numbers.add(number)
+    if len(numbers) != 1:
+        return _selection(
+            "AMBIGUOUS_EVENT_SUBJECT",
+            source="WORKFLOW_RUN_PULL_REQUESTS",
+            first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
+            pr_numbers=sorted(numbers),
+            expected_head=bound_head or None,
+        )
+    return _selection(
+        "CANDIDATE",
+        source="WORKFLOW_RUN_PULL_REQUESTS",
+        pr_numbers=sorted(numbers),
+        expected_head=bound_head or None,
+    )
 
 
 def _sha(value: Any, label: str) -> str:

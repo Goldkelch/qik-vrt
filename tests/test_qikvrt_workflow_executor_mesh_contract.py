@@ -88,9 +88,27 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
 
         executor = plane["executor"]
         self.assertEqual(executor["workflow_name"], "QIKVRT requested review executor")
+        self.assertEqual(
+            executor["eligible_subjects"],
+            "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+        )
         self.assertFalse(executor["human_review_request_prerequisite"])
         self.assertEqual(executor["platform_review_event"], "COMMENT")
         self.assertEqual(executor["bot_approve_or_request_changes_event"], "FORBIDDEN")
+        self.assertEqual(
+            executor["selection"]["allowed_sources"],
+            [
+                "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
+                "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
+                "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST",
+            ],
+        )
+        self.assertEqual(executor["selection"]["eventless_repository_scan"], "FORBIDDEN")
+        self.assertEqual(
+            executor["selection"]["scheduled_or_manual_workflow_run_source"],
+            "FORBIDDEN",
+        )
+        self.assertTrue(executor["selection"]["workflow_run_requires_role_local_url_and_matching_head"])
 
         binding = plane["exact_subject_binding"]
         self.assertEqual(
@@ -182,10 +200,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         )
         self.assertEqual(
             downstream["consumer_workflows"],
-            [
-                ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
-                ".github/workflows/qikvrt_expected_head_promotion.yml",
-            ],
+            [".github/workflows/qikvrt_expected_head_promotion.yml"],
         )
 
         self.assertEqual(
@@ -211,6 +226,19 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
 
         self.assertFalse(policy["review_lifecycle"]["human_review_request_prerequisite"])
         self.assertFalse(policy["review_executor"]["human_review_request_required"])
+        self.assertEqual(
+            policy["review_lifecycle"]["mesh_self_review_default"],
+            "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT",
+        )
+        self.assertEqual(
+            policy_plane["eligible_subjects"],
+            plane["executor"]["eligible_subjects"],
+        )
+        self.assertIn("workflow_dispatch.exact_pr", policy["review_executor"]["event_triggers"])
+        self.assertEqual(
+            policy["review_executor"]["manual_executor_dispatch_handoff"],
+            "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
+        )
         self.assertEqual(
             policy["mesh_self_review_owner_delegation"],
             "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
@@ -238,6 +266,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             documentation,
         )
         self.assertIn("D0=3 REQUEST_AUTHORITY", documentation)
+        self.assertIn("exact native event or an\nexplicit exact-PR dispatch", documentation)
+        self.assertIn("technical-review action only", documentation)
         self.assertIn("may submit only a\n`COMMENT` review event", documentation)
 
     def test_self_healing_and_node_policy_point_to_the_same_continuity_contract(self) -> None:

@@ -13,15 +13,9 @@ on:
       - "QIKVRT CI"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
-      - "QIKVRT requested review executor"
       - "QIKVRT code-owner review observer"
       - "QIKVRT workflow executor watchdog"
     types: [completed]
-  # Clock/fallback only. Productive reobservation is normally interrupt/event driven.
-  # GitHub-hosted Actions has no continuously resident process; five minutes is the
-  # bounded lost-event watchdog, not the normal continuation latency.
-  schedule:
-    - cron: "*/5 * * * *"
 
 permissions:
   actions: write
@@ -276,13 +270,10 @@ jobs:
               >> "$root/dispatched-workflows.jsonl"
           done
 
-          # Review execution remains separate authority. REQUEST_AUTHORITY/D0=3 is
-          # represented by the ABI but is not fabricated by this stall classifier.
-          live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
-          test "$live_ref" = "$HEAD_SHA"
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
-            -f ref=main -F "inputs[pr]=$PR_NUMBER"
+          # Requested review has no autonomous dispatch route.  The review
+          # executor accepts only an exact native event or a human-supplied
+          # explicit dispatch subject; this global continuation classifier must
+          # not launder its selected PR into that interface.
 
           jq -n \
             --arg pr "$PR_NUMBER" \

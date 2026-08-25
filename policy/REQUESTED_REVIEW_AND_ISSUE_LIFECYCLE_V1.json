@@ -23,7 +23,7 @@
   "human_contract": "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
   "review_lifecycle": {
     "requested_review_default": "EXECUTE_IMMEDIATELY",
-    "mesh_self_review_default": "EXECUTE_FOR_EVERY_ELIGIBLE_INTERNAL_PULL_REQUEST",
+    "mesh_self_review_default": "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT",
     "human_review_request_prerequisite": false,
     "deliberate_queueing_without_evidenced_blocker": "FORBIDDEN",
     "required_reobservation": [
@@ -83,10 +83,13 @@
       "pull_request_target.ready_for_review",
       "pull_request_target.reopened",
       "issue_comment.created_edited_deleted",
-      "workflow_run.completed"
+      "workflow_run.completed",
+      "workflow_dispatch.exact_pr"
     ],
-    "recovery_schedule": "*/5 * * * *",
-    "review_thread_resolution_event_boundary": "NO_NATIVE_GITHUB_ACTIONS_TRIGGER_FIVE_MINUTE_ROTATING_SCAN_CADENCE_WITHOUT_PER_PR_LATENCY_GUARANTEE",
+    "eventless_review_selection": "FORBIDDEN",
+    "scheduled_review_execution": "FORBIDDEN",
+    "manual_executor_dispatch_handoff": "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
+    "review_thread_resolution_event_boundary": "NO_NATIVE_GITHUB_ACTIONS_TRIGGER_UNOBSERVABLE_WITHOUT_EXACT_EVENT_NO_ROTATING_SCAN_OR_REVIEW_DISPATCH",
     "exact_head_status_context": "QIKVRT requested review execution",
     "promotion_workflow": ".github/workflows/qikvrt_expected_head_promotion.yml",
     "promotion_requires_successful_review_status": true,
@@ -97,7 +100,7 @@
     "promotion_favorable_nondraft_review_next_action": "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY",
     "skipped_only_required_gate": "ZERO_EXECUTED_JOB_GATE_REOBSERVE",
     "human_review_request_required": false,
-    "candidate_selection": "EVERY_ELIGIBLE_SAME_REPOSITORY_PULL_REQUEST",
+    "candidate_selection": "EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT_ONLY",
     "same_head_reobservation": "ALLOWED_ONLY_WHEN_CAUSAL_EVIDENCE_FINGERPRINT_CHANGED",
     "duplicate_identical_evidence_fingerprint_review": "FORBIDDEN",
     "head_tree_or_scope_drift_invalidates_review": true,
@@ -112,7 +115,7 @@
     "executor_workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
     "decision_core": "tools/qikvrt_requested_review_executor.py",
     "human_review_request_prerequisite": false,
-    "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES",
+    "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
     "exact_subject_binding": [
       "REPOSITORY_ROLE",
       "PULL_REQUEST_NUMBER",
@@ -173,7 +176,6 @@
         "EXACT_HEAD_STATUS_TRANSITION"
       ],
       "consumers": [
-        ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
         ".github/workflows/qikvrt_expected_head_promotion.yml"
       ],
       "exactly_one_derived_next_action": true,

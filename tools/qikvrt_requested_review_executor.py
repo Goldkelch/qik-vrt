@@ -23,7 +23,7 @@ import re
 import subprocess
 import sys
 import urllib.parse
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 MAX_DIFF_BYTES = 2 * 1024 * 1024
@@ -35,6 +35,7 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
+REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 VALID_FILE_STATES = {
     "added",
     "changed",
@@ -838,7 +839,6 @@ def _result(
             "candidate_branch_mutation": False,
             "status_context": "QIKVRT requested review execution",
             "consumers": [
-                "QIKVRT autonomous PR-head continuation",
                 "QIKVRT required code-owner review",
                 "QIK-VRT expected-head promotion executor",
             ],
@@ -1256,6 +1256,372 @@ def _gh_pages(path: str) -> list[Mapping[str, Any]]:
     return result
 
 
+def _positive_integer(value: Any) -> int | None:
+    """Return a positive integer subject identifier, otherwise ``None``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdecimal():
+            number = int(text)
+            return number if number > 0 else None
+    return None
+
+
+def _git_sha1(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) != 40:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
+def _selection_subject(pr: Mapping[str, Any]) -> dict[str, Any]:
+    """Project only the fields used for actionable-subject diagnostics."""
+    base = pr.get("base")
+    head = pr.get("head")
+    base_ref = base.get("ref") if isinstance(base, Mapping) else None
+    head_sha = head.get("sha") if isinstance(head, Mapping) else None
+    head_repo = head.get("repo") if isinstance(head, Mapping) else None
+    return {
+        "number": _positive_integer(pr.get("number")),
+        "state": pr.get("state") if isinstance(pr.get("state"), str) else None,
+        "base_ref": base_ref if isinstance(base_ref, str) else None,
+        "head_sha": head_sha if isinstance(head_sha, str) else None,
+        "head_repository": (
+            head_repo.get("full_name")
+            if isinstance(head_repo, Mapping)
+            and isinstance(head_repo.get("full_name"), str)
+            else None
+        ),
+    }
+
+
+def _selection_result(
+    state: str,
+    selection_basis: str,
+    *,
+    first_blocker: str | None = None,
+    pr_number: int | None = None,
+    event_source: str | None = None,
+    expected_head: str | None = None,
+    subject: Mapping[str, Any] | None = None,
+    eligibility_reasons: Sequence[str] = (),
+    subject_count: int = 0,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Return one stable, non-effecting selector observation."""
+    return {
+        "schema": REVIEW_SELECTION_SCHEMA,
+        "state": state,
+        "pr_number": pr_number,
+        "candidate_pr_number": pr_number if state == "CANDIDATE" else None,
+        "selection_basis": selection_basis,
+        "event_source": event_source,
+        "expected_head": expected_head,
+        "first_blocker": first_blocker,
+        "detail": detail,
+        "eligibility_reasons": list(eligibility_reasons),
+        "subject_count": subject_count,
+        "observed_subject": dict(subject) if subject is not None else None,
+        "review_execution": state == "CANDIDATE",
+        "review_observation_started": False,
+        "external_effect": "NONE",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+
+
+def _eligible_review_subject(
+    pr: Mapping[str, Any], repository: str, expected_number: int
+) -> tuple[dict[str, Any], list[str]]:
+    subject = _selection_subject(pr)
+    reasons: list[str] = []
+    if subject["number"] != expected_number:
+        reasons.append("PULL_REQUEST_NUMBER_MISMATCH")
+    if subject["state"] != "open":
+        reasons.append("PULL_REQUEST_NOT_OPEN")
+    if subject["base_ref"] != "main":
+        reasons.append("PULL_REQUEST_BASE_NOT_MAIN")
+    if subject["head_repository"] != repository:
+        reasons.append("PULL_REQUEST_HEAD_NOT_ROLE_LOCAL")
+    if _git_sha1(subject["head_sha"]) is None:
+        reasons.append("PULL_REQUEST_HEAD_SHA_INVALID")
+    return subject, reasons
+
+
+def _workflow_run_pr_number(
+    item: Mapping[str, Any], repository: str
+) -> tuple[int | None, str | None]:
+    """Require a workflow-run PR association to bind to this repository."""
+    number = _positive_integer(item.get("number"))
+    if number is None:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    url = item.get("url")
+    if not isinstance(url, str) or not url:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    parsed = urllib.parse.urlparse(url)
+    expected_path = f"/repos/{repository}/pulls/{number}"
+    if parsed.scheme != "https" or parsed.netloc != "api.github.com":
+        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    if parsed.path != expected_path or parsed.query or parsed.fragment:
+        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    return number, None
+
+
+def select_review_subject(
+    *,
+    repository: str,
+    requested_pr: str,
+    event_pr: str,
+    event_name: str,
+    expected_head: str,
+    workflow_event: str,
+    workflow_prs: Any,
+    fetch_pull_request: Callable[[int], Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Select one exact, eligible review subject without a fallback scan.
+
+    A non-candidate result is diagnostic only.  In particular, an explicit PR
+    event which is not open, role-local, and main-based is never conflated with
+    an eventless ``NOOP``. A native pull-request event must retain its literal
+    head, while an issue comment is bound by its exact PR number. A workflow-run
+    association must name this repository exactly, and a workflow head is never
+    reverse-mapped by listing PRs.
+    """
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("selector repository is invalid")
+
+    bound_head = expected_head.strip()
+    if bound_head and _git_sha1(bound_head) is None:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            "EXACT_EVENT_OR_DISPATCH",
+            first_blocker="INVALID_EVENT_EXPECTED_HEAD",
+            event_source="EVENT_HEAD",
+            expected_head=bound_head,
+            eligibility_reasons=["INVALID_EVENT_EXPECTED_HEAD"],
+        )
+
+    def exact_number(
+        value: str,
+        source: str,
+        *,
+        require_bound_head: bool,
+        missing_head_blocker: str,
+    ) -> dict[str, Any]:
+        number = _positive_integer(value)
+        if number is None:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
+                event_source=source,
+                eligibility_reasons=["INVALID_EXACT_PULL_REQUEST_NUMBER"],
+            )
+        if require_bound_head and not bound_head:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker=missing_head_blocker,
+                pr_number=number,
+                event_source=source,
+                eligibility_reasons=[missing_head_blocker],
+                subject_count=1,
+            )
+        try:
+            observed = fetch_pull_request(number)
+        except (OSError, ValueError, ReviewObservationError) as exc:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="PULL_REQUEST_OBSERVATION_UNAVAILABLE",
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head or None,
+                eligibility_reasons=["PULL_REQUEST_OBSERVATION_UNAVAILABLE"],
+                subject_count=1,
+                detail=str(exc)[:300],
+            )
+        if not isinstance(observed, Mapping):
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="PULL_REQUEST_OBSERVATION_MALFORMED",
+                pr_number=number,
+                event_source=source,
+                eligibility_reasons=["PULL_REQUEST_OBSERVATION_MALFORMED"],
+            )
+        subject, reasons = _eligible_review_subject(observed, repository, number)
+        if reasons:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker=reasons[0],
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head or None,
+                subject=subject,
+                eligibility_reasons=reasons,
+                subject_count=1,
+            )
+        if bound_head and subject["head_sha"] != bound_head:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="EVENT_TARGET_HEAD_DRIFT",
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head,
+                subject=subject,
+                eligibility_reasons=["EVENT_TARGET_HEAD_DRIFT"],
+                subject_count=1,
+            )
+        return _selection_result(
+            "CANDIDATE",
+            "EXACT_EVENT_OR_DISPATCH",
+            pr_number=number,
+            event_source=source,
+            expected_head=bound_head or None,
+            subject=subject,
+            subject_count=1,
+        )
+
+    if requested_pr.strip() and event_pr.strip():
+        requested_number = _positive_integer(requested_pr)
+        event_number = _positive_integer(event_pr)
+        if (
+            requested_number is not None
+            and event_number is not None
+            and requested_number != event_number
+        ):
+            return _selection_result(
+                "AMBIGUOUS_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="CONFLICTING_EXACT_PULL_REQUEST_SUBJECTS",
+                event_source="WORKFLOW_DISPATCH_AND_PULL_REQUEST_EVENT",
+                subject_count=2,
+            )
+
+    if requested_pr.strip():
+        return exact_number(
+            requested_pr,
+            "WORKFLOW_DISPATCH_PR",
+            require_bound_head=False,
+            missing_head_blocker="WORKFLOW_DISPATCH_HEAD_NOT_REQUIRED",
+        )
+    if event_pr.strip():
+        if event_name == "pull_request_target":
+            return exact_number(
+                event_pr,
+                "PULL_REQUEST_EVENT",
+                require_bound_head=True,
+                missing_head_blocker="PULL_REQUEST_EVENT_HEAD_MISSING",
+            )
+        if event_name == "issue_comment":
+            return exact_number(
+                event_pr,
+                "ISSUE_COMMENT_PULL_REQUEST_EVENT",
+                require_bound_head=False,
+                missing_head_blocker="ISSUE_COMMENT_HEAD_NOT_REQUIRED",
+            )
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT_OR_DISPATCH",
+            first_blocker="UNSUPPORTED_EXACT_EVENT_SOURCE",
+            event_source=event_name or "UNKNOWN",
+            eligibility_reasons=["UNSUPPORTED_EXACT_EVENT_SOURCE"],
+        )
+
+    if not workflow_event.strip():
+        return _selection_result(
+            "NO_EVENT_SUBJECT",
+            "NO_EVENT_SUBJECT",
+            first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+            event_source="NONE",
+            expected_head=bound_head or None,
+        )
+
+    if workflow_event.strip():
+        if workflow_event in {"schedule", "workflow_dispatch"}:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
+                event_source="WORKFLOW_RUN",
+                expected_head=bound_head or None,
+                eligibility_reasons=["SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN"],
+            )
+        if not workflow_prs:
+            return _selection_result(
+                "NO_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
+                event_source="WORKFLOW_RUN",
+                expected_head=bound_head or None,
+            )
+        if not isinstance(workflow_prs, Sequence) or isinstance(workflow_prs, (str, bytes)):
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                expected_head=bound_head or None,
+                eligibility_reasons=["MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"],
+            )
+        numbers: set[int] = set()
+        for item in workflow_prs:
+            if not isinstance(item, Mapping):
+                return _selection_result(
+                    "INELIGIBLE_EVENT_TARGET",
+                    "EXACT_EVENT_OR_DISPATCH",
+                    first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                    event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                    expected_head=bound_head or None,
+                    eligibility_reasons=["MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"],
+                )
+            number, blocker = _workflow_run_pr_number(item, repository)
+            if blocker is not None:
+                return _selection_result(
+                    "INELIGIBLE_EVENT_TARGET",
+                    "EXACT_EVENT_OR_DISPATCH",
+                    first_blocker=blocker,
+                    event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                    expected_head=bound_head or None,
+                    eligibility_reasons=[blocker],
+                )
+            assert number is not None
+            numbers.add(number)
+        if len(numbers) != 1:
+            return _selection_result(
+                "AMBIGUOUS_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
+                event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                expected_head=bound_head or None,
+                subject_count=len(numbers),
+            )
+        return exact_number(
+            str(next(iter(numbers))),
+            "WORKFLOW_RUN_PULL_REQUESTS",
+            require_bound_head=True,
+            missing_head_blocker="WORKFLOW_RUN_HEAD_MISSING",
+        )
+
+    return _selection_result(
+        "NO_EVENT_SUBJECT",
+        "NO_EVENT_SUBJECT",
+        first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+        event_source="NONE",
+    )
+
+
 def _gh_runs(path: str) -> list[Mapping[str, Any]]:
     pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
     if not isinstance(pages, list):
@@ -1577,9 +1943,17 @@ def observe_repository(
     required_gates: Sequence[str],
     required_gate_paths: Mapping[str, str],
     writer_workflows: Sequence[str],
+    expected_head: str | None = None,
 ) -> tuple[dict[str, Any], bytes]:
     """Read one stable trusted-main repository observation without remote writes."""
+    if expected_head is not None and _git_sha1(expected_head) is None:
+        raise ReviewObservationError("exact selector head is not a Git SHA-1")
     pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
+    if (
+        expected_head is not None
+        and pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head differs from exact selector event")
     main = _gh_one(f"repos/{repository}/commits/main")
     if not isinstance(pr, Mapping) or not isinstance(main, Mapping):
         raise ReviewObservationError("pull request or main observation is malformed")
@@ -1642,6 +2016,11 @@ def observe_repository(
     final_pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
     if final_main.get("sha") != main_sha:
         raise ReviewObservationError("main changed during repository observation")
+    if (
+        expected_head is not None
+        and final_pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head drifted from exact selector event")
     if (
         final_pr.get("state") != pr.get("state")
         or final_pr.get("draft") != pr.get("draft")
@@ -1789,6 +2168,7 @@ def _add_observation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--required-gates-json", required=True)
     parser.add_argument("--required-gate-paths-json", required=True)
     parser.add_argument("--writer-workflows-json", required=True)
+    parser.add_argument("--expected-head", default="")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1838,6 +2218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 required_gates,
                 required_gate_paths,
                 writer_workflows,
+                args.expected_head or None,
             )
             result = evaluate(snapshot, diff)
             _write_json(pathlib.Path(args.snapshot_out), snapshot)

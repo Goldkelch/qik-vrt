@@ -132,6 +132,83 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertNotIn("STATUS_CONTEXT: QIKVRT requested review execution", workflow)
         self.assertIn("commits/{head}/status", workflow)
         self.assertIn("STATUS_PUBLICATION_NOOP", workflow)
+        self.assertNotIn("\n  schedule:\n", workflow)
+        self.assertNotIn("pulls?state=open", workflow)
+        self.assertIn("select_required_review_targets", workflow)
+        self.assertIn("qikvrt-required-code-owner-selection-", workflow)
+        self.assertLess(
+            workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
+            workflow.index("rules=gh_json(f'repos/{repo}/rules/branches/main')"),
+        )
+
+    def test_target_selection_requires_one_exact_event_or_dispatch_subject(self):
+        dispatch = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="641",
+            workflow_event="",
+            expected_head="",
+            event_prs=[],
+        )
+        self.assertEqual(dispatch["state"], "CANDIDATE")
+        self.assertEqual(dispatch["pr_numbers"], [641])
+
+        no_event = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="pull_request",
+            expected_head=self.head,
+            event_prs=[],
+        )
+        self.assertEqual(no_event["state"], "NO_EVENT_SUBJECT")
+        self.assertEqual(
+            no_event["first_blocker"], "NO_EXACT_WORKFLOW_RUN_PULL_REQUEST"
+        )
+        self.assertEqual(no_event["status_publication"], "FORBIDDEN")
+
+        ambiguous = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="pull_request",
+            expected_head=self.head,
+            event_prs=[
+                {"number": 641, "url": "https://api.github.com/repos/example/qik-vrt/pulls/641"},
+                {"number": 642, "url": "https://api.github.com/repos/example/qik-vrt/pulls/642"},
+            ],
+        )
+        self.assertEqual(ambiguous["state"], "AMBIGUOUS_EVENT_SUBJECT")
+        self.assertEqual(
+            ambiguous["first_blocker"], "WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS"
+        )
+        self.assertEqual(ambiguous["status_publication"], "FORBIDDEN")
+
+        scheduled = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="schedule",
+            expected_head=self.head,
+            event_prs=[
+                {"number": 641, "url": "https://api.github.com/repos/example/qik-vrt/pulls/641"}
+            ],
+        )
+        self.assertEqual(scheduled["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            scheduled["first_blocker"], "SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN"
+        )
+
+        cross_repository = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="pull_request",
+            expected_head=self.head,
+            event_prs=[
+                {"number": 641, "url": "https://api.github.com/repos/other/qik-vrt/pulls/641"}
+            ],
+        )
+        self.assertEqual(cross_repository["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            cross_repository["first_blocker"],
+            "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL",
+        )
 
 
 if __name__ == "__main__":

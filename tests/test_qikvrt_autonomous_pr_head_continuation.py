@@ -23,13 +23,12 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         cls.recovery_text = RECOVERY_TOOL.read_text(encoding="utf-8")
         cls.abi = json.loads(ABI.read_text(encoding="utf-8"))
 
-    def test_is_event_driven_with_five_minute_lost_event_watchdog(self) -> None:
+    def test_is_event_driven_without_a_scheduled_recovery_path(self) -> None:
         self.assertIn("workflow_dispatch:", self.text)
         self.assertIn("pull_request_target:", self.text)
         self.assertIn("workflow_run:", self.text)
-        self.assertIn('cron: "*/5 * * * *"', self.text)
-        self.assertNotIn('cron: "7,22,37,52 * * * *"', self.text)
-        self.assertIn("Productive reobservation is normally interrupt/event driven", self.text)
+        self.assertNotIn("schedule:", self.text)
+        self.assertNotIn("cron:", self.text)
 
     def test_relevant_repository_edges_are_interrupt_sources(self) -> None:
         for workflow_name in (
@@ -38,12 +37,12 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
             "QIKVRT CI",
             "QIKVRT Collective Proposal Review",
             "QIK-VRT global claim completion",
-            "QIKVRT requested review executor",
             "QIKVRT code-owner review observer",
             "QIKVRT workflow executor watchdog",
         ):
             self.assertIn(workflow_name, self.text)
         self.assertIn("types: [completed]", self.text)
+        self.assertNotIn("QIKVRT requested review executor", self.text)
 
     def test_m68000_four_state_abi_is_exact(self) -> None:
         self.assertEqual(self.abi["architecture_reference"], "M68000")
@@ -178,14 +177,14 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("qikvrt_global_completion.yml", self.text)
         self.assertIn('-f ref="$HEAD_REF"', self.text)
 
-    def test_continuation_is_exact_head_bound_and_review_authority_stays_separate(self) -> None:
+    def test_continuation_is_exact_head_bound_and_never_dispatches_review(self) -> None:
         self.assertIn('event_type:"qikvrt_autonomous_exact_head_verify"', self.text)
         self.assertIn("head_sha:$head", self.text)
         self.assertIn("base_sha:$base", self.text)
         self.assertIn("causal_state:\"REOBSERVE\"", self.text)
-        self.assertIn("qikvrt_requested_review_executor.yml/dispatches", self.text)
-        self.assertIn("REQUEST_AUTHORITY/D0=3", self.text)
-        self.assertIn("is not fabricated", self.text)
+        self.assertIn("Requested review has no autonomous dispatch route", self.text)
+        self.assertNotIn("qikvrt_requested_review_executor.yml/dispatches", self.text)
+        self.assertNotIn("inputs[pr]", self.text)
 
     def test_exact_head_qce_verification_cannot_mutate_frozen_package_inventory(self) -> None:
         self.assertIn('qce_tmpdir="$(mktemp -d "${RUNNER_TEMP}/qikvrt-qce-exact-head.XXXXXX")"', self.exact_head_text)

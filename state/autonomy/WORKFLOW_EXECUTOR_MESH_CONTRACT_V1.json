@@ -42,7 +42,18 @@
       "workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
       "decision_core_path": "tools/qikvrt_requested_review_executor.py",
       "human_review_request_prerequisite": false,
-      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES",
+      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+      "selection": {
+        "allowed_sources": [
+          "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
+          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
+          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST"
+        ],
+        "eventless_repository_scan": "FORBIDDEN",
+        "scheduled_or_manual_workflow_run_source": "FORBIDDEN",
+        "workflow_run_requires_role_local_url_and_matching_head": true,
+        "noncandidate_disposition": "DIAGNOSTIC_ARTIFACT_WITHOUT_REVIEW_OBSERVATION_OR_METADATA_MUTATION"
+      },
       "platform_review_event": "COMMENT",
       "bot_approve_or_request_changes_event": "FORBIDDEN"
     },
@@ -106,7 +117,6 @@
         "EXACT_HEAD_STATUS_TRANSITION"
       ],
       "consumer_workflows": [
-        ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
         ".github/workflows/qikvrt_expected_head_promotion.yml"
       ],
       "exactly_one_derived_next_action": true,

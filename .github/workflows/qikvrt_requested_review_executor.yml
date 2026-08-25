@@ -16,13 +16,11 @@ on:
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT code-owner review observer"
     types: [completed]
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       pr:
-        description: "Optional pull request number"
-        required: false
+        description: "Exact pull request number"
+        required: true
         type: string
 
 permissions:
@@ -86,76 +84,70 @@ jobs:
         env:
           REQUESTED_PR: ${{ inputs.pr || '' }}
           EVENT_PR: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) || '' }}
-          EVENT_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
-          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
           EVENT_NAME: ${{ github.event_name }}
-          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || '' }}
+          EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
+          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-selection.json
-          import json, os, subprocess
+          import json, os
+          from tools.qikvrt_requested_review_executor import (
+              _gh_one,
+              select_review_subject,
+          )
 
           repo=os.environ['REPOSITORY']
           requested=os.environ.get('REQUESTED_PR','').strip()
           event_pr=os.environ.get('EVENT_PR','').strip()
-          event_head=os.environ.get('EVENT_HEAD','').strip()
+          event_name=os.environ.get('EVENT_NAME','').strip()
+          expected_head=os.environ.get('EVENT_EXPECTED_HEAD','').strip()
+          workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()
           workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')
-          event_name=os.environ.get('EVENT_NAME','')
 
-          def one(path):
-              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def one(number):
+              return _gh_one(f'repos/{repo}/pulls/{number}')
 
-          def pages(path):
-              values=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
-              return [item for page in values for item in page]
-
-          if requested:
-              prs=[one(f'repos/{repo}/pulls/{int(requested)}')]
-          elif event_pr:
-              prs=[one(f'repos/{repo}/pulls/{int(event_pr)}')]
-          elif workflow_prs:
-              numbers=sorted({int(item['number']) for item in workflow_prs if item.get('number')})
-              prs=[one(f'repos/{repo}/pulls/{number}') for number in numbers]
-          elif event_name == 'issue_comment':
-              prs=[]
-          else:
-              prs=pages(f'repos/{repo}/pulls?state=open&base=main&sort=updated&direction=asc&per_page=100')
-              if event_head:
-                  prs=[pr for pr in prs if (pr.get('head') or {}).get('sha') == event_head]
-
-          candidates=[]
-          for pr in prs:
-              if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main':
-                  continue
-              if pr.get('head',{}).get('repo',{}).get('full_name') != repo:
-                  continue
-              candidates.append(pr)
-          candidates.sort(key=lambda pr:(pr.get('updated_at') or '',pr['number']))
-          if len(candidates) > 1 and not (requested or event_pr or workflow_prs or event_head):
-              index=(max(1,int(os.environ.get('RUN_NUMBER','1')))-1) % len(candidates)
-              chosen=candidates[index]
-          else:
-              chosen=candidates[0] if candidates else None
-          print(json.dumps({
-              'state':'CANDIDATE' if chosen else 'NOOP',
-              'pr_number':chosen['number'] if chosen else None,
-              'selection_basis':'EXACT_EVENT_OR_DISPATCH' if (requested or event_pr or workflow_prs or event_head) else 'BOUNDED_SCHEDULE_ROTATION',
-          },sort_keys=True))
+          value=select_review_subject(
+              repository=repo,
+              requested_pr=requested,
+              event_pr=event_pr,
+              event_name=event_name,
+              expected_head=expected_head,
+              workflow_event=workflow_event,
+              workflow_prs=workflow_prs,
+              fetch_pull_request=one,
+          )
+          print(json.dumps(value,sort_keys=True))
           PY
           cat /tmp/qikvrt-review-selection.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           value=json.load(open('/tmp/qikvrt-review-selection.json',encoding='utf-8'))
           print(f"state={value['state']}")
-          print(f"pr={value.get('pr_number') or ''}")
+          print(f"pr={value.get('candidate_pr_number') or ''}")
+          print(f"target_pr={value.get('pr_number') or ''}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          print(f"basis={value['selection_basis']}")
+          print(f"expected_head={value.get('expected_head') or ''}")
           PY
+
+      - name: Preserve exact review-selection observation
+        if: always() && steps.active.outputs.active == 'true' && steps.select.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-review-selection-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-review-selection.json
 
       - name: Observe exact subject and derive causal Mesh receipt
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: decision
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_SELECTOR_HEAD: ${{ steps.select.outputs.expected_head }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
@@ -165,6 +157,7 @@ jobs:
           python3 -B tools/qikvrt_requested_review_executor.py observe \
             --repository "$REPOSITORY" \
             --pr-number "$PR_NUMBER" \
+            --expected-head "$EXPECTED_SELECTOR_HEAD" \
             --current-run-id "$CURRENT_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
             --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
@@ -500,9 +493,11 @@ jobs:
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1
 
-      - name: Strict NOOP when no eligible internal candidate exists
+      - name: Record non-actionable exact event selection
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state != 'CANDIDATE'
-        run: echo 'No eligible same-repository pull request is currently actionable.'
+        run: |
+          set -euo pipefail
+          cat /tmp/qikvrt-review-selection.json
 
       - name: Bootstrap NOOP before trusted-main promotion
         if: steps.active.outputs.active != 'true'

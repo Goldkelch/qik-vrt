@@ -19,9 +19,15 @@ This contract applies to `Goldkelch/qik-vrt` and `ingolf-lohmann/qik-vrt`. It is
 
 The existing `QIKVRT requested review executor` is the role-local Mesh
 self-review feedback plane. It runs from trusted repository code for every
-eligible same-repository pull request whose bytes can be observed. An explicit
-human review request remains a useful event signal, but it is not an execution
+eligible same-repository pull request supplied by an exact native event or an
+explicit exact-PR dispatch, whose bytes can be observed. An explicit human
+review request remains a useful event signal, but it is not an execution
 prerequisite.
+
+An explicit dispatch of that executor is a technical-review action only. Its
+completed manual workflow run is intentionally not a source for the required
+Code-Owner status; an operator who needs that status reobserved dispatches
+`QIKVRT required code-owner review` separately with the same exact PR number.
 
 For every review, the executor must act without deliberate queueing:
 
@@ -53,12 +59,11 @@ discussion set so feedback does not invalidate itself recursively.
 Issue-comment events enter the trusted executor directly; review and inline
 review-comment mutations enter through the permissionless Code-Owner observer's
 completed workflow signal. GitHub Actions exposes no native
-`pull_request_review_thread` workflow trigger, so a resolve/unresolve-only
-thread transition is detected by a schedule that starts a rotating scan every
-five minutes. With multiple eligible pull requests this is not a five-minute
-per-PR latency guarantee. That platform gap is recorded honestly; it is not
-described as immediate event delivery and it never permits stale evidence to
-authorize a mutation.
+`pull_request_review_thread` workflow trigger. A resolve/unresolve-only thread
+transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
+a scheduled scan, a rotating candidate selection, a review dispatch, or a
+metadata mutation. The next exact repository event or explicit dispatch may
+reobserve a bound subject; no prior evidence is transferred.
 
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository
