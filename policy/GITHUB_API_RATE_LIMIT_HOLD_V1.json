@@ -1,0 +1,59 @@
+{
+  "schema": "qikvrt_github_api_rate_limit_hold_v1",
+  "failure_class": "GITHUB_API_RATE_LIMIT",
+  "signature": {
+    "transport": "GITHUB_REST_API",
+    "status": 403,
+    "accepted_messages": [
+      "API rate limit exceeded",
+      "secondary rate limit"
+    ]
+  },
+  "classification": "EXTERNAL_PLATFORM_CAPACITY_BOUNDARY",
+  "disposition": "HOLD_EXTERNAL_PLATFORM",
+  "bounded_action": {
+    "persist_exact_head_tree_and_error_digest": true,
+    "emit_typed_receipt": true,
+    "semantic_work_performed": false,
+    "blind_retry": false,
+    "dispatch": false,
+    "candidate_mutation": false,
+    "success_inference": false
+  },
+  "continuation": {
+    "mode": "NEXT_AUTHENTICATED_CAUSAL_EVENT",
+    "allowed_events": [
+      "pull_request",
+      "workflow_run.completed",
+      "push.main",
+      "workflow_dispatch"
+    ],
+    "elapsed_time_alone_authorizes_domain_work": false
+  },
+  "monitor_contract": {
+    "live_status_polling": false,
+    "live_status_sleep_loop": false,
+    "one_snapshot_per_event": true,
+    "watchdog_schedule_is_lost_event_fail_safe_only": true,
+    "watchdog_may_perform_domain_work": false
+  },
+  "receipt": {
+    "required_fields": [
+      "repository",
+      "event",
+      "head_sha",
+      "tree_sha",
+      "observed_at",
+      "platform_error_sha256",
+      "first_blocker",
+      "productive_edge"
+    ],
+    "artifact_required": true
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "DEADLOCK_FREEDOM_PROVED": false
+  }
+}
