@@ -357,6 +357,36 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
         self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
         self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+        self.assertIn("revalidation_rc=$?", workflow)
+        self.assertIn('case "$revalidation_rc" in', workflow)
+        self.assertIn(
+            'QIKVRT_SEED_WORKFLOW_SKIP step=dashboard run_id=${QIKVRT_RUN_ID} reason=revalidation_continue',
+            workflow,
+        )
+
+    def test_seed_dashboard_and_audit_workflows_treat_revalidation_continue_as_nonfatal(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        expected = {
+            "qikvrt_seed_dashboard_publish.yml": "step=dashboard",
+            "qikvrt_seed_mesh_audit_export.yml": "step=audit-export",
+        }
+        for name, step in expected.items():
+            workflow = (repository / ".github/workflows" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("set +e", workflow, name)
+            self.assertIn("revalidation_rc=$?", workflow, name)
+            self.assertIn('case "$revalidation_rc" in', workflow, name)
+            self.assertIn(
+                'QIKVRT_SEED_WORKFLOW_CONTINUE step=revalidation run_id=${QIKVRT_RUN_ID}',
+                workflow,
+                name,
+            )
+            self.assertIn(
+                f"QIKVRT_SEED_WORKFLOW_SKIP {step} run_id=${{QIKVRT_RUN_ID}} reason=revalidation_continue",
+                workflow,
+                name,
+            )
 
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]

@@ -38,8 +38,22 @@ jobs:
           mkdir -p .qikvrt/seed-workflow
           {
             sh tools/qikvrt_seed_mesh_maintenance.sh
+            set +e
             sh tools/qikvrt_seed_node_revalidation.sh
-            sh tools/qikvrt_seed_mesh_audit_export.sh
+            revalidation_rc=$?
+            set -e
+            case "$revalidation_rc" in
+              0)
+                sh tools/qikvrt_seed_mesh_audit_export.sh
+                ;;
+              10)
+                echo "QIKVRT_SEED_WORKFLOW_CONTINUE step=revalidation run_id=${QIKVRT_RUN_ID}"
+                echo "QIKVRT_SEED_WORKFLOW_SKIP step=audit-export run_id=${QIKVRT_RUN_ID} reason=revalidation_continue"
+                ;;
+              *)
+                exit "$revalidation_rc"
+                ;;
+            esac
           } 2>&1 | tee .qikvrt/seed-workflow/audit-export.log
       - name: Preserve local audit evidence without mutating the repository
         if: always()
