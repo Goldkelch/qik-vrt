@@ -1,0 +1,122 @@
+{
+  "schema": "QIKVRT_MESH_HEARTBEAT_V1",
+  "heartbeat_hz": 1,
+  "heartbeat_interval_ns": 1000000000,
+  "heartbeat_role": "LIVENESS_AND_LEASE_FRESHNESS_ONLY",
+  "heartbeat_may_trigger_semantic_work": false,
+  "domain_polling_allowed": false,
+  "blind_retry_allowed": false,
+  "semantic_work_trigger": "LOCALLY_CONSTRUCTED_CONTENT_BOUND_EVENT_ONLY",
+  "external_ingress_authentication_observed": false,
+  "work_units_per_event_limit": 1,
+  "duplicate_event_must_be_idempotent": true,
+  "event_id_payload_rebinding_forbidden": true,
+  "work_lifecycle": [
+    "0",
+    "1",
+    "ARBEIT",
+    "ERGEBNIS",
+    "REOBSERVATION",
+    "AUTHORITY_EFFEKT",
+    "0"
+  ],
+  "system_test": {
+    "network_scope": "LOOPBACK_TCP_ONLY",
+    "node_process_count": 4,
+    "pair_count": 2,
+    "heartbeat_count_per_node": 4,
+    "hash_linked_heartbeat_chain_required": true,
+    "exact_one_hertz_schedule_required": true,
+    "work_event_construction_scope": "LOCAL_SYSTEM_TEST",
+    "audit_artifact_required": true
+  },
+  "candidate_executor": {
+    "contents_permission": "read",
+    "repository_write_allowed": false,
+    "literal_pull_request_head_required": true
+  },
+  "trusted_main_ledger_writer": {
+    "implemented": true,
+    "eligible_source_event": "SUCCESSFUL_PUSH_RUN_ON_MAIN_ONLY",
+    "productive_writer_serialized": true,
+    "cancel_in_progress": false,
+    "source_cas_before_write": true,
+    "source_cas_before_push": true,
+    "repository_enforced_ref_protection_required": true,
+    "ruleset_observation_endpoint": "GET_REPOSITORY_RULES_FOR_BRANCH_AND_RULESET_DETAIL",
+    "required_active_rules_on_one_ruleset": [
+      "deletion",
+      "non_fast_forward"
+    ],
+    "ruleset_observation_must_complete_before_ledger_mutation": true,
+    "literal_ledger_ref_include_required": true,
+    "empty_exclude_list_required": true,
+    "visible_empty_bypass_actor_list_required": true,
+    "bypass_actor_visibility_requires_ruleset_write_authority": true,
+    "control_receipts_same_source_context_required": true,
+    "control_receipt_observer_run_and_attempt_required": true,
+    "control_receipt_sha256_self_seal_scope": "BYTE_INTEGRITY_ONLY",
+    "control_receipt_sha256_self_seal_is_keyed_authentication": false,
+    "control_observation_phases": [
+      "INITIAL",
+      "PRE_PUSH",
+      "POST_READBACK"
+    ],
+    "baseline_transition_required": "NONE",
+    "current_transition_must_match_phase": true,
+    "supported_ruleset_source_types": [
+      "Organization",
+      "Repository"
+    ],
+    "repository_ruleset_source_must_match_repository": true,
+    "organization_ruleset_source_must_match_repository_owner": true,
+    "ruleset_source_identifiers_ascii_only": true,
+    "effective_detail_contradiction_state": "REOBSERVE",
+    "identical_control_snapshot_required_before_push": true,
+    "identical_control_snapshot_required_after_readback": true,
+    "ruleset_push_atomicity_observed": false,
+    "post_readback_control_is_detection_not_prevention": true,
+    "missing_control_state": "REQUEST_AUTHORITY",
+    "incomplete_observation_state": "REOBSERVE",
+    "repository_ruleset_mutation_allowed": false,
+    "ledger_head_cas_before_push": true,
+    "source_and_ledger_cas_after_prepush_observation": true,
+    "fast_forward_only": true,
+    "post_push_remote_ref_reobservation": true,
+    "post_push_exact_file_readback": [
+      "source_bound_target",
+      "latest.json"
+    ],
+    "terminal_reobservation_receipt_required": true,
+    "target_ref": "refs/heads/qikvrt/mesh-heartbeat-ledger-v1"
+  },
+  "event_model": {
+    "schedule_trigger_present": false,
+    "timer_may_emit_lease_heartbeat": true,
+    "timer_may_trigger_domain_work": false,
+    "watchdog_or_lease_timeout_may_fail_closed": true
+  },
+  "live_status_projection": {
+    "trigger": "REPOSITORY_EVENT_ONLY",
+    "workflow_run_types": [
+      "requested",
+      "in_progress",
+      "completed"
+    ],
+    "repository_api_polling": false,
+    "sleep_loop": false,
+    "semantic_work_triggered": false,
+    "artifact_required": true,
+    "external_effect": "NONE"
+  },
+  "boundaries": {
+    "external_effect": "NONE",
+    "repository_authority_effect_observed_on_candidate": false,
+    "general_effect_ack_done": false,
+    "publication_observed": false,
+    "deployment_observed": false,
+    "physical_hardware_execution_observed": false,
+    "pass": false,
+    "final_pass": false
+  }
+}

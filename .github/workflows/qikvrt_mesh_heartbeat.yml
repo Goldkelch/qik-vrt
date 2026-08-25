@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Mesh heartbeat
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_mesh_heartbeat.yml'
+      - '.github/workflows/qikvrt_mesh_heartbeat_main_ledger.yml'
+      - 'tools/qikvrt_mesh_heartbeat.py'
+      - 'tests/test_qikvrt_mesh_heartbeat.py'
+      - 'policy/QIKVRT_MESH_HEARTBEAT_V1.json'
+      - 'docs/architecture/QIKVRT_MESH_HEARTBEAT_V1.md'
+      - 'Makefile'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_mesh_heartbeat.yml'
+      - '.github/workflows/qikvrt_mesh_heartbeat_main_ledger.yml'
+      - 'tools/qikvrt_mesh_heartbeat.py'
+      - 'tests/test_qikvrt_mesh_heartbeat.py'
+      - 'policy/QIKVRT_MESH_HEARTBEAT_V1.json'
+      - 'docs/architecture/QIKVRT_MESH_HEARTBEAT_V1.md'
+      - 'Makefile'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mesh-heartbeat-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  system-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      QIKVRT_EVENT_NAME: ${{ github.event_name }}
+
+    steps:
+      - name: Check out literal exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Bind literal head, exact tree and clean worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          actual_tree="$(git rev-parse --verify HEAD^{tree})"
+          printf 'expected_head=%s\nactual_head=%s\nactual_tree=%s\n' \
+            "$QIKVRT_EXACT_HEAD" "$actual_head" "$actual_tree"
+          test "$actual_head" = "$QIKVRT_EXACT_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'QIKVRT_EXACT_TREE=%s\n' "$actual_tree" >> "$GITHUB_ENV"
+
+      - name: Execute focused heartbeat contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_mesh_heartbeat
+
+      - name: Execute four-process one-hertz Mesh heartbeat system test
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat"
+          rm -rf "$evidence_dir"
+          mkdir -p "$evidence_dir"
+          python3 -B tools/qikvrt_mesh_heartbeat.py demo \
+            --source-head "$QIKVRT_EXACT_HEAD" \
+            --source-tree "$QIKVRT_EXACT_TREE" \
+            --output-dir "$evidence_dir" \
+            --heartbeat-count 4 \
+            --event "$QIKVRT_EVENT_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            | tee "$evidence_dir/stdout.json"
+
+      - name: Verify exact heartbeat audit receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat"
+          python3 -B tools/qikvrt_mesh_heartbeat.py verify \
+            --receipt "$evidence_dir/execution-receipt.json" \
+            --source-head "$QIKVRT_EXACT_HEAD" \
+            --source-tree "$QIKVRT_EXACT_TREE"
+
+      - name: Verify repository-native integrity
+        run: python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Upload exact heartbeat audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-heartbeat-${{ env.QIKVRT_EXACT_HEAD }}
+          path: ${{ runner.temp }}/qikvrt-mesh-heartbeat
+          if-no-files-found: warn
+          retention-days: 30
