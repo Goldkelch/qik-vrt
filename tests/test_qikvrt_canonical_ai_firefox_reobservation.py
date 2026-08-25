@@ -29,18 +29,21 @@ class CanonicalAIFirefoxTerminalContractTests(unittest.TestCase):
         self.assertNotIn("XMLHttpRequest", script)
         self.assertNotIn("WebSocket", script)
 
-    def test_extension_e2e_is_query_gated_and_loopback_only(self) -> None:
+    def test_extension_e2e_reuses_exact_declared_loopback_permissions(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         options = OPTIONS.read_text(encoding="utf-8")
-        self.assertEqual(manifest["version"], "1.0.2")
-        self.assertIn("http://127.0.0.1/*", manifest["host_permissions"])
-        self.assertIn("http://localhost/*", manifest["host_permissions"])
-        csp = manifest["content_security_policy"]["extension_pages"]
-        self.assertIn("http://127.0.0.1:8771", csp)
-        self.assertIn("http://localhost:8771", csp)
+        self.assertEqual(manifest["version"], "1.0.1")
+        self.assertIn("http://127.0.0.1:8771/*", manifest["host_permissions"])
+        self.assertIn("http://localhost:8771/*", manifest["host_permissions"])
+        self.assertNotIn("http://127.0.0.1/*", manifest["host_permissions"])
+        self.assertNotIn("http://localhost/*", manifest["host_permissions"])
         self.assertIn('searchParams.get("qikvrt_e2e") === "1"', options)
         self.assertIn("QIKVRT-FIREFOX-E2E-NONCE-0001", options)
         self.assertIn('const E2E_BACKEND = "http://127.0.0.1:8771"', options)
+        self.assertIn(
+            'const E2E_HOST_PERMISSION = "http://127.0.0.1:8771/*"',
+            options,
+        )
         self.assertIn('external_effect: committed.body', options)
 
     def test_policy_preserves_observation_and_effect_boundaries(self) -> None:

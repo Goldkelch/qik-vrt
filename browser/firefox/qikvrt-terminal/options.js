@@ -1,7 +1,7 @@
 const fields = ["accent", "fontScale", "density", "position"];
 const E2E_NONCE = "QIKVRT-FIREFOX-E2E-NONCE-0001";
 const E2E_BACKEND = "http://127.0.0.1:8771";
-const E2E_HOST_PERMISSION = "http://127.0.0.1/*";
+const E2E_HOST_PERMISSION = "http://127.0.0.1:8771/*";
 
 async function load() {
   const stored = await browser.storage.local.get("qikvrtTerminalPreferences");
