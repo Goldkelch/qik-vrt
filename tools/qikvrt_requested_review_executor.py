@@ -26,9 +26,9 @@ import urllib.parse
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
-MAX_DIFF_BYTES = 2 * 1024 * 1024
 REVIEW_DIFF_CHUNK_BYTES = 1024 * 1024
 REVIEW_DIFF_TRANSPORT_SCHEMA = "qikvrt_mesh_review_diff_transport_v1"
+REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
@@ -116,37 +116,146 @@ def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
             "sha256": hashlib.sha256(packet).hexdigest(),
             "path": f"{base_path}.chunks/{index:08d}.bin",
         })
-    return {
+    transport: dict[str, Any] = {
         "schema": REVIEW_DIFF_TRANSPORT_SCHEMA,
         "packet_bytes": REVIEW_DIFF_CHUNK_BYTES,
+        "packet_count": len(chunks),
         "total_bytes": len(diff),
         "sha256": hashlib.sha256(diff).hexdigest(),
         "manifest_path": f"{base_path}.chunks.json",
         "packets": chunks,
-        "delivery": "SEQUENTIAL_EXACT_PACKET_ORDER",
+        "delivery": REVIEW_DIFF_TRANSPORT_DELIVERY,
     }
+    # The manifest digest is deliberately computed over the canonical manifest
+    # projection without this self-referential field.  The receipt seals the
+    # resulting transport object; the ledger stores the exact pretty-JSON
+    # manifest bytes and reconstructs every packet before accepting it.
+    transport["manifest_sha256"] = _canonical_sha256(transport)
+    return transport
 
 
 def reassemble_diff_transport(transport: Mapping[str, Any], packets: Sequence[bytes]) -> bytes:
     """Fail closed unless packets reproduce the complete declared diff."""
     if not isinstance(transport, Mapping) or transport.get("schema") != REVIEW_DIFF_TRANSPORT_SCHEMA:
         raise ReviewSnapshotError("diff transport schema is invalid")
+    required_fields = {
+        "schema",
+        "packet_bytes",
+        "packet_count",
+        "total_bytes",
+        "sha256",
+        "manifest_path",
+        "packets",
+        "delivery",
+        "manifest_sha256",
+    }
+    if set(transport) != required_fields:
+        raise ReviewSnapshotError("diff transport manifest fields are invalid")
+    if transport.get("packet_bytes") != REVIEW_DIFF_CHUNK_BYTES:
+        raise ReviewSnapshotError("diff transport packet bound is invalid")
+    if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
+        raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    total_bytes = transport.get("total_bytes")
+    packet_count = transport.get("packet_count")
+    if (
+        isinstance(total_bytes, bool)
+        or not isinstance(total_bytes, int)
+        or total_bytes < 1
+        or isinstance(packet_count, bool)
+        or not isinstance(packet_count, int)
+        or packet_count < 1
+    ):
+        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    _sha256(transport.get("sha256"), "diff transport digest")
+    manifest_path = transport.get("manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
+        raise ReviewSnapshotError("diff transport manifest path is invalid")
+    manifest_projection = dict(transport)
+    manifest_sha256 = manifest_projection.pop("manifest_sha256")
+    if (
+        not isinstance(manifest_sha256, str)
+        or manifest_sha256 != _canonical_sha256(manifest_projection)
+    ):
+        raise ReviewSnapshotError("diff transport manifest digest mismatch")
     declared = transport.get("packets")
-    if not isinstance(declared, list) or len(declared) != len(packets) or not declared:
+    if (
+        not isinstance(declared, list)
+        or len(declared) != packet_count
+        or len(declared) != len(packets)
+        or not declared
+    ):
         raise ReviewSnapshotError("diff transport packet count is invalid")
+    base_path = manifest_path[: -len(".chunks.json")]
     materialized: list[bytes] = []
     for index, (item, packet) in enumerate(zip(declared, packets)):
-        if not isinstance(item, Mapping) or not isinstance(packet, bytes):
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"index", "offset", "bytes", "sha256", "path"}
+            or not isinstance(packet, bytes)
+        ):
             raise ReviewSnapshotError("diff transport packet is invalid")
-        if item.get("index") != index or item.get("offset") != sum(len(value) for value in materialized):
+        offset = sum(len(value) for value in materialized)
+        remaining = total_bytes - offset
+        expected_size = min(REVIEW_DIFF_CHUNK_BYTES, remaining)
+        if (
+            item.get("index") != index
+            or item.get("offset") != offset
+            or item.get("path") != f"{base_path}.chunks/{index:08d}.bin"
+            or item.get("bytes") != expected_size
+        ):
             raise ReviewSnapshotError("diff transport packet order is invalid")
         if item.get("bytes") != len(packet) or item.get("sha256") != hashlib.sha256(packet).hexdigest():
             raise ReviewSnapshotError("diff transport packet digest mismatch")
         materialized.append(packet)
     complete = b"".join(materialized)
-    if transport.get("total_bytes") != len(complete) or transport.get("sha256") != hashlib.sha256(complete).hexdigest():
+    if total_bytes != len(complete) or transport.get("sha256") != hashlib.sha256(complete).hexdigest():
         raise ReviewSnapshotError("diff transport completion digest mismatch")
     return complete
+
+
+def prepare_diff_transport_ledger_entries(
+    transport: Mapping[str, Any],
+    diff: bytes,
+    ledger_manifest_path: str,
+) -> tuple[bytes, list[bytes]]:
+    """Return only a ledger-bound, exactly reconstructible packet sequence.
+
+    A receipt may name exactly one manifest path in the append-only ledger.  It
+    is not sufficient for a different, valid-looking manifest to reconstruct
+    the same bytes: that would leave receipt-to-ledger path identity
+    unverified.  This helper is shared by the workflow writer and its tests so
+    every write path validates the same envelope before creating blobs.
+    """
+    if not isinstance(diff, bytes) or not diff:
+        raise ReviewSnapshotError("ledger diff bytes are unavailable")
+    if not isinstance(ledger_manifest_path, str) or not ledger_manifest_path:
+        raise ReviewSnapshotError("ledger manifest path is invalid")
+    if not isinstance(transport, Mapping):
+        raise ReviewSnapshotError("ledger diff transport is invalid")
+    if transport.get("manifest_path") != ledger_manifest_path:
+        raise ReviewSnapshotError("diff transport manifest path does not bind the ledger path")
+    declared = transport.get("packets")
+    if not isinstance(declared, list):
+        raise ReviewSnapshotError("diff transport packets are unavailable")
+    packets: list[bytes] = []
+    for item in declared:
+        if not isinstance(item, Mapping):
+            raise ReviewSnapshotError("diff transport packet is invalid")
+        offset = item.get("offset")
+        size = item.get("bytes")
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+        ):
+            raise ReviewSnapshotError("diff transport packet range is invalid")
+        packets.append(diff[offset : offset + size])
+    if reassemble_diff_transport(transport, packets) != diff:
+        raise ReviewSnapshotError("diff transport reconstruction mismatch")
+    return _pretty_json_bytes(dict(transport)), packets
 
 
 def latest_status_matches_projection(
@@ -1391,15 +1500,6 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         ) if diff else None,
         "latest": latest,
     }
-    if len(diff) > MAX_DIFF_BYTES:
-        return _result(
-            snapshot,
-            "COMMENT_WITH_BLOCKER",
-            "REVIEW_BYTES_UNAVAILABLE",
-            f"complete exact diff exceeds the {MAX_DIFF_BYTES}-byte bounded static-inspection limit",
-            findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "complete exact diff is materialized but exceeds the bounded static-inspection limit")],
-            **common,
-        )
     if intake["reason_state"] == "AMBIGUOUS_FAIL_CLOSED":
         return _result(
             snapshot,
@@ -2539,7 +2639,8 @@ def observe_repository(
         "diff_sha256": hashlib.sha256(diff).hexdigest(),
         "diff_bytes": len(diff),
         # The observer has already materialized every diff byte.  The separate
-        # MAX_DIFF_BYTES bound limits static inspection, not receipt evidence.
+        # The observer materializes every byte; receipt transport splits it
+        # into independently bounded, content-addressed packets.
         "diff_complete": True,
         "review_threads": threads,
         "unresolved_review_threads": sum(1 for item in threads if not item["is_resolved"]),

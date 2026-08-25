@@ -73,7 +73,8 @@ The exact role-local receipt is appended on
 `refs/heads/qikvrt/mesh-review-ledger-v1`. Its paths are:
 
 - `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json`
-- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff`
+- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json`
+- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks/<zero-padded-index>.bin`
 
 The trusted-main observer is the only producer of this envelope. It requires
 its local checkout SHA and tree to equal the reobserved `main`, binds the
@@ -96,15 +97,18 @@ a scheduled scan, a rotating candidate selection, a review dispatch, or a
 metadata mutation. The next exact repository event or explicit dispatch may
 reobserve a bound subject; no prior evidence is transferred.
 
-The bounded static-invariant scanner currently inspects at most 2 MiB of exact
-diff bytes. That is an inspection budget, not an evidence-capture limit: if
-the trusted observer has materialized a larger complete diff, it still hashes
-and persists the exact receipt and diff to the append-only ledger, then
-projects `COMMENT_WITH_BLOCKER / REVIEW_BYTES_UNAVAILABLE / D0=2
-REOBSERVE_EXACT_HEAD_REVIEW_EVIDENCE`. It must not silently lose the handoff,
-invent a favorable result, or reuse the prior receipt. A later exact event may
-reobserve under a changed bounded-review capability, but no evidence transfers
-across a head, tree, scope, diff, policy, or intake change.
+The complete diff is transported as ordered, content-addressed packets of at
+most 1 MiB. Its canonical manifest binds an explicit packet count, every
+offset, packet byte count and packet SHA-256, the total byte count and total
+SHA-256, the deterministic packet paths and a SHA-256 over the canonical
+manifest projection. The receiver rejects a missing, reordered, altered,
+oversized or surplus packet, a manifest-path mismatch, or a manifest whose
+digest does not match. Only after every packet reconstructs the total digest
+does the ledger accept the review package. The bounded transport therefore
+does not turn a complete 2 MiB-plus diff into `REVIEW_BYTES_UNAVAILABLE`; it
+does not silently lose the handoff, invent a favorable result, or reuse an
+earlier receipt. Head, tree, scope, diff, policy or intake drift still
+invalidates the receipt.
 
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository
@@ -119,20 +123,22 @@ The observer regenerates the complete snapshot, diff and receipt before the
 ledger read, immediately before and after ledger initialization or compare-and-
 swap, and before and after each PR-comment or status mutation. Both the
 evidence fingerprint and sealed receipt-payload hash must remain byte-exact.
-The stored receipt must also verify its own seal and the stored diff bytes must
-equal the regenerated diff byte for byte. Any disagreement stops the next
-mutation and remains `HOLD_UNVERIFIED`.
+The stored receipt must also verify its own seal; the stored manifest must be
+byte-identical to the sealed canonical transport manifest; and the stored
+ordered packets must reassemble to the regenerated diff byte for byte and to
+its total SHA-256. Any disagreement stops the next mutation and remains
+`HOLD_UNVERIFIED`.
 
 The same pull-request head may be reviewed again only when its causal evidence
 fingerprint changed, for example because a required workflow attempt, active
 writer, discussion thread or applicable gate changed. An identical fingerprint
 is an idempotent `D0=0 NOOP`, never a duplicate receipt.
 
-Review receipts and `review.diff` are never committed to the reviewed candidate
-branch or to `main`. Doing so would mutate the reviewed head, immediately stale
-its evidence and create a recursive evidence-commit/review loop. The candidate
-base, head, tree, scope and diff are therefore unchanged by feedback
-persistence.
+Review receipts and review-diff manifests/packets are never committed to the
+reviewed candidate branch or to `main`. Doing so would mutate the reviewed
+head, immediately stale its evidence and create a recursive evidence-commit/
+review loop. The candidate base, head, tree, scope and diff are therefore
+unchanged by feedback persistence.
 
 After the ledger receipt has been written and read back byte-exactly, the same
 result may be projected as an Actions artifact, the exact-head status

@@ -239,7 +239,8 @@ jobs:
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
           from tools.qikvrt_requested_review_executor import (
-              _pretty_json_bytes, plan_ledger_update, reassemble_diff_transport,
+              _pretty_json_bytes, plan_ledger_update,
+              prepare_diff_transport_ledger_entries,
           )
 
           root=pathlib.Path('.qikvrt/mesh-review')
@@ -299,21 +300,12 @@ jobs:
           def transport_bytes():
               if not isinstance(transport, dict) or not diff_path:
                   raise LedgerHold('review receipt lacks a chunked diff transport')
-              packets=[]
-              for packet in transport.get('packets',[]):
-                  if not isinstance(packet,dict) or not isinstance(packet.get('path'),str):
-                      raise LedgerHold('review diff transport packet path is invalid')
-                  start=packet.get('offset')
-                  size=packet.get('bytes')
-                  if not isinstance(start,int) or not isinstance(size,int):
-                      raise LedgerHold('review diff transport packet range is invalid')
-                  packets.append(diff_bytes[start:start+size])
               try:
-                  if reassemble_diff_transport(transport,packets) != diff_bytes:
-                      raise LedgerHold('review diff transport reconstruction mismatch')
+                  return prepare_diff_transport_ledger_entries(
+                      transport,diff_bytes,diff_path,
+                  )
               except Exception as exc:
                   raise LedgerHold(f'review diff transport invalid: {exc}') from exc
-              return _pretty_json_bytes(transport), packets
 
           def new_blobs():
               manifest_bytes,packets=transport_bytes()
@@ -390,7 +382,11 @@ jobs:
                       ref=gh('GET',ref_path)
                       if ref['object']['sha'] != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or transport_at(commit) != diff_bytes:
+                      if (
+                          blob_at(receipt_path,commit) != receipt_bytes
+                          or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
+                          or transport_at(commit) != diff_bytes
+                      ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-initialization')
                       report.update(
@@ -410,6 +406,12 @@ jobs:
                   if plan['action'] == 'HOLD':
                       raise LedgerHold(plan['first_blocker'])
                   if plan['action'] == 'NOOP_IDENTICAL_RECEIPT':
+                      if (
+                          blob_at(receipt_path,ledger_head) != receipt_bytes
+                          or blob_at(diff_path,ledger_head) != manifest_bytes
+                          or transport_at(ledger_head) != diff_bytes
+                      ):
+                          raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('duplicate-ledger-readback')
                       report.update(
                           persisted=True,duplicate=True,ledger_commit=ledger_head,
@@ -431,7 +433,11 @@ jobs:
                       updated=gh('GET',ref_path)['object']['sha']
                       if updated != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or transport_at(commit) != diff_bytes:
+                      if (
+                          blob_at(receipt_path,commit) != receipt_bytes
+                          or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
+                          or transport_at(commit) != diff_bytes
+                      ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-cas')
                       report.update(

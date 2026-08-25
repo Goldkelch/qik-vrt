@@ -466,8 +466,8 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertTrue(intake["requested_target_observed"])
         self.assertEqual(intake["request_state"], "ACTIVE_EXPLICIT_REQUEST")
 
-    def test_oversized_materialized_diff_has_a_persistable_blocker_receipt(self):
-        diff = b"+" * (MODULE.MAX_DIFF_BYTES + 1)
+    def test_chunked_materialized_diff_above_legacy_two_mebibytes_is_reviewable(self):
+        diff = b"+" * (2 * MODULE.REVIEW_DIFF_CHUNK_BYTES + 1)
         snapshot = self.snapshot(
             diff_payload=diff,
             diff_sha256=sha256_bytes(diff),
@@ -476,15 +476,27 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         result = self.evaluate(snapshot, diff)
 
-        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
-        self.assertEqual(result["first_blocker"], "REVIEW_BYTES_UNAVAILABLE")
-        self.assertEqual(result["derived_action"]["d0"], 2)
+        self.assertNotEqual(result["first_blocker"], "REVIEW_BYTES_UNAVAILABLE")
+        self.assertEqual(result["mesh_disposition"], "APPROVE")
         self.assert_receipt_boundaries(result)
         self.assertEqual(result["diff_sha256"], sha256_bytes(diff))
         self.assertEqual(result["diff_bytes"], len(diff))
+        transport = result["diff_transport"]
+        self.assertEqual(transport["packet_count"], 3)
+        self.assertEqual(
+            MODULE.reassemble_diff_transport(
+                transport,
+                [
+                    diff[: MODULE.REVIEW_DIFF_CHUNK_BYTES],
+                    diff[MODULE.REVIEW_DIFF_CHUNK_BYTES : 2 * MODULE.REVIEW_DIFF_CHUNK_BYTES],
+                    diff[2 * MODULE.REVIEW_DIFF_CHUNK_BYTES :],
+                ],
+            ),
+            diff,
+        )
         plan = MODULE.plan_ledger_update(
             MODULE._pretty_json_bytes(result),
-            diff,
+            MODULE._pretty_json_bytes(transport),
             None,
             None,
             None,
@@ -513,10 +525,58 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         transport = MODULE.build_diff_transport(diff, "state/mesh/reviews/example")
 
         self.assertEqual(transport["packet_bytes"], 1024 * 1024)
+        self.assertEqual(transport["packet_count"], 2)
         self.assertEqual([item["bytes"] for item in transport["packets"]], [1024 * 1024, 17])
         self.assertEqual(MODULE.reassemble_diff_transport(transport, [diff[: 1024 * 1024], diff[1024 * 1024 :]]), diff)
         with self.assertRaisesRegex(MODULE.ReviewSnapshotError, "packet digest mismatch"):
             MODULE.reassemble_diff_transport(transport, [diff[: 1024 * 1024], b"c" * 17])
+        malformed = dict(transport)
+        malformed["packet_count"] = 3
+        malformed["manifest_sha256"] = MODULE._canonical_sha256(
+            {key: value for key, value in malformed.items() if key != "manifest_sha256"}
+        )
+        with self.assertRaisesRegex(MODULE.ReviewSnapshotError, "packet count is invalid"):
+            MODULE.reassemble_diff_transport(
+                malformed,
+                [diff[: 1024 * 1024], diff[1024 * 1024 :]],
+            )
+
+        oversized_packet = {
+            "schema": MODULE.REVIEW_DIFF_TRANSPORT_SCHEMA,
+            "packet_bytes": MODULE.REVIEW_DIFF_CHUNK_BYTES,
+            "packet_count": 1,
+            "total_bytes": len(diff),
+            "sha256": sha256_bytes(diff),
+            "manifest_path": "state/mesh/reviews/example.chunks.json",
+            "packets": [{
+                "index": 0,
+                "offset": 0,
+                "bytes": len(diff),
+                "sha256": sha256_bytes(diff),
+                "path": "state/mesh/reviews/example.chunks/00000000.bin",
+            }],
+            "delivery": MODULE.REVIEW_DIFF_TRANSPORT_DELIVERY,
+        }
+        oversized_packet["manifest_sha256"] = MODULE._canonical_sha256(oversized_packet)
+        with self.assertRaisesRegex(MODULE.ReviewSnapshotError, "packet order is invalid"):
+            MODULE.reassemble_diff_transport(oversized_packet, [diff])
+
+    def test_diff_transport_must_bind_the_exact_ledger_manifest_path(self):
+        diff = b"a" * MODULE.REVIEW_DIFF_CHUNK_BYTES + b"b"
+        path = "state/mesh/reviews/pr-349/head/fingerprint.chunks.json"
+        transport = MODULE.build_diff_transport(
+            diff, path[: -len(".chunks.json")]
+        )
+        manifest, packets = MODULE.prepare_diff_transport_ledger_entries(
+            transport, diff, path
+        )
+
+        self.assertEqual(manifest, MODULE._pretty_json_bytes(transport))
+        self.assertEqual(packets, [diff[: MODULE.REVIEW_DIFF_CHUNK_BYTES], b"b"])
+        with self.assertRaisesRegex(MODULE.ReviewSnapshotError, "does not bind"):
+            MODULE.prepare_diff_transport_ledger_entries(
+                transport, diff, path + ".wrong"
+            )
 
     def test_same_head_pull_request_body_change_creates_new_receipt_identity(self):
         first = self.evaluate()
@@ -1390,6 +1450,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", text)
         self.assertIn("'force':False", text)
         self.assertIn("existing_diff=blob_at(diff_path,ledger_head)", text)
+        self.assertIn("prepare_diff_transport_ledger_entries", core)
+        self.assertIn("prepare_diff_transport_ledger_entries", text)
+        self.assertIn("blob_at(diff_path,commit) != _pretty_json_bytes(transport)", text)
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
         self.assertIn("post-ledger-cas", text)

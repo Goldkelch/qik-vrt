@@ -143,10 +143,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             ],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
-        self.assertEqual(binding["complete_diff_static_inspection_max_bytes"], 2097152)
+        self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
         self.assertEqual(
-            binding["complete_oversized_diff"],
-            "PERSIST_EXACT_RECEIPT_AND_DIFF_THEN_COMMENT_WITH_BLOCKER_D0_2_REOBSERVE",
+            binding["complete_diff_transport_acceptance"],
+            "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",
         )
         self.assertEqual(
             binding["review_fingerprint_input"],
@@ -156,7 +156,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertEqual(binding["predecessor_evidence_transfer"], "FORBIDDEN")
         self.assertEqual(
             binding["same_fingerprint_requires"],
-            "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
+            "BYTE_IDENTICAL_RECEIPT_AND_REASSEMBLED_DIFF_AND_TRANSPORT_MANIFEST",
         )
 
         ledger = plane["ledger"]
@@ -172,8 +172,17 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json",
         )
         self.assertEqual(
-            ledger["diff_path_template"],
-            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+            ledger["diff_manifest_path_template"],
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json",
+        )
+        self.assertEqual(
+            ledger["diff_packet_path_template"],
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks/<zero-padded-index>.bin",
+        )
+        self.assertEqual(ledger["transport_schema"], "qikvrt_mesh_review_diff_transport_v1")
+        self.assertEqual(
+            ledger["manifest_readback"],
+            "BYTE_IDENTICAL_CANONICAL_MANIFEST_AND_REASSEMBLED_TOTAL_SHA256_REQUIRED",
         )
         self.assertEqual(ledger["write_protocol"], "FAST_FORWARD_COMPARE_AND_SWAP_ONLY")
         self.assertEqual(ledger["candidate_branch_write"], "FORBIDDEN")
@@ -279,8 +288,20 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             plane["ledger"]["receipt_path_template"],
         )
         self.assertEqual(
-            policy_plane["receipt_ledger"]["diff_path_template"],
-            plane["ledger"]["diff_path_template"],
+            policy_plane["receipt_ledger"]["diff_manifest_path_template"],
+            plane["ledger"]["diff_manifest_path_template"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["diff_packet_path_template"],
+            plane["ledger"]["diff_packet_path_template"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["transport_schema"],
+            plane["ledger"]["transport_schema"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["manifest_readback"],
+            plane["ledger"]["manifest_readback"],
         )
         self.assertEqual(
             {key: value["state"] for key, value in policy_plane["d0_mapping"].items()},
@@ -292,7 +313,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", documentation)
         self.assertIn("state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json", documentation)
         self.assertIn(
-            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json",
             documentation,
         )
         self.assertIn("D0=3 REQUEST_AUTHORITY", documentation)
