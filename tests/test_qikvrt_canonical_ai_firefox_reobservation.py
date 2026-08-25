@@ -39,11 +39,15 @@ class CanonicalAIFirefoxTerminalContractTests(unittest.TestCase):
         self.assertNotIn("http://localhost/*", manifest["host_permissions"])
         self.assertIn('searchParams.get("qikvrt_e2e") === "1"', options)
         self.assertIn("QIKVRT-FIREFOX-E2E-NONCE-0001", options)
-        self.assertIn('const E2E_BACKEND = "http://127.0.0.1:8771"', options)
         self.assertIn(
             'const E2E_HOST_PERMISSION = "http://127.0.0.1:8771/*"',
             options,
         )
+        self.assertIn('network_effect_path: "BACKGROUND_DISCOVER_PREPARE_COMMIT"', options)
+        self.assertIn("browser.runtime.sendMessage({kind: \"DISCOVER_EFFECT_ACK\"})", options)
+        self.assertIn("browser.runtime.sendMessage({kind: \"PREPARE_EFFECT\"", options)
+        self.assertIn('kind: "COMMIT_EFFECT"', options)
+        self.assertNotIn("await fetch(", options)
         self.assertIn('external_effect: committed.body', options)
 
     def test_policy_preserves_observation_and_effect_boundaries(self) -> None:

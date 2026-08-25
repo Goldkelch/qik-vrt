@@ -1,6 +1,5 @@
 const fields = ["accent", "fontScale", "density", "position"];
 const E2E_NONCE = "QIKVRT-FIREFOX-E2E-NONCE-0001";
-const E2E_BACKEND = "http://127.0.0.1:8771";
 const E2E_HOST_PERMISSION = "http://127.0.0.1:8771/*";
 
 async function load() {
@@ -17,27 +16,18 @@ async function save() {
   document.getElementById("status").textContent = "gespeichert";
 }
 
-async function e2eNetworkDiagnostic() {
+async function e2ePermissionDiagnostic() {
   let permission = null;
-  let directFetch = null;
   try {
     permission = await browser.permissions.contains({origins: [E2E_HOST_PERMISSION]});
   } catch (error) {
     permission = `ERROR:${error.message}`;
   }
-  try {
-    const response = await fetch(`${E2E_BACKEND}/.well-known/effect-ack`, {
-      cache: "no-store",
-      credentials: "omit"
-    });
-    directFetch = {ok: response.ok, status: response.status, text: await response.text()};
-  } catch (error) {
-    directFetch = {ok: false, error: error.message};
-  }
   return {
     host_permission: permission,
     host_permission_pattern: E2E_HOST_PERMISSION,
-    extension_page_direct_fetch: directFetch
+    extension_page_direct_fetch_required: false,
+    network_effect_path: "BACKGROUND_DISCOVER_PREPARE_COMMIT"
   };
 }
 
@@ -50,11 +40,9 @@ async function runBoundedEffectAckE2E() {
     audio: null,
     video: null
   };
-  const network = await e2eNetworkDiagnostic();
-  if (network.host_permission !== true ||
-      !network.extension_page_direct_fetch ||
-      network.extension_page_direct_fetch.ok !== true) {
-    throw new Error(`Effect-Ack network prerequisite failed:${JSON.stringify(network)}`);
+  const network = await e2ePermissionDiagnostic();
+  if (network.host_permission !== true) {
+    throw new Error(`Effect-Ack host permission unavailable:${JSON.stringify(network)}`);
   }
   const discovery = await browser.runtime.sendMessage({kind: "DISCOVER_EFFECT_ACK"});
   if (!discovery || discovery.discovered !== true) {
@@ -78,7 +66,8 @@ async function runBoundedEffectAckE2E() {
     nonce: E2E_NONCE,
     host_permission_observed: network.host_permission,
     host_permission_pattern: network.host_permission_pattern,
-    extension_page_direct_fetch_observed: network.extension_page_direct_fetch.ok,
+    extension_page_direct_fetch_required: false,
+    network_effect_path: network.network_effect_path,
     discovery_observed: true,
     prepare_record_validated: true,
     prepare_state: prepared.effect_ack.state,
