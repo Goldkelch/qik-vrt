@@ -55,6 +55,21 @@ class CanonicalAIFirefoxTerminalContractTests(unittest.TestCase):
         self.assertNotIn("await fetch(", options)
         self.assertIn('external_effect: committed.body', options)
 
+    def test_lna_grant_targets_actual_webextension_principal_only(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        self.assertIn('prefs["permissions.default.loopback-network"] = 0', source)
+        self.assertIn('prefs["permissions.default.local-network"] = 0', source)
+        self.assertIn("WebExtensionPolicy.getByID", source)
+        self.assertIn("policy.extension.principal", source)
+        self.assertIn("principalAddonId", source)
+        self.assertIn("actualExtensionPrincipalUsed", source)
+        self.assertIn("reconstructedPrincipalUsed", source)
+        self.assertIn("profile_wide_loopback_allow", source)
+        self.assertNotIn("createContentPrincipal", source)
+        self.assertNotIn('prefs["permissions.default.loopback-network"] = 1', source)
+        self.assertIn('"FIREFOX_SESSION_ONLY"', source)
+        self.assertIn('"ISOLATED_WEBDRIVER_PROFILE"', source)
+
     def test_policy_preserves_observation_and_effect_boundaries(self) -> None:
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(policy["authority_repository"], "Goldkelch/qik-vrt")
