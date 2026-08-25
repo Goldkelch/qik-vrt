@@ -54,6 +54,7 @@
       "discussion_sha256",
       "required_gate_workflow_id_path_event_and_jobs",
       "required_success_gate_has_completed_successful_job",
+      "review_intake_event_payload_action_actor_target_reason_label_priority_class_and_rank",
       "evidence_fingerprint",
       "findings",
       "platform_review_state",
@@ -69,6 +70,91 @@
       "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true
     }
   },
+  "review_intake_priority": {
+    "scope": "Exact repository-native review-request classification only; it never creates a human approval, merge authority, or a cross-event queue by itself.",
+    "principal_roles": {
+      "PRODUCT_OWNER": [
+        "ingolf-lohmann"
+      ],
+      "REQUIRED_CODE_OWNER": [
+        "Goldkelch"
+      ]
+    },
+    "reason_labels": {
+      "qikvrt-review:security": "SECURITY_OR_INTEGRITY",
+      "qikvrt-review:owner": "OWNER_DECISION",
+      "qikvrt-review:standard": "STANDARD"
+    },
+    "priority_classes": [
+      {
+        "class": "P0_SECURITY_OR_INTEGRITY",
+        "rank": 0,
+        "requires": {
+          "event_action": "review_requested",
+          "requester_roles": [
+            "PRODUCT_OWNER",
+            "REQUIRED_CODE_OWNER"
+          ],
+          "reason": "SECURITY_OR_INTEGRITY"
+        }
+      },
+      {
+        "class": "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER",
+        "rank": 1,
+        "requires": {
+          "event_action": "review_requested",
+          "requester_role": "PRODUCT_OWNER",
+          "requested_reviewer_role": "REQUIRED_CODE_OWNER"
+        }
+      },
+      {
+        "class": "P2_REQUIRED_CODE_OWNER_REQUEST",
+        "rank": 2,
+        "requires": {
+          "event_action": "review_requested",
+          "requested_reviewer_role": "REQUIRED_CODE_OWNER"
+        }
+      },
+      {
+        "class": "P3_EXPLICIT_REVIEW_REQUEST",
+        "rank": 3,
+        "requires": {
+          "event_action": "review_requested"
+        }
+      },
+      {
+        "class": "P4_AUTOMATIC_ELIGIBLE_EVENT",
+        "rank": 4,
+        "requires": {
+          "event_action": "any_other_exact_event"
+        }
+      }
+    ],
+    "reason_resolution": {
+      "no_reason_label": "UNSPECIFIED",
+      "multiple_reason_labels": "AMBIGUOUS_FAIL_CLOSED",
+      "free_text_or_guessed_reason": "FORBIDDEN"
+    },
+    "event_semantics": {
+      "review_requested": "ACTIVE_EXPLICIT_REQUEST",
+      "review_requested_target_missing_at_observation": "STALE_EXPLICIT_REQUEST_D0_2_REOBSERVE",
+      "review_request_removed": "REMOVED_REQUEST_REOBSERVATION_ONLY",
+      "other_exact_event": "AUTOMATIC_ELIGIBLE_REOBSERVATION"
+    },
+    "ordering": {
+      "same_event_priority_classification": "REQUIRED_AND_FINGERPRINT_BOUND",
+      "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
+      "github_app_event_broker_required_for_cross_event_priority": true,
+      "broker_tie_break": "GITHUB_DELIVERY_TIMESTAMP_ASCENDING_THEN_X_GITHUB_DELIVERY_ASCENDING",
+      "broker_may_not_cancel_an_in_progress_exact_review": true,
+      "scheduled_scan_or_rotating_pr_selection": "FORBIDDEN"
+    },
+    "identity_boundary": {
+      "automated_platform_review_event": "COMMENT_ONLY",
+      "github_actions_may_not_impersonate_PRODUCT_OWNER_or_REQUIRED_CODE_OWNER": true,
+      "priority_class_does_not_imply_independent_approval": true
+    }
+  },
   "review_executor": {
     "workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
     "decision_core": "tools/qikvrt_requested_review_executor.py",
@@ -79,16 +165,21 @@
       "pull_request_target.converted_to_draft",
       "pull_request_target.review_requested",
       "pull_request_target.review_request_removed",
+      "pull_request_target.labeled",
+      "pull_request_target.unlabeled",
       "pull_request_target.synchronize",
       "pull_request_target.ready_for_review",
       "pull_request_target.reopened",
       "issue_comment.created_edited_deleted",
       "workflow_run.completed",
-      "workflow_dispatch.exact_pr"
+      "workflow_dispatch.exact_pr_and_head"
     ],
     "eventless_review_selection": "FORBIDDEN",
     "scheduled_review_execution": "FORBIDDEN",
     "manual_executor_dispatch_handoff": "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
+    "manual_executor_dispatch_requires_exact_head": true,
+    "complete_diff_static_inspection_max_bytes": 2097152,
+    "complete_oversized_diff_disposition": "PERSIST_EXACT_RECEIPT_AND_DIFF_THEN_COMMENT_WITH_BLOCKER_D0_2_REOBSERVE_EXACT_HEAD_REVIEW_EVIDENCE",
     "review_thread_resolution_event_boundary": "NO_NATIVE_GITHUB_ACTIONS_TRIGGER_UNOBSERVABLE_WITHOUT_EXACT_EVENT_NO_ROTATING_SCAN_OR_REVIEW_DISPATCH",
     "exact_head_status_context": "QIKVRT requested review execution",
     "promotion_workflow": ".github/workflows/qikvrt_expected_head_promotion.yml",
@@ -131,7 +222,8 @@
       "DIFF_SHA256",
       "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
       "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
-      "ACTIVE_WRITER_QUEUE_STATE"
+      "ACTIVE_WRITER_QUEUE_STATE",
+      "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK"
     ],
     "review_fingerprint": {
       "algorithm": "SHA256",

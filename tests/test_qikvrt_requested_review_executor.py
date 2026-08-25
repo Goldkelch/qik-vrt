@@ -106,6 +106,32 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         value.update(overrides)
         return value
 
+    def review_intake(
+        self,
+        *,
+        action: str = "",
+        actor: str | None = None,
+        reviewer: str | None = None,
+        team: str | None = None,
+        labels: list[str] | None = None,
+        event_payload_sha256: str | None = None,
+    ) -> dict[str, object]:
+        return MODULE._review_intake(
+            {
+                "source": "PULL_REQUEST_EVENT",
+                "event_name": "pull_request_target",
+                "event_action": action,
+                "event_payload_sha256": event_payload_sha256 or sha256_bytes(b"review event"),
+                "event_actor": actor,
+                "requested_reviewer": reviewer,
+                "requested_team": team,
+                "native_delivery_identity": "UNAVAILABLE_TO_GITHUB_ACTIONS",
+            },
+            [] if labels is None else labels,
+            [reviewer] if action == "review_requested" and reviewer else [],
+            [team] if action == "review_requested" and team else [],
+        )
+
     def changed_files(self) -> list[dict[str, object]]:
         return [
             {
@@ -289,6 +315,208 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 "effect_ack": "HOLD_UNVERIFIED",
             },
         )
+
+    def test_review_intake_classifies_requester_reviewer_and_declared_reason(self):
+        cases = {
+            "security": (
+                self.review_intake(
+                    action="review_requested",
+                    actor="ingolf-lohmann",
+                    reviewer="Goldkelch",
+                    labels=["qikvrt-review:security"],
+                ),
+                "P0_SECURITY_OR_INTEGRITY",
+                0,
+            ),
+            "owner-to-code-owner": (
+                self.review_intake(
+                    action="review_requested",
+                    actor="ingolf-lohmann",
+                    reviewer="Goldkelch",
+                    labels=["qikvrt-review:owner"],
+                ),
+                "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER",
+                1,
+            ),
+            "code-owner-target": (
+                self.review_intake(
+                    action="review_requested",
+                    actor="other-maintainer",
+                    reviewer="Goldkelch",
+                ),
+                "P2_REQUIRED_CODE_OWNER_REQUEST",
+                2,
+            ),
+            "ordinary-request": (
+                self.review_intake(
+                    action="review_requested",
+                    actor="other-maintainer",
+                    reviewer="other-reviewer",
+                ),
+                "P3_EXPLICIT_REVIEW_REQUEST",
+                3,
+            ),
+            "automatic-reobservation": (
+                self.review_intake(
+                    action="review_request_removed",
+                    actor="other-maintainer",
+                    reviewer="Goldkelch",
+                ),
+                "P4_AUTOMATIC_ELIGIBLE_EVENT",
+                4,
+            ),
+        }
+        fingerprints: set[str] = set()
+        for label, (intake, priority_class, rank) in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(intake["priority_class"], priority_class)
+                self.assertEqual(intake["priority_rank"], rank)
+                result = self.evaluate(self.snapshot(review_intake=intake))
+                self.assertEqual(result["review_intake"], intake)
+                fingerprints.add(result["evidence_fingerprint"])
+        self.assertEqual(len(fingerprints), len(cases))
+
+    def test_ambiguous_review_reason_is_receipt_bound_and_fail_closed(self):
+        intake = self.review_intake(
+            action="review_requested",
+            actor="ingolf-lohmann",
+            reviewer="Goldkelch",
+            labels=["qikvrt-review:owner", "qikvrt-review:security"],
+        )
+        result = self.evaluate(self.snapshot(review_intake=intake))
+
+        self.assertEqual(intake["reason_state"], "AMBIGUOUS_FAIL_CLOSED")
+        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
+        self.assertEqual(result["first_blocker"], "REVIEW_REASON_AMBIGUOUS")
+        self.assertEqual(result["derived_action"]["d0"], 2)
+        self.assert_receipt_boundaries(result)
+
+    def test_review_intake_cannot_claim_a_higher_policy_rank(self):
+        intake = self.review_intake(
+            action="review_requested",
+            actor="other-maintainer",
+            reviewer="other-reviewer",
+        )
+        intake["priority_class"] = "P0_SECURITY_OR_INTEGRITY"
+        intake["priority_rank"] = 0
+
+        result = self.evaluate(self.snapshot(review_intake=intake))
+        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
+        self.assertEqual(result["first_blocker"], "INVALID_REVIEW_SNAPSHOT")
+
+    def test_event_payload_digest_is_fingerprint_bound(self):
+        first = self.review_intake(
+            action="review_requested",
+            actor="ingolf-lohmann",
+            reviewer="Goldkelch",
+            event_payload_sha256=sha256_bytes(b"first native event"),
+        )
+        second = self.review_intake(
+            action="review_requested",
+            actor="ingolf-lohmann",
+            reviewer="Goldkelch",
+            event_payload_sha256=sha256_bytes(b"second native event"),
+        )
+
+        first_result = self.evaluate(self.snapshot(review_intake=first))
+        second_result = self.evaluate(self.snapshot(review_intake=second))
+        self.assertNotEqual(
+            first_result["evidence_fingerprint"],
+            second_result["evidence_fingerprint"],
+        )
+
+    def test_removed_requested_target_is_a_fingerprint_bound_reobservation(self):
+        intake = MODULE._review_intake(
+            {
+                "source": "PULL_REQUEST_EVENT",
+                "event_name": "pull_request_target",
+                "event_action": "review_requested",
+                "event_actor": "ingolf-lohmann",
+                "requested_reviewer": "Goldkelch",
+                "requested_team": None,
+                "native_delivery_identity": "UNAVAILABLE_TO_GITHUB_ACTIONS",
+            },
+            [],
+            [],
+            [],
+        )
+        result = self.evaluate(self.snapshot(review_intake=intake))
+        self.assertEqual(intake["request_state"], "STALE_EXPLICIT_REQUEST")
+        self.assertFalse(intake["requested_target_observed"])
+        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
+        self.assertEqual(result["first_blocker"], "REVIEW_REQUEST_STALE")
+        self.assertEqual(result["derived_action"]["d0"], 2)
+
+    def test_requested_reviewer_observation_is_login_case_insensitive(self):
+        intake = MODULE._review_intake(
+            {
+                "source": "PULL_REQUEST_EVENT",
+                "event_name": "pull_request_target",
+                "event_action": "review_requested",
+                "event_actor": "ingolf-lohmann",
+                "requested_reviewer": "Goldkelch",
+                "requested_team": None,
+                "native_delivery_identity": "UNAVAILABLE_TO_GITHUB_ACTIONS",
+            },
+            [],
+            ["goldkelch"],
+            [],
+        )
+
+        self.assertTrue(intake["requested_target_observed"])
+        self.assertEqual(intake["request_state"], "ACTIVE_EXPLICIT_REQUEST")
+
+    def test_oversized_materialized_diff_has_a_persistable_blocker_receipt(self):
+        diff = b"+" * (MODULE.MAX_DIFF_BYTES + 1)
+        snapshot = self.snapshot(
+            diff_payload=diff,
+            diff_sha256=sha256_bytes(diff),
+            diff_bytes=len(diff),
+            diff_complete=True,
+        )
+        result = self.evaluate(snapshot, diff)
+
+        self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
+        self.assertEqual(result["first_blocker"], "REVIEW_BYTES_UNAVAILABLE")
+        self.assertEqual(result["derived_action"]["d0"], 2)
+        self.assert_receipt_boundaries(result)
+        self.assertEqual(result["diff_sha256"], sha256_bytes(diff))
+        self.assertEqual(result["diff_bytes"], len(diff))
+        plan = MODULE.plan_ledger_update(
+            MODULE._pretty_json_bytes(result),
+            diff,
+            None,
+            None,
+            None,
+        )
+        self.assertEqual(plan["action"], "INITIALIZE_ORPHAN_ROOT")
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(snapshot, diff),
+        ):
+            report, _fresh, _observed_diff = MODULE.verify_current_receipt(
+                result,
+                MODULE._pretty_json_bytes(result),
+                diff,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+        self.assertTrue(report["exact"])
+
+    def test_diff_transport_is_one_mebibyte_ordered_and_fail_closed(self):
+        diff = b"a" * MODULE.REVIEW_DIFF_CHUNK_BYTES + b"b" * 17
+        transport = MODULE.build_diff_transport(diff, "state/mesh/reviews/example")
+
+        self.assertEqual(transport["packet_bytes"], 1024 * 1024)
+        self.assertEqual([item["bytes"] for item in transport["packets"]], [1024 * 1024, 17])
+        self.assertEqual(MODULE.reassemble_diff_transport(transport, [diff[: 1024 * 1024], diff[1024 * 1024 :]]), diff)
+        with self.assertRaisesRegex(MODULE.ReviewSnapshotError, "packet digest mismatch"):
+            MODULE.reassemble_diff_transport(transport, [diff[: 1024 * 1024], b"c" * 17])
 
     def test_same_head_pull_request_body_change_creates_new_receipt_identity(self):
         first = self.evaluate()
@@ -1143,6 +1371,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("select_review_subject", text)
         self.assertIn("qikvrt-mesh-review-selection-", text)
         self.assertIn("EVENT_NAME: ${{ github.event_name }}", text)
+        self.assertIn("REQUESTED_HEAD: ${{ inputs.head || '' }}", text)
+        self.assertIn("GITHUB_EVENT_PATH", text)
+        self.assertIn("event_payload_sha256", text)
+        self.assertIn("qikvrt-review-event-context.json", text)
+        self.assertIn("--event-context-file /tmp/qikvrt-review-event-context.json", text)
         self.assertIn("EXPECTED_SELECTOR_HEAD", text)
         self.assertIn('--expected-head "$EXPECTED_SELECTOR_HEAD"', text)
         self.assertNotIn("if not people and not teams", text)
@@ -1151,6 +1384,8 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", text)
         self.assertIn('"--no-ext-diff", "--no-textconv", "--no-renames"', core)
         self.assertIn('"diff", "--name-status", "-z", "--no-renames"', core)
+        self.assertIn("REVIEW_INTAKE_SCHEMA", core)
+        self.assertIn("GITHUB_ACTIONS_NO_CROSS_EVENT_PRIORITY_GUARANTEE", core)
         self.assertIn("REQUIRED_GATE_PATHS_JSON", text)
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", text)
         self.assertIn("'force':False", text)
@@ -1340,6 +1575,33 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(
             unsupported["first_blocker"], "UNSUPPORTED_EXACT_EVENT_SOURCE"
         )
+
+    def test_explicit_dispatch_requires_the_exact_head(self):
+        missing = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="867",
+            event_pr="",
+            event_name="workflow_dispatch",
+            expected_head="",
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.fail("missing head must not fetch"),
+        )
+        self.assertEqual(missing["state"], "REOBSERVE_EXACT_EVENT_TARGET")
+        self.assertEqual(missing["first_blocker"], "WORKFLOW_DISPATCH_HEAD_MISSING")
+
+        exact = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="867",
+            event_pr="",
+            event_name="workflow_dispatch",
+            expected_head=HEAD_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.selector_pr(number=number),
+        )
+        self.assertEqual(exact["state"], "CANDIDATE")
+        self.assertEqual(exact["expected_head"], HEAD_SHA)
 
     def test_exact_selector_head_is_enforced_before_repository_observation(self):
         with mock.patch.object(

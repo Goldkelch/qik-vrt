@@ -2,7 +2,7 @@
   "schema": "qikvrt_requested_review_executor_completion_v1",
   "work_unit_id": "QIKVRT-REQUESTED-REVIEW-EXECUTOR-COMPLETION-V1",
   "status": "IMPLEMENTED_PENDING_PROMOTION_AND_PLATFORM_ENFORCEMENT",
-  "defect": "Requested-review policy and standing authorization existed without a repository-native executor that consumed review requests and without native GitHub Code Owner enforcement on main.",
+  "defect": "Requested-review policy and standing authorization existed without a repository-native executor that consumed review requests, without exact requester/reviewer/reason priority binding, and without native GitHub Code Owner enforcement on main.",
   "repositories": ["Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt"],
   "execution_layer": {
     "observer": ".github/workflows/qikvrt_code_owner_review_observer.yml",
@@ -13,7 +13,10 @@
     "contract_gate": ".github/workflows/qikvrt_requested_review_contract.yml",
     "promotion_guard": ".github/workflows/qikvrt_expected_head_promotion.yml",
     "recovery_model": "EXACT_EVENT_OR_EXPLICIT_DISPATCH_ONLY",
-    "head_tree_scope_drift_invalidates_review": true
+    "head_tree_scope_drift_invalidates_review": true,
+    "manual_dispatch_requires_exact_pr_and_head": true,
+    "review_intake": "EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_AND_POLICY_DERIVED_PRIORITY_ARE_FINGERPRINT_BOUND",
+    "oversized_complete_diff": "PERSIST_EXACT_RECEIPT_AND_DIFF_THEN_COMMENT_WITH_BLOCKER_D0_2_REOBSERVE"
   },
   "identity_boundary": {
     "github_identity_impersonation": "FORBIDDEN",
@@ -27,6 +30,14 @@
     "dismiss_stale_reviews_on_push": true,
     "require_last_push_approval": true,
     "required_code_owner": "Goldkelch"
+  },
+  "priority_platform_requirement": {
+    "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
+    "required_component": "REPOSITORY_SCOPED_GITHUB_APP_WEBHOOK_BROKER",
+    "broker_contract": "docs/QIKVRT_GITHUB_APP_TARGET_BLUEPRINT.md",
+    "required_native_delivery_binding": "X_GITHUB_DELIVERY_AND_DELIVERY_TIMESTAMP",
+    "scheduled_scan_or_rotating_selector": "FORBIDDEN",
+    "broker_may_not_impersonate_Goldkelch_or_submit_APPROVE": true
   },
   "live_observation_before_candidate": {
     "authority": {
@@ -49,6 +60,7 @@
     "native_main_rules_enforced_in_authority",
     "native_main_rules_enforced_in_mirror",
     "end_to_end_requested_review_event_produces_exact_head_disposition",
+    "review_intake_priority_is_bound_and_broker_order_is_evidenced",
     "head_change_invalidates_prior_review_and_requires_fresh_disposition"
   ],
   "completion_claims": {

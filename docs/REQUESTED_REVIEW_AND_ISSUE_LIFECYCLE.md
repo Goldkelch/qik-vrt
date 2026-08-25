@@ -20,7 +20,7 @@ This contract applies to `Goldkelch/qik-vrt` and `ingolf-lohmann/qik-vrt`. It is
 The existing `QIKVRT requested review executor` is the role-local Mesh
 self-review feedback plane. It runs from trusted repository code for every
 eligible same-repository pull request supplied by an exact native event or an
-explicit exact-PR dispatch, whose bytes can be observed. An explicit human
+explicit exact-PR-and-head dispatch, whose bytes can be observed. An explicit human
 review request remains a useful event signal, but it is not an execution
 prerequisite.
 
@@ -37,6 +37,37 @@ For every review, the executor must act without deliberate queueing:
 4. sort and bind the reviewed scope, hash that scope and the exact diff bytes, and derive one SHA-256 review fingerprint from the canonical trusted evaluator/workflow blobs, repository, pull-request eligibility and draft state, base, head, tree, scope, declared and observed diff, discussion, latest gate identity/attempt/jobs and active-writer binding;
 5. derive exactly one causal next action using the D0 mapping below;
 6. distinguish an automated technical Mesh disposition from a natural-person or independent Code-Owner disposition and from GitHub's account-level review state.
+
+Every exact event also produces a canonical `review_intake` bound into the
+receipt fingerprint. It records the native event-payload SHA-256, event action,
+event actor, explicitly requested user or team, one declared reason label and the policy-derived
+priority class/rank; the receipt separately binds the current observed
+requested-reviewer set. It is not an
+unconstrained user input. The only current reason labels are:
+
+- `qikvrt-review:security` → `SECURITY_OR_INTEGRITY`;
+- `qikvrt-review:owner` → `OWNER_DECISION`;
+- `qikvrt-review:standard` → `STANDARD`.
+
+No reason label remains `UNSPECIFIED`; two or more of these labels are a
+fail-closed `REVIEW_REASON_AMBIGUOUS`, never an invented priority. A priority
+is then derived in this fixed order: security/integrity requests by the
+Product Owner or required Code Owner (`P0`), Product Owner → required Code
+Owner (`P1`), required-Code-Owner target (`P2`), another explicit review
+request (`P3`), and any other exact automatic reobservation (`P4`). A
+`review_request_removed` event is an automatic reobservation only; it is not
+treated as an active request. If a `review_requested` target has disappeared
+before the exact observation, the receipt is `REVIEW_REQUEST_STALE / D0=2`;
+the former request is never silently carried forward.
+
+GitHub Actions can bind and classify one event but offers no cross-event
+priority ordering or native delivery identifier. The Actions receipt therefore
+states that limitation explicitly. A real ordering across concurrent requests
+requires the separately provisioned GitHub App webhook broker described in
+`docs/QIKVRT_GITHUB_APP_TARGET_BLUEPRINT.md`; it must order signed native
+deliveries by the policy rank and delivery-time/id tie-break without cancelling
+an in-progress exact review. Neither a scheduled scan, a rotating PR selector,
+nor an Actions-only pseudo-queue is permitted.
 
 The exact role-local receipt is appended on
 `refs/heads/qikvrt/mesh-review-ledger-v1`. Its paths are:
@@ -64,6 +95,16 @@ transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
 a scheduled scan, a rotating candidate selection, a review dispatch, or a
 metadata mutation. The next exact repository event or explicit dispatch may
 reobserve a bound subject; no prior evidence is transferred.
+
+The bounded static-invariant scanner currently inspects at most 2 MiB of exact
+diff bytes. That is an inspection budget, not an evidence-capture limit: if
+the trusted observer has materialized a larger complete diff, it still hashes
+and persists the exact receipt and diff to the append-only ledger, then
+projects `COMMENT_WITH_BLOCKER / REVIEW_BYTES_UNAVAILABLE / D0=2
+REOBSERVE_EXACT_HEAD_REVIEW_EVIDENCE`. It must not silently lose the handoff,
+invent a favorable result, or reuse the prior receipt. A later exact event may
+reobserve under a changed bounded-review capability, but no evidence transfers
+across a head, tree, scope, diff, policy, or intake change.
 
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository

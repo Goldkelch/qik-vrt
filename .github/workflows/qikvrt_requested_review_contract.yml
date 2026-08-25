@@ -21,6 +21,7 @@ on:
       - "tests/test_qikvrt_required_review_gate.py"
       - "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
       - "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md"
+      - "docs/QIKVRT_GITHUB_APP_TARGET_BLUEPRINT.md"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
@@ -82,9 +83,17 @@ jobs:
           grep -F "if: github.ref == 'refs/heads/main'" .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'converted_to_draft' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'review_request_removed' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'labeled' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'REQUESTED_HEAD: ${{ inputs.head ||' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'GITHUB_EVENT_PATH' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'event_payload_sha256' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F -- '--event-context-file /tmp/qikvrt-review-event-context.json' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'issue_comment:' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'review_requested' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'select_review_subject' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'WORKFLOW_DISPATCH_HEAD_MISSING' tools/qikvrt_requested_review_executor.py
+          grep -F 'REVIEW_INTAKE_SCHEMA' tools/qikvrt_requested_review_executor.py
+          grep -F 'GITHUB_ACTIONS_NO_CROSS_EVENT_PRIORITY_GUARANTEE' tools/qikvrt_requested_review_executor.py
           grep -F 'qikvrt-mesh-review-selection-' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'EVENT_WORKFLOW_EVENT' .github/workflows/qikvrt_requested_review_executor.yml
           ! grep -F 'schedule:' .github/workflows/qikvrt_requested_review_executor.yml

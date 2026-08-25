@@ -100,7 +100,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             [
                 "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
                 "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
-                "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST",
+                "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD",
             ],
         )
         self.assertEqual(executor["selection"]["eventless_repository_scan"], "FORBIDDEN")
@@ -109,6 +109,16 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "FORBIDDEN",
         )
         self.assertTrue(executor["selection"]["workflow_run_requires_role_local_url_and_matching_head"])
+        self.assertTrue(executor["selection"]["manual_dispatch_requires_matching_exact_head"])
+        self.assertEqual(
+            executor["selection"]["review_intake_priority_policy"],
+            "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
+        )
+        self.assertEqual(
+            executor["selection"]["github_actions_cross_event_priority_guarantee"],
+            "NOT_AVAILABLE",
+        )
+        self.assertTrue(executor["selection"]["github_app_event_broker_required_for_cross_event_priority"])
 
         binding = plane["exact_subject_binding"]
         self.assertEqual(
@@ -129,9 +139,15 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
                 "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
                 "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
                 "ACTIVE_WRITER_QUEUE_STATE",
+                "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK",
             ],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
+        self.assertEqual(binding["complete_diff_static_inspection_max_bytes"], 2097152)
+        self.assertEqual(
+            binding["complete_oversized_diff"],
+            "PERSIST_EXACT_RECEIPT_AND_DIFF_THEN_COMMENT_WITH_BLOCKER_D0_2_REOBSERVE",
+        )
         self.assertEqual(
             binding["review_fingerprint_input"],
             "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
@@ -234,7 +250,21 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             policy_plane["eligible_subjects"],
             plane["executor"]["eligible_subjects"],
         )
-        self.assertIn("workflow_dispatch.exact_pr", policy["review_executor"]["event_triggers"])
+        self.assertIn("workflow_dispatch.exact_pr_and_head", policy["review_executor"]["event_triggers"])
+        intake_priority = policy["review_intake_priority"]
+        self.assertEqual(
+            [item["class"] for item in intake_priority["priority_classes"]],
+            [
+                "P0_SECURITY_OR_INTEGRITY",
+                "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER",
+                "P2_REQUIRED_CODE_OWNER_REQUEST",
+                "P3_EXPLICIT_REVIEW_REQUEST",
+                "P4_AUTOMATIC_ELIGIBLE_EVENT",
+            ],
+        )
+        self.assertTrue(
+            intake_priority["ordering"]["github_app_event_broker_required_for_cross_event_priority"]
+        )
         self.assertEqual(
             policy["review_executor"]["manual_executor_dispatch_handoff"],
             "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
@@ -266,7 +296,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             documentation,
         )
         self.assertIn("D0=3 REQUEST_AUTHORITY", documentation)
-        self.assertIn("exact native event or an\nexplicit exact-PR dispatch", documentation)
+        self.assertIn("exact native event or an\nexplicit exact-PR-and-head dispatch", documentation)
         self.assertIn("technical-review action only", documentation)
         self.assertIn("may submit only a\n`COMMENT` review event", documentation)
 

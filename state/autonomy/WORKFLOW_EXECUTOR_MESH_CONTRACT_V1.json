@@ -47,11 +47,15 @@
         "allowed_sources": [
           "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
           "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
-          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST"
+          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD"
         ],
         "eventless_repository_scan": "FORBIDDEN",
         "scheduled_or_manual_workflow_run_source": "FORBIDDEN",
         "workflow_run_requires_role_local_url_and_matching_head": true,
+        "manual_dispatch_requires_matching_exact_head": true,
+        "review_intake_priority_policy": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
+        "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
+        "github_app_event_broker_required_for_cross_event_priority": true,
         "noncandidate_disposition": "DIAGNOSTIC_ARTIFACT_WITHOUT_REVIEW_OBSERVATION_OR_METADATA_MUTATION"
       },
       "platform_review_event": "COMMENT",
@@ -73,10 +77,13 @@
         "DIFF_SHA256",
         "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
         "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
-        "ACTIVE_WRITER_QUEUE_STATE"
+        "ACTIVE_WRITER_QUEUE_STATE",
+        "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK"
       ],
       "review_fingerprint_algorithm": "SHA256",
       "review_fingerprint_input": "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
+      "complete_diff_static_inspection_max_bytes": 2097152,
+      "complete_oversized_diff": "PERSIST_EXACT_RECEIPT_AND_DIFF_THEN_COMMENT_WITH_BLOCKER_D0_2_REOBSERVE",
       "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
       "subject_drift_disposition": "HOLD_UNVERIFIED",
       "predecessor_evidence_transfer": "FORBIDDEN"
