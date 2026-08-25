@@ -38,10 +38,22 @@ class SelfDisclosureTests(unittest.TestCase):
         self.assertFalse(self.disclosure['completion_claims']['pass'])
         capabilities = {entry['id'] for entry in self.disclosure['capabilities']}
         self.assertIn('publication_overview_discovery', capabilities)
+        self.assertIn('firefox_proxy_delegation_bridge', capabilities)
         binding = self.disclosure['bindings']['publication_overview']
         self.assertEqual(binding['canonical_url'], CANONICAL_URL)
         self.assertEqual(binding['human_index_path'], 'docs/publications/index.html')
         self.assertEqual(binding['machine_index_path'], 'docs/publications/index.json')
+        firefox = self.disclosure['bindings']['firefox_proxy_delegation_bridge']
+        self.assertEqual(
+            firefox['executor_contract_path'],
+            'state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json',
+        )
+        self.assertEqual(
+            firefox['workflow_path'],
+            '.github/workflows/qikvrt_firefox_proxy_delegation.yml',
+        )
+        self.assertTrue(firefox['current_exact_head_gate_required'])
+        self.assertFalse(firefox['historical_gate_evidence_transferable'])
 
     def test_machine_interaction(self):
         for command in ('show', 'capabilities', 'status'):

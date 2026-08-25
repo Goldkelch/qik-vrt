@@ -30,6 +30,15 @@ class AutonomousPreEffectControllerTests(unittest.TestCase):
         self.assertEqual(policy["preconditions"], MODULE.EXPECTED_PRECONDITIONS)
         self.assertEqual(policy["fail_closed"]["state"], "HOLD")
         self.assertTrue(policy["fail_closed"]["repair_forbidden"])
+        self.assertTrue(
+            MODULE.REQUIRED_AUTONOMOUS_CAPABILITIES.issubset(
+                set(policy["autonomous_capabilities"])
+            )
+        )
+        self.assertIn(
+            "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+            MODULE.REQUIRED_EVIDENCE_PATHS,
+        )
 
     def test_all_preconditions_allow_repository_internal_execution(self) -> None:
         preconditions = {name: True for name in MODULE.EXPECTED_PRECONDITIONS}

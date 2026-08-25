@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -45,3 +49,12 @@ jobs:
           assert value['next_boundary'] == 'HUMAN_AUTHENTICATION_OR_SECRET_ENTRY'
           assert value['post_boundary_requirement'] == 'AUTHORITATIVE_REOBSERVATION'
           PY
+      - name: Reobserve exact Authority main head
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$live_head" = "$GITHUB_SHA"

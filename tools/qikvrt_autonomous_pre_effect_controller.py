@@ -39,13 +39,23 @@ PROHIBITED_CLAIMS = {
     "FINAL_PASS",
     "EFFECT_ACK_DONE",
 }
+REQUIRED_AUTONOMOUS_CAPABILITIES = {
+    "REOBSERVE",
+    "CLASSIFY",
+    "SELF_HEAL",
+    "DISPATCH_ALLOWLISTED_EXACT_HEAD_GATE",
+    "GENERATE_RECEIPTS",
+}
 REQUIRED_EVIDENCE_PATHS = (
     "AI",
     "AI_CONTEXT.json",
     "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
     "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
     "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json",
+    "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
     "state/authorization/delegations/OWNER_AUTONOMOUS_REPOSITORY_CONTINUATION_V2.json",
+    "tools/qikvrt_workflow_executor.py",
+    ".github/workflows/qikvrt_workflow_executor.yml",
     "REPOSITORY_FILE_MANIFEST.json",
     "REPOSITORY_FILE_MANIFEST.json.sha256",
     "SHA256SUMS.txt",
@@ -125,6 +135,9 @@ def load_policy() -> dict[str, Any]:
     prohibited = set(value.get("prohibited_autonomous_effects", []))
     if not PROHIBITED_CLAIMS.issubset(prohibited):
         raise PreEffectBlock("epistemic or completion boundary weakened")
+    capabilities = set(value.get("autonomous_capabilities", []))
+    if not REQUIRED_AUTONOMOUS_CAPABILITIES.issubset(capabilities):
+        raise PreEffectBlock("required repository-native autonomous capability absent")
     owner = value.get("owner_authorization", {})
     if owner.get("state") != "ACTIVE" or owner.get("role") != "Product Owner":
         raise PreEffectBlock("Product Owner implementation authorization absent")

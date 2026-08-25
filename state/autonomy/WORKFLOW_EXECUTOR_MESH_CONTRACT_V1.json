@@ -32,7 +32,14 @@
       "EXACT_HEAD",
       "EXACT_TREE"
     ],
-    "baseline": "PREVIOUS_EXECUTOR_SNAPSHOT_ARTIFACT_WHEN_AVAILABLE"
+    "baseline": "LATEST_EXACT_COMPATIBLE_EXECUTOR_SNAPSHOT_ARTIFACT_OR_FAIL_CLOSED",
+    "baseline_compatibility_blobs": [
+      ".github/workflows/qikvrt_workflow_executor.yml",
+      "tools/qikvrt_workflow_executor.py",
+      "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+    ],
+    "no_compatible_prior_executor": "BOOTSTRAP_EMPTY_LEDGER",
+    "compatible_baseline_unavailable_or_invalid": "HOLD"
   },
   "review_feedback_plane": {
     "enabled": true,
@@ -155,16 +162,69 @@
   "dispatch_policy": {
     "enabled": true,
     "dispatch_ref": "main",
+    "maximum_dispatches_per_run": 1,
+    "dispatch_identity": [
+      "EXACT_HEAD",
+      "WORKFLOW_PATH",
+      "EVENT"
+    ],
+    "run_observation": {
+      "schema": "qikvrt_workflow_run_observation_v1",
+      "scope": "CURRENT_MAIN_EXACT_HEAD_ALL_PAGES",
+      "job_attempt_filter": "EXPLICIT_ATTEMPT_ENDPOINT_PLUS_RUN_DETAIL_REOBSERVATION",
+      "authority_repository_binding": "OBSERVED_GITHUB_REPOSITORY_EQUALS_CONTRACT_AUTHORITY",
+      "exact_head_binding": "OBSERVED_HEAD_EQUALS_SNAPSHOT_HEAD",
+      "malformed_or_incomplete_disposition": "HOLD"
+    },
     "required_conditions": [
+      "AUTHORITY_REPOSITORY_IDENTITY",
       "CURRENT_MAIN_HEAD_REOBSERVED",
       "CURRENT_MAIN_TREE_REOBSERVED",
       "WORKFLOW_IS_EXACT_TREE_MEMBER",
       "NO_COMPETING_WRITER",
       "NO_EQUIVALENT_EXACT_HEAD_RUN",
+      "PRE_EFFECT_EQUIVALENT_RUN_AND_CROSS_HEAD_WRITER_REOBSERVED",
       "NO_EXTERNAL_OR_IRREVERSIBLE_EFFECT"
     ],
     "terminal_or_active_exact_run_suppresses_duplicate_dispatch": true,
+    "equivalent_run_precedence": "ANY_ACTIVE_HOLDS_ELSE_LATEST_RUN_ID",
+    "transport_acknowledged_request_suppresses_duplicate_dispatch": true,
     "rerun": "ONLY_REPOSITORY_DECLARED_TRANSIENT_FAILURE",
+    "dispatch_ledger": {
+      "stateful_write": "ACTION_ARTIFACT_ONLY",
+      "maximum_entries": 128,
+      "accepted_state": "DISPATCH_TRANSPORT_ACKNOWLEDGED_EXECUTION_UNOBSERVED",
+      "failed_state": "DISPATCH_TRANSPORT_FAILED",
+      "failed_state_disposition": "HOLD_NO_BLIND_RETRY",
+      "history_rewrite": "FORBIDDEN"
+    },
+    "receipt_contract": {
+      "schema": "qikvrt_workflow_executor_dispatch_receipt_v1",
+      "fingerprint_fields": [
+        "CONTRACT_SHA256",
+        "REPOSITORY",
+        "CAPABILITY_ID",
+        "DECLARATION_BLOB",
+        "SUBJECT_MANIFEST_SHA256",
+        "EXACT_HEAD",
+        "EXACT_TREE",
+        "REF",
+        "WORKFLOW_PATH",
+        "WORKFLOW_BLOB",
+        "EVENT"
+      ],
+      "transport_acknowledgement_is_gate_execution_evidence": false,
+      "completion_claims": {
+        "INDEPENDENT_APPROVAL": false,
+        "PASS": false,
+        "FINAL_PASS": false,
+        "PUBLICATION": false,
+        "DEPLOYMENT": false,
+        "EFFECT_ACK_DONE": false,
+        "MERGE": false,
+        "EXTERNAL_EFFECT": false
+      }
+    },
     "writer_workflow_names": [
       "QIK-VRT autonomous bounded self-heal",
       "QIK-VRT autonomous draft-PR continuation",
@@ -173,6 +233,91 @@
     ],
     "authorized_workflows": [
       {
+        "capability_id": "firefox_proxy_delegation_bridge",
+        "priority": 10,
+        "purpose": "CAPABILITY_EXACT_HEAD_GATE",
+        "workflow_id": "qikvrt_firefox_proxy_delegation.yml",
+        "workflow_path": ".github/workflows/qikvrt_firefox_proxy_delegation.yml",
+        "workflow_name": "QIKVRT Firefox proxy delegation bridge",
+        "allowed_events": [
+          "workflow_dispatch"
+        ],
+        "external_effect": "NONE",
+        "is_writer": false,
+        "artifact_policy": "EXECUTOR_DISPATCH_RECEIPT_PLUS_RUN_JOB_STEP_EVIDENCE",
+        "declaration": {
+          "path": ".well-known/qik-vrt-self-disclosure.json",
+          "capability_id": "firefox_proxy_delegation_bridge",
+          "required_binding_fields": {
+            "executor_contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+            "workflow_path": ".github/workflows/qikvrt_firefox_proxy_delegation.yml",
+            "policy_path": "policy/FIREFOX_PROXY_DELEGATION_V1.json",
+            "current_exact_head_gate_required": true,
+            "historical_gate_evidence_transferable": false
+          }
+        },
+        "required_subjects": [
+          {
+            "path": ".github/workflows/qikvrt_firefox_proxy_delegation.yml",
+            "mode": "100644",
+            "blob_sha": "1f41100e3962d70d17a00b7b48613208847c014b"
+          },
+          {
+            "path": "browser/firefox/qikvrt-terminal/manifest.json",
+            "mode": "100644",
+            "blob_sha": "133652abe7decbcfcb514a793005772807aeced2"
+          },
+          {
+            "path": "browser/firefox/qikvrt-terminal/review_effect.js",
+            "mode": "100644",
+            "blob_sha": "03da429fe609603783f4829bb952ffd3c21dce6a"
+          },
+          {
+            "path": "docs/terminal/FIREFOX_PROXY_DELEGATION_BRIDGE_V1.md",
+            "mode": "100644",
+            "blob_sha": "62eaea728876c6d7900b41f826b3f85b0d311500"
+          },
+          {
+            "path": "policy/FIREFOX_PROXY_DELEGATION_V1.json",
+            "mode": "100644",
+            "blob_sha": "3a26f2938e82c0d5b3db347c05bdb97f808e512c"
+          },
+          {
+            "path": "tests/test_qikvrt_firefox_proxy_delegate.py",
+            "mode": "100644",
+            "blob_sha": "d3d9af18e3927e1701a8e8564007da616289a35c"
+          },
+          {
+            "path": "tools/qikvrt_firefox_proxy_delegate.py",
+            "mode": "100644",
+            "blob_sha": "e5b361b99f307b7ebedabeb57263082f23043e63"
+          }
+        ],
+        "evidence_policy": "SUCCESSFUL_POSITIVE_JOB_AND_REQUIRED_STEPS",
+        "required_job_evidence": {
+          "minimum_job_count": 1,
+          "job_name": "verify",
+          "required_successful_steps": [
+            "Verify review-effect JavaScript syntax",
+            "Verify delegation policy JSON",
+            "Run delegation bridge regression tests",
+            "Verify dry-run owner-authenticated target binding",
+            "Reobserve exact Authority main head"
+          ]
+        },
+        "historical_provenance": {
+          "pull_request": 727,
+          "head_sha": "d4cfa7ed284a65a8ad187364feb1578b4d3f25d1",
+          "tree_sha": "9e693ed98e66cd14ac48e0a9096928832f962aab",
+          "merge_commit_sha": "17da8ec84d7b036aef5e08ef9fc440c5feb173bb",
+          "evidence_role": "BYTE_PROVENANCE_ONLY",
+          "transferable_as_current_exact_head_gate_evidence": false
+        }
+      },
+      {
+        "capability_id": "workflow_executor_watchdog",
+        "priority": 100,
+        "purpose": "OBSERVER_CONTINUITY",
         "workflow_id": "qikvrt_workflow_executor_watchdog.yml",
         "workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
         "workflow_name": "QIKVRT workflow executor watchdog",
@@ -181,7 +326,9 @@
         ],
         "external_effect": "NONE",
         "is_writer": false,
-        "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-"
+        "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-",
+        "required_subjects": [],
+        "evidence_policy": "TERMINAL_RUN_SUPPRESSES_DUPLICATE_ONLY"
       }
     ]
   },

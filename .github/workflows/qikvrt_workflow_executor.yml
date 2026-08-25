@@ -8,20 +8,12 @@ on:
     - cron: "23 * * * *"
   push:
     branches: [main]
-    paths:
-      - "AI"
-      - "Makefile"
-      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
-      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
-      - "tools/qikvrt_workflow_executor.py"
-      - "tools/qikvrt_seed_common.py"
-      - ".github/workflows/qikvrt_workflow_executor.yml"
-      - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
-      - ".github/workflows/qikvrt_live_status_watch.yml"
-      - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
-      - "tests/test_seed_workflows.py"
-      - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
-      - "registry/NODE_DISCOVERY_POLICY.json"
+  workflow_run:
+    workflows:
+      - QIKVRT Firefox proxy delegation bridge
+      - QIKVRT workflow executor watchdog
+    types: [completed]
+    branches: [main]
 
 permissions:
   actions: write
@@ -32,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  observe-plan-and-dispatch-one-safe-watchdog:
+  observe-plan-and-dispatch-one-safe-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -55,74 +47,461 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .qikvrt/workflow-executor
+          authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          test "$authority_repository" = "Goldkelch/qik-vrt"
+          test "$GITHUB_REPOSITORY" = "$authority_repository"
+          previous_snapshot="${RUNNER_TEMP}/qikvrt-workflow-executor-previous-snapshot.json"
+          : > "$previous_snapshot"
+          printf 'PREVIOUS_EXECUTOR_SNAPSHOT=%s\n' "$previous_snapshot" >> "$GITHUB_ENV"
           local_head="$(git rev-parse --verify HEAD^{commit})"
           live_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           test "$local_head" = "$live_head"
           printf '%s\n' "$live_head" > .qikvrt/workflow-executor/observed-main-head.txt
           git rev-parse --verify HEAD^{tree} > .qikvrt/workflow-executor/observed-main-tree.txt
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&per_page=100" \
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&head_sha=${live_head}&per_page=100" \
+            > .qikvrt/workflow-executor/raw-current-run-pages.json
+          jq -e '
+            type == "array" and length > 0 and
+            all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+            ([.[].total_count] | unique | length) == 1 and
+            (([.[].workflow_runs | length] | add) == .[0].total_count)
+          ' \
+            .qikvrt/workflow-executor/raw-current-run-pages.json >/dev/null
+          jq '{workflow_runs: [.[].workflow_runs[]]}' \
+            .qikvrt/workflow-executor/raw-current-run-pages.json \
+            > .qikvrt/workflow-executor/raw-current-runs.json
+
+          allowed_paths="$(jq -c '[.dispatch_policy.authorized_workflows[].workflow_path]' \
+            state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          jq -e '.workflow_runs | type == "array"' \
+            .qikvrt/workflow-executor/raw-current-runs.json >/dev/null
+          jq -c '.workflow_runs[]' .qikvrt/workflow-executor/raw-current-runs.json \
+            > .qikvrt/workflow-executor/raw-current-runs.jsonl
+          : > .qikvrt/workflow-executor/current-runs.jsonl
+          while IFS= read -r run; do
+            run_id="$(jq -r '.id' <<< "$run")"
+            run_attempt="$(jq -r '.run_attempt' <<< "$run")"
+            run_head="$(jq -r '.head_sha // ""' <<< "$run")"
+            run_path="$(jq -r '(.path // "") | split("@")[0]' <<< "$run")"
+            if test "$run_head" = "$live_head" && \
+               jq -e --arg path "$run_path" 'index($path) != null' <<< "$allowed_paths" >/dev/null; then
+              gh api --paginate --slurp \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/attempts/${run_attempt}/jobs?per_page=100" \
+                > .qikvrt/workflow-executor/run-job-pages.json
+              jq -e '
+                type == "array" and length > 0 and
+                all(.[]; (.jobs | type) == "array" and (.total_count | type) == "number") and
+                ([.[].total_count] | unique | length) == 1 and
+                (([.[].jobs | length] | add) == .[0].total_count)
+              ' \
+                .qikvrt/workflow-executor/run-job-pages.json >/dev/null
+              jq --argjson run_id "$run_id" --argjson run_attempt "$run_attempt" --arg head "$run_head" '
+                {jobs: [.[].jobs[] |
+                  if .run_id == $run_id and .head_sha == $head
+                  then . + {run_attempt: $run_attempt, attempt_endpoint_bound: true}
+                  else error("job identity drift")
+                  end]}
+              ' .qikvrt/workflow-executor/run-job-pages.json \
+                > .qikvrt/workflow-executor/run-jobs.json
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+                > .qikvrt/workflow-executor/reobserved-run.json
+              jq -e --argjson listed "$run" '
+                .id == $listed.id and
+                .run_attempt == $listed.run_attempt and
+                .head_sha == $listed.head_sha and
+                .path == $listed.path and
+                .event == $listed.event and
+                .status == $listed.status and
+                .conclusion == $listed.conclusion and
+                .name == $listed.name
+              ' .qikvrt/workflow-executor/reobserved-run.json >/dev/null
+              run="$(jq -c '. + {run_detail_reobserved: true}' \
+                .qikvrt/workflow-executor/reobserved-run.json)"
+              jq -c --slurpfile jobs .qikvrt/workflow-executor/run-jobs.json \
+                '. + {jobs: $jobs[0].jobs}' <<< "$run" \
+                >> .qikvrt/workflow-executor/current-runs.jsonl
+            else
+              jq -c '. + {jobs: []}' <<< "$run" \
+                >> .qikvrt/workflow-executor/current-runs.jsonl
+            fi
+          done < .qikvrt/workflow-executor/raw-current-runs.jsonl
+
+          writer_names="$(jq -c '.dispatch_policy.writer_workflow_names' \
+            state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          : > .qikvrt/workflow-executor/active-writer-runs.jsonl
+          for run_status in queued in_progress waiting requested pending; do
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&status=${run_status}&per_page=100" \
+              > .qikvrt/workflow-executor/active-writer-run-pages.json
+            jq -e '
+              type == "array" and length > 0 and
+              all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+              ([.[].total_count] | unique | length) == 1 and
+              (([.[].workflow_runs | length] | add) == .[0].total_count)
+            ' .qikvrt/workflow-executor/active-writer-run-pages.json >/dev/null
+            jq -c --argjson names "$writer_names" '
+              .[].workflow_runs[] |
+              select(.name as $name | $names | index($name)) |
+              . + {jobs: []}
+            ' .qikvrt/workflow-executor/active-writer-run-pages.json \
+              >> .qikvrt/workflow-executor/active-writer-runs.jsonl
+          done
+          jq -n --slurpfile exact .qikvrt/workflow-executor/current-runs.jsonl \
+            --slurpfile writers .qikvrt/workflow-executor/active-writer-runs.jsonl \
+            --arg repository "$GITHUB_REPOSITORY" --arg head "$live_head" '
+            if ($exact | unique_by(.id) | length) != ($exact | length)
+            then error("duplicate exact-head run id")
+            elif ($writers | unique_by(.id) | length) != ($writers | length)
+            then error("duplicate active-writer run id")
+            else
+              ($writers | map(.id)) as $writer_ids |
+            {
+              schema: "qikvrt_workflow_run_observation_v1",
+              repository: $repository,
+              head_sha: $head,
+              pagination_complete: true,
+              workflow_runs: (
+                [$exact[] | select(.id as $id | any($writer_ids[]; . == $id) | not)] +
+                $writers |
+                sort_by([.id, .run_attempt])
+              )
+            }
+            end
+          ' \
             > .qikvrt/workflow-executor/current-runs.json
 
-          previous_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs?branch=main&status=completed&per_page=20" \
-            --jq '.workflow_runs[0].id // empty' 2>/dev/null || true)"
-          if test -n "$previous_run"; then
-            previous_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100" \
-              --jq '[.artifacts[] | select(.name | startswith("qikvrt-workflow-executor-snapshot-"))][0].id // empty' 2>/dev/null || true)"
-            if test -n "$previous_artifact"; then
-              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
-                > .qikvrt/workflow-executor/previous-snapshot.zip
-              unzip -p .qikvrt/workflow-executor/previous-snapshot.zip workflow-executor-snapshot.json \
-                > .qikvrt/workflow-executor/previous-snapshot.json || true
+          previous_run_pages="${RUNNER_TEMP}/qikvrt-workflow-executor-previous-run-pages.json"
+          previous_runs="${RUNNER_TEMP}/qikvrt-workflow-executor-previous-runs.jsonl"
+          baseline_since="$(date -u -d '31 days ago' +'%Y-%m-%dT%H:%M:%SZ')"
+          gh api --method GET --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_workflow_executor.yml/runs" \
+            -f branch=main -f status=completed -f per_page=100 -f created=">=${baseline_since}" \
+            > "$previous_run_pages"
+          jq -e '
+            type == "array" and length > 0 and
+            all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+            ([.[].total_count] | unique | length) == 1 and
+            (([.[].workflow_runs | length] | add) == .[0].total_count)
+          ' "$previous_run_pages" >/dev/null
+          jq -c '[.[].workflow_runs[]] | sort_by(.id) | reverse | .[]' \
+            "$previous_run_pages" > "$previous_runs"
+          compatibility_paths=(
+            .github/workflows/qikvrt_workflow_executor.yml
+            tools/qikvrt_workflow_executor.py
+            state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json
+          )
+          current_compatibility=""
+          for compatibility_path in "${compatibility_paths[@]}"; do
+            current_compatibility+="$(git rev-parse --verify "${live_head}:${compatibility_path}")"
+          done
+          compatible_run_found=false
+          baseline_found=false
+          while IFS= read -r previous_run; do
+            previous_run_id="$(jq -r '.id' <<< "$previous_run")"
+            previous_run_attempt="$(jq -r '.run_attempt' <<< "$previous_run")"
+            previous_head="$(jq -r '.head_sha' <<< "$previous_run")"
+            git cat-file -e "${previous_head}^{commit}"
+            previous_compatibility=""
+            for compatibility_path in "${compatibility_paths[@]}"; do
+              previous_compatibility+="$(git rev-parse --verify "${previous_head}:${compatibility_path}")"
+            done
+            if test "$previous_compatibility" != "$current_compatibility"; then
+              continue
             fi
+            compatible_run_found=true
+            artifact_pages="${RUNNER_TEMP}/qikvrt-workflow-executor-artifact-pages.json"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run_id}/artifacts?per_page=100" \
+              > "$artifact_pages"
+            jq -e '
+              type == "array" and length > 0 and
+              all(.[]; (.artifacts | type) == "array" and (.total_count | type) == "number") and
+              ([.[].total_count] | unique | length) == 1 and
+              (([.[].artifacts | length] | add) == .[0].total_count)
+            ' "$artifact_pages" >/dev/null
+            artifact_ids="${RUNNER_TEMP}/qikvrt-workflow-executor-artifact-ids.txt"
+            artifact_name="qikvrt-workflow-executor-snapshot-${previous_run_id}-${previous_run_attempt}"
+            jq -r --arg artifact_name "$artifact_name" '
+              [.[].artifacts[] |
+                select(.expired != true) |
+                select(.name == $artifact_name)] |
+              sort_by(.id) | reverse | .[] | .id
+            ' "$artifact_pages" > "$artifact_ids"
+            while IFS= read -r previous_artifact; do
+              candidate_zip="${RUNNER_TEMP}/qikvrt-workflow-executor-candidate.zip"
+              candidate_snapshot="${RUNNER_TEMP}/qikvrt-workflow-executor-candidate.json"
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_artifact}/zip" \
+                   > "$candidate_zip" 2>/dev/null && \
+                 unzip -p "$candidate_zip" workflow-executor-snapshot.json \
+                   > "$candidate_snapshot" 2>/dev/null && \
+                 python3 -B tools/qikvrt_workflow_executor.py snapshot \
+                   --baseline "$candidate_snapshot" --expect-head "$live_head" --json \
+                   >/dev/null 2>&1; then
+                cp "$candidate_snapshot" "$previous_snapshot"
+                baseline_found=true
+                break
+              fi
+            done < "$artifact_ids"
+            break
+          done < "$previous_runs"
+          if test "$compatible_run_found" = true && test "$baseline_found" != true; then
+            echo "BLOCK compatible executor baseline exists but no exact valid snapshot was recovered" >&2
+            exit 2
           fi
+          if test "$baseline_found" = true; then
+            baseline_state=RECOVERED_EXACT_COMPATIBLE_SNAPSHOT
+          else
+            baseline_state=BOOTSTRAP_NO_COMPATIBLE_PRIOR_EXECUTOR
+          fi
+          printf '%s\n' "$baseline_state" \
+            > .qikvrt/workflow-executor/baseline-state.txt
 
       - name: Build exact-head dispatch plan
         shell: bash
         run: |
           set -euo pipefail
+          authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          test "$authority_repository" = "Goldkelch/qik-vrt"
+          test "$GITHUB_REPOSITORY" = "$authority_repository"
           head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
           args=(plan --runs-file .qikvrt/workflow-executor/current-runs.json --expect-head "$head" --ref main --json)
-          if test -s .qikvrt/workflow-executor/previous-snapshot.json; then
-            args+=(--baseline .qikvrt/workflow-executor/previous-snapshot.json)
+          if test -s "$PREVIOUS_EXECUTOR_SNAPSHOT"; then
+            args+=(--baseline "$PREVIOUS_EXECUTOR_SNAPSHOT")
           fi
           python3 -B tools/qikvrt_workflow_executor.py "${args[@]}" \
             > .qikvrt/workflow-executor/dispatch-plan.json
           jq '.observed' .qikvrt/workflow-executor/dispatch-plan.json \
             > .qikvrt/workflow-executor/workflow-executor-snapshot.json
+          jq '.dispatch_ledger' .qikvrt/workflow-executor/dispatch-plan.json \
+            > .qikvrt/workflow-executor/dispatch-ledger.json
 
-      - name: Dispatch only a newly eligible no-effect exact-head watchdog
+      - name: Dispatch only one newly eligible no-effect exact-head gate
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          plan=.qikvrt/workflow-executor/dispatch-plan.json
+          authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          test "$authority_repository" = "Goldkelch/qik-vrt"
+          test "$GITHUB_REPOSITORY" = "$authority_repository"
           head="$(cat .qikvrt/workflow-executor/observed-main-head.txt)"
           tree="$(cat .qikvrt/workflow-executor/observed-main-tree.txt)"
+          refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$refreshed_head" = "$head"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$head"
+          test "$(git rev-parse --verify HEAD^{tree})" = "$tree"
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&head_sha=${head}&per_page=100" \
+            > .qikvrt/workflow-executor/raw-current-run-pages.json
+          jq -e '
+            type == "array" and length > 0 and
+            all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+            ([.[].total_count] | unique | length) == 1 and
+            (([.[].workflow_runs | length] | add) == .[0].total_count)
+          ' \
+            .qikvrt/workflow-executor/raw-current-run-pages.json >/dev/null
+          jq '{workflow_runs: [.[].workflow_runs[]]}' \
+            .qikvrt/workflow-executor/raw-current-run-pages.json \
+            > .qikvrt/workflow-executor/raw-current-runs.json
+          allowed_paths="$(jq -c '[.dispatch_policy.authorized_workflows[].workflow_path]' \
+            state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          jq -e '.workflow_runs | type == "array"' \
+            .qikvrt/workflow-executor/raw-current-runs.json >/dev/null
+          jq -c '.workflow_runs[]' .qikvrt/workflow-executor/raw-current-runs.json \
+            > .qikvrt/workflow-executor/raw-current-runs.jsonl
+          : > .qikvrt/workflow-executor/current-runs.jsonl
+          while IFS= read -r run; do
+            run_id="$(jq -r '.id' <<< "$run")"
+            run_attempt="$(jq -r '.run_attempt' <<< "$run")"
+            run_head="$(jq -r '.head_sha // ""' <<< "$run")"
+            run_path="$(jq -r '(.path // "") | split("@")[0]' <<< "$run")"
+            if test "$run_head" = "$head" && \
+               jq -e --arg path "$run_path" 'index($path) != null' <<< "$allowed_paths" >/dev/null; then
+              gh api --paginate --slurp \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/attempts/${run_attempt}/jobs?per_page=100" \
+                > .qikvrt/workflow-executor/run-job-pages.json
+              jq -e '
+                type == "array" and length > 0 and
+                all(.[]; (.jobs | type) == "array" and (.total_count | type) == "number") and
+                ([.[].total_count] | unique | length) == 1 and
+                (([.[].jobs | length] | add) == .[0].total_count)
+              ' \
+                .qikvrt/workflow-executor/run-job-pages.json >/dev/null
+              jq --argjson run_id "$run_id" --argjson run_attempt "$run_attempt" --arg head "$run_head" '
+                {jobs: [.[].jobs[] |
+                  if .run_id == $run_id and .head_sha == $head
+                  then . + {run_attempt: $run_attempt, attempt_endpoint_bound: true}
+                  else error("job identity drift")
+                  end]}
+              ' .qikvrt/workflow-executor/run-job-pages.json \
+                > .qikvrt/workflow-executor/run-jobs.json
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+                > .qikvrt/workflow-executor/reobserved-run.json
+              jq -e --argjson listed "$run" '
+                .id == $listed.id and
+                .run_attempt == $listed.run_attempt and
+                .head_sha == $listed.head_sha and
+                .path == $listed.path and
+                .event == $listed.event and
+                .status == $listed.status and
+                .conclusion == $listed.conclusion and
+                .name == $listed.name
+              ' .qikvrt/workflow-executor/reobserved-run.json >/dev/null
+              run="$(jq -c '. + {run_detail_reobserved: true}' \
+                .qikvrt/workflow-executor/reobserved-run.json)"
+              jq -c --slurpfile jobs .qikvrt/workflow-executor/run-jobs.json \
+                '. + {jobs: $jobs[0].jobs}' <<< "$run" \
+                >> .qikvrt/workflow-executor/current-runs.jsonl
+            else
+              jq -c '. + {jobs: []}' <<< "$run" \
+                >> .qikvrt/workflow-executor/current-runs.jsonl
+            fi
+          done < .qikvrt/workflow-executor/raw-current-runs.jsonl
+
+          writer_names="$(jq -c '.dispatch_policy.writer_workflow_names' \
+            state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
+          : > .qikvrt/workflow-executor/active-writer-runs.jsonl
+          for run_status in queued in_progress waiting requested pending; do
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&status=${run_status}&per_page=100" \
+              > .qikvrt/workflow-executor/active-writer-run-pages.json
+            jq -e '
+              type == "array" and length > 0 and
+              all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+              ([.[].total_count] | unique | length) == 1 and
+              (([.[].workflow_runs | length] | add) == .[0].total_count)
+            ' .qikvrt/workflow-executor/active-writer-run-pages.json >/dev/null
+            jq -c --argjson names "$writer_names" '
+              .[].workflow_runs[] |
+              select(.name as $name | $names | index($name)) |
+              . + {jobs: []}
+            ' .qikvrt/workflow-executor/active-writer-run-pages.json \
+              >> .qikvrt/workflow-executor/active-writer-runs.jsonl
+          done
+          jq -n --slurpfile exact .qikvrt/workflow-executor/current-runs.jsonl \
+            --slurpfile writers .qikvrt/workflow-executor/active-writer-runs.jsonl \
+            --arg repository "$GITHUB_REPOSITORY" --arg head "$head" '
+            if ($exact | unique_by(.id) | length) != ($exact | length)
+            then error("duplicate exact-head run id")
+            elif ($writers | unique_by(.id) | length) != ($writers | length)
+            then error("duplicate active-writer run id")
+            else
+              ($writers | map(.id)) as $writer_ids |
+            {
+              schema: "qikvrt_workflow_run_observation_v1",
+              repository: $repository,
+              head_sha: $head,
+              pagination_complete: true,
+              workflow_runs: (
+                [$exact[] | select(.id as $id | any($writer_ids[]; . == $id) | not)] +
+                $writers |
+                sort_by([.id, .run_attempt])
+              )
+            }
+            end
+          ' \
+            > .qikvrt/workflow-executor/current-runs.json
+
+          args=(plan --runs-file .qikvrt/workflow-executor/current-runs.json --expect-head "$head" --ref main --json)
+          if test -s "$PREVIOUS_EXECUTOR_SNAPSHOT"; then
+            args+=(--baseline "$PREVIOUS_EXECUTOR_SNAPSHOT")
+          fi
+          python3 -B tools/qikvrt_workflow_executor.py "${args[@]}" \
+            > .qikvrt/workflow-executor/dispatch-plan.json
+          jq '.observed' .qikvrt/workflow-executor/dispatch-plan.json \
+            > .qikvrt/workflow-executor/workflow-executor-snapshot.json
+          jq '.dispatch_ledger' .qikvrt/workflow-executor/dispatch-plan.json \
+            > .qikvrt/workflow-executor/dispatch-ledger.json
+
+          plan=.qikvrt/workflow-executor/dispatch-plan.json
           count="$(jq '[.candidates[] | select(.disposition == "DISPATCH")] | length' "$plan")"
           test "$count" -le 1
-          : > .qikvrt/workflow-executor/dispatched-runs.jsonl
-          while IFS=$'\t' read -r workflow_id workflow_name; do
+          jq -r '
+            .candidates[] | select(.disposition == "DISPATCH") |
+            [.workflow_id, .workflow_path, .workflow_blob_sha] | @tsv
+          ' "$plan" > .qikvrt/workflow-executor/dispatch-candidates.tsv
+          materialized_count="$(wc -l < .qikvrt/workflow-executor/dispatch-candidates.tsv | tr -d ' ')"
+          test "$materialized_count" -eq "$count"
+          : > .qikvrt/workflow-executor/dispatch-receipts.jsonl
+          while IFS=$'\t' read -r workflow_id workflow_path workflow_blob; do
             test -n "$workflow_id"
+            test "$GITHUB_REPOSITORY" = "$authority_repository"
             refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
             test "$refreshed_head" = "$head"
-            dispatched_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
-              -f ref=main
-            run_id=""
-            for _ in $(seq 1 12); do
-              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
-                | jq -r --arg head "$head" --arg started "$dispatched_at" \
-                  '[.workflow_runs[] | select(.head_sha == $head and .created_at >= $started)][0].id // empty')"
-              test -n "$run_id" && break
-              sleep 5
+            test "$(git rev-parse --verify HEAD^{tree})" = "$tree"
+            test "$(git rev-parse --verify "${head}:${workflow_path}")" = "$workflow_blob"
+            pre_dispatch_run_pages="${RUNNER_TEMP}/qikvrt-workflow-executor-pre-dispatch-runs.json"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&head_sha=${head}&per_page=100" \
+              > "$pre_dispatch_run_pages"
+            jq -e '
+              type == "array" and length > 0 and
+              all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+              ([.[].total_count] | unique | length) == 1 and
+              (([.[].workflow_runs | length] | add) == .[0].total_count)
+            ' "$pre_dispatch_run_pages" >/dev/null
+            jq -e --arg workflow_path "$workflow_path" '
+              all(.[].workflow_runs[];
+                ((.path // "") | split("@")[0]) != $workflow_path or
+                .event != "workflow_dispatch")
+            ' "$pre_dispatch_run_pages" >/dev/null
+            for run_status in queued in_progress waiting requested pending; do
+              pre_dispatch_writer_pages="${RUNNER_TEMP}/qikvrt-workflow-executor-pre-dispatch-writers.json"
+              gh api --paginate --slurp \
+                "repos/${GITHUB_REPOSITORY}/actions/runs?branch=main&status=${run_status}&per_page=100" \
+                > "$pre_dispatch_writer_pages"
+              jq -e '
+                type == "array" and length > 0 and
+                all(.[]; (.workflow_runs | type) == "array" and (.total_count | type) == "number") and
+                ([.[].total_count] | unique | length) == 1 and
+                (([.[].workflow_runs | length] | add) == .[0].total_count)
+              ' "$pre_dispatch_writer_pages" >/dev/null
+              jq -e --argjson names "$writer_names" '
+                all(.[].workflow_runs[]; (.name as $name | $names | index($name)) == null)
+              ' "$pre_dispatch_writer_pages" >/dev/null
             done
-            test -n "$run_id"
-            printf '{"workflow_id":"%s","workflow_name":"%s","ref":"main","head_sha":"%s","tree_sha":"%s","run_id":%s}\n' \
-              "$workflow_id" "$workflow_name" "$head" "$tree" "$run_id" \
-              >> .qikvrt/workflow-executor/dispatched-runs.jsonl
-          done < <(jq -r '.candidates[] | select(.disposition == "DISPATCH") | [.workflow_id, .workflow_name] | @tsv' "$plan")
+            test "$GITHUB_REPOSITORY" = "$authority_repository"
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$head"
+            test "$(git rev-parse --verify "${head}:${workflow_path}")" = "$workflow_blob"
+            observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            if gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
+              -f ref=main; then
+              transport_state=DISPATCH_TRANSPORT_ACKNOWLEDGED_EXECUTION_UNOBSERVED
+              transport_exit=0
+            else
+              transport_state=DISPATCH_TRANSPORT_FAILED
+              transport_exit=1
+            fi
+            python3 -B tools/qikvrt_workflow_executor.py dispatch-receipt \
+              --plan-file "$plan" \
+              --workflow-id "$workflow_id" \
+              --transport-state "$transport_state" \
+              --observed-at "$observed_at" \
+              --json > .qikvrt/workflow-executor/dispatch-receipt.json
+            jq -c . .qikvrt/workflow-executor/dispatch-receipt.json \
+              >> .qikvrt/workflow-executor/dispatch-receipts.jsonl
+            jq --slurpfile receipt .qikvrt/workflow-executor/dispatch-receipt.json \
+              'if any(.[]; .dispatch_key == $receipt[0].dispatch_key)
+               then error("duplicate dispatch receipt")
+               else . + $receipt
+               end |
+               sort_by(.observed_at) |
+               if length > 128 then .[-128:] else . end' \
+              .qikvrt/workflow-executor/dispatch-ledger.json \
+              > .qikvrt/workflow-executor/dispatch-ledger.next.json
+            mv .qikvrt/workflow-executor/dispatch-ledger.next.json \
+              .qikvrt/workflow-executor/dispatch-ledger.json
+            jq --slurpfile ledger .qikvrt/workflow-executor/dispatch-ledger.json \
+              '.dispatch_ledger = $ledger[0]' \
+              .qikvrt/workflow-executor/workflow-executor-snapshot.json \
+              > .qikvrt/workflow-executor/workflow-executor-snapshot.next.json
+            mv .qikvrt/workflow-executor/workflow-executor-snapshot.next.json \
+              .qikvrt/workflow-executor/workflow-executor-snapshot.json
+            test "$transport_exit" -eq 0
+          done < .qikvrt/workflow-executor/dispatch-candidates.tsv
 
       - name: Preserve exact-head plan and dispatch receipt
         if: always()
@@ -131,4 +510,5 @@ jobs:
           name: qikvrt-workflow-executor-snapshot-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
           path: .qikvrt/workflow-executor

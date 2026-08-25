@@ -88,6 +88,32 @@
     "executor_workflow_path": ".github/workflows/qikvrt_workflow_executor.yml",
     "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
     "node_split_acceptance": "QUEUE_ROWS_REQUIRE_EXACT_NODE_CONTINUITY_RECEIPT",
+    "capability_gate_recovery": {
+      "classification": "PRESENT_BYTES_CURRENT_EXACT_HEAD_GATE_UNOBSERVED",
+      "action": "DISPATCH_ONE_ALLOWLISTED_NO_EFFECT_WORKFLOW",
+      "selection": "CONTRACT_PRIORITY_MAXIMUM_ONE",
+      "required_bindings": [
+        "CURRENT_MAIN_HEAD",
+        "CURRENT_MAIN_TREE",
+        "CAPABILITY_DECLARATION_BLOB",
+        "SUBJECT_PATH_MODE_AND_BLOB_MANIFEST",
+        "WORKFLOW_PATH_AND_BLOB",
+        "WORKFLOW_DISPATCH_EVENT"
+      ],
+      "active_or_terminal_exact_run_suppresses_duplicate": true,
+      "zero_job_or_action_required_is_success": false,
+      "historical_gate_evidence_transferable": false,
+      "transport_acknowledgement_is_execution_evidence": false,
+      "repository_byte_mutation": false,
+      "completion_claims": {
+        "INDEPENDENT_APPROVAL": false,
+        "PASS": false,
+        "FINAL_PASS": false,
+        "PUBLICATION": false,
+        "DEPLOYMENT": false,
+        "EFFECT_ACK_DONE": false
+      }
+    },
     "external_effect": "FORBIDDEN"
   },
   "allowlisted_handlers": [

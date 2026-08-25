@@ -99,6 +99,10 @@ class FirefoxProxyDelegateTests(unittest.TestCase):
         self.assertIn("browser/firefox/qikvrt-terminal/review_effect.js", workflow)
         self.assertIn("browser/firefox/qikvrt-terminal/manifest.json", workflow)
         self.assertIn("node --check browser/firefox/qikvrt-terminal/review_effect.js", workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("Reobserve exact Authority main head", workflow)
+        self.assertIn('test "$live_head" = "$GITHUB_SHA"', workflow)
 
     @mock.patch.object(bridge.subprocess, "Popen")
     @mock.patch.object(bridge, "resolve_firefox", return_value="/usr/bin/firefox")
