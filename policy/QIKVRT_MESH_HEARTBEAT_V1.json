@@ -1,0 +1,76 @@
+{
+  "schema": "QIKVRT_MESH_HEARTBEAT_V1",
+  "heartbeat_hz": 1,
+  "heartbeat_interval_ns": 1000000000,
+  "heartbeat_role": "LIVENESS_AND_LEASE_FRESHNESS_ONLY",
+  "heartbeat_may_trigger_semantic_work": false,
+  "domain_polling_allowed": false,
+  "blind_retry_allowed": false,
+  "semantic_work_trigger": "AUTHENTICATED_CONTENT_BOUND_EVENT_ONLY",
+  "work_units_per_event_limit": 1,
+  "duplicate_event_must_be_idempotent": true,
+  "event_id_payload_rebinding_forbidden": true,
+  "work_lifecycle": [
+    "0",
+    "1",
+    "ARBEIT",
+    "ERGEBNIS",
+    "REOBSERVATION",
+    "AUTHORITY_EFFEKT",
+    "0"
+  ],
+  "system_test": {
+    "network_scope": "LOOPBACK_TCP_ONLY",
+    "node_process_count": 4,
+    "pair_count": 2,
+    "heartbeat_count_per_node": 4,
+    "hash_linked_heartbeat_chain_required": true,
+    "exact_one_hertz_schedule_required": true,
+    "audit_artifact_required": true
+  },
+  "candidate_executor": {
+    "contents_permission": "read",
+    "repository_write_allowed": false,
+    "literal_pull_request_head_required": true
+  },
+  "trusted_main_ledger_writer": {
+    "implemented": true,
+    "eligible_source_event": "SUCCESSFUL_PUSH_RUN_ON_MAIN_ONLY",
+    "productive_writer_serialized": true,
+    "cancel_in_progress": false,
+    "source_cas_before_write": true,
+    "source_cas_before_push": true,
+    "ledger_head_cas_before_push": true,
+    "fast_forward_only": true,
+    "target_ref": "refs/heads/qikvrt/mesh-heartbeat-ledger-v1"
+  },
+  "event_model": {
+    "schedule_trigger_present": false,
+    "timer_may_emit_lease_heartbeat": true,
+    "timer_may_trigger_domain_work": false,
+    "watchdog_or_lease_timeout_may_fail_closed": true
+  },
+  "live_status_projection": {
+    "trigger": "REPOSITORY_EVENT_ONLY",
+    "workflow_run_types": [
+      "requested",
+      "in_progress",
+      "completed"
+    ],
+    "repository_api_polling": false,
+    "sleep_loop": false,
+    "semantic_work_triggered": false,
+    "artifact_required": true,
+    "external_effect": "NONE"
+  },
+  "boundaries": {
+    "external_effect": "NONE",
+    "repository_authority_effect_observed_on_candidate": false,
+    "general_effect_ack_done": false,
+    "publication_observed": false,
+    "deployment_observed": false,
+    "physical_hardware_execution_observed": false,
+    "pass": false,
+    "final_pass": false
+  }
+}

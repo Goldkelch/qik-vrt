@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Mesh heartbeat main ledger
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT Mesh heartbeat"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: qikvrt-mesh-heartbeat-main-ledger-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  persist-main-heartbeat-receipt:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_HEAD: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      LEDGER_REF: refs/heads/qikvrt/mesh-heartbeat-ledger-v1
+
+    steps:
+      - name: Check out exact trusted Authority-main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Revalidate exact Authority-main source before artifact acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          live="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          printf 'source_head=%s\nactual_head=%s\nlive_main=%s\n' \
+            "$SOURCE_HEAD" "$actual" "$live"
+          test "$actual" = "$SOURCE_HEAD"
+          test "$live" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Download exact source-run heartbeat evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="qikvrt-mesh-heartbeat-${SOURCE_HEAD}"
+          target="$RUNNER_TEMP/evidence"
+          mkdir -p "$target"
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$artifact" \
+            --dir "$target"
+          test -s "$target/execution-receipt.json"
+          test -s "$target/heartbeats.jsonl"
+          test -s "$target/work-receipt.json"
+          test -s "$target/authority-ledger.json"
+
+      - name: Verify receipt, source identity and fail-closed boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SOURCE_TREE="$(git rev-parse --verify HEAD^{tree})"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'evidence'
+          value = json.loads((root / 'execution-receipt.json').read_text(encoding='utf-8'))
+          assert value['schema'] == 'qikvrt_mesh_heartbeat_execution_receipt_v1'
+          assert value['repository'] == os.environ['GITHUB_REPOSITORY']
+          assert value['event'] == 'push'
+          assert value['run_id'] == int(os.environ['SOURCE_RUN_ID'])
+          assert value['source_head'] == os.environ['SOURCE_HEAD']
+          assert value['source_tree'] == os.environ['SOURCE_TREE']
+          assert value['network_scope'] == 'LOOPBACK_TCP_ONLY'
+          assert value['heartbeat_hz'] == 1
+          assert value['heartbeat_role'] == 'LIVENESS_AND_LEASE_FRESHNESS_ONLY'
+          assert value['node_process_count'] == 4
+          assert value['pair_count'] == 2
+          assert value['heartbeat_chain_verified'] is True
+          assert value['scheduled_one_hertz_verified'] is True
+          assert value['heartbeat_semantic_work_count'] == 0
+          assert value['polling_count'] == 0
+          assert value['blind_retry_count'] == 0
+          assert value['authenticated_content_bound_work_event_count'] == 1
+          assert value['work_lifecycle'] == [
+              '0', '1', 'ARBEIT', 'ERGEBNIS', 'REOBSERVATION',
+              'AUTHORITY_EFFEKT', '0'
+          ]
+          assert value['duplicate_event_replay_byte_identical'] is True
+          assert value['event_id_payload_rebinding_blocked'] is True
+          assert value['local_authority_effect_reobserved'] is True
+          assert value['repository_authority_effect_observed'] is False
+          assert value['authority_effect_scope'] == 'LOCAL_TEST_LEDGER_ONLY'
+          assert value['external_effect'] == 'NONE'
+          assert value['general_effect_ack_done'] is False
+          assert value['physical_hardware_execution_observed'] is False
+          assert value['publication_observed'] is False
+          assert value['deployment_observed'] is False
+          assert value['pass'] is False
+          assert value['final_pass'] is False
+          files = {
+              'heartbeats_sha256': root / 'heartbeats.jsonl',
+              'work_receipt_sha256': root / 'work-receipt.json',
+              'authority_ledger_sha256': root / 'authority-ledger.json',
+          }
+          for key, path in files.items():
+              observed = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
+              assert value[key] == observed
+          print('MESH_HEARTBEAT_MAIN_RECEIPT=VERIFIED')
+          PY
+
+      - name: Persist exact receipt with serialized fast-forward source CAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/evidence/execution-receipt.json"
+          source_remote_before="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 {print $1}'
+          )"
+          if [ "$source_remote_before" != "$SOURCE_HEAD" ]; then
+            echo 'BLOCK: AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_WRITE' >&2
+            exit 2
+          fi
+
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          ledger="$RUNNER_TEMP/ledger"
+          git init -q "$ledger"
+          git -C "$ledger" config user.name 'github-actions[bot]'
+          git -C "$ledger" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$ledger" remote add origin "$remote"
+
+          expected_ledger_head="$(
+            git ls-remote "$remote" "$LEDGER_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          if [ -n "$expected_ledger_head" ]; then
+            git -C "$ledger" fetch --no-tags --depth=1 origin "$LEDGER_REF"
+            git -C "$ledger" checkout -q -B ledger FETCH_HEAD
+          else
+            git -C "$ledger" checkout -q --orphan ledger
+          fi
+
+          target="receipts/${SOURCE_HEAD}/${SOURCE_RUN_ID}.json"
+          mkdir -p "$ledger/$(dirname "$target")"
+          if [ -e "$ledger/$target" ]; then
+            cmp "$source" "$ledger/$target"
+          else
+            cp "$source" "$ledger/$target"
+          fi
+          cp "$source" "$ledger/latest.json"
+          git -C "$ledger" add "$target" latest.json
+          if git -C "$ledger" diff --cached --quiet; then
+            echo 'MESH_HEARTBEAT_LEDGER_ALREADY_CURRENT'
+            exit 0
+          fi
+          git -C "$ledger" commit -q \
+            -m "evidence: Mesh heartbeat main ${SOURCE_HEAD} run ${SOURCE_RUN_ID}"
+
+          source_remote_before_push="$(
+            git ls-remote --heads origin refs/heads/main |
+              awk 'NR == 1 {print $1}'
+          )"
+          if [ "$source_remote_before_push" != "$SOURCE_HEAD" ]; then
+            echo 'BLOCK: AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_PUSH' >&2
+            exit 2
+          fi
+          ledger_remote_before_push="$(
+            git ls-remote "$remote" "$LEDGER_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          if [ "$ledger_remote_before_push" != "$expected_ledger_head" ]; then
+            echo 'BLOCK: LEDGER_REF_ADVANCED_BEFORE_PUSH' >&2
+            exit 2
+          fi
+          git -C "$ledger" push origin "HEAD:$LEDGER_REF"
