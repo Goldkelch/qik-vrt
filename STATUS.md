@@ -110,7 +110,8 @@ workspace state.
 - No GitHub Release object is created for either annotated tag. Repository
   tagging and Zenodo archival publication remain separate effects.
 - IETF Datatracker publishes the active individual Internet-Draft revision
-  `draft-lohmann-qikvrt-effect-ack-01`; it is neither an RFC nor IETF consensus.
+  `draft-lohmann-qikvrt-effect-ack-03` (last updated `2026-08-01`); it is
+  neither an RFC nor IETF consensus and is not endorsed by the IETF.
 - Public machine-readable Zenodo reservation, finalization, and anonymous
   verification evidence remains retained on the dedicated QIK-VRT state branches.
 
