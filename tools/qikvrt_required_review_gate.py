@@ -47,6 +47,7 @@ def _selection(
     first_blocker: str | None = None,
     pr_numbers: Sequence[int] = (),
     expected_head: str | None = None,
+    workflow_run_head: str | None = None,
 ) -> dict[str, Any]:
     return {
         "schema": SELECTION_SCHEMA,
@@ -55,6 +56,7 @@ def _selection(
         "first_blocker": first_blocker,
         "pr_numbers": list(pr_numbers),
         "expected_head": expected_head,
+        "workflow_run_head": workflow_run_head,
         "status_publication": "FORBIDDEN" if state != "CANDIDATE" else "PENDING_EXACT_REOBSERVATION",
     }
 
@@ -67,15 +69,15 @@ def _selector_sha(value: Any) -> str | None:
     return value
 
 
-def _workflow_run_pr_number(
+def _workflow_run_pr_subject(
     item: Mapping[str, Any], repository: str
-) -> tuple[int | None, str | None]:
+) -> tuple[int | None, str | None, str | None]:
     number = _positive_pr_number(item.get("number"))
     if number is None:
-        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+        return None, None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
     url = item.get("url")
     if not isinstance(url, str) or not url:
-        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+        return None, None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
     parsed = urllib.parse.urlparse(url)
     expected_path = f"/repos/{repository}/pulls/{number}"
     if (
@@ -85,8 +87,17 @@ def _workflow_run_pr_number(
         or parsed.query
         or parsed.fragment
     ):
-        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
-    return number, None
+        return None, None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    head = item.get("head")
+    if not isinstance(head, Mapping):
+        return None, None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    head_value = head.get("sha")
+    if not isinstance(head_value, str) or not head_value:
+        return None, None, "WORKFLOW_RUN_PULL_REQUEST_HEAD_MISSING"
+    candidate_head = _selector_sha(head_value)
+    if candidate_head is None:
+        return None, None, "WORKFLOW_RUN_PULL_REQUEST_HEAD_INVALID"
+    return number, candidate_head, None
 
 
 def select_required_review_targets(
@@ -94,19 +105,19 @@ def select_required_review_targets(
     repository: str,
     requested_pr: str,
     workflow_event: str,
-    expected_head: str,
+    workflow_run_head: str,
     event_prs: Any,
 ) -> dict[str, Any]:
     """Resolve exactly one status subject without a scheduled repository scan."""
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise ReviewGateInputError("selector repository is invalid")
-    bound_head = expected_head.strip()
-    if bound_head and _selector_sha(bound_head) is None:
+    run_head = workflow_run_head.strip()
+    if run_head and _selector_sha(run_head) is None:
         return _selection(
             "REOBSERVE_EXACT_EVENT_TARGET",
             source="WORKFLOW_RUN",
-            first_blocker="INVALID_EVENT_EXPECTED_HEAD",
-            expected_head=bound_head,
+            first_blocker="INVALID_WORKFLOW_RUN_HEAD",
+            workflow_run_head=run_head,
         )
     if requested_pr.strip():
         number = _positive_pr_number(requested_pr)
@@ -125,16 +136,16 @@ def select_required_review_targets(
             "INELIGIBLE_EVENT_TARGET",
             source="WORKFLOW_RUN",
             first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
-            expected_head=bound_head or None,
+            workflow_run_head=run_head or None,
         )
     if not workflow_event:
         return _selection(
             "NO_EVENT_SUBJECT",
             source="NONE",
             first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
-            expected_head=bound_head or None,
+            workflow_run_head=run_head or None,
         )
-    if workflow_event and not bound_head:
+    if workflow_event and not run_head:
         return _selection(
             "REOBSERVE_EXACT_EVENT_TARGET",
             source="WORKFLOW_RUN",
@@ -145,45 +156,59 @@ def select_required_review_targets(
             "NO_EVENT_SUBJECT",
             source="NONE",
             first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
-            expected_head=bound_head or None,
+            workflow_run_head=run_head or None,
         )
     if not isinstance(event_prs, Sequence) or isinstance(event_prs, (str, bytes)):
         return _selection(
             "INELIGIBLE_EVENT_TARGET",
             source="WORKFLOW_RUN_PULL_REQUESTS",
             first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+            workflow_run_head=run_head or None,
         )
-    numbers: set[int] = set()
+    subjects: dict[int, str] = {}
     for item in event_prs:
         if not isinstance(item, Mapping):
             return _selection(
                 "INELIGIBLE_EVENT_TARGET",
                 source="WORKFLOW_RUN_PULL_REQUESTS",
                 first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                workflow_run_head=run_head or None,
             )
-        number, blocker = _workflow_run_pr_number(item, repository)
+        number, candidate_head, blocker = _workflow_run_pr_subject(item, repository)
         if blocker is not None:
             return _selection(
                 "INELIGIBLE_EVENT_TARGET",
                 source="WORKFLOW_RUN_PULL_REQUESTS",
                 first_blocker=blocker,
-                expected_head=bound_head or None,
+                workflow_run_head=run_head or None,
             )
         assert number is not None
-        numbers.add(number)
-    if len(numbers) != 1:
+        assert candidate_head is not None
+        previous_head = subjects.get(number)
+        if previous_head is not None and previous_head != candidate_head:
+            return _selection(
+                "AMBIGUOUS_EVENT_SUBJECT",
+                source="WORKFLOW_RUN_PULL_REQUESTS",
+                first_blocker="WORKFLOW_RUN_PULL_REQUEST_HEAD_CONFLICT",
+                pr_numbers=[number],
+                workflow_run_head=run_head or None,
+            )
+        subjects[number] = candidate_head
+    if len(subjects) != 1:
         return _selection(
             "AMBIGUOUS_EVENT_SUBJECT",
             source="WORKFLOW_RUN_PULL_REQUESTS",
             first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
-            pr_numbers=sorted(numbers),
-            expected_head=bound_head or None,
+            pr_numbers=sorted(subjects),
+            workflow_run_head=run_head or None,
         )
+    number, candidate_head = next(iter(subjects.items()))
     return _selection(
         "CANDIDATE",
         source="WORKFLOW_RUN_PULL_REQUESTS",
-        pr_numbers=sorted(numbers),
-        expected_head=bound_head or None,
+        pr_numbers=[number],
+        expected_head=candidate_head,
+        workflow_run_head=run_head or None,
     )
 
 

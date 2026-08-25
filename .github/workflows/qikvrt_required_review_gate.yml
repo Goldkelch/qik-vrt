@@ -36,7 +36,7 @@ jobs:
       STATUS_CONTEXT: QIKVRT required code-owner review
       REQUESTED_PR: ${{ inputs.pr || '' }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
-      EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
+      EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
       EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
     steps:
       - name: Check out trusted main gate implementation
@@ -59,7 +59,7 @@ jobs:
               repository=os.environ['REPOSITORY'],
               requested_pr=os.environ.get('REQUESTED_PR','').strip(),
               workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip(),
-              expected_head=os.environ.get('EVENT_EXPECTED_HEAD','').strip(),
+              workflow_run_head=os.environ.get('EVENT_WORKFLOW_RUN_HEAD','').strip(),
               event_prs=json.loads(os.environ.get('EVENT_PRS') or '[]'),
           )
           print(json.dumps(value,sort_keys=True))

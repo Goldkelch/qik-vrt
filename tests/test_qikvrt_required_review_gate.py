@@ -27,6 +27,13 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         value.update(overrides)
         return value
 
+    def event_pr(self, number=641, *, head=None, repository="example/qik-vrt"):
+        return {
+            "number": number,
+            "url": f"https://api.github.com/repos/{repository}/pulls/{number}",
+            "head": {"sha": self.head if head is None else head},
+        }
+
     def enforced_rules(self):
         return [{"type": "pull_request", "parameters": {
             "required_approving_review_count": 1,
@@ -135,6 +142,8 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
         self.assertNotIn("\n  schedule:\n", workflow)
         self.assertNotIn("pulls?state=open", workflow)
         self.assertIn("select_required_review_targets", workflow)
+        self.assertIn("EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}", workflow)
+        self.assertNotIn("EVENT_EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha", workflow)
         self.assertIn("qikvrt-required-code-owner-selection-", workflow)
         self.assertLess(
             workflow.index("pr=gh_json(f'repos/{repo}/pulls/{number}')"),
@@ -146,7 +155,7 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             repository="example/qik-vrt",
             requested_pr="641",
             workflow_event="",
-            expected_head="",
+            workflow_run_head="",
             event_prs=[],
         )
         self.assertEqual(dispatch["state"], "CANDIDATE")
@@ -156,7 +165,7 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             repository="example/qik-vrt",
             requested_pr="",
             workflow_event="pull_request",
-            expected_head=self.head,
+            workflow_run_head="a" * 40,
             event_prs=[],
         )
         self.assertEqual(no_event["state"], "NO_EVENT_SUBJECT")
@@ -169,10 +178,10 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             repository="example/qik-vrt",
             requested_pr="",
             workflow_event="pull_request",
-            expected_head=self.head,
+            workflow_run_head="a" * 40,
             event_prs=[
-                {"number": 641, "url": "https://api.github.com/repos/example/qik-vrt/pulls/641"},
-                {"number": 642, "url": "https://api.github.com/repos/example/qik-vrt/pulls/642"},
+                self.event_pr(641),
+                self.event_pr(642),
             ],
         )
         self.assertEqual(ambiguous["state"], "AMBIGUOUS_EVENT_SUBJECT")
@@ -185,10 +194,8 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             repository="example/qik-vrt",
             requested_pr="",
             workflow_event="schedule",
-            expected_head=self.head,
-            event_prs=[
-                {"number": 641, "url": "https://api.github.com/repos/example/qik-vrt/pulls/641"}
-            ],
+            workflow_run_head="a" * 40,
+            event_prs=[self.event_pr()],
         )
         self.assertEqual(scheduled["state"], "INELIGIBLE_EVENT_TARGET")
         self.assertEqual(
@@ -199,16 +206,44 @@ class RequiredCodeOwnerReviewGateTests(unittest.TestCase):
             repository="example/qik-vrt",
             requested_pr="",
             workflow_event="pull_request",
-            expected_head=self.head,
-            event_prs=[
-                {"number": 641, "url": "https://api.github.com/repos/other/qik-vrt/pulls/641"}
-            ],
+            workflow_run_head="a" * 40,
+            event_prs=[self.event_pr(repository="other/qik-vrt")],
         )
         self.assertEqual(cross_repository["state"], "INELIGIBLE_EVENT_TARGET")
         self.assertEqual(
             cross_repository["first_blocker"],
             "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL",
         )
+
+    def test_workflow_run_uses_associated_pr_head_not_trusted_main_head(self):
+        trusted_main_head = "a" * 40
+        result = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="pull_request_target",
+            workflow_run_head=trusted_main_head,
+            event_prs=[self.event_pr(head=self.head)],
+        )
+        self.assertEqual(result["state"], "CANDIDATE")
+        self.assertEqual(result["pr_numbers"], [641])
+        self.assertEqual(result["expected_head"], self.head)
+        self.assertEqual(result["workflow_run_head"], trusted_main_head)
+
+    def test_workflow_run_pr_head_is_required_and_fail_closed(self):
+        missing = self.event_pr()
+        missing["head"] = {}
+        result = MODULE.select_required_review_targets(
+            repository="example/qik-vrt",
+            requested_pr="",
+            workflow_event="pull_request_target",
+            workflow_run_head="a" * 40,
+            event_prs=[missing],
+        )
+        self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(
+            result["first_blocker"], "WORKFLOW_RUN_PULL_REQUEST_HEAD_MISSING"
+        )
+        self.assertIsNone(result["expected_head"])
 
 
 if __name__ == "__main__":
