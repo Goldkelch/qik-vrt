@@ -5,7 +5,7 @@
 
 One pulse per second proves liveness and lease freshness only. Heartbeats never
 select work, trigger semantic work, poll domain state or blind-retry failures.
-Semantic work begins only from one authenticated content-bound event and
+Semantic work begins only from one locally constructed content-bound event and
 follows the exact local lifecycle:
 
 0 -> 1 -> ARBEIT -> ERGEBNIS -> REOBSERVATION -> AUTHORITY_EFFEKT -> 0
@@ -212,6 +212,8 @@ def build_work_event(*, source_head: str, source_tree: str) -> dict[str, Any]:
         "source_head": _sha1(source_head, "source_head"),
         "source_tree": _sha1(source_tree, "source_tree"),
         "authority_scope": AUTHORITY_EFFECT_SCOPE,
+        "construction_scope": "LOCAL_SYSTEM_TEST",
+        "external_ingress_authentication_observed": False,
     }
 
 
@@ -221,6 +223,7 @@ def normalize_work_event(value: Any) -> dict[str, Any]:
     required = {
         "schema", "event_id", "payload", "payload_sha256",
         "source_head", "source_tree", "authority_scope",
+        "construction_scope", "external_ingress_authentication_observed",
     }
     if set(value) != required or value["schema"] != WORK_EVENT_SCHEMA:
         raise HeartbeatContractError("work event fields are not exact")
@@ -228,6 +231,12 @@ def normalize_work_event(value: Any) -> dict[str, Any]:
         raise HeartbeatContractError("work event payload digest mismatch")
     if value["authority_scope"] != AUTHORITY_EFFECT_SCOPE:
         raise HeartbeatContractError("work event authority scope mismatch")
+    if value["construction_scope"] != "LOCAL_SYSTEM_TEST":
+        raise HeartbeatContractError("work event construction scope mismatch")
+    if value["external_ingress_authentication_observed"] is not False:
+        raise HeartbeatContractError(
+            "work event may not manufacture external ingress authentication"
+        )
     return {
         **copy.deepcopy(dict(value)),
         "event_id": _identifier(value["event_id"], "event_id"),
@@ -519,7 +528,8 @@ async def run_demo(
         "heartbeat_semantic_work_count": ring.heartbeat_semantic_work_count,
         "polling_count": ring.polling_count,
         "blind_retry_count": ring.blind_retry_count,
-        "authenticated_content_bound_work_event_count": 1,
+        "locally_constructed_content_bound_work_event_count": 1,
+        "external_ingress_authentication_observed": False,
         "work_lifecycle": work_receipt["lifecycle"],
         "duplicate_event_replay_byte_identical": replay_identical,
         "event_id_payload_rebinding_blocked": tamper_blocked,
@@ -562,13 +572,17 @@ def verify_audit(value: Any, *, source_head: str, source_tree: str) -> dict[str,
             raise HeartbeatContractError(f"audit {key} must be true")
     if value.get("scheduled_interval_ns") != HEARTBEAT_INTERVAL_NS or value.get("work_lifecycle") != LIFECYCLE:
         raise HeartbeatContractError("audit schedule or lifecycle mismatch")
-    if value.get("authenticated_content_bound_work_event_count") != 1:
+    if value.get("locally_constructed_content_bound_work_event_count") != 1:
         raise HeartbeatContractError("audit must execute exactly one work event")
     for key in ("heartbeat_semantic_work_count", "polling_count", "blind_retry_count"):
         if value.get(key) != 0:
             raise HeartbeatContractError(f"audit {key} must be zero")
     if value.get("repository_authority_effect_observed") is not False:
         raise HeartbeatContractError("audit may not manufacture repository authority effect")
+    if value.get("external_ingress_authentication_observed") is not False:
+        raise HeartbeatContractError(
+            "audit may not manufacture external ingress authentication"
+        )
     if value.get("authority_effect_scope") != AUTHORITY_EFFECT_SCOPE or value.get("external_effect") != EXTERNAL_EFFECT:
         raise HeartbeatContractError("audit authority or external effect mismatch")
     for key in (

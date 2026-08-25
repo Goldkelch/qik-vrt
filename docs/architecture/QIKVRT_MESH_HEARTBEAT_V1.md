@@ -14,7 +14,7 @@ HEARTBEAT
 
 The one-hertz signal is a liveness and lease-freshness pulse only. It may update the last-seen lease of a bound node. It may not discover work, select work, dispatch work, repeat a failed work unit, transfer stale evidence, or manufacture completion.
 
-Semantic work begins only from one authenticated, content-bound event. One accepted event may produce at most one bounded work unit. Reuse of the same event identity with the same bytes is idempotent; reuse with different bytes fails closed.
+The bounded candidate test begins semantic work only from one locally constructed, content-bound event. One accepted event may produce at most one bounded work unit. Reuse of the same event identity with the same bytes is idempotent; reuse with different bytes fails closed. The local payload digest is not a signer, MAC, webhook signature or proof of external ingress authentication.
 
 ```text
 0
@@ -26,13 +26,13 @@ Semantic work begins only from one authenticated, content-bound event. One accep
 → 0
 ```
 
-`0` is quiescence. `1` is acceptance of an authenticated content-bound event. `ARBEIT` is the bounded deterministic work unit. `ERGEBNIS` is its exact result. `REOBSERVATION` recomputes and compares the result. `AUTHORITY-EFFEKT` in the candidate system test is deliberately restricted to a local test ledger. A repository Authority effect is never inferred from candidate execution.
+`0` is quiescence. `1` is acceptance of a locally constructed content-bound event. `ARBEIT` is the bounded deterministic work unit. `ERGEBNIS` is its exact result. `REOBSERVATION` recomputes and compares the result. `AUTHORITY-EFFEKT` in the candidate system test is deliberately restricted to a local test ledger. A repository Authority effect is never inferred from candidate execution.
 
 ## Bounded system test
 
 The repository-native system test starts four independent heartbeat emitter processes arranged as two Authority/Mirror pairs. Each process opens one real TCP connection to a loopback collector and emits four hash-linked heartbeats on an exact one-second schedule. Every heartbeat contains the exact source head and tree, a contiguous sequence number, the previous heartbeat digest, its scheduled and actual monotonic timestamps, and explicit false values for semantic work, polling and blind retry.
 
-The collector validates every frame and returns a digest-bound acknowledgement. After all heartbeat events have been reobserved, the test executes one authenticated work event through the complete local lifecycle. An identical replay must return byte-identical evidence without another authority-ledger record. Rebinding the same event ID to different bytes must block.
+The collector validates every frame and returns a digest-bound acknowledgement. After all heartbeat events have been reobserved, the test executes one locally constructed work event through the complete local lifecycle. An identical replay must return byte-identical evidence without another authority-ledger record. Rebinding the same event ID to different bytes must block.
 
 The execution receipt binds:
 
@@ -44,6 +44,7 @@ The execution receipt binds:
 - zero polling and zero blind retry;
 - exact work lifecycle;
 - idempotent replay and tamper blocking;
+- local construction scope and explicit absence of observed external ingress authentication;
 - local-test-only authority effect;
 - `external_effect=NONE`;
 - no publication, deployment, physical execution, `PASS`, `FINAL_PASS`, or general `EFFECT_ACK_DONE`.
@@ -58,7 +59,7 @@ The execution receipt binds:
 
 The former bounded API polling loop is removed. `.github/workflows/qikvrt_live_status_watch.yml` now reacts once to a repository event and materializes one exact event-bound status snapshot. Relevant `workflow_run` transitions (`requested`, `in_progress`, `completed`), pull-request lifecycle events, an explicit command, or manual dispatch are the only triggers.
 
-The projection performs no `gh api` crawl, no sleep loop and no repeated workflow discovery. It consumes the authenticated GitHub event envelope, writes one job summary and uploads one exact JSON artifact. The projection explicitly records:
+The projection performs no `gh api` crawl, no sleep loop and no repeated workflow discovery. It consumes one repository-delivered GitHub event envelope, writes one job summary and uploads one exact JSON artifact. This projection does not independently prove the envelope's webhook signature or delivery identity. It explicitly records:
 
 ```text
 trigger = REPOSITORY_EVENT_ONLY

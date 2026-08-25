@@ -57,6 +57,8 @@ class MeshHeartbeatPureContractTests(unittest.TestCase):
     def test_work_ring_executes_exact_lifecycle_once(self) -> None:
         ring = WorkRing()
         event = build_work_event(source_head=HEAD, source_tree=TREE)
+        self.assertEqual(event["construction_scope"], "LOCAL_SYSTEM_TEST")
+        self.assertFalse(event["external_ingress_authentication_observed"])
         first = ring.execute(event)
         second = ring.execute(event)
         self.assertEqual(first, second)
@@ -119,6 +121,13 @@ class MeshHeartbeatSystemTests(unittest.TestCase):
             self.assertEqual(receipt["heartbeat_semantic_work_count"], 0)
             self.assertEqual(receipt["polling_count"], 0)
             self.assertEqual(receipt["blind_retry_count"], 0)
+            self.assertEqual(
+                receipt["locally_constructed_content_bound_work_event_count"],
+                1,
+            )
+            self.assertFalse(
+                receipt["external_ingress_authentication_observed"]
+            )
             self.assertTrue(receipt["duplicate_event_replay_byte_identical"])
             self.assertTrue(receipt["event_id_payload_rebinding_blocked"])
             self.assertTrue(receipt["local_authority_effect_reobserved"])
@@ -148,6 +157,22 @@ class MeshHeartbeatSystemTests(unittest.TestCase):
         with self.assertRaisesRegex(HeartbeatContractError, "manufacture"):
             verify_audit(receipt, source_head=HEAD, source_tree=TREE)
 
+    def test_audit_rejects_manufactured_external_ingress_authentication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = asyncio.run(
+                run_demo(
+                    source_head=HEAD,
+                    source_tree=TREE,
+                    output_dir=pathlib.Path(directory),
+                    heartbeat_count=4,
+                    event_name="local",
+                    run_id=0,
+                )
+            )
+        receipt["external_ingress_authentication_observed"] = True
+        with self.assertRaisesRegex(HeartbeatContractError, "authentication"):
+            verify_audit(receipt, source_head=HEAD, source_tree=TREE)
+
 
 class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
     def test_policy_binds_one_hertz_liveness_without_semantic_polling(self) -> None:
@@ -164,7 +189,12 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         self.assertEqual(policy["work_lifecycle"], LIFECYCLE)
         self.assertEqual(
             policy["semantic_work_trigger"],
-            "AUTHENTICATED_CONTENT_BOUND_EVENT_ONLY",
+            "LOCALLY_CONSTRUCTED_CONTENT_BOUND_EVENT_ONLY",
+        )
+        self.assertFalse(policy["external_ingress_authentication_observed"])
+        self.assertEqual(
+            policy["system_test"]["work_event_construction_scope"],
+            "LOCAL_SYSTEM_TEST",
         )
         projection = policy["live_status_projection"]
         self.assertEqual(projection["trigger"], "REPOSITORY_EVENT_ONLY")
@@ -230,6 +260,18 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         self.assertIn("AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_WRITE", workflow)
         self.assertIn("AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_PUSH", workflow)
         self.assertIn("LEDGER_REF_ADVANCED_BEFORE_PUSH", workflow)
+        self.assertIn(
+            "value['locally_constructed_content_bound_work_event_count'] == 1",
+            workflow,
+        )
+        self.assertIn(
+            "value['external_ingress_authentication_observed'] is False",
+            workflow,
+        )
+        self.assertNotIn(
+            "authenticated_content_bound_work_event_count",
+            workflow,
+        )
         self.assertIn("git -C \"$ledger\" push origin \"HEAD:$LEDGER_REF\"", workflow)
 
 
