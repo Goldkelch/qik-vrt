@@ -23,6 +23,7 @@ from typing import Any, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_RELATIVE_PATH = "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+ASSIGNMENT_CONTRACT_RELATIVE_PATH = "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 ACTIVE_STATUSES = frozenset({"queued", "in_progress", "waiting", "requested", "pending"})
 WAITING_STATUSES = frozenset({"queued", "waiting", "requested", "pending"})
 UNTRUSTED_CONCLUSIONS = frozenset({"action_required", "startup_failure"})
@@ -38,6 +39,10 @@ GATEWATCH_STATES = frozenset(
         "NOT_OBSERVED",
         "NOT_APPLICABLE",
     }
+)
+TERMINAL_ASSIGNMENT_WORKFLOWS = (
+    "QIKVRT requested review executor",
+    "QIK-VRT autonomous draft-PR continuation",
 )
 
 
@@ -190,10 +195,52 @@ def load_contract(root: Path = ROOT) -> dict[str, Any]:
     return contract
 
 
+def _terminal_assignment_policy(root: Path) -> Mapping[str, Any]:
+    path = root / ASSIGNMENT_CONTRACT_RELATIVE_PATH
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ReflexiveWatchdogBlock(f"cannot load terminal assignment contract: {exc}") from exc
+    policy = _mapping(
+        _mapping(value, "autonomous self-healing contract").get("terminal_assignment_backpressure"),
+        "terminal assignment backpressure",
+    )
+    if policy.get("schema") != "qikvrt_terminal_assignment_backpressure_v1":
+        raise ReflexiveWatchdogBlock("terminal assignment backpressure schema is not v1")
+    _string(policy.get("repository"), "terminal assignment repository")
+    _positive_int(policy.get("carrier_pr"), "terminal assignment carrier PR")
+    anchor = _mapping(policy.get("anchor_assignment"), "terminal assignment anchor")
+    _string(anchor.get("display_id"), "terminal assignment display id")
+    _positive_int(anchor.get("comment_id"), "terminal assignment comment id")
+    _string(policy.get("candidate_marker"), "terminal assignment candidate marker")
+    requirements = _mapping(
+        policy.get("candidate_requirements"), "terminal assignment candidate requirements"
+    )
+    if requirements.get("same_repository") is not True:
+        raise ReflexiveWatchdogBlock("terminal assignment candidates are not same-repository bound")
+    if requirements.get("state") != "open" or requirements.get("draft") is not True:
+        raise ReflexiveWatchdogBlock("terminal assignment candidates are not open-draft bound")
+    if requirements.get("base_ref") != "main" or requirements.get("exact_base_sha") is not True:
+        raise ReflexiveWatchdogBlock("terminal assignment candidates are not exact-main bound")
+    _string(requirements.get("exact_opt_in_marker"), "terminal assignment opt-in marker")
+    _positive_int(
+        requirements.get("maximum_open_candidates"),
+        "terminal assignment maximum open candidates",
+    )
+    return policy
+
+
 def _runs(value: Mapping[str, Any] | Sequence[Any]) -> list[Mapping[str, Any]]:
     raw: Any = value.get("workflow_runs") if isinstance(value, Mapping) else value
     if not isinstance(raw, list):
         raise ReflexiveWatchdogBlock("workflow run observation must contain workflow_runs")
+    return [item for item in raw if isinstance(item, Mapping)]
+
+
+def _pulls(value: Mapping[str, Any] | Sequence[Any]) -> list[Mapping[str, Any]]:
+    raw: Any = value.get("pull_requests") if isinstance(value, Mapping) else value
+    if not isinstance(raw, list):
+        raise ReflexiveWatchdogBlock("pull-request observation must contain pull_requests")
     return [item for item in raw if isinstance(item, Mapping)]
 
 
@@ -602,6 +649,132 @@ def _node_liveness_observation(
     }
 
 
+def _terminal_assignment_observation(
+    *,
+    root: Path,
+    repository: str,
+    authority_head: str,
+    pulls_value: Mapping[str, Any] | Sequence[Any] | None,
+    runs_value: Mapping[str, Any] | Sequence[Any] | None,
+    jobs_by_run: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, Any]:
+    if pulls_value is None:
+        return {
+            "schema": "qikvrt_reflexive_terminal_assignment_observation_v1",
+            "state": "NOT_OBSERVED",
+            "first_blocker": None,
+            "candidate_pull_requests": [],
+            "workflow_dispositions": [],
+        }
+
+    policy = _terminal_assignment_policy(root)
+    if policy.get("repository") != repository:
+        raise ReflexiveWatchdogBlock("terminal assignment repository differs from observation")
+    anchor = _mapping(policy["anchor_assignment"], "terminal assignment anchor")
+    requirements = _mapping(
+        policy["candidate_requirements"], "terminal assignment candidate requirements"
+    )
+    marker = _string(policy["candidate_marker"], "terminal assignment candidate marker")
+    opt_in_marker = _string(
+        requirements["exact_opt_in_marker"], "terminal assignment opt-in marker"
+    )
+
+    candidates: list[dict[str, Any]] = []
+    candidate_heads: set[str] = set()
+    for pull in sorted(_pulls(pulls_value), key=lambda item: str(item.get("number", ""))):
+        body = pull.get("body") or ""
+        if not isinstance(body, str) or marker not in body:
+            continue
+        number = _positive_int(pull.get("number"), "terminal assignment candidate PR")
+        head = _mapping(pull.get("head"), f"terminal assignment candidate #{number} head")
+        base = _mapping(pull.get("base"), f"terminal assignment candidate #{number} base")
+        head_repository = _mapping(
+            head.get("repo"), f"terminal assignment candidate #{number} head repository"
+        ).get("full_name")
+        head_sha = _head_sha(head.get("sha"), f"terminal assignment candidate #{number} head")
+        binding_blockers: list[str] = []
+        if body.count(marker) != 1:
+            binding_blockers.append("CANDIDATE_MARKER_NOT_EXACTLY_ONCE")
+        if body.count(opt_in_marker) != 1:
+            binding_blockers.append("SELF_HEAL_OPT_IN_NOT_EXACTLY_ONCE")
+        if pull.get("state") != requirements["state"]:
+            binding_blockers.append("CANDIDATE_NOT_OPEN")
+        if pull.get("draft") is not requirements["draft"]:
+            binding_blockers.append("CANDIDATE_NOT_DRAFT")
+        if head_repository != repository:
+            binding_blockers.append("CANDIDATE_HEAD_REPOSITORY_DRIFT")
+        if base.get("ref") != requirements["base_ref"]:
+            binding_blockers.append("CANDIDATE_BASE_REF_DRIFT")
+        if base.get("sha") != authority_head:
+            binding_blockers.append("CANDIDATE_BASE_SHA_DRIFT")
+        candidates.append(
+            {
+                "pull_request": number,
+                "head_ref": head.get("ref"),
+                "head_sha": head_sha,
+                "base_ref": base.get("ref"),
+                "base_sha": base.get("sha"),
+                "binding_state": "EXACT" if not binding_blockers else "INVALID",
+                "binding_blockers": binding_blockers,
+            }
+        )
+        candidate_heads.add(head_sha)
+
+    maximum = _positive_int(
+        requirements["maximum_open_candidates"], "terminal assignment maximum open candidates"
+    )
+    first_blocker: str | None
+    state: str
+    dispositions: list[dict[str, Any]] = []
+    if not candidates:
+        state = "PENDING"
+        first_blocker = "REPAIR_CANDIDATE_NOT_MATERIALIZED"
+    elif len(candidates) > maximum:
+        state = "AUTHORITY_REQUIRED"
+        first_blocker = "MULTIPLE_BOUND_REPAIR_CANDIDATES"
+    elif candidates[0]["binding_state"] != "EXACT":
+        state = "AUTHORITY_REQUIRED"
+        first_blocker = "TERMINAL_ASSIGNMENT_CANDIDATE_BINDING_INVALID"
+    else:
+        state = "MATERIALIZED"
+        assignment_runs = (
+            [run for run in _runs(runs_value) if run.get("head_sha") in candidate_heads]
+            if runs_value is not None
+            else []
+        )
+        for name in TERMINAL_ASSIGNMENT_WORKFLOWS:
+            gate = _gate_state_for_run(
+                _latest_by_exact_name(assignment_runs, name), jobs_by_run, required=False
+            )
+            dispositions.append({"workflow_name": name, **gate})
+        blocking_dispositions = [
+            item for item in dispositions if item["state"] in {"FAILED", "UNTRUSTED"}
+        ]
+        if blocking_dispositions:
+            first = blocking_dispositions[0]
+            stem = (
+                "REQUESTED_REVIEW"
+                if first["workflow_name"] == TERMINAL_ASSIGNMENT_WORKFLOWS[0]
+                else "CONTINUATION"
+            )
+            suffix = "EXECUTED_FAILURE" if first["state"] == "FAILED" else "UNTRUSTED"
+            first_blocker = f"TERMINAL_ASSIGNMENT_{stem}_{suffix}"
+        else:
+            first_blocker = "TERMINAL_ASSIGNMENT_DISPOSITION_PENDING"
+
+    return {
+        "schema": "qikvrt_reflexive_terminal_assignment_observation_v1",
+        "state": state,
+        "first_blocker": first_blocker,
+        "assignment": {
+            "display_id": anchor["display_id"],
+            "comment_id": anchor["comment_id"],
+        },
+        "candidate_pull_requests": candidates,
+        "workflow_dispositions": dispositions,
+    }
+
+
 def _resource_graph(
     active_writers: Sequence[Mapping[str, Any]],
     waiting_productive: Sequence[Mapping[str, Any]],
@@ -644,6 +817,8 @@ def analyze(
     observation_scope: str = "MAIN",
     node_liveness_dir: Path | None = None,
     authority_head: str | None = None,
+    terminal_assignment_pulls_value: Mapping[str, Any] | Sequence[Any] | None = None,
+    terminal_assignment_runs_value: Mapping[str, Any] | Sequence[Any] | None = None,
 ) -> dict[str, Any]:
     contract = load_contract(root)
     if authority_head is not None:
@@ -731,7 +906,22 @@ def analyze(
         now=now,
     )
 
+    assignment_authority_head = authority_head or expected_head
+    terminal_assignment = _terminal_assignment_observation(
+        root=root,
+        repository=repository,
+        authority_head=assignment_authority_head,
+        pulls_value=terminal_assignment_pulls_value,
+        runs_value=terminal_assignment_runs_value,
+        jobs_by_run=jobs_by_run,
+    )
+
     progress_material = [item for item in normalized if item["name"] not in observer_names]
+    if terminal_assignment["state"] != "NOT_OBSERVED":
+        progress_material = [
+            *progress_material,
+            {"terminal_assignment": terminal_assignment},
+        ]
     progress_fingerprint = sha256_bytes(canonical_json_bytes(progress_material))
     baseline_same = False
     baseline_binding_same = False
@@ -787,6 +977,15 @@ def analyze(
         disposition = "HOLD"
         productive_edge = "REPAIR_OR_REOBSERVE_FIRST_FAILED_TRUSTED_GATE"
         safe_continuation = "Do not infer a terminal gate success; retain the exact failed run and job evidence."
+    elif terminal_assignment["first_blocker"] is not None:
+        state = "PREEMPTIVE_HOLD_TERMINAL_ASSIGNMENT"
+        blocker = terminal_assignment["first_blocker"]
+        disposition = "HOLD"
+        productive_edge = "REPAIR_OR_REOBSERVE_BOUND_TERMINAL_ASSIGNMENT"
+        safe_continuation = (
+            "Do not report repository quiescence while the exact-bound Terminal assignment "
+            "lacks a verified disposition."
+        )
     elif liveness["blocking_records"]:
         first_liveness_blocker = liveness["blocking_records"][0]
         state = "PREEMPTIVE_HOLD_NODE_LIVENESS"
@@ -872,6 +1071,7 @@ def analyze(
             ),
             "node_liveness": liveness,
         },
+        "terminal_assignment": terminal_assignment,
         "resource_graph": resource_graph,
         "boundaries": {
             "watchdog_terminality_is_gate_success": False,
@@ -883,6 +1083,7 @@ def analyze(
             "automatic_writer_cancellation": False,
             "repository_mutation": False,
             "external_effect": False,
+            "open_terminal_assignment_is_quiescent": False,
         },
         "completion_claims": {
             "PASS": False,
@@ -928,6 +1129,8 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--observation-scope", choices=sorted(GATEWATCH_SCOPES), default="MAIN")
     analyze_parser.add_argument("--node-liveness-dir", type=Path)
     analyze_parser.add_argument("--authority-head-file", type=Path)
+    analyze_parser.add_argument("--terminal-assignment-pulls-file", type=Path)
+    analyze_parser.add_argument("--terminal-assignment-runs-file", type=Path)
     analyze_parser.add_argument("--json", action="store_true")
     check_parser = subcommands.add_parser("check-contract")
     check_parser.add_argument("--json", action="store_true")
@@ -960,6 +1163,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 except (OSError, UnicodeError) as exc:
                     raise ReflexiveWatchdogBlock(f"cannot load authority head observation: {exc}") from exc
                 authority_head = _head_sha(authority_head, "authority head observation")
+            terminal_assignment_pulls = (
+                _read_json(arguments.terminal_assignment_pulls_file, "terminal assignment pulls")
+                if arguments.terminal_assignment_pulls_file
+                else None
+            )
+            terminal_assignment_runs = (
+                _read_json(arguments.terminal_assignment_runs_file, "terminal assignment runs")
+                if arguments.terminal_assignment_runs_file
+                else None
+            )
             value = analyze(
                 runs,
                 jobs,
@@ -971,6 +1184,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 observation_scope=arguments.observation_scope,
                 node_liveness_dir=arguments.node_liveness_dir,
                 authority_head=authority_head,
+                terminal_assignment_pulls_value=terminal_assignment_pulls,
+                terminal_assignment_runs_value=terminal_assignment_runs,
             )
         if arguments.json:
             print(canonical_json_bytes(value).decode("utf-8"), end="")

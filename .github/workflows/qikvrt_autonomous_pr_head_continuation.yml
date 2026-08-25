@@ -111,8 +111,18 @@ jobs:
             gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
               > "$root/runs-${pr}.json"
             : > "$root/observations-${pr}.jsonl"
-            while IFS=$'\t' read -r run_id name status conclusion created_at; do
+            # NUL framing preserves the empty conclusion of an active run.  A
+            # whitespace IFS (including TAB) collapses that empty field and
+            # shifts created_at out of its column.
+            while
+              IFS= read -r -d '' run_id &&
+                IFS= read -r -d '' name &&
+                IFS= read -r -d '' status &&
+                IFS= read -r -d '' conclusion &&
+                IFS= read -r -d '' created_at
+            do
               test -n "$run_id" || continue
+              test -n "$created_at"
               jobs_total=0
               case "$conclusion" in
                 action_required|cancelled|failure|startup_failure|timed_out)
@@ -134,7 +144,14 @@ jobs:
                 '{id:$id,name:$name,status:$status,conclusion:(if $conclusion == "" then null else $conclusion end),jobs_total:$jobs_total,created_at:$created_at}' \
                 >> "$root/observations-${pr}.jsonl"
             done < <(
-              jq -r '.workflow_runs[] | [.id,.name,.status,(.conclusion // ""),.created_at] | @tsv' \
+              jq -j '
+                .workflow_runs[] |
+                (.id | tostring), "\u0000",
+                .name, "\u0000",
+                .status, "\u0000",
+                (.conclusion // ""), "\u0000",
+                .created_at, "\u0000"
+              ' \
                 "$root/runs-${pr}.json"
             )
             jq -s '.' "$root/observations-${pr}.jsonl" > "$root/observations-${pr}.json"

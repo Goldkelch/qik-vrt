@@ -1095,6 +1095,129 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     )
                 )
 
+    def test_pr_890_sized_diff_is_reviewable_and_uses_three_chunk_transport(self):
+        exact_pr_890_bytes = 2_186_648
+        diff = DEFAULT_DIFF_BYTES + b"+bounded-review-byte\n" * 100_000
+        diff = (diff + b"+" * exact_pr_890_bytes)[:exact_pr_890_bytes]
+        self.assertEqual(len(diff), exact_pr_890_bytes)
+
+        result = self.evaluate(self.snapshot(diff_payload=diff), diff)
+
+        self.assertNotEqual(result["first_blocker"], "REVIEW_BYTES_UNAVAILABLE")
+        self.assertEqual(result["diff_bytes"], exact_pr_890_bytes)
+        self.assertEqual(result["ledger_diff_format"], MODULE.DIFF_MANIFEST_SCHEMA)
+        manifest, chunks = MODULE.build_diff_transport(
+            diff, result["ledger_diff_path"]
+        )
+        parsed = json.loads(manifest)
+        self.assertEqual(parsed["chunk_count"], 3)
+        self.assertEqual(
+            [chunk["bytes"] for chunk in parsed["chunks"]],
+            [1_048_576, 1_048_576, 89_496],
+        )
+        self.assertEqual(
+            MODULE.load_ledger_diff(result, manifest, chunks.get),
+            diff,
+        )
+
+    def test_manifest_is_fully_validated_before_any_chunk_fetch(self):
+        diff = b"a" * (MODULE.DIFF_CHUNK_BYTES + 7)
+        receipt = self.evaluate(self.snapshot(diff_payload=diff), diff)
+        manifest_bytes, chunks = MODULE.build_diff_transport(
+            diff, receipt["ledger_diff_path"]
+        )
+        original = json.loads(manifest_bytes)
+
+        invalid_manifests = []
+        missing = copy.deepcopy(original)
+        missing["chunks"].pop()
+        invalid_manifests.append(MODULE._canonical_bytes(missing))
+        duplicate = copy.deepcopy(original)
+        duplicate["chunks"][1]["index"] = 0
+        invalid_manifests.append(MODULE._canonical_bytes(duplicate))
+        reordered = copy.deepcopy(original)
+        reordered["chunks"].reverse()
+        invalid_manifests.append(MODULE._canonical_bytes(reordered))
+        oversized = copy.deepcopy(original)
+        oversized["chunks"][0]["bytes"] = MODULE.DIFF_CHUNK_BYTES + 1
+        invalid_manifests.append(MODULE._canonical_bytes(oversized))
+        boolean_index = copy.deepcopy(original)
+        boolean_index["chunks"][0]["index"] = False
+        invalid_manifests.append(MODULE._canonical_bytes(boolean_index))
+        wrong_path = copy.deepcopy(original)
+        wrong_path["chunks"][0]["path"] = "state/mesh/reviews/injected"
+        invalid_manifests.append(MODULE._canonical_bytes(wrong_path))
+        too_many = copy.deepcopy(original)
+        too_many["chunk_count"] = MODULE.MAX_DIFF_CHUNKS + 1
+        invalid_manifests.append(MODULE._canonical_bytes(too_many))
+        invalid_manifests.append(
+            b'{"chunk_count":2,' + manifest_bytes[1:]
+        )
+        invalid_manifests.append(json.dumps(original, indent=2).encode("utf-8"))
+
+        for invalid in invalid_manifests:
+            with self.subTest(invalid=invalid[:80]):
+                fetched = []
+                with self.assertRaises(MODULE.ReviewSnapshotError):
+                    MODULE.load_ledger_diff(
+                        receipt,
+                        invalid,
+                        lambda path: fetched.append(path) or chunks.get(path),
+                    )
+                self.assertEqual(fetched, [])
+
+    def test_chunk_and_full_digest_mismatches_fail_closed(self):
+        diff = b"a" * (MODULE.DIFF_CHUNK_BYTES + 7)
+        receipt = self.evaluate(self.snapshot(diff_payload=diff), diff)
+        manifest, chunks = MODULE.build_diff_transport(
+            diff, receipt["ledger_diff_path"]
+        )
+        first_path = next(iter(chunks))
+        tampered = dict(chunks)
+        tampered[first_path] = b"b" + tampered[first_path][1:]
+
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "chunk digest mismatch"
+        ):
+            MODULE.load_ledger_diff(receipt, manifest, tampered.get)
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "chunk bytes are unavailable"
+        ):
+            MODULE.load_ledger_diff(receipt, manifest, lambda _path: None)
+
+        wrong_digest = "f" * 64
+        wrong_receipt = dict(receipt, diff_sha256=wrong_digest)
+        wrong_manifest = json.loads(manifest)
+        wrong_manifest["diff_sha256"] = wrong_digest
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "reassembled ledger diff digest mismatch"
+        ):
+            MODULE.load_ledger_diff(
+                wrong_receipt,
+                MODULE._canonical_bytes(wrong_manifest),
+                chunks.get,
+            )
+
+    def test_legacy_raw_diff_is_supported_only_without_format_marker(self):
+        diff = DEFAULT_DIFF_BYTES
+        receipt = self.evaluate()
+        legacy = dict(receipt)
+        legacy.pop("ledger_diff_format")
+        fetched = []
+
+        self.assertEqual(
+            MODULE.load_ledger_diff(
+                legacy, diff, lambda path: fetched.append(path) or None
+            ),
+            diff,
+        )
+        self.assertEqual(fetched, [])
+        with self.assertRaises(MODULE.ReviewSnapshotError):
+            MODULE.load_ledger_diff(receipt, diff, lambda _path: None)
+        explicit_null = dict(legacy, ledger_diff_format=None)
+        with self.assertRaises(MODULE.ReviewSnapshotError):
+            MODULE.load_ledger_diff(explicit_null, diff, lambda _path: None)
+
     def test_conflict_marker_is_a_deterministic_review_finding(self):
         snap = self.snapshot(diff_payload=CONFLICT_DIFF_BYTES)
 
@@ -1132,6 +1255,10 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", text)
         self.assertIn("'force':False", text)
         self.assertIn("existing_diff=blob_at(diff_path,ledger_head)", text)
+        self.assertIn("build_diff_transport(diff_bytes,diff_path)", text)
+        self.assertIn("readback_diff(commit) != diff_bytes", text)
+        self.assertIn("APPEND_ONLY_LEDGER_CHUNK_PATH_COLLISION", text)
+        self.assertIn("load_ledger_diff(receipt,stored_diff,ledger_bytes)", PROMOTION_WORKFLOW.read_text(encoding="utf-8"))
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
         self.assertIn("post-ledger-cas", text)

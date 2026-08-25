@@ -10,6 +10,7 @@ on:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
       - "QIK-VRT autonomous draft-PR continuation"
+      - "QIKVRT requested review executor"
       - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
       - "QIKVRT live status watch"
@@ -30,6 +31,7 @@ on:
       - "tools/qikvrt_reflexive_repository_watchdog.py"
       - "tools/qikvrt_workflow_executor.py"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "registry/NODE_DISCOVERY_POLICY.json"
       - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
       - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
@@ -43,6 +45,7 @@ on:
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
       - "tools/qikvrt_reflexive_repository_watchdog.py"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "registry/NODE_DISCOVERY_POLICY.json"
       - "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json"
       - "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json"
@@ -117,6 +120,37 @@ jobs:
           gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
             > "$root/current-runs.json"
 
+          gh api --paginate "repos/$REPOSITORY/pulls?state=open&per_page=100" \
+            | jq -s 'add // []' > "$root/open-pulls.json"
+          printf '{"workflow_runs":[]}\n' > "$root/terminal-assignment-runs.json"
+          candidate_marker="$(
+            jq -r '.terminal_assignment_backpressure.candidate_marker' \
+              state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json
+          )"
+          test -n "$candidate_marker"
+          test "$candidate_marker" != null
+          mapfile -t assignment_heads < <(
+            jq -r --arg marker "$candidate_marker" \
+              '.[] | select((.body // "") | contains($marker)) | .head.sha' \
+              "$root/open-pulls.json" | sort -u
+          )
+          for assignment_head in "${assignment_heads[@]}"; do
+            if ! [[ "$assignment_head" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "invalid terminal assignment head: $assignment_head" >&2
+              exit 1
+            fi
+            page="$root/terminal-assignment-runs-$assignment_head.json"
+            gh api --paginate \
+              "repos/$REPOSITORY/actions/runs?head_sha=$assignment_head&per_page=100" \
+              | jq -s '{workflow_runs: [.[] | .workflow_runs[]?]}' > "$page"
+            jq -s \
+              '{workflow_runs: ([.[] | .workflow_runs[]?] | unique_by(.id))}' \
+              "$root/terminal-assignment-runs.json" "$page" \
+              > "$root/terminal-assignment-runs.next.json"
+            mv "$root/terminal-assignment-runs.next.json" \
+              "$root/terminal-assignment-runs.json"
+          done
+
           # The analyzer considers every returned run. Fetch the matching jobs for
           # every one of those runs so missing observation data is never confused
           # with a genuine terminal zero-job execution.
@@ -126,6 +160,13 @@ jobs:
           for run_id in "${run_ids[@]}"; do
             gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
               > "$root/jobs/$run_id.json"
+          done
+          mapfile -t assignment_run_ids < <(
+            jq -r '.workflow_runs[].id' "$root/terminal-assignment-runs.json"
+          )
+          for run_id in "${assignment_run_ids[@]}"; do
+            gh api --paginate "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
+              | jq -s '{jobs: [.[] | .jobs[]?]}' > "$root/jobs/$run_id.json"
           done
 
           if test "$EVENT_NAME" != pull_request; then
@@ -170,6 +211,8 @@ jobs:
             --observation-scope "$scope"
             --node-liveness-dir qikvrt/runtime/onboarding
             --authority-head-file "$root/observed-authority-main-head.txt"
+            --terminal-assignment-pulls-file "$root/open-pulls.json"
+            --terminal-assignment-runs-file "$root/terminal-assignment-runs.json"
             --json
           )
           if test -s "$root/previous-receipt.json"; then

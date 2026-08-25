@@ -38,6 +38,16 @@ The exact role-local receipt is appended on
 - `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json`
 - `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff`
 
+New receipts declare `qikvrt_mesh_review_diff_manifest_v1`; the `.diff` path
+then contains canonical JSON rather than raw candidate bytes. The manifest
+describes at most 64 contiguous chunks named
+`<diff_path>.part-<zero-padded-index>`. Every non-final chunk is exactly 1 MiB,
+the final chunk is between one byte and 1 MiB, and the bounded aggregate is at
+most 64 MiB. Exact non-boolean integer fields, canonical names, per-chunk
+SHA-256, full length and full SHA-256 are validated before any chunk is
+fetched. Only receipts without a transport-format marker retain legacy raw
+`.diff` compatibility; an invalid declared manifest never falls back to raw.
+
 The trusted-main observer is the only producer of this envelope. It requires
 its local checkout SHA and tree to equal the reobserved `main`, binds the
 evaluator and workflow blobs, derives the complete NUL-delimited path scope
@@ -61,7 +71,7 @@ described as immediate event delivery and it never permits stale evidence to
 authorize a mutation.
 
 The ledger is initialized as an orphan root commit containing only the first
-exact receipt and diff; it therefore does not copy a predecessor repository
+exact receipt, diff manifest and chunks; it therefore does not copy a predecessor repository
 tree into the evidence plane. It is append-only. Its sole writer uses a non-force,
 fast-forward compare-and-swap against the reobserved ledger head. A competing
 write, missing predecessor, non-fast-forward update, or post-review subject
@@ -73,8 +83,8 @@ The observer regenerates the complete snapshot, diff and receipt before the
 ledger read, immediately before and after ledger initialization or compare-and-
 swap, and before and after each PR-comment or status mutation. Both the
 evidence fingerprint and sealed receipt-payload hash must remain byte-exact.
-The stored receipt must also verify its own seal and the stored diff bytes must
-equal the regenerated diff byte for byte. Any disagreement stops the next
+The stored receipt must also verify its own seal, and strict reconstruction of
+the stored manifest/chunks must equal the regenerated diff byte for byte. Any disagreement stops the next
 mutation and remains `HOLD_UNVERIFIED`.
 
 The same pull-request head may be reviewed again only when its causal evidence

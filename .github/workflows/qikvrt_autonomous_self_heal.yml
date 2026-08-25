@@ -13,9 +13,14 @@ on:
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
     types: [completed]
+  issue_comment:
+    types: [created]
   pull_request:
     paths:
       - ".github/workflows/qikvrt_autonomous_self_heal.yml"
+      - "tools/qikvrt_terminal_assignment_backpressure.py"
+      - "tests/test_qikvrt_terminal_assignment_backpressure.py"
+      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
       - "tools/qikvrt_autonomous_pre_effect_controller.py"
       - "tests/test_qikvrt_autonomous_pre_effect_controller.py"
@@ -54,15 +59,20 @@ jobs:
           set -euo pipefail
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_continuous_auto_repair \
-            tests.test_qikvrt_autonomous_pre_effect_controller
+            tests.test_qikvrt_autonomous_pre_effect_controller \
+            tests.test_qikvrt_terminal_assignment_backpressure
 
   observe-repair-propose:
     if: >-
       github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_run' ||
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.head_branch == 'main') &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request &&
+        contains(github.event.comment.body, 'qikvrt-terminal-repair-assignment:')))
     permissions:
       contents: write
+      issues: read
       pull-requests: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -160,7 +170,46 @@ jobs:
           set -euo pipefail
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_continuous_auto_repair \
-            tests.test_qikvrt_autonomous_pre_effect_controller
+            tests.test_qikvrt_autonomous_pre_effect_controller \
+            tests.test_qikvrt_terminal_assignment_backpressure
+
+      - name: Observe canonical Terminal assignment backpressure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp             "repos/$REPOSITORY/issues/885/comments?per_page=100"             | jq 'add' > /tmp/qikvrt-terminal-comments.json
+          gh api --paginate --slurp             "repos/$REPOSITORY/pulls?state=open&per_page=100"             | jq 'add' > /tmp/qikvrt-terminal-pulls.json
+          carrier="$(gh api "repos/$REPOSITORY/pulls/885")"
+          base_sha="$(printf '%s' "$carrier" | jq -r '.base.sha')"
+          head_sha="$(printf '%s' "$carrier" | jq -r '.head.sha')"
+          base_tree="$(gh api "repos/$REPOSITORY/git/commits/$base_sha" --jq '.tree.sha')"
+          head_tree="$(gh api "repos/$REPOSITORY/git/commits/$head_sha" --jq '.tree.sha')"
+          printf '%s' "$carrier" | jq             --arg base_tree "$base_tree"             --arg head_tree "$head_tree"             '{
+              number,
+              state,
+              draft,
+              opt_in: (.body | contains("<!-- qikvrt-autonomous-self-heal:enabled -->")),
+              base_sha: .base.sha,
+              base_tree: $base_tree,
+              head_sha: .head.sha,
+              head_tree: $head_tree
+            }' > /tmp/qikvrt-terminal-carrier.json
+          python3 -B tools/qikvrt_terminal_assignment_backpressure.py observe             --comments /tmp/qikvrt-terminal-comments.json             --pulls /tmp/qikvrt-terminal-pulls.json             --carrier /tmp/qikvrt-terminal-carrier.json             --source-run-id "$SOURCE_RUN_ID"             --source-run-attempt "$SOURCE_RUN_ATTEMPT"             --output /tmp/qikvrt-terminal-assignment.json
+          cat /tmp/qikvrt-terminal-assignment.json
+
+      - name: Preserve Terminal assignment observation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-terminal-assignment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-terminal-assignment.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Execute bounded repository-native repairs before external effects
         id: repair
@@ -168,9 +217,10 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal.json
+          python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal-raw.json
           rc=$?
           set -e
+          python3 -B tools/qikvrt_terminal_assignment_backpressure.py reconcile             --controller /tmp/qikvrt-self-heal-raw.json             --observation /tmp/qikvrt-terminal-assignment.json             --output /tmp/qikvrt-self-heal.json
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
@@ -274,6 +324,7 @@ jobs:
           PY
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
           <!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->
+          <!-- qikvrt-autonomous-self-heal:enabled -->
 
           Repository-native opportunistic pre-effect repair candidate.
 

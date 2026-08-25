@@ -141,6 +141,18 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             ledger["diff_path_template"],
             "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
         )
+        transport = ledger["diff_transport"]
+        self.assertEqual(
+            transport["current_format"],
+            "qikvrt_mesh_review_diff_manifest_v1",
+        )
+        self.assertTrue(transport["legacy_raw_diff_requires_absent_format_marker"])
+        self.assertEqual(transport["chunk_bytes"], 1_048_576)
+        self.assertEqual(transport["max_chunks"], 64)
+        self.assertEqual(transport["max_diff_bytes"], 67_108_864)
+        self.assertTrue(transport["manifest_validation_before_chunk_fetch"])
+        self.assertTrue(transport["canonical_json_and_exact_integer_fields"])
+        self.assertTrue(transport["per_chunk_and_full_diff_sha256"])
         self.assertEqual(ledger["write_protocol"], "FAST_FORWARD_COMPARE_AND_SWAP_ONLY")
         self.assertEqual(ledger["candidate_branch_write"], "FORBIDDEN")
         self.assertEqual(ledger["main_branch_write"], "FORBIDDEN")
@@ -223,6 +235,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertEqual(
             policy_plane["receipt_ledger"]["diff_path_template"],
             plane["ledger"]["diff_path_template"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["diff_transport"],
+            plane["ledger"]["diff_transport"],
         )
         self.assertEqual(
             {key: value["state"] for key, value in policy_plane["d0_mapping"].items()},

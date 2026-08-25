@@ -278,6 +278,7 @@ jobs:
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
           from tools.qikvrt_expected_head_promotion import mesh_review_status_projection
           from tools.qikvrt_required_review_gate import evaluate_required_review
+          from tools.qikvrt_requested_review_executor import load_ledger_diff
 
           repo=os.environ['REPOSITORY']
           pr_number=int(os.environ['PR_NUMBER'])
@@ -322,7 +323,11 @@ jobs:
           receipt_path=evidence/'review.json'
           diff_path=evidence/'review.diff'
           receipt_path.write_bytes(ledger_bytes(root+'.json'))
-          diff_path.write_bytes(ledger_bytes(root+'.diff'))
+          receipt=json.loads(receipt_path.read_text(encoding='utf-8'))
+          if receipt.get('ledger_path') != root+'.json' or receipt.get('ledger_diff_path') != root+'.diff':
+              raise SystemExit('BLOCK: ledger receipt paths differ from exact status binding')
+          stored_diff=ledger_bytes(root+'.diff')
+          diff_path.write_bytes(load_ledger_diff(receipt,stored_diff,ledger_bytes))
           command=[
               sys.executable,'-B','tools/qikvrt_requested_review_executor.py','verify',
               '--repository',repo,'--pr-number',str(pr_number),
@@ -334,7 +339,6 @@ jobs:
               '--output-dir',str(evidence/'reobserved'),
           ]
           subprocess.check_call(command)
-          receipt=json.loads(receipt_path.read_text(encoding='utf-8'))
           fresh=json.loads((evidence/'reobserved'/'review.json').read_text(encoding='utf-8'))
           if receipt.get('evidence_fingerprint') != fingerprint:
               raise SystemExit('BLOCK: status and ledger fingerprints differ')
