@@ -125,7 +125,7 @@ jobs:
           print('MESH_HEARTBEAT_MAIN_RECEIPT=VERIFIED')
           PY
 
-      - name: Persist exact receipt with serialized fast-forward source CAS
+      - name: Persist and terminally reobserve exact receipt
         shell: bash
         run: |
           set -euo pipefail
@@ -152,6 +152,13 @@ jobs:
           )"
           if [ -n "$expected_ledger_head" ]; then
             git -C "$ledger" fetch --no-tags --depth=1 origin "$LEDGER_REF"
+            fetched_ledger_head="$(
+              git -C "$ledger" rev-parse --verify FETCH_HEAD^{commit}
+            )"
+            if [ "$fetched_ledger_head" != "$expected_ledger_head" ]; then
+              echo 'BLOCK: LEDGER_REF_ADVANCED_DURING_INITIAL_FETCH' >&2
+              exit 2
+            fi
             git -C "$ledger" checkout -q -B ledger FETCH_HEAD
           else
             git -C "$ledger" checkout -q --orphan ledger
@@ -168,25 +175,114 @@ jobs:
           git -C "$ledger" add "$target" latest.json
           if git -C "$ledger" diff --cached --quiet; then
             echo 'MESH_HEARTBEAT_LEDGER_ALREADY_CURRENT'
-            exit 0
-          fi
-          git -C "$ledger" commit -q \
-            -m "evidence: Mesh heartbeat main ${SOURCE_HEAD} run ${SOURCE_RUN_ID}"
+            ledger_transition='NOOP_ALREADY_CURRENT'
+          else
+            git -C "$ledger" commit -q \
+              -m "evidence: Mesh heartbeat main ${SOURCE_HEAD} run ${SOURCE_RUN_ID}"
 
-          source_remote_before_push="$(
-            git ls-remote --heads origin refs/heads/main |
-              awk 'NR == 1 {print $1}'
-          )"
-          if [ "$source_remote_before_push" != "$SOURCE_HEAD" ]; then
-            echo 'BLOCK: AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_PUSH' >&2
-            exit 2
+            source_remote_before_push="$(
+              git ls-remote --heads origin refs/heads/main |
+                awk 'NR == 1 {print $1}'
+            )"
+            if [ "$source_remote_before_push" != "$SOURCE_HEAD" ]; then
+              echo 'BLOCK: AUTHORITY_MAIN_ADVANCED_BEFORE_LEDGER_PUSH' >&2
+              exit 2
+            fi
+            ledger_remote_before_push="$(
+              git ls-remote "$remote" "$LEDGER_REF" |
+                awk 'NR == 1 {print $1}'
+            )"
+            if [ "$ledger_remote_before_push" != "$expected_ledger_head" ]; then
+              echo 'BLOCK: LEDGER_REF_ADVANCED_BEFORE_PUSH' >&2
+              exit 2
+            fi
+            git -C "$ledger" push origin "HEAD:$LEDGER_REF"
+            ledger_transition='FAST_FORWARD_PUSHED'
           fi
-          ledger_remote_before_push="$(
+
+          intended_commit="$(git -C "$ledger" rev-parse --verify HEAD^{commit})"
+          observed_ledger_head="$(
             git ls-remote "$remote" "$LEDGER_REF" |
               awk 'NR == 1 {print $1}'
           )"
-          if [ "$ledger_remote_before_push" != "$expected_ledger_head" ]; then
-            echo 'BLOCK: LEDGER_REF_ADVANCED_BEFORE_PUSH' >&2
+          if [ "$observed_ledger_head" != "$intended_commit" ]; then
+            echo 'BLOCK: LEDGER_REF_POST_PUSH_REOBSERVATION_MISMATCH' >&2
             exit 2
           fi
-          git -C "$ledger" push origin "HEAD:$LEDGER_REF"
+
+          readback="$RUNNER_TEMP/ledger-readback"
+          git init -q "$readback"
+          git -C "$readback" remote add origin "$remote"
+          git -C "$readback" fetch --no-tags --depth=1 origin "$LEDGER_REF"
+          readback_commit="$(git -C "$readback" rev-parse --verify FETCH_HEAD^{commit})"
+          if [ "$readback_commit" != "$intended_commit" ]; then
+            echo 'BLOCK: LEDGER_FETCH_POST_PUSH_REOBSERVATION_MISMATCH' >&2
+            exit 2
+          fi
+          git -C "$readback" show "FETCH_HEAD:$target" \
+            > "$RUNNER_TEMP/readback-target.json"
+          git -C "$readback" show 'FETCH_HEAD:latest.json' \
+            > "$RUNNER_TEMP/readback-latest.json"
+          cmp "$source" "$RUNNER_TEMP/readback-target.json"
+          cmp "$source" "$RUNNER_TEMP/readback-latest.json"
+
+          observed_ledger_head_after_readback="$(
+            git ls-remote "$remote" "$LEDGER_REF" |
+              awk 'NR == 1 {print $1}'
+          )"
+          if [ "$observed_ledger_head_after_readback" != "$intended_commit" ]; then
+            echo 'BLOCK: LEDGER_REF_ADVANCED_DURING_READBACK' >&2
+            exit 2
+          fi
+
+          export EXPECTED_LEDGER_HEAD="$expected_ledger_head"
+          export PERSISTED_LEDGER_COMMIT="$intended_commit"
+          export REOBSERVED_LEDGER_HEAD="$observed_ledger_head_after_readback"
+          export LEDGER_TARGET="$target"
+          export LEDGER_TRANSITION="$ledger_transition"
+          python3 -B - <<'PY' > "$RUNNER_TEMP/ledger-reobservation.json"
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP'])
+          target = (root / 'readback-target.json').read_bytes()
+          latest = (root / 'readback-latest.json').read_bytes()
+          receipt = {
+              'schema': 'qikvrt_mesh_heartbeat_ledger_reobservation_v1',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'source_head': os.environ['SOURCE_HEAD'],
+              'source_run_id': int(os.environ['SOURCE_RUN_ID']),
+              'ledger_ref': os.environ['LEDGER_REF'],
+              'predecessor_ledger_head': os.environ['EXPECTED_LEDGER_HEAD'] or None,
+              'persisted_ledger_commit': os.environ['PERSISTED_LEDGER_COMMIT'],
+              'reobserved_remote_ledger_head': os.environ['REOBSERVED_LEDGER_HEAD'],
+              'ledger_transition': os.environ['LEDGER_TRANSITION'],
+              'target_path': os.environ['LEDGER_TARGET'],
+              'target_bytes': len(target),
+              'target_sha256': hashlib.sha256(target).hexdigest(),
+              'latest_bytes': len(latest),
+              'latest_sha256': hashlib.sha256(latest).hexdigest(),
+              'target_and_latest_byte_identical': target == latest,
+              'external_effect': 'NONE',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+                  'DEPLOYMENT': False,
+              },
+          }
+          if not receipt['target_and_latest_byte_identical']:
+              raise SystemExit('BLOCK: LEDGER_READBACK_BYTES_DIVERGE')
+          print(json.dumps(receipt, sort_keys=True, separators=(',', ':')))
+          PY
+
+      - name: Preserve terminal ledger reobservation receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-heartbeat-ledger-reobservation-${{ env.SOURCE_HEAD }}-${{ env.SOURCE_RUN_ID }}
+          path: ${{ runner.temp }}/ledger-reobservation.json
+          if-no-files-found: error
+          retention-days: 30

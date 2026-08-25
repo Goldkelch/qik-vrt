@@ -6,7 +6,9 @@ import asyncio
 import copy
 import json
 import pathlib
+import re
 import tempfile
+import textwrap
 import unittest
 
 from tools.qikvrt_mesh_heartbeat import (
@@ -273,6 +275,52 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("git -C \"$ledger\" push origin \"HEAD:$LEDGER_REF\"", workflow)
+        self.assertIn(
+            "LEDGER_REF_POST_PUSH_REOBSERVATION_MISMATCH",
+            workflow,
+        )
+        self.assertIn("LEDGER_REF_ADVANCED_DURING_READBACK", workflow)
+        self.assertIn("LEDGER_REF_ADVANCED_DURING_INITIAL_FETCH", workflow)
+        self.assertIn(
+            'git -C "$ledger" rev-parse --verify FETCH_HEAD^{commit}',
+            workflow,
+        )
+        self.assertIn(
+            'git -C "$readback" fetch --no-tags --depth=1 origin "$LEDGER_REF"',
+            workflow,
+        )
+        self.assertIn('show "FETCH_HEAD:$target"', workflow)
+        self.assertIn("show 'FETCH_HEAD:latest.json'", workflow)
+        self.assertIn('cmp "$source" "$RUNNER_TEMP/readback-target.json"', workflow)
+        self.assertIn('cmp "$source" "$RUNNER_TEMP/readback-latest.json"', workflow)
+        self.assertIn(
+            "qikvrt_mesh_heartbeat_ledger_reobservation_v1",
+            workflow,
+        )
+        self.assertIn("ledger_transition='NOOP_ALREADY_CURRENT'", workflow)
+        self.assertIn("ledger_transition='FAST_FORWARD_PUSHED'", workflow)
+        self.assertIn(
+            "'reobserved_remote_ledger_head': os.environ['REOBSERVED_LEDGER_HEAD']",
+            workflow,
+        )
+        self.assertIn(
+            "Preserve terminal ledger reobservation receipt",
+            workflow,
+        )
+        self.assertNotIn("MESH_HEARTBEAT_LEDGER_ALREADY_CURRENT'\n            exit 0", workflow)
+
+    def test_trusted_writer_embedded_python_is_syntactically_valid(self) -> None:
+        workflow = (
+            ROOT / ".github/workflows/qikvrt_mesh_heartbeat_main_ledger.yml"
+        ).read_text(encoding="utf-8")
+        blocks = re.findall(
+            r"^[ \t]+python3 -B - <<'PY'[^\n]*\n(.*?)^[ \t]+PY$",
+            workflow,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertEqual(len(blocks), 2)
+        for index, block in enumerate(blocks):
+            compile(textwrap.dedent(block), f"<heartbeat-ledger-{index}>", "exec")
 
 
 if __name__ == "__main__":
