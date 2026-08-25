@@ -3,17 +3,19 @@
 """Firefox 153+ Local Network Access adapter for the canonical /AI E2E harness.
 
 The core harness remains byte-preserved in
-``qikvrt_canonical_ai_firefox_reobservation_core``.  Firefox 153 introduced a
-separate ``loopback-network`` site permission.  A headless CI browser cannot
-answer the UI prompt, so this adapter grants that exact permission to the
-installed temporary extension principal for the current Firefox session only,
-reobserves the permission, and then runs the unchanged core harness.
+``qikvrt_canonical_ai_firefox_reobservation_core``. Firefox 153 introduced a
+separate ``loopback-network`` site permission. A headless CI browser cannot
+answer the UI prompt, so this adapter uses an isolated WebDriver profile whose
+loopback-network default is explicitly ALLOW for that test profile only. It
+also grants and reobserves a session-scoped permission for the installed
+extension principal before the bounded request is made.
 
 This does not disable Local Network Access protection globally, does not grant
 LAN access, and does not broaden the bounded loopback Effect-Ack scope.
 """
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 
@@ -32,8 +34,40 @@ CLAIM_BOUNDARIES = {
 }
 
 _LNA_RECEIPT: dict[str, Any] = {}
+_ORIGINAL_REQUEST_JSON = core.request_json
 _ORIGINAL_INSTALLED_EXTENSION_UUID = core.installed_extension_uuid
 _ORIGINAL_OBSERVE_BOUNDED_EFFECT_ACK = core.observe_bounded_effect_ack
+
+
+def request_json_with_isolated_loopback_profile(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    effective_body = body
+    if method == "POST" and url.endswith("/session") and isinstance(body, dict):
+        effective_body = copy.deepcopy(body)
+        prefs = (
+            effective_body
+            .setdefault("capabilities", {})
+            .setdefault("alwaysMatch", {})
+            .setdefault("moz:firefoxOptions", {})
+            .setdefault("prefs", {})
+        )
+        prefs["permissions.default.loopback-network"] = 1
+        prefs["permissions.default.local-network"] = 0
+        prefs["network.lna.enabled"] = True
+        prefs["network.lna.blocking"] = True
+        _LNA_RECEIPT.update({
+            "isolated_profile_loopback_default": "ALLOW_ACTION",
+            "isolated_profile_local_network_default": "PROMPT",
+            "local_network_access_enabled": True,
+            "local_network_access_blocking_enabled": True,
+            "profile_scope": "ISOLATED_WEBDRIVER_PROFILE",
+            "global_lna_protection_disabled": False,
+        })
+    return _ORIGINAL_REQUEST_JSON(method, url, effective_body, timeout)
 
 
 def _set_context(base: str, session_id: str, context: str) -> None:
@@ -96,10 +130,9 @@ def installed_extension_uuid_with_loopback_permission(
     if result.get("scope") != "FIREFOX_SESSION_ONLY":
         raise RuntimeError(f"Firefox LNA permission escaped session scope: {result!r}")
 
-    _LNA_RECEIPT.clear()
     _LNA_RECEIPT.update(result)
     _LNA_RECEIPT["loopback_network_permission_observed"] = True
-    _LNA_RECEIPT["global_lna_protection_disabled"] = False
+    print(json.dumps({"firefox_lna_receipt": _LNA_RECEIPT}, sort_keys=True))
     return extension_uuid
 
 
@@ -116,6 +149,7 @@ def observe_bounded_effect_ack_with_lna_receipt(
     return result
 
 
+core.request_json = request_json_with_isolated_loopback_profile
 core.installed_extension_uuid = installed_extension_uuid_with_loopback_permission
 core.observe_bounded_effect_ack = observe_bounded_effect_ack_with_lna_receipt
 
