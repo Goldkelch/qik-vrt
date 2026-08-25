@@ -20,6 +20,7 @@
   ],
   "owner_delegation": "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
   "mesh_self_review_owner_delegation": "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
+  "delegated_native_account_review_owner_delegation": "state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json",
   "human_contract": "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
   "review_lifecycle": {
     "requested_review_default": "EXECUTE_IMMEDIATELY",
@@ -67,7 +68,21 @@
       "natural_person_control_does_not_change_api_signer": true,
       "platform_state_must_be_reported_exactly": true,
       "product_owner_disposition_may_be_recorded_when_account_level_approve_is_rejected": true,
-      "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true
+      "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true,
+      "delegated_native_account_automation": {
+        "delegation": "OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1",
+        "requires_self_identifying_user_credential": true,
+        "requires_exact_platform_user_readback": true,
+        "requires_non_author_repository_counterpart": true,
+        "approve_requires_current_requested_counterpart_reobservation": true,
+        "is_identity_impersonation": false,
+        "is_independent_natural_person_review": false,
+        "may_submit": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        "comment_with_blocker_projection": "REQUEST_CHANGES_TO_SUPERSEDE_ANY_OLDER_SAME_HEAD_DELEGATED_APPROVAL",
+        "non_request_negative_projection": "ONLY_RETRACTS_A_CURRENTLY_DECISIVE_STALE_SAME_HEAD_DELEGATED_APPROVAL_AFTER_AN_EXACT_ARTIFACT_BOUND_PULL_REQUEST_TARGET_ISSUE_COMMENT_OR_WORKFLOW_RUN_EVENT",
+        "delegation_state_must_be_active_at_plan_and_pre_effect_readback": true,
+        "may_not_merge_or_create_external_effect": true
+      }
     }
   },
   "review_intake_priority": {
@@ -161,7 +176,8 @@
     "identity_boundary": {
       "automated_platform_review_event": "COMMENT_ONLY",
       "github_actions_may_not_impersonate_PRODUCT_OWNER_or_REQUIRED_CODE_OWNER": true,
-      "priority_class_does_not_imply_independent_approval": true
+      "priority_class_does_not_imply_independent_approval": true,
+      "delegated_native_account_automation": "ONLY_UNDER_OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1_WITH_EXACT_USER_READBACK"
     }
   },
   "review_executor": {
@@ -207,7 +223,15 @@
     "platform_review_event": "COMMENT",
     "platform_approval_by_automation": "FORBIDDEN",
     "platform_approval_fallback": "PERSIST_SUBSTANTIVE_DISPOSITION_AS_COMMENT_WITH_EXACT_PLATFORM_LIMITATION",
-    "independent_code_owner_approval_may_be_inferred": false
+    "independent_code_owner_approval_may_be_inferred": false,
+    "delegated_native_account_projection": {
+      "workflow": ".github/workflows/qikvrt_required_review_gate.yml",
+      "planner": "tools/qikvrt_native_account_review.py",
+      "activation_delegation": "OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1",
+      "technical_github_actions_projection_remains_comment_only": true,
+      "exact_platform_user_readback_required": true,
+      "independent_natural_person_review_may_be_inferred": false
+    }
   },
   "mesh_self_review_feedback_plane": {
     "enabled": true,

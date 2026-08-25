@@ -106,6 +106,31 @@ executor`; an ordinary `repository_dispatch` or manual workflow input alone
 is not sufficient proof of GitHub-App origin. This repository does not yet
 contain that deployed broker or authenticated adapter.
 
+## Delegated native-account projection
+
+The broker and an Actions workflow are not `Goldkelch` or
+`ingolf-lohmann`. Their technical projections remain `COMMENT`-only. A
+separate owner delegation may nevertheless permit a self-identifying GitHub
+**User** credential for one of those two accounts to submit an exact platform
+review on that account's behalf. This is not identity substitution: the POST
+must be authenticated by that account's credential and GitHub must read back
+the same `type=User` login. It is also not an independent natural-person
+review.
+
+`OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1` and
+`docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md` define the narrowly
+allowed per-event adapter. It runs only from trusted `main`, never checks out
+or executes candidate bytes while a credential is present, requires the
+non-author configured counterpart, exact ledger transport and receipt
+reverification, a fresh pre-POST base/head/tree/fingerprint reobservation,
+and a post-POST readback. A missing, wrong, App, bot, or insufficiently
+privileged credential is a no-effect hold. The two account credentials are
+separated into mutually exclusive signer jobs.
+
+This adapter does not make Actions a cross-event priority queue. It must not
+claim the delivery signature, replay protection, timestamp ordering, or
+global prioritization that still requires the signed webhook broker above.
+
 ## Identity and effect boundary
 
 The App is not `Goldkelch`. It may project only the already-authorized

@@ -186,6 +186,19 @@ The substantive automated finding is persisted accurately together with the
 platform state. It never satisfies, replaces, weakens or transfers the separate
 exact-head independent Code-Owner gate.
 
+The separately versioned `OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1` does not
+change that `github-actions[bot]` boundary. It permits a second, explicit
+adapter only when GitHub receives a self-identifying `type=User` credential for
+the selected repository account and returns that exact account in the review
+readback. The adapter uses `Goldkelch` or `ingolf-lohmann` solely as the
+non-author counterpart, never exposes its credential to candidate bytes, and
+keeps the account credentials in separate signer jobs. Its review body is
+marked as delegated account automation; it is not an independent
+natural-person review and does not create merge, release, publication,
+deployment, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE` authority. The full
+provisioning and fail-closed checks are in
+`docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md`.
+
 The platform-effective repository-reviewer set is `Goldkelch` and
 `ingolf-lohmann`.  The pull-request author is removed from the eligible set for
 that pull request, so the other configured account is the required counterpart.
