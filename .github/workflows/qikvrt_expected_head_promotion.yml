@@ -80,16 +80,25 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-candidate.json
-          import json, os, subprocess
+          import json, os, subprocess, time
           from tools.qikvrt_expected_head_promotion import PromotionBlock, trusted_promotion_marker
           repo = os.environ['REPOSITORY']
           marker = os.environ['PROMOTION_MARKER']
           requested = os.environ.get('REQUESTED_PR', '').strip()
 
+          def _gh_retry(cmd):
+              delays=[10,30,90]
+              for attempt,delay in enumerate(delays+[None]):
+                  try:
+                      return subprocess.check_output(cmd, text=True)
+                  except subprocess.CalledProcessError:
+                      if delay is None:
+                          raise
+                      time.sleep(delay)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_retry(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_retry(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
@@ -136,7 +145,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-promotion-snapshot.json
-          import json, os, subprocess
+          import json, os, subprocess, time
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
           repo=os.environ['REPOSITORY']
@@ -144,16 +153,25 @@ jobs:
           required=json.loads(os.environ['REQUIRED_GATES_JSON'])
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_retry(cmd):
+              delays=[10,30,90]
+              for attempt,delay in enumerate(delays+[None]):
+                  try:
+                      return subprocess.check_output(cmd, text=True)
+                  except subprocess.CalledProcessError:
+                      if delay is None:
+                          raise
+                      time.sleep(delay)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_retry(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_retry(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
               return out
           def gh_runs(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_retry(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   if isinstance(page,dict):
@@ -275,7 +293,7 @@ jobs:
           test "$EXPECTED_PHASE" = REQUEST_EXACT_BASE_CAS_AUTHORITY
 
           python3 -B - <<'PY'
-          import base64, json, os, pathlib, subprocess, sys, urllib.parse
+          import base64, json, os, pathlib, subprocess, sys, time, urllib.parse
           from tools.qikvrt_expected_head_promotion import mesh_review_status_projection
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
@@ -284,10 +302,19 @@ jobs:
           expected_head=os.environ['EXPECTED_HEAD']
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_retry(cmd):
+              delays=[10,30,90]
+              for attempt,delay in enumerate(delays+[None]):
+                  try:
+                      return subprocess.check_output(cmd, text=True)
+                  except subprocess.CalledProcessError:
+                      if delay is None:
+                          raise
+                      time.sleep(delay)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_retry(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_retry(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
@@ -353,7 +380,7 @@ jobs:
           PY
 
           python3 -B - <<'PY'
-          import json, os, pathlib, subprocess, sys
+          import json, os, pathlib, subprocess, sys, time
           from tools.qikvrt_expected_head_promotion import require_unchanged_mesh_review_status, require_unchanged_promotion_marker
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
@@ -363,10 +390,19 @@ jobs:
           expected_head=os.environ['EXPECTED_HEAD']
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_retry(cmd):
+              delays=[10,30,90]
+              for attempt,delay in enumerate(delays+[None]):
+                  try:
+                      return subprocess.check_output(cmd, text=True)
+                  except subprocess.CalledProcessError:
+                      if delay is None:
+                          raise
+                      time.sleep(delay)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+              return json.loads(_gh_retry(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
+              pages=json.loads(_gh_retry(['gh','api','--paginate','--slurp',path]))
               return [item for page in pages for item in page]
 
           evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
