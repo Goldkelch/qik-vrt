@@ -2389,4 +2389,368 @@ def observe_repository(
     event_context: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], bytes]:
     """Read one stable trusted-main repository observation without remote writes."""
-    if expected_head i
+    if expected_head is not None and _git_sha1(expected_head) is None:
+        raise ReviewObservationError("exact selector head is not a Git SHA-1")
+    pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
+    if (
+        expected_head is not None
+        and pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head differs from exact selector event")
+    main = _gh_one(f"repos/{repository}/commits/main")
+    if not isinstance(pr, Mapping) or not isinstance(main, Mapping):
+        raise ReviewObservationError("pull request or main observation is malformed")
+    main_sha = str(main.get("sha"))
+    if _git_text(("rev-parse", "HEAD")) != main_sha:
+        raise ReviewObservationError("trusted-main checkout drifted from observed main")
+    main_tree = _gh_one(f"repos/{repository}/git/commits/{main_sha}")["tree"]["sha"]
+    if _git_text(("rev-parse", "HEAD^{tree}")) != main_tree:
+        raise ReviewObservationError("trusted-main tree differs from observed main tree")
+
+    base = pr["base"]["sha"]
+    head = pr["head"]["sha"]
+    title_sha256 = hashlib.sha256(str(pr.get("title") or "").encode("utf-8")).hexdigest()
+    body_sha256 = hashlib.sha256(str(pr.get("body") or "").encode("utf-8")).hexdigest()
+    _git_fetch(("--no-tags", "--depth=1", "origin", base))
+    local_ref = f"refs/qikvrt/mesh-review-head-{pr_number}"
+    _git_fetch(
+        (
+            "--no-tags",
+            "--depth=1",
+            "origin",
+            f"+refs/pull/{pr_number}/head:{local_ref}",
+        )
+    )
+    if _git_text(("rev-parse", "--verify", f"{local_ref}^{{commit}}")) != head:
+        raise ReviewObservationError("pull-request ref drifted during fetch")
+
+    base_tree = _gh_one(f"repos/{repository}/git/commits/{base}")["tree"]["sha"]
+    head_tree = _gh_one(f"repos/{repository}/git/commits/{head}")["tree"]["sha"]
+    if _git_text(("rev-parse", f"{head}^{{tree}}")) != head_tree:
+        raise ReviewObservationError("local candidate tree differs from GitHub")
+    scope = _git_scope(base, head)
+    scope_envelope = {
+        "changed_files": scope,
+        "changed_paths": sorted(item["path"] for item in scope),
+    }
+    scope_digest = canonical_scope_digest(canonical_scope(scope_envelope))
+    diff = _canonical_git_diff(base, head)
+
+    gate_ids: dict[str, int] = {}
+    gate_events = {name: "pull_request" for name in required_gates}
+    for gate in required_gates:
+        path = required_gate_paths[gate]
+        workflow = _gh_one(
+            f"repos/{repository}/actions/workflows/{urllib.parse.quote(pathlib.PurePosixPath(path).name, safe='')}"
+        )
+        if workflow.get("path") != path:
+            raise ReviewObservationError(f"trusted workflow path mismatch: {gate}")
+        gate_ids[gate] = int(workflow["id"])
+
+    threads = _thread_observation(repository, pr_number)
+    discussion = _discussion_observation(repository, pr_number)
+    runs = _workflow_observation(repository, head)
+    writers = _active_writer_observation(
+        repository,
+        current_run_id,
+        set(writer_workflows),
+    )
+    final_main = _gh_one(f"repos/{repository}/commits/main")
+    final_pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
+    if final_main.get("sha") != main_sha:
+        raise ReviewObservationError("main changed during repository observation")
+    if (
+        expected_head is not None
+        and final_pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head drifted from exact selector event")
+    if (
+        final_pr.get("state") != pr.get("state")
+        or final_pr.get("draft") != pr.get("draft")
+        or final_pr.get("base", {}).get("sha") != base
+        or final_pr.get("head", {}).get("sha") != head
+        or hashlib.sha256(str(final_pr.get("title") or "").encode("utf-8")).hexdigest() != title_sha256
+        or hashlib.sha256(str(final_pr.get("body") or "").encode("utf-8")).hexdigest() != body_sha256
+    ):
+        raise ReviewObservationError("pull request changed during repository observation")
+
+    raw_labels = final_pr.get("labels", [])
+    if not isinstance(raw_labels, list):
+        raise ReviewObservationError("pull request labels are malformed")
+    observed_labels: list[str] = []
+    for item in raw_labels:
+        if not isinstance(item, Mapping) or not isinstance(item.get("name"), str):
+            raise ReviewObservationError("pull request label is malformed")
+        observed_labels.append(item["name"])
+    raw_reviewers = final_pr.get("requested_reviewers", [])
+    raw_teams = final_pr.get("requested_teams", [])
+    if not isinstance(raw_reviewers, list) or not isinstance(raw_teams, list):
+        raise ReviewObservationError("pull request requested-reviewer projection is malformed")
+    observed_reviewers: list[str] = []
+    for item in raw_reviewers:
+        if not isinstance(item, Mapping) or not isinstance(item.get("login"), str) or not item["login"]:
+            raise ReviewObservationError("pull request requested reviewer is malformed")
+        observed_reviewers.append(item["login"])
+    observed_teams: list[str] = []
+    for item in raw_teams:
+        if not isinstance(item, Mapping) or not isinstance(item.get("slug"), str) or not item["slug"]:
+            raise ReviewObservationError("pull request requested reviewer team is malformed")
+        observed_teams.append(item["slug"])
+    observed_reviewers.sort()
+    observed_teams.sort()
+    intake = _review_intake(
+        event_context,
+        observed_labels,
+        observed_reviewers,
+        observed_teams,
+    )
+
+    if repository == "Goldkelch/qik-vrt":
+        role = "AUTHORITY"
+    elif repository == "ingolf-lohmann/qik-vrt":
+        role = "MIRROR"
+    else:
+        role = "MESH_NODE"
+    snapshot = {
+        "repository": repository,
+        "repository_role": role,
+        "pr_number": pr_number,
+        "pr_state": final_pr.get("state"),
+        "pr_title_sha256": title_sha256,
+        "pr_body_sha256": body_sha256,
+        "head_repository": final_pr.get("head", {}).get("repo", {}).get("full_name"),
+        "base_ref": final_pr.get("base", {}).get("ref"),
+        "draft": bool(final_pr.get("draft")),
+        "trusted_evaluator_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_EVALUATOR_PATH}")),
+        "trusted_workflow_blob_sha": _git_text(("rev-parse", f"HEAD:{TRUSTED_WORKFLOW_PATH}")),
+        "current_main_sha": main_sha,
+        "current_main_tree_sha": main_tree,
+        "base_sha": base,
+        "base_tree_sha": base_tree,
+        "head_sha": head,
+        "observed_head_sha": final_pr.get("head", {}).get("sha"),
+        "tree_sha": head_tree,
+        "observed_tree_sha": head_tree,
+        "requested_reviewers": observed_reviewers,
+        "requested_team_reviewers": observed_teams,
+        "review_intake": intake,
+        **scope_envelope,
+        "scope_sha256": scope_digest,
+        "diff_sha256": hashlib.sha256(diff).hexdigest(),
+        "diff_bytes": len(diff),
+        # The observer has already materialized every diff byte.  The separate
+        # MAX_DIFF_BYTES bound limits static inspection, not receipt evidence.
+        "diff_complete": True,
+        "review_threads": threads,
+        "unresolved_review_threads": sum(1 for item in threads if not item["is_resolved"]),
+        "discussion_items": discussion,
+        "active_writers": writers,
+        "required_gates": list(required_gates),
+        "required_gate_paths": dict(required_gate_paths),
+        "required_gate_workflow_ids": gate_ids,
+        "required_gate_events": gate_events,
+        "workflow_runs": runs,
+    }
+    return snapshot, diff
+
+
+def verify_current_receipt(
+    expected: Mapping[str, Any],
+    expected_receipt_bytes: bytes,
+    expected_diff: bytes,
+    repository: str,
+    pr_number: int,
+    current_run_id: int,
+    required_gates: Sequence[str],
+    required_gate_paths: Mapping[str, str],
+    writer_workflows: Sequence[str],
+) -> tuple[dict[str, Any], dict[str, Any], bytes]:
+    snapshot, diff = observe_repository(
+        repository,
+        pr_number,
+        current_run_id,
+        required_gates,
+        required_gate_paths,
+        writer_workflows,
+        expected_head=_optional_text(expected.get("head_sha"), "receipt head_sha"),
+        event_context=_event_context_from_review_intake(expected),
+    )
+    fresh = evaluate(snapshot, diff)
+    try:
+        stored_receipt = json.loads(expected_receipt_bytes)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        stored_receipt = None
+    sealed_payload = dict(expected)
+    claimed_payload_sha256 = sealed_payload.pop("receipt_payload_sha256", None)
+    checks = {
+        "expected_receipt_self_seal": claimed_payload_sha256 == _canonical_sha256(sealed_payload),
+        "stored_receipt_parses_as_expected": stored_receipt == dict(expected),
+        "stored_receipt_bytes": expected_receipt_bytes == _pretty_json_bytes(fresh),
+        "repository": expected.get("repository") == repository,
+        "pr_number": expected.get("pr_number") == pr_number,
+        "evidence_fingerprint": expected.get("evidence_fingerprint") == fresh.get("evidence_fingerprint"),
+        "receipt_payload_sha256": expected.get("receipt_payload_sha256") == fresh.get("receipt_payload_sha256"),
+        "diff_sha256": expected.get("diff_sha256") == hashlib.sha256(diff).hexdigest(),
+        "diff_bytes": expected.get("diff_bytes") == len(diff),
+        "stored_diff_bytes": expected_diff == diff,
+    }
+    exact = all(checks.values())
+    report = {
+        "schema": "qikvrt_mesh_review_reobservation_v1",
+        "state": "HOLD_UNVERIFIED",
+        "exact": exact,
+        "checks": checks,
+        "expected_fingerprint": expected.get("evidence_fingerprint"),
+        "observed_fingerprint": fresh.get("evidence_fingerprint"),
+        "first_blocker": None if exact else "CAUSAL_REVIEW_EVIDENCE_DRIFT",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+    return report, fresh, diff
+
+
+def _load(path: str) -> Mapping[str, Any]:
+    value = json.load(sys.stdin) if path == "-" else json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("snapshot JSON must be an object")
+    return value
+
+
+def _json_argument(value: str, label: str, expected: type) -> Any:
+    parsed = json.loads(value)
+    if not isinstance(parsed, expected):
+        raise ReviewObservationError(f"{label} has the wrong JSON type")
+    return parsed
+
+
+def _write_json(path: pathlib.Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_pretty_json_bytes(value))
+
+
+def _add_observation_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--pr-number", required=True, type=int)
+    parser.add_argument("--current-run-id", required=True, type=int)
+    parser.add_argument("--required-gates-json", required=True)
+    parser.add_argument("--required-gate-paths-json", required=True)
+    parser.add_argument("--writer-workflows-json", required=True)
+    parser.add_argument("--expected-head", default="")
+    parser.add_argument("--event-context-file")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    evaluate_parser = commands.add_parser("evaluate")
+    evaluate_parser.add_argument("--input", default="-")
+    evaluate_parser.add_argument("--diff-file")
+    observe_parser = commands.add_parser("observe")
+    _add_observation_arguments(observe_parser)
+    observe_parser.add_argument("--snapshot-out", required=True)
+    observe_parser.add_argument("--diff-out", required=True)
+    observe_parser.add_argument("--receipt-out", required=True)
+    verify_parser = commands.add_parser("verify")
+    _add_observation_arguments(verify_parser)
+    verify_parser.add_argument("--receipt", required=True)
+    verify_parser.add_argument("--expected-diff", required=True)
+    verify_parser.add_argument("--output-dir", required=True)
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "evaluate":
+            diff = pathlib.Path(args.diff_file).read_bytes() if args.diff_file else None
+            result = evaluate(_load(args.input), diff)
+            print(json.dumps(result, sort_keys=True, indent=2))
+            return 0 if result.get("state") in {"WAIT", "APPROVE"} else 2
+
+        required_gates = _json_argument(
+            args.required_gates_json,
+            "required-gates-json",
+            list,
+        )
+        required_gate_paths = _json_argument(
+            args.required_gate_paths_json,
+            "required-gate-paths-json",
+            dict,
+        )
+        writer_workflows = _json_argument(
+            args.writer_workflows_json,
+            "writer-workflows-json",
+            list,
+        )
+        if args.command == "observe":
+            event_context = _load(args.event_context_file) if args.event_context_file else None
+            snapshot, diff = observe_repository(
+                args.repository,
+                args.pr_number,
+                args.current_run_id,
+                required_gates,
+                required_gate_paths,
+                writer_workflows,
+                args.expected_head or None,
+                event_context,
+            )
+            result = evaluate(snapshot, diff)
+            _write_json(pathlib.Path(args.snapshot_out), snapshot)
+            diff_path = pathlib.Path(args.diff_out)
+            diff_path.parent.mkdir(parents=True, exist_ok=True)
+            diff_path.write_bytes(diff)
+            _write_json(pathlib.Path(args.receipt_out), result)
+            print(json.dumps(result, sort_keys=True, indent=2))
+            return 0
+
+        expected_receipt_bytes = pathlib.Path(args.receipt).read_bytes()
+        expected_value = json.loads(expected_receipt_bytes)
+        if not isinstance(expected_value, Mapping):
+            raise ReviewSnapshotError("receipt JSON must be an object")
+        expected = expected_value
+        expected_diff = pathlib.Path(args.expected_diff).read_bytes()
+        report, fresh, diff = verify_current_receipt(
+            expected,
+            expected_receipt_bytes,
+            expected_diff,
+            args.repository,
+            args.pr_number,
+            args.current_run_id,
+            required_gates,
+            required_gate_paths,
+            writer_workflows,
+        )
+        output = pathlib.Path(args.output_dir)
+        _write_json(output / "review.json", fresh)
+        (output / "review.diff").write_bytes(diff)
+        _write_json(output / "verification.json", report)
+        print(json.dumps(report, sort_keys=True, indent=2))
+        return 0 if report["exact"] else 3
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        ReviewSnapshotError,
+        ReviewObservationError,
+        subprocess.SubprocessError,
+    ) as exc:
+        result = _result(
+            {},
+            "COMMENT_WITH_BLOCKER",
+            "INVALID_REVIEW_SNAPSHOT",
+            str(exc),
+            findings=[_finding("INVALID_REVIEW_SNAPSHOT", "BLOCK", str(exc))],
+        )
+        if getattr(args, "command", None) == "observe" and getattr(args, "receipt_out", None):
+            _write_json(pathlib.Path(args.receipt_out), result)
+        if getattr(args, "command", None) == "verify" and getattr(args, "output_dir", None):
+            output = pathlib.Path(args.output_dir)
+            _write_json(output / "verification.json", result)
+        print(json.dumps(result, sort_keys=True, indent=2))
+        return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
