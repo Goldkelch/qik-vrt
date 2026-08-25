@@ -16,6 +16,7 @@ from tools.qikvrt_seed_common import (
     FetchedJson,
     MAX_INPUT_BYTES,
     SeedError,
+    _result_exit_code,
     canonical_json_bytes,
     load_nodes,
     parse_json_bytes,
@@ -27,6 +28,11 @@ from tools.qikvrt_seed_common import (
     run_revalidation,
     validate_raw_request_url,
 )
+from tools.qikvrt_seed_control_plane import (
+    aggregate_statuses,
+    run_control_plane,
+    workflow_transport_exit_code,
+)
 
 
 GUID = "a84f157a-cef2-4c47-bca9-8f407085bdbe"
@@ -37,6 +43,9 @@ REQUEST_URL = (
     "qikvrt/runtime/onboarding/SEED_REGISTRATION_REQUEST.json"
 )
 NOW = dt.datetime(2026, 7, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+LATER = NOW + dt.timedelta(days=2)
+HEAD = "a" * 40
+TREE = "b" * 40
 
 
 def continuity_declaration() -> dict[str, object]:
@@ -136,6 +145,18 @@ class SeedWorkflowTests(unittest.TestCase):
         )
         (self.root / "registry/node_request_queue/OPEN_NODE_REQUESTS.tsv").write_text(
             "# empty queue\n", encoding="utf-8"
+        )
+        (self.root / "state/mesh").mkdir(parents=True)
+        (self.root / "state/mesh/QIKVRT_AUTHORITY_MIRROR_MESH_INSTANCE_V1.json").write_bytes(
+            canonical_json_bytes(
+                {
+                    "schema": "qikvrt_authority_mirror_mesh_instance_contract_v1",
+                    "topology": {
+                        "authority": {"repository": SEED, "role": "AUTHORITY"},
+                        "mirror": {"repository": "ingolf-lohmann/qik-vrt", "role": "MIRROR"},
+                    },
+                }
+            )
         )
 
     def tearDown(self) -> None:
@@ -343,20 +364,187 @@ class SeedWorkflowTests(unittest.TestCase):
             read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")["schema"],
         )
 
+    def test_seed_exit_semantics_are_typed_and_fail_closed(self) -> None:
+        self.assertEqual(0, _result_exit_code({"status": "PASS"}))
+        self.assertEqual(20, _result_exit_code({"status": "CONTINUE"}))
+        self.assertEqual(1, _result_exit_code({"status": "BLOCK"}))
+        with self.assertRaisesRegex(SeedError, "unclassified"):
+            _result_exit_code({"status": "UNKNOWN"})
+        self.assertEqual("CONTINUE", aggregate_statuses(({"status": "PASS"}, {"status": "CONTINUE"})))
+        self.assertEqual(0, workflow_transport_exit_code({"status": "CONTINUE"}))
+        self.assertEqual(1, workflow_transport_exit_code({"status": "BLOCK"}))
+        with self.assertRaisesRegex(SeedError, "unclassified"):
+            aggregate_statuses(({"status": "UNKNOWN"},))
+        with self.assertRaisesRegex(SeedError, "unclassified"):
+            workflow_transport_exit_code({"status": "UNKNOWN"})
+
+    def test_dashboard_and_audit_render_continue_without_semantic_upgrade(self) -> None:
+        self.accept()
+        maintenance = run_maintenance(
+            self.root,
+            "stale-run",
+            FakeFetcher(remote_documents()),
+            now=LATER,
+        )
+        self.assertEqual("PASS", maintenance["status"])
+        self.assertEqual(1, maintenance["stale_count"])
+        revalidation = run_revalidation(self.root, "stale-run", now=LATER)
+        self.assertEqual("CONTINUE", revalidation["status"])
+
+        dashboard = run_dashboard(self.root, "stale-dashboard", now=LATER)
+        audit = run_audit_export(self.root, "stale-audit", now=LATER)
+        for result in (dashboard, audit):
+            self.assertEqual("CONTINUE", result["status"])
+            self.assertEqual("CONTINUE", result["source_revalidation_status"])
+            self.assertEqual("COMPLETE", result["render_status"])
+        self.assertIn(
+            "source_revalidation_status: CONTINUE",
+            (self.root / "docs/QIKVRT_MESH_DASHBOARD.md").read_text(encoding="utf-8"),
+        )
+
     def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         workflow = (
             repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("push:\n    branches: [main]", workflow)
+        self.assertIn("expected_head_sha:", workflow)
+        self.assertIn("required: true", workflow)
         self.assertIn("ref: ${{ github.sha }}", workflow)
         self.assertIn('actual_head="$(git rev-parse --verify HEAD^{commit})"', workflow)
-        self.assertIn('test "$actual_head" = "$EXPECTED_HEAD"', workflow)
-        self.assertIn('actual_tree="$(git show -s --format=%T HEAD)"', workflow)
-        self.assertIn("dashboard-exact-head-binding.json", workflow)
-        self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
-        self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
-        self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
+        self.assertIn('test "$actual_head" = "$GITHUB_SHA"', workflow)
+        self.assertIn('export QIKVRT_SOURCE_TREE="$(git show -s --format=%T HEAD)"', workflow)
+        self.assertIn("qikvrt_seed_control_plane.py dashboard", workflow)
+        self.assertIn("path: .qikvrt/seed-workflow/${{ env.QIKVRT_RUN_ID }}/artifact", workflow)
+
+    def test_control_plane_role_hold_precedes_network_or_semantic_work(self) -> None:
+        fetcher = FakeFetcher(remote_documents())
+        receipt = run_control_plane(
+            self.root,
+            "registry",
+            "role-hold",
+            actual_repository="ingolf-lohmann/qik-vrt",
+            event_name="push",
+            source_head=HEAD,
+            source_tree=TREE,
+            expected_head=HEAD,
+            fetch=fetcher,
+            now=NOW,
+        )
+        self.assertEqual("BLOCK", receipt["status"])
+        self.assertIn("SEED_ROLE_HOLD", receipt["error"])
+        self.assertEqual([], fetcher.calls)
+        self.assertEqual([], receipt["steps"])
+
+    def test_control_plane_event_binding_precedes_network_or_semantic_work(self) -> None:
+        for run_id, event_name, expected_head in (
+            ("timer-hold", "schedule", HEAD),
+            ("head-hold", "push", "c" * 40),
+        ):
+            with self.subTest(run_id=run_id):
+                fetcher = FakeFetcher({})
+                receipt = run_control_plane(
+                    self.root,
+                    "registry",
+                    run_id,
+                    actual_repository=SEED,
+                    event_name=event_name,
+                    source_head=HEAD,
+                    source_tree=TREE,
+                    expected_head=expected_head,
+                    fetch=fetcher,
+                    now=NOW,
+                )
+                self.assertEqual("BLOCK", receipt["status"])
+                self.assertIn("SEED_EVENT_HOLD", receipt["error"])
+                self.assertEqual([], fetcher.calls)
+                self.assertEqual([], receipt["steps"])
+
+    def test_control_plane_profiles_preserve_continue(self) -> None:
+        for profile in ("registry", "dashboard", "audit"):
+            run_id = f"{profile}-continue"
+            receipt = run_control_plane(
+                self.root,
+                profile,
+                run_id,
+                actual_repository=SEED,
+                event_name="push",
+                source_head=HEAD,
+                source_tree=TREE,
+                expected_head=HEAD,
+                fetch=FakeFetcher(remote_documents()),
+                now=LATER,
+            )
+            self.assertEqual("CONTINUE", receipt["status"], profile)
+            self.assertEqual("COMPLETE", receipt["transport_status"], profile)
+            self.assertEqual(0, workflow_transport_exit_code(receipt), profile)
+            staged = self.root / f".qikvrt/seed-workflow/{run_id}/artifact"
+            self.assertTrue((staged / "MANIFEST.json").is_file(), profile)
+            self.assertFalse(
+                any(
+                    b"LATEST.json" in path.read_bytes()
+                    for path in staged.rglob("*")
+                    if path.is_file()
+                ),
+                profile,
+            )
+
+    def test_control_plane_stages_only_fresh_current_run_outputs(self) -> None:
+        self.accept()
+        (self.root / "evidence/seed_dashboard").mkdir(parents=True, exist_ok=True)
+        (self.root / "evidence/seed_dashboard/LATEST.json").write_text(
+            '{"run_id":"old-run","status":"PASS"}\n', encoding="utf-8"
+        )
+        (self.root / "docs").mkdir(parents=True, exist_ok=True)
+        (self.root / "docs/QIKVRT_MESH_DASHBOARD.md").write_text("old-run\n", encoding="utf-8")
+        receipt = run_control_plane(
+            self.root,
+            "dashboard",
+            "fresh-run",
+            actual_repository=SEED,
+            event_name="push",
+            source_head=HEAD,
+            source_tree=TREE,
+            expected_head=HEAD,
+            fetch=FakeFetcher(remote_documents()),
+            now=LATER,
+        )
+        self.assertEqual("CONTINUE", receipt["status"])
+        self.assertEqual("COMPLETE", receipt["transport_status"])
+        artifact = self.root / ".qikvrt/seed-workflow/fresh-run/artifact"
+        names = [path.relative_to(artifact).as_posix() for path in artifact.rglob("*") if path.is_file()]
+        self.assertTrue(names)
+        self.assertFalse(any("LATEST.json" in name for name in names))
+        self.assertFalse(any("old-run" in path.read_text(encoding="utf-8") for path in artifact.rglob("*") if path.is_file()))
+        manifest = read_json(artifact / "MANIFEST.json")
+        self.assertEqual("CONTINUE", manifest["semantic_status"])
+        for entry in manifest["files"]:
+            raw = (artifact / entry["path"]).read_bytes()
+            self.assertEqual(len(raw), entry["bytes"])
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), entry["sha256"])
+
+    def test_blocked_acceptance_stops_pipeline_and_quarantines_old_state(self) -> None:
+        documents = remote_documents()
+        documents[REQUEST_URL] = {**request_document(), "no_global_scanning": "true"}
+        (self.root / "registry/nodes").mkdir(parents=True)
+        (self.root / f"registry/nodes/{GUID}.json").write_text('{"run_id":"old-run"}\n', encoding="utf-8")
+        receipt = run_control_plane(
+            self.root,
+            "registry",
+            "blocked-control",
+            actual_repository=SEED,
+            event_name="push",
+            source_head=HEAD,
+            source_tree=TREE,
+            expected_head=HEAD,
+            fetch=FakeFetcher(documents),
+            now=NOW,
+        )
+        self.assertEqual("BLOCK", receipt["status"])
+        self.assertEqual([{"step": "acceptance", "status": "BLOCK"}], receipt["steps"])
+        artifact = self.root / ".qikvrt/seed-workflow/blocked-control/artifact"
+        names = [path.relative_to(artifact).as_posix() for path in artifact.rglob("*") if path.is_file()]
+        self.assertFalse(any("registry/nodes" in name for name in names))
 
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]
@@ -367,6 +555,48 @@ class SeedWorkflowTests(unittest.TestCase):
             self.assertIn("persist-credentials: false", text, workflow.name)
             self.assertNotRegex(text, r"actions/(?:checkout|upload-artifact)@v\d")
             self.assertNotRegex(text, r"\bgit (?:push|pull|commit)\b")
+            self.assertNotIn("schedule:", text, workflow.name)
+            self.assertNotIn("cron:", text, workflow.name)
+            self.assertIn("expected_head_sha:", text, workflow.name)
+            self.assertIn("github.repository == 'Goldkelch/qik-vrt'", text, workflow.name)
+            self.assertIn("tools/qikvrt_seed_control_plane.py", text, workflow.name)
+            self.assertIn(
+                "path: .qikvrt/seed-workflow/${{ env.QIKVRT_RUN_ID }}/artifact",
+                text,
+                workflow.name,
+            )
+            self.assertNotIn("LATEST.json", text, workflow.name)
+
+    def test_issue_854_failure_class_binds_executable_preventions(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        policy = read_json(repository / "policy/SEED_CONTROL_PLANE_PREVENTION_V1.json")
+        self.assertEqual(
+            "SEED_TYPED_CONTINUE_COLLAPSED_TO_JOB_FAILURE",
+            policy["failure_class"]["id"],
+        )
+        self.assertEqual(854, policy["issue"]["number"])
+        self.assertEqual("REFERENCED_NOT_CLOSED", policy["issue"]["disposition"])
+        invariant_ids = {item["id"] for item in policy["prevention_invariants"]}
+        self.assertEqual(
+            {
+                "SEED_TYPED_STATUS_TRANSPORT_SEPARATION",
+                "SEED_EXACT_RUN_ARTIFACT_QUARANTINE",
+                "SEED_MACHINE_ROLE_REPOSITORY_ADMISSION",
+                "SEED_CONTENT_BOUND_SEMANTIC_EVENTS",
+            },
+            invariant_ids,
+        )
+        self.assertFalse(any(policy["completion_claims"].values()))
+        self_healing = read_json(
+            repository / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+        )
+        prevention = next(
+            item
+            for item in self_healing["non_repairing_preventions"]
+            if item["failure_class"] == "SEED_TYPED_CONTINUE_COLLAPSED_TO_JOB_FAILURE"
+        )
+        self.assertFalse(prevention["autonomous_repair"])
+        self.assertFalse(prevention["automatic_promotion"])
 
 
 if __name__ == "__main__":

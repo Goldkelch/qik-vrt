@@ -6,12 +6,23 @@ name: QIKVRT Seed Registry Acceptance
 on:
   workflow_dispatch:
     inputs:
+      expected_head_sha:
+        description: Exact event-bound Authority head (must equal github.sha)
+        required: true
+        type: string
       run_id:
         description: Optional safe QIKVRT run id
         required: false
         type: string
-  schedule:
-    - cron: '17 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'registry/**'
+      - 'tools/qikvrt_seed_common.py'
+      - 'tools/qikvrt_seed_control_plane.py'
+      - 'state/mesh/QIKVRT_AUTHORITY_MIRROR_MESH_INSTANCE_V1.json'
+      - 'policy/SEED_CONTROL_PLANE_PREVENTION_V1.json'
+      - '.github/workflows/qikvrt_seed_registry_acceptance.yml'
 
 permissions:
   contents: read
@@ -22,42 +33,33 @@ concurrency:
 
 jobs:
   run:
+    if: github.repository == 'Goldkelch/qik-vrt'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       QIKVRT_RUN_ID: ${{ inputs.run_id || format('{0}-{1}', github.run_id, github.run_attempt) }}
+      QIKVRT_EXPECTED_HEAD: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_head_sha || github.sha }}
+      QIKVRT_SEED_REPOSITORY: Goldkelch/qik-vrt
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Validate, accept, maintain, and revalidate
+      - name: Run role-bound exact-run Seed registry adapter
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .qikvrt/seed-workflow
-          {
-            sh tools/qikvrt_seed_registry_acceptance.sh
-            sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
-          } 2>&1 | tee .qikvrt/seed-workflow/registry-acceptance.log
-      - name: Preserve local evidence without mutating the repository
+          actual_head="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual_head" = "$GITHUB_SHA"
+          export QIKVRT_SOURCE_HEAD="$actual_head"
+          export QIKVRT_SOURCE_TREE="$(git show -s --format=%T HEAD)"
+          python3 -B tools/qikvrt_seed_control_plane.py registry --root .
+      - name: Preserve only quarantined current-run evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qikvrt-seed-registry-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 30
-          path: |
-            .qikvrt/seed-workflow/registry-acceptance.log
-            registry/nodes
-            registry/NODEMESH_INDEX.json
-            registry/NODEMESH_STATUS.json
-            registry/NODEMESH_REVALIDATION.json
-            evidence/seed_acceptance/*.json
-            evidence/seed_acceptance/runs/${{ env.QIKVRT_RUN_ID }}.json
-            evidence/seed_mesh_maintenance/LATEST.json
-            evidence/seed_mesh_maintenance/runs/${{ env.QIKVRT_RUN_ID }}.json
-            evidence/seed_node_revalidation/LATEST.json
-            evidence/seed_node_revalidation/runs/${{ env.QIKVRT_RUN_ID }}.json
-            ledger/NODE_REGISTRATION_LEDGER.jsonl
+          path: .qikvrt/seed-workflow/${{ env.QIKVRT_RUN_ID }}/artifact

@@ -1,0 +1,120 @@
+{
+  "schema": "qikvrt_seed_control_plane_prevention_v1",
+  "contract_id": "qikvrt-seed-control-plane-prevention-v1",
+  "issue": {
+    "repository": "Goldkelch/qik-vrt",
+    "number": 854,
+    "disposition": "REFERENCED_NOT_CLOSED"
+  },
+  "failure_class": {
+    "id": "SEED_TYPED_CONTINUE_COLLAPSED_TO_JOB_FAILURE",
+    "scope": "SHARED_SEED_CONTROL_PLANE",
+    "classification": "CROSS_REPOSITORY_SHARED_IMPLEMENTATION_REGRESSION",
+    "first_causal_predecessor": "NON_PASS_SEED_STATUS_COLLAPSED_TO_EXIT_10_BEFORE_FAIL_FAST_PIPELINE",
+    "known_signature": {
+      "semantic_status": "CONTINUE",
+      "legacy_exit_code": 10,
+      "transport_observation": "GITHUB_ACTIONS_JOB_FAILURE",
+      "affected_profiles": [
+        "audit",
+        "dashboard",
+        "maintenance",
+        "registry",
+        "revalidation"
+      ]
+    },
+    "observed_instances": [
+      {
+        "repository": "Goldkelch/qik-vrt",
+        "head": "fb744e5b5925d61c6b473e27aab3606f237f7e6d",
+        "workflow_families": [
+          "QIKVRT Seed Dashboard Build",
+          "QIKVRT Seed Registry Acceptance"
+        ]
+      },
+      {
+        "repository": "ingolf-lohmann/qik-vrt",
+        "head": "25c4df4caf063d0545621f9958941c3cd0dfd5fa",
+        "workflow_families": [
+          "QIKVRT Seed Dashboard Build",
+          "QIKVRT Seed Registry Acceptance"
+        ]
+      }
+    ],
+    "shared_legacy_blob_bindings": {
+      "tools/qikvrt_seed_common.py": "43643e473b8dc8a1c963a360185246f96f0aaf26",
+      ".github/workflows/qikvrt_seed_dashboard_publish.yml": "0121c8eba6470f77c04ded990d147d81b4ee8009",
+      ".github/workflows/qikvrt_seed_registry_acceptance.yml": "1d98f87c715d4c1e570ab30b961f243428821d60"
+    },
+    "role_local_cofactor": "MIRROR_MUST_NOT_EXECUTE_AUTHORITY_BOUND_SEED_SEMANTICS",
+    "role_local_cofactor_is_separate_root_cause": false
+  },
+  "bounded_repair": {
+    "canonical_semantic_exit_codes": {
+      "PASS": 0,
+      "CONTINUE": 20,
+      "BLOCK": 1
+    },
+    "workflow_transport_rule": "PASS_OR_CONTINUE_WITH_FRESH_RECEIPT_IS_COMPLETE; BLOCK_OR_UNKNOWN_FAILS",
+    "dashboard_and_audit_rule": "RENDER_FRESH_VISIBILITY_WITHOUT_PROMOTING_SOURCE_CONTINUE",
+    "mutable_paths": [
+      ".github/workflows/qikvrt_seed_dashboard_publish.yml",
+      ".github/workflows/qikvrt_seed_mesh_audit_export.yml",
+      ".github/workflows/qikvrt_seed_mesh_maintenance.yml",
+      ".github/workflows/qikvrt_seed_node_revalidation.yml",
+      ".github/workflows/qikvrt_seed_registry_acceptance.yml",
+      "tools/qikvrt_seed_common.py",
+      "tools/qikvrt_seed_control_plane.py",
+      "tests/test_seed_workflows.py",
+      "policy/SEED_CONTROL_PLANE_PREVENTION_V1.json"
+    ]
+  },
+  "prevention_invariants": [
+    {
+      "id": "SEED_TYPED_STATUS_TRANSPORT_SEPARATION",
+      "rule": "CONTINUE_REMAINS_LITERAL_IN_RECEIPTS_AND_DOES_NOT_BECOME_PASS_OR_AN_UNCLASSIFIED_JOB_FAILURE",
+      "implementation": "tools/qikvrt_seed_control_plane.py"
+    },
+    {
+      "id": "SEED_EXACT_RUN_ARTIFACT_QUARANTINE",
+      "rule": "UPLOAD_ONLY_CURRENT_RUN_DIGESTED_OUTPUTS; LATEST_AND_TRACKED_STALE_FALLBACKS_ARE_FORBIDDEN",
+      "implementation": "tools/qikvrt_seed_control_plane.py"
+    },
+    {
+      "id": "SEED_MACHINE_ROLE_REPOSITORY_ADMISSION",
+      "rule": "ACTUAL_REPOSITORY_MUST_EQUAL_CONFIGURED_SEED_AND_MACHINE_DECLARED_AUTHORITY_BEFORE_NETWORK_OR_SEMANTIC_WORK",
+      "role_authority": "state/mesh/QIKVRT_AUTHORITY_MIRROR_MESH_INSTANCE_V1.json"
+    },
+    {
+      "id": "SEED_CONTENT_BOUND_SEMANTIC_EVENTS",
+      "rule": "SEMANTIC_SEED_WORK_HAS_NO_TIMER_TRIGGER_AND_REQUIRES_AN_AUTHENTICATED_EXACT_HEAD_EVENT",
+      "allowed_events": [
+        "push",
+        "workflow_dispatch_with_exact_event_head"
+      ]
+    }
+  ],
+  "prevention_test": "tests/test_seed_workflows.py",
+  "receipt_chain": [
+    "KNOWN_ERROR",
+    "MACHINE_READABLE_FAILURE_CLASS",
+    "BOUNDED_REPAIR",
+    "PREVENTION_MECHANISM",
+    "FRESH_LITERAL_EXACT_HEAD_EVIDENCE",
+    "INTERNALLY_REFLEXIVE_RECEIPT",
+    "EXTERNALLY_TRANSPARENT_RECONSTRUCTION"
+  ],
+  "artifact_authority": ".qikvrt/seed-workflow/<run-id>/artifact/MANIFEST.json",
+  "repository_history_boundary": {
+    "authority_and_mirror_changes_require_independent_commits": true,
+    "authority_mirror_synchronization_inferred": false,
+    "shared_blob_identity_is_sync_evidence": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "deployment": false,
+    "EFFECT_ACK_DONE": false,
+    "issue_854_complete": false
+  }
+}
