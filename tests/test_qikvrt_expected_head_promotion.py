@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import sys
 import unittest
@@ -16,6 +17,15 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+REVIEW_SPEC = importlib.util.spec_from_file_location(
+    "qikvrt_requested_review_executor_for_promotion_test",
+    ROOT / "tools/qikvrt_requested_review_executor.py",
+)
+assert REVIEW_SPEC and REVIEW_SPEC.loader
+REVIEW_MODULE = importlib.util.module_from_spec(REVIEW_SPEC)
+sys.modules[REVIEW_SPEC.name] = REVIEW_MODULE
+REVIEW_SPEC.loader.exec_module(REVIEW_MODULE)
 
 
 class ExpectedHeadPromotionTests(unittest.TestCase):
@@ -290,7 +300,21 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("code_owner_review_gate", workflow)
         self.assertIn("independent Code Owner gate changed", workflow)
         self.assertIn("mesh_review_status_projection", workflow)
-        self.assertIn("MESH_REVIEW_LEDGER_REF", workflow)
+        self.assertIn(
+            "MESH_REVIEW_LEDGER_REF: refs/heads/qikvrt/mesh-review-ledger-v1",
+            workflow,
+        )
+        self.assertIn("ledger_commit=gh_json", workflow)
+        self.assertIn("ref=urllib.parse.quote(ledger_commit,safe='')", workflow)
+        self.assertIn("prepare_diff_transport_ledger_entries", workflow)
+        self.assertIn("reassemble_diff_transport", workflow)
+        self.assertIn("manifest_ledger_path=root+'.chunks.json'", workflow)
+        self.assertIn("receipt.get('ledger_diff_path') != manifest_ledger_path", workflow)
+        self.assertIn("receipt.get('diff_transport') != manifest", workflow)
+        self.assertIn("expected_path=f'{root}.chunks/{index:08d}.bin'", workflow)
+        self.assertIn("manifest_bytes != canonical_manifest or packets != canonical_packets", workflow)
+        self.assertIn("diff_path.write_bytes(complete_diff)", workflow)
+        self.assertNotIn("ledger_bytes(root+'.diff')", workflow)
         self.assertIn("tools/qikvrt_requested_review_executor.py','verify'", workflow)
         self.assertIn("'--expected-diff',str(diff_path)", workflow)
         self.assertIn("status and ledger fingerprints differ", workflow)
@@ -311,6 +335,60 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         )
         self.assertNotIn('pulls/${PR_NUMBER}/merge', workflow)
         self.assertNotIn("gh pr merge", workflow)
+
+    def test_promotion_chunk_transport_rejects_incomplete_or_drifted_packets(self):
+        packet_bytes = REVIEW_MODULE.REVIEW_DIFF_CHUNK_BYTES
+        diff = b"a" * packet_bytes + b"b" * packet_bytes + b"c" * 17
+        root = "state/mesh/reviews/pr-459/head/fingerprint"
+        manifest_path = root + ".chunks.json"
+        transport = REVIEW_MODULE.build_diff_transport(diff, root)
+        manifest_bytes, packets = REVIEW_MODULE.prepare_diff_transport_ledger_entries(
+            transport, diff, manifest_path
+        )
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+
+        self.assertEqual(
+            REVIEW_MODULE.reassemble_diff_transport(manifest, packets),
+            diff,
+        )
+        self.assertEqual(
+            manifest_bytes,
+            REVIEW_MODULE._pretty_json_bytes(manifest),
+        )
+
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "packet count is invalid"
+        ):
+            REVIEW_MODULE.reassemble_diff_transport(manifest, packets[:-1])
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "packet count is invalid"
+        ):
+            REVIEW_MODULE.reassemble_diff_transport(manifest, packets + [b"surplus"])
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "packet digest mismatch"
+        ):
+            REVIEW_MODULE.reassemble_diff_transport(
+                manifest, [packets[1], packets[0], packets[2]]
+            )
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "packet digest mismatch"
+        ):
+            REVIEW_MODULE.reassemble_diff_transport(
+                manifest, [packets[0], packets[1], b"d" * 17]
+            )
+
+        tampered_manifest = dict(manifest)
+        tampered_manifest["total_bytes"] += 1
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "manifest digest mismatch"
+        ):
+            REVIEW_MODULE.reassemble_diff_transport(tampered_manifest, packets)
+        with self.assertRaisesRegex(
+            REVIEW_MODULE.ReviewSnapshotError, "does not bind"
+        ):
+            REVIEW_MODULE.prepare_diff_transport_ledger_entries(
+                manifest, diff, root + "-other.chunks.json"
+            )
 
 
 if __name__ == "__main__":

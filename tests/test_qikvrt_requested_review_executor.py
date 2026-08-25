@@ -1452,6 +1452,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("existing_diff=blob_at(diff_path,ledger_head)", text)
         self.assertIn("prepare_diff_transport_ledger_entries", core)
         self.assertIn("prepare_diff_transport_ledger_entries", text)
+        self.assertIn(
+            "prepare_diff_transport_ledger_entries,\n"
+            "              reassemble_diff_transport,",
+            text,
+        )
         self.assertIn("blob_at(diff_path,commit) != _pretty_json_bytes(transport)", text)
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
