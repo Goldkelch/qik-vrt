@@ -82,14 +82,14 @@ jobs:
       OBSERVED_RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
       OBSERVED_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
       OBSERVED_BRANCH: ${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref || github.ref_name }}
-      EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-live-status-event
 
     steps:
       - name: Project one event-bound status snapshot without polling
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$EVIDENCE_DIR"
+          evidence_dir="$RUNNER_TEMP/qikvrt-live-status-event"
+          mkdir -p "$evidence_dir"
           observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           jq -n \
             --arg schema 'qikvrt_event_bound_live_status_v1' \
@@ -122,7 +122,7 @@ jobs:
               blind_retry: false,
               semantic_work_triggered: false,
               external_effect: "NONE"
-            }' | tee "$EVIDENCE_DIR/status-event.json"
+            }' | tee "$evidence_dir/status-event.json"
 
           {
             echo '## QIKVRT event-bound repository status projection'
@@ -146,6 +146,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-live-status-event-${{ env.OBSERVED_RUN_ID }}-${{ github.run_attempt }}
-          path: ${{ env.EVIDENCE_DIR }}/status-event.json
+          path: ${{ runner.temp }}/qikvrt-live-status-event/status-event.json
           if-no-files-found: error
           retention-days: 30

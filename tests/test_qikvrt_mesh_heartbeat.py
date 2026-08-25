@@ -176,7 +176,13 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/qikvrt_mesh_heartbeat.yml").read_text(
             encoding="utf-8"
         )
+        job_prefix = workflow.split("\n    steps:", 1)[0]
         self.assertNotIn("schedule:", workflow)
+        self.assertNotIn("runner.temp", job_prefix)
+        self.assertIn(
+            'evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat"',
+            workflow,
+        )
         self.assertIn("contents: read", workflow)
         self.assertIn("github.event.pull_request.head.sha || github.sha", workflow)
         self.assertIn("--heartbeat-count 4", workflow)
@@ -185,6 +191,12 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
 
     def test_live_status_projection_is_event_driven_and_api_poll_free(self) -> None:
         workflow = LIVE_STATUS.read_text(encoding="utf-8")
+        job_prefix = workflow.split("\n    steps:", 1)[0]
+        self.assertNotIn("runner.temp", job_prefix)
+        self.assertIn(
+            'evidence_dir="$RUNNER_TEMP/qikvrt-live-status-event"',
+            workflow,
+        )
         self.assertIn("workflow_run:", workflow)
         self.assertIn("types: [requested, in_progress, completed]", workflow)
         self.assertIn("GITHUB_STEP_SUMMARY", workflow)

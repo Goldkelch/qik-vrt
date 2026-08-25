@@ -45,7 +45,6 @@ jobs:
     env:
       QIKVRT_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       QIKVRT_EVENT_NAME: ${{ github.event_name }}
-      QIKVRT_EVIDENCE_DIR: ${{ runner.temp }}/qikvrt-mesh-heartbeat
 
     steps:
       - name: Check out literal exact source head
@@ -83,23 +82,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$QIKVRT_EVIDENCE_DIR"
-          mkdir -p "$QIKVRT_EVIDENCE_DIR"
+          evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat"
+          rm -rf "$evidence_dir"
+          mkdir -p "$evidence_dir"
           python3 -B tools/qikvrt_mesh_heartbeat.py demo \
             --source-head "$QIKVRT_EXACT_HEAD" \
             --source-tree "$QIKVRT_EXACT_TREE" \
-            --output-dir "$QIKVRT_EVIDENCE_DIR" \
+            --output-dir "$evidence_dir" \
             --heartbeat-count 4 \
             --event "$QIKVRT_EVENT_NAME" \
             --run-id "$GITHUB_RUN_ID" \
-            | tee "$QIKVRT_EVIDENCE_DIR/stdout.json"
+            | tee "$evidence_dir/stdout.json"
 
       - name: Verify exact heartbeat audit receipt
         shell: bash
         run: |
           set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat"
           python3 -B tools/qikvrt_mesh_heartbeat.py verify \
-            --receipt "$QIKVRT_EVIDENCE_DIR/execution-receipt.json" \
+            --receipt "$evidence_dir/execution-receipt.json" \
             --source-head "$QIKVRT_EXACT_HEAD" \
             --source-tree "$QIKVRT_EXACT_TREE"
 
@@ -111,6 +112,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-mesh-heartbeat-${{ env.QIKVRT_EXACT_HEAD }}
-          path: ${{ env.QIKVRT_EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/qikvrt-mesh-heartbeat
           if-no-files-found: warn
           retention-days: 30
