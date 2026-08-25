@@ -37,6 +37,11 @@ class CanonicalAIFirefoxTerminalContractTests(unittest.TestCase):
         self.assertIn("http://localhost:8771/*", manifest["host_permissions"])
         self.assertNotIn("http://127.0.0.1/*", manifest["host_permissions"])
         self.assertNotIn("http://localhost/*", manifest["host_permissions"])
+        csp = manifest["content_security_policy"]["extension_pages"]
+        self.assertIn("connect-src", csp)
+        self.assertIn("http://127.0.0.1:8771", csp)
+        self.assertIn("http://localhost:8771", csp)
+        self.assertNotIn("upgrade-insecure-requests", csp)
         self.assertIn('searchParams.get("qikvrt_e2e") === "1"', options)
         self.assertIn("QIKVRT-FIREFOX-E2E-NONCE-0001", options)
         self.assertIn(
