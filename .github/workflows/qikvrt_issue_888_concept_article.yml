@@ -1,0 +1,124 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT Issue 888 concept article
+
+on:
+  pull_request:
+    paths:
+      - "docs/publications/2026-08-25-intelligent-terminal-self-scaling-mesh/**"
+      - "state/work_units/ISSUE_888_INTELLIGENT_TERMINAL_MESH_CONCEPT_ARTICLE_V1.json"
+      - "tests/test_issue_888_intelligent_terminal_mesh_article.py"
+      - ".github/workflows/qikvrt_issue_888_concept_article.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs/publications/2026-08-25-intelligent-terminal-self-scaling-mesh/**"
+      - "state/work_units/ISSUE_888_INTELLIGENT_TERMINAL_MESH_CONCEPT_ARTICLE_V1.json"
+      - "tests/test_issue_888_intelligent_terminal_mesh_article.py"
+      - ".github/workflows/qikvrt_issue_888_concept_article.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-concept-article:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out literal exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind literal exact head and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/issue-888-concept-article
+          mkdir -p "$root"
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$EXPECTED_HEAD"
+          printf '%s\n' "$head" > "$root/source-head.txt"
+          printf '%s\n' "$tree" > "$root/source-tree.txt"
+
+      - name: Verify article, source audit and claim boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool \
+            docs/publications/2026-08-25-intelligent-terminal-self-scaling-mesh/PRIMARY_SOURCE_AUDIT.json \
+            >/dev/null
+          python3 -m json.tool \
+            docs/publications/2026-08-25-intelligent-terminal-self-scaling-mesh/CLAIM_MATRIX.json \
+            >/dev/null
+          python3 -m json.tool \
+            state/work_units/ISSUE_888_INTELLIGENT_TERMINAL_MESH_CONCEPT_ARTICLE_V1.json \
+            >/dev/null
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v \
+              tests.test_issue_888_intelligent_terminal_mesh_article
+
+      - name: Write exact-head documentation receipt
+        env:
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/issue-888-concept-article
+          export HEAD_SHA="$(cat "$root/source-head.txt")"
+          export TREE_SHA="$(cat "$root/source-tree.txt")"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "qikvrt_issue_888_concept_article_receipt_v1",
+              "repository": os.environ["REPOSITORY"],
+              "event": os.environ["EVENT_NAME"],
+              "source_head": os.environ["HEAD_SHA"],
+              "source_tree": os.environ["TREE_SHA"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "article_contract_verified": True,
+              "primary_source_audit_verified": True,
+              "claim_boundaries_verified": True,
+              "article_role": "CONCEPTUAL_COMPANION_NOT_IMPLEMENTATION_CARRIER",
+              "issue_888_completion_effect": False,
+              "authority_effect": False,
+              "independent_approval": False,
+              "deployment": False,
+              "publication": False,
+              "doi_assigned": False,
+              "arxiv_identifier_assigned": False,
+              "physical_megast_execution": False,
+              "pass": False,
+              "final_pass": False,
+              "general_effect_ack_done": False,
+          }
+          Path(
+              ".qikvrt/issue-888-concept-article/receipt.json"
+          ).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+
+      - name: Preserve exact-head documentation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-issue-888-concept-article-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/issue-888-concept-article
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
