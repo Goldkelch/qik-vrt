@@ -6,18 +6,34 @@ on:
       - ".github/workflows/qikvrt_live_status_watch.yml"
       - ".github/workflows/qikvrt_workflow_executor.yml"
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+      - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "tools/qikvrt_workflow_executor.py"
       - "tools/qikvrt_seed_common.py"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+      - "tests/test_qikvrt_event_driven_monitor_platform_hold.py"
       - "tests/test_seed_workflows.py"
+      - "policy/GITHUB_API_RATE_LIMIT_HOLD_V1.json"
       - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
       - "registry/NODE_DISCOVERY_POLICY.json"
       - "AI"
       - "Makefile"
   issue_comment:
     types: [created]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT zero-bug continuous invariant"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT canonical AI Firefox terminal reobservation"
+      - "QIKVRT Firefox proxy delegation bridge"
+      - "QIKVRT EFFECT_ACK HTTP Firefox terminal"
+      - "QIKVRT workflow executor watchdog"
+      - "QIKVRT reflexive repository watchdog"
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr:
@@ -32,7 +48,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
+  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -40,97 +56,186 @@ jobs:
     if: >-
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.pull_requests[0].number) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '/qikvrt-status-watch'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Observe repository workflow, job, and step transitions serially
+      - name: Observe one exact event-bound repository snapshot
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number || github.event.issue.number }}
+          INPUT_PR: ${{ inputs.pr || '' }}
           WATCH_WORKFLOW: QIKVRT live status watch
           MARKER: '<!-- qikvrt-live-status-watch -->'
-          MAX_CYCLES: "12"
+        shell: bash
         run: |
           set -euo pipefail
-          pr="$EVENT_PR"
+          root=.qikvrt/live-status-watch
+          mkdir -p "$root/jobs"
+
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) pr="$INPUT_PR" ;;
+            pull_request) pr="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")" ;;
+            issue_comment) pr="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")" ;;
+            workflow_run) pr="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")" ;;
+            *) pr="" ;;
+          esac
           test -n "$pr"
-          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+          printf '%s\n' "$pr" > "$root/pull-request-number.txt"
+          printf '%s\n' "$GITHUB_EVENT_NAME" > "$root/causal-event.txt"
 
-          update_status() {
-            body="$1"
-            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" |
-              jq -r --arg marker "$MARKER" \
-                '.[] | select(.body | contains($marker)) | .id' |
-              tail -n 1)"
-            if [ -n "$comment_id" ]; then
-              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
-
-          $body" >/dev/null
-            else
-              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
-
-          $body" >/dev/null
-            fi
+          platform_hold() {
+            error_file="$1"
+            observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            error_sha="$(sha256sum "$error_file" | awk '{print $1}')"
+            jq -n \
+              --arg repository "$REPOSITORY" \
+              --arg event "$GITHUB_EVENT_NAME" \
+              --arg pr "$pr" \
+              --arg observed_at "$observed_at" \
+              --arg error_sha "$error_sha" \
+              '{
+                schema: "qikvrt_external_platform_hold_v1",
+                state: "HOLD_EXTERNAL_PLATFORM",
+                disposition: "HOLD",
+                first_blocker: "GITHUB_API_RATE_LIMIT",
+                productive_edge: "REOBSERVE_ON_NEXT_AUTHENTICATED_EVENT",
+                repository: $repository,
+                event: $event,
+                pull_request: ($pr | tonumber),
+                observed_at: $observed_at,
+                platform_error_sha256: $error_sha,
+                semantic_work_performed: false,
+                blind_retry_performed: false,
+                completion_claims: {
+                  PASS: false,
+                  FINAL_PASS: false,
+                  EFFECT_ACK_DONE: false
+                }
+              }' > "$root/platform-hold.json"
+            {
+              echo '### QIKVRT live status watch'
+              echo
+              echo '`HOLD_EXTERNAL_PLATFORM / GITHUB_API_RATE_LIMIT`'
+              echo
+              echo 'The one-shot event-bound observation performed no polling, blind retry, semantic work, mutation inference, or terminal claim.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           }
 
-          state_signature=""
-          cycle=0
-          while :; do
-            cycle=$((cycle + 1))
-            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
-            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
-            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
-            active_count="$(printf '%s' "$active" | jq 'length')"
-
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end')"
-            step_rows=''
-            total_steps=0
-            completed_steps=0
-            while IFS= read -r run_id; do
-              [ -n "$run_id" ] || continue
-              jobs="$(gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100")"
-              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv')"
-              while IFS=$'\t' read -r job step status conclusion; do
-                [ -n "$step" ] || continue
-                total_steps=$((total_steps + 1))
-                marker='⟳'
-                effective="$status"
-                if [ "$status" = completed ]; then
-                  completed_steps=$((completed_steps + 1))
-                  effective="$conclusion"
-                  if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then marker='✓'; else marker='✗'; fi
-                elif [ "$status" = queued ] || [ "$status" = pending ]; then
-                  marker='□'
-                fi
-                step_rows="$step_rows
-          | $marker | $job | $step | $effective |"
-              done <<< "$rows"
-            done < <(printf '%s' "$latest" | jq -r '.[].id')
-
-            if [ "$total_steps" -eq 0 ]; then
-              percent=0
-              step_rows='| □ | none | awaiting workflow jobs | PENDING |'
-            else
-              percent=$((completed_steps * 100 / total_steps))
+          api_to_file() {
+            endpoint="$1"
+            target="$2"
+            error_file="$root/api-error.txt"
+            if gh api "$endpoint" > "$target" 2> "$error_file"; then
+              rm -f "$error_file"
+              return 0
             fi
-            filled=$((percent / 5))
-            empty=$((20 - filled))
-            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
-            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
+            if grep -Eiq 'rate limit exceeded|secondary rate limit|HTTP 403' "$error_file"; then
+              platform_hold "$error_file"
+            fi
+            cat "$error_file" >&2
+            return 1
+          }
 
-            if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT bounded repository runtime observation
+          api_mutation_or_hold() {
+            error_file="$root/api-error.txt"
+            if "$@" 2> "$error_file"; then
+              rm -f "$error_file"
+              return 0
+            fi
+            if grep -Eiq 'rate limit exceeded|secondary rate limit|HTTP 403' "$error_file"; then
+              platform_hold "$error_file"
+            fi
+            cat "$error_file" >&2
+            return 1
+          }
+
+          api_to_file "repos/$REPOSITORY/pulls/$pr" "$root/pull-request.json"
+          branch="$(jq -r '.head.ref' "$root/pull-request.json")"
+          head="$(jq -r '.head.sha' "$root/pull-request.json")"
+          printf '%s\n' "$branch" > "$root/observed-branch.txt"
+          printf '%s\n' "$head" > "$root/observed-head.txt"
+
+          api_to_file "repos/$REPOSITORY/actions/runs?head_sha=$head&per_page=50" "$root/current-runs.json"
+          jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:12]' "$root/current-runs.json" > "$root/latest-runs.json"
+          active_count="$(jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending")] | length' "$root/latest-runs.json")"
+          workflow_lines="$(jq -r 'if length == 0 then "| none | NOT_OBSERVED | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end' "$root/latest-runs.json")"
+
+          step_rows=''
+          total_steps=0
+          completed_steps=0
+          while IFS= read -r run_id; do
+            test -n "$run_id" || continue
+            api_to_file "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" "$root/jobs/$run_id.json"
+            while IFS=$'\t' read -r job step status conclusion; do
+              test -n "$step" || continue
+              total_steps=$((total_steps + 1))
+              marker='⟳'
+              effective="$status"
+              if test "$status" = completed; then
+                completed_steps=$((completed_steps + 1))
+                effective="$conclusion"
+                if test "$conclusion" = success || test "$conclusion" = skipped; then marker='✓'; else marker='✗'; fi
+              elif test "$status" = queued || test "$status" = pending; then
+                marker='□'
+              fi
+              step_rows="$step_rows
+          | $marker | $job | $step | $effective |"
+            done < <(jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv' "$root/jobs/$run_id.json")
+          done < <(jq -r '.[].id' "$root/latest-runs.json")
+
+          if test "$total_steps" -eq 0; then
+            percent=0
+            step_rows='| □ | none | no job-bearing observation | NOT_OBSERVED |'
+          else
+            percent=$((completed_steps * 100 / total_steps))
+          fi
+          filled=$((percent / 5))
+          empty=$((20 - filled))
+          bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
+          now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg pr "$pr" \
+            --arg branch "$branch" \
+            --arg head "$head" \
+            --arg observed_at "$now" \
+            --argjson active "$active_count" \
+            --argjson completed "$completed_steps" \
+            --argjson total "$total_steps" \
+            '{
+              schema: "qikvrt_event_bound_live_status_snapshot_v1",
+              state: "OBSERVED",
+              repository: $repository,
+              causal_event: $event,
+              pull_request: ($pr | tonumber),
+              branch: $branch,
+              head_sha: $head,
+              observed_at: $observed_at,
+              active_runs: $active,
+              completed_steps: $completed,
+              total_steps: $total,
+              polling: false,
+              blind_retry: false,
+              semantic_work_performed: false
+            }' > "$root/snapshot.json"
+
+          body="## QIKVRT event-bound repository runtime observation
 
           **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
 
           - Repository: \`$REPOSITORY\`
+          - Pull request: \`#$pr\`
           - Branch: \`$branch\`
-          - Observation cycle: \`$cycle/$MAX_CYCLES\`
+          - Exact head: \`$head\`
+          - Causal event: \`$GITHUB_EVENT_NAME\`
           - Observed at: \`$now\`
           - Active external runs: \`$active_count\`
 
@@ -146,12 +251,26 @@ jobs:
           |---|---|---|---|
           $step_rows
 
-          Observation is opt-in and bounded so the watcher cannot monopolize a runner while the observed jobs wait behind it. A new explicit invocation supersedes any older invocation for the same pull request."
-              state_signature="$signature"
-            fi
+          This is one event-bound observation. It performs no polling, sleep loop, blind retry, workflow dispatch, merge, publication, deployment, or Effect-Ack inference."
 
-            if [ "$active_count" -eq 0 ] || [ "$cycle" -ge "$MAX_CYCLES" ]; then
-              break
-            fi
-            sleep 5
-          done
+          api_to_file "repos/$REPOSITORY/issues/$pr/comments?per_page=100" "$root/comments.json"
+          comment_id="$(jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' "$root/comments.json" | tail -n 1)"
+          if test -n "$comment_id"; then
+            api_mutation_or_hold gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
+
+          $body" >/dev/null
+          else
+            api_mutation_or_hold gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
+
+          $body" >/dev/null
+          fi
+
+      - name: Preserve the event-bound observation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-live-status-watch-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+          path: .qikvrt/live-status-watch
