@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -107,6 +108,65 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("latest run per workflow", self.recovery_text)
         self.assertIn("created_at", self.recovery_text)
         self.assertIn("run_id", self.recovery_text)
+
+    def test_null_conclusion_transport_preserves_created_at(self) -> None:
+        self.assertIn("IFS= read -r -d '' conclusion", self.text)
+        self.assertIn("IFS= read -r -d '' created_at", self.text)
+        self.assertNotIn(
+            ".workflow_runs[] | [.id,.name,.status,(.conclusion // \"\"),.created_at] | @tsv",
+            self.text,
+        )
+
+        payload = {
+            "workflow_runs": [
+                {
+                    "id": 32897677800,
+                    "name": "QIKVRT autonomous PR head continuation",
+                    "status": "in_progress",
+                    "conclusion": None,
+                    "created_at": "2026-08-25T20:48:00Z",
+                }
+            ]
+        }
+        script = r'''
+set -euo pipefail
+while
+  IFS= read -r -d '' run_id &&
+    IFS= read -r -d '' name &&
+    IFS= read -r -d '' status &&
+    IFS= read -r -d '' conclusion &&
+    IFS= read -r -d '' created_at
+do
+  jq -nc \
+    --argjson id "$run_id" \
+    --arg name "$name" \
+    --arg status "$status" \
+    --arg conclusion "$conclusion" \
+    --arg created_at "$created_at" \
+    '{id:$id,name:$name,status:$status,conclusion:(if $conclusion == "" then null else $conclusion end),created_at:$created_at}'
+done < <(
+  jq -j '
+    .workflow_runs[] |
+    (.id | tostring), "\u0000",
+    .name, "\u0000",
+    .status, "\u0000",
+    (.conclusion // ""), "\u0000",
+    .created_at, "\u0000"
+  '
+)
+'''
+        completed = subprocess.run(
+            ["bash", "-c", script],
+            input=json.dumps(payload),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        observation = json.loads(completed.stdout)
+        self.assertIsNone(observation["conclusion"])
+        self.assertEqual(
+            observation["created_at"], payload["workflow_runs"][0]["created_at"]
+        )
 
     def test_false_noop_regression_runs_in_canonical_suite(self) -> None:
         decision = classify_observations(

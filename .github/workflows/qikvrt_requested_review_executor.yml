@@ -199,7 +199,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
-          from tools.qikvrt_requested_review_executor import plan_ledger_update
+          from tools.qikvrt_requested_review_executor import build_diff_transport, load_ledger_diff, plan_ledger_update
 
           root=pathlib.Path('.qikvrt/mesh-review')
           receipt=json.loads((root/'review.json').read_text(encoding='utf-8'))
@@ -211,6 +211,8 @@ jobs:
           full_ref=os.environ['LEDGER_REF']
           receipt_path=receipt.get('ledger_path')
           diff_path=receipt.get('ledger_diff_path')
+          manifest_bytes=None
+          chunk_bytes={}
 
           class LedgerHold(RuntimeError): pass
 
@@ -255,13 +257,25 @@ jobs:
               return base64.b64decode(blob['content'])
 
           def new_blobs():
-              receipt_blob=gh('POST',f'repos/{repo}/git/blobs',{
-                  'content':base64.b64encode(receipt_bytes).decode('ascii'),'encoding':'base64'
-              })['sha']
-              diff_blob=gh('POST',f'repos/{repo}/git/blobs',{
-                  'content':base64.b64encode(diff_bytes).decode('ascii'),'encoding':'base64'
-              })['sha']
-              return receipt_blob,diff_blob
+              if manifest_bytes is None:
+                  raise LedgerHold('DIFF_MANIFEST_NOT_PLANNED')
+              entries=[]
+              for path,payload in [
+                  (receipt_path,receipt_bytes),(diff_path,manifest_bytes),*chunk_bytes.items()
+              ]:
+                  blob=gh('POST',f'repos/{repo}/git/blobs',{
+                      'content':base64.b64encode(payload).decode('ascii'),'encoding':'base64'
+                  })['sha']
+                  entries.append({'path':path,'mode':'100644','type':'blob','sha':blob})
+              return entries
+
+          def readback_diff(ref):
+              stored_manifest=blob_at(diff_path,ref)
+              if stored_manifest is None:
+                  raise LedgerHold('LEDGER_DIFF_MANIFEST_MISSING')
+              return load_ledger_diff(
+                  receipt,stored_manifest,lambda path: blob_at(path,ref)
+              )
 
           report={
               'schema':'qikvrt_mesh_review_ledger_write_v1',
@@ -273,22 +287,19 @@ jobs:
           try:
               if not receipt_path or not diff_path or not receipt.get('evidence_fingerprint'):
                   raise LedgerHold('review receipt lacks a persistable exact evidence fingerprint')
+              manifest_bytes,chunk_bytes=build_diff_transport(diff_bytes,diff_path)
               verify('pre-ledger-read')
               ref_path=f'repos/{repo}/git/ref/heads/{short_ref}'
               ref=gh('GET',ref_path,allow_404=True)
 
               if ref is None:
                   plan=plan_ledger_update(
-                      receipt_bytes,diff_bytes,None,None,None
+                      receipt_bytes,manifest_bytes,None,None,None
                   )
                   if plan['action'] != 'INITIALIZE_ORPHAN_ROOT':
                       raise LedgerHold('INVALID_LEDGER_INITIALIZATION_PLAN')
-                  receipt_blob,diff_blob=new_blobs()
                   tree=gh('POST',f'repos/{repo}/git/trees',{
-                      'tree':[
-                          {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
-                          {'path':diff_path,'mode':'100644','type':'blob','sha':diff_blob},
-                      ]
+                      'tree':new_blobs()
                   })['sha']
                   commit=gh('POST',f'repos/{repo}/git/commits',{
                       'message':f"Initialize Mesh review ledger with PR #{number} {receipt['head_sha'][:12]} {receipt['evidence_fingerprint'][:12]}",
@@ -305,7 +316,7 @@ jobs:
                       ref=gh('GET',ref_path)
                       if ref['object']['sha'] != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or blob_at(diff_path,commit) != diff_bytes:
+                      if blob_at(receipt_path,commit) != receipt_bytes or readback_diff(commit) != diff_bytes:
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-initialization')
                       report.update(
@@ -319,25 +330,25 @@ jobs:
                   existing=blob_at(receipt_path,ledger_head)
                   existing_diff=blob_at(diff_path,ledger_head)
                   plan=plan_ledger_update(
-                      receipt_bytes,diff_bytes,ledger_head,existing,existing_diff
+                      receipt_bytes,manifest_bytes,ledger_head,existing,existing_diff
                   )
                   if plan['action'] == 'HOLD':
                       raise LedgerHold(plan['first_blocker'])
                   if plan['action'] == 'NOOP_IDENTICAL_RECEIPT':
+                      if readback_diff(ledger_head) != diff_bytes:
+                          raise LedgerHold('LEDGER_DIFF_READBACK_MISMATCH')
                       verify('duplicate-ledger-readback')
                       report.update(
                           persisted=True,duplicate=True,ledger_commit=ledger_head,
                           d0=0,next_action='NOOP_IDENTICAL_RECEIPT_ALREADY_PERSISTED',
                       )
                   elif plan['action'] == 'APPEND_FAST_FORWARD':
+                      if any(blob_at(path,ledger_head) is not None for path in chunk_bytes):
+                          raise LedgerHold('APPEND_ONLY_LEDGER_CHUNK_PATH_COLLISION')
                       parent=gh('GET',f'repos/{repo}/git/commits/{ledger_head}')
-                      receipt_blob,diff_blob=new_blobs()
                       tree=gh('POST',f'repos/{repo}/git/trees',{
                           'base_tree':parent['tree']['sha'],
-                          'tree':[
-                              {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
-                              {'path':diff_path,'mode':'100644','type':'blob','sha':diff_blob},
-                          ],
+                          'tree':new_blobs(),
                       })['sha']
                       commit=gh('POST',f'repos/{repo}/git/commits',{
                           'message':f"Record Mesh review PR #{number} {receipt['head_sha'][:12]} {receipt['evidence_fingerprint'][:12]}",
@@ -348,7 +359,7 @@ jobs:
                       updated=gh('GET',ref_path)['object']['sha']
                       if updated != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or blob_at(diff_path,commit) != diff_bytes:
+                      if blob_at(receipt_path,commit) != receipt_bytes or readback_diff(commit) != diff_bytes:
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-cas')
                       report.update(

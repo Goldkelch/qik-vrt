@@ -23,10 +23,13 @@ import re
 import subprocess
 import sys
 import urllib.parse
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
-MAX_DIFF_BYTES = 2 * 1024 * 1024
+DIFF_CHUNK_BYTES = 1024 * 1024
+MAX_DIFF_CHUNKS = 64
+MAX_DIFF_BYTES = DIFF_CHUNK_BYTES * MAX_DIFF_CHUNKS
+DIFF_MANIFEST_SCHEMA = "qikvrt_mesh_review_diff_manifest_v1"
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
@@ -87,6 +90,261 @@ def _canonical_sha256(value: Any) -> str:
 
 def _pretty_json_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ReviewSnapshotError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def _exact_int(value: Any, label: str, *, minimum: int, maximum: int) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ReviewSnapshotError(
+            f"{label} must be an exact integer in [{minimum}, {maximum}]"
+        )
+    return value
+
+
+def _diff_chunk_path(manifest_path: str, index: int) -> str:
+    return f"{manifest_path}.part-{index:04d}"
+
+
+def _validate_manifest_path(manifest_path: Any) -> str:
+    if not isinstance(manifest_path, str) or not manifest_path:
+        raise ReviewSnapshotError("ledger diff manifest path is missing")
+    pure = pathlib.PurePosixPath(manifest_path)
+    if (
+        pure.is_absolute()
+        or str(pure) != manifest_path
+        or ".." in pure.parts
+        or not manifest_path.startswith(f"{LEDGER_ROOT}/")
+        or not manifest_path.endswith(".diff")
+    ):
+        raise ReviewSnapshotError("ledger diff manifest path is not canonical")
+    return manifest_path
+
+
+def build_diff_transport(
+    diff_bytes: bytes,
+    manifest_path: str,
+) -> tuple[bytes, dict[str, bytes]]:
+    """Build one deterministic bounded manifest plus exact 1 MiB chunks."""
+    _validate_manifest_path(manifest_path)
+    if not isinstance(diff_bytes, bytes) or not diff_bytes:
+        raise ReviewSnapshotError("ledger diff bytes are unavailable")
+    if len(diff_bytes) > MAX_DIFF_BYTES:
+        raise ReviewSnapshotError("ledger diff exceeds the bounded transport limit")
+    chunks: list[dict[str, Any]] = []
+    chunk_bytes: dict[str, bytes] = {}
+    for index, offset in enumerate(range(0, len(diff_bytes), DIFF_CHUNK_BYTES)):
+        payload = diff_bytes[offset : offset + DIFF_CHUNK_BYTES]
+        path = _diff_chunk_path(manifest_path, index)
+        chunks.append(
+            {
+                "index": index,
+                "path": path,
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+        chunk_bytes[path] = payload
+    manifest = {
+        "schema": DIFF_MANIFEST_SCHEMA,
+        "hash_algorithm": "sha256",
+        "diff_sha256": hashlib.sha256(diff_bytes).hexdigest(),
+        "diff_bytes": len(diff_bytes),
+        "chunk_size": DIFF_CHUNK_BYTES,
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+    }
+    manifest_bytes = _canonical_bytes(manifest)
+    plan_diff_manifest(
+        manifest_bytes,
+        manifest_path,
+        manifest["diff_sha256"],
+        manifest["diff_bytes"],
+    )
+    return manifest_bytes, chunk_bytes
+
+
+def plan_diff_manifest(
+    manifest_bytes: bytes,
+    manifest_path: str,
+    expected_sha256: str,
+    expected_bytes: int,
+) -> dict[str, Any]:
+    """Validate all manifest metadata before a caller fetches any chunk."""
+    manifest_path = _validate_manifest_path(manifest_path)
+    _sha256(expected_sha256, "expected diff sha256")
+    expected_bytes = _exact_int(
+        expected_bytes,
+        "expected diff bytes",
+        minimum=1,
+        maximum=MAX_DIFF_BYTES,
+    )
+    if not isinstance(manifest_bytes, bytes) or not manifest_bytes:
+        raise ReviewSnapshotError("ledger diff manifest bytes are unavailable")
+    try:
+        manifest = json.loads(
+            manifest_bytes.decode("utf-8"),
+            object_pairs_hook=_strict_json_object,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReviewSnapshotError("ledger diff manifest is not strict JSON") from exc
+    if not isinstance(manifest, dict):
+        raise ReviewSnapshotError("ledger diff manifest must be an object")
+    if manifest_bytes != _canonical_bytes(manifest):
+        raise ReviewSnapshotError("ledger diff manifest is not canonical JSON")
+    if set(manifest) != {
+        "schema",
+        "hash_algorithm",
+        "diff_sha256",
+        "diff_bytes",
+        "chunk_size",
+        "chunk_count",
+        "chunks",
+    }:
+        raise ReviewSnapshotError("ledger diff manifest fields are not exact")
+    if manifest["schema"] != DIFF_MANIFEST_SCHEMA:
+        raise ReviewSnapshotError("ledger diff manifest schema is unsupported")
+    if manifest["hash_algorithm"] != "sha256":
+        raise ReviewSnapshotError("ledger diff manifest hash algorithm is unsupported")
+    if _sha256(manifest["diff_sha256"], "manifest diff sha256") != expected_sha256:
+        raise ReviewSnapshotError("ledger diff manifest digest differs from receipt")
+    total_bytes = _exact_int(
+        manifest["diff_bytes"],
+        "manifest diff bytes",
+        minimum=1,
+        maximum=MAX_DIFF_BYTES,
+    )
+    if total_bytes != expected_bytes:
+        raise ReviewSnapshotError("ledger diff manifest byte count differs from receipt")
+    _exact_int(
+        manifest["chunk_size"],
+        "manifest chunk size",
+        minimum=DIFF_CHUNK_BYTES,
+        maximum=DIFF_CHUNK_BYTES,
+    )
+    chunk_count = _exact_int(
+        manifest["chunk_count"],
+        "manifest chunk count",
+        minimum=1,
+        maximum=MAX_DIFF_CHUNKS,
+    )
+    chunks = manifest["chunks"]
+    if not isinstance(chunks, list) or len(chunks) != chunk_count:
+        raise ReviewSnapshotError("ledger diff manifest chunk list is incomplete")
+    expected_count = (total_bytes + DIFF_CHUNK_BYTES - 1) // DIFF_CHUNK_BYTES
+    if chunk_count != expected_count:
+        raise ReviewSnapshotError("ledger diff manifest chunk count is non-canonical")
+
+    planned: list[dict[str, Any]] = []
+    planned_bytes = 0
+    for expected_index, chunk in enumerate(chunks):
+        if not isinstance(chunk, dict) or set(chunk) != {
+            "index",
+            "path",
+            "bytes",
+            "sha256",
+        }:
+            raise ReviewSnapshotError("ledger diff chunk descriptor fields are not exact")
+        index = _exact_int(
+            chunk["index"],
+            "chunk index",
+            minimum=0,
+            maximum=MAX_DIFF_CHUNKS - 1,
+        )
+        if index != expected_index:
+            raise ReviewSnapshotError("ledger diff chunk indices are not contiguous")
+        path = _diff_chunk_path(manifest_path, index)
+        if chunk["path"] != path:
+            raise ReviewSnapshotError("ledger diff chunk path is non-canonical")
+        size = _exact_int(
+            chunk["bytes"],
+            "chunk bytes",
+            minimum=1,
+            maximum=DIFF_CHUNK_BYTES,
+        )
+        if index < chunk_count - 1 and size != DIFF_CHUNK_BYTES:
+            raise ReviewSnapshotError("non-final ledger diff chunk is not exactly 1 MiB")
+        digest = _sha256(chunk["sha256"], "chunk sha256")
+        planned.append(
+            {"index": index, "path": path, "bytes": size, "sha256": digest}
+        )
+        planned_bytes += size
+    if planned_bytes != total_bytes:
+        raise ReviewSnapshotError("ledger diff chunk byte counts do not equal total")
+    return {
+        "schema": DIFF_MANIFEST_SCHEMA,
+        "manifest_path": manifest_path,
+        "diff_sha256": expected_sha256,
+        "diff_bytes": expected_bytes,
+        "chunks": tuple(planned),
+    }
+
+
+def reassemble_planned_diff(
+    plan: Mapping[str, Any],
+    fetch_chunk: Callable[[str], bytes | None],
+) -> bytes:
+    """Fetch exactly one already-validated bounded plan and verify every byte."""
+    chunks = plan.get("chunks")
+    if not isinstance(chunks, tuple) or not 1 <= len(chunks) <= MAX_DIFF_CHUNKS:
+        raise ReviewSnapshotError("ledger diff fetch plan is invalid")
+    payload = bytearray()
+    for chunk in chunks:
+        part = fetch_chunk(chunk["path"])
+        if not isinstance(part, bytes):
+            raise ReviewSnapshotError("ledger diff chunk bytes are unavailable")
+        if len(part) != chunk["bytes"]:
+            raise ReviewSnapshotError("ledger diff chunk length mismatch")
+        if hashlib.sha256(part).hexdigest() != chunk["sha256"]:
+            raise ReviewSnapshotError("ledger diff chunk digest mismatch")
+        payload.extend(part)
+    result = bytes(payload)
+    if len(result) != plan.get("diff_bytes"):
+        raise ReviewSnapshotError("reassembled ledger diff length mismatch")
+    if hashlib.sha256(result).hexdigest() != plan.get("diff_sha256"):
+        raise ReviewSnapshotError("reassembled ledger diff digest mismatch")
+    return result
+
+
+def load_ledger_diff(
+    receipt: Mapping[str, Any],
+    stored_diff_bytes: bytes,
+    fetch_chunk: Callable[[str], bytes | None],
+) -> bytes:
+    """Load a declared chunk manifest, or an undeclared legacy raw diff."""
+    manifest_path = _validate_manifest_path(receipt.get("ledger_diff_path"))
+    expected_sha256 = _sha256(receipt.get("diff_sha256"), "receipt diff sha256")
+    expected_bytes = _exact_int(
+        receipt.get("diff_bytes"),
+        "receipt diff bytes",
+        minimum=1,
+        maximum=MAX_DIFF_BYTES,
+    )
+    if "ledger_diff_format" not in receipt:
+        if not isinstance(stored_diff_bytes, bytes):
+            raise ReviewSnapshotError("legacy ledger diff bytes are unavailable")
+        if len(stored_diff_bytes) != expected_bytes:
+            raise ReviewSnapshotError("legacy ledger diff length mismatch")
+        if hashlib.sha256(stored_diff_bytes).hexdigest() != expected_sha256:
+            raise ReviewSnapshotError("legacy ledger diff digest mismatch")
+        return stored_diff_bytes
+    transport = receipt.get("ledger_diff_format")
+    if transport != DIFF_MANIFEST_SCHEMA:
+        raise ReviewSnapshotError("ledger diff transport format is unsupported")
+    plan = plan_diff_manifest(
+        stored_diff_bytes,
+        manifest_path,
+        expected_sha256,
+        expected_bytes,
+    )
+    return reassemble_planned_diff(plan, fetch_chunk)
 
 
 def latest_status_matches_projection(
@@ -817,6 +1075,7 @@ def _result(
         "evidence_fingerprint": fingerprint,
         "ledger_path": ledger_path,
         "ledger_diff_path": diff_path,
+        "ledger_diff_format": DIFF_MANIFEST_SCHEMA if fingerprint else None,
         "findings": [dict(finding) for finding in findings],
         "discussion_sha256": _canonical_sha256(snapshot.get("discussion_items", [])),
         "requested_reviewers_observed": list(snapshot.get("requested_reviewers", [])) if isinstance(snapshot.get("requested_reviewers"), list) else [],
@@ -834,6 +1093,7 @@ def _result(
             "ledger_ref": LEDGER_REF,
             "receipt_path": ledger_path,
             "diff_path": diff_path,
+            "diff_format": DIFF_MANIFEST_SCHEMA if fingerprint else None,
             "append_only": True,
             "candidate_branch_mutation": False,
             "status_context": "QIKVRT requested review execution",

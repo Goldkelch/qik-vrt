@@ -38,6 +38,7 @@ def run(
     created_at: str,
     updated_at: str,
     conclusion: str | None = None,
+    head_sha: str = HEAD,
 ) -> dict[str, object]:
     return {
         "id": run_id,
@@ -45,7 +46,7 @@ def run(
         "status": status,
         "conclusion": conclusion,
         "event": "workflow_dispatch",
-        "head_sha": HEAD,
+        "head_sha": head_sha,
         "created_at": created_at,
         "updated_at": updated_at,
     }
@@ -67,6 +68,31 @@ def jobs(*run_ids: int) -> dict[str, object]:
     }
 
 
+def candidate_pull(
+    *,
+    number: int = 890,
+    head_sha: str = "c" * 40,
+    base_sha: str = HEAD,
+    repository: str = "Goldkelch/qik-vrt",
+) -> dict[str, object]:
+    return {
+        "number": number,
+        "state": "open",
+        "draft": True,
+        "body": (
+            "<!-- qikvrt-terminal-repair-candidate:assignment=A56 "
+            "comment=5415958931 -->\n"
+            "<!-- qikvrt-autonomous-self-heal:enabled -->"
+        ),
+        "head": {
+            "ref": "automation/self-heal-a56",
+            "sha": head_sha,
+            "repo": {"full_name": repository},
+        },
+        "base": {"ref": "main", "sha": base_sha},
+    }
+
+
 class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
     def analyze(
         self,
@@ -78,19 +104,28 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         scope: str = "MAIN",
         liveness_dir: pathlib.Path | None = None,
         authority_head: str | None = HEAD,
+        terminal_assignment_pulls: list[dict[str, object]] | None = None,
+        terminal_assignment_runs: list[dict[str, object]] | None = None,
+        repository: str = "example/qik-vrt",
     ) -> dict[str, object]:
         return MODULE.analyze(
             {"workflow_runs": runs},
             job_value,
             expected_head=HEAD,
             expected_tree=TREE,
-            repository="example/qik-vrt",
+            repository=repository,
             now=datetime.fromisoformat(now.replace("Z", "+00:00")).astimezone(timezone.utc),
             baseline=baseline,
             root=ROOT,
             observation_scope=scope,
             node_liveness_dir=liveness_dir,
             authority_head=authority_head,
+            terminal_assignment_pulls_value=terminal_assignment_pulls,
+            terminal_assignment_runs_value=(
+                {"workflow_runs": terminal_assignment_runs}
+                if terminal_assignment_runs is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -395,6 +430,108 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertEqual(value["gatewatch"]["node_liveness"]["state"], "NOT_APPLICABLE")
         self.assertEqual(value["state"], "QUIESCENT_OBSERVATION")
 
+    def test_open_bound_terminal_assignment_is_not_reported_as_quiescent(self) -> None:
+        value = self.analyze(
+            [],
+            {"jobs_by_run": {}},
+            repository="Goldkelch/qik-vrt",
+            terminal_assignment_pulls=[candidate_pull()],
+            terminal_assignment_runs=[],
+        )
+        self.assertEqual(value["state"], "PREEMPTIVE_HOLD_TERMINAL_ASSIGNMENT")
+        self.assertEqual(value["disposition"], "HOLD")
+        self.assertEqual(
+            value["first_blocker"], "TERMINAL_ASSIGNMENT_DISPOSITION_PENDING"
+        )
+        self.assertEqual(value["terminal_assignment"]["state"], "MATERIALIZED")
+        self.assertFalse(value["boundaries"]["open_terminal_assignment_is_quiescent"])
+
+    def test_failed_requested_review_is_the_first_assignment_blocker(self) -> None:
+        candidate_head = "c" * 40
+        value = self.analyze(
+            [],
+            {
+                "jobs_by_run": {
+                    "8901": [
+                        {
+                            "id": 89010,
+                            "name": "requested review",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        }
+                    ]
+                }
+            },
+            repository="Goldkelch/qik-vrt",
+            terminal_assignment_pulls=[candidate_pull(head_sha=candidate_head)],
+            terminal_assignment_runs=[
+                run(
+                    8901,
+                    "QIKVRT requested review executor",
+                    "completed",
+                    "2026-08-10T17:50:00Z",
+                    "2026-08-10T17:51:00Z",
+                    "failure",
+                    head_sha=candidate_head,
+                )
+            ],
+        )
+        self.assertEqual(
+            value["first_blocker"],
+            "TERMINAL_ASSIGNMENT_REQUESTED_REVIEW_EXECUTED_FAILURE",
+        )
+        dispositions = {
+            item["workflow_name"]: item
+            for item in value["terminal_assignment"]["workflow_dispositions"]
+        }
+        self.assertEqual(dispositions["QIKVRT requested review executor"]["state"], "FAILED")
+
+    def test_failed_continuation_is_not_hidden_by_successful_requested_review(self) -> None:
+        candidate_head = "c" * 40
+        assignment_runs = [
+            run(
+                8902,
+                "QIKVRT requested review executor",
+                "completed",
+                "2026-08-10T17:50:00Z",
+                "2026-08-10T17:51:00Z",
+                "success",
+                head_sha=candidate_head,
+            ),
+            run(
+                8903,
+                "QIK-VRT autonomous draft-PR continuation",
+                "completed",
+                "2026-08-10T17:52:00Z",
+                "2026-08-10T17:53:00Z",
+                "failure",
+                head_sha=candidate_head,
+            ),
+        ]
+        value = self.analyze(
+            [],
+            {
+                "jobs_by_run": {
+                    str(item["id"]): [
+                        {
+                            "id": int(item["id"]) * 10,
+                            "name": "job",
+                            "status": "completed",
+                            "conclusion": item["conclusion"],
+                        }
+                    ]
+                    for item in assignment_runs
+                }
+            },
+            repository="Goldkelch/qik-vrt",
+            terminal_assignment_pulls=[candidate_pull(head_sha=candidate_head)],
+            terminal_assignment_runs=assignment_runs,
+        )
+        self.assertEqual(
+            value["first_blocker"],
+            "TERMINAL_ASSIGNMENT_CONTINUATION_EXECUTED_FAILURE",
+        )
+
     def test_old_same_head_receipt_detects_a_missed_gatewatch_tick(self) -> None:
         value = self.analyze(
             [],
@@ -438,6 +575,9 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("QIKVRT CI", workflow)
         self.assertIn("QIKVRT repository evidence materialization", workflow)
         self.assertIn("observed-authority-main-head.txt", workflow)
+        self.assertIn("terminal-assignment-runs.json", workflow)
+        self.assertIn("terminal-assignment-pulls-file", workflow)
+        self.assertIn("QIKVRT requested review executor", workflow)
         self.assertIn("gatewatch-receipt.json", workflow)
         self.assertIn("jq -r '.workflow_runs[].id'", workflow)
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
