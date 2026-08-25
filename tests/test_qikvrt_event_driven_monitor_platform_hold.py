@@ -15,6 +15,7 @@ class EventDrivenMonitorPlatformHoldTests(unittest.TestCase):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(policy["failure_class"], "GITHUB_API_RATE_LIMIT")
         self.assertEqual(policy["disposition"], "HOLD_EXTERNAL_PLATFORM")
+        self.assertFalse(policy["signature"]["generic_http_403_is_rate_limit"])
         action = policy["bounded_action"]
         self.assertTrue(action["persist_exact_head_tree_and_error_digest"])
         self.assertTrue(action["emit_typed_receipt"])
@@ -26,11 +27,17 @@ class EventDrivenMonitorPlatformHoldTests(unittest.TestCase):
         self.assertFalse(
             policy["continuation"]["elapsed_time_alone_authorizes_domain_work"]
         )
+        monitor = policy["monitor_contract"]
+        self.assertTrue(
+            monitor["exact_head_tree_required_before_platform_api_observation"]
+        )
+        self.assertTrue(monitor["issue_comment_trusted_association_required"])
+        self.assertFalse(monitor["mutual_observer_trigger_cycle"])
         self.assertTrue(
             all(value is False for value in policy["completion_claims"].values())
         )
 
-    def test_live_status_is_one_shot_event_driven_and_rate_limit_safe(self) -> None:
+    def test_live_status_is_one_shot_exact_bound_and_rate_limit_safe(self) -> None:
         workflow = LIVE.read_text(encoding="utf-8")
         self.assertIn("workflow_run:", workflow)
         self.assertIn("types: [completed]", workflow)
@@ -38,14 +45,40 @@ class EventDrivenMonitorPlatformHoldTests(unittest.TestCase):
         self.assertNotIn("cron:", workflow)
         self.assertNotIn("sleep 5", workflow)
         self.assertNotIn("while :", workflow)
+        self.assertIn("Check out exact pull-request head", workflow)
+        self.assertIn("refs/pull/${{", workflow)
+        self.assertIn("git rev-parse --verify HEAD^{commit}", workflow)
+        self.assertIn("git rev-parse --verify HEAD^{tree}", workflow)
+        self.assertIn("observed-head.txt", workflow)
+        self.assertIn("observed-tree.txt", workflow)
+        self.assertIn("head_sha: $head", workflow)
+        self.assertIn("tree_sha: $tree", workflow)
         self.assertIn("one exact event-bound repository snapshot", workflow)
-        self.assertIn("head_sha=$head", workflow)
         self.assertIn("GITHUB_API_RATE_LIMIT", workflow)
         self.assertIn("platform-hold.json", workflow)
         self.assertIn("polling: false", workflow)
         self.assertIn("include-hidden-files: true", workflow)
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
+        self.assertNotIn("|HTTP 403", workflow)
+
+    def test_comment_trigger_requires_trusted_repository_association(self) -> None:
+        workflow = LIVE.read_text(encoding="utf-8")
+        self.assertIn("github.event.comment.author_association", workflow)
+        self.assertIn('fromJSON(\'["OWNER","MEMBER","COLLABORATOR"]\')', workflow)
+        self.assertIn("/qikvrt-status-watch", workflow)
+
+    def test_observer_trigger_graph_is_acyclic(self) -> None:
+        live = LIVE.read_text(encoding="utf-8")
+        reflexive = REFLEXIVE.read_text(encoding="utf-8")
+        live_workflow_run = live.split("  workflow_run:", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        reflexive_workflow_run = reflexive.split("  workflow_run:", 1)[1].split(
+            "  push:", 1
+        )[0]
+        self.assertIn('- "QIKVRT reflexive repository watchdog"', live_workflow_run)
+        self.assertNotIn('- "QIKVRT live status watch"', reflexive_workflow_run)
 
     def test_watchdog_fail_safe_persists_receipt_without_domain_work(self) -> None:
         workflow = REFLEXIVE.read_text(encoding="utf-8")
@@ -59,6 +92,7 @@ class EventDrivenMonitorPlatformHoldTests(unittest.TestCase):
         self.assertIn("include-hidden-files: true", workflow)
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
+        self.assertNotIn("|HTTP 403", workflow)
 
 
 if __name__ == "__main__":
