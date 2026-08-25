@@ -42,7 +42,45 @@
     "cancel_in_progress": false,
     "source_cas_before_write": true,
     "source_cas_before_push": true,
+    "repository_enforced_ref_protection_required": true,
+    "ruleset_observation_endpoint": "GET_REPOSITORY_RULES_FOR_BRANCH_AND_RULESET_DETAIL",
+    "required_active_rules_on_one_ruleset": [
+      "deletion",
+      "non_fast_forward"
+    ],
+    "ruleset_observation_must_complete_before_ledger_mutation": true,
+    "literal_ledger_ref_include_required": true,
+    "empty_exclude_list_required": true,
+    "visible_empty_bypass_actor_list_required": true,
+    "bypass_actor_visibility_requires_ruleset_write_authority": true,
+    "control_receipts_same_source_context_required": true,
+    "control_receipt_observer_run_and_attempt_required": true,
+    "control_receipt_sha256_self_seal_scope": "BYTE_INTEGRITY_ONLY",
+    "control_receipt_sha256_self_seal_is_keyed_authentication": false,
+    "control_observation_phases": [
+      "INITIAL",
+      "PRE_PUSH",
+      "POST_READBACK"
+    ],
+    "baseline_transition_required": "NONE",
+    "current_transition_must_match_phase": true,
+    "supported_ruleset_source_types": [
+      "Organization",
+      "Repository"
+    ],
+    "repository_ruleset_source_must_match_repository": true,
+    "organization_ruleset_source_must_match_repository_owner": true,
+    "ruleset_source_identifiers_ascii_only": true,
+    "effective_detail_contradiction_state": "REOBSERVE",
+    "identical_control_snapshot_required_before_push": true,
+    "identical_control_snapshot_required_after_readback": true,
+    "ruleset_push_atomicity_observed": false,
+    "post_readback_control_is_detection_not_prevention": true,
+    "missing_control_state": "REQUEST_AUTHORITY",
+    "incomplete_observation_state": "REOBSERVE",
+    "repository_ruleset_mutation_allowed": false,
     "ledger_head_cas_before_push": true,
+    "source_and_ledger_cas_after_prepush_observation": true,
     "fast_forward_only": true,
     "post_push_remote_ref_reobservation": true,
     "post_push_exact_file_readback": [
@@ -50,26 +88,6 @@
       "latest.json"
     ],
     "terminal_reobservation_receipt_required": true,
-    "exact_ledger_ref_protection_qualification": {
-      "ruleset_mutation_allowed": false,
-      "observation_method": "GET_EFFECTIVE_BRANCH_RULES_AND_RULESET_DETAILS",
-      "exactly_one_active_protecting_ruleset_required": true,
-      "required_rule_types": [
-        "deletion",
-        "non_fast_forward"
-      ],
-      "ruleset_target": "branch",
-      "bypass_actors_must_be_explicitly_observable_and_empty": true,
-      "current_writer_bypass_must_be": "never",
-      "protection_snapshot_phases": [
-        "INITIAL",
-        "PRE_PUSH",
-        "POST_READBACK"
-      ],
-      "snapshot_drift_classification": "REOBSERVE",
-      "missing_or_ambiguous_authority_classification": "REQUEST_AUTHORITY",
-      "non_completion_claims_required": true
-    },
     "target_ref": "refs/heads/qikvrt/mesh-heartbeat-ledger-v1"
   },
   "event_model": {

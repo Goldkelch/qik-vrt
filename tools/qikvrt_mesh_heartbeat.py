@@ -28,12 +28,16 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
+
+from tools.qikvrt_subprocess import run_bounded
 
 HEARTBEAT_SCHEMA = "qikvrt_mesh_heartbeat_v1"
 AUDIT_SCHEMA = "qikvrt_mesh_heartbeat_execution_receipt_v1"
 WORK_EVENT_SCHEMA = "qikvrt_mesh_work_event_v1"
 WORK_RECEIPT_SCHEMA = "qikvrt_mesh_work_receipt_v1"
 AUTHORITY_LEDGER_SCHEMA = "qikvrt_mesh_local_authority_ledger_v1"
+LEDGER_REF_CONTROL_SCHEMA = "qikvrt_mesh_heartbeat_ledger_ref_control_v1"
 NETWORK_SCOPE = "LOOPBACK_TCP_ONLY"
 HEARTBEAT_ROLE = "LIVENESS_AND_LEASE_FRESHNESS_ONLY"
 AUTHORITY_EFFECT_SCOPE = "LOCAL_TEST_LEDGER_ONLY"
@@ -51,6 +55,14 @@ NODE_SPECS = (
     ("authority-b", "pair-b", "AUTHORITY"),
     ("mirror-b", "pair-b", "MIRROR"),
 )
+LEDGER_REF = "refs/heads/qikvrt/mesh-heartbeat-ledger-v1"
+LEDGER_REQUIRED_RULE_TYPES = frozenset({"deletion", "non_fast_forward"})
+LEDGER_OBSERVATION_PHASES = frozenset({
+    "INITIAL", "PRE_PUSH", "POST_READBACK",
+})
+LEDGER_RULESET_SOURCE_TYPES = frozenset({"Repository", "Organization"})
+REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+REPOSITORY_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 class HeartbeatContractError(ValueError):
@@ -90,6 +102,897 @@ def sha256_ref(data: bytes) -> str:
 
 def canonical_sha256(value: Any) -> str:
     return sha256_ref(canonical_json_bytes(value))
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON member")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def _strict_json_loads(text: str, blocker: str) -> Any:
+    try:
+        return json.loads(
+            text,
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HeartbeatContractError(blocker) from exc
+
+
+def _ledger_control_common(
+    *, repository: str, source_head: str, source_run_id: int,
+    observer_run_id: int, observer_run_attempt: int, observation_phase: str,
+    ledger_ref: str, ledger_transition: str,
+) -> dict[str, Any]:
+    if not isinstance(repository, str) or not REPOSITORY_RE.fullmatch(repository):
+        raise HeartbeatContractError("repository must be owner/name")
+    _sha1(source_head, "source_head")
+    _integer(source_run_id, "source_run_id")
+    _integer(observer_run_id, "observer_run_id")
+    _integer(observer_run_attempt, "observer_run_attempt")
+    if source_run_id <= 0:
+        raise HeartbeatContractError("source run binding must be positive")
+    if observer_run_id <= 0 or observer_run_attempt <= 0:
+        raise HeartbeatContractError("observer run binding must be positive")
+    if observation_phase not in LEDGER_OBSERVATION_PHASES:
+        raise HeartbeatContractError("ledger observation phase is invalid")
+    if ledger_ref != LEDGER_REF:
+        raise HeartbeatContractError("ledger_ref is not the exact governed ref")
+    if ledger_transition not in {
+        "NONE", "NOOP_ALREADY_CURRENT", "FAST_FORWARD_PUSHED",
+    }:
+        raise HeartbeatContractError("ledger transition is invalid")
+    if (
+        observation_phase in {"INITIAL", "PRE_PUSH"}
+        and ledger_transition != "NONE"
+    ) or (
+        observation_phase == "POST_READBACK"
+        and ledger_transition not in {
+            "NOOP_ALREADY_CURRENT", "FAST_FORWARD_PUSHED",
+        }
+    ):
+        raise HeartbeatContractError("ledger phase/transition binding is invalid")
+    return {
+        "schema": LEDGER_REF_CONTROL_SCHEMA,
+        "repository": repository,
+        "source_head": source_head,
+        "source_run_id": source_run_id,
+        "observer_run_id": observer_run_id,
+        "observer_run_attempt": observer_run_attempt,
+        "observation_phase": observation_phase,
+        "ledger_ref": ledger_ref,
+        "ledger_branch": ledger_ref.removeprefix("refs/heads/"),
+        "observation_endpoint": "GET_REPOSITORY_RULES_FOR_BRANCH_AND_RULESET_DETAIL",
+        "api_version": "2022-11-28",
+        "required_rule_types_on_one_ruleset": sorted(LEDGER_REQUIRED_RULE_TYPES),
+        "ledger_transition_before_observation": ledger_transition,
+        "repository_ruleset_mutation_performed": False,
+        "ruleset_push_atomicity_observed": False,
+        "post_readback_control_is_detection_not_prevention": True,
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+            "DEPLOYMENT": False,
+        },
+    }
+
+
+def _seal_ledger_control(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(receipt)
+    result["receipt_sha256"] = canonical_sha256(result)
+    return result
+
+
+def ledger_ref_control_reobserve(
+    *, repository: str, source_head: str, source_run_id: int,
+    observer_run_id: int = 1, observer_run_attempt: int = 1,
+    observation_phase: str = "INITIAL",
+    ledger_ref: str = LEDGER_REF, blocker: str,
+    ledger_transition: str = "NONE",
+    expected_snapshot_sha256: str | None = None,
+    observed_snapshot_sha256: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(blocker, str) or not re.fullmatch(r"[A-Z0-9_]{1,128}", blocker):
+        raise HeartbeatContractError("ledger control blocker is invalid")
+    if (expected_snapshot_sha256 is None) != (observed_snapshot_sha256 is None):
+        raise HeartbeatContractError("ledger control comparison binding is incomplete")
+    if expected_snapshot_sha256 is not None:
+        _sha256(expected_snapshot_sha256, "expected_snapshot_sha256")
+        _sha256(observed_snapshot_sha256, "observed_snapshot_sha256")
+        if (
+            blocker != "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+            or expected_snapshot_sha256 == observed_snapshot_sha256
+            or observation_phase == "INITIAL"
+        ):
+            raise HeartbeatContractError(
+                "ledger control comparison semantics are invalid"
+            )
+    elif blocker == "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT":
+        raise HeartbeatContractError(
+            "ledger control drift blocker requires comparison evidence"
+        )
+    return _seal_ledger_control({
+        **_ledger_control_common(
+            repository=repository,
+            source_head=source_head,
+            source_run_id=source_run_id,
+            observer_run_id=observer_run_id,
+            observer_run_attempt=observer_run_attempt,
+            observation_phase=observation_phase,
+            ledger_ref=ledger_ref,
+            ledger_transition=ledger_transition,
+        ),
+        "observation_complete": False,
+        "state": "REOBSERVE",
+        "d0": 2,
+        "first_blocker": blocker,
+        "ledger_write_guard_satisfied": False,
+        "protection_snapshot": None,
+        "protection_snapshot_sha256": None,
+        "qualifying_ruleset_ids": [],
+        "selected_ruleset_id": None,
+        "comparison_performed": expected_snapshot_sha256 is not None,
+        "expected_protection_snapshot_sha256": expected_snapshot_sha256,
+        "observed_protection_snapshot_sha256": observed_snapshot_sha256,
+        "productive_effect_released_by_observation": False,
+    })
+
+
+def flatten_ledger_rule_pages(value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, list) or not value or len(value) > 100:
+        raise HeartbeatContractError("LEDGER_RULE_PAGINATION_INVALID")
+    result: list[Mapping[str, Any]] = []
+    for page in value:
+        if not isinstance(page, list) or len(page) > 100:
+            raise HeartbeatContractError("LEDGER_RULE_PAGE_INVALID")
+        for item in page:
+            if not isinstance(item, Mapping):
+                raise HeartbeatContractError("LEDGER_RULE_ITEM_INVALID")
+            result.append(item)
+    return result
+
+
+def _effective_ledger_rule_projection(
+    rules: Sequence[Mapping[str, Any]],
+    *,
+    repository: str,
+) -> tuple[list[dict[str, Any]], dict[int, set[str]]]:
+    if isinstance(rules, (str, bytes)) or not isinstance(rules, Sequence):
+        raise HeartbeatContractError("LEDGER_RULE_OBSERVATION_INVALID")
+    projection: list[dict[str, Any]] = []
+    grouped: dict[int, set[str]] = {}
+    sources_by_ruleset: dict[int, tuple[str, str]] = {}
+    seen: set[tuple[int, str, str, str]] = set()
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            raise HeartbeatContractError("LEDGER_RULE_ITEM_INVALID")
+        ruleset_id = rule.get("ruleset_id")
+        rule_type = rule.get("type")
+        source_type = rule.get("ruleset_source_type")
+        source = rule.get("ruleset_source")
+        if (
+            isinstance(ruleset_id, bool)
+            or not isinstance(ruleset_id, int)
+            or ruleset_id <= 0
+            or not isinstance(rule_type, str)
+            or not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", rule_type)
+        ):
+            raise HeartbeatContractError("LEDGER_RULE_BINDING_INVALID")
+        source_type, source = _validate_ruleset_source(
+            repository,
+            source_type,
+            source,
+        )
+        canonical_source = (source_type, source)
+        previous_source = sources_by_ruleset.setdefault(
+            ruleset_id,
+            canonical_source,
+        )
+        if previous_source != canonical_source:
+            raise HeartbeatContractError(
+                "LEDGER_RULESET_EFFECTIVE_SOURCE_CONTRADICTION"
+            )
+        key = (ruleset_id, rule_type, source_type, source)
+        if key in seen:
+            raise HeartbeatContractError("LEDGER_RULE_DUPLICATE")
+        seen.add(key)
+        grouped.setdefault(ruleset_id, set()).add(rule_type)
+        projection.append({
+            "ruleset_id": ruleset_id,
+            "type": rule_type,
+            "ruleset_source_type": source_type,
+            "ruleset_source": source,
+        })
+    projection.sort(key=lambda item: (
+        item["ruleset_id"], item["type"],
+        item["ruleset_source_type"], item["ruleset_source"],
+    ))
+    return projection, grouped
+
+
+def _string_list(value: Any, label: str) -> list[str]:
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and bool(item) for item in value
+    ):
+        raise HeartbeatContractError(f"{label} must be a string list")
+    if len(set(value)) != len(value):
+        raise HeartbeatContractError(f"{label} contains duplicates")
+    return sorted(value)
+
+
+def _rule_type_list(value: Any, label: str) -> list[str]:
+    result = _string_list(value, label)
+    if any(not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", item) for item in result):
+        raise HeartbeatContractError(f"{label} contains an invalid rule type")
+    return result
+
+
+def _validate_ruleset_source(
+    repository: str,
+    source_type: Any,
+    source: Any,
+) -> tuple[str, str]:
+    if not isinstance(source_type, str) or source_type not in (
+        LEDGER_RULESET_SOURCE_TYPES
+    ) or not isinstance(source, str):
+        raise HeartbeatContractError("LEDGER_RULESET_SOURCE_DOMAIN_INVALID")
+    owner = repository.split("/", 1)[0]
+    expected_source = repository if source_type == "Repository" else owner
+    source_shape_valid = (
+        REPOSITORY_RE.fullmatch(source)
+        if source_type == "Repository"
+        else REPOSITORY_COMPONENT_RE.fullmatch(source)
+    )
+    if source_shape_valid is None:
+        raise HeartbeatContractError("LEDGER_RULESET_SOURCE_DOMAIN_INVALID")
+    if source.lower() != expected_source.lower():
+        raise HeartbeatContractError("LEDGER_RULESET_SOURCE_REPOSITORY_MISMATCH")
+    return source_type, expected_source
+
+
+def evaluate_ledger_ref_control(
+    effective_rules: Sequence[Mapping[str, Any]],
+    ruleset_details: Mapping[int, Mapping[str, Any]],
+    *, repository: str, source_head: str, source_run_id: int,
+    observer_run_id: int = 1, observer_run_attempt: int = 1,
+    observation_phase: str = "INITIAL",
+    ledger_ref: str = LEDGER_REF, ledger_transition: str = "NONE",
+) -> dict[str, Any]:
+    common = _ledger_control_common(
+        repository=repository,
+        source_head=source_head,
+        source_run_id=source_run_id,
+        observer_run_id=observer_run_id,
+        observer_run_attempt=observer_run_attempt,
+        observation_phase=observation_phase,
+        ledger_ref=ledger_ref,
+        ledger_transition=ledger_transition,
+    )
+    effective_projection, grouped = _effective_ledger_rule_projection(
+        effective_rules,
+        repository=repository,
+    )
+    if not isinstance(ruleset_details, Mapping):
+        raise HeartbeatContractError("LEDGER_RULESET_DETAILS_INVALID")
+    for key, detail in ruleset_details.items():
+        if isinstance(key, bool) or not isinstance(key, int) or key <= 0:
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_KEY_INVALID")
+        if not isinstance(detail, Mapping):
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_INVALID")
+
+    candidate_ids = sorted(
+        ruleset_id for ruleset_id, types in grouped.items()
+        if LEDGER_REQUIRED_RULE_TYPES.issubset(types)
+    )
+    detail_projection: list[dict[str, Any]] = []
+    qualifying: list[int] = []
+    blockers: list[str] = []
+    for ruleset_id in candidate_ids:
+        if ruleset_id not in ruleset_details:
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_MISSING")
+        detail = ruleset_details[ruleset_id]
+        effective_sources = {
+            (item["ruleset_source_type"], item["ruleset_source"])
+            for item in effective_projection
+            if item["ruleset_id"] == ruleset_id
+        }
+        if (
+            len(effective_sources) != 1
+            or any(
+                not isinstance(value, str) or not value
+                for value in next(iter(effective_sources))
+            )
+        ):
+            raise HeartbeatContractError("LEDGER_RULESET_EFFECTIVE_SOURCE_INVALID")
+        effective_source_type, effective_source = next(iter(effective_sources))
+        _validate_ruleset_source(
+            repository,
+            effective_source_type,
+            effective_source,
+        )
+        detail_id = detail.get("id")
+        if (
+            isinstance(detail_id, bool)
+            or not isinstance(detail_id, int)
+            or detail_id <= 0
+            or detail_id != ruleset_id
+        ):
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_ID_MISMATCH")
+        rules = detail.get("rules")
+        if not isinstance(rules, list) or not all(isinstance(rule, Mapping) for rule in rules):
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_RULES_INVALID")
+        detail_rule_types = _rule_type_list(
+            [rule.get("type") for rule in rules],
+            "ruleset detail rule types",
+        )
+        conditions = detail.get("conditions")
+        if not isinstance(conditions, Mapping) or not isinstance(conditions.get("ref_name"), Mapping):
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_CONDITIONS_INVALID")
+        ref_name = conditions["ref_name"]
+        includes = _string_list(ref_name.get("include"), "ruleset include")
+        excludes = _string_list(ref_name.get("exclude"), "ruleset exclude")
+        target = detail.get("target")
+        enforcement = detail.get("enforcement")
+        if (
+            not isinstance(target, str)
+            or not target
+            or not isinstance(enforcement, str)
+            or not enforcement
+        ):
+            raise HeartbeatContractError("LEDGER_RULESET_DETAIL_STATE_INVALID")
+        detail_source_type, detail_source = _validate_ruleset_source(
+            repository,
+            detail.get("source_type"),
+            detail.get("source"),
+        )
+        bypass_visible = "bypass_actors" in detail
+        bypass = detail.get("bypass_actors")
+        if bypass_visible and (
+            not isinstance(bypass, list)
+            or not all(isinstance(actor, Mapping) for actor in bypass)
+        ):
+            raise HeartbeatContractError("LEDGER_RULESET_BYPASS_INVALID")
+        bypass_projection = (
+            sorted(
+                (dict(actor) for actor in bypass),
+                key=lambda actor: canonical_json_bytes(actor),
+            )
+            if bypass_visible
+            else None
+        )
+        if (
+            detail_source_type != effective_source_type
+            or detail_source != effective_source
+        ):
+            raise HeartbeatContractError(
+                "LEDGER_RULESET_SOURCE_BINDING_MISMATCH"
+            )
+        if (
+            target != "branch"
+            or enforcement != "active"
+            or not LEDGER_REQUIRED_RULE_TYPES.issubset(detail_rule_types)
+        ):
+            raise HeartbeatContractError(
+                "LEDGER_RULESET_EFFECTIVE_DETAIL_CONTRADICTION"
+            )
+        literal_include = ledger_ref in includes
+        excludes_empty = excludes == []
+        bypass_empty = bypass_visible and bypass_projection == []
+        detail_projection.append({
+            "ruleset_id": ruleset_id,
+            "source_type": detail_source_type,
+            "source": detail_source,
+            "target": target,
+            "enforcement": enforcement,
+            "include": includes,
+            "exclude": excludes,
+            "rule_types": detail_rule_types,
+            "bypass_actors_visible": bypass_visible,
+            "bypass_actors": bypass_projection,
+            "effective_source_type": effective_source_type,
+            "effective_source": effective_source,
+        })
+        if (
+            literal_include
+            and excludes_empty
+            and bypass_empty
+        ):
+            qualifying.append(ruleset_id)
+            continue
+        if not bypass_visible:
+            blockers.append("LEDGER_RULESET_BYPASS_VISIBILITY_REQUIRED")
+        elif not bypass_empty:
+            blockers.append("LEDGER_RULESET_BYPASS_PRESENT")
+        elif not literal_include:
+            blockers.append("LEDGER_RULESET_LITERAL_INCLUDE_MISSING")
+        elif not excludes_empty:
+            blockers.append("LEDGER_RULESET_EXCLUDE_PRESENT")
+        else:
+            blockers.append("LEDGER_IMMUTABILITY_RULESET_NOT_ACTIVE")
+
+    snapshot = {
+        "ledger_ref": ledger_ref,
+        "effective_rules": effective_projection,
+        "candidate_rulesets": sorted(detail_projection, key=lambda item: item["ruleset_id"]),
+        "required_rule_types_on_one_ruleset": sorted(LEDGER_REQUIRED_RULE_TYPES),
+    }
+    snapshot_sha256 = canonical_sha256(snapshot)
+    selected = min(qualifying) if qualifying else None
+    if selected is not None:
+        state = "CONTROL_OBSERVED"
+        d0 = None
+        blocker = None
+        guard = True
+    else:
+        state = "REQUEST_AUTHORITY"
+        d0 = 3
+        blocker = blockers[0] if blockers else "LEDGER_IMMUTABILITY_RULESET_NOT_ACTIVE"
+        guard = False
+    return _seal_ledger_control({
+        **common,
+        "observation_complete": True,
+        "state": state,
+        "d0": d0,
+        "first_blocker": blocker,
+        "ledger_write_guard_satisfied": guard,
+        "protection_snapshot": snapshot,
+        "protection_snapshot_sha256": snapshot_sha256,
+        "qualifying_ruleset_ids": sorted(qualifying),
+        "selected_ruleset_id": selected,
+        "productive_effect_released_by_observation": False,
+    })
+
+
+def _gh_json(command: Sequence[str]) -> Any:
+    result = run_bounded(command, timeout=60, max_output_bytes=4 * 1024 * 1024)
+    if result.timed_out:
+        raise HeartbeatContractError("LEDGER_RULESET_API_TIMEOUT")
+    if result.output_limit_exceeded:
+        raise HeartbeatContractError("LEDGER_RULESET_API_OUTPUT_LIMIT")
+    if result.returncode:
+        raise HeartbeatContractError("LEDGER_RULESET_API_FAILED")
+    return _strict_json_loads(
+        result.stdout,
+        "LEDGER_RULESET_API_INVALID_JSON",
+    )
+
+
+def observe_ledger_ref_control(
+    *, repository: str, source_head: str, source_run_id: int,
+    observer_run_id: int = 1, observer_run_attempt: int = 1,
+    observation_phase: str = "INITIAL",
+    ledger_ref: str = LEDGER_REF, ledger_transition: str = "NONE",
+) -> dict[str, Any]:
+    try:
+        common = _ledger_control_common(
+            repository=repository,
+            source_head=source_head,
+            source_run_id=source_run_id,
+            observer_run_id=observer_run_id,
+            observer_run_attempt=observer_run_attempt,
+            observation_phase=observation_phase,
+            ledger_ref=ledger_ref,
+            ledger_transition=ledger_transition,
+        )
+        branch = common["ledger_branch"]
+        headers = [
+            "-H", "Accept: application/vnd.github+json",
+            "-H", "X-GitHub-Api-Version: 2022-11-28",
+        ]
+        endpoint = (
+            f"repos/{repository}/rules/branches/{quote(branch, safe='')}?per_page=100"
+        )
+        pages = _gh_json(["gh", "api", "--paginate", "--slurp", *headers, endpoint])
+        effective_rules = flatten_ledger_rule_pages(pages)
+        _, grouped = _effective_ledger_rule_projection(
+            effective_rules,
+            repository=repository,
+        )
+        candidate_ids = sorted(
+            ruleset_id for ruleset_id, types in grouped.items()
+            if LEDGER_REQUIRED_RULE_TYPES.issubset(types)
+        )
+        details: dict[int, Mapping[str, Any]] = {}
+        for ruleset_id in candidate_ids:
+            detail = _gh_json([
+                "gh", "api", *headers,
+                f"repos/{repository}/rulesets/{ruleset_id}?includes_parents=true",
+            ])
+            if not isinstance(detail, Mapping):
+                raise HeartbeatContractError("LEDGER_RULESET_DETAIL_INVALID")
+            details[ruleset_id] = detail
+        return evaluate_ledger_ref_control(
+            effective_rules,
+            details,
+            repository=repository,
+            source_head=source_head,
+            source_run_id=source_run_id,
+            observer_run_id=observer_run_id,
+            observer_run_attempt=observer_run_attempt,
+            observation_phase=observation_phase,
+            ledger_ref=ledger_ref,
+            ledger_transition=ledger_transition,
+        )
+    except HeartbeatContractError as exc:
+        blocker = str(exc)
+        if not re.fullmatch(r"[A-Z0-9_]{1,128}", blocker):
+            blocker = "LEDGER_RULESET_OBSERVATION_INVALID"
+        return ledger_ref_control_reobserve(
+            repository=repository,
+            source_head=source_head,
+            source_run_id=source_run_id,
+            observer_run_id=observer_run_id,
+            observer_run_attempt=observer_run_attempt,
+            observation_phase=observation_phase,
+            ledger_ref=ledger_ref,
+            blocker=blocker,
+            ledger_transition=ledger_transition,
+        )
+    except Exception:
+        return ledger_ref_control_reobserve(
+            repository=repository,
+            source_head=source_head,
+            source_run_id=source_run_id,
+            observer_run_id=observer_run_id,
+            observer_run_attempt=observer_run_attempt,
+            observation_phase=observation_phase,
+            ledger_ref=ledger_ref,
+            blocker="LEDGER_RULESET_OBSERVATION_UNEXPECTED",
+            ledger_transition=ledger_transition,
+        )
+
+
+def _verify_ledger_protection_snapshot(
+    value: Any,
+    ledger_ref: str,
+    repository: str,
+) -> tuple[list[int], str]:
+    if not isinstance(value, Mapping) or set(value) != {
+        "ledger_ref", "effective_rules", "candidate_rulesets",
+        "required_rule_types_on_one_ruleset",
+    }:
+        raise HeartbeatContractError("ledger control snapshot fields are not exact")
+    if value["ledger_ref"] != ledger_ref:
+        raise HeartbeatContractError("ledger control snapshot ref mismatch")
+    if value["required_rule_types_on_one_ruleset"] != sorted(
+        LEDGER_REQUIRED_RULE_TYPES
+    ):
+        raise HeartbeatContractError("ledger control snapshot rules mismatch")
+    effective_rules = value["effective_rules"]
+    projection, grouped = _effective_ledger_rule_projection(
+        effective_rules,
+        repository=repository,
+    )
+    if projection != effective_rules:
+        raise HeartbeatContractError("ledger control effective rules are not canonical")
+    candidates = value["candidate_rulesets"]
+    if not isinstance(candidates, list) or not all(
+        isinstance(candidate, Mapping) for candidate in candidates
+    ):
+        raise HeartbeatContractError("ledger control candidates are invalid")
+    expected_ids = sorted(
+        ruleset_id for ruleset_id, types in grouped.items()
+        if LEDGER_REQUIRED_RULE_TYPES.issubset(types)
+    )
+    observed_ids: list[int] = []
+    qualifying: list[int] = []
+    blockers: list[str] = []
+    expected_fields = {
+        "ruleset_id", "source_type", "source", "target", "enforcement",
+        "include", "exclude", "rule_types", "bypass_actors_visible",
+        "bypass_actors", "effective_source_type", "effective_source",
+    }
+    for candidate in candidates:
+        if set(candidate) != expected_fields:
+            raise HeartbeatContractError("ledger control candidate fields are not exact")
+        ruleset_id = candidate["ruleset_id"]
+        if (
+            isinstance(ruleset_id, bool)
+            or not isinstance(ruleset_id, int)
+            or ruleset_id <= 0
+        ):
+            raise HeartbeatContractError("ledger control candidate ID is invalid")
+        observed_ids.append(ruleset_id)
+        includes = _string_list(candidate["include"], "snapshot include")
+        excludes = _string_list(candidate["exclude"], "snapshot exclude")
+        rule_types = _rule_type_list(
+            candidate["rule_types"],
+            "snapshot rule types",
+        )
+        if (
+            includes != candidate["include"]
+            or excludes != candidate["exclude"]
+            or rule_types != candidate["rule_types"]
+        ):
+            raise HeartbeatContractError("ledger control candidate is not canonical")
+        bypass_visible = candidate["bypass_actors_visible"]
+        bypass = candidate["bypass_actors"]
+        if not isinstance(bypass_visible, bool):
+            raise HeartbeatContractError("ledger control bypass visibility is invalid")
+        if bypass_visible:
+            if not isinstance(bypass, list) or not all(
+                isinstance(actor, Mapping) for actor in bypass
+            ):
+                raise HeartbeatContractError("ledger control bypass list is invalid")
+            try:
+                canonical_bypass = sorted(
+                    (dict(actor) for actor in bypass),
+                    key=canonical_json_bytes,
+                )
+            except (HeartbeatContractError, TypeError, ValueError) as exc:
+                raise HeartbeatContractError(
+                    "ledger control bypass list is not canonical"
+                ) from exc
+            if bypass != canonical_bypass:
+                raise HeartbeatContractError(
+                    "ledger control bypass list is not canonical"
+                )
+        elif bypass is not None:
+            raise HeartbeatContractError("hidden bypass data must be null")
+        effective_sources = {
+            (item["ruleset_source_type"], item["ruleset_source"])
+            for item in projection
+            if item["ruleset_id"] == ruleset_id
+        }
+        if (
+            len(effective_sources) != 1
+            or any(
+                not isinstance(source_value, str) or not source_value
+                for source_value in next(iter(effective_sources))
+            )
+        ):
+            raise HeartbeatContractError(
+                "ledger control effective source binding is invalid"
+            )
+        derived_source_type, derived_source = next(iter(effective_sources))
+        if (
+            candidate["effective_source_type"] != derived_source_type
+            or candidate["effective_source"] != derived_source
+        ):
+            raise HeartbeatContractError(
+                "ledger control effective source binding mismatch"
+            )
+        candidate_source_type, candidate_source = _validate_ruleset_source(
+            repository,
+            candidate["source_type"],
+            candidate["source"],
+        )
+        if (
+            candidate_source_type != derived_source_type
+            or candidate_source != derived_source
+        ):
+            raise HeartbeatContractError(
+                "LEDGER_RULESET_SOURCE_BINDING_MISMATCH"
+            )
+        target = candidate["target"]
+        enforcement = candidate["enforcement"]
+        if (
+            not isinstance(target, str)
+            or not target
+            or not isinstance(enforcement, str)
+            or not enforcement
+        ):
+            raise HeartbeatContractError(
+                "ledger control candidate state is invalid"
+            )
+        if (
+            target != "branch"
+            or enforcement != "active"
+            or not LEDGER_REQUIRED_RULE_TYPES.issubset(rule_types)
+        ):
+            raise HeartbeatContractError(
+                "LEDGER_RULESET_EFFECTIVE_DETAIL_CONTRADICTION"
+            )
+        qualifies = (
+            ledger_ref in includes
+            and excludes == []
+            and bypass_visible is True
+            and bypass == []
+        )
+        if qualifies:
+            qualifying.append(ruleset_id)
+        elif not bypass_visible:
+            blockers.append("LEDGER_RULESET_BYPASS_VISIBILITY_REQUIRED")
+        elif bypass != []:
+            blockers.append("LEDGER_RULESET_BYPASS_PRESENT")
+        elif ledger_ref not in includes:
+            blockers.append("LEDGER_RULESET_LITERAL_INCLUDE_MISSING")
+        elif excludes != []:
+            blockers.append("LEDGER_RULESET_EXCLUDE_PRESENT")
+        else:
+            blockers.append("LEDGER_IMMUTABILITY_RULESET_NOT_ACTIVE")
+    if observed_ids != expected_ids or observed_ids != sorted(set(observed_ids)):
+        raise HeartbeatContractError("ledger control candidate IDs mismatch")
+    return (
+        sorted(qualifying),
+        blockers[0] if blockers else "LEDGER_IMMUTABILITY_RULESET_NOT_ACTIVE",
+    )
+
+
+def verify_ledger_ref_control_receipt(
+    value: Any,
+    *,
+    expected_snapshot_sha256: str | None = None,
+    allow_noncontrol_state: bool = False,
+) -> dict[str, Any]:
+    if type(allow_noncontrol_state) is not bool:
+        raise HeartbeatContractError(
+            "allow_noncontrol_state must be an exact Boolean"
+        )
+    if not isinstance(value, Mapping) or value.get("schema") != LEDGER_REF_CONTROL_SCHEMA:
+        raise HeartbeatContractError("ledger control receipt schema mismatch")
+    observation_complete = value.get("observation_complete")
+    common_fields = {
+        "schema", "repository", "source_head", "source_run_id",
+        "observer_run_id", "observer_run_attempt", "observation_phase",
+        "ledger_ref",
+        "ledger_branch", "observation_endpoint", "api_version",
+        "required_rule_types_on_one_ruleset", "ledger_transition_before_observation",
+        "repository_ruleset_mutation_performed", "ruleset_push_atomicity_observed",
+        "post_readback_control_is_detection_not_prevention", "completion_claims",
+        "observation_complete", "state", "d0", "first_blocker",
+        "ledger_write_guard_satisfied", "protection_snapshot",
+        "protection_snapshot_sha256", "qualifying_ruleset_ids",
+        "selected_ruleset_id", "productive_effect_released_by_observation",
+        "receipt_sha256",
+    }
+    reobserve_fields = {
+        "comparison_performed", "expected_protection_snapshot_sha256",
+        "observed_protection_snapshot_sha256",
+    }
+    expected_fields = (
+        common_fields if observation_complete is True
+        else common_fields | reobserve_fields if observation_complete is False
+        else set()
+    )
+    if set(value) != expected_fields:
+        raise HeartbeatContractError("ledger control receipt fields are not exact")
+    unsigned = dict(value)
+    seal = unsigned.pop("receipt_sha256")
+    if seal != canonical_sha256(unsigned):
+        raise HeartbeatContractError("ledger control receipt seal mismatch")
+    expected_common = _ledger_control_common(
+        repository=value["repository"],
+        source_head=value["source_head"],
+        source_run_id=value["source_run_id"],
+        observer_run_id=value["observer_run_id"],
+        observer_run_attempt=value["observer_run_attempt"],
+        observation_phase=value["observation_phase"],
+        ledger_ref=value["ledger_ref"],
+        ledger_transition=value["ledger_transition_before_observation"],
+    )
+    for key, expected in expected_common.items():
+        if value.get(key) != expected:
+            raise HeartbeatContractError("ledger control common binding mismatch")
+    if value.get("repository_ruleset_mutation_performed") is not False:
+        raise HeartbeatContractError("ledger control manufactured ruleset mutation")
+    if value.get("ruleset_push_atomicity_observed") is not False:
+        raise HeartbeatContractError("ledger control manufactured atomicity")
+    if value.get("post_readback_control_is_detection_not_prevention") is not True:
+        raise HeartbeatContractError("ledger control detection boundary mismatch")
+    if value.get("productive_effect_released_by_observation") is not False:
+        raise HeartbeatContractError("ledger control manufactured productive effect")
+    completion_claims = value.get("completion_claims")
+    if (
+        not isinstance(completion_claims, Mapping)
+        or set(completion_claims) != {
+            "PASS", "FINAL_PASS", "EFFECT_ACK_DONE", "MERGE", "DEPLOYMENT",
+        }
+        or any(claim is not False for claim in completion_claims.values())
+    ):
+        raise HeartbeatContractError("ledger control completion claims are invalid")
+
+    if observation_complete is False:
+        if (
+            value.get("state") != "REOBSERVE"
+            or isinstance(value.get("d0"), bool)
+            or not isinstance(value.get("d0"), int)
+            or value.get("d0") != 2
+            or value.get("ledger_write_guard_satisfied") is not False
+            or value.get("protection_snapshot") is not None
+            or value.get("protection_snapshot_sha256") is not None
+            or value.get("qualifying_ruleset_ids") != []
+            or value.get("selected_ruleset_id") is not None
+            or not isinstance(value.get("first_blocker"), str)
+            or not re.fullmatch(r"[A-Z0-9_]{1,128}", value["first_blocker"])
+        ):
+            raise HeartbeatContractError("ledger control reobserve state mismatch")
+        compared = value.get("comparison_performed")
+        expected = value.get("expected_protection_snapshot_sha256")
+        observed = value.get("observed_protection_snapshot_sha256")
+        if compared is True:
+            _sha256(expected, "expected_protection_snapshot_sha256")
+            _sha256(observed, "observed_protection_snapshot_sha256")
+            if (
+                value.get("first_blocker")
+                != "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+                or expected == observed
+                or value.get("observation_phase") == "INITIAL"
+            ):
+                raise HeartbeatContractError(
+                    "ledger control comparison semantics are invalid"
+                )
+        elif (
+            compared is not False
+            or expected is not None
+            or observed is not None
+            or value.get("first_blocker")
+            == "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+        ):
+            raise HeartbeatContractError("ledger control comparison mismatch")
+        if allow_noncontrol_state:
+            return dict(value)
+        raise HeartbeatContractError("LEDGER_REF_CONTROL_REOBSERVE")
+
+    snapshot_sha256 = value.get("protection_snapshot_sha256")
+    _sha256(snapshot_sha256, "protection_snapshot_sha256")
+    protection_snapshot = value.get("protection_snapshot")
+    if canonical_sha256(protection_snapshot) != snapshot_sha256:
+        raise HeartbeatContractError("ledger control snapshot digest mismatch")
+    qualifying, recomputed_blocker = _verify_ledger_protection_snapshot(
+        protection_snapshot,
+        value["ledger_ref"],
+        value["repository"],
+    )
+    observed_qualifying = value.get("qualifying_ruleset_ids")
+    if (
+        not isinstance(observed_qualifying, list)
+        or any(
+            isinstance(ruleset_id, bool)
+            or not isinstance(ruleset_id, int)
+            or ruleset_id <= 0
+            for ruleset_id in observed_qualifying
+        )
+        or observed_qualifying != sorted(set(observed_qualifying))
+        or observed_qualifying != qualifying
+    ):
+        raise HeartbeatContractError("ledger control qualifying IDs mismatch")
+    selected_ruleset_id = value.get("selected_ruleset_id")
+    if selected_ruleset_id is not None and (
+        isinstance(selected_ruleset_id, bool)
+        or not isinstance(selected_ruleset_id, int)
+        or selected_ruleset_id <= 0
+    ):
+        raise HeartbeatContractError("ledger control selected ID is invalid")
+    if qualifying:
+        if (
+            value.get("state") != "CONTROL_OBSERVED"
+            or value.get("d0") is not None
+            or value.get("first_blocker") is not None
+            or value.get("ledger_write_guard_satisfied") is not True
+            or value.get("selected_ruleset_id") != min(qualifying)
+        ):
+            raise HeartbeatContractError("ledger control success state mismatch")
+    else:
+        if (
+            value.get("state") != "REQUEST_AUTHORITY"
+            or isinstance(value.get("d0"), bool)
+            or not isinstance(value.get("d0"), int)
+            or value.get("d0") != 3
+            or value.get("ledger_write_guard_satisfied") is not False
+            or value.get("selected_ruleset_id") is not None
+            or value.get("first_blocker") != recomputed_blocker
+            or not isinstance(value.get("first_blocker"), str)
+            or not re.fullmatch(r"[A-Z0-9_]{1,128}", value["first_blocker"])
+        ):
+            raise HeartbeatContractError("ledger control authority state mismatch")
+        if allow_noncontrol_state:
+            return dict(value)
+        raise HeartbeatContractError("LEDGER_REF_CONTROL_REQUEST_AUTHORITY")
+    if expected_snapshot_sha256 is not None and snapshot_sha256 != expected_snapshot_sha256:
+        raise HeartbeatContractError("LEDGER_REF_CONTROL_SNAPSHOT_DRIFT")
+    return dict(value)
 
 
 def _sha1(value: Any, label: str) -> str:
@@ -596,282 +1499,6 @@ def verify_audit(value: Any, *, source_head: str, source_tree: str) -> dict[str,
     return dict(value)
 
 
-LEDGER_PROTECTION_SCHEMA = "qikvrt_mesh_heartbeat_ledger_protection_v1"
-LEDGER_PROTECTION_COMPLETION_CLAIMS = {
-    "PASS": False,
-    "FINAL_PASS": False,
-    "EFFECT_ACK_DONE": False,
-    "MERGE": False,
-    "APPROVAL": False,
-    "DEPLOYMENT": False,
-}
-
-
-def _positive_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value > 0
-
-
-def _string_list(value: Any) -> list[str] | None:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        return None
-    return list(value)
-
-
-def _effective_rules(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        raise HeartbeatContractError("effective rules response must be a paginated list")
-    rules: list[dict[str, Any]] = []
-    for page in value:
-        if isinstance(page, list):
-            items = page
-        elif isinstance(page, dict):
-            items = [page]
-        else:
-            raise HeartbeatContractError("effective rules page must be an array")
-        if not all(isinstance(item, dict) for item in items):
-            raise HeartbeatContractError("effective rule must be an object")
-        rules.extend(items)
-    return sorted(rules, key=canonical_json_bytes)
-
-
-def _ruleset_details(value: Any) -> list[dict[str, Any]]:
-    if isinstance(value, Mapping):
-        value = value.get("rulesets")
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-        raise HeartbeatContractError("ruleset details must be an object list")
-    return sorted((dict(item) for item in value), key=canonical_json_bytes)
-
-
-def _protection_receipt(
-    *,
-    repository: str,
-    ledger_ref: str,
-    source_head: str,
-    source_run_id: str,
-    phase: str,
-    transition: str,
-    classification: str,
-    d0: int,
-    reason: str,
-    snapshot: dict[str, Any] | None,
-    baseline_digest: str | None = None,
-    observed_digest: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "schema": LEDGER_PROTECTION_SCHEMA,
-        "repository": repository,
-        "ledger_ref": ledger_ref,
-        "source_head": source_head,
-        "source_run_id": source_run_id,
-        "phase": phase,
-        "ledger_transition": transition,
-        "classification": classification,
-        "d0": d0,
-        "reason": reason,
-        "protection_snapshot": snapshot,
-        "protection_snapshot_sha256": canonical_sha256(snapshot) if snapshot is not None else None,
-        "baseline_protection_snapshot_sha256": baseline_digest,
-        "observed_protection_snapshot_sha256": observed_digest,
-        "completion_claims": LEDGER_PROTECTION_COMPLETION_CLAIMS,
-    }
-
-
-def qualify_ledger_ref_protection(
-    *,
-    repository: str,
-    ledger_ref: str,
-    source_head: str,
-    source_run_id: str,
-    effective_rules: Any,
-    ruleset_details: Any,
-    phase: str,
-    transition: str,
-) -> dict[str, Any]:
-    """Classify a read-only, platform-effective exact-ref protection observation."""
-    try:
-        rules = _effective_rules(effective_rules)
-        details = _ruleset_details(ruleset_details)
-    except HeartbeatContractError:
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="RULESET_OBSERVATION_UNVERIFIABLE", snapshot=None,
-        )
-
-    groups: dict[tuple[str, str, int], set[str]] = {}
-    try:
-        for rule in rules:
-            source_type = rule["ruleset_source_type"]
-            source = rule["ruleset_source"]
-            identifier = rule["ruleset_id"]
-            rule_type = rule["type"]
-            if (
-                not isinstance(source_type, str) or not source_type
-                or not isinstance(source, str) or not source
-                or not _positive_int(identifier)
-                or not isinstance(rule_type, str)
-            ):
-                raise HeartbeatContractError("effective ruleset identity is malformed")
-            groups.setdefault((source_type, source, identifier), set()).add(rule_type)
-    except (HeartbeatContractError, KeyError):
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="RULESET_IDENTITY_UNVERIFIABLE", snapshot=None,
-        )
-
-    qualifying_groups = [
-        group for group, rule_types in groups.items()
-        if {"deletion", "non_fast_forward"}.issubset(rule_types)
-    ]
-    if len(qualifying_groups) != 1:
-        snapshot = {
-            "repository": repository, "ledger_ref": ledger_ref,
-            "effective_rules": rules,
-            "effective_rule_groups": [
-                {"source_type": key[0], "source": key[1], "id": key[2],
-                 "rule_types": sorted(value)}
-                for key, value in sorted(groups.items())
-            ],
-            "ruleset_details": details,
-        }
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REQUEST_AUTHORITY", d0=3,
-            reason="EXACTLY_ONE_ACTIVE_PROTECTING_RULESET_REQUIRED", snapshot=snapshot,
-        )
-
-    source_type, source, identifier = qualifying_groups[0]
-    matching_details = [detail for detail in details if detail.get("id") == identifier]
-    if len(matching_details) != 1:
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="RULESET_DETAIL_UNVERIFIABLE", snapshot=None,
-        )
-    detail = matching_details[0]
-    conditions = detail.get("conditions")
-    ref_name = conditions.get("ref_name") if isinstance(conditions, Mapping) else None
-    include = _string_list(ref_name.get("include")) if isinstance(ref_name, Mapping) else None
-    exclude = _string_list(ref_name.get("exclude")) if isinstance(ref_name, Mapping) else None
-    snapshot = {
-        "repository": repository, "ledger_ref": ledger_ref,
-        "effective_rules_endpoint": (
-            "GET /repos/{repository}/rules/branches/{ledger_ref_urlencoded}"
-        ),
-        "effective_rules": rules,
-        "selected_ruleset": {
-            "source_type": source_type, "source": source, "id": identifier,
-            "effective_rule_types": sorted(groups[qualifying_groups[0]]),
-        },
-        "ruleset_detail": detail,
-        "include": include,
-        "exclude": exclude,
-        "bypass_actors_present": "bypass_actors" in detail,
-        "bypass_actors": detail.get("bypass_actors"),
-        "current_user_can_bypass": detail.get("current_user_can_bypass"),
-    }
-    if (
-        detail.get("source_type") != source_type
-        or detail.get("source") != source
-        or detail.get("target") != "branch"
-        or detail.get("enforcement") != "active"
-        or include is None
-        or exclude is None
-    ):
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="RULESET_DETAIL_UNVERIFIABLE", snapshot=snapshot,
-        )
-    if "bypass_actors" not in detail or not isinstance(detail["bypass_actors"], list):
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="BYPASS_VISIBILITY_UNVERIFIABLE", snapshot=snapshot,
-        )
-    if not isinstance(detail.get("current_user_can_bypass"), str):
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REOBSERVE", d0=2,
-            reason="WRITER_BYPASS_VISIBILITY_UNVERIFIABLE", snapshot=snapshot,
-        )
-    if detail["bypass_actors"] or detail["current_user_can_bypass"] != "never":
-        return _protection_receipt(
-            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-            source_run_id=source_run_id, phase=phase, transition=transition,
-            classification="REQUEST_AUTHORITY", d0=3,
-            reason="BYPASSABLE_LEDGER_PROTECTION", snapshot=snapshot,
-        )
-    return _protection_receipt(
-        repository=repository, ledger_ref=ledger_ref, source_head=source_head,
-        source_run_id=source_run_id, phase=phase, transition=transition,
-        classification="QUALIFIED", d0=0,
-        reason="EXACT_LEDGER_REF_PROTECTION_QUALIFIED", snapshot=snapshot,
-    )
-
-
-def compare_ledger_ref_protection(
-    initial: Any, observed: Any, *, phase: str, transition: str
-) -> dict[str, Any]:
-    """Compare two sealed D0=0 observations without trusting their declarations."""
-    def valid(value: Any, expected_phase: str) -> bool:
-        if not isinstance(value, Mapping) or value.get("schema") != LEDGER_PROTECTION_SCHEMA:
-            return False
-        if value.get("phase") != expected_phase or value.get("classification") != "QUALIFIED" or value.get("d0") != 0:
-            return False
-        snapshot = value.get("protection_snapshot")
-        return (
-            isinstance(snapshot, Mapping)
-            and value.get("protection_snapshot_sha256") == canonical_sha256(snapshot)
-            and value.get("completion_claims") == LEDGER_PROTECTION_COMPLETION_CLAIMS
-        )
-
-    if not valid(initial, "INITIAL") or not valid(observed, phase):
-        context = initial if isinstance(initial, Mapping) else observed
-        return _protection_receipt(
-            repository=str(context.get("repository", "")) if isinstance(context, Mapping) else "",
-            ledger_ref=str(context.get("ledger_ref", "")) if isinstance(context, Mapping) else "",
-            source_head=str(context.get("source_head", "")) if isinstance(context, Mapping) else "",
-            source_run_id=str(context.get("source_run_id", "")) if isinstance(context, Mapping) else "",
-            phase=phase, transition=transition, classification="REOBSERVE", d0=2,
-            reason="LEDGER_REF_CONTROL_RECEIPT_UNVERIFIABLE", snapshot=None,
-        )
-    initial_digest = initial["protection_snapshot_sha256"]
-    observed_digest = observed["protection_snapshot_sha256"]
-    same_binding = all(
-        initial.get(key) == observed.get(key)
-        for key in ("repository", "ledger_ref", "source_head", "source_run_id")
-    )
-    if not same_binding or initial_digest != observed_digest:
-        return _protection_receipt(
-            repository=observed["repository"], ledger_ref=observed["ledger_ref"],
-            source_head=observed["source_head"], source_run_id=observed["source_run_id"],
-            phase=phase, transition=transition, classification="REOBSERVE", d0=2,
-            reason="LEDGER_REF_CONTROL_SNAPSHOT_DRIFT",
-            snapshot=dict(observed["protection_snapshot"]),
-            baseline_digest=initial_digest, observed_digest=observed_digest,
-        )
-    return _protection_receipt(
-        repository=observed["repository"], ledger_ref=observed["ledger_ref"],
-        source_head=observed["source_head"], source_run_id=observed["source_run_id"],
-        phase=phase, transition=transition, classification="QUALIFIED", d0=0,
-        reason="LEDGER_REF_CONTROL_SNAPSHOT_STABLE",
-        snapshot=dict(observed["protection_snapshot"]),
-    )
-
-
-def _write_control_receipt(path: pathlib.Path, receipt: Mapping[str, Any]) -> None:
-    path.write_bytes(canonical_json_bytes(receipt) + b"\n")
-
-
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     sub = result.add_subparsers(dest="command", required=True)
@@ -890,70 +1517,221 @@ def parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify")
     verify.add_argument("--receipt", type=pathlib.Path, required=True)
     verify.add_argument("--source-head", required=True); verify.add_argument("--source-tree", required=True)
-    qualify = sub.add_parser("qualify-ledger-ref-protection")
-    qualify.add_argument("--repository", required=True)
-    qualify.add_argument("--ledger-ref", required=True)
-    qualify.add_argument("--source-head", required=True)
-    qualify.add_argument("--source-run-id", required=True)
-    qualify.add_argument("--phase", choices=("INITIAL", "PRE_PUSH", "POST_READBACK"), required=True)
-    qualify.add_argument("--ledger-transition", required=True)
-    qualify.add_argument("--effective-rules", type=pathlib.Path, required=True)
-    qualify.add_argument("--ruleset-details", type=pathlib.Path, required=True)
-    qualify.add_argument("--out", type=pathlib.Path, required=True)
-    compare = sub.add_parser("compare-ledger-ref-protection")
-    compare.add_argument("--initial", type=pathlib.Path, required=True)
-    compare.add_argument("--observed", type=pathlib.Path, required=True)
-    compare.add_argument("--phase", choices=("PRE_PUSH", "POST_READBACK"), required=True)
-    compare.add_argument("--ledger-transition", required=True)
-    compare.add_argument("--out", type=pathlib.Path, required=True)
+    ledger_control = sub.add_parser("ledger-ref-control")
+    ledger_control.add_argument(
+        "--repository", default=os.environ.get("GITHUB_REPOSITORY", "")
+    )
+    ledger_control.add_argument("--source-head", required=True)
+    ledger_control.add_argument("--source-run-id", type=int, required=True)
+    ledger_control.add_argument("--observer-run-id", type=int, required=True)
+    ledger_control.add_argument("--observer-run-attempt", type=int, required=True)
+    ledger_control.add_argument(
+        "--observation-phase",
+        choices=tuple(sorted(LEDGER_OBSERVATION_PHASES)),
+        required=True,
+    )
+    ledger_control.add_argument("--ledger-ref", default=LEDGER_REF)
+    ledger_control.add_argument(
+        "--ledger-transition",
+        choices=("NONE", "NOOP_ALREADY_CURRENT", "FAST_FORWARD_PUSHED"),
+        default="NONE",
+    )
+    ledger_control.add_argument("--output", type=pathlib.Path, required=True)
+    enforce_control = sub.add_parser("enforce-ledger-ref-control")
+    enforce_control.add_argument("--receipt", type=pathlib.Path, required=True)
+    enforce_control.add_argument(
+        "--expected-snapshot-receipt", type=pathlib.Path
+    )
+    enforce_control.add_argument("--comparison-output", type=pathlib.Path)
+    enforce_control.add_argument(
+        "--repository", default=os.environ.get("GITHUB_REPOSITORY", "")
+    )
+    enforce_control.add_argument("--source-head", required=True)
+    enforce_control.add_argument("--source-run-id", type=int, required=True)
+    enforce_control.add_argument("--observer-run-id", type=int, required=True)
+    enforce_control.add_argument(
+        "--observer-run-attempt", type=int, required=True
+    )
+    enforce_control.add_argument(
+        "--observation-phase",
+        choices=tuple(sorted(LEDGER_OBSERVATION_PHASES)),
+        required=True,
+    )
+    enforce_control.add_argument("--ledger-ref", default=LEDGER_REF)
+    enforce_control.add_argument(
+        "--ledger-transition",
+        choices=("NONE", "NOOP_ALREADY_CURRENT", "FAST_FORWARD_PUSHED"),
+        default="NONE",
+    )
     return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.command == "qualify-ledger-ref-protection":
-        try:
-            receipt = qualify_ledger_ref_protection(
-                repository=args.repository, ledger_ref=args.ledger_ref,
-                source_head=args.source_head, source_run_id=args.source_run_id,
-                effective_rules=json.loads(args.effective_rules.read_text(encoding="utf-8")),
-                ruleset_details=json.loads(args.ruleset_details.read_text(encoding="utf-8")),
-                phase=args.phase, transition=args.ledger_transition,
-            )
-        except (OSError, json.JSONDecodeError):
-            receipt = _protection_receipt(
-                repository=args.repository, ledger_ref=args.ledger_ref,
-                source_head=args.source_head, source_run_id=args.source_run_id,
-                phase=args.phase, transition=args.ledger_transition,
-                classification="REOBSERVE", d0=2,
-                reason="RULESET_OBSERVATION_UNAVAILABLE", snapshot=None,
-            )
-        _write_control_receipt(args.out, receipt)
-        print(json.dumps(receipt, indent=2, sort_keys=True))
-        return 0 if receipt["d0"] == 0 else 2
-    if args.command == "compare-ledger-ref-protection":
-        try:
-            receipt = compare_ledger_ref_protection(
-                json.loads(args.initial.read_text(encoding="utf-8")),
-                json.loads(args.observed.read_text(encoding="utf-8")),
-                phase=args.phase, transition=args.ledger_transition,
-            )
-        except (OSError, json.JSONDecodeError):
-            receipt = _protection_receipt(
-                repository="", ledger_ref="", source_head="", source_run_id="",
-                phase=args.phase, transition=args.ledger_transition,
-                classification="REOBSERVE", d0=2,
-                reason="LEDGER_REF_CONTROL_RECEIPT_UNAVAILABLE", snapshot=None,
-            )
-        _write_control_receipt(args.out, receipt)
-        print(json.dumps(receipt, indent=2, sort_keys=True))
-        return 0 if receipt["d0"] == 0 else 2
     if args.command == "emit":
         asyncio.run(emit_heartbeats(
             host=args.host, port=args.port, node_id=args.node_id, pair_id=args.pair_id,
             role=args.role, source_head=args.source_head, source_tree=args.source_tree,
             start_monotonic_ns=args.start_monotonic_ns, count=args.count,
         ))
+        return 0
+    if args.command == "ledger-ref-control":
+        value = observe_ledger_ref_control(
+            repository=args.repository,
+            source_head=args.source_head,
+            source_run_id=args.source_run_id,
+            observer_run_id=args.observer_run_id,
+            observer_run_attempt=args.observer_run_attempt,
+            observation_phase=args.observation_phase,
+            ledger_ref=args.ledger_ref,
+            ledger_transition=args.ledger_transition,
+        )
+        args.output.write_bytes(canonical_json_bytes(value) + b"\n")
+        print(json.dumps(value, indent=2, sort_keys=True))
+        return 0
+    if args.command == "enforce-ledger-ref-control":
+        value: Any = None
+        baseline: Any = None
+        try:
+            value = _strict_json_loads(
+                args.receipt.read_text(encoding="utf-8"),
+                "LEDGER_REF_CONTROL_EVIDENCE_INVALID_JSON",
+            )
+            expected = None
+            if args.expected_snapshot_receipt is not None:
+                baseline = _strict_json_loads(
+                    args.expected_snapshot_receipt.read_text(encoding="utf-8"),
+                    "LEDGER_REF_CONTROL_EVIDENCE_INVALID_JSON",
+                )
+                verify_ledger_ref_control_receipt(baseline)
+                expected = baseline["protection_snapshot_sha256"]
+            verified = verify_ledger_ref_control_receipt(
+                value,
+                allow_noncontrol_state=True,
+            )
+            context_required = (
+                args.expected_snapshot_receipt is not None
+                or args.source_head is not None
+                or args.source_run_id is not None
+            )
+            if context_required:
+                if (
+                    not args.repository
+                    or args.source_head is None
+                    or args.source_run_id is None
+                    or args.observer_run_id is None
+                    or args.observer_run_attempt is None
+                ):
+                    raise HeartbeatContractError(
+                        "LEDGER_REF_CONTROL_CONTEXT_INCOMPLETE"
+                    )
+                expected_context = {
+                    "repository": args.repository,
+                    "source_head": args.source_head,
+                    "source_run_id": args.source_run_id,
+                    "observer_run_id": args.observer_run_id,
+                    "observer_run_attempt": args.observer_run_attempt,
+                    "ledger_ref": args.ledger_ref,
+                }
+                if (
+                    any(
+                        verified.get(key) != expected_value
+                        for key, expected_value in expected_context.items()
+                    )
+                    or verified.get("observation_phase")
+                    != args.observation_phase
+                    or verified.get("ledger_transition_before_observation")
+                    != args.ledger_transition
+                ):
+                    raise HeartbeatContractError(
+                        "LEDGER_REF_CONTROL_CONTEXT_MISMATCH"
+                    )
+                if args.expected_snapshot_receipt is not None:
+                    if (
+                        args.observation_phase == "INITIAL"
+                        or any(
+                            baseline.get(key) != expected_value
+                            for key, expected_value in expected_context.items()
+                        )
+                        or baseline.get("observation_phase") != "INITIAL"
+                        or baseline.get("ledger_transition_before_observation")
+                        != "NONE"
+                    ):
+                        raise HeartbeatContractError(
+                            "LEDGER_REF_CONTROL_CONTEXT_MISMATCH"
+                        )
+                    if verified["state"] == "CONTROL_OBSERVED" and (
+                        verified["protection_snapshot_sha256"] != expected
+                    ):
+                        raise HeartbeatContractError(
+                            "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+                        )
+                elif args.observation_phase != "INITIAL":
+                    raise HeartbeatContractError(
+                        "LEDGER_REF_CONTROL_BASELINE_REQUIRED"
+                    )
+        except Exception as exc:
+            code = str(exc)
+            print(code, file=sys.stderr)
+            if args.comparison_output is not None:
+                if (
+                    not args.repository
+                    or args.source_head is None
+                    or args.source_run_id is None
+                ):
+                    print(
+                        "ledger control comparison context is incomplete",
+                        file=sys.stderr,
+                    )
+                    return 2
+                blocker = (
+                    "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+                    if code == "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT"
+                    else "LEDGER_REF_CONTROL_EVIDENCE_INVALID"
+                )
+                expected_snapshot = None
+                observed_snapshot = None
+                if blocker == "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT":
+                    try:
+                        expected_snapshot = baseline[
+                            "protection_snapshot_sha256"
+                        ]
+                        observed_snapshot = value[
+                            "protection_snapshot_sha256"
+                        ]
+                        _sha256(expected_snapshot, "expected_snapshot_sha256")
+                        _sha256(observed_snapshot, "observed_snapshot_sha256")
+                    except Exception:
+                        blocker = "LEDGER_REF_CONTROL_EVIDENCE_INVALID"
+                        expected_snapshot = None
+                        observed_snapshot = None
+                comparison = ledger_ref_control_reobserve(
+                    repository=args.repository,
+                    source_head=args.source_head,
+                    source_run_id=args.source_run_id,
+                    observer_run_id=args.observer_run_id,
+                    observer_run_attempt=args.observer_run_attempt,
+                    observation_phase=args.observation_phase,
+                    ledger_ref=args.ledger_ref,
+                    blocker=blocker,
+                    ledger_transition=args.ledger_transition,
+                    expected_snapshot_sha256=expected_snapshot,
+                    observed_snapshot_sha256=observed_snapshot,
+                )
+                args.comparison_output.write_bytes(
+                    canonical_json_bytes(comparison) + b"\n"
+                )
+            return 2
+        if verified["state"] == "REQUEST_AUTHORITY":
+            print("LEDGER_REF_CONTROL_REQUEST_AUTHORITY", file=sys.stderr)
+            return 3
+        if verified["state"] == "REOBSERVE":
+            print("LEDGER_REF_CONTROL_REOBSERVE", file=sys.stderr)
+            return 2
+        print(
+            "LEDGER_REF_CONTROL=OBSERVED "
+            + str(verified["protection_snapshot_sha256"])
+        )
         return 0
     if args.command == "demo":
         value = asyncio.run(run_demo(
