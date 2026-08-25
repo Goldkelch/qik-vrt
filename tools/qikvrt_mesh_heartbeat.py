@@ -596,6 +596,282 @@ def verify_audit(value: Any, *, source_head: str, source_tree: str) -> dict[str,
     return dict(value)
 
 
+LEDGER_PROTECTION_SCHEMA = "qikvrt_mesh_heartbeat_ledger_protection_v1"
+LEDGER_PROTECTION_COMPLETION_CLAIMS = {
+    "PASS": False,
+    "FINAL_PASS": False,
+    "EFFECT_ACK_DONE": False,
+    "MERGE": False,
+    "APPROVAL": False,
+    "DEPLOYMENT": False,
+}
+
+
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+def _effective_rules(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HeartbeatContractError("effective rules response must be a paginated list")
+    rules: list[dict[str, Any]] = []
+    for page in value:
+        if isinstance(page, list):
+            items = page
+        elif isinstance(page, dict):
+            items = [page]
+        else:
+            raise HeartbeatContractError("effective rules page must be an array")
+        if not all(isinstance(item, dict) for item in items):
+            raise HeartbeatContractError("effective rule must be an object")
+        rules.extend(items)
+    return sorted(rules, key=canonical_json_bytes)
+
+
+def _ruleset_details(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, Mapping):
+        value = value.get("rulesets")
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise HeartbeatContractError("ruleset details must be an object list")
+    return sorted((dict(item) for item in value), key=canonical_json_bytes)
+
+
+def _protection_receipt(
+    *,
+    repository: str,
+    ledger_ref: str,
+    source_head: str,
+    source_run_id: str,
+    phase: str,
+    transition: str,
+    classification: str,
+    d0: int,
+    reason: str,
+    snapshot: dict[str, Any] | None,
+    baseline_digest: str | None = None,
+    observed_digest: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": LEDGER_PROTECTION_SCHEMA,
+        "repository": repository,
+        "ledger_ref": ledger_ref,
+        "source_head": source_head,
+        "source_run_id": source_run_id,
+        "phase": phase,
+        "ledger_transition": transition,
+        "classification": classification,
+        "d0": d0,
+        "reason": reason,
+        "protection_snapshot": snapshot,
+        "protection_snapshot_sha256": canonical_sha256(snapshot) if snapshot is not None else None,
+        "baseline_protection_snapshot_sha256": baseline_digest,
+        "observed_protection_snapshot_sha256": observed_digest,
+        "completion_claims": LEDGER_PROTECTION_COMPLETION_CLAIMS,
+    }
+
+
+def qualify_ledger_ref_protection(
+    *,
+    repository: str,
+    ledger_ref: str,
+    source_head: str,
+    source_run_id: str,
+    effective_rules: Any,
+    ruleset_details: Any,
+    phase: str,
+    transition: str,
+) -> dict[str, Any]:
+    """Classify a read-only, platform-effective exact-ref protection observation."""
+    try:
+        rules = _effective_rules(effective_rules)
+        details = _ruleset_details(ruleset_details)
+    except HeartbeatContractError:
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="RULESET_OBSERVATION_UNVERIFIABLE", snapshot=None,
+        )
+
+    groups: dict[tuple[str, str, int], set[str]] = {}
+    try:
+        for rule in rules:
+            source_type = rule["ruleset_source_type"]
+            source = rule["ruleset_source"]
+            identifier = rule["ruleset_id"]
+            rule_type = rule["type"]
+            if (
+                not isinstance(source_type, str) or not source_type
+                or not isinstance(source, str) or not source
+                or not _positive_int(identifier)
+                or not isinstance(rule_type, str)
+            ):
+                raise HeartbeatContractError("effective ruleset identity is malformed")
+            groups.setdefault((source_type, source, identifier), set()).add(rule_type)
+    except (HeartbeatContractError, KeyError):
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="RULESET_IDENTITY_UNVERIFIABLE", snapshot=None,
+        )
+
+    qualifying_groups = [
+        group for group, rule_types in groups.items()
+        if {"deletion", "non_fast_forward"}.issubset(rule_types)
+    ]
+    if len(qualifying_groups) != 1:
+        snapshot = {
+            "repository": repository, "ledger_ref": ledger_ref,
+            "effective_rules": rules,
+            "effective_rule_groups": [
+                {"source_type": key[0], "source": key[1], "id": key[2],
+                 "rule_types": sorted(value)}
+                for key, value in sorted(groups.items())
+            ],
+            "ruleset_details": details,
+        }
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REQUEST_AUTHORITY", d0=3,
+            reason="EXACTLY_ONE_ACTIVE_PROTECTING_RULESET_REQUIRED", snapshot=snapshot,
+        )
+
+    source_type, source, identifier = qualifying_groups[0]
+    matching_details = [detail for detail in details if detail.get("id") == identifier]
+    if len(matching_details) != 1:
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="RULESET_DETAIL_UNVERIFIABLE", snapshot=None,
+        )
+    detail = matching_details[0]
+    conditions = detail.get("conditions")
+    ref_name = conditions.get("ref_name") if isinstance(conditions, Mapping) else None
+    include = _string_list(ref_name.get("include")) if isinstance(ref_name, Mapping) else None
+    exclude = _string_list(ref_name.get("exclude")) if isinstance(ref_name, Mapping) else None
+    snapshot = {
+        "repository": repository, "ledger_ref": ledger_ref,
+        "effective_rules_endpoint": (
+            "GET /repos/{repository}/rules/branches/{ledger_ref_urlencoded}"
+        ),
+        "effective_rules": rules,
+        "selected_ruleset": {
+            "source_type": source_type, "source": source, "id": identifier,
+            "effective_rule_types": sorted(groups[qualifying_groups[0]]),
+        },
+        "ruleset_detail": detail,
+        "include": include,
+        "exclude": exclude,
+        "bypass_actors_present": "bypass_actors" in detail,
+        "bypass_actors": detail.get("bypass_actors"),
+        "current_user_can_bypass": detail.get("current_user_can_bypass"),
+    }
+    if (
+        detail.get("source_type") != source_type
+        or detail.get("source") != source
+        or detail.get("target") != "branch"
+        or detail.get("enforcement") != "active"
+        or include is None
+        or exclude is None
+    ):
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="RULESET_DETAIL_UNVERIFIABLE", snapshot=snapshot,
+        )
+    if "bypass_actors" not in detail or not isinstance(detail["bypass_actors"], list):
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="BYPASS_VISIBILITY_UNVERIFIABLE", snapshot=snapshot,
+        )
+    if not isinstance(detail.get("current_user_can_bypass"), str):
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REOBSERVE", d0=2,
+            reason="WRITER_BYPASS_VISIBILITY_UNVERIFIABLE", snapshot=snapshot,
+        )
+    if detail["bypass_actors"] or detail["current_user_can_bypass"] != "never":
+        return _protection_receipt(
+            repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+            source_run_id=source_run_id, phase=phase, transition=transition,
+            classification="REQUEST_AUTHORITY", d0=3,
+            reason="BYPASSABLE_LEDGER_PROTECTION", snapshot=snapshot,
+        )
+    return _protection_receipt(
+        repository=repository, ledger_ref=ledger_ref, source_head=source_head,
+        source_run_id=source_run_id, phase=phase, transition=transition,
+        classification="QUALIFIED", d0=0,
+        reason="EXACT_LEDGER_REF_PROTECTION_QUALIFIED", snapshot=snapshot,
+    )
+
+
+def compare_ledger_ref_protection(
+    initial: Any, observed: Any, *, phase: str, transition: str
+) -> dict[str, Any]:
+    """Compare two sealed D0=0 observations without trusting their declarations."""
+    def valid(value: Any, expected_phase: str) -> bool:
+        if not isinstance(value, Mapping) or value.get("schema") != LEDGER_PROTECTION_SCHEMA:
+            return False
+        if value.get("phase") != expected_phase or value.get("classification") != "QUALIFIED" or value.get("d0") != 0:
+            return False
+        snapshot = value.get("protection_snapshot")
+        return (
+            isinstance(snapshot, Mapping)
+            and value.get("protection_snapshot_sha256") == canonical_sha256(snapshot)
+            and value.get("completion_claims") == LEDGER_PROTECTION_COMPLETION_CLAIMS
+        )
+
+    if not valid(initial, "INITIAL") or not valid(observed, phase):
+        context = initial if isinstance(initial, Mapping) else observed
+        return _protection_receipt(
+            repository=str(context.get("repository", "")) if isinstance(context, Mapping) else "",
+            ledger_ref=str(context.get("ledger_ref", "")) if isinstance(context, Mapping) else "",
+            source_head=str(context.get("source_head", "")) if isinstance(context, Mapping) else "",
+            source_run_id=str(context.get("source_run_id", "")) if isinstance(context, Mapping) else "",
+            phase=phase, transition=transition, classification="REOBSERVE", d0=2,
+            reason="LEDGER_REF_CONTROL_RECEIPT_UNVERIFIABLE", snapshot=None,
+        )
+    initial_digest = initial["protection_snapshot_sha256"]
+    observed_digest = observed["protection_snapshot_sha256"]
+    same_binding = all(
+        initial.get(key) == observed.get(key)
+        for key in ("repository", "ledger_ref", "source_head", "source_run_id")
+    )
+    if not same_binding or initial_digest != observed_digest:
+        return _protection_receipt(
+            repository=observed["repository"], ledger_ref=observed["ledger_ref"],
+            source_head=observed["source_head"], source_run_id=observed["source_run_id"],
+            phase=phase, transition=transition, classification="REOBSERVE", d0=2,
+            reason="LEDGER_REF_CONTROL_SNAPSHOT_DRIFT",
+            snapshot=dict(observed["protection_snapshot"]),
+            baseline_digest=initial_digest, observed_digest=observed_digest,
+        )
+    return _protection_receipt(
+        repository=observed["repository"], ledger_ref=observed["ledger_ref"],
+        source_head=observed["source_head"], source_run_id=observed["source_run_id"],
+        phase=phase, transition=transition, classification="QUALIFIED", d0=0,
+        reason="LEDGER_REF_CONTROL_SNAPSHOT_STABLE",
+        snapshot=dict(observed["protection_snapshot"]),
+    )
+
+
+def _write_control_receipt(path: pathlib.Path, receipt: Mapping[str, Any]) -> None:
+    path.write_bytes(canonical_json_bytes(receipt) + b"\n")
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     sub = result.add_subparsers(dest="command", required=True)
@@ -614,11 +890,64 @@ def parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify")
     verify.add_argument("--receipt", type=pathlib.Path, required=True)
     verify.add_argument("--source-head", required=True); verify.add_argument("--source-tree", required=True)
+    qualify = sub.add_parser("qualify-ledger-ref-protection")
+    qualify.add_argument("--repository", required=True)
+    qualify.add_argument("--ledger-ref", required=True)
+    qualify.add_argument("--source-head", required=True)
+    qualify.add_argument("--source-run-id", required=True)
+    qualify.add_argument("--phase", choices=("INITIAL", "PRE_PUSH", "POST_READBACK"), required=True)
+    qualify.add_argument("--ledger-transition", required=True)
+    qualify.add_argument("--effective-rules", type=pathlib.Path, required=True)
+    qualify.add_argument("--ruleset-details", type=pathlib.Path, required=True)
+    qualify.add_argument("--out", type=pathlib.Path, required=True)
+    compare = sub.add_parser("compare-ledger-ref-protection")
+    compare.add_argument("--initial", type=pathlib.Path, required=True)
+    compare.add_argument("--observed", type=pathlib.Path, required=True)
+    compare.add_argument("--phase", choices=("PRE_PUSH", "POST_READBACK"), required=True)
+    compare.add_argument("--ledger-transition", required=True)
+    compare.add_argument("--out", type=pathlib.Path, required=True)
     return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "qualify-ledger-ref-protection":
+        try:
+            receipt = qualify_ledger_ref_protection(
+                repository=args.repository, ledger_ref=args.ledger_ref,
+                source_head=args.source_head, source_run_id=args.source_run_id,
+                effective_rules=json.loads(args.effective_rules.read_text(encoding="utf-8")),
+                ruleset_details=json.loads(args.ruleset_details.read_text(encoding="utf-8")),
+                phase=args.phase, transition=args.ledger_transition,
+            )
+        except (OSError, json.JSONDecodeError):
+            receipt = _protection_receipt(
+                repository=args.repository, ledger_ref=args.ledger_ref,
+                source_head=args.source_head, source_run_id=args.source_run_id,
+                phase=args.phase, transition=args.ledger_transition,
+                classification="REOBSERVE", d0=2,
+                reason="RULESET_OBSERVATION_UNAVAILABLE", snapshot=None,
+            )
+        _write_control_receipt(args.out, receipt)
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return 0 if receipt["d0"] == 0 else 2
+    if args.command == "compare-ledger-ref-protection":
+        try:
+            receipt = compare_ledger_ref_protection(
+                json.loads(args.initial.read_text(encoding="utf-8")),
+                json.loads(args.observed.read_text(encoding="utf-8")),
+                phase=args.phase, transition=args.ledger_transition,
+            )
+        except (OSError, json.JSONDecodeError):
+            receipt = _protection_receipt(
+                repository="", ledger_ref="", source_head="", source_run_id="",
+                phase=args.phase, transition=args.ledger_transition,
+                classification="REOBSERVE", d0=2,
+                reason="LEDGER_REF_CONTROL_RECEIPT_UNAVAILABLE", snapshot=None,
+            )
+        _write_control_receipt(args.out, receipt)
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return 0 if receipt["d0"] == 0 else 2
     if args.command == "emit":
         asyncio.run(emit_heartbeats(
             host=args.host, port=args.port, node_id=args.node_id, pair_id=args.pair_id,

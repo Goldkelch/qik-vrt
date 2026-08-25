@@ -18,11 +18,14 @@ from tools.qikvrt_mesh_heartbeat import (
     HEARTBEAT_INTERVAL_NS,
     HEARTBEAT_ROLE,
     LIFECYCLE,
+    LEDGER_PROTECTION_SCHEMA,
     HeartbeatContractError,
     WorkRing,
     build_heartbeat,
     build_work_event,
     canonical_sha256,
+    compare_ledger_ref_protection,
+    qualify_ledger_ref_protection,
     run_demo,
     verify_audit,
 )
@@ -203,6 +206,18 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         self.assertFalse(projection["repository_api_polling"])
         self.assertFalse(projection["sleep_loop"])
         self.assertTrue(projection["artifact_required"])
+        qualification = policy["trusted_main_ledger_writer"][
+            "exact_ledger_ref_protection_qualification"
+        ]
+        self.assertFalse(qualification["ruleset_mutation_allowed"])
+        self.assertEqual(
+            qualification["required_rule_types"],
+            ["deletion", "non_fast_forward"],
+        )
+        self.assertEqual(
+            qualification["protection_snapshot_phases"],
+            ["INITIAL", "PRE_PUSH", "POST_READBACK"],
+        )
 
     def test_candidate_workflow_is_event_driven_read_only_and_audited(self) -> None:
         workflow = (ROOT / ".github/workflows/qikvrt_mesh_heartbeat.yml").read_text(
@@ -307,6 +322,40 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
             "Preserve terminal ledger reobservation receipt",
             workflow,
         )
+        self.assertIn(
+            "rules/branches/$encoded_branch?per_page=100",
+            workflow,
+        )
+        self.assertIn(
+            "qualify-ledger-ref-protection",
+            workflow,
+        )
+        self.assertIn(
+            "compare-ledger-ref-protection",
+            workflow,
+        )
+        self.assertIn(
+            "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT",
+            ROOT.joinpath("tools/qikvrt_mesh_heartbeat.py").read_text(
+                encoding="utf-8"
+            ),
+        )
+        self.assertIn(
+            "if: always()",
+            workflow,
+        )
+        self.assertIn(
+            "Preserve final exact ledger-ref protection observations",
+            workflow,
+        )
+        self.assertNotIn(
+            "gh api --method PATCH",
+            workflow,
+        )
+        self.assertNotIn(
+            "gh api --method POST",
+            workflow,
+        )
         self.assertNotIn("MESH_HEARTBEAT_LEDGER_ALREADY_CURRENT'\n            exit 0", workflow)
 
     def test_trusted_writer_embedded_python_is_syntactically_valid(self) -> None:
@@ -321,6 +370,113 @@ class MeshHeartbeatRepositoryContractTests(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         for index, block in enumerate(blocks):
             compile(textwrap.dedent(block), f"<heartbeat-ledger-{index}>", "exec")
+
+
+class MeshHeartbeatLedgerProtectionTests(unittest.TestCase):
+    repository = "Goldkelch/qik-vrt"
+    ledger_ref = "refs/heads/qikvrt/mesh-heartbeat-ledger-v1"
+    source_head = "a" * 40
+
+    def _rules(self, first_id: int = 44, second_id: int | None = None) -> list[list[dict[str, object]]]:
+        return [[
+            {
+                "ruleset_source_type": "Repository",
+                "ruleset_source": self.repository,
+                "ruleset_id": first_id,
+                "type": "deletion",
+            },
+            {
+                "ruleset_source_type": "Repository",
+                "ruleset_source": self.repository,
+                "ruleset_id": second_id if second_id is not None else first_id,
+                "type": "non_fast_forward",
+            },
+        ]]
+
+    def _details(self, identifier: int = 44) -> list[dict[str, object]]:
+        return [{
+            "id": identifier,
+            "source_type": "Repository",
+            "source": self.repository,
+            "target": "branch",
+            "enforcement": "active",
+            "conditions": {
+                "ref_name": {
+                    "include": ["refs/heads/qikvrt/*"],
+                    "exclude": [],
+                }
+            },
+            "bypass_actors": [],
+            "current_user_can_bypass": "never",
+        }]
+
+    def _qualify(
+        self, rules: object | None = None, details: object | None = None, phase: str = "INITIAL"
+    ) -> dict[str, object]:
+        return qualify_ledger_ref_protection(
+            repository=self.repository,
+            ledger_ref=self.ledger_ref,
+            source_head=self.source_head,
+            source_run_id="9",
+            effective_rules=self._rules() if rules is None else rules,
+            ruleset_details=self._details() if details is None else details,
+            phase=phase,
+            transition="NONE",
+        )
+
+    def test_exact_single_effective_ruleset_qualifies_deterministically(self) -> None:
+        first = self._qualify()
+        second = self._qualify(
+            rules=[list(reversed(self._rules()[0]))],
+            details=list(reversed(self._details())),
+        )
+        self.assertEqual(first["schema"], LEDGER_PROTECTION_SCHEMA)
+        self.assertEqual(first["classification"], "QUALIFIED")
+        self.assertEqual(first["d0"], 0)
+        self.assertEqual(
+            first["protection_snapshot_sha256"],
+            second["protection_snapshot_sha256"],
+        )
+        self.assertEqual(first["completion_claims"]["PASS"], False)
+        self.assertEqual(first["completion_claims"]["APPROVAL"], False)
+
+    def test_protection_insufficiency_and_unobservable_bypass_fail_closed(self) -> None:
+        split = self._qualify(rules=self._rules(second_id=45))
+        self.assertEqual((split["classification"], split["d0"]), ("REQUEST_AUTHORITY", 3))
+        bypassed = self._details()
+        bypassed[0]["bypass_actors"] = [{"actor_id": 1}]
+        blocked = self._qualify(details=bypassed)
+        self.assertEqual((blocked["classification"], blocked["d0"]), ("REQUEST_AUTHORITY", 3))
+        hidden = self._details()
+        del hidden[0]["bypass_actors"]
+        reobserve = self._qualify(details=hidden)
+        self.assertEqual((reobserve["classification"], reobserve["d0"]), ("REOBSERVE", 2))
+
+    def test_snapshot_drift_and_forged_receipt_reobserve(self) -> None:
+        initial = self._qualify()
+        observed = self._qualify(phase="PRE_PUSH")
+        stable = compare_ledger_ref_protection(
+            initial, observed, phase="PRE_PUSH", transition="NONE"
+        )
+        self.assertEqual((stable["classification"], stable["d0"]), ("QUALIFIED", 0))
+        changed = copy.deepcopy(observed)
+        changed["protection_snapshot"]["ruleset_detail"]["updated_at"] = "changed"
+        changed["protection_snapshot_sha256"] = canonical_sha256(
+            changed["protection_snapshot"]
+        )
+        drift = compare_ledger_ref_protection(
+            initial, changed, phase="PRE_PUSH", transition="FAST_FORWARD_PUSHED"
+        )
+        self.assertEqual((drift["classification"], drift["d0"]), ("REOBSERVE", 2))
+        self.assertEqual(drift["reason"], "LEDGER_REF_CONTROL_SNAPSHOT_DRIFT")
+        self.assertEqual(drift["ledger_transition"], "FAST_FORWARD_PUSHED")
+        forged = copy.deepcopy(observed)
+        forged["classification"] = "REQUEST_AUTHORITY"
+        forged["d0"] = 3
+        untrusted = compare_ledger_ref_protection(
+            initial, forged, phase="PRE_PUSH", transition="NONE"
+        )
+        self.assertEqual((untrusted["classification"], untrusted["d0"]), ("REOBSERVE", 2))
 
 
 if __name__ == "__main__":

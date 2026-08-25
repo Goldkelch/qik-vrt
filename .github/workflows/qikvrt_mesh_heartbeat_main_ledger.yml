@@ -51,6 +51,69 @@ jobs:
           test "$live" = "$SOURCE_HEAD"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
+      - name: Observe exact ledger-ref protection before any ledger write
+        id: initial-ledger-protection
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -u -o pipefail
+          evidence_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat-ledger-protection"
+          mkdir -p "$evidence_dir"
+          rules="$evidence_dir/effective-rules-initial.json"
+          details="$evidence_dir/ruleset-details-initial.json"
+          branch="${LEDGER_REF#refs/heads/}"
+          encoded_branch="$(python3 -B -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$branch")"
+          if ! gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/rules/branches/$encoded_branch?per_page=100" \
+            > "$rules"; then
+            printf 'null\n' > "$rules"
+          fi
+          if ! ids="$(python3 -B -c 'import json, sys; pages=json.load(open(sys.argv[1], encoding="utf-8")); rows=[row for page in pages for row in (page if isinstance(page, list) else [page])]; ids=sorted({str(row["ruleset_id"]) for row in rows if isinstance(row, dict) and isinstance(row.get("ruleset_id"), int) and not isinstance(row.get("ruleset_id"), bool) and row["ruleset_id"] > 0}); print(" ".join(ids))' "$rules")"; then
+            printf 'null\n' > "$details"
+          elif [ -z "$ids" ]; then
+            printf '[]\n' > "$details"
+          else
+            printf '[' > "$details"
+            first=1
+            for id in $ids; do
+              if ! value="$(gh api --method GET "repos/$GITHUB_REPOSITORY/rulesets/$id?includes_parents=true")"; then
+                printf 'null\n' > "$details"
+                break
+              fi
+              if [ "$first" -eq 0 ]; then printf ','; fi
+              printf '%s' "$value" >> "$details"
+              first=0
+            done
+            if [ "$(head -c 1 "$details")" = '[' ]; then printf ']\n' >> "$details"; fi
+          fi
+          python3 -B tools/qikvrt_mesh_heartbeat.py qualify-ledger-ref-protection \
+            --repository "$GITHUB_REPOSITORY" \
+            --ledger-ref "$LEDGER_REF" \
+            --source-head "$SOURCE_HEAD" \
+            --source-run-id "$SOURCE_RUN_ID" \
+            --phase INITIAL \
+            --ledger-transition NONE \
+            --effective-rules "$rules" \
+            --ruleset-details "$details" \
+            --out "$evidence_dir/ledger-protection-initial.json"
+
+      - name: Preserve exact ledger-ref protection observation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-heartbeat-ledger-protection-${{ env.SOURCE_HEAD }}-${{ env.SOURCE_RUN_ID }}
+          path: ${{ runner.temp }}/qikvrt-mesh-heartbeat-ledger-protection
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce exact ledger-ref protection qualification
+        if: steps.initial-ledger-protection.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'BLOCK: LEDGER_REF_PROTECTION_UNQUALIFIED' >&2
+          exit 2
+
       - name: Download exact source-run heartbeat evidence
         shell: bash
         run: |
@@ -130,6 +193,51 @@ jobs:
         run: |
           set -euo pipefail
           source="$RUNNER_TEMP/evidence/execution-receipt.json"
+          protection_dir="$RUNNER_TEMP/qikvrt-mesh-heartbeat-ledger-protection"
+          initial_protection="$protection_dir/ledger-protection-initial.json"
+          test -s "$initial_protection"
+          observe_ledger_protection() {
+            phase="$1"
+            transition="$2"
+            rules="$protection_dir/effective-rules-${phase}.json"
+            details="$protection_dir/ruleset-details-${phase}.json"
+            receipt="$protection_dir/ledger-protection-${phase}.json"
+            branch="${LEDGER_REF#refs/heads/}"
+            encoded_branch="$(python3 -B -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$branch")"
+            if ! gh api --method GET --paginate --slurp \
+              "repos/$GITHUB_REPOSITORY/rules/branches/$encoded_branch?per_page=100" \
+              > "$rules"; then
+              printf 'null\n' > "$rules"
+            fi
+            if ! ids="$(python3 -B -c 'import json, sys; pages=json.load(open(sys.argv[1], encoding="utf-8")); rows=[row for page in pages for row in (page if isinstance(page, list) else [page])]; ids=sorted({str(row["ruleset_id"]) for row in rows if isinstance(row, dict) and isinstance(row.get("ruleset_id"), int) and not isinstance(row.get("ruleset_id"), bool) and row["ruleset_id"] > 0}); print(" ".join(ids))' "$rules")"; then
+              printf 'null\n' > "$details"
+            elif [ -z "$ids" ]; then
+              printf '[]\n' > "$details"
+            else
+              printf '[' > "$details"
+              first=1
+              for id in $ids; do
+                if ! value="$(gh api --method GET "repos/$GITHUB_REPOSITORY/rulesets/$id?includes_parents=true")"; then
+                  printf 'null\n' > "$details"
+                  break
+                fi
+                if [ "$first" -eq 0 ]; then printf ','; fi
+                printf '%s' "$value" >> "$details"
+                first=0
+              done
+              if [ "$(head -c 1 "$details")" = '[' ]; then printf ']\n' >> "$details"; fi
+            fi
+            python3 -B tools/qikvrt_mesh_heartbeat.py qualify-ledger-ref-protection \
+              --repository "$GITHUB_REPOSITORY" \
+              --ledger-ref "$LEDGER_REF" \
+              --source-head "$SOURCE_HEAD" \
+              --source-run-id "$SOURCE_RUN_ID" \
+              --phase "$phase" \
+              --ledger-transition "$transition" \
+              --effective-rules "$rules" \
+              --ruleset-details "$details" \
+              --out "$receipt"
+          }
           source_remote_before="$(
             git ls-remote --heads origin refs/heads/main |
               awk 'NR == 1 {print $1}'
@@ -196,6 +304,13 @@ jobs:
               echo 'BLOCK: LEDGER_REF_ADVANCED_BEFORE_PUSH' >&2
               exit 2
             fi
+            observe_ledger_protection PRE_PUSH NONE
+            python3 -B tools/qikvrt_mesh_heartbeat.py compare-ledger-ref-protection \
+              --initial "$initial_protection" \
+              --observed "$protection_dir/ledger-protection-PRE_PUSH.json" \
+              --phase PRE_PUSH \
+              --ledger-transition NONE \
+              --out "$protection_dir/ledger-protection-prepush-control.json"
             git -C "$ledger" push origin "HEAD:$LEDGER_REF"
             ledger_transition='FAST_FORWARD_PUSHED'
           fi
@@ -235,11 +350,29 @@ jobs:
             exit 2
           fi
 
+          if [ "$ledger_transition" = 'FAST_FORWARD_PUSHED' ]; then
+            observe_ledger_protection POST_READBACK "$ledger_transition"
+            python3 -B tools/qikvrt_mesh_heartbeat.py compare-ledger-ref-protection \
+              --initial "$initial_protection" \
+              --observed "$protection_dir/ledger-protection-POST_READBACK.json" \
+              --phase POST_READBACK \
+              --ledger-transition "$ledger_transition" \
+              --out "$protection_dir/ledger-protection-postreadback-control.json"
+            ledger_protection_control="$protection_dir/ledger-protection-postreadback-control.json"
+            ledger_protection_final="$protection_dir/ledger-protection-POST_READBACK.json"
+          else
+            ledger_protection_control="$initial_protection"
+            ledger_protection_final="$initial_protection"
+          fi
+
           export EXPECTED_LEDGER_HEAD="$expected_ledger_head"
           export PERSISTED_LEDGER_COMMIT="$intended_commit"
           export REOBSERVED_LEDGER_HEAD="$observed_ledger_head_after_readback"
           export LEDGER_TARGET="$target"
           export LEDGER_TRANSITION="$ledger_transition"
+          export LEDGER_PROTECTION_INITIAL="$initial_protection"
+          export LEDGER_PROTECTION_FINAL="$ledger_protection_final"
+          export LEDGER_PROTECTION_CONTROL="$ledger_protection_control"
           python3 -B - <<'PY' > "$RUNNER_TEMP/ledger-reobservation.json"
           import hashlib
           import json
@@ -249,6 +382,29 @@ jobs:
           root = Path(os.environ['RUNNER_TEMP'])
           target = (root / 'readback-target.json').read_bytes()
           latest = (root / 'readback-latest.json').read_bytes()
+          initial_control = Path(os.environ['LEDGER_PROTECTION_INITIAL']).read_bytes()
+          final_control = Path(os.environ['LEDGER_PROTECTION_FINAL']).read_bytes()
+          control = json.loads(
+              Path(os.environ['LEDGER_PROTECTION_CONTROL']).read_text(encoding='utf-8')
+          )
+          if (
+              control.get('schema') != 'qikvrt_mesh_heartbeat_ledger_protection_v1'
+              or control.get('classification') != 'QUALIFIED'
+              or control.get('d0') != 0
+              or control.get('completion_claims') != {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+                  'APPROVAL': False,
+                  'DEPLOYMENT': False,
+              }
+          ):
+              raise SystemExit('BLOCK: LEDGER_REF_PROTECTION_CONTROL_UNQUALIFIED')
+          snapshot = control.get('protection_snapshot')
+          selected = snapshot.get('selected_ruleset') if isinstance(snapshot, dict) else None
+          if not isinstance(selected, dict):
+              raise SystemExit('BLOCK: LEDGER_REF_PROTECTION_SELECTION_UNVERIFIABLE')
           receipt = {
               'schema': 'qikvrt_mesh_heartbeat_ledger_reobservation_v1',
               'repository': os.environ['GITHUB_REPOSITORY'],
@@ -265,12 +421,21 @@ jobs:
               'latest_bytes': len(latest),
               'latest_sha256': hashlib.sha256(latest).hexdigest(),
               'target_and_latest_byte_identical': target == latest,
+              'ledger_protection_initial_sha256': hashlib.sha256(initial_control).hexdigest(),
+              'ledger_protection_final_sha256': hashlib.sha256(final_control).hexdigest(),
+              'ledger_protection_control_sha256': hashlib.sha256(
+                  Path(os.environ['LEDGER_PROTECTION_CONTROL']).read_bytes()
+              ).hexdigest(),
+              'ledger_protection_d0': control['d0'],
+              'ledger_protection_classification': control['classification'],
+              'ledger_protection_selected_ruleset': selected,
               'external_effect': 'NONE',
               'completion_claims': {
                   'PASS': False,
                   'FINAL_PASS': False,
                   'EFFECT_ACK_DONE': False,
                   'MERGE': False,
+                  'APPROVAL': False,
                   'DEPLOYMENT': False,
               },
           }
@@ -278,6 +443,15 @@ jobs:
               raise SystemExit('BLOCK: LEDGER_READBACK_BYTES_DIVERGE')
           print(json.dumps(receipt, sort_keys=True, separators=(',', ':')))
           PY
+
+      - name: Preserve final exact ledger-ref protection observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-heartbeat-ledger-protection-final-${{ env.SOURCE_HEAD }}-${{ env.SOURCE_RUN_ID }}
+          path: ${{ runner.temp }}/qikvrt-mesh-heartbeat-ledger-protection
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Preserve terminal ledger reobservation receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
