@@ -14,7 +14,6 @@ on:
       - "QIK-VRT autonomous draft-PR continuation"
       - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
-      - "QIKVRT live status watch"
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
       - "QIKVRT Collective Proposal Review"
@@ -171,7 +170,7 @@ jobs:
               rm -f "$error_file"
               return 0
             fi
-            if grep -Eiq 'rate limit exceeded|secondary rate limit|HTTP 403' "$error_file"; then
+            if grep -Eiq 'API rate limit exceeded|secondary rate limit' "$error_file"; then
               platform_hold "$error_file"
             fi
             cat "$error_file" >&2
