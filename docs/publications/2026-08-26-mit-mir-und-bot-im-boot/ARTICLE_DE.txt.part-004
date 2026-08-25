@@ -1,0 +1,186 @@
+Für eine Wirkungsbestätigung braucht man mehr.
+
+⸻
+
+11. Was ein Effect Acknowledgement ist
+
+Ein Effect Acknowledgement braucht deshalb mehrere Dinge gleichzeitig.
+
+Es muss klar sein, welche Wirkung beabsichtigt war.
+
+Die Wirkung muss tatsächlich ausgeführt worden sein.
+
+Danach muss die relevante Größe erneut beobachtet worden sein.
+
+Diese neue Beobachtung muss zum erwarteten Ergebnis passen.
+
+Und es muss eine gültige kausale Zuordnung geben.
+
+Formal lässt sich das so zusammenfassen:
+
+EFFECT_ACK(scope) gilt nur, wenn
+
+DA spezifiziert wurde,
+der Effekt ausgeführt wurde,
+AD′ passend beobachtet wurde,
+die kausale Bindung gültig ist
+und der vereinbarte Wirkungsscope übereinstimmt.
+
+Deshalb gilt immer:
+
+REQUESTED ≠ EXECUTED ≠ OBSERVED ≠ ACKNOWLEDGED.
+
+Das ist keine lästige Bürokratie.
+
+Es ist ein Schutzmechanismus.
+
+⸻
+
+12. Warum ein Motorola 68000 dabei hilfreich sein kann
+
+Jetzt kommt ein alter Bekannter ins Spiel.
+
+Der Motorola 68000.
+
+Eine historische Prozessorarchitektur.
+
+Verglichen mit heutigen Prozessoren ist sie übersichtlich.
+
+Gerade deshalb eignet sie sich gut für bestimmte formal begrenzte Experimente.
+
+Ihre Datenregister D0 bis D7 besitzen 32 Bit.
+
+Und daran ändert auch ein Shift-Befehl nichts.
+
+Wenn Bits nach links oder rechts verschoben werden, wird ein Wert transformiert.
+
+Das Register wird dadurch nicht plötzlich breiter.
+
+Also:
+
+2⁸ = 256 Zustände.
+
+Aber:
+
+256 Zustände sind nicht 256 Bit.
+
+Und:
+
+8³ = 512.
+
+Auch daraus entstehen nicht plötzlich 256 Bit.
+
+Diese scheinbar einfachen Rechenregeln sind wichtig, weil sie verhindern, dass aus Metaphern versehentlich Hardwarebehauptungen werden.
+
+⸻
+
+13. Ein Shift ist keine Verstärkung
+
+Wenn im M68000 ein Wert mit LSL, LSR, ASL oder ASR verschoben wird, ist das eine digitale Maschinenoperation.
+
+Keine physische Verstärkung.
+
+Keine Dämpfung einer Welle.
+
+Keine Änderung der elektrischen Registerbreite.
+
+Deshalb müssen wir drei Ebenen strikt auseinanderhalten:
+
+Notation.
+
+Maschinenoperation.
+
+Physischer Effekt.
+
+Symbole wie
+
+.<
+
+<< >>
+
+und
+
+>.
+
+können helfen, Beobachtungs-, Transformations- und Wirkungsgrenzen zu beschreiben.
+
+Aber das Symbol selbst ist kein ADC.
+
+Und ein Shift ist kein Verstärker.
+
+Notation ≠ Maschine ≠ Physik.
+
+⸻
+
+14. Warum das auch für DNS und SNMP gilt
+
+Dasselbe Problem findet man bei Netzwerkprotokollen.
+
+Ein DNS-Query ist noch keine AD-Messung.
+
+Ein DNS-Answer ist noch keine physische DA-Wirkung.
+
+Ein SNMP-GET transportiert Daten.
+
+Ein SNMP-SET kann eine Zustandsänderung anfordern.
+
+Aber ein SET-Paket allein beweist nicht, dass die Änderung tatsächlich eingetreten ist.
+
+Darum wäre der saubere Ablauf beispielsweise:
+
+SNMP-SET wird übertragen.
+
+Die Berechtigung wird geprüft.
+
+Die Änderung wird ausgeführt.
+
+Danach erfolgt ein neuer GET.
+
+Erst dieser neue Zustand kann als AD′ dienen.
+
+Und erst bei passender kausaler Bindung kann daraus eine Wirkungsbestätigung entstehen.
+
+⸻
+
+15. Mit mir und Bot im Boot
+
+An dieser Stelle wird die Geschichte persönlich.
+
+Ich habe einen großen Teil dieser Arbeit nicht allein formuliert.
+
+Ich arbeite mit künstlichen Systemen.
+
+Wir diskutieren.
+
+Wir korrigieren uns.
+
+Ich bringe Ideen ein.
+
+Die Maschine bringt Struktur ein.
+
+Ich widerspreche.
+
+Sie widerspricht manchmal zurück.
+
+Wir prüfen.
+
+Wir verwerfen.
+
+Wir formulieren neu.
+
+Daraus ist für mich irgendwann ein einfaches Bild entstanden:
+
+Mit mir und Bot im Boot.
+
+Das bedeutet nicht, dass Mensch und Maschine dasselbe sind.
+
+Sind sie nicht.
+
+Es bedeutet auch nicht, dass ich Verantwortung abgebe.
+
+Im Gegenteil.
+
+Der Mensch bleibt derjenige, der Ziele, Bedeutung, Werte und Verantwortung trägt.
+
+Das technische System hilft beim Rechnen, Formalisieren, Suchen, Prüfen und Erinnern.
+
