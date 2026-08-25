@@ -580,13 +580,20 @@ GitHub ist die versionierte Ausführungs- und Reviewebene. Lean ist die formale 
 
 Der vorliegende Lieferstand ist ein **commit-ready Kandidatenpaket**. Markdown, wissenschaftliche Spezifikation, Lean-Quellkandidat, Validatoren, Workflow, Claim-Matrix, Quellenbindungen, Zenodo-Metadaten und Prüfsummen werden gemeinsam bereitgestellt.
 
-Der neue Lean-Quellkandidat wurde in dieser Ausführungsumgebung noch nicht mit Lean 4.19.0 kernelgeprüft. Deshalb enthält das Paket ausschließlich ein `KERNEL_RECEIPT_TEMPLATE.json` mit dem Status `NOT_EXECUTED`. Ein späterer erfolgreicher GitHub-Actions-Lauf muss dieses Template durch ein exakt gebundenes Ausführungsreceipt ersetzen.
+Der QCE-Quellkern wurde mit Lean 4.19.0 kernelgeprüft. Das Paket enthält das
+exakt gebundene Receipt, den Axiom-Audit-Output, den Verifikationsoutput und
+die Artefaktprovenienz aus dem erfolgreichen GitHub-Actions-Lauf `31467654213`.
+Der Receipt bindet den Verifikations-Carrier-Commit
+`225675ae2145aec709103f843cd26fd6893b39ba` und dessen Tree
+`94eafdc41f42c3c5107275212351c323653dcb35`; der Paketprüfer bestätigt die
+Gleichheit der gebundenen Modell- und Axiom-Audit-Bytes mit dem vorliegenden
+Paket.
 
 Die physikalische Korrespondenz bleibt unabhängig davon offen.
 
-`FORMAL_SOURCE = PREPARED`
+`FORMAL_SOURCE = EXECUTED_BYTES_BOUND`
 
-`LEAN_EXECUTION = PENDING_REPOSITORY_RUN`
+`LEAN_EXECUTION = EXECUTED_RECEIPT_PRESENT`
 
 `PHYSICAL_CORRESPONDENCE = OPEN_CANDIDATE`
 

@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools import qikvrt_workflow_executor as workflow_executor
 from tools.qikvrt_seed_common import (
     FetchedJson,
     MAX_INPUT_BYTES,
@@ -36,6 +37,15 @@ REQUEST_URL = (
     "qikvrt/runtime/onboarding/SEED_REGISTRATION_REQUEST.json"
 )
 NOW = dt.datetime(2026, 7, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+
+def continuity_declaration() -> dict[str, object]:
+    return {
+        "schema": "qikvrt_workflow_executor_mesh_continuity_declaration_v1",
+        "receipt_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json",
+        "receipt_url": workflow_executor.expected_node_receipt_url(SOURCE, "main"),
+        "acceptance_required": True,
+    }
 
 
 class FakeFetcher:
@@ -66,6 +76,7 @@ def request_document() -> dict[str, object]:
         "no_global_scanning": True,
         "no_self_propagation": True,
         "no_remote_mutation_without_authorization": True,
+        "workflow_executor_continuity": continuity_declaration(),
     }
 
 
@@ -102,6 +113,10 @@ def remote_documents() -> dict[str, dict[str, object]]:
             "repository": SOURCE,
             "seed_repository": SEED,
         },
+        workflow_executor.expected_node_receipt_url(SOURCE, "main"): workflow_executor.build_node_receipt(
+            SOURCE,
+            "main",
+        ),
     }
 
 
@@ -134,6 +149,18 @@ class SeedWorkflowTests(unittest.TestCase):
             now=NOW,
         )
         self.assertEqual("PASS", result["status"])
+
+    def move_node_to_future_queue(self) -> None:
+        known = self.root / "registry/KNOWN_NODE_REQUESTS.tsv"
+        queue = self.root / "registry/node_request_queue/OPEN_NODE_REQUESTS.tsv"
+        row = next(line for line in known.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#"))
+        known.write_text("# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n", encoding="utf-8")
+        queue.write_text(
+            "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n"
+            + row
+            + "\n",
+            encoding="utf-8",
+        )
 
     def test_duplicate_json_keys_and_non_object_documents_are_rejected(self) -> None:
         with self.assertRaises(SeedError):
@@ -204,6 +231,35 @@ class SeedWorkflowTests(unittest.TestCase):
         lines = (self.root / "ledger/NODE_REGISTRATION_LEDGER.jsonl").read_bytes().splitlines()
         self.assertEqual(1, len(lines))
         self.assertEqual(GUID, parse_json_bytes(lines[0], "ledger")["guid"])
+
+    def test_future_queue_node_requires_exact_workflow_executor_continuity_receipt(self) -> None:
+        self.move_node_to_future_queue()
+        result = run_acceptance(
+            self.root,
+            "continuity-1",
+            FakeFetcher(remote_documents()),
+            now=NOW,
+        )
+        self.assertEqual("PASS", result["status"])
+        entry = read_json(self.root / f"registry/nodes/{GUID}.json")
+        continuity = entry["workflow_executor_continuity"]
+        self.assertEqual(
+            continuity["receipt_url"],
+            workflow_executor.expected_node_receipt_url(SOURCE, "main"),
+        )
+        self.assertRegex(continuity["receipt_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(continuity["validation"], "STRUCTURAL_ACCEPTANCE_ONLY")
+
+    def test_future_queue_node_without_continuity_declaration_is_blocked(self) -> None:
+        self.move_node_to_future_queue()
+        documents = remote_documents()
+        request = dict(documents[REQUEST_URL])
+        del request["workflow_executor_continuity"]
+        documents[REQUEST_URL] = request
+        result = run_acceptance(self.root, "continuity-blocked", FakeFetcher(documents), now=NOW)
+        self.assertEqual("BLOCK", result["status"])
+        self.assertEqual(result["fail_count"], 1)
+        self.assertIn("workflow executor continuity", result["errors"][0]["error"])
 
     def test_corrupt_ledger_blocks_before_registry_mutation(self) -> None:
         ledger = self.root / "ledger/NODE_REGISTRATION_LEDGER.jsonl"
@@ -286,6 +342,21 @@ class SeedWorkflowTests(unittest.TestCase):
             "qikvrt_seed_mesh_audit_export_v2",
             read_json(self.root / "audit/QIKVRT_MESH_AUDIT_SUMMARY.json")["schema"],
         )
+
+    def test_dashboard_build_binds_every_main_push_to_exact_head_artifact(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        workflow = (
+            repository / ".github/workflows/qikvrt_seed_dashboard_publish.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("push:\n    branches: [main]", workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+        self.assertIn('actual_head="$(git rev-parse --verify HEAD^{commit})"', workflow)
+        self.assertIn('test "$actual_head" = "$EXPECTED_HEAD"', workflow)
+        self.assertIn('actual_tree="$(git show -s --format=%T HEAD)"', workflow)
+        self.assertIn("dashboard-exact-head-binding.json", workflow)
+        self.assertIn('"source_head": os.environ["EXPECTED_HEAD"]', workflow)
+        self.assertIn('"source_tree": os.environ["ACTUAL_TREE"]', workflow)
+        self.assertIn("qikvrt_seed_dashboard_exact_head_binding_v1", workflow)
 
     def test_seed_workflows_are_pinned_read_only_and_do_not_push(self) -> None:
         repository = Path(__file__).resolve().parents[1]

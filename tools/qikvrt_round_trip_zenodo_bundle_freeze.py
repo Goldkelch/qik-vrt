@@ -42,7 +42,11 @@ FORMAL_SOURCES = RELEASE / "PROMOTED_FORMAL_SOURCE_BINDINGS.json"
 FORMAL_RECEIPTS = RELEASE / "PROMOTED_FORMAL_KERNEL_RECEIPTS.json"
 BOUNDARY_REPORT = RELEASE / "BOUNDARY_TEST_REPORT.json"
 FILESET = RELEASE / "ZENODO_FILESET.md"
+LICENSE_NOTICE = RELEASE / "ZENODO_LICENSE_NOTICE.md"
 CHECKSUMS = RELEASE / "ZENODO_SHA256SUMS"
+
+CANONICAL_PUBLICATION_ID = "qikvrt-round-trip-canonical-publication-v1"
+RETROSPECTIVE_SOURCE_PUBLICATION_ID = "qikvrt-round-trip-retrospective-proof-v1"
 
 EXPECTED_AUTHORITY = "12842e8df99553260774d53517522b2b5539c8a8"
 EXPECTED_AUTHORITY_TREE = "e8bdc99712bf0eca1a94ece6e34b20059076d280"
@@ -404,6 +408,72 @@ def verify_target_record() -> dict[str, Any]:
     }
 
 
+def verify_publication_identity_values(
+    target_record: Mapping[str, Any],
+    retrospective: Mapping[str, Any],
+    formal_sources: Mapping[str, Any],
+    formal_receipts: Mapping[str, Any],
+    boundary_report: Mapping[str, Any],
+    fileset_text: str,
+    license_text: str,
+) -> None:
+    """Require one canonical candidate ID while retaining source provenance."""
+    for where, value in (
+        ("target record", target_record),
+        ("retrospective constituents", retrospective),
+        ("formal source bindings", formal_sources),
+        ("boundary report", boundary_report),
+    ):
+        require_equal(
+            value.get("publication_id"),
+            CANONICAL_PUBLICATION_ID,
+            f"{where} publication_id",
+        )
+    require_equal(
+        formal_receipts.get("scope_id"),
+        CANONICAL_PUBLICATION_ID,
+        "formal kernel receipts scope_id",
+    )
+    require_equal(
+        formal_receipts.get("source_publication_id"),
+        RETROSPECTIVE_SOURCE_PUBLICATION_ID,
+        "formal kernel receipts source_publication_id",
+    )
+    expected_line = f"Publication ID: `{CANONICAL_PUBLICATION_ID}`"
+    for where, text in (
+        ("ZENODO_FILESET.md", fileset_text),
+        ("ZENODO_LICENSE_NOTICE.md", license_text),
+    ):
+        lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip().startswith("Publication ID:")
+        ]
+        require_equal(lines, [expected_line], f"{where} publication ID line")
+
+
+def verify_publication_identity_controls() -> None:
+    target_record, _ = load_json(TARGET_RECORD)
+    retrospective, _ = load_json(RETROSPECTIVE)
+    formal_sources, _ = load_json(FORMAL_SOURCES)
+    formal_receipts, _ = load_json(FORMAL_RECEIPTS)
+    boundary_report, _ = load_json(BOUNDARY_REPORT)
+    try:
+        fileset_text = read_bytes(FILESET).decode("utf-8")
+        license_text = read_bytes(LICENSE_NOTICE).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        fail(f"publication identity control text is not UTF-8: {exc}")
+    verify_publication_identity_values(
+        target_record,
+        retrospective,
+        formal_sources,
+        formal_receipts,
+        boundary_report,
+        fileset_text,
+        license_text,
+    )
+
+
 def verify_primary_files(receipt: Mapping[str, Any]) -> list[dict[str, Any]]:
     values = receipt.get("primary_files")
     if not isinstance(values, list) or len(values) != 2:
@@ -659,6 +729,8 @@ def materialize() -> dict[str, Any]:
     receipt, _ = load_json(FREEZE_RECEIPT)
     bundle, _ = load_json(PROOF_BUNDLE)
 
+    verify_publication_identity_controls()
+
     source = work_unit.get("source_base")
     if not isinstance(source, dict):
         fail("work unit source_base must be an object")
@@ -799,8 +871,9 @@ def check() -> dict[str, Any]:
     bundle, bundle_raw = load_json(PROOF_BUNDLE)
 
     require_equal(work_unit.get("work_unit_id"), "ROUND_TRIP_ZENODO_BUNDLE_FREEZE_V1", "work unit id")
-    require_equal(receipt.get("publication_id"), "qikvrt-round-trip-canonical-publication-v1", "freeze publication_id")
+    require_equal(receipt.get("publication_id"), CANONICAL_PUBLICATION_ID, "freeze publication_id")
     require_equal(bundle.get("publication_id"), receipt.get("publication_id"), "proof publication_id")
+    verify_publication_identity_controls()
     base = verify_git_base(work_unit)
     require_equal(
         receipt.get("history_preserving_successor"),

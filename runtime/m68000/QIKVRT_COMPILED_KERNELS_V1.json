@@ -1,0 +1,45 @@
+{
+  "schema": "QIKVRT_COMPILED_M68000_KERNEL_REGISTRY_V1",
+  "target": "Motorola 68000",
+  "reuse_rule": "Load immutable compiled bytes by exact kernel id; do not reinterpret the higher-level rule on each invocation.",
+  "kernels": [
+    {
+      "id": "lean_gate_v1",
+      "hex_path": "runtime/m68000/qikvrt_lean_gate_kernel.hex",
+      "machine_bytes": 24,
+      "proof_source": "formalization/QIKVRT_Formalization_v1.0/QIKVRTFormalization/M68000Kernel.lean",
+      "semantic_domain": "PASS/BLOCK certificate presence -> CONTINUE/PASS/BLOCK"
+    },
+    {
+      "id": "lean_v2_d3_step_v1",
+      "hex_path": "runtime/m68000/qikvrt_lean_v2_d3_step.hex",
+      "machine_bytes": 20,
+      "proof_source": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/D3FixedPoint.lean",
+      "semantic_domain": "D0 decision preserved; D2 IED phase advances; D3 witness preserved"
+    },
+    {
+      "id": "lean_v2_mesh_recovery_v1",
+      "hex_path": "runtime/m68000/qikvrt_lean_v2_mesh_recovery.hex",
+      "machine_bytes": 24,
+      "proof_source": "formalization/QIKVRT_Formalization_v2.0/QIKVRTFormalization/Hardware/AuthorityMirrorWitness.lean",
+      "semantic_domain": "pre-witness -> predecessor; post-witness -> successor; invalid input -> HOLD"
+    },
+    {
+      "id": "lean_spark_branch_pass_v1",
+      "hex_path": "runtime/m68000/qikvrt_spark_branch_pass.hex",
+      "machine_bytes": 82,
+      "proof_source": "formalization/QIKVRT_Spark_v1/QIKVRTSpark.lean",
+      "semantic_domain": "one bounded local branch capsule -> COMPLETE/HOLD/REOBSERVE/REQUEST_AUTHORITY while preserving D3"
+    },
+    {
+      "id": "lean_spark_branch_plan_v1",
+      "hex_path": "runtime/m68000/qikvrt_spark_branch_plan_v1.hex",
+      "machine_bytes": 134,
+      "proof_source": "formalization/QIKVRT_Spark_v2/QIKVRTSparkV2.lean",
+      "semantic_domain": "one normalized branch observation -> one complete bounded remaining branch plan"
+    }
+  ],
+  "compiled_machine_bytes_total": 284,
+  "physical_m68000_execution_observed": false,
+  "physical_speedup_measured": false
+}

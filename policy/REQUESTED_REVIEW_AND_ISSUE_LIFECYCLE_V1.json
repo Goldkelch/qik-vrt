@@ -1,0 +1,278 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_governance",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_requested_review_and_issue_lifecycle_policy_v1",
+  "policy_id": "QIKVRT-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1",
+  "status": "ACTIVE",
+  "owner": {
+    "name": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "owner_delegation": "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+  "mesh_self_review_owner_delegation": "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
+  "human_contract": "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
+  "review_lifecycle": {
+    "requested_review_default": "EXECUTE_IMMEDIATELY",
+    "mesh_self_review_default": "EXECUTE_FOR_EVERY_ELIGIBLE_INTERNAL_PULL_REQUEST",
+    "human_review_request_prerequisite": false,
+    "deliberate_queueing_without_evidenced_blocker": "FORBIDDEN",
+    "required_reobservation": [
+      "CURRENT_BASE_HEAD_AND_TREE",
+      "EXACT_CANDIDATE_HEAD_AND_TREE",
+      "CHANGED_PATHS_AND_DIFF",
+      "COMMENTS_REVIEWS_AND_UNRESOLVED_THREADS",
+      "APPLICABLE_EXACT_HEAD_GATES",
+      "COMPETING_WRITERS_AND_SUPERSESSION"
+    ],
+    "required_substantive_dispositions": [
+      "APPROVE",
+      "REQUEST_CHANGES",
+      "COMMENT_WITH_BLOCKER"
+    ],
+    "binding_fields": [
+      "repository",
+      "pull_request",
+      "trusted_evaluator_and_workflow_blobs",
+      "open_internal_main_based_eligibility",
+      "base_sha",
+      "base_tree_sha",
+      "head_sha",
+      "tree_sha",
+      "reviewed_scope",
+      "scope_sha256",
+      "diff_sha256",
+      "discussion_sha256",
+      "required_gate_workflow_id_path_event_and_jobs",
+      "required_success_gate_has_completed_successful_job",
+      "evidence_fingerprint",
+      "findings",
+      "platform_review_state",
+      "d0",
+      "next_action"
+    ],
+    "repeat_request_in_place_of_review": "FORBIDDEN_WHEN_REVIEW_BYTES_ARE_AVAILABLE",
+    "account_identity_rule": {
+      "impersonation": "FORBIDDEN",
+      "natural_person_control_does_not_change_api_signer": true,
+      "platform_state_must_be_reported_exactly": true,
+      "product_owner_disposition_may_be_recorded_when_account_level_approve_is_rejected": true,
+      "product_owner_disposition_must_not_be_misrepresented_as_independent_account_approval": true
+    }
+  },
+  "review_executor": {
+    "workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
+    "decision_core": "tools/qikvrt_requested_review_executor.py",
+    "contract_gate": ".github/workflows/qikvrt_requested_review_contract.yml",
+    "event_triggers": [
+      "pull_request_target.opened",
+      "pull_request_target.edited",
+      "pull_request_target.converted_to_draft",
+      "pull_request_target.review_requested",
+      "pull_request_target.review_request_removed",
+      "pull_request_target.synchronize",
+      "pull_request_target.ready_for_review",
+      "pull_request_target.reopened",
+      "issue_comment.created_edited_deleted",
+      "workflow_run.completed"
+    ],
+    "recovery_schedule": "*/5 * * * *",
+    "review_thread_resolution_event_boundary": "NO_NATIVE_GITHUB_ACTIONS_TRIGGER_FIVE_MINUTE_ROTATING_SCAN_CADENCE_WITHOUT_PER_PR_LATENCY_GUARANTEE",
+    "exact_head_status_context": "QIKVRT requested review execution",
+    "promotion_workflow": ".github/workflows/qikvrt_expected_head_promotion.yml",
+    "promotion_requires_successful_review_status": true,
+    "promotion_requires_fresh_byte_identical_ledger_receipt": true,
+    "promotion_merge_mutation": "DISABLED_HEAD_SHA_PRECONDITION_DOES_NOT_CAS_REOBSERVED_BASE_AS_HEAD1",
+    "promotion_ready_mutation": "DISABLED_NO_ATOMIC_EXPECTED_BASE_AND_HEAD_CAS_AND_NO_RELIABLE_GITHUB_TOKEN_FOLLOW_ON_GATE_EVENT",
+    "promotion_favorable_draft_review_next_action": "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY",
+    "promotion_favorable_nondraft_review_next_action": "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY",
+    "skipped_only_required_gate": "ZERO_EXECUTED_JOB_GATE_REOBSERVE",
+    "human_review_request_required": false,
+    "candidate_selection": "EVERY_ELIGIBLE_SAME_REPOSITORY_PULL_REQUEST",
+    "same_head_reobservation": "ALLOWED_ONLY_WHEN_CAUSAL_EVIDENCE_FINGERPRINT_CHANGED",
+    "duplicate_identical_evidence_fingerprint_review": "FORBIDDEN",
+    "head_tree_or_scope_drift_invalidates_review": true,
+    "platform_review_event": "COMMENT",
+    "platform_approval_by_automation": "FORBIDDEN",
+    "platform_approval_fallback": "PERSIST_SUBSTANTIVE_DISPOSITION_AS_COMMENT_WITH_EXACT_PLATFORM_LIMITATION",
+    "independent_code_owner_approval_may_be_inferred": false
+  },
+  "mesh_self_review_feedback_plane": {
+    "enabled": true,
+    "mode": "ROLE_LOCAL_REPOSITORY_NATIVE_MESH_SELF_REVIEW",
+    "executor_workflow": ".github/workflows/qikvrt_requested_review_executor.yml",
+    "decision_core": "tools/qikvrt_requested_review_executor.py",
+    "human_review_request_prerequisite": false,
+    "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES",
+    "exact_subject_binding": [
+      "REPOSITORY_ROLE",
+      "PULL_REQUEST_NUMBER",
+      "TRUSTED_EVALUATOR_AND_WORKFLOW_BLOB_SHA",
+      "OPEN_INTERNAL_MAIN_BASED_ELIGIBILITY_AND_DRAFT_STATE",
+      "PULL_REQUEST_TITLE_AND_BODY_SHA256",
+      "BASE_SHA",
+      "BASE_TREE_SHA",
+      "HEAD_SHA",
+      "HEAD_TREE_SHA",
+      "SORTED_REVIEWED_SCOPE",
+      "SCOPE_SHA256",
+      "DIFF_SHA256",
+      "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
+      "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
+      "ACTIVE_WRITER_QUEUE_STATE"
+    ],
+    "review_fingerprint": {
+      "algorithm": "SHA256",
+      "canonical_input": "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
+      "field": "evidence_fingerprint",
+      "head_tree_scope_or_diff_drift": "INVALIDATES_AND_REQUIRES_FRESH_RECEIPT",
+      "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_DIFF"
+    },
+    "receipt_ledger": {
+      "role_local": true,
+      "ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
+      "receipt_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json",
+      "diff_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+      "append_only": true,
+      "initialization": "ORPHAN_ROOT_COMMIT_WITH_FIRST_EXACT_RECEIPT",
+      "write_protocol": "FAST_FORWARD_COMPARE_AND_SWAP_ONLY",
+      "force_push": "FORBIDDEN",
+      "history_rewrite": "FORBIDDEN",
+      "candidate_branch_write": "FORBIDDEN",
+      "main_branch_write": "FORBIDDEN",
+      "cross_role_receipt_transfer": "FORBIDDEN",
+      "single_writer_workflow_name": "QIKVRT requested review executor",
+      "ledger_push_triggers_candidate_ci": false,
+      "write_conflict_state": "HOLD"
+    },
+    "projections": {
+      "canonical_source": "ROLE_LOCAL_LEDGER_RECEIPT_AND_REVIEW_DIFF",
+      "actions_artifact": "EXACT_RECEIPT_AND_DIFF_PROJECTION",
+      "exact_head_status": "QIKVRT requested review execution",
+      "pull_request_review_event": "COMMENT",
+      "platform_review_state": "COMMENTED",
+      "status_deduplication": "LATEST_CONTEXT_STATUS_ONLY",
+      "actions_artifact_includes_hidden_evidence_root": true,
+      "automation_signer": "github-actions[bot]",
+      "projection_does_not_mutate_candidate": true,
+      "projection_does_not_supply_independent_code_owner_authority": true
+    },
+    "downstream_feedback": {
+      "persist_before_signal": true,
+      "signals": [
+        "WORKFLOW_RUN_COMPLETED",
+        "EXACT_HEAD_STATUS_TRANSITION"
+      ],
+      "consumers": [
+        ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
+        ".github/workflows/qikvrt_expected_head_promotion.yml"
+      ],
+      "exactly_one_derived_next_action": true,
+      "new_parallel_action_router": "FORBIDDEN",
+      "head_or_fingerprint_mismatch": "HOLD_UNVERIFIED",
+      "status_alone_authorizes_continuation": false,
+      "promotion_reobserves_ledger_receipt_and_diff": true
+    },
+    "d0_mapping": {
+      "0": {
+        "state": "NOOP",
+        "meaning": "IDENTICAL_EXACT_RECEIPT_ALREADY_PERSISTED_OR_NO_NEW_REVIEW_ACTION"
+      },
+      "1": {
+        "state": "HOLD",
+        "meaning": "ACTIVE_OR_ADVERSE_GATE_FINDING_UNRESOLVED_THREAD_INVALID_RECEIPT_OR_LEDGER_CONFLICT"
+      },
+      "2": {
+        "state": "REOBSERVE",
+        "meaning": "MISSING_STALE_UNTRUSTED_ZERO_JOB_OR_DRIFTED_EXACT_SUBJECT_EVIDENCE"
+      },
+      "3": {
+        "state": "REQUEST_AUTHORITY",
+        "meaning": "MESH_DISPOSITION_SUPPORTS_CONTINUATION_BUT_INDEPENDENT_CODE_OWNER_OR_OTHER_AUTHORITY_IS_MISSING_OR_STALE"
+      }
+    },
+    "authority_boundary": {
+      "automated_mesh_review_is_independent_code_owner_review": false,
+      "bot_may_submit_approve_event": false,
+      "bot_may_submit_request_changes_event": false,
+      "independent_code_owner_gate": "SEPARATE_EXACT_HEAD_PREREQUISITE",
+      "merge_or_external_effect_authority": "NOT_GRANTED"
+    },
+    "completion_claims": {
+      "PASS": false,
+      "FINAL_PASS": false,
+      "EFFECT_ACK_DONE": false,
+      "INDEPENDENT_CODE_OWNER_APPROVAL": false,
+      "AUTHORITY_MIRROR_EQUALITY": false,
+      "EXTERNAL_EFFECT": false,
+      "MERGE": false
+    }
+  },
+  "issue_lifecycle": {
+    "unclassified_open_issue": "FORBIDDEN",
+    "allowed_dispositions": [
+      "EXECUTE_NOW",
+      "CLARIFICATION_REQUIRED",
+      "BLOCKED_WITH_NEXT_ACTION",
+      "CLOSE_COMPLETED",
+      "CLOSE_NOT_PLANNED",
+      "CLOSE_INVALID_OR_UNSUPPORTED"
+    ],
+    "execute_now_rule": "When clear supported and technically actionable begin or resume the smallest bounded work unit.",
+    "clarification_rule": "Ask only the minimum bounded question whose answer is required for safe execution and record the missing field or decision.",
+    "blocked_rule": "A blocker requires a deterministic failure class evidence references retry condition and one next technically possible action.",
+    "close_completed_rule": "Close only when completion or canonical supersession is evidenced.",
+    "close_not_planned_rule": "Close with an explicit supported-scope or authorization reason.",
+    "close_invalid_rule": "Close when the request is not reproducible not traceable internally contradictory untrue or technically unsupported and record the reason.",
+    "age_alone_is_not_a_close_reason": true,
+    "broadness_alone_is_not_a_wait_reason": true,
+    "closure_is_reversible": true,
+    "discussion_and_provenance_must_be_preserved": true,
+    "closure_may_not_hide_a_real_unresolved_defect": true
+  },
+  "issue_agent_integration": {
+    "system_prompt": "scripts/issue_agent/infer.py",
+    "status_materializer": "scripts/issue_agent/finalize.py",
+    "bundle_validator": "scripts/issue_agent/validate.py",
+    "required_status_fields": [
+      "issue_disposition",
+      "next_action",
+      "disposition_reason",
+      "no_false_pass"
+    ]
+  },
+  "standing_internal_authority": {
+    "substantive_review_execution": true,
+    "review_findings_persistence": true,
+    "issue_triage": true,
+    "deterministic_issue_work": true,
+    "bounded_clarification": true,
+    "evidence_bound_issue_closure": true,
+    "requires_repeated_chat_authorization": false
+  },
+  "mandatory_boundaries": {
+    "github_platform_protections_may_be_bypassed": false,
+    "merge_or_promotion_implicitly_authorized": false,
+    "external_publication_or_submission_authorized": false,
+    "force_push_or_history_rewrite_authorized": false,
+    "fabricated_review_or_evidence_authorized": false,
+    "scientific_confirmation_inferred_from_review_or_issue_disposition": false
+  },
+  "notification_rule": "Notify only on a new or changed disposition blocker resolution head or scope change completed work unit issue closure or promotion readiness.",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "FULL_AUTHORITY_MIRROR_SYNCHRONIZATION": false,
+    "MERGE": false
+  }
+}

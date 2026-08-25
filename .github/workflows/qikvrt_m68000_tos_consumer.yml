@@ -1,0 +1,219 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT M68000 TOS consumer benchmark
+
+on:
+  pull_request:
+    paths:
+      - "runtime/m68000/**"
+      - "tools/qikvrt_m68000_tos_consumer.py"
+      - "tests/test_qikvrt_m68000_tos_consumer.py"
+      - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
+      - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
+  push:
+    branches: [main]
+    paths:
+      - "runtime/m68000/**"
+      - "tools/qikvrt_m68000_tos_consumer.py"
+      - "tests/test_qikvrt_m68000_tos_consumer.py"
+      - "docs/M68000_TOS_CONSUMER_BENCHMARK_V1.md"
+      - ".github/workflows/qikvrt_m68000_tos_consumer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-execute-reobserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Compile exact five-kernel registry consumer
+        run: |
+          set -euo pipefail
+          python3 -m unittest tests.test_qikvrt_m68000_tos_consumer -v
+          mkdir -p "$RUNNER_TEMP/drive"
+          python3 tools/qikvrt_m68000_tos_consumer.py \
+            --output "$RUNNER_TEMP/drive/MLP.TOS" \
+            --hex-output "$RUNNER_TEMP/MLP.TOS.hex" \
+            | tee "$RUNNER_TEMP/build.json"
+          cmp "$RUNNER_TEMP/MLP.TOS.hex" runtime/m68000/tos/MLP.TOS.hex
+
+      - name: Install exact Hatari and checksum-pinned EmuTOS
+        id: emulator
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends hatari xvfb curl unzip
+          hatari --version 2>&1 | tee "$RUNNER_TEMP/hatari-version.txt" || true
+          hatari --trace help > "$RUNNER_TEMP/hatari-trace-help.txt" 2>&1 || true
+
+          archive="$RUNNER_TEMP/emutos-512k-1.4.zip"
+          archive_url='https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip'
+          archive_sha256='1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663'
+          curl --location --fail --retry 5 --retry-all-errors \
+            --output "$archive" "$archive_url"
+          printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --strict
+          entry="$(unzip -Z1 "$archive" | awk '/(^|\/)etos512us\.img$/ { print; exit }')"
+          if [ -z "$entry" ]; then
+            echo 'BLOCK: PINNED_EMUTOS_ARCHIVE_MISSING_ETOS512US_IMG' >&2
+            unzip -Z1 "$archive" >&2
+            exit 1
+          fi
+          rom="$RUNNER_TEMP/etos512us.img"
+          unzip -p "$archive" "$entry" > "$rom"
+          test "$(stat --format=%s "$rom")" -eq 524288
+          printf '%s  %s\n' "$archive_sha256" "$archive" \
+            > "$RUNNER_TEMP/emutos-archive.sha256"
+          sha256sum "$rom" | tee "$RUNNER_TEMP/emutos-rom.sha256"
+          echo "rom=$rom" >> "$GITHUB_OUTPUT"
+
+      - name: Execute five-kernel MLP.TOS on Mega ST MC68000
+        env:
+          SDL_AUDIODRIVER: dummy
+        run: |
+          set -euo pipefail
+          drive="$RUNNER_TEMP/drive"
+          rm -f "$drive/QIKVRT.RCP"
+          set +e
+          xvfb-run -a timeout 90s hatari \
+            --tos "${{ steps.emulator.outputs.rom }}" \
+            --machine megast --cpulevel 0 --cpuclock 8 \
+            --compatible yes --cpu-exact yes \
+            --sound off --fast-forward yes --confirm-quit no \
+            --alert-level fatal --harddrive "$drive" \
+            --protect-hd off --gemdos-case upper \
+            --auto 'C:\MLP.TOS' --run-vbls 3000 \
+            --log-level debug --log-file "$RUNNER_TEMP/hatari.log" \
+            --trace gemdos --trace-file "$RUNNER_TEMP/hatari-trace.log"
+          hatari_status=$?
+          set -e
+          printf 'hatari_status=%s\n' "$hatari_status" | tee "$RUNNER_TEMP/hatari-status.txt"
+          find "$drive" -maxdepth 2 -printf '%y %s %p\n' | sort \
+            | tee "$RUNNER_TEMP/hatari-drive-after.txt"
+          if [ -f "$RUNNER_TEMP/hatari.log" ]; then cat "$RUNNER_TEMP/hatari.log"; fi
+          if [ -f "$RUNNER_TEMP/hatari-trace.log" ]; then tail -n 400 "$RUNNER_TEMP/hatari-trace.log"; fi
+          if [ "$hatari_status" -ne 0 ]; then
+            echo "BLOCK: HATARI_EXITED_$hatari_status" >&2
+            exit "$hatari_status"
+          fi
+          if [ ! -s "$drive/QIKVRT.RCP" ]; then
+            echo 'BLOCK: MLP_TOS_DID_NOT_CREATE_QIKVRT_RCP' >&2
+            exit 1
+          fi
+
+      - name: Reobserve exact five-kernel TOS effect and benchmark
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_m68000_tos_consumer.py \
+            --verify-receipt "$RUNNER_TEMP/drive/QIKVRT.RCP" \
+            | tee "$RUNNER_TEMP/reobservation.json"
+          sha256sum "$RUNNER_TEMP/drive/MLP.TOS" "$RUNNER_TEMP/drive/QIKVRT.RCP" \
+            | tee "$RUNNER_TEMP/effects.sha256"
+
+      - name: Materialize exact Authority-main receipt V2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          tos = (temp / 'drive/MLP.TOS').read_bytes()
+          receipt = (temp / 'drive/QIKVRT.RCP').read_bytes()
+          reobservation = json.loads((temp / 'reobservation.json').read_text())
+          value = {
+              'schema': 'QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V2',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'ref': os.environ['GITHUB_REF'],
+              'head': os.environ['GITHUB_SHA'],
+              'tree': subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip(),
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'workflow': os.environ['GITHUB_WORKFLOW'],
+              'registry_to_consumer': True,
+              'tos_execution_observed': True,
+              'spark_m68000_emulator_execution_observed': reobservation['spark_m68000_emulator_execution_observed'],
+              'benchmark_observed': True,
+              'receipt_reobserved': True,
+              'tos_sha256': hashlib.sha256(tos).hexdigest(),
+              'receipt_sha256': hashlib.sha256(receipt).hexdigest(),
+              'emutos_archive_sha256': (temp / 'emutos-archive.sha256').read_text().split()[0],
+              'emutos_rom_sha256': (temp / 'emutos-rom.sha256').read_text().split()[0],
+              'build': json.loads((temp / 'build.json').read_text()),
+              'reobservation': reobservation,
+              'physical_m68000_execution_observed': False,
+              'physical_speedup_measured': False,
+              'pass': False,
+              'final_pass': False,
+              'effect_ack_done': False,
+          }
+          (temp / 'main-effect.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Persist main receipt by fast-forward CAS
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LEDGER_REF: refs/heads/qikvrt/m68000-tos-systemtest-ledger-v1
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/main-effect.json"
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          success=0
+          for attempt in 1 2 3; do
+            ledger="$RUNNER_TEMP/ledger-$attempt"
+            rm -rf "$ledger" && git init -q "$ledger"
+            git -C "$ledger" config user.name 'github-actions[bot]'
+            git -C "$ledger" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C "$ledger" remote add origin "$remote"
+            if git -C "$ledger" fetch --no-tags --depth=1 origin "$LEDGER_REF"; then
+              git -C "$ledger" checkout -q -B ledger FETCH_HEAD
+            else
+              git -C "$ledger" checkout -q --orphan ledger
+            fi
+            target="receipts/${GITHUB_SHA}/${GITHUB_RUN_ID}.json"
+            mkdir -p "$ledger/$(dirname "$target")"
+            if [ -e "$ledger/$target" ]; then cmp "$source" "$ledger/$target"; else cp "$source" "$ledger/$target"; fi
+            cp "$source" "$ledger/latest.json"
+            git -C "$ledger" add "$target" latest.json
+            if git -C "$ledger" diff --cached --quiet; then success=1; break; fi
+            git -C "$ledger" commit -q -m "evidence: M68000 TOS main ${GITHUB_SHA} run ${GITHUB_RUN_ID}"
+            if git -C "$ledger" push origin "HEAD:$LEDGER_REF"; then success=1; break; fi
+            sleep "$attempt"
+          done
+          if [ "$success" -ne 1 ]; then
+            echo 'BLOCK: M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED' >&2
+            exit 1
+          fi
+
+      - name: Upload exact execution evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-m68000-tos-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/drive/MLP.TOS
+            ${{ runner.temp }}/drive/QIKVRT.RCP
+            ${{ runner.temp }}/build.json
+            ${{ runner.temp }}/reobservation.json
+            ${{ runner.temp }}/main-effect.json
+            ${{ runner.temp }}/effects.sha256
+            ${{ runner.temp }}/emutos-archive.sha256
+            ${{ runner.temp }}/emutos-rom.sha256
+            ${{ runner.temp }}/hatari-version.txt
+            ${{ runner.temp }}/hatari-trace-help.txt
+            ${{ runner.temp }}/hatari-status.txt
+            ${{ runner.temp }}/hatari-drive-after.txt
+            ${{ runner.temp }}/hatari.log
+            ${{ runner.temp }}/hatari-trace.log
+          retention-days: 30
+          if-no-files-found: warn

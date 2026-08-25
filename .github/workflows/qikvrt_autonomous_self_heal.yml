@@ -5,18 +5,65 @@ name: QIK-VRT autonomous bounded self-heal
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/5 * * * *"
+  push:
+    branches: [main]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+    types: [completed]
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_autonomous_self_heal.yml"
+      - "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
+      - "tools/qikvrt_autonomous_pre_effect_controller.py"
+      - "tests/test_qikvrt_autonomous_pre_effect_controller.py"
+      - "tests/test_qikvrt_continuous_auto_repair.py"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
-  group: qikvrt-autonomous-self-heal-${{ github.repository }}
+  group: qikvrt-autonomous-self-heal-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: false
 
 jobs:
+  validate-continuous-opportunity-contract:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify continuous opportunistic auto-repair contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_continuous_auto_repair \
+            tests.test_qikvrt_autonomous_pre_effect_controller
+
   observe-repair-propose:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.head_branch == 'main')
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -32,12 +79,98 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Materialize policy-bound canonical Authority remote
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(
+            python3 -B - <<'PY'
+          import json
+          import shlex
+          from pathlib import Path
+
+          policy = json.loads(
+              Path("policy/CANONICAL_UPSTREAM_REMOTE_V1.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if policy.get("schema") != "qikvrt_canonical_upstream_remote_v1":
+              raise SystemExit("BLOCK: canonical upstream policy schema mismatch")
+          if policy.get("status") != "NORMATIVE":
+              raise SystemExit("BLOCK: canonical upstream policy is not normative")
+          canonical = policy.get("canonical_upstream", {})
+          repository = canonical.get("repository")
+          role = canonical.get("role")
+          remote_name = canonical.get("canonical_remote_name")
+          remote_url = canonical.get("canonical_https_url")
+          default_branch = canonical.get("default_branch")
+          if (
+              not isinstance(repository, str)
+              or not repository
+              or role != "AUTHORITY"
+              or not isinstance(remote_name, str)
+              or not remote_name
+              or not isinstance(remote_url, str)
+              or not remote_url
+              or not isinstance(default_branch, str)
+              or not default_branch
+          ):
+              raise SystemExit("BLOCK: canonical upstream contract mismatch")
+          expected_url = f"https://github.com/{repository}.git"
+          if remote_url != expected_url:
+              raise SystemExit("BLOCK: canonical upstream URL/repository mismatch")
+          selection = policy.get("selection_rule", {})
+          if (
+              selection.get("source_of_truth")
+              != "canonical_upstream.repository"
+              or selection.get("policy_over_local_git_config") is not True
+              or selection.get("policy_over_remote_name_heuristics") is not True
+              or selection.get("policy_over_personal_origin") is not True
+              or selection.get("ambiguous_or_missing_binding") != "HOLD"
+          ):
+              raise SystemExit("BLOCK: canonical upstream precedence weakened")
+          print(f"canonical_remote_name={shlex.quote(remote_name)}")
+          print(f"canonical_remote_url={shlex.quote(remote_url)}")
+          print(f"canonical_remote_branch={shlex.quote(default_branch)}")
+          PY
+          )"
+          case "$canonical_remote_name" in
+            ""|*[!A-Za-z0-9._-]*)
+              echo "BLOCK: canonical remote name is unsafe" >&2
+              exit 2
+              ;;
+          esac
+          if git remote get-url "$canonical_remote_name" >/dev/null 2>&1; then
+            git remote set-url "$canonical_remote_name" "$canonical_remote_url"
+          else
+            git remote add "$canonical_remote_name" "$canonical_remote_url"
+          fi
+          test "$(git remote get-url "$canonical_remote_name")" = "$canonical_remote_url"
+          remote_head="$(
+            git ls-remote --exit-code --heads \
+              "$canonical_remote_name" "refs/heads/$canonical_remote_branch" \
+              | awk 'NR == 1 {print $1}'
+          )"
+          test -n "$remote_head"
+          test "$remote_head" = "$(git rev-parse --verify HEAD^{commit})"
+
+      - name: Verify continuous opportunistic auto-repair contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
+            tests.test_qikvrt_continuous_auto_repair \
+            tests.test_qikvrt_autonomous_pre_effect_controller
+
       - name: Execute bounded repository-native repairs before external effects
         id: repair
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           python3 -B tools/qikvrt_autonomous_pre_effect_controller.py apply > /tmp/qikvrt-self-heal.json
+          rc=$?
+          set -e
           cat /tmp/qikvrt-self-heal.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import base64
@@ -50,6 +183,16 @@ jobs:
           print(f"candidate_id={value.get('candidate_identity') or ''}")
           print(f"changed_paths_b64={base64.b64encode(paths).decode('ascii')}")
           PY
+          exit "$rc"
+
+      - name: Preserve autonomous pre-effect controller receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-self-heal-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-self-heal.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Verify repaired repository state
         if: steps.repair.outputs.state == 'CANDIDATE_READY'
@@ -65,7 +208,8 @@ jobs:
             tests.test_qikvrt_publication_overview \
             tests.test_qikvrt_autonomous_self_heal \
             tests.test_qikvrt_autonomous_pre_effect_controller \
-            tests.test_qikvrt_expected_head_promotion
+            tests.test_qikvrt_expected_head_promotion \
+            tests.test_qikvrt_continuous_auto_repair
           python3 -B - <<'PY'
           import base64
           import os
@@ -131,7 +275,7 @@ jobs:
           cat > /tmp/qikvrt-self-heal-pr.md <<EOF
           <!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->
 
-          Repository-native scheduled pre-effect repair candidate.
+          Repository-native opportunistic pre-effect repair candidate.
 
           Exact bindings:
           - observed current-main base: \`$BASE_SHA\`
@@ -142,7 +286,7 @@ jobs:
           Exact allowlisted paths:
           $(cat /tmp/qikvrt-self-heal-paths.txt)
 
-          Unconditional automatic merge is forbidden. Expected-head-bound promotion is allowed only after current-base reobservation, unchanged-head verification, allowlisted-diff verification, confirmation of no external effect, terminal green completion of every applicable exact-head gate, and confirmation that no competing writer exists. This proposal workflow never merges; the separate expected-head promotion executor may merge only the exact reobserved head after independently rechecking those conditions.
+          Unconditional automatic merge and automatic draft-to-ready reclassification are forbidden. A favorable draft review derives only a history-preserving ready-reclassification authority request. This proposal workflow never promotes or merges. The separate expected-head controller also remains fail-closed because GitHub exposes neither an atomic expected-base-and-head ready transition nor a pull-merge precondition that compare-and-swaps the reobserved base as merge HEAD^1; it derives only the corresponding authority request.
 
           Execution stops before Zenodo publication, IETF submission, DOI creation, public release, external credential consumption, or any other irreversible external effect and requires the separately persisted exact external-effect authorization contract.
 

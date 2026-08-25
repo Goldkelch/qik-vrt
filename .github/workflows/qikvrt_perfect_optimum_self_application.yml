@@ -1,0 +1,148 @@
+name: QIKVRT perfect optimum recursive self-application
+
+on:
+  pull_request:
+    paths:
+      - 'policy/PERFECT_OPTIMUM_V1.json'
+      - 'docs/PERFECT_OPTIMUM_V1.md'
+      - 'tools/qikvrt_perfect_optimum.py'
+      - 'tests/test_qikvrt_perfect_optimum.py'
+      - '.github/workflows/qikvrt_perfect_optimum_self_application.yml'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  push:
+    branches: [main]
+    paths:
+      - 'policy/PERFECT_OPTIMUM_V1.json'
+      - 'docs/PERFECT_OPTIMUM_V1.md'
+      - 'tools/qikvrt_perfect_optimum.py'
+      - 'tests/test_qikvrt_perfect_optimum.py'
+      - '.github/workflows/qikvrt_perfect_optimum_self_application.yml'
+      - 'REPOSITORY_FILE_MANIFEST.json'
+      - 'REPOSITORY_FILE_MANIFEST.json.sha256'
+      - 'SHA256SUMS.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-perfect-optimum-observe-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  self-apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact observed head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head, tree and causal predecessor
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          predecessor="$(git rev-parse --verify HEAD^1^{commit})"
+          test "$head" = "$expected"
+          test "$predecessor" != "$head"
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          printf 'predecessor=%s\n' "$predecessor" >> "$GITHUB_OUTPUT"
+
+      - name: Verify policy self-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_perfect_optimum.py --self-check | tee /tmp/perfect-optimum-self-check.json
+          grep -q '"self_application_safe": true' /tmp/perfect-optimum-self-check.json
+
+      - name: Run recursive-improvement regression contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_perfect_optimum
+
+      - name: Evaluate this transition under the same rule
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PREDECESSOR_SHA: ${{ steps.bind.outputs.predecessor }}
+          HEAD_SHA: ${{ steps.bind.outputs.head }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          from tools.qikvrt_perfect_optimum import evaluate, load_policy
+
+          policy = load_policy()
+          predecessor = os.environ['PREDECESSOR_SHA']
+          head = os.environ['HEAD_SHA']
+          before_has_policy = subprocess.run(
+              ['git', 'cat-file', '-e', f'{predecessor}:policy/PERFECT_OPTIMUM_V1.json'],
+              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          ).returncode == 0
+          after_has_policy = Path('policy/PERFECT_OPTIMUM_V1.json').is_file()
+
+          before = {
+              'deterministic_blockers': 0 if before_has_policy else 1,
+              'avoidable_human_interventions': 0,
+              'productive_writer_count': 1,
+              'stale_evidence_reuse': 0,
+              'unbound_effect_claims': 0,
+              'fresh_exact_head_gate_coverage': 0,
+              'deterministically_closed_internal_loops': 1 if before_has_policy else 0,
+          }
+          after = dict(before)
+          if after_has_policy and not before_has_policy:
+              after['deterministic_blockers'] = 0
+              after['fresh_exact_head_gate_coverage'] = 1
+              after['deterministically_closed_internal_loops'] = 1
+
+          invariant_checks = {k: True for k in policy['hard_invariants']}
+          result = evaluate(before, after, invariant_checks, policy)
+          result.update({
+              'event_name': os.environ['EVENT_NAME'],
+              'predecessor_sha': predecessor,
+              'head_sha': head,
+              'tree_sha': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
+              'before_has_policy': before_has_policy,
+              'after_has_policy': after_has_policy,
+          })
+          if not before_has_policy:
+              assert result['decision'] == 'ACCEPT_CANDIDATE', result
+              result['recursive_outcome'] = 'STRICT_PROGRESS_ACCEPTED'
+          else:
+              assert result['decision'] == 'HOLD', result
+              result['recursive_outcome'] = 'LOCAL_FIXPOINT_HOLD_NO_STRICT_PROGRESS'
+          Path('/tmp/perfect-optimum-receipt.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
+
+      - name: Reobserve exact head after read-only self-application
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = '${{ steps.bind.outputs.head }}'
+          test "$(git rev-parse --verify HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
+          test -z "$(git status --porcelain)"
+
+      - name: Preserve recursive self-application receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-perfect-optimum-${{ steps.bind.outputs.head }}
+          path: |
+            /tmp/perfect-optimum-self-check.json
+            /tmp/perfect-optimum-receipt.json
+          if-no-files-found: error
+          retention-days: 14

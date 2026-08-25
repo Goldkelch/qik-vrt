@@ -35,11 +35,14 @@
     "schedule_fallback": "*/10 * * * *",
     "workflow_run_reobservation": true,
     "two_phase_promotion": [
-      "DRAFT_TO_READY",
+      "REQUEST_READY_RECLASSIFICATION_AUTHORITY",
       "STOP_AND_REOBSERVE",
-      "EXPECTED_HEAD_BOUND_MERGE"
+      "REQUEST_EXACT_BASE_CAS_AUTHORITY"
     ],
-    "merge_binding": "GITHUB_PULL_MERGE_REST_SHA_PRECONDITION",
+    "merge_binding": "DISABLED_BECAUSE_GITHUB_PULL_MERGE_SHA_DOES_NOT_BIND_REOBSERVED_BASE_AS_HEAD1",
+    "ready_authority_request_requires_trusted_marker_body_digest_reobservation": true,
+    "automatic_ready_mutation": false,
+    "automatic_merge_mutation": false,
     "old_action_required_may_be_superseded_by_newer_same_workflow_success": true,
     "same_head_verification_proxy_is_competing_writer": false,
     "stale_base_pull_request_is_current_competing_writer": false,
@@ -49,7 +52,8 @@
       "PASS": false,
       "FINAL_PASS": false,
       "EFFECT_ACK_DONE": false,
-      "AUTHORITY_MIRROR_EQUALITY": false
+      "AUTHORITY_MIRROR_EQUALITY": false,
+      "MERGE": false
     }
   },
   "promotion_gate_order": [
@@ -77,6 +81,14 @@
       "SEPARATE_EXPLICIT_ZENODO_AUTHORIZATION"
     ],
     "automatic_promotion": "TWO_PHASE_EXPECTED_HEAD_BOUND_ONLY"
+  },
+  "workflow_executor_mesh_continuity": {
+    "contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+    "controller_path": "tools/qikvrt_workflow_executor.py",
+    "executor_workflow_path": ".github/workflows/qikvrt_workflow_executor.yml",
+    "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+    "node_split_acceptance": "QUEUE_ROWS_REQUIRE_EXACT_NODE_CONTINUITY_RECEIPT",
+    "external_effect": "FORBIDDEN"
   },
   "allowlisted_handlers": [
     {
@@ -201,7 +213,7 @@
     "no_diff": "NOOP",
     "all_paths_must_be_allowlisted": true,
     "proposal_workflow_may_merge": false,
-    "promotion_executor_may_merge": "ONLY_AFTER_TWO_PHASE_EXACT_HEAD_REOBSERVATION"
+    "promotion_executor_may_merge": false
   },
   "completion_claims": {
     "PASS": false,

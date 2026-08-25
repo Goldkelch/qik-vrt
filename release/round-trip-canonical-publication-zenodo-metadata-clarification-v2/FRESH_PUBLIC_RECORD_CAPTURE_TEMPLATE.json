@@ -1,0 +1,52 @@
+{
+  "schema": "qikvrt_zenodo_fresh_public_record_capture_template_v1",
+  "state": "TEMPLATE_NOT_EVIDENCE_NOT_EXECUTABLE",
+  "purpose": "Specify the exact fresh public observation required before a metadata-only edit of an existing Zenodo record can be frozen.",
+  "target": {
+    "record_id": 21888130,
+    "concept_record_id": 21888129,
+    "doi": "10.5281/zenodo.21888130",
+    "concept_doi": "10.5281/zenodo.21888129",
+    "title_must_remain": "Von Softwarearchitektur zur Weltformel – DAS UNIVERSUM ALS ROUND TRIP"
+  },
+  "fresh_capture_required": {
+    "request": {
+      "method": "GET",
+      "url": "https://zenodo.org/api/records/21888130",
+      "authentication": "NONE_REQUIRED_FOR_PUBLIC_READ",
+      "redirect_policy": "RECORD_FINAL_RESPONSE_URL_AND_STATUS"
+    },
+    "capture": {
+      "observed_at": null,
+      "response_status": null,
+      "response_etag": null,
+      "record_revision": null,
+      "raw_response_path": "TO_BE_MATERIALIZED_FROM_FRESH_PUBLIC_RESPONSE.json",
+      "raw_response_bytes": null,
+      "raw_response_sha256": null,
+      "public_metadata_path": "TO_BE_MATERIALIZED_AS_METADATA_BEFORE.json",
+      "public_metadata_canonical_sha256": null
+    },
+    "acceptance_rules": [
+      "response_status MUST equal 200",
+      "record id, concept record id, DOI and concept DOI MUST equal target",
+      "record state MUST be published",
+      "response ETag MUST be non-empty",
+      "revision MUST be a positive integer",
+      "the raw response and extracted metadata MUST be canonicalizable UTF-8 JSON objects",
+      "the extracted metadata MUST satisfy the published-metadata editor's exact allowlist"
+    ]
+  },
+  "historical_context_not_usable_for_execution": {
+    "source_path": "release/round-trip-canonical-publication-zenodo-metadata-clarification-v1/METADATA_CORRECTION_REQUEST.json",
+    "observed_at": "2026-08-12T08:25:01Z",
+    "etag": "\"3\"",
+    "revision": 3,
+    "reason": "A later public change could invalidate every bound identity. This retained observation is only historical context."
+  },
+  "external_effects": {
+    "zenodo_read_performed_by_this_template": false,
+    "zenodo_metadata_edit": "NOT_EXECUTED",
+    "file_mutation": "NOT_EXECUTED"
+  }
+}

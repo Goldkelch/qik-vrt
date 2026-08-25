@@ -1,0 +1,377 @@
+{
+  "schema": "qikvrt_workflow_executor_mesh_contract_v1",
+  "contract_id": "qikvrt-workflow-executor-mesh-v1",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "entrypoint": "AI",
+    "self_healing_contract_path": "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+  },
+  "executor": {
+    "controller_path": "tools/qikvrt_workflow_executor.py",
+    "workflow_path": ".github/workflows/qikvrt_workflow_executor.yml",
+    "watchdog_workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+    "monitor_workflow_path": ".github/workflows/qikvrt_live_status_watch.yml",
+    "observation_mode": "REPOSITORY_NATIVE_EXACT_HEAD_BOUND",
+    "stateful_writes": "ACTION_ARTIFACTS_ONLY",
+    "single_writer_order": [
+      "AUTHORITY",
+      "MIRROR",
+      "MESH_NODE"
+    ]
+  },
+  "workflow_inventory": {
+    "root": ".github/workflows",
+    "recognize": [
+      "ADDED_FILE",
+      "REMOVED_FILE",
+      "BLOB_CHANGE"
+    ],
+    "binding": [
+      "WORKFLOW_PATH",
+      "WORKFLOW_BLOB",
+      "EXACT_HEAD",
+      "EXACT_TREE"
+    ],
+    "baseline": "PREVIOUS_EXECUTOR_SNAPSHOT_ARTIFACT_WHEN_AVAILABLE"
+  },
+  "review_feedback_plane": {
+    "enabled": true,
+    "mode": "ROLE_LOCAL_REPOSITORY_NATIVE_MESH_SELF_REVIEW",
+    "executor": {
+      "workflow_name": "QIKVRT requested review executor",
+      "workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
+      "decision_core_path": "tools/qikvrt_requested_review_executor.py",
+      "human_review_request_prerequisite": false,
+      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES",
+      "platform_review_event": "COMMENT",
+      "bot_approve_or_request_changes_event": "FORBIDDEN"
+    },
+    "exact_subject_binding": {
+      "required_fields": [
+        "REPOSITORY_ROLE",
+        "PULL_REQUEST_NUMBER",
+        "TRUSTED_EVALUATOR_AND_WORKFLOW_BLOB_SHA",
+        "OPEN_INTERNAL_MAIN_BASED_ELIGIBILITY_AND_DRAFT_STATE",
+        "PULL_REQUEST_TITLE_AND_BODY_SHA256",
+        "BASE_SHA",
+        "BASE_TREE_SHA",
+        "HEAD_SHA",
+        "HEAD_TREE_SHA",
+        "SORTED_REVIEWED_SCOPE",
+        "SCOPE_SHA256",
+        "DIFF_SHA256",
+        "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
+        "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
+        "ACTIVE_WRITER_QUEUE_STATE"
+      ],
+      "review_fingerprint_algorithm": "SHA256",
+      "review_fingerprint_input": "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
+      "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
+      "subject_drift_disposition": "HOLD_UNVERIFIED",
+      "predecessor_evidence_transfer": "FORBIDDEN"
+    },
+    "ledger": {
+      "role_local": true,
+      "ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
+      "receipt_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json",
+      "diff_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+      "append_only": true,
+      "initialization": "ORPHAN_ROOT_COMMIT_WITH_FIRST_EXACT_RECEIPT",
+      "write_protocol": "FAST_FORWARD_COMPARE_AND_SWAP_ONLY",
+      "force_push": "FORBIDDEN",
+      "history_rewrite": "FORBIDDEN",
+      "candidate_branch_write": "FORBIDDEN",
+      "main_branch_write": "FORBIDDEN",
+      "cross_role_receipt_transfer": "FORBIDDEN",
+      "single_writer_workflow_name": "QIKVRT requested review executor",
+      "ledger_push_triggers_candidate_ci": false,
+      "write_conflict_disposition": "HOLD"
+    },
+    "projections": {
+      "canonical_source": "ROLE_LOCAL_LEDGER_RECEIPT_AND_REVIEW_DIFF",
+      "actions_artifact": "EXACT_RECEIPT_AND_DIFF_PROJECTION",
+      "actions_artifact_includes_hidden_evidence_root": true,
+      "status_context": "QIKVRT requested review execution",
+      "status_deduplication": "LATEST_CONTEXT_STATUS_ONLY",
+      "pull_request_review_event": "COMMENT",
+      "platform_review_state": "COMMENTED",
+      "automation_signer": "github-actions[bot]",
+      "candidate_mutation": false,
+      "independent_code_owner_authority": false
+    },
+    "downstream_feedback": {
+      "persist_before_signal": true,
+      "signals": [
+        "WORKFLOW_RUN_COMPLETED",
+        "EXACT_HEAD_STATUS_TRANSITION"
+      ],
+      "consumer_workflows": [
+        ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
+        ".github/workflows/qikvrt_expected_head_promotion.yml"
+      ],
+      "exactly_one_derived_next_action": true,
+      "new_parallel_action_router": "FORBIDDEN",
+      "status_alone_authorizes_continuation": false,
+      "promotion_reobserves_ledger_receipt_and_diff": true,
+      "automatic_ready_mutation": false,
+      "automatic_merge_mutation": false,
+      "favorable_draft_next_action": "REQUEST_HISTORY_PRESERVING_READY_RECLASSIFICATION_AUTHORITY",
+      "favorable_nondraft_next_action": "REQUEST_HISTORY_PRESERVING_EXACT_BASE_CAS_AUTHORITY"
+    },
+    "d0_mapping": {
+      "0": {
+        "state": "NOOP",
+        "meaning": "IDENTICAL_EXACT_RECEIPT_ALREADY_PERSISTED_OR_NO_NEW_REVIEW_ACTION"
+      },
+      "1": {
+        "state": "HOLD",
+        "meaning": "ACTIVE_OR_ADVERSE_GATE_FINDING_UNRESOLVED_THREAD_INVALID_RECEIPT_OR_LEDGER_CONFLICT"
+      },
+      "2": {
+        "state": "REOBSERVE",
+        "meaning": "MISSING_STALE_UNTRUSTED_ZERO_JOB_OR_DRIFTED_EXACT_SUBJECT_EVIDENCE"
+      },
+      "3": {
+        "state": "REQUEST_AUTHORITY",
+        "meaning": "MESH_DISPOSITION_SUPPORTS_CONTINUATION_BUT_INDEPENDENT_CODE_OWNER_OR_OTHER_AUTHORITY_IS_MISSING_OR_STALE"
+      }
+    },
+    "authority_boundary": {
+      "automated_mesh_review_is_independent_code_owner_review": false,
+      "independent_code_owner_gate": "SEPARATE_EXACT_HEAD_PREREQUISITE",
+      "merge_or_promotion_implicitly_authorized": false,
+      "external_effect_authorized": false
+    },
+    "completion_claims": {
+      "PASS": false,
+      "FINAL_PASS": false,
+      "EFFECT_ACK_DONE": false,
+      "INDEPENDENT_CODE_OWNER_APPROVAL": false,
+      "AUTHORITY_MIRROR_EQUALITY": false,
+      "EXTERNAL_EFFECT": false,
+      "MERGE": false
+    }
+  },
+  "dispatch_policy": {
+    "enabled": true,
+    "dispatch_ref": "main",
+    "required_conditions": [
+      "CURRENT_MAIN_HEAD_REOBSERVED",
+      "CURRENT_MAIN_TREE_REOBSERVED",
+      "WORKFLOW_IS_EXACT_TREE_MEMBER",
+      "NO_COMPETING_WRITER",
+      "NO_EQUIVALENT_EXACT_HEAD_RUN",
+      "NO_EXTERNAL_OR_IRREVERSIBLE_EFFECT"
+    ],
+    "terminal_or_active_exact_run_suppresses_duplicate_dispatch": true,
+    "rerun": "ONLY_REPOSITORY_DECLARED_TRANSIENT_FAILURE",
+    "writer_workflow_names": [
+      "QIK-VRT autonomous bounded self-heal",
+      "QIK-VRT autonomous draft-PR continuation",
+      "QIK-VRT expected-head promotion executor",
+      "QIKVRT requested review executor"
+    ],
+    "authorized_workflows": [
+      {
+        "workflow_id": "qikvrt_workflow_executor_watchdog.yml",
+        "workflow_path": ".github/workflows/qikvrt_workflow_executor_watchdog.yml",
+        "workflow_name": "QIKVRT workflow executor watchdog",
+        "allowed_events": [
+          "workflow_dispatch"
+        ],
+        "external_effect": "NONE",
+        "is_writer": false,
+        "required_artifact_prefix": "qikvrt-workflow-executor-watchdog-"
+      }
+    ]
+  },
+  "reflexive_deadlock_prevention": {
+    "enabled": true,
+    "applies_to": [
+      "AUTHORITY",
+      "MIRROR",
+      "EVERY_FUTURE_MESH_NODE"
+    ],
+    "controller_path": "tools/qikvrt_reflexive_repository_watchdog.py",
+    "workflow_path": ".github/workflows/qikvrt_reflexive_repository_watchdog.yml",
+    "acceptance_test_path": "tests/test_qikvrt_reflexive_repository_watchdog.py",
+    "documentation_path": "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md",
+    "work_unit_path": "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json",
+    "observation_cadence": "PT5M",
+    "platform_minimum_schedule": "GITHUB_ACTIONS_FIVE_MINUTES",
+    "event_triggers": [
+      "SCHEDULE",
+      "WORKFLOW_RUN_REQUESTED",
+      "WORKFLOW_RUN_IN_PROGRESS",
+      "WORKFLOW_RUN_COMPLETED",
+      "PUSH_MAIN",
+      "PULL_REQUEST",
+      "WORKFLOW_DISPATCH"
+    ],
+    "gatewatch": {
+      "enabled": true,
+      "receipt_path": "gatewatch-receipt.json",
+      "observation_freshness_seconds": 900,
+      "observed_workflow_names": [
+        "QIKVRT CI",
+        "QIKVRT repository evidence materialization",
+        "QIKVRT Collective Proposal Review",
+        "QIK-VRT global claim completion",
+        "QIKVRT Batch-003 remaining subject disposition",
+        "QIKVRT adaptive runtime",
+        "QIKVRT Seed Dashboard Build",
+        "QIKVRT Seed Mesh Maintenance",
+        "QIKVRT Seed Node Revalidation"
+      ],
+      "required_workflow_names_by_scope": {
+        "MAIN": [],
+        "PULL_REQUEST_MAIN": [
+          "QIKVRT CI",
+          "QIKVRT repository evidence materialization"
+        ],
+        "PULL_REQUEST_STACKED": [
+          "QIKVRT CI"
+        ]
+      },
+      "gate_states": [
+        "SUCCESS",
+        "FAILED",
+        "MISSING",
+        "ACTIVE",
+        "UNTRUSTED",
+        "NOT_OBSERVED",
+        "NOT_APPLICABLE"
+      ],
+      "node_liveness": {
+        "enabled": true,
+        "records_root": "qikvrt/runtime/onboarding",
+        "seed_acceptance_path": "qikvrt/runtime/onboarding/SEED_ACCEPTANCE_STATUS.json",
+        "renewal_path": "qikvrt/runtime/onboarding/NODE_REGISTRATION_RENEWAL.json",
+        "health_path": "qikvrt/runtime/onboarding/NODE_HEALTH.json",
+        "authority_repository": "Goldkelch/qik-vrt",
+        "warning_seconds": 3600,
+        "all_records_absent_state": "NOT_APPLICABLE",
+        "expired_or_overdue_disposition": "HOLD",
+        "authority_head_mismatch_disposition": "HOLD",
+        "artifact_only_materialization": true
+      }
+    },
+    "observer_workflow_names": [
+      "QIKVRT reflexive repository watchdog",
+      "QIKVRT workflow executor watchdog",
+      "QIKVRT workflow executor",
+      "QIKVRT live status watch"
+    ],
+    "writer_lease_seconds": 1200,
+    "queue_lease_seconds": 600,
+    "progress_lease_seconds": 900,
+    "max_simultaneous_active_writers": 1,
+    "max_queued_productive_runs": 2,
+    "admission_policy": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
+    "observer_run_policy": "CANCEL_SUPERSEDED_OBSERVER_ONLY",
+    "progress_evidence": [
+      "EXACT_HEAD_AND_TREE",
+      "WORKFLOW_STATUS_TRANSITION",
+      "JOB_COUNT_AND_STATE",
+      "EXECUTED_FAILURE_COUNT",
+      "EXACT_HEAD_TRUSTED_GATE_MATRIX",
+      "NODE_LOCAL_LIVENESS_RECORDS",
+      "AUTHORITY_HEAD_REOBSERVATION",
+      "PREVIOUS_REFLEXIVE_RECEIPT_FINGERPRINT"
+    ],
+    "prevention_states": [
+      "PREEMPTIVE_HOLD_COMPETING_WRITERS",
+      "PREEMPTIVE_HOLD_STALE_WRITER_LEASE",
+      "PREEMPTIVE_HOLD_NO_PROGRESS_TRANSITION",
+      "PREEMPTIVE_HOLD_QUEUE_PRESSURE",
+      "PREEMPTIVE_HOLD_EXECUTED_GATE_FAILURE",
+      "PREEMPTIVE_HOLD_NODE_LIVENESS",
+      "PREEMPTIVE_HOLD_REQUIRED_GATE_EVIDENCE",
+      "PREEMPTIVE_HOLD_OBSERVATION_CADENCE_BREACH",
+      "UNTRUSTED_EXECUTION_GAP",
+      "SAFE_PROGRESS",
+      "QUIESCENT_OBSERVATION"
+    ],
+    "read_only_mitigations": [
+      "SERIALIZE_TO_ONE_EXPECTED_HEAD_WRITER",
+      "COALESCE_SUPERSEDED_OBSERVER_RUNS",
+      "PRESERVE_EXACT_HEAD_RECEIPT",
+      "REOBSERVE_JOBS_AND_STEPS",
+      "RECOMMEND_HOLD_BEFORE_NEW_WRITER"
+    ],
+    "forbidden_mitigations": [
+      "AUTOMATIC_PRODUCTIVE_WRITER_CANCELLATION",
+      "DIRECT_REPOSITORY_MUTATION",
+      "UNCONDITIONAL_MERGE",
+      "FORCE_PUSH",
+      "RELEASE",
+      "DEPLOYMENT",
+      "ZENODO_MUTATION",
+      "DOI_MUTATION",
+      "IETF_MUTATION"
+    ],
+    "interpretation_boundaries": {
+      "watchdog_terminality_is_gate_success": false,
+      "no_active_runner_is_pipeline_empty": false,
+      "action_required_is_trusted_execution": false,
+      "zero_job_is_trusted_execution": false,
+      "deadlock_freedom_proved": false,
+      "universal_relational_database_superiority_proved": false
+    }
+  },
+  "boundaries": {
+    "direct_repository_mutation": "FORBIDDEN",
+    "review_receipt_candidate_branch_mutation": "FORBIDDEN",
+    "review_receipt_main_branch_mutation": "FORBIDDEN",
+    "role_local_review_ledger_write": "ALLOWLISTED_FAST_FORWARD_COMPARE_AND_SWAP_ONLY",
+    "automated_mesh_review_is_independent_code_owner_review": false,
+    "watchdog_terminality_is_gate_success": false,
+    "action_required_is_trusted_execution": false,
+    "zero_job_is_trusted_execution": false,
+    "external_or_irreversible_effect_requires_separate_exact_authorization": true,
+    "forbidden_effects": [
+      "force_push",
+      "unconditional_automatic_merge",
+      "automatic_draft_to_ready",
+      "release",
+      "deployment",
+      "zenodo_mutation",
+      "doi_mutation",
+      "ietf_mutation",
+      "credentialed_external_write"
+    ]
+  },
+  "mesh_node_split_acceptance": {
+    "applies_to": "EVERY_FUTURE_NODE_ADDED_BY_QUEUE_ROW",
+    "queue_root": "registry/node_request_queue",
+    "registration_request_field": "workflow_executor_continuity",
+    "continuity_declaration_schema": "qikvrt_workflow_executor_mesh_continuity_declaration_v1",
+    "receipt_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_NODE_RECEIPT_V1.json",
+    "receipt_schema": "qikvrt_workflow_executor_mesh_node_receipt_v1",
+    "required_acceptance_tests": [
+      "tests/test_qikvrt_workflow_executor_mesh_contract.py",
+      "tests/test_seed_workflows.py"
+    ],
+    "connection_order": [
+      "AUTHORITY_CONTRACT_BOUND",
+      "NODE_RECEIPT_DECLARED",
+      "NODE_STRUCTURAL_ACCEPTANCE",
+      "SEED_QUEUE_ACCEPTANCE",
+      "WATCHDOG_OBSERVATION"
+    ],
+    "structural_acceptance_does_not_claim": [
+      "PASS",
+      "FINAL_PASS",
+      "EFFECT_ACK_DONE",
+      "AUTHORITY_MIRROR_EQUALITY",
+      "EXTERNAL_EFFECT"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_EQUALITY": false,
+    "EXTERNAL_EFFECT": false
+  }
+}

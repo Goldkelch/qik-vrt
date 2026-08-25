@@ -1,0 +1,12 @@
+import QIKVRTFormalization.Hardware.D3FixedPoint
+
+#print axioms QIKVRT.V2.BitwidthCausalMachine.widen_preserves_code
+#print axioms QIKVRT.V2.BitwidthCausalMachine.encode_refines
+#print axioms QIKVRT.V2.BitwidthCausalMachine.standard_width_chain
+#print axioms QIKVRT.V2.BitwidthCausalMachine.one_bit_not_enough_for_four_states
+#print axioms QIKVRT.V2.D3FixedPoint.decision_byte_preserves_code
+#print axioms QIKVRT.V2.D3FixedPoint.d0_value_three_is_request_authority
+#print axioms QIKVRT.V2.D3FixedPoint.d0_and_d3_are_distinct_registers
+#print axioms QIKVRT.V2.D3FixedPoint.d3_projection_fixed_under_step
+#print axioms QIKVRT.V2.D3FixedPoint.d3_projection_fixed_under_any_finite_trace
+#print axioms QIKVRT.V2.D3FixedPoint.one_ied_cycle_returns_phase_and_preserves_d3

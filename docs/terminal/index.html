@@ -1,0 +1,173 @@
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+-->
+<!doctype html>
+<html lang="de" data-theme="dark" data-language="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QIK-VRT Repository-Terminal</title>
+  <meta name="description" content="Ein zugängliches, rein lesendes Browser-Terminal für öffentlich prüfbare QIK-VRT-Repository-Evidenz und optionale Browser-Sprachinteraktion.">
+  <meta property="og:title" content="QIK-VRT Repository-Terminal">
+  <meta property="og:description" content="Öffentliche Repository-Evidenz lesen, lokal analysieren und optional im Browser diktieren oder vorlesen lassen.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="../assets/css/qikvrt.css">
+  <link rel="stylesheet" href="../assets/css/qikvrt-terminal.css">
+</head>
+<body>
+<a class="skip" href="#main"><span class="de">Zum Inhalt springen</span><span class="en" lang="en">Skip to content</span></a>
+<header class="topbar">
+  <div class="wrap nav">
+    <a class="brand" href="../" aria-label="QIK-VRT Start / QIK-VRT home"><span class="logo">Q</span><span>QIK-VRT<br><small>Repository Terminal</small></span></a>
+    <nav class="navlinks" aria-label="Hauptnavigation / Main navigation">
+      <a href="../"><span class="de">Start</span><span class="en" lang="en">Home</span></a>
+      <a href="../publications/"><span class="de">Publikationen</span><span class="en" lang="en">Publications</span></a>
+      <a href="https://github.com/Goldkelch/qik-vrt" rel="noopener">GitHub</a>
+      <button id="languageToggle" class="btn" type="button" aria-pressed="false">English</button>
+      <button id="themeToggle" class="btn" type="button"><span class="de">Hell/Dunkel</span><span class="en" lang="en">Light/Dark</span></button>
+    </nav>
+  </div>
+</header>
+<main id="main">
+  <section class="terminal-hero">
+    <div class="wrap terminal-hero-grid">
+      <div>
+        <span class="eyebrow"><span class="de">Öffentlicher Forschungsprototyp · lesend · rückverfolgbar</span><span class="en" lang="en">Public research prototype · read-only · traceable</span></span>
+        <h1><span class="de">Repository-Evidenz, direkt im <span class="grad">Browser-Terminal</span>.</span><span class="en" lang="en">Repository evidence, directly in a <span class="grad">browser terminal</span>.</span></h1>
+        <p class="lead de">Die Konsole liest ausschließlich einen kleinen, festgelegten Satz öffentlicher QIK-VRT-Quellen. Sie führt keine Befehle aus, nimmt keine Zugangsdaten an und löst keine Workflows aus.</p>
+        <p class="lead en" lang="en">The console reads only a small, fixed set of public QIK-VRT sources. It executes no commands, accepts no credentials, and never dispatches workflows.</p>
+        <div class="terminal-badges" aria-label="Sicherheitsstatus / Security status">
+          <span class="terminal-badge good">READ_ONLY</span>
+          <span class="terminal-badge">PUBLIC_GET_ONLY</span>
+          <span class="terminal-badge warn">EFFECT_ACK_CONTINUE</span>
+        </div>
+      </div>
+      <aside class="card terminal-boundary-card" aria-label="Grenzen / Boundaries">
+        <h2><span class="de">Wirkungsgrenze</span><span class="en" lang="en">Effect boundary</span></h2>
+        <p class="de">Eine erfolgreiche Anzeige ist eine lesbare Beobachtung. Sie beweist weder wissenschaftliche Bestätigung noch Sicherheit, Rechtmäßigkeit, Veröffentlichung, Synchronität oder eine externe Wirkung.</p>
+        <p class="en" lang="en">A successful display is a readable observation. It proves neither scientific confirmation nor security, legality, publication, synchronization, or an external effect.</p>
+        <a class="btn" href="../CURRENT_AUTHORITY.md"><span class="de">Aktuelle Authority lesen</span><span class="en" lang="en">Read current authority</span></a>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section terminal-section" aria-labelledby="terminal-heading">
+    <div class="wrap">
+      <div class="terminal-section-heading">
+        <div>
+          <h2 id="terminal-heading"><span class="de">QIK-VRT Repository-Terminal</span><span class="en" lang="en">QIK-VRT repository terminal</span></h2>
+          <p class="de">Wähle eine kanonische Quelle, nutze einen transparenten Befehl und prüfe die angezeigte Provenienz.</p>
+          <p class="en" lang="en">Choose a canonical source, use a transparent command, and inspect the displayed provenance.</p>
+        </div>
+        <div class="terminal-repo-select">
+          <label for="repositorySelect"><span class="de">Lesekontext</span><span class="en" lang="en">Read context</span></label>
+          <select id="repositorySelect" aria-describedby="repositoryHelp">
+            <option value="authority">Authority — Goldkelch/qik-vrt</option>
+            <option value="mirror">Mirror — ingolf-lohmann/qik-vrt</option>
+          </select>
+          <p id="repositoryHelp" class="mini de">Die Auswahl ändert nur, welches öffentliche Repository gelesen wird.</p>
+          <p class="mini en" lang="en">The selection changes only which public repository is read.</p>
+        </div>
+      </div>
+
+      <div class="terminal-grid">
+        <section class="card terminal-control-card" aria-labelledby="command-heading">
+          <h3 id="command-heading"><span class="de">Eingabe</span><span class="en" lang="en">Input</span></h3>
+          <form id="terminalForm" novalidate>
+            <label for="terminalInput"><span class="de">Befehl oder lokale Frage</span><span class="en" lang="en">Command or local question</span></label>
+            <textarea id="terminalInput" rows="4" spellcheck="true" aria-describedby="commandHelp" placeholder="status"></textarea>
+            <p id="commandHelp" class="mini de">Eingabetaste: ausführen. Umschalt+Eingabetaste: neue Zeile. Nur die unten gezeigten Befehle sind verfügbar.</p>
+            <p class="mini en" lang="en">Enter: run. Shift+Enter: new line. Only the commands shown below are available.</p>
+            <div class="terminal-actions">
+              <button id="runCommand" class="btn primary" type="submit"><span class="de">Ausführen</span><span class="en" lang="en">Run</span></button>
+              <button id="clearCommand" class="btn" type="button"><span class="de">Ausgabe leeren</span><span class="en" lang="en">Clear output</span></button>
+            </div>
+          </form>
+
+          <h4><span class="de">Erlaubte Befehle</span><span class="en" lang="en">Allowed commands</span></h4>
+          <ul class="terminal-command-list" aria-label="Erlaubte Terminalbefehle / Allowed terminal commands">
+            <li><button class="terminal-command" type="button" data-command="help"><code>help</code><span class="de">Befehle und Grenzen</span><span class="en" lang="en">commands and boundaries</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="status"><code>status [authority|mirror]</code><span class="de">aktuellen öffentlichen Ref lesen</span><span class="en" lang="en">read current public ref</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="capabilities"><code>capabilities</code><span class="de">Selbstauskunft lesen</span><span class="en" lang="en">read self-disclosure</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="read AI"><code>read AI|STATUS|README|ARCHITECTURE|BOUNDARIES|PRIVACY</code><span class="de">festgelegte Quelle lesen</span><span class="en" lang="en">read a fixed source</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="publications"><code>publications</code><span class="de">öffentlichen Publikationsindex lesen</span><span class="en" lang="en">read public publication index</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="analyse Beispiel: Welche Evidenz braucht ein Repository-Release?"><code>analyse … / analyze …</code><span class="de">lokale Regelanalyse</span><span class="en" lang="en">local rule analysis</span></button></li>
+            <li><button class="terminal-command" type="button" data-command="clear"><code>clear</code><span class="de">Sitzungsausgabe leeren</span><span class="en" lang="en">clear session output</span></button></li>
+          </ul>
+        </section>
+
+        <section class="card terminal-output-card" aria-labelledby="output-heading">
+          <div class="terminal-output-heading">
+            <div>
+              <h3 id="output-heading"><span class="de">Beobachtung</span><span class="en" lang="en">Observation</span></h3>
+              <p class="mini de">Alle dynamischen Inhalte werden als Text dargestellt; externe Daten erzeugen keinen ausführbaren Inhalt.</p>
+              <p class="mini en" lang="en">All dynamic content is rendered as text; external data never becomes executable content.</p>
+            </div>
+            <div id="terminalConnectionState" class="terminal-connection-state" role="status" aria-live="polite">LOCAL_READY</div>
+          </div>
+          <div id="terminalOutput" class="terminal-output" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Terminalausgabe / Terminal output" tabindex="0"></div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <section class="section terminal-section terminal-voice-section" aria-labelledby="voice-heading">
+    <div class="wrap terminal-grid">
+      <section class="card">
+        <h2 id="voice-heading"><span class="de">Akustische Interaktion</span><span class="en" lang="en">Voice interaction</span></h2>
+        <p class="de">Spracheingabe und Vorlesen sind freiwillige Browserfunktionen. Das Mikrofon startet nie automatisch. Ein erkanntes Ergebnis wird nur als sichtbarer <code>ASR_DRAFT</code> in das Eingabefeld eingesetzt und erst nach deinem ausdrücklichen Ausführen verarbeitet.</p>
+        <p class="en" lang="en">Speech input and readback are voluntary browser features. The microphone never starts automatically. A recognition result is inserted only as a visible <code>ASR_DRAFT</code> into the input field and is processed only after you explicitly run it.</p>
+        <div class="terminal-actions">
+          <button id="startListening" class="btn" type="button"><span class="de">Mikrofon starten</span><span class="en" lang="en">Start microphone</span></button>
+          <button id="stopListening" class="btn" type="button"><span class="de">Mikrofon stoppen</span><span class="en" lang="en">Stop microphone</span></button>
+          <button id="speakOutput" class="btn" type="button"><span class="de">Ausgabe vorlesen</span><span class="en" lang="en">Read output aloud</span></button>
+          <button id="stopSpeaking" class="btn" type="button"><span class="de">Vorlesen stoppen</span><span class="en" lang="en">Stop reading</span></button>
+        </div>
+        <p id="voiceStatus" class="notice" role="status" aria-live="polite">VOICE_CHECK_PENDING</p>
+        <p id="asrDraft" class="terminal-asr-draft" role="status" aria-live="polite" hidden></p>
+      </section>
+      <aside class="card">
+        <h3><span class="de">Datenschutz und Präzision</span><span class="en" lang="en">Privacy and precision</span></h3>
+        <ul class="terminal-boundary-list">
+          <li class="de">Diese Seite speichert keine Gespräche, Roh-Audio oder Entwürfe im QIK-VRT-Repository.</li>
+          <li class="en" lang="en">This page stores no conversations, raw audio, or drafts in the QIK-VRT repository.</li>
+          <li class="de">Browser-Spracherkennung kann je nach Browser oder Anbieter einen externen Sprachdienst verwenden. Nutze Text, wenn du das nicht möchtest.</li>
+          <li class="en" lang="en">Browser speech recognition may use an external speech service depending on the browser or provider. Use text if you do not want that.</li>
+          <li class="de">Eine <code>ASR_DRAFT</code>-Anzeige ist fallibel und kein verifiziertes Transkript.</li>
+          <li class="en" lang="en">An <code>ASR_DRAFT</code> display is fallible and is not a verified transcript.</li>
+          <li class="de">Die hash-gebundene, repository-native Offline-Transkription bleibt ein getrenntes Verfahren mit eigener Freigabe.</li>
+          <li class="en" lang="en">Hash-bound repository-native offline transcription remains a separate procedure with its own authorization.</li>
+        </ul>
+        <a class="btn" href="../OFFLINE_AUDIO_TRANSCRIPTION_DE.md"><span class="de">Offline-Audio-Grenze lesen</span><span class="en" lang="en">Read offline-audio boundary</span></a>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section terminal-section" aria-labelledby="provenance-heading">
+    <div class="wrap terminal-provenance-grid">
+      <div>
+        <h2 id="provenance-heading"><span class="de">Nachvollziehbare Anschlussstelle</span><span class="en" lang="en">Traceable integration point</span></h2>
+        <p class="de">Die Konsole trennt drei Ebenen sichtbar: öffentliche Repository-Evidenz, lokale Regelanalyse und optionale Browser-Hilfen. Keine Ebene ersetzt verantwortliche menschliche Entscheidung oder eine fachliche Prüfung.</p>
+        <p class="en" lang="en">The console visibly separates three layers: public repository evidence, local rule analysis, and optional browser aids. No layer replaces a responsible human decision or expert review.</p>
+      </div>
+      <div class="card terminal-source-links">
+        <a href="https://github.com/Goldkelch/qik-vrt/blob/main/AI">/AI</a>
+        <a href="https://github.com/Goldkelch/qik-vrt/blob/main/STATUS.md">STATUS.md</a>
+        <a href="https://github.com/Goldkelch/qik-vrt/blob/main/docs/PRIVACY_PRESERVING_INTERACTION_ARCHIVE.md">Privacy boundary</a>
+        <a href="https://github.com/Goldkelch/qik-vrt/blob/main/.well-known/qik-vrt-self-disclosure.json">Capability disclosure</a>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="wrap">
+    <p><strong>QIK-VRT Repository-Terminal</strong> — <span class="de">statische, zugängliche Leseschnittstelle mit optionaler Browser-Sprachinteraktion.</span><span class="en" lang="en">a static, accessible reading interface with optional browser voice interaction.</span></p>
+    <p class="mini de">Kein allgemeines Login, kein universales SSO, keine Biometrie, kein fernsteuerbarer Agent und keine automatisierte Freigabe.</p>
+    <p class="mini en" lang="en">No general login, universal SSO, biometrics, remote-controlled agent, or automated approval.</p>
+  </div>
+</footer>
+<script src="../assets/js/qikvrt-local-engine.js"></script>
+<script src="../assets/js/qikvrt-repository-terminal.js"></script>
+</body>
+</html>

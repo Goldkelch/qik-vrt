@@ -31,6 +31,11 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+try:
+    from tools import qikvrt_workflow_executor as workflow_executor
+except ModuleNotFoundError:  # Script execution keeps tools/ as sys.path[0].
+    import qikvrt_workflow_executor as workflow_executor
+
 
 MAX_INPUT_BYTES = 1_048_576
 MAX_NODE_ROWS = 10_000
@@ -456,7 +461,7 @@ def _validate_boundaries(value: Mapping[str, Any], label: str) -> None:
         _require_exact(value, key, True, label)
 
 
-def validate_registration_request(document: Mapping[str, Any], node: NodeRecord) -> None:
+def validate_registration_request(document: Mapping[str, Any], node: NodeRecord) -> str | None:
     label = f"registration request for {node.guid}"
     _require_exact(document, "event", "QIKVRT_NODE_ONBOARDING_REQUEST", label)
     _require_exact(document, "role", "node", label)
@@ -468,6 +473,13 @@ def validate_registration_request(document: Mapping[str, Any], node: NodeRecord)
     _require_exact(document, "no_further_human_machine_interaction_after_setup", True, label)
     _require_exact(document, "authorized_manifest_graph_only", True, label)
     _validate_boundaries(document, label)
+    if node.source_path.startswith("registry/node_request_queue/"):
+        return workflow_executor.validate_node_continuity_declaration(
+            document,
+            node.source_repository,
+            node.node_branch,
+        )
+    return None
 
 
 def _utc_now() -> dt.datetime:
@@ -512,19 +524,32 @@ def run_acceptance(
     now = now or _utc_now()
     run_id, utc = _run_metadata(run_id, now)
     nodes, policies = load_nodes(root, seed_repository)
-    prepared: list[tuple[NodeRecord, PolicyRecord, str, str | None]] = []
+    prepared: list[tuple[NodeRecord, PolicyRecord, str, str | None, str | None, str | None]] = []
     errors: list[dict[str, str]] = []
     for node in nodes:
         policy = policies[node.guid]
         if policy.status == "ACTIVE":
             try:
                 fetched = fetch(node.request_url)
-                validate_registration_request(fetched.value, node)
-                prepared.append((node, policy, "ACCEPTED", fetched.sha256))
+                receipt_url = validate_registration_request(fetched.value, node)
+                receipt_sha256 = None
+                if receipt_url is not None:
+                    receipt = fetch(receipt_url)
+                    workflow_executor.validate_node_receipt(
+                        receipt.value,
+                        node.source_repository,
+                        node.node_branch,
+                    )
+                    receipt_sha256 = receipt.sha256
+                prepared.append(
+                    (node, policy, "ACCEPTED", fetched.sha256, receipt_url, receipt_sha256)
+                )
             except SeedError as exc:
                 errors.append({"guid": node.guid, "error": str(exc)})
+            except workflow_executor.ExecutorBlock as exc:
+                errors.append({"guid": node.guid, "error": str(exc)})
         else:
-            prepared.append((node, policy, policy.status, None))
+            prepared.append((node, policy, policy.status, None, None, None))
 
     summary = {
         "schema": "qikvrt_seed_acceptance_run_v2",
@@ -534,9 +559,9 @@ def run_acceptance(
         "status": "BLOCK" if errors else "PASS",
         "seed_repository": seed_repository,
         "node_count": len(nodes),
-        "accepted_count": sum(status == "ACCEPTED" for _, _, status, _ in prepared),
-        "suspended_count": sum(status == "SUSPENDED" for _, _, status, _ in prepared),
-        "revoked_count": sum(status == "REVOKED" for _, _, status, _ in prepared),
+        "accepted_count": sum(status == "ACCEPTED" for _, _, status, _, _, _ in prepared),
+        "suspended_count": sum(status == "SUSPENDED" for _, _, status, _, _, _ in prepared),
+        "revoked_count": sum(status == "REVOKED" for _, _, status, _, _, _ in prepared),
         "fail_count": len(errors),
         "errors": errors,
         "results": [
@@ -546,8 +571,10 @@ def run_acceptance(
                 "policy_status": policy.status,
                 "result_status": status,
                 "request_sha256": digest,
+                "workflow_executor_receipt_url": receipt_url,
+                "workflow_executor_receipt_sha256": receipt_digest,
             }
-            for node, policy, status, digest in prepared
+            for node, policy, status, digest, receipt_url, receipt_digest in prepared
         ],
     }
     if errors:
@@ -561,7 +588,7 @@ def run_acceptance(
         for line_number, line in enumerate(existing.splitlines(), 1):
             parse_json_bytes(line, f"{ledger_path}:{line_number}")
 
-    for node, policy, status, request_digest in prepared:
+    for node, policy, status, request_digest, receipt_url, receipt_digest in prepared:
         entry = {
             "schema": "qikvrt_seed_registry_entry_v2",
             "qikvrt_event": "AUTONOMOUS_SEED_ACCEPTANCE",
@@ -595,6 +622,12 @@ def run_acceptance(
                 "seed_writes_only_to_seed_repository": True,
             },
         }
+        if receipt_url is not None and receipt_digest is not None:
+            entry["workflow_executor_continuity"] = {
+                "receipt_url": receipt_url,
+                "receipt_sha256": receipt_digest,
+                "validation": "STRUCTURAL_ACCEPTANCE_ONLY",
+            }
         write_json(root / "registry/nodes" / f"{node.guid}.json", entry)
         evidence = {
             "schema": "qikvrt_seed_acceptance_node_evidence_v2",
@@ -610,6 +643,12 @@ def run_acceptance(
             "run_id": run_id,
             "status": "PASS",
         }
+        if receipt_url is not None and receipt_digest is not None:
+            evidence["workflow_executor_continuity"] = {
+                "receipt_url": receipt_url,
+                "receipt_sha256": receipt_digest,
+                "validation": "STRUCTURAL_ACCEPTANCE_ONLY",
+            }
         write_json(root / "evidence/seed_acceptance" / f"{node.guid}.json", evidence)
 
     additions = b"".join(
@@ -620,6 +659,8 @@ def run_acceptance(
                 "policy_status": policy.status,
                 "repository": node.source_repository,
                 "request_sha256": digest,
+                "workflow_executor_receipt_url": receipt_url,
+                "workflow_executor_receipt_sha256": receipt_digest,
                 "result_status": status,
                 "run_id": run_id,
                 "seed_repository": node.seed_repository,
@@ -631,7 +672,7 @@ def run_acceptance(
             allow_nan=False,
         ).encode("utf-8")
         + b"\n"
-        for node, policy, status, digest in prepared
+        for node, policy, status, digest, receipt_url, receipt_digest in prepared
     )
     _atomic_write(ledger_path, existing + additions)
     _write_latest_and_run(root, "evidence/seed_acceptance", run_id, summary)

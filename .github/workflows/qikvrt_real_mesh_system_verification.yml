@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT real mesh system verification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qikvrt_real_mesh_system_verification.yml'
+      - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_real_mesh_system_verification.py'
+      - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'REFLEXIVE_FINDING_WORKFLOW_STANDARD.json'
+      - 'Makefile'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qikvrt_real_mesh_system_verification.yml'
+      - 'tools/qikvrt_real_mesh.py'
+      - 'tools/qikvrt_real_mesh_system_verification.py'
+      - 'tests/test_qikvrt_real_mesh_system_verification.py'
+      - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'REFLEXIVE_FINDING_WORKFLOW_STANDARD.json'
+      - 'Makefile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-real-mesh-system-verification-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  system-verification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and clean worktree
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain)"
+
+      - name: Run reflexive system verification tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v \
+            tests.test_qikvrt_real_mesh_system_verification
+
+      - name: Execute real mesh and produce audit receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/real-mesh-sysverify
+          python3 -B tools/qikvrt_real_mesh_system_verification.py run \
+            --source-head "$(git rev-parse --verify HEAD^{commit})" \
+            --source-tree "$(git rev-parse --verify HEAD^{tree})" \
+            --output .qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json \
+            > .qikvrt/real-mesh-sysverify/stdout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('.qikvrt/real-mesh-sysverify/AUDIT_RECEIPT.json').read_text())
+          assert audit['status'] == 'PASS', f"Audit status: {audit['status']}, findings: {audit['findings']}"
+          assert audit['finding_count'] == 0, f"Unexpected findings: {audit['findings']}"
+          assert audit['general_effect_ack_done'] is False, "general_effect_ack_done must be False"
+          assert audit['external_effect'] == 'NONE', "external_effect must be NONE"
+          assert audit['transport_ack_is_effect_ack'] is False, "transport_ack_is_effect_ack must be False"
+          assert audit['bounded_loopback_effect_ack_scope_confirmed'] is True
+          print("PASS: all audit receipt assertions satisfied")
+          PY

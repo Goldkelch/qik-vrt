@@ -1,1 +1,242 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QIK-VRT Live Monitor</title><style>body{font-family:system-ui;background:#111;color:#eee;margin:0}header,main{max-width:1200px;margin:auto;padding:1rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem}.card{background:#1b1b1b;border:1px solid #444;border-radius:10px;padding:1rem}.ok{color:#7ee787}.bad{color:#ff7b72}.run{color:#d2a8ff}.muted{color:#999}a{color:#58a6ff}table{width:100%;border-collapse:collapse}td,th{padding:.35rem;border-bottom:1px solid #333;text-align:left;font-size:.9rem}code{word-break:break-all}input{width:min(36rem,90%)}#log{white-space:pre-wrap;font-family:monospace;font-size:.8rem;max-height:18rem;overflow:auto}</style></head><body><header><h1>QIK-VRT Repository Live Monitor</h1><p>Direkte Beobachtung der Authority- und Mirror-Repositories über die offizielle GitHub-API. Keine Chat-Projektion.</p><p><input id="token" type="password" autocomplete="off" placeholder="Optional: GitHub Fine-grained Token nur für diese Browser-Sitzung"> <button onclick="activate()">Live-Modus aktivieren</button> <button onclick="refreshAll()">Jetzt aktualisieren</button></p><p id="mode" class="muted"></p><p id="clock" class="muted"></p></header><main><div id="repos" class="grid"></div><div class="card"><h2>Ereignisprotokoll</h2><div id="log"></div></div></main><script>const repos=['Goldkelch/qik-vrt','ingolf-lohmann/qik-vrt'],api='https://api.github.com',state={};let timer=null,token=sessionStorage.getItem('qikvrt_monitor_token')||'';document.getElementById('token').value=token;function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}function cls(s){return ['success','completed','clean'].includes(s)?'ok':['failure','cancelled','timed_out','action_required'].includes(s)?'bad':'run'}function interval(){return token?10000:240000}function schedule(){clearInterval(timer);timer=setInterval(refreshAll,interval());document.getElementById('mode').textContent=token?'Authentifizierter Live-Modus: 10 Sekunden. Token bleibt ausschließlich im sessionStorage dieses Tabs.':'Öffentlicher Fallback: 4 Minuten wegen GitHub-Rate-Limit. Für 10 Sekunden einen read-only Fine-grained Token eingeben.'}function activate(){token=document.getElementById('token').value.trim();token?sessionStorage.setItem('qikvrt_monitor_token',token):sessionStorage.removeItem('qikvrt_monitor_token');schedule();refreshAll()}async function get(path){const h={Accept:'application/vnd.github+json'};if(token)h.Authorization='Bearer '+token;const r=await fetch(api+path,{headers:h});if(!r.ok)throw new Error(r.status+' '+r.statusText+'; remaining='+r.headers.get('x-ratelimit-remaining'));return r.json()}function event(m){const e=document.getElementById('log');e.textContent=new Date().toISOString()+'  '+m+'\n'+e.textContent.slice(0,12000)}async function load(repo){const [meta,prs,runs,commits]=await Promise.all([get('/repos/'+repo),get('/repos/'+repo+'/pulls?state=open&per_page=20&sort=updated&direction=desc'),get('/repos/'+repo+'/actions/runs?per_page=30'),get('/repos/'+repo+'/commits?per_page=10')]);const sig=JSON.stringify({h:commits[0]?.sha,p:prs.map(x=>[x.number,x.head.sha,x.updated_at,x.draft]),r:runs.workflow_runs.map(x=>[x.id,x.status,x.conclusion,x.head_sha])});if(state[repo]&&state[repo]!==sig)event(repo+': technischer Zustand geändert');state[repo]=sig;return{repo,meta,prs,runs:runs.workflow_runs,commits}}function render(d){const a=d.runs.filter(x=>x.status!=='completed'),f=d.runs.filter(x=>['failure','cancelled','timed_out','action_required'].includes(x.conclusion));return `<section class="card"><h2>${esc(d.repo)}</h2><p>Default: <code>${esc(d.meta.default_branch)}</code><br>Head: <code>${esc(d.commits[0]?.sha)}</code></p><p>Offene PRs: <b>${d.prs.length}</b> · aktive Runs: <b class="${a.length?'run':'ok'}">${a.length}</b> · problematische Runs: <b class="${f.length?'bad':'ok'}">${f.length}</b></p><h3>Pull Requests</h3><table>${d.prs.slice(0,10).map(p=>`<tr><td><a target="_blank" href="${p.html_url}">#${p.number}</a></td><td><code>${p.head.sha.slice(0,10)}</code></td><td>${p.draft?'DRAFT':'READY'}</td></tr>`).join('')}</table><h3>Workflows</h3><table>${d.runs.slice(0,15).map(r=>`<tr><td><a target="_blank" href="${r.html_url}">${esc(r.name)}</a></td><td><code>${(r.head_sha||'').slice(0,10)}</code></td><td class="${cls(r.conclusion||r.status)}">${esc(r.status)} / ${esc(r.conclusion||'—')}</td></tr>`).join('')}</table></section>`}async function refreshAll(){document.getElementById('clock').textContent='Aktualisierung läuft …';try{const d=await Promise.all(repos.map(load));document.getElementById('repos').innerHTML=d.map(render).join('');document.getElementById('clock').textContent='Stand: '+new Date().toLocaleString()}catch(e){event('FEHLER: '+e.message);document.getElementById('clock').textContent=e.message}}schedule();refreshAll();</script></body></html>
+<!doctype html>
+<!--
+SPDX-License-Identifier: CC-BY-NC-ND-4.0
+Copyright (c) 2026 Ingolf Lohmann.
+-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT Live Monitor</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; }
+    header, main { max-width: 1200px; margin: auto; padding: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+    .card { background: #1b1b1b; border: 1px solid #444; border-radius: 10px; padding: 1rem; }
+    .mesh { border-color: #4b76a8; }
+    .ok { color: #7ee787; }
+    .bad { color: #ff7b72; }
+    .run { color: #d2a8ff; }
+    .muted { color: #aaa; }
+    a { color: #58a6ff; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: .35rem; border-bottom: 1px solid #333; text-align: left; font-size: .9rem; vertical-align: top; }
+    code { word-break: break-all; }
+    input { width: min(36rem, 90%); }
+    #log { white-space: pre-wrap; font-family: monospace; font-size: .8rem; max-height: 18rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QIK-VRT Repository Live Monitor</h1>
+    <p>Direkte, reine Lese-Beobachtung der Authority- und Mirror-Repositories über die öffentliche GitHub-API.</p>
+    <p><input id="token" type="password" autocomplete="off" placeholder="Optional: GitHub Fine-grained Token nur für diese Browser-Sitzung"> <button type="button" id="activate">Live-Modus aktivieren</button> <button type="button" id="refresh">Jetzt aktualisieren</button></p>
+    <p id="mode" class="muted"></p>
+    <p id="clock" class="muted" aria-live="polite"></p>
+  </header>
+  <main>
+    <section id="mesh" class="card mesh" aria-live="polite">
+      <h2>QIK-VRT Mesh Authority/Mirror-Instanz</h2>
+      <p class="muted">Warte auf eine paarweise, exakte Lese-Beobachtung.</p>
+    </section>
+    <div id="repos" class="grid"></div>
+    <section class="card">
+      <h2>Ereignisprotokoll</h2>
+      <div id="log"></div>
+    </section>
+  </main>
+  <script>
+    "use strict";
+
+    const NODES = Object.freeze([
+      Object.freeze({ role: "AUTHORITY", label: "Authority", repository: "Goldkelch/qik-vrt" }),
+      Object.freeze({ role: "MIRROR", label: "Mirror", repository: "ingolf-lohmann/qik-vrt" }),
+    ]);
+    const API = "https://api.github.com";
+    const state = {};
+    let timer = null;
+    let token = sessionStorage.getItem("qikvrt_monitor_token") || "";
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>\"]/g, function (character) {
+        return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character];
+      });
+    }
+
+    function cls(value) {
+      return ["success", "completed", "clean"].includes(value) ? "ok" :
+        ["failure", "cancelled", "timed_out", "action_required"].includes(value) ? "bad" : "run";
+    }
+
+    function event(message) {
+      const log = document.getElementById("log");
+      log.textContent = new Date().toISOString() + "  " + message + "\n" + log.textContent.slice(0, 12000);
+    }
+
+    function headers() {
+      const value = { Accept: "application/vnd.github+json" };
+      if (token) value.Authorization = "Bearer " + token;
+      return value;
+    }
+
+    async function request(path) {
+      const response = await fetch(API + path, { method: "GET", headers: headers() });
+      if (!response.ok) {
+        throw new Error(response.status + " " + response.statusText + "; remaining=" + response.headers.get("x-ratelimit-remaining"));
+      }
+      return response;
+    }
+
+    async function get(path) {
+      return (await request(path)).json();
+    }
+
+    function lastPage(link) {
+      const match = String(link || "").match(/[?&]page=(\d+)[^>]*>;\s*rel="last"/);
+      return match ? Number(match[1]) : 1;
+    }
+
+    async function paged(path, perPage) {
+      const separator = path.includes("?") ? "&" : "?";
+      const firstResponse = await request(path + separator + "per_page=" + perPage);
+      const items = await firstResponse.json();
+      const page = lastPage(firstResponse.headers.get("link"));
+      if (page === 1) return { items: items, count: items.length };
+      const lastResponse = await request(path + separator + "per_page=" + perPage + "&page=" + page);
+      const lastItems = await lastResponse.json();
+      return { items: items, count: (page - 1) * perPage + lastItems.length };
+    }
+
+    async function load(node) {
+      const repository = node.repository;
+      const values = await Promise.all([
+        get("/repos/" + repository),
+        paged("/repos/" + repository + "/pulls?state=open&sort=updated&direction=desc", 20),
+        paged("/repos/" + repository + "/branches", 100),
+        get("/repos/" + repository + "/commits/main"),
+        get("/repos/" + repository + "/actions/runs?per_page=30"),
+      ]);
+      const metadata = values[0];
+      const pullRequests = values[1];
+      const branches = values[2];
+      const commit = values[3];
+      const runs = values[4].workflow_runs || [];
+      const inventory = {
+        open_issues: Math.max(0, Number(metadata.open_issues_count || 0) - pullRequests.count),
+        open_pull_requests: pullRequests.count,
+        branches: branches.count,
+      };
+      const snapshot = {
+        role: node.role,
+        label: node.label,
+        repository: repository,
+        pullRequests: pullRequests.items,
+        runs: runs,
+        headSha: commit.sha || "UNAVAILABLE",
+        rootTreeSha: commit && commit.commit && commit.commit.tree ? commit.commit.tree.sha : "UNAVAILABLE",
+        inventory: inventory,
+      };
+      const signature = JSON.stringify({
+        head: snapshot.headSha,
+        tree: snapshot.rootTreeSha,
+        inventory: inventory,
+        pullRequests: snapshot.pullRequests.map(function (item) { return [item.number, item.head.sha, item.updated_at, item.draft]; }),
+        runs: runs.map(function (item) { return [item.id, item.status, item.conclusion, item.head_sha]; }),
+      });
+      if (state[repository] && state[repository] !== signature) event(repository + ": technischer Zustand geändert");
+      state[repository] = signature;
+      return snapshot;
+    }
+
+    function renderRepository(snapshot) {
+      const active = snapshot.runs.filter(function (run) { return run.status !== "completed"; });
+      const adverse = snapshot.runs.filter(function (run) {
+        return ["failure", "cancelled", "timed_out", "action_required"].includes(run.conclusion);
+      });
+      return "<section class=\"card\"><h2>" + esc(snapshot.label) + " <code>" + esc(snapshot.repository) + "</code></h2>" +
+        "<p>Rolle: <code>" + esc(snapshot.role) + "</code><br>Ref: <code>main</code><br>Head: <code>" + esc(snapshot.headSha) + "</code><br>Tree: <code>" + esc(snapshot.rootTreeSha) + "</code></p>" +
+        "<p>Offene Issues: <b>" + snapshot.inventory.open_issues + "</b> · Offene PRs: <b>" + snapshot.inventory.open_pull_requests + "</b> · Branches: <b>" + snapshot.inventory.branches + "</b><br>" +
+        "aktive Runs: <b class=\"" + (active.length ? "run" : "ok") + "\">" + active.length + "</b> · problematische Runs: <b class=\"" + (adverse.length ? "bad" : "ok") + "\">" + adverse.length + "</b></p>" +
+        "<h3>Pull Requests</h3><table>" + snapshot.pullRequests.slice(0, 10).map(function (pull) {
+          return "<tr><td><a target=\"_blank\" rel=\"noopener\" href=\"" + esc(pull.html_url) + "\">#" + pull.number + "</a></td><td><code>" + esc(pull.head.sha.slice(0, 10)) + "</code></td><td>" + (pull.draft ? "DRAFT" : "READY") + "</td></tr>";
+        }).join("") + "</table>" +
+        "<h3>Workflows</h3><table>" + snapshot.runs.slice(0, 15).map(function (run) {
+          return "<tr><td><a target=\"_blank\" rel=\"noopener\" href=\"" + esc(run.html_url) + "\">" + esc(run.name) + "</a></td><td><code>" + esc((run.head_sha || "").slice(0, 10)) + "</code></td><td class=\"" + cls(run.conclusion || run.status) + "\">" + esc(run.status) + " / " + esc(run.conclusion || "—") + "</td></tr>";
+        }).join("") + "</table></section>";
+    }
+
+    function meshState(authority, mirror) {
+      if (authority.rootTreeSha === "UNAVAILABLE" || mirror.rootTreeSha === "UNAVAILABLE") {
+        return { state: "OBSERVATION_INCOMPLETE", detail: "Ein oder beide Root-Trees sind nicht lesbar.", canonical: "NICHT_ABGELEITET" };
+      }
+      if (authority.rootTreeSha !== mirror.rootTreeSha) {
+        return { state: "DIVERGED", detail: "Die Root-Trees unterscheiden sich; eine Mesh-Hauptreferenz wäre falsch.", canonical: "NICHT_ABGELEITET" };
+      }
+      return { state: "TREE_EQUALITY_UNVERIFIED_INTEGRITY", detail: "Die Trees stimmen überein, aber diese Browser-Leseansicht besitzt kein exaktes Pair-Integrity-Binding oder reziprokes Receipt.", canonical: "NICHT_ABGELEITET" };
+    }
+
+    function nodeRow(snapshot) {
+      return "<tr><th>" + esc(snapshot.label) + " <code>" + esc(snapshot.repository) + "</code></th><td><code>" + esc(snapshot.headSha) + "</code><br><code>" + esc(snapshot.rootTreeSha) + "</code></td><td>" + snapshot.inventory.open_issues + "</td><td>" + snapshot.inventory.open_pull_requests + "</td><td>" + snapshot.inventory.branches + "</td></tr>";
+    }
+
+    function renderMesh(snapshots) {
+      const authority = snapshots.find(function (snapshot) { return snapshot.role === "AUTHORITY"; });
+      const mirror = snapshots.find(function (snapshot) { return snapshot.role === "MIRROR"; });
+      const status = meshState(authority, mirror);
+      const totals = {
+        issues: authority.inventory.open_issues + mirror.inventory.open_issues,
+        pullRequests: authority.inventory.open_pull_requests + mirror.inventory.open_pull_requests,
+        branches: authority.inventory.branches + mirror.inventory.branches,
+        nonMain: authority.inventory.branches - 1 + mirror.inventory.branches - 1,
+      };
+      return "<h2>QIK-VRT Mesh Authority/Mirror-Instanz</h2>" +
+        "<p>Instanz: <code>QIKVRT_AUTHORITY_MIRROR_MESH_V1</code> · Modus: <code>OBSERVE_ONLY</code> · Zustand: <b class=\"" + (status.state === "DIVERGED" ? "bad" : "run") + "\">" + esc(status.state) + "</b></p>" +
+        "<p>Kanonischer Mesh-Ref: <code>" + status.canonical + "</code>. " + esc(status.detail) + "</p>" +
+        "<table><thead><tr><th>Node</th><th>main / Root-Tree</th><th>offene Issues</th><th>offene PRs</th><th>Branches</th></tr></thead><tbody>" +
+        nodeRow(authority) + nodeRow(mirror) +
+        "<tr><th>Mesh gesamt</th><td><code>ARITHMETIC_SUM_ONLY</code></td><td><b>" + totals.issues + "</b></td><td><b>" + totals.pullRequests + "</b></td><td><b>" + totals.branches + "</b></td></tr>" +
+        "</tbody></table>" +
+        "<p class=\"muted\">" + totals.nonMain + " Non-main-Refs. NON_MAIN_REF != STALE_REF != ORPHAN_REF != SAFE_TO_DELETE. Die Summen beweisen weder Gleichheit noch Lifecycle- oder Löschautorität; kein Sync, Merge, Review, Workflow-Dispatch oder externer Effekt wird ausgeführt.</p>";
+    }
+
+    function interval() {
+      return token ? 10000 : 600000;
+    }
+
+    function schedule() {
+      clearInterval(timer);
+      timer = setInterval(refreshAll, interval());
+      document.getElementById("mode").textContent = token ?
+        "Authentifizierter Live-Modus: 10 Sekunden. Token bleibt ausschließlich im sessionStorage dieses Tabs." :
+        "Öffentlicher Fallback: 10 Minuten wegen GitHub-Rate-Limit. Für 10 Sekunden einen read-only Fine-grained Token eingeben.";
+    }
+
+    function activate() {
+      token = document.getElementById("token").value.trim();
+      if (token) sessionStorage.setItem("qikvrt_monitor_token", token);
+      else sessionStorage.removeItem("qikvrt_monitor_token");
+      schedule();
+      refreshAll();
+    }
+
+    async function refreshAll() {
+      document.getElementById("clock").textContent = "Aktualisierung läuft …";
+      try {
+        const snapshots = await Promise.all(NODES.map(load));
+        document.getElementById("mesh").innerHTML = renderMesh(snapshots);
+        document.getElementById("repos").innerHTML = snapshots.map(renderRepository).join("");
+        document.getElementById("clock").textContent = "Stand: " + new Date().toLocaleString();
+      } catch (error) {
+        event("FEHLER: " + error.message);
+        document.getElementById("clock").textContent = error.message;
+      }
+    }
+
+    document.getElementById("token").value = token;
+    document.getElementById("activate").addEventListener("click", activate);
+    document.getElementById("refresh").addEventListener("click", refreshAll);
+    schedule();
+    refreshAll();
+  </script>
+</body>
+</html>

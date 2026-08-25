@@ -31,18 +31,22 @@ Leitsätze:
 |---|---|
 | Allgemeintext | vollständig formuliert, WhatsApp-optimiert, ohne Formeln |
 | Fachartikel | vollständig formulierter Forschungskandidat mit Anspruchsgrenzen |
-| Lean-Quellkern | 36 benannte Modelltheoreme vorbereitet |
-| Lean-Ausführung dieses Kandidaten | `PENDING_REPOSITORY_RUN` |
-| Axiom-Audit | Quellkandidat vorbereitet, nicht ausgeführt |
+| Lean-Quellkern | 36 benannte endliche Modelltheoreme |
+| Lean-Ausführung der gebundenen Kernbytes | `EXECUTED_RECEIPT_PRESENT` |
+| Axiom-Audit | ausgeführt: 36 Direktiven, 0 Projektaxiome, 0 `sorry`/`admit`, 0 `unsafe` |
 | Python-Syntax/Referenzvalidator | lokal ausführbar |
 | Physikalische Korrespondenz | `OPEN_CANDIDATE` |
-| Zenodo-Paket | Metadaten und Fileset vorbereitet, nicht veröffentlicht |
+| Zenodo-Paket | deterministisch baubar, nicht veröffentlicht |
 | Wirkung | `EFFECT_ACK_CONTINUE` |
 
-Ein tatsächlich erfolgreicher Lean-Lauf muss ein neues, source-, commit-, tree-,
-toolchain- und output-gebundenes Receipt erzeugen. Das vorhandene H5-Receipt
-beweist ausschließlich den früheren H5-Quellstand und darf nicht auf QCE
-übertragen werden.
+Der persistierte QCE-Receipt stammt aus dem erfolgreichen Actions-Lauf
+`31467654213` und bindet Commit `225675ae2145aec709103f843cd26fd6893b39ba`
+sowie Tree `94eafdc41f42c3c5107275212351c323653dcb35`. Dieser reine
+Verifikations-Carrier basiert auf Authority `main`
+`d0593450077161a83d35b6d373ebe7968df7229d`; der Paketprüfer bestätigt, dass
+die im Receipt gebundenen Modell- und Axiom-Audit-Bytes mit diesem Paket
+identisch sind. Das Receipt gilt nur für diese explizit gebundenen formalen
+Kernbytes und beweist keine physikalische Korrespondenz.
 
 ## Formaler Scope
 
@@ -72,7 +76,8 @@ Standardmodells oder der Einstein-Gleichungen.
 | Lean | `VRTCore_QCE_Model.lean`, `VRTCore_QCE_AxiomAudit.lean`, `lean-toolchain`, `lakefile.lean` |
 | Syntax/Semantik | `VRTCore_QCE_Syntax.ebnf`, `QCE_REFERENCE_INSTANCE.vrt`, Validator und Tests |
 | Erkenntnisgrenzen | `CLAIM_MATRIX.json`, `SOURCE_EVIDENCE_BINDINGS.json`, `FORMALIZATION_ROADMAP.md`, `REVIEW_PROTOCOL.md` |
-| Reproduktion | `verify_qce_package.py`, `make_qce_kernel_receipt.py`, `KERNEL_RECEIPT_TEMPLATE.json` |
+| Reproduktion | `verify_qce_package.py`, `make_qce_kernel_receipt.py`, Receipt, Axiom- und Verifikationsoutput |
+| Ausführungsprovenienz | `QCE_KERNEL_ARTIFACT_PROVENANCE.json`, `QCE_KERNEL_RECEIPT.json`, `qce-axiom-output.txt`, `qce-verification.json` |
 | Persistenz | `MANIFEST.json`, `SHA256SUMS`, `CITATION.cff`, `LICENSE_MAP.md` |
 | Zenodo | `ZENODO_METADATA.json`, `ZENODO_FILESET.md`, `MACHINE_PROOF_BUNDLE.json` |
 
@@ -133,9 +138,9 @@ Der gegenwärtige Kandidat erfüllt diese Konjunktion nicht.
 
 ## Status
 
-`FORMAL_SOURCE = PREPARED`
+`FORMAL_SOURCE = EXECUTED_BYTES_BOUND`
 
-`LEAN_EXECUTION = PENDING_REPOSITORY_RUN`
+`LEAN_EXECUTION = EXECUTED_RECEIPT_PRESENT`
 
 `PHYSICAL_CORRESPONDENCE = OPEN_CANDIDATE`
 

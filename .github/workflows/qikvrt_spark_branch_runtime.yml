@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Spark branch work-unit core
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-spark-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prove-compile-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Kernel-check finite Spark semantics
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_Spark_v1
+          test: false
+      - name: Compile and exhaustively verify 65,536 flag/witness pairs
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_spark_branch.py verify --json \
+            | tee qikvrt-spark-compiler-report.json
+          python3 -m unittest -v tests.test_qikvrt_spark_branch
+      - name: Reject proof holes in finite Spark source
+        run: |
+          set -euo pipefail
+          target=formalization/QIKVRT_Spark_v1/QIKVRTSpark.lean
+          ! grep -nE '^[[:space:]]*(axiom|sorry|admit)([[:space:]]|$)' "$target"
+      - name: Execute one compiled Spark pass for each of 256 bounded work units
+        env:
+          REPOSITORY_NAME: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse --verify HEAD^{commit})"
+          tree_sha="$(git rev-parse --verify HEAD^{tree})"
+          base_sha="$EVENT_BASE_SHA"
+          if [ -z "$base_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)"
+          fi
+          python3 tools/qikvrt_spark_branch.py run \
+            --repository "$REPOSITORY_NAME" \
+            --branch "$BRANCH_NAME" \
+            --base-sha "$base_sha" \
+            --head-sha "$head_sha" \
+            --tree-sha "$tree_sha" \
+            --mode complete \
+            --batch 256 \
+            --output qikvrt-spark-branch-runtime-receipt.json \
+            >/dev/null
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('qikvrt-spark-branch-runtime-receipt.json').read_text())
+          assert receipt['processor_passes'] == 256
+          assert receipt['work_units_consumed'] == 256
+          assert receipt['bounded_work_units_closed'] == 256
+          assert receipt['one_processor_pass_per_work_unit'] is True
+          assert receipt['physical_m68000_execution_observed'] is False
+          assert receipt['git_merge_effect_applied'] is False
+          PY
+      - name: Preserve Spark proof, compiler and runtime evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-spark-branch-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            qikvrt-spark-compiler-report.json
+            qikvrt-spark-branch-runtime-receipt.json

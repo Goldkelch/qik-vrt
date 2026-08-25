@@ -1,0 +1,89 @@
+{
+  "_license": {
+    "classification": "machine_readable_control_contract",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_authority_mirror_mesh_instance_contract_v1",
+  "instance_id": "QIKVRT_AUTHORITY_MIRROR_MESH_V1",
+  "purpose": "Provide one mesh-wide, exact-input-bound Authority/Mirror observation instance without inventing a shared canonical main or transferring evidence between nodes.",
+  "topology": {
+    "kind": "AUTHORITY_MIRROR_PAIR",
+    "authority": {
+      "repository": "Goldkelch/qik-vrt",
+      "role": "AUTHORITY",
+      "required_ref": "main"
+    },
+    "mirror": {
+      "repository": "ingolf-lohmann/qik-vrt",
+      "role": "MIRROR",
+      "required_ref": "main"
+    }
+  },
+  "canonical_envelope": {
+    "required_node_fields": [
+      "repository",
+      "role",
+      "ref_name",
+      "head_sha",
+      "root_tree_sha",
+      "inventory",
+      "integrity"
+    ],
+    "pipeline": [
+      "CANONICAL_EVENT_ENVELOPE",
+      "AUDIENCE_RESOLUTION",
+      "LOSSLESS_VIEW_SELECTION",
+      "TERMINAL_PROJECTION"
+    ],
+    "audiences": {
+      "PRODUCT_OWNER_DEFAULT": "EXECUTIVE",
+      "ENGINEER_REVIEWER": "EXPERT",
+      "WATCHDOG_MESH_NODE": "FULL"
+    }
+  },
+  "state_machine": {
+    "DIVERGED": {
+      "predicate": "AUTHORITY_ROOT_TREE != MIRROR_ROOT_TREE",
+      "mesh_main_ref": null,
+      "next_admitted_action": "REOBSERVE_OR_FOLLOW_HISTORY_PRESERVING_WHOLE_TREE_CONVERGENCE"
+    },
+    "TREE_EQUALITY_UNVERIFIED_INTEGRITY": {
+      "predicate": "ROOT_TREES_EQUAL && PAIR_INTEGRITY_MISSING_OR_DIFFERENT",
+      "mesh_main_ref": null,
+      "next_admitted_action": "REOBSERVE_COMPLETE_PAIR_INTEGRITY_EVIDENCE"
+    },
+    "CONTENT_EQUIVALENT_NOT_RECIPROCAL_RECEIPT_BOUND": {
+      "predicate": "ROOT_TREES_EQUAL && PAIR_INTEGRITY_EQUAL",
+      "mesh_main_ref": null,
+      "next_admitted_action": "MATERIALIZE_RECIPROCAL_WHOLE_TREE_RECEIPT_AFTER_EXACT_REOBSERVATION"
+    }
+  },
+  "aggregation": {
+    "inventory_semantics": "ARITHMETIC_SUM_ONLY_NO_EQUALITY_OR_LIFECYCLE_INFERENCE",
+    "non_main_branch_refs": "BRANCHES_MINUS_ONE_PER_NODE",
+    "non_main_ref_is_stale_ref": false,
+    "non_main_ref_is_orphan_ref": false,
+    "non_main_ref_is_safe_to_delete": false,
+    "gc_candidate_is_gc_authorized": false
+  },
+  "effect_boundary": {
+    "mode": "OBSERVE_ONLY",
+    "cross_repository_sync": false,
+    "merge": false,
+    "force_push": false,
+    "branch_deletion": false,
+    "release": false,
+    "deployment": false,
+    "external_effect": false
+  },
+  "completion_claims": {
+    "mesh_canonical_main_derived": false,
+    "authority_mirror_equality_claimed": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

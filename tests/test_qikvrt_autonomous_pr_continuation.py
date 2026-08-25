@@ -28,7 +28,7 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         self.assertEqual(value["history_rewrite"], "FORBIDDEN")
         self.assertEqual(
             value["automatic_promotion"],
-            "HOLD_UNTIL_ALL_EXTERNAL_AND_INTERNAL_GATES",
+            "TWO_PHASE_EXPECTED_HEAD_BOUND_ONLY",
         )
 
     def test_continuation_preserves_history_and_never_merges_or_force_pushes(self) -> None:

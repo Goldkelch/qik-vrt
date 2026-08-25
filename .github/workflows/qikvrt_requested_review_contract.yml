@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT requested review contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_requested_review_executor.yml"
+      - ".github/workflows/qikvrt_requested_review_contract.yml"
+      - ".github/workflows/qikvrt_ci.yml"
+      - ".github/workflows/qikvrt_code_owner_review_observer.yml"
+      - ".github/workflows/qikvrt_required_review_gate.yml"
+      - ".github/workflows/qikvrt_expected_head_promotion.yml"
+      - ".github/workflows/qikvrt_autonomous_self_heal.yml"
+      - "tools/qikvrt_requested_review_executor.py"
+      - "tools/qikvrt_expected_head_promotion.py"
+      - "tools/qikvrt_required_review_gate.py"
+      - "tests/test_qikvrt_requested_review_executor.py"
+      - "tests/test_qikvrt_expected_head_promotion.py"
+      - "tests/test_qikvrt_required_review_gate.py"
+      - "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+      - "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md"
+      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
+      - "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+      - "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json"
+      - "state/work_units/MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json"
+      - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
+      - "tests/test_qikvrt_expected_head_promotion_contract.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify review cores and decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/qikvrt_requested_review_executor.py \
+            tools/qikvrt_expected_head_promotion.py \
+            tools/qikvrt_required_review_gate.py \
+            tests/test_qikvrt_requested_review_executor.py \
+            tests/test_qikvrt_expected_head_promotion.py \
+            tests/test_qikvrt_expected_head_promotion_contract.py \
+            tests/test_qikvrt_required_review_gate.py \
+            tests/test_qikvrt_workflow_executor_mesh_contract.py
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_requested_review_executor \
+            tests.test_qikvrt_required_review_gate \
+            tests.test_qikvrt_expected_head_promotion \
+            tests.test_qikvrt_expected_head_promotion_contract \
+            tests.test_qikvrt_workflow_executor_mesh_contract
+
+      - name: Verify event, recovery, identity and promotion bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'pull_request_target:' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F "if: github.ref == 'refs/heads/main'" .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'converted_to_draft' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'review_request_removed' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'issue_comment:' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'review_requested' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F '*/5 * * * *' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'workflow_run:' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'refs/heads/qikvrt/mesh-review-ledger-v1' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'qikvrt/mesh-review-ledger-v1' .github/workflows/qikvrt_ci.yml
+          grep -F 'def _git_scope' tools/qikvrt_requested_review_executor.py
+          grep -F '"--no-ext-diff", "--no-textconv", "--no-renames"' tools/qikvrt_requested_review_executor.py
+          grep -F 'REQUIRED_GATE_PATHS_JSON' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'post-ledger-cas' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'post-review-comment' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'post-status' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F -- '-f commit_id="$EXPECTED_HEAD" -f event=COMMENT' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'if-no-files-found: error' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'include-hidden-files: true' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'latest_status_matches_projection' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'HOLD_UNVERIFIED' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'independent Code-Owner approval: **not implied**' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'event=APPROVE' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'event=REQUEST_CHANGES' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F '<<EOF' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'git push' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'gh pr merge' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'permissions: {}' .github/workflows/qikvrt_code_owner_review_observer.yml
+          grep -F 'QIKVRT requested review executor' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'QIKVRT required code-owner review' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'require_code_owner_review' tools/qikvrt_required_review_gate.py
+          grep -F 'dismiss_stale_reviews_on_push' tools/qikvrt_required_review_gate.py
+          grep -F 'require_last_push_approval' tools/qikvrt_required_review_gate.py
+          grep -F 'QIKVRT requested review execution' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'QIKVRT required code-owner review' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'statuses?per_page=100' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'mesh_review_status_projection' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'require_unchanged_mesh_review_status' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'require_unchanged_promotion_marker' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F 'HEAD^1' .github/workflows/qikvrt_expected_head_promotion.yml
+          ! grep -F 'pulls/${PR_NUMBER}/merge' .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F "tools/qikvrt_requested_review_executor.py','verify'" .github/workflows/qikvrt_expected_head_promotion.yml
+          grep -F "'--expected-diff',str(diff_path)" .github/workflows/qikvrt_expected_head_promotion.yml

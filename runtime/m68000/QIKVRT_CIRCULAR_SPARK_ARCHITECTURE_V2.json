@@ -1,0 +1,122 @@
+{
+  "schema": "QIKVRT_CIRCULAR_SPARK_ARCHITECTURE_V2",
+  "version": 2,
+  "target_microcore": "Motorola 68000",
+  "physical_register_width_bits": 32,
+  "scale": {
+    "sequence": [0, 1, 2, 8, 256],
+    "zero": "QUIESCENT / no active bounded work ring",
+    "one": "ACTIVATE one bounded work ring",
+    "two": "binary distinction 0|1",
+    "eight": "2^3 = 8 control bits = one byte",
+    "two_hundred_fifty_six": "2^8 = 256 possible control-byte values",
+    "explicit_evidence_ring_bits": 256,
+    "macro_ring_bits_expression": "256^3",
+    "macro_ring_bits": 16777216,
+    "macro_ring_bytes": 2097152,
+    "macro_ring_state_cardinality": {
+      "expression": "2^(256^3)",
+      "base": 2,
+      "exponent_bits": 16777216,
+      "materialized_or_enumerated": false
+    }
+  },
+  "hard_distinctions": [
+    "256_BYTE_STATES != 256_BIT_RING_WIDTH",
+    "256^3_BITS != 2^(256^3)_STATES",
+    "PHYSICAL_M68000_REGISTER_WIDTH = 32_BITS",
+    "VIRTUAL_RING_WIDTH != PHYSICAL_REGISTER_WIDTH",
+    "ONE_M68000_PLAN_PASS != GITHUB_EFFECT",
+    "ONE_SPARK_CYCLE != ONE_MACHINE_INSTRUCTION",
+    "EMULATOR_EXECUTION != PHYSICAL_HARDWARE_EXECUTION"
+  ],
+  "structural_rings": [
+    {
+      "id": "CONTROL",
+      "width_bits": 8,
+      "state_count": 256
+    },
+    {
+      "id": "EVIDENCE",
+      "width_bits": 256,
+      "carrier": "SHA-256 work-unit/provenance identity"
+    },
+    {
+      "id": "COMPLETION",
+      "purpose": "collect -> persist -> release -> reobserve -> quiesce"
+    }
+  ],
+  "circular_layer_cycle": [
+    {
+      "ordinal": 0,
+      "kind": "VIRTUAL_COMPILER",
+      "effect": "lower stable finite rules to immutable M68000 bytes once"
+    },
+    {
+      "ordinal": 1,
+      "kind": "PHYSICAL_M68000_PLAN_ROLE",
+      "effect": "execute one plan-selection pass"
+    },
+    {
+      "ordinal": 2,
+      "kind": "VIRTUAL_INTERPRETER_EFFECT_ADAPTER",
+      "effect": "interpret the selected plan and serialize bounded host effects"
+    },
+    {
+      "ordinal": 3,
+      "kind": "PHYSICAL_M68000_CLOSURE_ROLE",
+      "effect": "execute one finite capsule closure pass"
+    },
+    {
+      "ordinal": 4,
+      "kind": "VIRTUAL_REOBSERVATION",
+      "effect": "bind exact resulting state and select the next work ring"
+    },
+    {
+      "ordinal": 5,
+      "kind": "QUIESCENCE_OR_NEXT_ACTIVATION",
+      "effect": "D3 lifecycle returns to 0 or activates the next causally ready ring"
+    }
+  ],
+  "branch_work_unit_contract": {
+    "one_plan_kernel_pass_per_admitted_work_unit": true,
+    "one_complete_plan_selected_per_plan_pass": true,
+    "one_spark_cycle_closes_to": [
+      "COMPLETE",
+      "PRECISE_EXTERNAL_HOLD",
+      "HOLD_INVALID"
+    ],
+    "complete_requires": [
+      "base current",
+      "integrity current",
+      "gates terminal",
+      "gates non-adverse",
+      "mergeable",
+      "authority when required",
+      "main effect reobserved",
+      "collect",
+      "persist",
+      "release"
+    ],
+    "arbitrary_unbounded_implementation_in_one_pass": false
+  },
+  "compiled_kernels": [
+    "lean_spark_branch_pass_v1",
+    "lean_spark_branch_plan_v1"
+  ],
+  "software_virtualization": {
+    "compiler_language": "Python deterministic M68000 emitter plus Lean/Lake proof binding",
+    "interpreter_language": "Python bounded opcode/reference interpreter",
+    "hot_path_rule": "compile once; load immutable bytes once; do not reinterpret the higher-level decision rule per admitted work unit"
+  },
+  "current_execution_evidence": {
+    "virtual_m68000": true,
+    "hatari_m68000_for_predecessor_kernels": true,
+    "hatari_m68000_for_new_spark_kernels": false,
+    "physical_m68000": false,
+    "physical_speedup_ratio": false
+  },
+  "pass": false,
+  "final_pass": false,
+  "effect_ack_done": false
+}

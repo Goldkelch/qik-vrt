@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Lean gate M68000 compiler
+
+on:
+  pull_request:
+    paths:
+      - "formalization/QIKVRT_Formalization_v1.0/**"
+      - "src/m68000/qikvrt_lean_gate_kernel.s"
+      - "tools/qikvrt_lean_gate_m68000_compiler.py"
+      - "tests/test_qikvrt_lean_gate_m68000_compiler.py"
+      - ".github/workflows/qikvrt_lean_gate_m68000.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-compile-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Restore Lean runtime cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.elan
+            formalization/QIKVRT_Formalization_v1.0/.lake/packages
+          key: qikvrt-v1-lean-m68k-${{ runner.os }}-${{ hashFiles('formalization/QIKVRT_Formalization_v1.0/lean-toolchain', 'formalization/QIKVRT_Formalization_v1.0/lakefile.toml') }}-${{ github.sha }}
+          restore-keys: |
+            qikvrt-v1-lean-m68k-${{ runner.os }}-${{ hashFiles('formalization/QIKVRT_Formalization_v1.0/lean-toolchain', 'formalization/QIKVRT_Formalization_v1.0/lakefile.toml') }}-
+            qikvrt-v1-lean-m68k-${{ runner.os }}-
+      - name: Kernel-check Lean projection
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          lake-package-directory: formalization/QIKVRT_Formalization_v1.0
+          test: false
+      - name: Compile M68000 machine bytes and exhaustively verify ABI
+        run: |
+          set -euo pipefail
+          python3 tools/qikvrt_lean_gate_m68000_compiler.py --json | tee qikvrt-lean-gate-m68000-report.json
+          python3 -m unittest tests.test_qikvrt_lean_gate_m68000_compiler -v
+      - name: Reject axioms/sorry/admit in projection
+        run: |
+          set -euo pipefail
+          target=formalization/QIKVRT_Formalization_v1.0/QIKVRTFormalization/M68000Kernel.lean
+          ! grep -nE '(^|[^A-Za-z])(axiom|sorry|admit)([^A-Za-z]|$)' "$target"
+      - name: Publish compiler report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-lean-gate-m68000-${{ github.sha }}
+          path: qikvrt-lean-gate-m68000-report.json
+          retention-days: 30
+          if-no-files-found: error

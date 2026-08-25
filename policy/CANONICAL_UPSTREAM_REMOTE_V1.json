@@ -1,0 +1,58 @@
+{
+  "schema": "qikvrt_canonical_upstream_remote_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "smallest_action": "MATERIALIZE_POLICY_BOUND_CANONICAL_UPSTREAM_REMOTE",
+  "canonical_upstream": {
+    "repository": "Goldkelch/qik-vrt",
+    "role": "AUTHORITY",
+    "canonical_remote_name": "authority",
+    "canonical_https_url": "https://github.com/Goldkelch/qik-vrt.git",
+    "canonical_api_repository": "https://api.github.com/repos/Goldkelch/qik-vrt",
+    "canonical_entrypoint": "/AI",
+    "default_branch": "main"
+  },
+  "mirror": {
+    "repository": "ingolf-lohmann/qik-vrt",
+    "role": "MIRROR",
+    "canonical_remote_name": "mirror",
+    "canonical_https_url": "https://github.com/ingolf-lohmann/qik-vrt.git",
+    "canonical_api_repository": "https://api.github.com/repos/ingolf-lohmann/qik-vrt",
+    "canonical_entrypoint": "/AI",
+    "default_branch": "main"
+  },
+  "selection_rule": {
+    "source_of_truth": "canonical_upstream.repository",
+    "policy_over_local_git_config": true,
+    "policy_over_remote_name_heuristics": true,
+    "policy_over_personal_origin": true,
+    "ambiguous_or_missing_binding": "HOLD"
+  },
+  "exact_head_contract": {
+    "bind_current_authority_main_before_use": true,
+    "bind_current_authority_root_tree_before_use": true,
+    "reobserve_after_every_effect": true,
+    "predecessor_gate_evidence_transfer": false
+  },
+  "promotion_contract": {
+    "authority_first": true,
+    "mirror_history_preserving": true,
+    "mirror_parent_must_equal_current_mirror_main": true,
+    "mirror_tree_must_equal_promoted_authority_tree": true,
+    "fresh_mirror_exact_head_gates_required": true,
+    "force_push": false
+  },
+  "effect_boundary": {
+    "remote_identity_materialization_is_not_merge_authorization": true,
+    "remote_identity_materialization_is_not_release_authorization": true,
+    "remote_identity_materialization_is_not_deployment_authorization": true,
+    "remote_identity_materialization_is_not_publication_authorization": true,
+    "completion_claim_requires_reobservation": true
+  },
+  "maxim": "Resolve canonical upstream identity from repository policy, bind it to the current exact head and tree, act only through the smallest authorized path, and reobserve after every effect.",
+  "ontology": [
+    "Sequenz ist Ordnung.",
+    "Kausalität ist Verantwortung.",
+    "Eins und nicht keins."
+  ]
+}

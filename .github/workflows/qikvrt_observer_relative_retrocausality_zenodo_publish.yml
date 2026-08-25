@@ -1,0 +1,275 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: Publish observer-relative retrocausality v2 to Zenodo
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PUBLISH_OBSERVER_RELATIVE_RETROCAUSALITY_ZENODO_V2 to authorize this one manual run
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-observer-relative-retrocausality-zenodo-v2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'Goldkelch' &&
+      github.triggering_actor == 'Goldkelch' &&
+      inputs.confirmation == 'PUBLISH_OBSERVER_RELATIVE_RETROCAUSALITY_ZENODO_V2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: zenodo-production
+    env:
+      EXECUTION_HEAD: a7cd4011b8cdf06e650e22dc3e8dda6df22a5bf0
+      SOURCE_HEAD: 56127a6fd7dadea331fea98ed6cba19b4b96c6b2
+      MANIFEST_PATH: release/observer-relative-retrocausality-current-synthesis-zenodo-v2/publish-request.json
+      EVIDENCE_PATH: release/observer-relative-retrocausality-current-synthesis-zenodo-v2/zenodo-publication.json
+      DISPATCH_MAIN_HEAD: ${{ github.sha }}
+      ZENODO_API_BASE: https://zenodo.org/api
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - name: Check out the fixed authorized execution commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXECUTION_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify main-to-execution ancestry and exact allowed delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = 'Goldkelch'
+          test "$GITHUB_TRIGGERING_ACTOR" = 'Goldkelch'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXECUTION_HEAD"
+          git cat-file -e "$DISPATCH_MAIN_HEAD^{commit}"
+          git merge-base --is-ancestor "$EXECUTION_HEAD" "$DISPATCH_MAIN_HEAD"
+          test "$(git show -s --format=%P "$EXECUTION_HEAD")" = "$SOURCE_HEAD"
+          test ! -e "$EVIDENCE_PATH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          expected_delta="$(
+            printf '%s\t%s\n' \
+              M REPOSITORY_FILE_MANIFEST.json \
+              M REPOSITORY_FILE_MANIFEST.json.sha256 \
+              M SHA256SUMS.txt \
+              A release/observer-relative-retrocausality-current-synthesis-zenodo-v2/OWNER_ZENODO_AUTHORIZATION.json \
+              A release/observer-relative-retrocausality-current-synthesis-zenodo-v2/publish-request.json \
+              M tests/test_observer_relative_retrocausality_zenodo_finalizer.py
+          )"
+          observed_delta="$(
+            git diff --name-status --no-renames "$SOURCE_HEAD" "$EXECUTION_HEAD" --
+          )"
+          test "$observed_delta" = "$expected_delta"
+          remote_main_head="$(
+            git ls-remote --heads origin 'refs/heads/main' |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_main_head" = "$DISPATCH_MAIN_HEAD"
+
+      - name: Verify final controls and exact publish manifest without network effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B release/observer-relative-retrocausality-current-synthesis-zenodo-v2/finalize_authorized_controls.py --check
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          GITHUB_SHA="$EXECUTION_HEAD" \
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          execution_head = publish._validate_repository_source_head(
+              root, manifest_path, manifest
+          )
+          publish._validate_origin_repository(root, manifest["repository"])
+          if execution_head != os.environ["EXECUTION_HEAD"]:
+              raise SystemExit("BLOCK: normalized execution head differs")
+          if manifest["source_head"] != os.environ["SOURCE_HEAD"]:
+              raise SystemExit("BLOCK: manifest source head differs")
+          if len(manifest["files"]) != 21:
+              raise SystemExit("BLOCK: exact Zenodo upload count differs")
+          print("ZENODO_EXECUTION_PREFLIGHT=VALID")
+          PY
+          python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Run complete repository gates before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recheck remote heads immediately before effect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXECUTION_HEAD"
+          remote_main_head="$(
+            git ls-remote --heads origin 'refs/heads/main' |
+              awk 'NR == 1 { print $1 }'
+          )"
+          test "$remote_main_head" = "$DISPATCH_MAIN_HEAD"
+          test ! -e "$EVIDENCE_PATH"
+
+      - name: Consume authorization and publish exact files
+        id: publish
+        continue-on-error: true
+        timeout-minutes: 20
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+        run: |
+          set +e
+          umask 077
+          GITHUB_SHA="$EXECUTION_HEAD" python3 -B tools/qikvrt_zenodo_publish.py \
+            --manifest "$MANIFEST_PATH"
+          status=$?
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist publication or recovery receipt on a separate pull request
+        id: persist
+        if: always()
+        shell: bash
+        env:
+          RECEIPT_BRANCH: receipt/observer-relative-retrocausality-zenodo-v2-${{ github.run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if test ! -f "$EVIDENCE_PATH"; then
+            printf 'persisted=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          state="$(
+            python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          root = Path.cwd().resolve()
+          manifest_path = root / os.environ["MANIFEST_PATH"]
+          manifest = publish.load_manifest(manifest_path, root)
+          value, _raw = publish.zenodo._load_json_file(
+              root / os.environ["EVIDENCE_PATH"]
+          )
+          evidence = publish._validate_recovery_evidence(
+              value,
+              manifest_path,
+              root,
+              manifest,
+              os.environ["EXECUTION_HEAD"],
+          )
+          print(evidence["state"])
+          PY
+          )"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B - <<'PY'
+          import os
+          import subprocess
+
+          expected = {
+              "REPOSITORY_FILE_MANIFEST.json",
+              "REPOSITORY_FILE_MANIFEST.json.sha256",
+              "SHA256SUMS.txt",
+              os.environ["EVIDENCE_PATH"],
+          }
+          raw = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
+          )
+          observed = set()
+          for item in raw.split(b"\0"):
+              if item:
+                  observed.add(item[3:].decode("utf-8"))
+          if observed != expected:
+              raise SystemExit(
+                  "BLOCK: post-publication repository delta differs: "
+                  + ",".join(sorted(observed))
+              )
+          PY
+          git config user.name 'qik-vrt-zenodo-publication[bot]'
+          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
+          git switch -c "$RECEIPT_BRANCH"
+          git add -- \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt \
+            "$EVIDENCE_PATH"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if test "$state" = 'published'; then
+            message='zenodo: persist observer-relative retrocausality publication'
+          else
+            message='zenodo: persist observer-relative retrocausality recovery receipt'
+          fi
+          git commit -m "$message"
+          push_auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $push_auth" \
+            push origin "HEAD:refs/heads/$RECEIPT_BRANCH"
+          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+          RECEIPT_BRANCH="$RECEIPT_BRANCH" \
+          STATE="$state" \
+          python3 -B - <<'PY'
+          import os
+
+          from tools import qikvrt_zenodo_publish as publish
+
+          if os.environ["GITHUB_REPOSITORY"] != publish.PRODUCTION_REPOSITORY:
+              raise SystemExit("BLOCK: receipt repository differs")
+          publish._github_api_request(
+              "POST",
+              "/repos/Goldkelch/qik-vrt/pulls",
+              os.environ["GITHUB_TOKEN"],
+              payload={
+                  "title": "Persist observer-relative retrocausality Zenodo receipt",
+                  "head": os.environ["RECEIPT_BRANCH"],
+                  "base": "main",
+                  "body": (
+                      "Zenodo publisher receipt state: `"
+                      + os.environ["STATE"]
+                      + "`. This receipt branch is intentionally separate from "
+                        "the execution-control commit."
+                  ),
+              },
+              accept=(201,),
+          )
+          PY
+          printf 'persisted=true\n' >> "$GITHUB_OUTPUT"
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+      - name: Upload publication or recovery evidence
+        if: always() && hashFiles('release/observer-relative-retrocausality-current-synthesis-zenodo-v2/zenodo-publication.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: observer-relative-retrocausality-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_PATH }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Report a failed publish attempt after durable receipt handling
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "${{ steps.publish.outputs.status }}" != '0'; then
+            exit "${{ steps.publish.outputs.status }}"
+          fi
+          test "${{ steps.persist.outputs.persisted }}" = 'true'

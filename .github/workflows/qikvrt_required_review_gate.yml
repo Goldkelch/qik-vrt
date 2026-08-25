@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT required code-owner review
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT code-owner review observer"
+      - "QIKVRT requested review executor"
+    types: [completed]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Optional open main-based PR number"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-required-code-owner-review-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      REQUIRED_CODE_OWNER: Goldkelch
+      STATUS_CONTEXT: QIKVRT required code-owner review
+      REQUESTED_PR: ${{ inputs.pr || '' }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+    steps:
+      - name: Check out trusted main gate implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reobserve native rules and exact-head reviews
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, subprocess
+          from tools.qikvrt_required_review_gate import (
+              STATUS_PUBLICATION_NOOP,
+              decide_status_publication,
+              evaluate_required_review,
+              status_description,
+          )
+
+          repo = os.environ['REPOSITORY']
+          requested = os.environ.get('REQUESTED_PR', '').strip()
+          event_name = os.environ['EVENT_NAME']
+          event_prs = json.loads(os.environ.get('EVENT_PRS') or '[]')
+          owner = os.environ['REQUIRED_CODE_OWNER']
+          context = os.environ['STATUS_CONTEXT']
+
+          def gh_json(path):
+              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+
+          def gh_pages(path):
+              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              out=[]
+              for page in pages:
+                  out.extend(page if isinstance(page,list) else [page])
+              return out
+
+          if requested:
+              numbers=[int(requested)]
+          elif event_name == 'workflow_run':
+              numbers=sorted({int(item['number']) for item in event_prs if isinstance(item,dict) and item.get('number')})
+          else:
+              numbers=[int(pr['number']) for pr in gh_pages(f'repos/{repo}/pulls?state=open&base=main&per_page=100')]
+
+          rules=gh_json(f'repos/{repo}/rules/branches/main')
+
+          for number in numbers:
+              pr=gh_json(f'repos/{repo}/pulls/{number}')
+              if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main':
+                  continue
+              head=pr['head']['sha']
+              reviews=gh_pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
+              decision=evaluate_required_review(pr, rules, reviews, required_code_owner=owner)
+              state=decision['gate_state']
+              description=status_description(decision)
+
+              combined=gh_json(f'repos/{repo}/commits/{head}/status')
+              publication=decide_status_publication(
+                  combined.get('statuses', []),
+                  context=context,
+                  state=state,
+                  description=description,
+              )
+              receipt={**decision, **publication}
+              if publication['status_publication'] == STATUS_PUBLICATION_NOOP:
+                  print(json.dumps(receipt, sort_keys=True))
+                  continue
+
+              subprocess.check_call([
+                  'gh','api','--method','POST',f'repos/{repo}/statuses/{head}',
+                  '-f',f'state={state}','-f',f'context={context}','-f',f'description={description}',
+                  '-f',f'target_url={os.environ["GITHUB_SERVER_URL"]}/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
+              ])
+              print(json.dumps(receipt, sort_keys=True))
+          PY

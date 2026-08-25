@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from tools import qikvrt_vrtcore_zenodo_publication_controls as controls
+from tools import qikvrt_zenodo_actions as zenodo
 from tools import qikvrt_zenodo_publish as publish
 
 
@@ -13,6 +16,22 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class VRTCoreZenodoPublicationControlTests(unittest.TestCase):
+    def load_authority_manifest(self, path: pathlib.Path) -> dict[str, object]:
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "ingolf-lohmann/qik-vrt"},
+        ):
+            with self.assertRaisesRegex(
+                zenodo.ZenodoError,
+                "manifest repository differs from the executing repository",
+            ):
+                publish.load_manifest(path, ROOT)
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": publish.PRODUCTION_REPOSITORY},
+        ):
+            return publish.load_manifest(path, ROOT)
+
     def test_three_exact_unique_owner_decisions(self) -> None:
         self.assertEqual(set(controls.PROFILES), {"h3", "h5", "h6"})
         ids = {str(value["authorization_id"]) for value in controls.PROFILES.values()}
@@ -26,7 +45,7 @@ class VRTCoreZenodoPublicationControlTests(unittest.TestCase):
     def test_controls_pass_active_v2_manifest_gate(self) -> None:
         for profile in controls.PROFILES.values():
             control = ROOT / str(profile["control"])
-            manifest = publish.load_manifest(control / "publish-request.json", ROOT)
+            manifest = self.load_authority_manifest(control / "publish-request.json")
             self.assertEqual(manifest["source_head"], controls.SOURCE_HEAD)
             self.assertEqual(len(manifest["files"]), profile["upload_count"])
             self.assertEqual(
@@ -45,7 +64,7 @@ class VRTCoreZenodoPublicationControlTests(unittest.TestCase):
             nonce = value["nonce"]
             self.assertEqual(len(nonce), 64)
             self.assertNotEqual(nonce, "0" * 64)
-            normalized = publish.load_manifest(control / "publish-request.json", ROOT)
+            normalized = self.load_authority_manifest(control / "publish-request.json")
             digests.add(normalized["owner_authorization"]["nonce_digest"]["value"])
         self.assertEqual(len(digests), 3)
 
