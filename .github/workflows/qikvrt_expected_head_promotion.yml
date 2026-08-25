@@ -86,10 +86,20 @@ jobs:
           marker = os.environ['PROMOTION_MARKER']
           requested = os.environ.get('REQUESTED_PR', '').strip()
 
+          def _gh_call(args, retries=5, backoff=15):
+              import time
+              for attempt in range(retries):
+                  r=subprocess.run(args, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      return r.stdout
+                  if attempt < retries - 1 and 'rate limit' in r.stderr.lower():
+                      time.sleep(backoff * (attempt + 1))
+                      continue
+                  raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_call(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_call(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
@@ -144,16 +154,26 @@ jobs:
           required=json.loads(os.environ['REQUIRED_GATES_JSON'])
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_call(args, retries=5, backoff=15):
+              import time
+              for attempt in range(retries):
+                  r=subprocess.run(args, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      return r.stdout
+                  if attempt < retries - 1 and 'rate limit' in r.stderr.lower():
+                      time.sleep(backoff * (attempt + 1))
+                      continue
+                  raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_call(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_call(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
               return out
           def gh_runs(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_call(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   if isinstance(page,dict):
@@ -246,11 +266,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          current_main="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
-          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-          current_base="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
-          merged="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
-          draft="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)"
+          gh_api_retry() {
+            local out; local attempt=0
+            while true; do
+              out="$(gh api "$@" 2>&1)" && { echo "$out"; return 0; }
+              attempt=$((attempt+1))
+              if [ $attempt -ge 5 ]; then echo "$out" >&2; return 1; fi
+              echo "$out" | grep -qi "rate limit" || { echo "$out" >&2; return 1; }
+              sleep $((15 * attempt))
+            done
+          }
+          current_main="$(gh_api_retry "repos/${REPOSITORY}/commits/main" --jq .sha)"
+          current_head="$(gh_api_retry "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          current_base="$(gh_api_retry "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .base.sha)"
+          merged="$(gh_api_retry "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .merged)"
+          draft="$(gh_api_retry "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .draft)"
           test "$merged" = false
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_BASE"
           test "$current_main" = "$EXPECTED_BASE"
@@ -258,14 +288,21 @@ jobs:
           test "$current_head" = "$EXPECTED_HEAD"
 
           python3 -B - <<'PY'
-          import json, os, subprocess
+          import json, os, subprocess, time
           from tools.qikvrt_expected_head_promotion import require_unchanged_promotion_marker
 
           repo=os.environ['REPOSITORY']
           number=int(os.environ['PR_NUMBER'])
-          pr=json.loads(subprocess.check_output(
-              ['gh','api',f'repos/{repo}/pulls/{number}'],text=True
-          ))
+          def _gh_call(args, retries=5, backoff=15):
+              for attempt in range(retries):
+                  r=subprocess.run(args, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      return r.stdout
+                  if attempt < retries - 1 and 'rate limit' in r.stderr.lower():
+                      time.sleep(backoff * (attempt + 1))
+                      continue
+                  raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
+          pr=json.loads(_gh_call(['gh','api',f'repos/{repo}/pulls/{number}']))
           require_unchanged_promotion_marker(
               os.environ['EXPECTED_MARKER_SHA256'],pr,repo,os.environ['PROMOTION_MARKER']
           )
@@ -284,10 +321,20 @@ jobs:
           expected_head=os.environ['EXPECTED_HEAD']
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_call(args, retries=5, backoff=15):
+              import time
+              for attempt in range(retries):
+                  r=subprocess.run(args, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      return r.stdout
+                  if attempt < retries - 1 and 'rate limit' in r.stderr.lower():
+                      time.sleep(backoff * (attempt + 1))
+                      continue
+                  raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+              return json.loads(_gh_call(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              pages=json.loads(_gh_call(['gh','api','--paginate','--slurp',path]))
               out=[]
               for page in pages:
                   out.extend(page if isinstance(page,list) else [page])
@@ -363,10 +410,20 @@ jobs:
           expected_head=os.environ['EXPECTED_HEAD']
           review_context=os.environ['REVIEW_STATUS_CONTEXT']
 
+          def _gh_call(args, retries=5, backoff=15):
+              import time
+              for attempt in range(retries):
+                  r=subprocess.run(args, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      return r.stdout
+                  if attempt < retries - 1 and 'rate limit' in r.stderr.lower():
+                      time.sleep(backoff * (attempt + 1))
+                      continue
+                  raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
           def gh_json(path):
-              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+              return json.loads(_gh_call(['gh','api',path]))
           def gh_pages(path):
-              pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
+              pages=json.loads(_gh_call(['gh','api','--paginate','--slurp',path]))
               return [item for page in pages for item in page]
 
           evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
