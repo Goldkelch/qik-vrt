@@ -1,0 +1,302 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT canonical AI Firefox terminal reobservation
+
+on:
+  pull_request:
+    paths:
+      - "docs/AI/**"
+      - "docs/terminal/**"
+      - "docs/assets/js/qikvrt-ai-entrypoint.js"
+      - "docs/assets/js/qikvrt-repository-terminal.js"
+      - "browser/firefox/qikvrt-terminal/**"
+      - "src/qikvrt_effect_ack_http_terminal.py"
+      - "policy/CANONICAL_AI_FIREFOX_TERMINAL_V1.json"
+      - "tools/qikvrt_canonical_ai_firefox_reobservation.py"
+      - "tests/test_qikvrt_canonical_ai_firefox_reobservation.py"
+      - ".github/workflows/qikvrt_canonical_ai_firefox_reobservation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs/AI/**"
+      - "docs/terminal/**"
+      - "docs/assets/js/qikvrt-ai-entrypoint.js"
+      - "docs/assets/js/qikvrt-repository-terminal.js"
+      - "browser/firefox/qikvrt-terminal/**"
+      - "src/qikvrt_effect_ack_http_terminal.py"
+      - "policy/CANONICAL_AI_FIREFOX_TERMINAL_V1.json"
+      - "tools/qikvrt_canonical_ai_firefox_reobservation.py"
+      - "tests/test_qikvrt_canonical_ai_firefox_reobservation.py"
+      - ".github/workflows/qikvrt_canonical_ai_firefox_reobservation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-ai-firefox-terminal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out literal exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind literal exact head and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          git rev-parse --verify HEAD^{tree} | tee /tmp/qikvrt-source-tree.txt
+          test -s /tmp/qikvrt-source-tree.txt
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Verify route, extension, policy and harness contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        run: |
+          set -euo pipefail
+          python3 -m json.tool policy/CANONICAL_AI_FIREFOX_TERMINAL_V1.json >/dev/null
+          python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
+          python3 -m py_compile \
+            tools/qikvrt_canonical_ai_firefox_reobservation.py \
+            src/qikvrt_effect_ack_http_terminal.py \
+            tests/test_qikvrt_canonical_ai_firefox_reobservation.py
+          node --check docs/assets/js/qikvrt-ai-entrypoint.js
+          node --check docs/assets/js/qikvrt-repository-terminal.js
+          node --check browser/firefox/qikvrt-terminal/background.js
+          node --check browser/firefox/qikvrt-terminal/content.js
+          node --check browser/firefox/qikvrt-terminal/options.js
+          node --check browser/firefox/qikvrt-terminal/review_effect.js
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_canonical_ai_firefox_reobservation \
+            tests.test_qikvrt_effect_ack_http_terminal \
+            tests.test_qikvrt_firefox_proxy_delegate
+
+      - name: Observe installed Firefox runtime
+        run: |
+          set -euo pipefail
+          (firefox --version || firefox-esr --version) \
+            | tee /tmp/qikvrt-firefox-version.txt
+
+      - name: Acquire pinned Mozilla geckodriver
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-ai-firefox/geckodriver
+          curl --fail --location --retry 3 \
+            "https://api.github.com/repos/mozilla/geckodriver/releases/tags/v0.37.1" \
+            -o /tmp/qikvrt-ai-firefox/geckodriver/release.json
+          python3 - <<'PY' > /tmp/qikvrt-ai-firefox/geckodriver/asset.env
+          import json
+          value = json.load(open(
+              "/tmp/qikvrt-ai-firefox/geckodriver/release.json",
+              encoding="utf-8",
+          ))
+          asset = next(
+              item for item in value["assets"]
+              if item["name"] == "geckodriver-v0.37.1-linux64.tar.gz"
+          )
+          digest = asset.get("digest")
+          assert isinstance(digest, str) and digest.startswith("sha256:")
+          print("URL=" + asset["browser_download_url"])
+          print("SHA256=" + digest.split(":", 1)[1])
+          PY
+          . /tmp/qikvrt-ai-firefox/geckodriver/asset.env
+          curl --fail --location --retry 3 "$URL" \
+            -o /tmp/qikvrt-ai-firefox/geckodriver/geckodriver.tar.gz
+          printf "%s  %s\n" "$SHA256" \
+            /tmp/qikvrt-ai-firefox/geckodriver/geckodriver.tar.gz \
+            | sha256sum -c -
+          tar -xzf /tmp/qikvrt-ai-firefox/geckodriver/geckodriver.tar.gz \
+            -C /tmp/qikvrt-ai-firefox/geckodriver
+          /tmp/qikvrt-ai-firefox/geckodriver/geckodriver --version \
+            | tee /tmp/qikvrt-ai-firefox/geckodriver/version.txt
+
+      - name: Package exact Firefox terminal extension
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-ai-firefox
+          (
+            cd browser/firefox/qikvrt-terminal
+            zip -X -q -r /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi .
+          )
+          sha256sum /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi \
+            | tee /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi.sha256
+
+      - name: Start same-origin docs route and bounded Effect-Ack backend
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8000 --bind 127.0.0.1 --directory docs \
+            > /tmp/qikvrt-ai-firefox/docs-server.log 2>&1 &
+          echo $! > /tmp/qikvrt-ai-firefox/docs-server.pid
+          python3 -B src/qikvrt_effect_ack_http_terminal.py \
+            > /tmp/qikvrt-ai-firefox/backend.log 2>&1 &
+          echo $! > /tmp/qikvrt-ai-firefox/backend.pid
+          docs_ready=0
+          backend_ready=0
+          for _ in $(seq 1 100); do
+            if curl --fail --silent "http://127.0.0.1:8000/AI/" \
+              > /tmp/qikvrt-ai-firefox/ai.html 2>/dev/null; then
+              docs_ready=1
+            fi
+            if curl --fail --silent \
+              "http://127.0.0.1:8771/.well-known/effect-ack" \
+              > /tmp/qikvrt-ai-firefox/discovery.json 2>/dev/null; then
+              backend_ready=1
+            fi
+            if test "$docs_ready" -eq 1 && test "$backend_ready" -eq 1; then
+              break
+            fi
+            sleep 0.1
+          done
+          test "$docs_ready" -eq 1
+          test "$backend_ready" -eq 1
+          grep -F 'id="terminalRoute"' /tmp/qikvrt-ai-firefox/ai.html
+          cat /tmp/qikvrt-ai-firefox/discovery.json
+
+      - name: Reobserve canonical /AI, Firefox JavaScript, terminal interaction and bounded Effect-Ack
+        env:
+          QIKVRT_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          export QIKVRT_SOURCE_TREE="$(git rev-parse --verify HEAD^{tree})"
+          if test "$GITHUB_EVENT_NAME" = "push" && \
+             test "$GITHUB_REF" = "refs/heads/main"; then
+            export QIKVRT_AUTHORITY_MAIN_EXACT=true
+          else
+            export QIKVRT_AUTHORITY_MAIN_EXACT=false
+          fi
+          mkdir -p "$HOME/qikvrt-gecko-profiles"
+          python3 -B tools/qikvrt_canonical_ai_firefox_reobservation.py \
+            --geckodriver /tmp/qikvrt-ai-firefox/geckodriver/geckodriver \
+            --xpi /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi \
+            --ai-url http://127.0.0.1:8000/AI/ \
+            --receipt /tmp/qikvrt-ai-firefox/browser-receipt.json \
+            --screenshot /tmp/qikvrt-ai-firefox/terminal.png \
+            --geckodriver-log /tmp/qikvrt-ai-firefox/geckodriver.log \
+            --profile-root "$HOME/qikvrt-gecko-profiles"
+          cat /tmp/qikvrt-ai-firefox/browser-receipt.json
+
+      - name: Reobserve bounded backend effect and write final receipt
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent "http://127.0.0.1:8771/terminal/state" \
+            > /tmp/qikvrt-ai-firefox/backend-state.json
+          export TREE_SHA="$(git rev-parse --verify HEAD^{tree})"
+          export XPI_SHA="$(
+            sha256sum /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi \
+              | awk '{print $1}'
+          )"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          browser = json.loads(Path(
+              "/tmp/qikvrt-ai-firefox/browser-receipt.json"
+          ).read_text(encoding="utf-8"))
+          state = json.loads(Path(
+              "/tmp/qikvrt-ai-firefox/backend-state.json"
+          ).read_text(encoding="utf-8"))
+
+          assert browser["canonical_ai_route_observed"] is True
+          assert browser["browser_rendering_observed"] is True
+          assert browser["browser_javascript_observed"] is True
+          assert browser["terminal_interaction_observed"] is True
+          assert browser["bounded_loopback_effect_ack_done"] is True
+          assert browser["general_effect_ack_done"] is False
+          assert state["events"] == 1
+          assert state["last_event"]["kind"] == "TERMINAL_INPUT_ACCEPTED"
+          assert state["last_event"]["text"] == "QIKVRT-FIREFOX-E2E-NONCE-0001"
+          assert state["last_event"]["external_effect"] == "NONE"
+          assert state["external_effects"] == "NONE"
+
+          receipt = {
+              "schema": "qikvrt_canonical_ai_firefox_terminal_run_receipt_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "source_head": os.environ["HEAD_SHA"],
+              "source_tree": os.environ["TREE_SHA"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "xpi_sha256": os.environ["XPI_SHA"],
+              "canonical_ai_route_observed": True,
+              "browser_rendering_observed": True,
+              "browser_javascript_observed": True,
+              "terminal_interaction_observed": True,
+              "bounded_loopback_effect_ack_done": True,
+              "effect_ack_done_scope": "BOUNDED_LOOPBACK_TERMINAL_INPUT_ONLY",
+              "post_effect_backend_reobservation_observed": True,
+              "external_effect": "NONE",
+              "general_effect_ack_done": False,
+              "physical_megast_execution": False,
+              "publication": False,
+              "deployment": False,
+              "pass": False,
+              "final_pass": False,
+              "browser": browser,
+              "backend_state": state,
+          }
+          Path(
+              "/tmp/qikvrt-ai-firefox/"
+              "CANONICAL_AI_FIREFOX_TERMINAL_RECEIPT_V1.json"
+          ).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, sort_keys=True, indent=2))
+          PY
+          echo "BROWSER_RENDERING_OBSERVED=true"
+          echo "BROWSER_JAVASCRIPT_OBSERVED=true"
+          echo "TERMINAL_INTERACTION_OBSERVED=true"
+          echo "BOUNDED_LOOPBACK_EFFECT_ACK_DONE=true"
+          echo "GENERAL_EFFECT_ACK_DONE=false"
+          echo "EXTERNAL_EFFECT=NONE"
+
+      - name: Reobserve literal Authority main on main push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          live_head="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            --jq '.object.sha')"
+          test "$live_head" = "$GITHUB_SHA"
+
+      - name: Preserve exact-head browser proof artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: canonical-ai-firefox-terminal-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            /tmp/qikvrt-source-tree.txt
+            /tmp/qikvrt-firefox-version.txt
+            /tmp/qikvrt-ai-firefox/ai.html
+            /tmp/qikvrt-ai-firefox/discovery.json
+            /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi
+            /tmp/qikvrt-ai-firefox/qikvrt-terminal.xpi.sha256
+            /tmp/qikvrt-ai-firefox/browser-receipt.json
+            /tmp/qikvrt-ai-firefox/backend-state.json
+            /tmp/qikvrt-ai-firefox/CANONICAL_AI_FIREFOX_TERMINAL_RECEIPT_V1.json
+            /tmp/qikvrt-ai-firefox/terminal.png
+            /tmp/qikvrt-ai-firefox/docs-server.log
+            /tmp/qikvrt-ai-firefox/backend.log
+            /tmp/qikvrt-ai-firefox/geckodriver.log
+            /tmp/qikvrt-ai-firefox/geckodriver/version.txt
+            /tmp/qikvrt-ai-firefox/geckodriver/release.json
+          if-no-files-found: warn
+          retention-days: 30
