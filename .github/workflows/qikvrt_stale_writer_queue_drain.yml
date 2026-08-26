@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  force-cancel-two-proven-stale-writers:
+  delete-two-proven-irreconcilable-stale-runs:
     if: >-
       github.repository == 'Goldkelch/qik-vrt' &&
       github.event.pull_request.number == 893 &&
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Verify identities and force-cancel only the stale queue records
+      - name: Verify identities and delete only the two stale run records
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -52,20 +52,14 @@ jobs:
               "$root/run-$run_id-before.json" >> "$root/before.jsonl"
           done < <(jq -r '.[] | [.id,.name,.head_sha,.created_at] | @tsv' "$root/targets.json")
           while read -r run_id; do
-            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"
-            terminal=false
-            for _ in $(seq 1 30); do
-              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-after.json"
-              if test "$(jq -r '.status' "$root/run-$run_id-after.json")" = completed && \
-                 test "$(jq -r '.conclusion // ""' "$root/run-$run_id-after.json")" = cancelled; then
-                terminal=true
-                break
-              fi
-              sleep 2
-            done
-            test "$terminal" = true
-            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
-              "$root/run-$run_id-after.json" >> "$root/after.jsonl"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$run_id"
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-after.json" 2> "$root/run-$run_id-after.err"; then
+              echo "stale run $run_id still exists after deletion" >&2
+              exit 1
+            fi
+            grep -F "HTTP 404" "$root/run-$run_id-after.err" >/dev/null
+            jq -n --argjson id "$run_id" '{id:$id,status:"deleted",get_reobservation_http:404}' \
+              >> "$root/after.jsonl"
           done < <(jq -r '.[].id' "$root/targets.json")
 
       - name: Write bounded drain receipt
@@ -85,7 +79,7 @@ jobs:
           test -s "$root/after.jsonl" && after="$(jq -s '.' "$root/after.jsonl")"
           jq -n --arg repository "$GITHUB_REPOSITORY" --arg source_head "$SOURCE_HEAD" --arg source_tree "$source_tree" \
             --argjson run_id "$RUN_ID" --argjson run_attempt "$RUN_ATTEMPT" --argjson before "$before" --argjson after "$after" \
-            '{schema:"qikvrt_bounded_stale_writer_queue_drain_v1",repository:$repository,source_head:$source_head,source_tree:$source_tree,run_id:$run_id,run_attempt:$run_attempt,scope:"TWO_EXACT_STALE_QUEUED_WRITER_RUNS_ONLY",before:$before,after:$after,credentials_disclosed:false,repository_bytes_published:false,merge:false,pass:false,final_pass:false,effect_ack_done:false}' \
+            '{schema:"qikvrt_bounded_stale_writer_queue_drain_v1",repository:$repository,source_head:$source_head,source_tree:$source_tree,run_id:$run_id,run_attempt:$run_attempt,scope:"TWO_EXACT_IRRECONCILABLE_STALE_RUN_RECORDS_ONLY",before:$before,after:$after,provenance_comment_id:5432370534,credentials_disclosed:false,repository_bytes_published:false,merge:false,pass:false,final_pass:false,effect_ack_done:false}' \
             | tee "$root/receipt.json"
 
       - name: Preserve bounded queue-drain receipt
