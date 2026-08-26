@@ -42,7 +42,22 @@
       "workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
       "decision_core_path": "tools/qikvrt_requested_review_executor.py",
       "human_review_request_prerequisite": false,
-      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES",
+      "eligible_subjects": "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+      "selection": {
+        "allowed_sources": [
+          "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
+          "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
+          "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD"
+        ],
+        "eventless_repository_scan": "FORBIDDEN",
+        "scheduled_or_manual_workflow_run_source": "FORBIDDEN",
+        "workflow_run_requires_role_local_url_and_matching_head": true,
+        "manual_dispatch_requires_matching_exact_head": true,
+        "review_intake_priority_policy": "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
+        "github_actions_cross_event_priority_guarantee": "NOT_AVAILABLE",
+        "github_app_event_broker_required_for_cross_event_priority": true,
+        "noncandidate_disposition": "DIAGNOSTIC_ARTIFACT_WITHOUT_REVIEW_OBSERVATION_OR_METADATA_MUTATION"
+      },
       "platform_review_event": "COMMENT",
       "bot_approve_or_request_changes_event": "FORBIDDEN"
     },
@@ -62,11 +77,14 @@
         "DIFF_SHA256",
         "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
         "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
-        "ACTIVE_WRITER_QUEUE_STATE"
+        "ACTIVE_WRITER_QUEUE_STATE",
+        "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK"
       ],
       "review_fingerprint_algorithm": "SHA256",
       "review_fingerprint_input": "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
-      "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
+      "complete_diff_transport_packet_max_bytes": 1048576,
+      "complete_diff_transport_acceptance": "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",
+      "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_REASSEMBLED_DIFF_AND_TRANSPORT_MANIFEST",
       "subject_drift_disposition": "HOLD_UNVERIFIED",
       "predecessor_evidence_transfer": "FORBIDDEN"
     },
@@ -74,7 +92,10 @@
       "role_local": true,
       "ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
       "receipt_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json",
-      "diff_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+      "diff_manifest_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json",
+      "diff_packet_path_template": "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks/<zero-padded-index>.bin",
+      "transport_schema": "qikvrt_mesh_review_diff_transport_v1",
+      "manifest_readback": "BYTE_IDENTICAL_CANONICAL_MANIFEST_AND_REASSEMBLED_TOTAL_SHA256_REQUIRED",
       "append_only": true,
       "initialization": "ORPHAN_ROOT_COMMIT_WITH_FIRST_EXACT_RECEIPT",
       "write_protocol": "FAST_FORWARD_COMPARE_AND_SWAP_ONLY",
@@ -106,7 +127,6 @@
         "EXACT_HEAD_STATUS_TRANSITION"
       ],
       "consumer_workflows": [
-        ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
         ".github/workflows/qikvrt_expected_head_promotion.yml"
       ],
       "exactly_one_derived_next_action": true,

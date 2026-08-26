@@ -4,7 +4,7 @@ name: QIKVRT requested review executor
 
 on:
   pull_request_target:
-    types: [opened, edited, converted_to_draft, review_requested, review_request_removed, synchronize, ready_for_review, reopened]
+    types: [opened, edited, converted_to_draft, review_requested, review_request_removed, labeled, unlabeled, synchronize, ready_for_review, reopened]
   issue_comment:
     types: [created, edited, deleted]
   workflow_run:
@@ -16,13 +16,15 @@ on:
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT code-owner review observer"
     types: [completed]
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       pr:
-        description: "Optional pull request number"
-        required: false
+        description: "Exact pull request number"
+        required: true
+        type: string
+      head:
+        description: "Exact pull request head SHA"
+        required: true
         type: string
 
 permissions:
@@ -85,77 +87,112 @@ jobs:
         id: select
         env:
           REQUESTED_PR: ${{ inputs.pr || '' }}
+          REQUESTED_HEAD: ${{ inputs.head || '' }}
           EVENT_PR: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) || '' }}
-          EVENT_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
-          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
           EVENT_NAME: ${{ github.event_name }}
-          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_EXPECTED_HEAD: ${{ inputs.head || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || '' }}
+          EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
+          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
         shell: bash
         run: |
           set -euo pipefail
           python3 -B - <<'PY' > /tmp/qikvrt-review-selection.json
-          import json, os, subprocess
+          import hashlib, json, os, pathlib
+          from tools.qikvrt_requested_review_executor import (
+              _gh_one,
+              select_review_subject,
+          )
 
           repo=os.environ['REPOSITORY']
           requested=os.environ.get('REQUESTED_PR','').strip()
+          requested_head=os.environ.get('REQUESTED_HEAD','').strip()
           event_pr=os.environ.get('EVENT_PR','').strip()
-          event_head=os.environ.get('EVENT_HEAD','').strip()
+          event_name=os.environ.get('EVENT_NAME','').strip()
+          expected_head=os.environ.get('EVENT_EXPECTED_HEAD','').strip()
+          workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()
           workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')
-          event_name=os.environ.get('EVENT_NAME','')
 
-          def one(path):
-              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def one(number):
+              return _gh_one(f'repos/{repo}/pulls/{number}')
 
-          def pages(path):
-              values=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
-              return [item for page in values for item in page]
+          value=select_review_subject(
+              repository=repo,
+              requested_pr=requested,
+              event_pr=event_pr,
+              event_name=event_name,
+              expected_head=expected_head,
+              workflow_event=workflow_event,
+              workflow_prs=workflow_prs,
+              fetch_pull_request=one,
+          )
+          print(json.dumps(value,sort_keys=True))
+          payload={}
+          event_payload_sha256=None
+          event_path=os.environ.get('GITHUB_EVENT_PATH','')
+          if event_path:
+              try:
+                  event_payload=pathlib.Path(event_path).read_bytes()
+                  payload=json.loads(event_payload.decode('utf-8'))
+                  event_payload_sha256=hashlib.sha256(event_payload).hexdigest()
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  payload={}
 
-          if requested:
-              prs=[one(f'repos/{repo}/pulls/{int(requested)}')]
-          elif event_pr:
-              prs=[one(f'repos/{repo}/pulls/{int(event_pr)}')]
-          elif workflow_prs:
-              numbers=sorted({int(item['number']) for item in workflow_prs if item.get('number')})
-              prs=[one(f'repos/{repo}/pulls/{number}') for number in numbers]
-          elif event_name == 'issue_comment':
-              prs=[]
-          else:
-              prs=pages(f'repos/{repo}/pulls?state=open&base=main&sort=updated&direction=asc&per_page=100')
-              if event_head:
-                  prs=[pr for pr in prs if (pr.get('head') or {}).get('sha') == event_head]
+          def nested(mapping, *fields):
+              current=mapping
+              for field in fields:
+                  if not isinstance(current, dict):
+                      return None
+                  current=current.get(field)
+              return current if isinstance(current, str) and current else None
 
-          candidates=[]
-          for pr in prs:
-              if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main':
-                  continue
-              if pr.get('head',{}).get('repo',{}).get('full_name') != repo:
-                  continue
-              candidates.append(pr)
-          candidates.sort(key=lambda pr:(pr.get('updated_at') or '',pr['number']))
-          if len(candidates) > 1 and not (requested or event_pr or workflow_prs or event_head):
-              index=(max(1,int(os.environ.get('RUN_NUMBER','1')))-1) % len(candidates)
-              chosen=candidates[index]
-          else:
-              chosen=candidates[0] if candidates else None
-          print(json.dumps({
-              'state':'CANDIDATE' if chosen else 'NOOP',
-              'pr_number':chosen['number'] if chosen else None,
-              'selection_basis':'EXACT_EVENT_OR_DISPATCH' if (requested or event_pr or workflow_prs or event_head) else 'BOUNDED_SCHEDULE_ROTATION',
-          },sort_keys=True))
+          event_context={
+              'source':value.get('event_source') or 'UNSPECIFIED',
+              'event_name':event_name,
+              'event_action':nested(payload,'action') or '',
+              'event_payload_sha256':event_payload_sha256,
+              'event_actor':nested(payload,'sender','login'),
+              'requested_reviewer':nested(payload,'requested_reviewer','login'),
+              'requested_team':nested(payload,'requested_team','slug'),
+              # GitHub Actions does not expose the native X-GitHub-Delivery
+              # value. A GitHub App broker supplies it when cross-event order
+              # is required; Actions never invents one here.
+              'native_delivery_identity':'UNAVAILABLE_TO_GITHUB_ACTIONS',
+          }
+          if requested and not requested_head:
+              event_context['source']='WORKFLOW_DISPATCH_PR'
+          pathlib.Path('/tmp/qikvrt-review-event-context.json').write_text(
+              json.dumps(event_context,sort_keys=True)+"\n",encoding='utf-8'
+          )
           PY
           cat /tmp/qikvrt-review-selection.json
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           value=json.load(open('/tmp/qikvrt-review-selection.json',encoding='utf-8'))
           print(f"state={value['state']}")
-          print(f"pr={value.get('pr_number') or ''}")
+          print(f"pr={value.get('candidate_pr_number') or ''}")
+          print(f"target_pr={value.get('pr_number') or ''}")
+          print(f"blocker={value.get('first_blocker') or ''}")
+          print(f"basis={value['selection_basis']}")
+          print(f"expected_head={value.get('expected_head') or ''}")
           PY
+
+      - name: Preserve exact review-selection observation
+        if: always() && steps.active.outputs.active == 'true' && steps.select.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-review-selection-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            /tmp/qikvrt-review-selection.json
+            /tmp/qikvrt-review-event-context.json
 
       - name: Observe exact subject and derive causal Mesh receipt
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state == 'CANDIDATE'
         id: decision
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_SELECTOR_HEAD: ${{ steps.select.outputs.expected_head }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
@@ -165,10 +202,12 @@ jobs:
           python3 -B tools/qikvrt_requested_review_executor.py observe \
             --repository "$REPOSITORY" \
             --pr-number "$PR_NUMBER" \
+            --expected-head "$EXPECTED_SELECTOR_HEAD" \
             --current-run-id "$CURRENT_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
             --required-gate-paths-json "$REQUIRED_GATE_PATHS_JSON" \
             --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
+            --event-context-file /tmp/qikvrt-review-event-context.json \
             --snapshot-out "$root/snapshot.json" \
             --diff-out "$root/review.diff" \
             --receipt-out "$root/review.json"
@@ -199,7 +238,11 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
-          from tools.qikvrt_requested_review_executor import plan_ledger_update
+          from tools.qikvrt_requested_review_executor import (
+              _pretty_json_bytes, plan_ledger_update,
+              prepare_diff_transport_ledger_entries,
+              reassemble_diff_transport,
+          )
 
           root=pathlib.Path('.qikvrt/mesh-review')
           receipt=json.loads((root/'review.json').read_text(encoding='utf-8'))
@@ -211,6 +254,7 @@ jobs:
           full_ref=os.environ['LEDGER_REF']
           receipt_path=receipt.get('ledger_path')
           diff_path=receipt.get('ledger_diff_path')
+          transport=receipt.get('diff_transport')
 
           class LedgerHold(RuntimeError): pass
 
@@ -254,14 +298,50 @@ jobs:
               blob=gh('GET',f"repos/{repo}/git/blobs/{metadata['sha']}")
               return base64.b64decode(blob['content'])
 
+          def transport_bytes():
+              if not isinstance(transport, dict) or not diff_path:
+                  raise LedgerHold('review receipt lacks a chunked diff transport')
+              try:
+                  return prepare_diff_transport_ledger_entries(
+                      transport,diff_bytes,diff_path,
+                  )
+              except Exception as exc:
+                  raise LedgerHold(f'review diff transport invalid: {exc}') from exc
+
           def new_blobs():
+              manifest_bytes,packets=transport_bytes()
               receipt_blob=gh('POST',f'repos/{repo}/git/blobs',{
                   'content':base64.b64encode(receipt_bytes).decode('ascii'),'encoding':'base64'
               })['sha']
-              diff_blob=gh('POST',f'repos/{repo}/git/blobs',{
-                  'content':base64.b64encode(diff_bytes).decode('ascii'),'encoding':'base64'
+              manifest_blob=gh('POST',f'repos/{repo}/git/blobs',{
+                  'content':base64.b64encode(manifest_bytes).decode('ascii'),'encoding':'base64'
               })['sha']
-              return receipt_blob,diff_blob
+              packet_blobs=[]
+              for packet,blob in zip(transport['packets'],packets):
+                  packet_blobs.append((packet['path'],gh('POST',f'repos/{repo}/git/blobs',{
+                      'content':base64.b64encode(blob).decode('ascii'),'encoding':'base64'
+                  })['sha']))
+              return receipt_blob,manifest_blob,packet_blobs
+
+          def tree_entries(receipt_blob,manifest_blob,packet_blobs):
+              return [
+                  {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
+                  {'path':diff_path,'mode':'100644','type':'blob','sha':manifest_blob},
+              ] + [
+                  {'path':path,'mode':'100644','type':'blob','sha':sha}
+                  for path,sha in packet_blobs
+              ]
+
+          def transport_at(commit):
+              manifest=blob_at(diff_path,commit)
+              if manifest is None:
+                  return None
+              try:
+                  declared=json.loads(manifest)
+                  packets=[blob_at(item['path'],commit) for item in declared['packets']]
+                  return reassemble_diff_transport(declared,packets)
+              except Exception:
+                  return None
 
           report={
               'schema':'qikvrt_mesh_review_ledger_write_v1',
@@ -278,17 +358,15 @@ jobs:
               ref=gh('GET',ref_path,allow_404=True)
 
               if ref is None:
+                  manifest_bytes,_=transport_bytes()
                   plan=plan_ledger_update(
-                      receipt_bytes,diff_bytes,None,None,None
+                      receipt_bytes,manifest_bytes,None,None,None
                   )
                   if plan['action'] != 'INITIALIZE_ORPHAN_ROOT':
                       raise LedgerHold('INVALID_LEDGER_INITIALIZATION_PLAN')
-                  receipt_blob,diff_blob=new_blobs()
+                  receipt_blob,manifest_blob,packet_blobs=new_blobs()
                   tree=gh('POST',f'repos/{repo}/git/trees',{
-                      'tree':[
-                          {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
-                          {'path':diff_path,'mode':'100644','type':'blob','sha':diff_blob},
-                      ]
+                      'tree':tree_entries(receipt_blob,manifest_blob,packet_blobs)
                   })['sha']
                   commit=gh('POST',f'repos/{repo}/git/commits',{
                       'message':f"Initialize Mesh review ledger with PR #{number} {receipt['head_sha'][:12]} {receipt['evidence_fingerprint'][:12]}",
@@ -305,7 +383,11 @@ jobs:
                       ref=gh('GET',ref_path)
                       if ref['object']['sha'] != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or blob_at(diff_path,commit) != diff_bytes:
+                      if (
+                          blob_at(receipt_path,commit) != receipt_bytes
+                          or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
+                          or transport_at(commit) != diff_bytes
+                      ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-initialization')
                       report.update(
@@ -318,12 +400,19 @@ jobs:
                   ledger_head=ref['object']['sha']
                   existing=blob_at(receipt_path,ledger_head)
                   existing_diff=blob_at(diff_path,ledger_head)
+                  manifest_bytes,_=transport_bytes()
                   plan=plan_ledger_update(
-                      receipt_bytes,diff_bytes,ledger_head,existing,existing_diff
+                      receipt_bytes,manifest_bytes,ledger_head,existing,existing_diff
                   )
                   if plan['action'] == 'HOLD':
                       raise LedgerHold(plan['first_blocker'])
                   if plan['action'] == 'NOOP_IDENTICAL_RECEIPT':
+                      if (
+                          blob_at(receipt_path,ledger_head) != receipt_bytes
+                          or blob_at(diff_path,ledger_head) != manifest_bytes
+                          or transport_at(ledger_head) != diff_bytes
+                      ):
+                          raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('duplicate-ledger-readback')
                       report.update(
                           persisted=True,duplicate=True,ledger_commit=ledger_head,
@@ -331,13 +420,10 @@ jobs:
                       )
                   elif plan['action'] == 'APPEND_FAST_FORWARD':
                       parent=gh('GET',f'repos/{repo}/git/commits/{ledger_head}')
-                      receipt_blob,diff_blob=new_blobs()
+                      receipt_blob,manifest_blob,packet_blobs=new_blobs()
                       tree=gh('POST',f'repos/{repo}/git/trees',{
                           'base_tree':parent['tree']['sha'],
-                          'tree':[
-                              {'path':receipt_path,'mode':'100644','type':'blob','sha':receipt_blob},
-                              {'path':diff_path,'mode':'100644','type':'blob','sha':diff_blob},
-                          ],
+                          'tree':tree_entries(receipt_blob,manifest_blob,packet_blobs),
                       })['sha']
                       commit=gh('POST',f'repos/{repo}/git/commits',{
                           'message':f"Record Mesh review PR #{number} {receipt['head_sha'][:12]} {receipt['evidence_fingerprint'][:12]}",
@@ -348,7 +434,11 @@ jobs:
                       updated=gh('GET',ref_path)['object']['sha']
                       if updated != commit:
                           raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
-                      if blob_at(receipt_path,commit) != receipt_bytes or blob_at(diff_path,commit) != diff_bytes:
+                      if (
+                          blob_at(receipt_path,commit) != receipt_bytes
+                          or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
+                          or transport_at(commit) != diff_bytes
+                      ):
                           raise LedgerHold('LEDGER_BLOB_READBACK_MISMATCH')
                       verify('post-ledger-cas')
                       report.update(
@@ -500,9 +590,11 @@ jobs:
           echo 'HOLD_UNVERIFIED: exact Mesh review receipt was not persisted by FF-CAS.'
           exit 1
 
-      - name: Strict NOOP when no eligible internal candidate exists
+      - name: Record non-actionable exact event selection
         if: steps.active.outputs.active == 'true' && steps.select.outputs.state != 'CANDIDATE'
-        run: echo 'No eligible same-repository pull request is currently actionable.'
+        run: |
+          set -euo pipefail
+          cat /tmp/qikvrt-review-selection.json
 
       - name: Bootstrap NOOP before trusted-main promotion
         if: steps.active.outputs.active != 'true'

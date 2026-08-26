@@ -19,9 +19,15 @@ This contract applies to `Goldkelch/qik-vrt` and `ingolf-lohmann/qik-vrt`. It is
 
 The existing `QIKVRT requested review executor` is the role-local Mesh
 self-review feedback plane. It runs from trusted repository code for every
-eligible same-repository pull request whose bytes can be observed. An explicit
-human review request remains a useful event signal, but it is not an execution
+eligible same-repository pull request supplied by an exact native event or an
+explicit exact-PR-and-head dispatch, whose bytes can be observed. An explicit human
+review request remains a useful event signal, but it is not an execution
 prerequisite.
+
+An explicit dispatch of that executor is a technical-review action only. Its
+completed manual workflow run is intentionally not a source for the required
+Code-Owner status; an operator who needs that status reobserved dispatches
+`QIKVRT required code-owner review` separately with the same exact PR number.
 
 For every review, the executor must act without deliberate queueing:
 
@@ -32,11 +38,43 @@ For every review, the executor must act without deliberate queueing:
 5. derive exactly one causal next action using the D0 mapping below;
 6. distinguish an automated technical Mesh disposition from a natural-person or independent Code-Owner disposition and from GitHub's account-level review state.
 
+Every exact event also produces a canonical `review_intake` bound into the
+receipt fingerprint. It records the native event-payload SHA-256, event action,
+event actor, explicitly requested user or team, one declared reason label and the policy-derived
+priority class/rank; the receipt separately binds the current observed
+requested-reviewer set. It is not an
+unconstrained user input. The only current reason labels are:
+
+- `qikvrt-review:security` → `SECURITY_OR_INTEGRITY`;
+- `qikvrt-review:owner` → `OWNER_DECISION`;
+- `qikvrt-review:standard` → `STANDARD`.
+
+No reason label remains `UNSPECIFIED`; two or more of these labels are a
+fail-closed `REVIEW_REASON_AMBIGUOUS`, never an invented priority. A priority
+is then derived in this fixed order: security/integrity requests by the
+Product Owner or required Code Owner (`P0`), Product Owner → required Code
+Owner (`P1`), required-Code-Owner target (`P2`), another explicit review
+request (`P3`), and any other exact automatic reobservation (`P4`). A
+`review_request_removed` event is an automatic reobservation only; it is not
+treated as an active request. If a `review_requested` target has disappeared
+before the exact observation, the receipt is `REVIEW_REQUEST_STALE / D0=2`;
+the former request is never silently carried forward.
+
+GitHub Actions can bind and classify one event but offers no cross-event
+priority ordering or native delivery identifier. The Actions receipt therefore
+states that limitation explicitly. A real ordering across concurrent requests
+requires the separately provisioned GitHub App webhook broker described in
+`docs/QIKVRT_GITHUB_APP_TARGET_BLUEPRINT.md`; it must order signed native
+deliveries by the policy rank and delivery-time/id tie-break without cancelling
+an in-progress exact review. Neither a scheduled scan, a rotating PR selector,
+nor an Actions-only pseudo-queue is permitted.
+
 The exact role-local receipt is appended on
 `refs/heads/qikvrt/mesh-review-ledger-v1`. Its paths are:
 
 - `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json`
-- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff`
+- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json`
+- `state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks/<zero-padded-index>.bin`
 
 The trusted-main observer is the only producer of this envelope. It requires
 its local checkout SHA and tree to equal the reobserved `main`, binds the
@@ -53,12 +91,24 @@ discussion set so feedback does not invalidate itself recursively.
 Issue-comment events enter the trusted executor directly; review and inline
 review-comment mutations enter through the permissionless Code-Owner observer's
 completed workflow signal. GitHub Actions exposes no native
-`pull_request_review_thread` workflow trigger, so a resolve/unresolve-only
-thread transition is detected by a schedule that starts a rotating scan every
-five minutes. With multiple eligible pull requests this is not a five-minute
-per-PR latency guarantee. That platform gap is recorded honestly; it is not
-described as immediate event delivery and it never permits stale evidence to
-authorize a mutation.
+`pull_request_review_thread` workflow trigger. A resolve/unresolve-only thread
+transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
+a scheduled scan, a rotating candidate selection, a review dispatch, or a
+metadata mutation. The next exact repository event or explicit dispatch may
+reobserve a bound subject; no prior evidence is transferred.
+
+The complete diff is transported as ordered, content-addressed packets of at
+most 1 MiB. Its canonical manifest binds an explicit packet count, every
+offset, packet byte count and packet SHA-256, the total byte count and total
+SHA-256, the deterministic packet paths and a SHA-256 over the canonical
+manifest projection. The receiver rejects a missing, reordered, altered,
+oversized or surplus packet, a manifest-path mismatch, or a manifest whose
+digest does not match. Only after every packet reconstructs the total digest
+does the ledger accept the review package. The bounded transport therefore
+does not turn a complete 2 MiB-plus diff into `REVIEW_BYTES_UNAVAILABLE`; it
+does not silently lose the handoff, invent a favorable result, or reuse an
+earlier receipt. Head, tree, scope, diff, policy or intake drift still
+invalidates the receipt.
 
 The ledger is initialized as an orphan root commit containing only the first
 exact receipt and diff; it therefore does not copy a predecessor repository
@@ -73,20 +123,22 @@ The observer regenerates the complete snapshot, diff and receipt before the
 ledger read, immediately before and after ledger initialization or compare-and-
 swap, and before and after each PR-comment or status mutation. Both the
 evidence fingerprint and sealed receipt-payload hash must remain byte-exact.
-The stored receipt must also verify its own seal and the stored diff bytes must
-equal the regenerated diff byte for byte. Any disagreement stops the next
-mutation and remains `HOLD_UNVERIFIED`.
+The stored receipt must also verify its own seal; the stored manifest must be
+byte-identical to the sealed canonical transport manifest; and the stored
+ordered packets must reassemble to the regenerated diff byte for byte and to
+its total SHA-256. Any disagreement stops the next mutation and remains
+`HOLD_UNVERIFIED`.
 
 The same pull-request head may be reviewed again only when its causal evidence
 fingerprint changed, for example because a required workflow attempt, active
 writer, discussion thread or applicable gate changed. An identical fingerprint
 is an idempotent `D0=0 NOOP`, never a duplicate receipt.
 
-Review receipts and `review.diff` are never committed to the reviewed candidate
-branch or to `main`. Doing so would mutate the reviewed head, immediately stale
-its evidence and create a recursive evidence-commit/review loop. The candidate
-base, head, tree, scope and diff are therefore unchanged by feedback
-persistence.
+Review receipts and review-diff manifests/packets are never committed to the
+reviewed candidate branch or to `main`. Doing so would mutate the reviewed
+head, immediately stale its evidence and create a recursive evidence-commit/
+review loop. The candidate base, head, tree, scope and diff are therefore
+unchanged by feedback persistence.
 
 After the ledger receipt has been written and read back byte-exactly, the same
 result may be projected as an Actions artifact, the exact-head status
@@ -133,6 +185,28 @@ claim that GitHub recorded `APPROVED` when the platform stored `COMMENTED`.
 The substantive automated finding is persisted accurately together with the
 platform state. It never satisfies, replaces, weakens or transfers the separate
 exact-head independent Code-Owner gate.
+
+The separately versioned `OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1` does not
+change that `github-actions[bot]` boundary. It permits a second, explicit
+adapter only when GitHub receives a self-identifying `type=User` credential for
+the selected repository account and returns that exact account in the review
+readback. The adapter uses `Goldkelch` or `ingolf-lohmann` solely as the
+non-author counterpart, never exposes its credential to candidate bytes, and
+keeps the account credentials in separate signer jobs. Its review body is
+marked as delegated account automation; it is not an independent
+natural-person review and does not create merge, release, publication,
+deployment, `PASS`, `FINAL_PASS`, or `EFFECT_ACK_DONE` authority. The full
+provisioning and fail-closed checks are in
+`docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md`.
+
+The platform-effective repository-reviewer set is `Goldkelch` and
+`ingolf-lohmann`.  The pull-request author is removed from the eligible set for
+that pull request, so the other configured account is the required counterpart.
+Ingolf Lohmann as a natural person does not perform these reviews.  ChatGPT may
+produce a clearly attributed technical disposition but does not normally supply
+the native repository-account approval.  Account labels establish only the
+platform signer recorded by GitHub; they do not prove distinct natural persons
+or organizational independence.
 
 Review completion and feedback persistence do not themselves authorize merge,
 promotion, release, deployment, Zenodo, DOI, IETF, `PASS`, `FINAL_PASS`,

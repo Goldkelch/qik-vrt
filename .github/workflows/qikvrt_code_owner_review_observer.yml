@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Validate pull-request event selector without repository access
+      - name: Classify pull-request event selector without repository access
         shell: bash
         run: |
           set -euo pipefail
@@ -30,8 +30,31 @@ jobs:
           pr = event.get("pull_request") or {}
           number = pr.get("number")
           if not isinstance(number, int) or number <= 0:
-              raise SystemExit("BLOCK: pull-request number is unavailable")
+              print(json.dumps({
+                  "schema": "qikvrt_code_owner_review_event_selector_v1",
+                  "state": "REOBSERVE_EXACT_EVENT_TARGET",
+                  "first_blocker": "PULL_REQUEST_NUMBER_UNAVAILABLE",
+                  "review_observation_started": False,
+                  "external_effect": "NONE",
+              }, sort_keys=True))
+              raise SystemExit(0)
           if pr.get("base", {}).get("ref") != "main":
-              raise SystemExit("BLOCK: pull request is not based on main")
-          print(f"observed review lifecycle event for PR #{number}")
+              print(json.dumps({
+                  "schema": "qikvrt_code_owner_review_event_selector_v1",
+                  "state": "INELIGIBLE_EVENT_TARGET",
+                  "first_blocker": "PULL_REQUEST_BASE_NOT_MAIN",
+                  "pr_number": number,
+                  "base_ref": pr.get("base", {}).get("ref"),
+                  "review_observation_started": False,
+                  "external_effect": "NONE",
+              }, sort_keys=True))
+              raise SystemExit(0)
+          print(json.dumps({
+              "schema": "qikvrt_code_owner_review_event_selector_v1",
+              "state": "CANDIDATE",
+              "pr_number": number,
+              "base_ref": "main",
+              "review_observation_started": False,
+              "external_effect": "NONE",
+          }, sort_keys=True))
           PY

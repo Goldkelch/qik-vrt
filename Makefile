@@ -60,7 +60,7 @@ m68000-kernel-contract:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_virtual_mesh_m68000_acceptance.py --iterations 3 --json >/dev/null
 
 workflow-executor-mesh-contract: m68000-kernel-contract
-	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_autonomous_pr_head_continuation tests.test_qikvrt_pr_head_recovery tests.test_seed_workflows
+	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract tests.test_qikvrt_autonomous_pr_head_continuation tests.test_qikvrt_pr_head_recovery tests.test_qikvrt_native_account_review tests.test_seed_workflows
 	PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 $(PYTHON) -B tools/qikvrt_workflow_executor.py snapshot --expect-head "$$(git rev-parse --verify HEAD^{commit})" --json >/dev/null
 
 repository-terminal-test:

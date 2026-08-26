@@ -1,0 +1,95 @@
+{
+  "schema": "qikvrt_owner_native_account_review_automation_v1",
+  "delegation_id": "OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1",
+  "state": "ACTIVE",
+  "effective_at": "2026-08-25T18:00:00+02:00",
+  "principal": {
+    "name": "Ingolf Lohmann",
+    "role": "Principal and Product Owner",
+    "type": "NATURAL_PERSON"
+  },
+  "repositories": [
+    "Goldkelch/qik-vrt",
+    "ingolf-lohmann/qik-vrt"
+  ],
+  "configured_platform_accounts": [
+    "Goldkelch",
+    "ingolf-lohmann"
+  ],
+  "source_decision": {
+    "summary": "Goldkelch and ingolf-lohmann repository accounts perform the native review; the natural person Ingolf Lohmann abstains and ChatGPT remains technical-only by default.",
+    "authorization": "Set up the repository-internal automation so future exact-account reviews can run autonomously."
+  },
+  "selection": {
+    "pull_request_author_must_be_configured_platform_account": true,
+    "pull_request_author_is_eligible": false,
+    "reviewer": "THE_OTHER_CONFIGURED_PLATFORM_ACCOUNT",
+    "same_account_self_review": false,
+    "chatgpt_native_signing": false,
+    "bot_or_app_identity_substitution": false
+  },
+  "credential_boundary": {
+    "credential_kind": "SELF_IDENTIFYING_GITHUB_USER_CREDENTIAL",
+    "accepted_platform_actor": "GitHub API /user exact login and type=User",
+    "secret_names": {
+      "Goldkelch": "QIKVRT_GOLDKELCH_REVIEW_TOKEN",
+      "ingolf-lohmann": "QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN",
+      "activation": "QIKVRT_NATIVE_ACCOUNT_REVIEW_ACTIVATION"
+    },
+    "minimum_scope": [
+      "Metadata: read",
+      "Pull requests: write"
+    ],
+    "repository_scope": "ONLY_THE_EXACT_ROLE_LOCAL_QIKVRT_REPOSITORY",
+    "credentials_in_repository_or_chat": false,
+    "credential_rotation_and_revocation": "GitHub secret replacement or removal disables subsequent native-account projection; the trusted-main planner and signer also bind this delegation file's current ACTIVE state"
+  },
+  "mandatory_preconditions": [
+    "trusted_main_planner_only",
+    "no_candidate_checkout_or_execution_with_account_credential",
+    "exact_open_internal_main_based_pull_request",
+    "exact_base_head_tree_and_evidence_fingerprint",
+    "approve_requires_current_requested_counterpart_at_pre_effect_readback",
+    "immutable_ledger_receipt_and_chunk_transport_reassembly",
+    "fresh_reobservation_immediately_before_post",
+    "non_request_negative_projection_only_retracts_the_currently_decisive_marked_same_head_approval_from_one_artifact_bound_exact_event",
+    "platform_rule_requires_one_approval_code_owner_review_stale_dismissal_and_last_push_approval_before_APPROVE",
+    "exact_account_user_and_collaborator_permission_readback",
+    "manual_target_review_preserved",
+    "post_effect_base_head_tree_reobservation"
+  ],
+  "identity_semantics": {
+    "delegated_native_account_automation_is_impersonation": false,
+    "delegated_native_account_automation_is_independent_natural_person_review": false,
+    "platform_signer_must_be_reported_exactly": true,
+    "platform_review_state_must_be_reported_exactly": true
+  },
+  "not_authorized": [
+    "merge",
+    "force_update",
+    "ruleset_weakening",
+    "deployment",
+    "publication",
+    "license_or_rights_change",
+    "PASS",
+    "FINAL_PASS",
+    "EFFECT_ACK_DONE",
+    "ChatGPT_or_bot_identity_as_native_reviewer",
+    "account_credential_disclosure"
+  ],
+  "activation_boundary": {
+    "requires_platform_secret_provisioning": true,
+    "requires_administrative_main_ruleset_configuration": true,
+    "absence_or_mismatch": "HOLD_WITHOUT_REVIEW_MUTATION"
+  },
+  "revocation": {
+    "revocable": true,
+    "method": "set this delegation state to REVOKED or remove the activation secret; both planner and signer re-read the trusted-main delegation before an account POST"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE": false
+  }
+}

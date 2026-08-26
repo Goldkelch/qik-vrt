@@ -12,21 +12,31 @@ on:
       - ".github/workflows/qikvrt_required_review_gate.yml"
       - ".github/workflows/qikvrt_expected_head_promotion.yml"
       - ".github/workflows/qikvrt_autonomous_self_heal.yml"
+      - ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml"
+      - "Makefile"
       - "tools/qikvrt_requested_review_executor.py"
       - "tools/qikvrt_expected_head_promotion.py"
       - "tools/qikvrt_required_review_gate.py"
+      - "tools/qikvrt_native_account_review.py"
       - "tests/test_qikvrt_requested_review_executor.py"
       - "tests/test_qikvrt_expected_head_promotion.py"
       - "tests/test_qikvrt_required_review_gate.py"
+      - "tests/test_qikvrt_native_account_review.py"
       - "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
       - "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md"
+      - "docs/QIKVRT_GITHUB_APP_TARGET_BLUEPRINT.md"
+      - "docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "state/authorization/delegations/OWNER_REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
       - "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json"
+      - "state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json"
       - "state/work_units/MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json"
+      - "state/work_units/QIKVRT_REQUESTED_REVIEW_EXECUTOR_COMPLETION_V1.json"
+      - "state/work_units/QIKVRT_DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
       - "tests/test_qikvrt_expected_head_promotion_contract.py"
+      - "tests/test_qikvrt_autonomous_pr_head_continuation.py"
   workflow_dispatch:
 
 permissions:
@@ -57,17 +67,22 @@ jobs:
             tools/qikvrt_requested_review_executor.py \
             tools/qikvrt_expected_head_promotion.py \
             tools/qikvrt_required_review_gate.py \
+            tools/qikvrt_native_account_review.py \
             tests/test_qikvrt_requested_review_executor.py \
             tests/test_qikvrt_expected_head_promotion.py \
             tests/test_qikvrt_expected_head_promotion_contract.py \
             tests/test_qikvrt_required_review_gate.py \
-            tests/test_qikvrt_workflow_executor_mesh_contract.py
+            tests/test_qikvrt_native_account_review.py \
+            tests/test_qikvrt_workflow_executor_mesh_contract.py \
+            tests/test_qikvrt_autonomous_pr_head_continuation.py
           python3 -B -m unittest -v \
             tests.test_qikvrt_requested_review_executor \
             tests.test_qikvrt_required_review_gate \
+            tests.test_qikvrt_native_account_review \
             tests.test_qikvrt_expected_head_promotion \
             tests.test_qikvrt_expected_head_promotion_contract \
-            tests.test_qikvrt_workflow_executor_mesh_contract
+            tests.test_qikvrt_workflow_executor_mesh_contract \
+            tests.test_qikvrt_autonomous_pr_head_continuation
 
       - name: Verify event, recovery, identity and promotion bindings
         shell: bash
@@ -77,9 +92,26 @@ jobs:
           grep -F "if: github.ref == 'refs/heads/main'" .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'converted_to_draft' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'review_request_removed' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'labeled' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'REQUESTED_HEAD: ${{ inputs.head ||' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'GITHUB_EVENT_PATH' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'event_payload_sha256' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F -- '--event-context-file /tmp/qikvrt-review-event-context.json' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'issue_comment:' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'review_requested' .github/workflows/qikvrt_requested_review_executor.yml
-          grep -F '*/5 * * * *' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'select_review_subject' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'WORKFLOW_DISPATCH_HEAD_MISSING' tools/qikvrt_requested_review_executor.py
+          grep -F 'REVIEW_INTAKE_SCHEMA' tools/qikvrt_requested_review_executor.py
+          grep -F 'GITHUB_ACTIONS_NO_CROSS_EVENT_PRIORITY_GUARANTEE' tools/qikvrt_requested_review_executor.py
+          grep -F 'qikvrt-mesh-review-selection-' .github/workflows/qikvrt_requested_review_executor.yml
+          grep -F 'EVENT_WORKFLOW_EVENT' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'schedule:' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F '*/5 * * * *' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'BOUNDED_SCHEDULE_ROTATION' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'pulls?state=open' .github/workflows/qikvrt_requested_review_executor.yml
+          ! grep -F 'schedule:' .github/workflows/qikvrt_autonomous_pr_head_continuation.yml
+          ! grep -F 'qikvrt_requested_review_executor.yml/dispatches' .github/workflows/qikvrt_autonomous_pr_head_continuation.yml
+          ! grep -F 'QIKVRT requested review executor' .github/workflows/qikvrt_autonomous_pr_head_continuation.yml
           grep -F 'workflow_run:' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'refs/heads/qikvrt/mesh-review-ledger-v1' .github/workflows/qikvrt_requested_review_executor.yml
           grep -F 'qikvrt/mesh-review-ledger-v1' .github/workflows/qikvrt_ci.yml
@@ -103,6 +135,19 @@ jobs:
           grep -F 'permissions: {}' .github/workflows/qikvrt_code_owner_review_observer.yml
           grep -F 'QIKVRT requested review executor' .github/workflows/qikvrt_required_review_gate.yml
           grep -F 'QIKVRT required code-owner review' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'select_required_review_targets' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'plan-native-account-review:' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'QIKVRT_GOLDKELCH_REVIEW_TOKEN' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'DELEGATED_ACCOUNT_TOKEN_IDENTITY_MISMATCH' tools/qikvrt_native_account_review.py
+          grep -F 'OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1' policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json
+          grep -F 'delegated platform-account action' docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md
+          grep -F 'qikvrt-required-code-owner-selection-' .github/workflows/qikvrt_required_review_gate.yml
+          ! grep -F 'schedule:' .github/workflows/qikvrt_required_review_gate.yml
+          ! grep -F '*/5 * * * *' .github/workflows/qikvrt_required_review_gate.yml
+          ! grep -F 'pulls?state=open' .github/workflows/qikvrt_required_review_gate.yml
+          grep -F 'INELIGIBLE_EVENT_TARGET' .github/workflows/qikvrt_code_owner_review_observer.yml
+          ! grep -F 'BLOCK: pull request is not based on main' .github/workflows/qikvrt_code_owner_review_observer.yml
           grep -F 'require_code_owner_review' tools/qikvrt_required_review_gate.py
           grep -F 'dismiss_stale_reviews_on_push' tools/qikvrt_required_review_gate.py
           grep -F 'require_last_push_approval' tools/qikvrt_required_review_gate.py

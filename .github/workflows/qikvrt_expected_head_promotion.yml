@@ -45,7 +45,7 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       PROMOTION_MARKER: "<!-- qikvrt-expected-head-promotion:enabled external_effect=NONE -->"
       REVIEW_STATUS_CONTEXT: "QIKVRT requested review execution"
-      MESH_REVIEW_LEDGER_REF: qikvrt/mesh-review-ledger-v1
+      MESH_REVIEW_LEDGER_REF: refs/heads/qikvrt/mesh-review-ledger-v1
       MESH_REVIEW_REQUIRED_GATES_JSON: >-
         ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review"]
       MESH_REVIEW_REQUIRED_GATE_PATHS_JSON: >-
@@ -191,7 +191,7 @@ jobs:
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
           code_owner_review_gate=evaluate_required_review(
-              pr, rules, reviews, required_code_owner='Goldkelch'
+              pr, rules, reviews, required_code_owners=('Goldkelch','ingolf-lohmann')
           )
 
           candidate_files={item['filename'] for item in gh_pages(f'repos/{repo}/pulls/{pr_number}/files?per_page=100')}
@@ -277,6 +277,10 @@ jobs:
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, sys, urllib.parse
           from tools.qikvrt_expected_head_promotion import mesh_review_status_projection
+          from tools.qikvrt_requested_review_executor import (
+              prepare_diff_transport_ledger_entries,
+              reassemble_diff_transport,
+          )
           from tools.qikvrt_required_review_gate import evaluate_required_review
 
           repo=os.environ['REPOSITORY']
@@ -298,7 +302,7 @@ jobs:
               raise SystemExit('BLOCK: head drift before exact-base-CAS authority continuation')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
-          gate=evaluate_required_review(pr, rules, reviews, required_code_owner='Goldkelch')
+          gate=evaluate_required_review(pr, rules, reviews, required_code_owners=('Goldkelch','ingolf-lohmann'))
           if gate.get('gate_state') != 'success':
               raise SystemExit(f"BLOCK: independent Code Owner gate changed: {gate.get('first_blocker')}")
 
@@ -310,9 +314,19 @@ jobs:
           ledger_ref=os.environ['MESH_REVIEW_LEDGER_REF']
           root=f'state/mesh/reviews/pr-{pr_number}/{expected_head}/{fingerprint}'
 
+          if not ledger_ref.startswith('refs/heads/'):
+              raise SystemExit('BLOCK: Mesh review ledger ref is not a branch')
+          ledger_short=ledger_ref.removeprefix('refs/heads/')
+          ledger_ref_path=urllib.parse.quote(f'heads/{ledger_short}',safe='/')
+          ledger_commit=gh_json(
+              f'repos/{repo}/git/ref/{ledger_ref_path}'
+          ).get('object',{}).get('sha')
+          if not isinstance(ledger_commit,str) or len(ledger_commit) != 40:
+              raise SystemExit('BLOCK: Mesh review ledger commit is invalid')
+
           def ledger_bytes(path):
               quoted=urllib.parse.quote(path,safe='/')
-              ref=urllib.parse.quote(ledger_ref,safe='')
+              ref=urllib.parse.quote(ledger_commit,safe='')
               metadata=gh_json(f'repos/{repo}/contents/{quoted}?ref={ref}')
               blob=gh_json(f"repos/{repo}/git/blobs/{metadata['sha']}")
               return base64.b64decode(blob['content'])
@@ -320,9 +334,63 @@ jobs:
           evidence=pathlib.Path('/tmp/qikvrt-promotion-mesh-review')
           evidence.mkdir(parents=True,exist_ok=True)
           receipt_path=evidence/'review.json'
+          manifest_path=evidence/'review.chunks.json'
+          packet_root=evidence/'review.chunks'
           diff_path=evidence/'review.diff'
-          receipt_path.write_bytes(ledger_bytes(root+'.json'))
-          diff_path.write_bytes(ledger_bytes(root+'.diff'))
+          receipt_ledger_path=root+'.json'
+          manifest_ledger_path=root+'.chunks.json'
+          receipt_bytes=ledger_bytes(receipt_ledger_path)
+          manifest_bytes=ledger_bytes(manifest_ledger_path)
+          try:
+              receipt=json.loads(receipt_bytes.decode('utf-8'))
+              manifest=json.loads(manifest_bytes.decode('utf-8'))
+          except (UnicodeDecodeError,json.JSONDecodeError) as exc:
+              raise SystemExit(f'BLOCK: review ledger receipt or manifest is not canonical JSON: {exc}') from exc
+          if not isinstance(receipt,dict) or not isinstance(manifest,dict):
+              raise SystemExit('BLOCK: review ledger receipt or manifest is not an object')
+          if receipt.get('ledger_path') != receipt_ledger_path:
+              raise SystemExit('BLOCK: review receipt path does not bind the selected ledger receipt')
+          if receipt.get('ledger_diff_path') != manifest_ledger_path:
+              raise SystemExit('BLOCK: review receipt does not bind the selected chunk manifest')
+          if receipt.get('diff_transport') != manifest:
+              raise SystemExit('BLOCK: review receipt and chunk manifest differ')
+
+          declared=manifest.get('packets')
+          packet_count=manifest.get('packet_count')
+          if (
+              not isinstance(declared,list)
+              or not declared
+              or isinstance(packet_count,bool)
+              or not isinstance(packet_count,int)
+              or packet_count != len(declared)
+          ):
+              raise SystemExit('BLOCK: review chunk manifest packet count is invalid')
+          packet_paths=[]
+          for index,item in enumerate(declared):
+              expected_path=f'{root}.chunks/{index:08d}.bin'
+              if not isinstance(item,dict) or item.get('path') != expected_path:
+                  raise SystemExit('BLOCK: review chunk manifest packet path or order is invalid')
+              packet_paths.append(expected_path)
+          if len(packet_paths) != len(set(packet_paths)):
+              raise SystemExit('BLOCK: review chunk manifest contains duplicate packet paths')
+
+          packets=[ledger_bytes(path) for path in packet_paths]
+          try:
+              complete_diff=reassemble_diff_transport(manifest,packets)
+              canonical_manifest,canonical_packets=prepare_diff_transport_ledger_entries(
+                  manifest,complete_diff,manifest_ledger_path,
+              )
+          except Exception as exc:
+              raise SystemExit(f'BLOCK: review chunk transport verification failed: {exc}') from exc
+          if manifest_bytes != canonical_manifest or packets != canonical_packets:
+              raise SystemExit('BLOCK: review ledger chunk transport is not byte-canonical')
+
+          receipt_path.write_bytes(receipt_bytes)
+          manifest_path.write_bytes(manifest_bytes)
+          packet_root.mkdir()
+          for index,packet in enumerate(packets):
+              (packet_root/f'{index:08d}.bin').write_bytes(packet)
+          diff_path.write_bytes(complete_diff)
           command=[
               sys.executable,'-B','tools/qikvrt_requested_review_executor.py','verify',
               '--repository',repo,'--pr-number',str(pr_number),
@@ -334,7 +402,6 @@ jobs:
               '--output-dir',str(evidence/'reobserved'),
           ]
           subprocess.check_call(command)
-          receipt=json.loads(receipt_path.read_text(encoding='utf-8'))
           fresh=json.loads((evidence/'reobserved'/'review.json').read_text(encoding='utf-8'))
           if receipt.get('evidence_fingerprint') != fingerprint:
               raise SystemExit('BLOCK: status and ledger fingerprints differ')
@@ -374,7 +441,7 @@ jobs:
           pr=gh_json(f'repos/{repo}/pulls/{pr_number}')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{pr_number}/reviews?per_page=100')
-          gate=evaluate_required_review(pr,rules,reviews,required_code_owner='Goldkelch')
+          gate=evaluate_required_review(pr,rules,reviews,required_code_owners=('Goldkelch','ingolf-lohmann'))
           if gate.get('gate_state') != 'success':
               raise SystemExit(f"BLOCK: independent Code Owner gate changed at final fence: {gate.get('first_blocker')}")
 

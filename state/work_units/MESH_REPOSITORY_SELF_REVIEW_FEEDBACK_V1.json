@@ -43,10 +43,11 @@
       "SORTED_SCOPE_AND_BLOB_SHA",
       "SCOPE_SHA256",
       "FULL_DIFF_SHA256_AND_BYTES",
-      "DISCUSSION_GATE_AND_WRITER_EVIDENCE_FINGERPRINT"
+    "DISCUSSION_GATE_AND_WRITER_EVIDENCE_FINGERPRINT",
+    "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK"
     ],
     "trusted_main_observer": "SINGLE_OBSERVE_AND_VERIFY_PATH_IN_DECISION_CORE",
-    "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
+    "same_fingerprint_requires": "BYTE_IDENTICAL_RECEIPT_AND_REASSEMBLED_DIFF_AND_TRANSPORT_MANIFEST",
     "stored_receipt_and_diff_raw_bytes_reverified": true,
     "required_gate_binding": "WORKFLOW_ID_PATH_PULL_REQUEST_EVENT_EXACT_HEAD_COMPLETE_JOB_PROJECTION_AND_AT_LEAST_ONE_COMPLETED_SUCCESSFUL_JOB",
     "active_writer_states": [
@@ -57,6 +58,9 @@
       "pending"
     ],
     "review_runtime": "DETERMINISTIC_BOUNDED_INVARIANT_REVIEW",
+    "complete_oversized_diff": "ORDERED_AT_MOST_1_MIB_PACKET_TRANSPORT_WITH_EXPLICIT_COUNT_ORDER_PACKET_DIGESTS_TOTAL_DIGEST_AND_CANONICAL_MANIFEST",
+    "promotion_diff_consumer": "FETCH_LEDGER_BOUND_CANONICAL_MANIFEST_AND_DECLARED_PACKETS_REASSEMBLE_AND_VERIFY_BEFORE_PROMOTION_FENCE",
+    "review_intake_priority": "POLICY_DERIVED_AND_FINGERPRINT_BOUND_NO_ACTIONS_CROSS_EVENT_ORDERING_CLAIM",
     "receipt_ledger_ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
     "ledger_initialization": "ORPHAN_ROOT_COMMIT_WITH_FIRST_EXACT_RECEIPT",
     "ledger_write": "NON_FORCE_FAST_FORWARD_COMPARE_AND_SWAP",
@@ -67,7 +71,7 @@
     "actions_artifact": true,
     "actions_artifact_includes_hidden_evidence_root": true,
     "status_deduplication": "LATEST_CONTEXT_STATUS_ONLY",
-    "review_thread_resolution_detection": "FIVE_MINUTE_ROTATING_SCAN_CADENCE_NO_NATIVE_ACTIONS_TRIGGER_NO_PER_PR_LATENCY_GUARANTEE",
+    "review_thread_resolution_detection": "EVENT_ONLY_UNOBSERVABLE_WITHOUT_EXACT_EVENT_NO_ROTATING_SCAN_OR_REVIEW_DISPATCH",
     "same_fingerprint_disposition": "D0_0_NOOP",
     "favorable_mesh_disposition_without_independent_authority": "D0_3_REQUEST_AUTHORITY"
   },
@@ -99,7 +103,7 @@
     "ledger_ref_force_update": false,
     "subject_reobserved_after_each_metadata_or_ledger_mutation": true,
     "status_only_continuation": false,
-    "promotion_revalidates_full_ledger_receipt_and_diff": true
+    "promotion_revalidates_full_ledger_receipt_manifest_packets_and_reassembled_diff": true
   },
   "effect_boundary": {
     "verification_state_after_mutation": "HOLD_UNVERIFIED",

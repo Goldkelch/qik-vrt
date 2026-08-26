@@ -23,10 +23,12 @@ import re
 import subprocess
 import sys
 import urllib.parse
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
-MAX_DIFF_BYTES = 2 * 1024 * 1024
+REVIEW_DIFF_CHUNK_BYTES = 1024 * 1024
+REVIEW_DIFF_TRANSPORT_SCHEMA = "qikvrt_mesh_review_diff_transport_v1"
+REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
@@ -35,6 +37,10 @@ TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
+REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
+REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
+REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
+REVIEW_PRIORITY_POLICY_SCHEMA = "qikvrt_requested_review_and_issue_lifecycle_policy_v1"
 VALID_FILE_STATES = {
     "added",
     "changed",
@@ -87,6 +93,169 @@ def _canonical_sha256(value: Any) -> str:
 
 def _pretty_json_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def build_diff_transport(diff: bytes, base_path: str) -> dict[str, Any]:
+    """Describe an exact diff as ordered, content-addressed 1 MiB packets.
+
+    The packets are a transport representation only: the receipt remains bound
+    to the complete canonical diff digest and byte count.  A consumer must
+    reject missing, reordered, altered, or surplus packets.
+    """
+    if not isinstance(diff, bytes) or not diff:
+        raise ReviewSnapshotError("diff transport requires non-empty bytes")
+    if not isinstance(base_path, str) or not base_path:
+        raise ReviewSnapshotError("diff transport base path is missing")
+    chunks = []
+    for index, offset in enumerate(range(0, len(diff), REVIEW_DIFF_CHUNK_BYTES)):
+        packet = diff[offset : offset + REVIEW_DIFF_CHUNK_BYTES]
+        chunks.append({
+            "index": index,
+            "offset": offset,
+            "bytes": len(packet),
+            "sha256": hashlib.sha256(packet).hexdigest(),
+            "path": f"{base_path}.chunks/{index:08d}.bin",
+        })
+    transport: dict[str, Any] = {
+        "schema": REVIEW_DIFF_TRANSPORT_SCHEMA,
+        "packet_bytes": REVIEW_DIFF_CHUNK_BYTES,
+        "packet_count": len(chunks),
+        "total_bytes": len(diff),
+        "sha256": hashlib.sha256(diff).hexdigest(),
+        "manifest_path": f"{base_path}.chunks.json",
+        "packets": chunks,
+        "delivery": REVIEW_DIFF_TRANSPORT_DELIVERY,
+    }
+    # The manifest digest is deliberately computed over the canonical manifest
+    # projection without this self-referential field.  The receipt seals the
+    # resulting transport object; the ledger stores the exact pretty-JSON
+    # manifest bytes and reconstructs every packet before accepting it.
+    transport["manifest_sha256"] = _canonical_sha256(transport)
+    return transport
+
+
+def reassemble_diff_transport(transport: Mapping[str, Any], packets: Sequence[bytes]) -> bytes:
+    """Fail closed unless packets reproduce the complete declared diff."""
+    if not isinstance(transport, Mapping) or transport.get("schema") != REVIEW_DIFF_TRANSPORT_SCHEMA:
+        raise ReviewSnapshotError("diff transport schema is invalid")
+    required_fields = {
+        "schema",
+        "packet_bytes",
+        "packet_count",
+        "total_bytes",
+        "sha256",
+        "manifest_path",
+        "packets",
+        "delivery",
+        "manifest_sha256",
+    }
+    if set(transport) != required_fields:
+        raise ReviewSnapshotError("diff transport manifest fields are invalid")
+    if transport.get("packet_bytes") != REVIEW_DIFF_CHUNK_BYTES:
+        raise ReviewSnapshotError("diff transport packet bound is invalid")
+    if transport.get("delivery") != REVIEW_DIFF_TRANSPORT_DELIVERY:
+        raise ReviewSnapshotError("diff transport delivery contract is invalid")
+    total_bytes = transport.get("total_bytes")
+    packet_count = transport.get("packet_count")
+    if (
+        isinstance(total_bytes, bool)
+        or not isinstance(total_bytes, int)
+        or total_bytes < 1
+        or isinstance(packet_count, bool)
+        or not isinstance(packet_count, int)
+        or packet_count < 1
+    ):
+        raise ReviewSnapshotError("diff transport size declaration is invalid")
+    _sha256(transport.get("sha256"), "diff transport digest")
+    manifest_path = transport.get("manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path.endswith(".chunks.json"):
+        raise ReviewSnapshotError("diff transport manifest path is invalid")
+    manifest_projection = dict(transport)
+    manifest_sha256 = manifest_projection.pop("manifest_sha256")
+    if (
+        not isinstance(manifest_sha256, str)
+        or manifest_sha256 != _canonical_sha256(manifest_projection)
+    ):
+        raise ReviewSnapshotError("diff transport manifest digest mismatch")
+    declared = transport.get("packets")
+    if (
+        not isinstance(declared, list)
+        or len(declared) != packet_count
+        or len(declared) != len(packets)
+        or not declared
+    ):
+        raise ReviewSnapshotError("diff transport packet count is invalid")
+    base_path = manifest_path[: -len(".chunks.json")]
+    materialized: list[bytes] = []
+    for index, (item, packet) in enumerate(zip(declared, packets)):
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"index", "offset", "bytes", "sha256", "path"}
+            or not isinstance(packet, bytes)
+        ):
+            raise ReviewSnapshotError("diff transport packet is invalid")
+        offset = sum(len(value) for value in materialized)
+        remaining = total_bytes - offset
+        expected_size = min(REVIEW_DIFF_CHUNK_BYTES, remaining)
+        if (
+            item.get("index") != index
+            or item.get("offset") != offset
+            or item.get("path") != f"{base_path}.chunks/{index:08d}.bin"
+            or item.get("bytes") != expected_size
+        ):
+            raise ReviewSnapshotError("diff transport packet order is invalid")
+        if item.get("bytes") != len(packet) or item.get("sha256") != hashlib.sha256(packet).hexdigest():
+            raise ReviewSnapshotError("diff transport packet digest mismatch")
+        materialized.append(packet)
+    complete = b"".join(materialized)
+    if total_bytes != len(complete) or transport.get("sha256") != hashlib.sha256(complete).hexdigest():
+        raise ReviewSnapshotError("diff transport completion digest mismatch")
+    return complete
+
+
+def prepare_diff_transport_ledger_entries(
+    transport: Mapping[str, Any],
+    diff: bytes,
+    ledger_manifest_path: str,
+) -> tuple[bytes, list[bytes]]:
+    """Return only a ledger-bound, exactly reconstructible packet sequence.
+
+    A receipt may name exactly one manifest path in the append-only ledger.  It
+    is not sufficient for a different, valid-looking manifest to reconstruct
+    the same bytes: that would leave receipt-to-ledger path identity
+    unverified.  This helper is shared by the workflow writer and its tests so
+    every write path validates the same envelope before creating blobs.
+    """
+    if not isinstance(diff, bytes) or not diff:
+        raise ReviewSnapshotError("ledger diff bytes are unavailable")
+    if not isinstance(ledger_manifest_path, str) or not ledger_manifest_path:
+        raise ReviewSnapshotError("ledger manifest path is invalid")
+    if not isinstance(transport, Mapping):
+        raise ReviewSnapshotError("ledger diff transport is invalid")
+    if transport.get("manifest_path") != ledger_manifest_path:
+        raise ReviewSnapshotError("diff transport manifest path does not bind the ledger path")
+    declared = transport.get("packets")
+    if not isinstance(declared, list):
+        raise ReviewSnapshotError("diff transport packets are unavailable")
+    packets: list[bytes] = []
+    for item in declared:
+        if not isinstance(item, Mapping):
+            raise ReviewSnapshotError("diff transport packet is invalid")
+        offset = item.get("offset")
+        size = item.get("bytes")
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+        ):
+            raise ReviewSnapshotError("diff transport packet range is invalid")
+        packets.append(diff[offset : offset + size])
+    if reassemble_diff_transport(transport, packets) != diff:
+        raise ReviewSnapshotError("diff transport reconstruction mismatch")
+    return _pretty_json_bytes(dict(transport)), packets
 
 
 def latest_status_matches_projection(
@@ -413,6 +582,361 @@ def _string_list(snapshot: Mapping[str, Any], field: str) -> list[str]:
     return sorted(raw)
 
 
+def _optional_text(value: Any, label: str) -> str | None:
+    """Normalize one optional, non-control-character text value."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ReviewSnapshotError(f"{label} must be a string or null")
+    normalized = value.strip()
+    if not normalized or any(ord(character) < 32 for character in normalized):
+        raise ReviewSnapshotError(f"{label} is invalid")
+    return normalized
+
+
+def _optional_sha256(value: Any, label: str) -> str | None:
+    """Normalize one optional SHA-256 binding."""
+    if value is None or value == "":
+        return None
+    return _sha256(value, label)
+
+
+def _review_priority_policy() -> tuple[dict[str, Any], str]:
+    """Load the versioned, trusted-main review-intake classification policy."""
+    path = pathlib.Path(__file__).resolve().parents[1] / REVIEW_PRIORITY_POLICY_PATH
+    try:
+        raw = path.read_bytes()
+        policy = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReviewSnapshotError(f"review priority policy is unavailable: {exc}") from exc
+    if not isinstance(policy, dict):
+        raise ReviewSnapshotError("review priority policy must be an object")
+    if policy.get("schema") != REVIEW_PRIORITY_POLICY_SCHEMA:
+        raise ReviewSnapshotError("review priority policy schema is invalid")
+    if policy.get("policy_id") != "QIKVRT-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1":
+        raise ReviewSnapshotError("review priority policy id is invalid")
+    intake_policy = policy.get("review_intake_priority")
+    if not isinstance(intake_policy, Mapping):
+        raise ReviewSnapshotError("review intake priority policy is missing")
+    roles = intake_policy.get("principal_roles")
+    labels = intake_policy.get("reason_labels")
+    classes = intake_policy.get("priority_classes")
+    if not isinstance(roles, Mapping) or not isinstance(labels, Mapping) or not isinstance(classes, list):
+        raise ReviewSnapshotError("review priority policy shape is invalid")
+    expected_classes = {
+        "P0_SECURITY_OR_INTEGRITY": 0,
+        "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER": 1,
+        "P2_REQUIRED_CODE_OWNER_REQUEST": 2,
+        "P3_EXPLICIT_REVIEW_REQUEST": 3,
+        "P4_AUTOMATIC_ELIGIBLE_EVENT": 4,
+    }
+    observed_classes: dict[str, int] = {}
+    for item in classes:
+        if not isinstance(item, Mapping):
+            raise ReviewSnapshotError("review priority class must be an object")
+        name = item.get("class")
+        rank = item.get("rank")
+        if (
+            not isinstance(name, str)
+            or isinstance(rank, bool)
+            or not isinstance(rank, int)
+        ):
+            raise ReviewSnapshotError("review priority class is invalid")
+        if name in observed_classes:
+            raise ReviewSnapshotError("review priority class is duplicated")
+        observed_classes[name] = rank
+    if observed_classes != expected_classes:
+        raise ReviewSnapshotError("review priority policy class mapping is invalid")
+    for role in ("PRODUCT_OWNER", "REQUIRED_CODE_OWNER"):
+        values = roles.get(role)
+        if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
+            raise ReviewSnapshotError(f"review priority role {role} is invalid")
+    if not all(isinstance(label, str) and isinstance(reason, str) for label, reason in labels.items()):
+        raise ReviewSnapshotError("review priority reason labels are invalid")
+    return dict(intake_policy), hashlib.sha256(raw).hexdigest()
+
+
+def _principal_role(login: str | None, policy: Mapping[str, Any]) -> str:
+    if login is None:
+        return "NONE"
+    roles = policy["principal_roles"]
+    normalized = login.casefold()
+    for role in ("PRODUCT_OWNER", "REQUIRED_CODE_OWNER"):
+        if any(
+            isinstance(candidate, str) and candidate.casefold() == normalized
+            for candidate in roles[role]
+        ):
+            return role
+    return "OTHER"
+
+
+def _review_intake(
+    event_context: Mapping[str, Any] | None,
+    observed_labels: Sequence[str],
+    observed_reviewers: Sequence[str] = (),
+    observed_teams: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Derive the sole canonical priority classification for one exact event.
+
+    GitHub Actions does not expose a native delivery id or a priority queue.  It
+    can bind the event fields and classify them, but it must not claim that it
+    ordered multiple independent deliveries.  A provisioned GitHub App broker
+    is the only permitted owner of that cross-event ordering.
+    """
+    if event_context is None:
+        event_context = {}
+    if not isinstance(event_context, Mapping):
+        raise ReviewSnapshotError("review event context must be an object")
+    policy, policy_sha256 = _review_priority_policy()
+    event_name = _optional_text(event_context.get("event_name"), "review event name") or "UNKNOWN"
+    event_action = _optional_text(event_context.get("event_action"), "review event action") or ""
+    event_payload_sha256 = _optional_sha256(
+        event_context.get("event_payload_sha256"),
+        "review event payload sha256",
+    )
+    event_actor = _optional_text(event_context.get("event_actor"), "review event actor")
+    requested_reviewer = _optional_text(
+        event_context.get("requested_reviewer"),
+        "requested reviewer",
+    )
+    requested_team = _optional_text(
+        event_context.get("requested_team"),
+        "requested reviewer team",
+    )
+    source = _optional_text(event_context.get("source"), "review event source") or "UNSPECIFIED"
+    native_delivery_identity = (
+        _optional_text(event_context.get("native_delivery_identity"), "native delivery identity")
+        or "UNAVAILABLE_TO_GITHUB_ACTIONS"
+    )
+    if requested_reviewer is not None and requested_team is not None:
+        raise ReviewSnapshotError("review event cannot name both a user and a team target")
+    if event_action == "review_requested" and requested_reviewer is None and requested_team is None:
+        raise ReviewSnapshotError("review_requested event lacks a reviewer or team target")
+
+    normalized_labels: list[str] = []
+    for label in observed_labels:
+        normalized_label = _optional_text(label, "pull request label")
+        if normalized_label is None:
+            raise ReviewSnapshotError("pull request labels contain an empty value")
+        normalized_labels.append(normalized_label)
+    labels = sorted(set(normalized_labels))
+    reason_mapping = policy["reason_labels"]
+    matched_labels = [label for label in labels if label in reason_mapping]
+    if len(matched_labels) > 1:
+        reason = "AMBIGUOUS"
+        reason_label = None
+        reason_state = "AMBIGUOUS_FAIL_CLOSED"
+    elif matched_labels:
+        reason_label = matched_labels[0]
+        reason = reason_mapping[reason_label]
+        reason_state = "DECLARED_LABEL"
+    else:
+        reason = "UNSPECIFIED"
+        reason_label = None
+        reason_state = "UNSPECIFIED"
+
+    requester_role = _principal_role(event_actor, policy)
+    requested_reviewer_role = _principal_role(requested_reviewer, policy)
+    requested_target_observed: bool | None = None
+    if event_action == "review_requested":
+        requested_target_observed = (
+            any(
+                candidate.casefold() == requested_reviewer.casefold()
+                for candidate in observed_reviewers
+            )
+            if requested_reviewer is not None
+            else requested_team in observed_teams
+        )
+        if (
+            reason == "SECURITY_OR_INTEGRITY"
+            and requester_role in {"PRODUCT_OWNER", "REQUIRED_CODE_OWNER"}
+        ):
+            priority_class = "P0_SECURITY_OR_INTEGRITY"
+        elif (
+            requester_role == "PRODUCT_OWNER"
+            and requested_reviewer_role == "REQUIRED_CODE_OWNER"
+        ):
+            priority_class = "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER"
+        elif requested_reviewer_role == "REQUIRED_CODE_OWNER":
+            priority_class = "P2_REQUIRED_CODE_OWNER_REQUEST"
+        else:
+            priority_class = "P3_EXPLICIT_REVIEW_REQUEST"
+        request_state = (
+            "ACTIVE_EXPLICIT_REQUEST"
+            if requested_target_observed
+            else "STALE_EXPLICIT_REQUEST"
+        )
+    else:
+        priority_class = "P4_AUTOMATIC_ELIGIBLE_EVENT"
+        request_state = (
+            "REMOVED_REQUEST_REOBSERVATION_ONLY"
+            if event_action == "review_request_removed"
+            else "AUTOMATIC_ELIGIBLE_REOBSERVATION"
+        )
+    ranks = {item["class"]: item["rank"] for item in policy["priority_classes"]}
+    return {
+        "schema": REVIEW_INTAKE_SCHEMA,
+        "policy_id": "QIKVRT-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1",
+        "policy_sha256": policy_sha256,
+        "source": source,
+        "event_name": event_name,
+        "event_action": event_action,
+        "event_payload_sha256": event_payload_sha256,
+        "event_actor": event_actor,
+        "requested_reviewer": requested_reviewer,
+        "requested_team": requested_team,
+        "requester_role": requester_role,
+        "requested_reviewer_role": requested_reviewer_role,
+        "requested_target_observed": requested_target_observed,
+        "request_state": request_state,
+        "reason": reason,
+        "reason_label": reason_label,
+        "reason_labels": matched_labels,
+        "reason_state": reason_state,
+        "priority_class": priority_class,
+        "priority_rank": ranks[priority_class],
+        "cross_event_ordering": "GITHUB_ACTIONS_NO_CROSS_EVENT_PRIORITY_GUARANTEE",
+        "native_delivery_identity": native_delivery_identity,
+    }
+
+
+def _canonical_review_intake(value: Any) -> dict[str, Any]:
+    """Validate a receipt-bound review intake against current trusted policy."""
+    if value is None:
+        return _review_intake({}, [])
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("review_intake must be an object")
+    required = {
+        "schema",
+        "policy_id",
+        "policy_sha256",
+        "source",
+        "event_name",
+        "event_action",
+        "event_payload_sha256",
+        "event_actor",
+        "requested_reviewer",
+        "requested_team",
+        "requester_role",
+        "requested_reviewer_role",
+        "requested_target_observed",
+        "request_state",
+        "reason",
+        "reason_label",
+        "reason_labels",
+        "reason_state",
+        "priority_class",
+        "priority_rank",
+        "cross_event_ordering",
+        "native_delivery_identity",
+    }
+    if set(value) != required:
+        raise ReviewSnapshotError("review_intake fields are invalid")
+    policy, policy_sha256 = _review_priority_policy()
+    if (
+        value.get("schema") != REVIEW_INTAKE_SCHEMA
+        or value.get("policy_id") != "QIKVRT-REQUESTED-REVIEW-AND-ISSUE-LIFECYCLE-V1"
+        or value.get("policy_sha256") != policy_sha256
+    ):
+        raise ReviewSnapshotError("review_intake policy binding drifted")
+    normalized: dict[str, Any] = {}
+    for field in (
+        "source",
+        "event_name",
+        "event_action",
+        "event_actor",
+        "requested_reviewer",
+        "requested_team",
+        "reason_label",
+        "native_delivery_identity",
+    ):
+        normalized[field] = _optional_text(value.get(field), f"review_intake {field}")
+    normalized["event_payload_sha256"] = _optional_sha256(
+        value.get("event_payload_sha256"),
+        "review_intake event_payload_sha256",
+    )
+    raw_reason_labels = value.get("reason_labels")
+    if (
+        not isinstance(raw_reason_labels, list)
+        or not all(isinstance(label, str) and label for label in raw_reason_labels)
+        or raw_reason_labels != sorted(set(raw_reason_labels))
+    ):
+        raise ReviewSnapshotError("review_intake reason_labels are invalid")
+    for field in (
+        "requester_role",
+        "requested_reviewer_role",
+        "request_state",
+        "reason",
+        "reason_state",
+        "priority_class",
+        "cross_event_ordering",
+    ):
+        text = _optional_text(value.get(field), f"review_intake {field}")
+        if text is None:
+            raise ReviewSnapshotError(f"review_intake {field} is missing")
+        normalized[field] = text
+    rank = value.get("priority_rank")
+    if isinstance(rank, bool) or not isinstance(rank, int):
+        raise ReviewSnapshotError("review_intake priority_rank is invalid")
+    ranks = {item["class"]: item["rank"] for item in policy["priority_classes"]}
+    if ranks.get(normalized["priority_class"]) != rank:
+        raise ReviewSnapshotError("review_intake priority class and rank disagree")
+    if normalized["cross_event_ordering"] != "GITHUB_ACTIONS_NO_CROSS_EVENT_PRIORITY_GUARANTEE":
+        raise ReviewSnapshotError("review_intake cross-event ordering claim is invalid")
+    if normalized["event_action"] == "review_requested" and (
+        normalized["requested_reviewer"] is None and normalized["requested_team"] is None
+    ):
+        raise ReviewSnapshotError("review_intake requested review lacks target")
+    target_observed = value.get("requested_target_observed")
+    if target_observed is not None and not isinstance(target_observed, bool):
+        raise ReviewSnapshotError("review_intake requested_target_observed is invalid")
+    if normalized["event_action"] == "review_requested" and not isinstance(target_observed, bool):
+        raise ReviewSnapshotError("review_intake requested review target observation is missing")
+    if normalized["event_action"] != "review_requested" and target_observed is not None:
+        raise ReviewSnapshotError("review_intake non-request event target observation is invalid")
+    expected = _review_intake(
+        {
+            field: normalized[field]
+            for field in (
+                "source",
+                "event_name",
+                "event_action",
+                "event_payload_sha256",
+                "event_actor",
+                "requested_reviewer",
+                "requested_team",
+                "native_delivery_identity",
+            )
+        },
+        raw_reason_labels,
+        [normalized["requested_reviewer"]] if target_observed and normalized["requested_reviewer"] else [],
+        [normalized["requested_team"]] if target_observed and normalized["requested_team"] else [],
+    )
+    if dict(value) != expected:
+        raise ReviewSnapshotError("review_intake does not match deterministic priority policy")
+    return expected
+
+
+def _event_context_from_review_intake(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Reuse a sealed receipt's raw event fields for exact reobservation."""
+    value = receipt.get("review_intake")
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        field: value.get(field)
+        for field in (
+            "source",
+            "event_name",
+            "event_action",
+            "event_payload_sha256",
+            "event_actor",
+            "requested_reviewer",
+            "requested_team",
+            "native_delivery_identity",
+        )
+    }
+
+
 def _discussion_items(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw = snapshot.get("discussion_items", [])
     if not isinstance(raw, list):
@@ -533,7 +1057,7 @@ def _evidence_fingerprint(
     required_gate_paths: Mapping[str, str],
 ) -> str:
     payload = {
-        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v3",
+        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v4",
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
         "repository": snapshot.get("repository"),
@@ -563,6 +1087,7 @@ def _evidence_fingerprint(
         "diff_complete": snapshot.get("diff_complete"),
         "requested_reviewers": sorted(snapshot.get("requested_reviewers", [])),
         "requested_team_reviewers": sorted(snapshot.get("requested_team_reviewers", [])),
+        "review_intake": snapshot.get("review_intake"),
         "discussion": list(threads),
         "discussion_items": snapshot.get("discussion_items", []),
         "required_gates": snapshot.get("required_gates"),
@@ -717,6 +1242,8 @@ def _derived_action(state: str, blocker: str | None) -> dict[str, Any]:
         "ZERO_JOB_GATE",
         "ZERO_EXECUTED_JOB_GATE",
         "REVIEW_BYTES_UNAVAILABLE",
+        "REVIEW_REASON_AMBIGUOUS",
+        "REVIEW_REQUEST_STALE",
         "DIFF_INCOMPLETE",
         "DIFF_DIGEST_MISMATCH",
         "EMPTY_SCOPE",
@@ -775,6 +1302,7 @@ def _result(
     diff_sha256: str | None = None,
     diff_bytes: int | None = None,
     fingerprint: str | None = None,
+    diff_transport: Mapping[str, Any] | None = None,
     findings: Sequence[Mapping[str, Any]] = (),
     latest: Mapping[tuple[int, str, str, str], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -785,7 +1313,7 @@ def _result(
     if isinstance(pr_number, int) and isinstance(head, str) and fingerprint:
         base_path = f"{LEDGER_ROOT}/pr-{pr_number}/{head}/{fingerprint}"
         ledger_path = f"{base_path}.json"
-        diff_path = f"{base_path}.diff"
+        diff_path = f"{base_path}.chunks.json"
     result: dict[str, Any] = {
         "schema": "qikvrt_mesh_repository_review_receipt_v1",
         "review_kind": "MESH_REPOSITORY_SELF_REVIEW",
@@ -817,10 +1345,12 @@ def _result(
         "evidence_fingerprint": fingerprint,
         "ledger_path": ledger_path,
         "ledger_diff_path": diff_path,
+        "diff_transport": dict(diff_transport) if isinstance(diff_transport, Mapping) else None,
         "findings": [dict(finding) for finding in findings],
         "discussion_sha256": _canonical_sha256(snapshot.get("discussion_items", [])),
         "requested_reviewers_observed": list(snapshot.get("requested_reviewers", [])) if isinstance(snapshot.get("requested_reviewers"), list) else [],
         "requested_team_reviewers_observed": list(snapshot.get("requested_team_reviewers", [])) if isinstance(snapshot.get("requested_team_reviewers"), list) else [],
+        "review_intake": dict(snapshot.get("review_intake", {})) if isinstance(snapshot.get("review_intake"), Mapping) else {},
         "required_gate_paths": dict(snapshot.get("required_gate_paths", {})) if isinstance(snapshot.get("required_gate_paths"), Mapping) else {},
         "required_gate_workflow_ids": dict(snapshot.get("required_gate_workflow_ids", {})) if isinstance(snapshot.get("required_gate_workflow_ids"), Mapping) else {},
         "required_gate_events": dict(snapshot.get("required_gate_events", {})) if isinstance(snapshot.get("required_gate_events"), Mapping) else {},
@@ -834,11 +1364,11 @@ def _result(
             "ledger_ref": LEDGER_REF,
             "receipt_path": ledger_path,
             "diff_path": diff_path,
+            "diff_transport": dict(diff_transport) if isinstance(diff_transport, Mapping) else None,
             "append_only": True,
             "candidate_branch_mutation": False,
             "status_context": "QIKVRT requested review execution",
             "consumers": [
-                "QIKVRT autonomous PR-head continuation",
                 "QIKVRT required code-owner review",
                 "QIK-VRT expected-head promotion executor",
             ],
@@ -904,6 +1434,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         discussion = _discussion_items(snapshot)
         reviewers = _string_list(snapshot, "requested_reviewers")
         teams = _string_list(snapshot, "requested_team_reviewers")
+        intake = _canonical_review_intake(snapshot.get("review_intake"))
         writers = _active_writers(snapshot)
         required, required_gate_paths, required_gate_workflow_ids, required_gate_events = (
             _required_gate_binding(snapshot)
@@ -911,6 +1442,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         snapshot["discussion_items"] = discussion
         snapshot["requested_reviewers"] = reviewers
         snapshot["requested_team_reviewers"] = teams
+        snapshot["review_intake"] = intake
         snapshot["required_gate_paths"] = required_gate_paths
         snapshot["required_gate_workflow_ids"] = required_gate_workflow_ids
         snapshot["required_gate_events"] = required_gate_events
@@ -932,7 +1464,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             findings=[_finding("INVALID_REVIEW_SNAPSHOT", "BLOCK", str(exc))],
         )
 
-    if diff is None:
+    if diff is None or not isinstance(diff, bytes):
         return _result(
             snapshot,
             "COMMENT_WITH_BLOCKER",
@@ -941,18 +1473,6 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             scope=scope,
             scope_sha256=observed_scope_digest,
             findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "complete exact diff bytes are required")],
-            latest=latest,
-        )
-    if not isinstance(diff, bytes) or len(diff) > MAX_DIFF_BYTES:
-        return _result(
-            snapshot,
-            "COMMENT_WITH_BLOCKER",
-            "REVIEW_BYTES_UNAVAILABLE",
-            f"exact diff must contain at most {MAX_DIFF_BYTES} bytes",
-            scope=scope,
-            scope_sha256=observed_scope_digest,
-            diff_bytes=len(diff) if isinstance(diff, bytes) else None,
-            findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "exact diff is not bytes or exceeds the bounded limit")],
             latest=latest,
         )
 
@@ -974,8 +1494,30 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         "diff_sha256": actual_diff_sha256,
         "diff_bytes": len(diff),
         "fingerprint": fingerprint,
+        "diff_transport": build_diff_transport(
+            diff,
+            f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
+        ) if diff else None,
         "latest": latest,
     }
+    if intake["reason_state"] == "AMBIGUOUS_FAIL_CLOSED":
+        return _result(
+            snapshot,
+            "COMMENT_WITH_BLOCKER",
+            "REVIEW_REASON_AMBIGUOUS",
+            "multiple declared review-reason labels prevent a deterministic priority classification",
+            findings=[_finding("REVIEW_REASON_AMBIGUOUS", "BLOCK", "multiple review-reason labels are present")],
+            **common,
+        )
+    if intake["request_state"] == "STALE_EXPLICIT_REQUEST":
+        return _result(
+            snapshot,
+            "COMMENT_WITH_BLOCKER",
+            "REVIEW_REQUEST_STALE",
+            "the requested reviewer or team is no longer present at exact observation",
+            findings=[_finding("REVIEW_REQUEST_STALE", "BLOCK", "review-request target drifted before exact observation")],
+            **common,
+        )
     if snapshot.get("diff_complete") is not True:
         return _result(
             snapshot,
@@ -1254,6 +1796,372 @@ def _gh_pages(path: str) -> list[Mapping[str, Any]]:
                 raise ReviewObservationError("paginated GitHub item is not an object")
             result.append(item)
     return result
+
+
+def _positive_integer(value: Any) -> int | None:
+    """Return a positive integer subject identifier, otherwise ``None``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdecimal():
+            number = int(text)
+            return number if number > 0 else None
+    return None
+
+
+def _git_sha1(value: Any) -> str | None:
+    if not isinstance(value, str) or len(value) != 40:
+        return None
+    if any(character not in "0123456789abcdef" for character in value):
+        return None
+    return value
+
+
+def _selection_subject(pr: Mapping[str, Any]) -> dict[str, Any]:
+    """Project only the fields used for actionable-subject diagnostics."""
+    base = pr.get("base")
+    head = pr.get("head")
+    base_ref = base.get("ref") if isinstance(base, Mapping) else None
+    head_sha = head.get("sha") if isinstance(head, Mapping) else None
+    head_repo = head.get("repo") if isinstance(head, Mapping) else None
+    return {
+        "number": _positive_integer(pr.get("number")),
+        "state": pr.get("state") if isinstance(pr.get("state"), str) else None,
+        "base_ref": base_ref if isinstance(base_ref, str) else None,
+        "head_sha": head_sha if isinstance(head_sha, str) else None,
+        "head_repository": (
+            head_repo.get("full_name")
+            if isinstance(head_repo, Mapping)
+            and isinstance(head_repo.get("full_name"), str)
+            else None
+        ),
+    }
+
+
+def _selection_result(
+    state: str,
+    selection_basis: str,
+    *,
+    first_blocker: str | None = None,
+    pr_number: int | None = None,
+    event_source: str | None = None,
+    expected_head: str | None = None,
+    subject: Mapping[str, Any] | None = None,
+    eligibility_reasons: Sequence[str] = (),
+    subject_count: int = 0,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Return one stable, non-effecting selector observation."""
+    return {
+        "schema": REVIEW_SELECTION_SCHEMA,
+        "state": state,
+        "pr_number": pr_number,
+        "candidate_pr_number": pr_number if state == "CANDIDATE" else None,
+        "selection_basis": selection_basis,
+        "event_source": event_source,
+        "expected_head": expected_head,
+        "first_blocker": first_blocker,
+        "detail": detail,
+        "eligibility_reasons": list(eligibility_reasons),
+        "subject_count": subject_count,
+        "observed_subject": dict(subject) if subject is not None else None,
+        "review_execution": state == "CANDIDATE",
+        "review_observation_started": False,
+        "external_effect": "NONE",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+
+
+def _eligible_review_subject(
+    pr: Mapping[str, Any], repository: str, expected_number: int
+) -> tuple[dict[str, Any], list[str]]:
+    subject = _selection_subject(pr)
+    reasons: list[str] = []
+    if subject["number"] != expected_number:
+        reasons.append("PULL_REQUEST_NUMBER_MISMATCH")
+    if subject["state"] != "open":
+        reasons.append("PULL_REQUEST_NOT_OPEN")
+    if subject["base_ref"] != "main":
+        reasons.append("PULL_REQUEST_BASE_NOT_MAIN")
+    if subject["head_repository"] != repository:
+        reasons.append("PULL_REQUEST_HEAD_NOT_ROLE_LOCAL")
+    if _git_sha1(subject["head_sha"]) is None:
+        reasons.append("PULL_REQUEST_HEAD_SHA_INVALID")
+    return subject, reasons
+
+
+def _workflow_run_pr_number(
+    item: Mapping[str, Any], repository: str
+) -> tuple[int | None, str | None]:
+    """Require a workflow-run PR association to bind to this repository."""
+    number = _positive_integer(item.get("number"))
+    if number is None:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    url = item.get("url")
+    if not isinstance(url, str) or not url:
+        return None, "MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"
+    parsed = urllib.parse.urlparse(url)
+    expected_path = f"/repos/{repository}/pulls/{number}"
+    if parsed.scheme != "https" or parsed.netloc != "api.github.com":
+        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    if parsed.path != expected_path or parsed.query or parsed.fragment:
+        return None, "WORKFLOW_RUN_PULL_REQUEST_NOT_ROLE_LOCAL"
+    return number, None
+
+
+def select_review_subject(
+    *,
+    repository: str,
+    requested_pr: str,
+    event_pr: str,
+    event_name: str,
+    expected_head: str,
+    workflow_event: str,
+    workflow_prs: Any,
+    fetch_pull_request: Callable[[int], Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Select one exact, eligible review subject without a fallback scan.
+
+    A non-candidate result is diagnostic only.  In particular, an explicit PR
+    event which is not open, role-local, and main-based is never conflated with
+    an eventless ``NOOP``. A native pull-request event must retain its literal
+    head, while an issue comment is bound by its exact PR number. A workflow-run
+    association must name this repository exactly, and a workflow head is never
+    reverse-mapped by listing PRs.
+    """
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("selector repository is invalid")
+
+    bound_head = expected_head.strip()
+    if bound_head and _git_sha1(bound_head) is None:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            "EXACT_EVENT_OR_DISPATCH",
+            first_blocker="INVALID_EVENT_EXPECTED_HEAD",
+            event_source="EVENT_HEAD",
+            expected_head=bound_head,
+            eligibility_reasons=["INVALID_EVENT_EXPECTED_HEAD"],
+        )
+
+    def exact_number(
+        value: str,
+        source: str,
+        *,
+        require_bound_head: bool,
+        missing_head_blocker: str,
+    ) -> dict[str, Any]:
+        number = _positive_integer(value)
+        if number is None:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
+                event_source=source,
+                eligibility_reasons=["INVALID_EXACT_PULL_REQUEST_NUMBER"],
+            )
+        if require_bound_head and not bound_head:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker=missing_head_blocker,
+                pr_number=number,
+                event_source=source,
+                eligibility_reasons=[missing_head_blocker],
+                subject_count=1,
+            )
+        try:
+            observed = fetch_pull_request(number)
+        except (OSError, ValueError, ReviewObservationError) as exc:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="PULL_REQUEST_OBSERVATION_UNAVAILABLE",
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head or None,
+                eligibility_reasons=["PULL_REQUEST_OBSERVATION_UNAVAILABLE"],
+                subject_count=1,
+                detail=str(exc)[:300],
+            )
+        if not isinstance(observed, Mapping):
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="PULL_REQUEST_OBSERVATION_MALFORMED",
+                pr_number=number,
+                event_source=source,
+                eligibility_reasons=["PULL_REQUEST_OBSERVATION_MALFORMED"],
+            )
+        subject, reasons = _eligible_review_subject(observed, repository, number)
+        if reasons:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker=reasons[0],
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head or None,
+                subject=subject,
+                eligibility_reasons=reasons,
+                subject_count=1,
+            )
+        if bound_head and subject["head_sha"] != bound_head:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="EVENT_TARGET_HEAD_DRIFT",
+                pr_number=number,
+                event_source=source,
+                expected_head=bound_head,
+                subject=subject,
+                eligibility_reasons=["EVENT_TARGET_HEAD_DRIFT"],
+                subject_count=1,
+            )
+        return _selection_result(
+            "CANDIDATE",
+            "EXACT_EVENT_OR_DISPATCH",
+            pr_number=number,
+            event_source=source,
+            expected_head=bound_head or None,
+            subject=subject,
+            subject_count=1,
+        )
+
+    if requested_pr.strip() and event_pr.strip():
+        requested_number = _positive_integer(requested_pr)
+        event_number = _positive_integer(event_pr)
+        if (
+            requested_number is not None
+            and event_number is not None
+            and requested_number != event_number
+        ):
+            return _selection_result(
+                "AMBIGUOUS_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="CONFLICTING_EXACT_PULL_REQUEST_SUBJECTS",
+                event_source="WORKFLOW_DISPATCH_AND_PULL_REQUEST_EVENT",
+                subject_count=2,
+            )
+
+    if requested_pr.strip():
+        return exact_number(
+            requested_pr,
+            "WORKFLOW_DISPATCH_PR",
+            require_bound_head=True,
+            missing_head_blocker="WORKFLOW_DISPATCH_HEAD_MISSING",
+        )
+    if event_pr.strip():
+        if event_name == "pull_request_target":
+            return exact_number(
+                event_pr,
+                "PULL_REQUEST_EVENT",
+                require_bound_head=True,
+                missing_head_blocker="PULL_REQUEST_EVENT_HEAD_MISSING",
+            )
+        if event_name == "issue_comment":
+            return exact_number(
+                event_pr,
+                "ISSUE_COMMENT_PULL_REQUEST_EVENT",
+                require_bound_head=False,
+                missing_head_blocker="ISSUE_COMMENT_HEAD_NOT_REQUIRED",
+            )
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            "EXACT_EVENT_OR_DISPATCH",
+            first_blocker="UNSUPPORTED_EXACT_EVENT_SOURCE",
+            event_source=event_name or "UNKNOWN",
+            eligibility_reasons=["UNSUPPORTED_EXACT_EVENT_SOURCE"],
+        )
+
+    if not workflow_event.strip():
+        return _selection_result(
+            "NO_EVENT_SUBJECT",
+            "NO_EVENT_SUBJECT",
+            first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+            event_source="NONE",
+            expected_head=bound_head or None,
+        )
+
+    if workflow_event.strip():
+        if workflow_event in {"schedule", "workflow_dispatch"}:
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN",
+                event_source="WORKFLOW_RUN",
+                expected_head=bound_head or None,
+                eligibility_reasons=["SCHEDULED_OR_MANUAL_WORKFLOW_RUN_FORBIDDEN"],
+            )
+        if not workflow_prs:
+            return _selection_result(
+                "NO_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="NO_EXACT_WORKFLOW_RUN_PULL_REQUEST",
+                event_source="WORKFLOW_RUN",
+                expected_head=bound_head or None,
+            )
+        if not isinstance(workflow_prs, Sequence) or isinstance(workflow_prs, (str, bytes)):
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                expected_head=bound_head or None,
+                eligibility_reasons=["MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"],
+            )
+        numbers: set[int] = set()
+        for item in workflow_prs:
+            if not isinstance(item, Mapping):
+                return _selection_result(
+                    "INELIGIBLE_EVENT_TARGET",
+                    "EXACT_EVENT_OR_DISPATCH",
+                    first_blocker="MALFORMED_WORKFLOW_RUN_PULL_REQUESTS",
+                    event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                    expected_head=bound_head or None,
+                    eligibility_reasons=["MALFORMED_WORKFLOW_RUN_PULL_REQUESTS"],
+                )
+            number, blocker = _workflow_run_pr_number(item, repository)
+            if blocker is not None:
+                return _selection_result(
+                    "INELIGIBLE_EVENT_TARGET",
+                    "EXACT_EVENT_OR_DISPATCH",
+                    first_blocker=blocker,
+                    event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                    expected_head=bound_head or None,
+                    eligibility_reasons=[blocker],
+                )
+            assert number is not None
+            numbers.add(number)
+        if len(numbers) != 1:
+            return _selection_result(
+                "AMBIGUOUS_EVENT_SUBJECT",
+                "EXACT_EVENT_OR_DISPATCH",
+                first_blocker="WORKFLOW_RUN_MULTIPLE_PULL_REQUESTS",
+                event_source="WORKFLOW_RUN_PULL_REQUESTS",
+                expected_head=bound_head or None,
+                subject_count=len(numbers),
+            )
+        return exact_number(
+            str(next(iter(numbers))),
+            "WORKFLOW_RUN_PULL_REQUESTS",
+            require_bound_head=True,
+            missing_head_blocker="WORKFLOW_RUN_HEAD_MISSING",
+        )
+
+    return _selection_result(
+        "NO_EVENT_SUBJECT",
+        "NO_EVENT_SUBJECT",
+        first_blocker="NO_EXACT_EVENT_OR_DISPATCH_SUBJECT",
+        event_source="NONE",
+    )
 
 
 def _gh_runs(path: str) -> list[Mapping[str, Any]]:
@@ -1577,9 +2485,18 @@ def observe_repository(
     required_gates: Sequence[str],
     required_gate_paths: Mapping[str, str],
     writer_workflows: Sequence[str],
+    expected_head: str | None = None,
+    event_context: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], bytes]:
     """Read one stable trusted-main repository observation without remote writes."""
+    if expected_head is not None and _git_sha1(expected_head) is None:
+        raise ReviewObservationError("exact selector head is not a Git SHA-1")
     pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
+    if (
+        expected_head is not None
+        and pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head differs from exact selector event")
     main = _gh_one(f"repos/{repository}/commits/main")
     if not isinstance(pr, Mapping) or not isinstance(main, Mapping):
         raise ReviewObservationError("pull request or main observation is malformed")
@@ -1643,6 +2560,11 @@ def observe_repository(
     if final_main.get("sha") != main_sha:
         raise ReviewObservationError("main changed during repository observation")
     if (
+        expected_head is not None
+        and final_pr.get("head", {}).get("sha") != expected_head
+    ):
+        raise ReviewObservationError("pull request head drifted from exact selector event")
+    if (
         final_pr.get("state") != pr.get("state")
         or final_pr.get("draft") != pr.get("draft")
         or final_pr.get("base", {}).get("sha") != base
@@ -1651,6 +2573,37 @@ def observe_repository(
         or hashlib.sha256(str(final_pr.get("body") or "").encode("utf-8")).hexdigest() != body_sha256
     ):
         raise ReviewObservationError("pull request changed during repository observation")
+
+    raw_labels = final_pr.get("labels", [])
+    if not isinstance(raw_labels, list):
+        raise ReviewObservationError("pull request labels are malformed")
+    observed_labels: list[str] = []
+    for item in raw_labels:
+        if not isinstance(item, Mapping) or not isinstance(item.get("name"), str):
+            raise ReviewObservationError("pull request label is malformed")
+        observed_labels.append(item["name"])
+    raw_reviewers = final_pr.get("requested_reviewers", [])
+    raw_teams = final_pr.get("requested_teams", [])
+    if not isinstance(raw_reviewers, list) or not isinstance(raw_teams, list):
+        raise ReviewObservationError("pull request requested-reviewer projection is malformed")
+    observed_reviewers: list[str] = []
+    for item in raw_reviewers:
+        if not isinstance(item, Mapping) or not isinstance(item.get("login"), str) or not item["login"]:
+            raise ReviewObservationError("pull request requested reviewer is malformed")
+        observed_reviewers.append(item["login"])
+    observed_teams: list[str] = []
+    for item in raw_teams:
+        if not isinstance(item, Mapping) or not isinstance(item.get("slug"), str) or not item["slug"]:
+            raise ReviewObservationError("pull request requested reviewer team is malformed")
+        observed_teams.append(item["slug"])
+    observed_reviewers.sort()
+    observed_teams.sort()
+    intake = _review_intake(
+        event_context,
+        observed_labels,
+        observed_reviewers,
+        observed_teams,
+    )
 
     if repository == "Goldkelch/qik-vrt":
         role = "AUTHORITY"
@@ -1678,21 +2631,17 @@ def observe_repository(
         "observed_head_sha": final_pr.get("head", {}).get("sha"),
         "tree_sha": head_tree,
         "observed_tree_sha": head_tree,
-        "requested_reviewers": sorted(
-            item.get("login")
-            for item in final_pr.get("requested_reviewers", [])
-            if item.get("login")
-        ),
-        "requested_team_reviewers": sorted(
-            item.get("slug")
-            for item in final_pr.get("requested_teams", [])
-            if item.get("slug")
-        ),
+        "requested_reviewers": observed_reviewers,
+        "requested_team_reviewers": observed_teams,
+        "review_intake": intake,
         **scope_envelope,
         "scope_sha256": scope_digest,
         "diff_sha256": hashlib.sha256(diff).hexdigest(),
         "diff_bytes": len(diff),
-        "diff_complete": 0 < len(diff) <= MAX_DIFF_BYTES,
+        # The observer has already materialized every diff byte.  The separate
+        # The observer materializes every byte; receipt transport splits it
+        # into independently bounded, content-addressed packets.
+        "diff_complete": True,
         "review_threads": threads,
         "unresolved_review_threads": sum(1 for item in threads if not item["is_resolved"]),
         "discussion_items": discussion,
@@ -1724,6 +2673,8 @@ def verify_current_receipt(
         required_gates,
         required_gate_paths,
         writer_workflows,
+        expected_head=_optional_text(expected.get("head_sha"), "receipt head_sha"),
+        event_context=_event_context_from_review_intake(expected),
     )
     fresh = evaluate(snapshot, diff)
     try:
@@ -1789,6 +2740,8 @@ def _add_observation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--required-gates-json", required=True)
     parser.add_argument("--required-gate-paths-json", required=True)
     parser.add_argument("--writer-workflows-json", required=True)
+    parser.add_argument("--expected-head", default="")
+    parser.add_argument("--event-context-file")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1831,6 +2784,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             list,
         )
         if args.command == "observe":
+            event_context = _load(args.event_context_file) if args.event_context_file else None
             snapshot, diff = observe_repository(
                 args.repository,
                 args.pr_number,
@@ -1838,6 +2792,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 required_gates,
                 required_gate_paths,
                 writer_workflows,
+                args.expected_head or None,
+                event_context,
             )
             result = evaluate(snapshot, diff)
             _write_json(pathlib.Path(args.snapshot_out), snapshot)

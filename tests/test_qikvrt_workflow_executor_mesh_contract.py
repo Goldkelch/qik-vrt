@@ -88,9 +88,37 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
 
         executor = plane["executor"]
         self.assertEqual(executor["workflow_name"], "QIKVRT requested review executor")
+        self.assertEqual(
+            executor["eligible_subjects"],
+            "SAME_REPOSITORY_PULL_REQUESTS_WITH_OBSERVABLE_BYTES_FROM_EXACT_EVENT_OR_EXPLICIT_DISPATCH",
+        )
         self.assertFalse(executor["human_review_request_prerequisite"])
         self.assertEqual(executor["platform_review_event"], "COMMENT")
         self.assertEqual(executor["bot_approve_or_request_changes_event"], "FORBIDDEN")
+        self.assertEqual(
+            executor["selection"]["allowed_sources"],
+            [
+                "EXACT_PULL_REQUEST_OR_ISSUE_EVENT",
+                "EXACT_ROLE_LOCAL_WORKFLOW_RUN_PULL_REQUEST",
+                "EXPLICIT_WORKFLOW_DISPATCH_PULL_REQUEST_AND_HEAD",
+            ],
+        )
+        self.assertEqual(executor["selection"]["eventless_repository_scan"], "FORBIDDEN")
+        self.assertEqual(
+            executor["selection"]["scheduled_or_manual_workflow_run_source"],
+            "FORBIDDEN",
+        )
+        self.assertTrue(executor["selection"]["workflow_run_requires_role_local_url_and_matching_head"])
+        self.assertTrue(executor["selection"]["manual_dispatch_requires_matching_exact_head"])
+        self.assertEqual(
+            executor["selection"]["review_intake_priority_policy"],
+            "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
+        )
+        self.assertEqual(
+            executor["selection"]["github_actions_cross_event_priority_guarantee"],
+            "NOT_AVAILABLE",
+        )
+        self.assertTrue(executor["selection"]["github_app_event_broker_required_for_cross_event_priority"])
 
         binding = plane["exact_subject_binding"]
         self.assertEqual(
@@ -111,9 +139,15 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
                 "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
                 "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
                 "ACTIVE_WRITER_QUEUE_STATE",
+                "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK",
             ],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
+        self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
+        self.assertEqual(
+            binding["complete_diff_transport_acceptance"],
+            "SEQUENTIAL_EXACT_PACKET_ORDER_EXPLICIT_COUNT_PER_PACKET_AND_TOTAL_SHA256_CANONICAL_MANIFEST_SHA256_AND_EXACT_LEDGER_MANIFEST_READBACK_REQUIRED",
+        )
         self.assertEqual(
             binding["review_fingerprint_input"],
             "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
@@ -122,7 +156,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertEqual(binding["predecessor_evidence_transfer"], "FORBIDDEN")
         self.assertEqual(
             binding["same_fingerprint_requires"],
-            "BYTE_IDENTICAL_RECEIPT_AND_DIFF",
+            "BYTE_IDENTICAL_RECEIPT_AND_REASSEMBLED_DIFF_AND_TRANSPORT_MANIFEST",
         )
 
         ledger = plane["ledger"]
@@ -138,8 +172,17 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json",
         )
         self.assertEqual(
-            ledger["diff_path_template"],
-            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+            ledger["diff_manifest_path_template"],
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json",
+        )
+        self.assertEqual(
+            ledger["diff_packet_path_template"],
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks/<zero-padded-index>.bin",
+        )
+        self.assertEqual(ledger["transport_schema"], "qikvrt_mesh_review_diff_transport_v1")
+        self.assertEqual(
+            ledger["manifest_readback"],
+            "BYTE_IDENTICAL_CANONICAL_MANIFEST_AND_REASSEMBLED_TOTAL_SHA256_REQUIRED",
         )
         self.assertEqual(ledger["write_protocol"], "FAST_FORWARD_COMPARE_AND_SWAP_ONLY")
         self.assertEqual(ledger["candidate_branch_write"], "FORBIDDEN")
@@ -182,10 +225,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         )
         self.assertEqual(
             downstream["consumer_workflows"],
-            [
-                ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",
-                ".github/workflows/qikvrt_expected_head_promotion.yml",
-            ],
+            [".github/workflows/qikvrt_expected_head_promotion.yml"],
         )
 
         self.assertEqual(
@@ -212,6 +252,33 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertFalse(policy["review_lifecycle"]["human_review_request_prerequisite"])
         self.assertFalse(policy["review_executor"]["human_review_request_required"])
         self.assertEqual(
+            policy["review_lifecycle"]["mesh_self_review_default"],
+            "EXECUTE_FOR_EVERY_ELIGIBLE_EXACT_EVENT_OR_EXPLICIT_DISPATCH_SUBJECT",
+        )
+        self.assertEqual(
+            policy_plane["eligible_subjects"],
+            plane["executor"]["eligible_subjects"],
+        )
+        self.assertIn("workflow_dispatch.exact_pr_and_head", policy["review_executor"]["event_triggers"])
+        intake_priority = policy["review_intake_priority"]
+        self.assertEqual(
+            [item["class"] for item in intake_priority["priority_classes"]],
+            [
+                "P0_SECURITY_OR_INTEGRITY",
+                "P1_PRODUCT_OWNER_TO_REQUIRED_CODE_OWNER",
+                "P2_REQUIRED_CODE_OWNER_REQUEST",
+                "P3_EXPLICIT_REVIEW_REQUEST",
+                "P4_AUTOMATIC_ELIGIBLE_EVENT",
+            ],
+        )
+        self.assertTrue(
+            intake_priority["ordering"]["github_app_event_broker_required_for_cross_event_priority"]
+        )
+        self.assertEqual(
+            policy["review_executor"]["manual_executor_dispatch_handoff"],
+            "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
+        )
+        self.assertEqual(
             policy["mesh_self_review_owner_delegation"],
             "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
         )
@@ -221,8 +288,20 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             plane["ledger"]["receipt_path_template"],
         )
         self.assertEqual(
-            policy_plane["receipt_ledger"]["diff_path_template"],
-            plane["ledger"]["diff_path_template"],
+            policy_plane["receipt_ledger"]["diff_manifest_path_template"],
+            plane["ledger"]["diff_manifest_path_template"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["diff_packet_path_template"],
+            plane["ledger"]["diff_packet_path_template"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["transport_schema"],
+            plane["ledger"]["transport_schema"],
+        )
+        self.assertEqual(
+            policy_plane["receipt_ledger"]["manifest_readback"],
+            plane["ledger"]["manifest_readback"],
         )
         self.assertEqual(
             {key: value["state"] for key, value in policy_plane["d0_mapping"].items()},
@@ -234,10 +313,12 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", documentation)
         self.assertIn("state/mesh/reviews/pr-<N>/<head>/<fingerprint>.json", documentation)
         self.assertIn(
-            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.diff",
+            "state/mesh/reviews/pr-<N>/<head>/<fingerprint>.chunks.json",
             documentation,
         )
         self.assertIn("D0=3 REQUEST_AUTHORITY", documentation)
+        self.assertIn("exact native event or an\nexplicit exact-PR-and-head dispatch", documentation)
+        self.assertIn("technical-review action only", documentation)
         self.assertIn("may submit only a\n`COMMENT` review event", documentation)
 
     def test_self_healing_and_node_policy_point_to_the_same_continuity_contract(self) -> None:
