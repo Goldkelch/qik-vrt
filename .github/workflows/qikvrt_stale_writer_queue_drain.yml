@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT bounded stale writer queue drain
+
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - ".github/workflows/qikvrt_stale_writer_queue_drain.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: qikvrt-stale-writer-queue-drain-pr-893
+  cancel-in-progress: false
+
+jobs:
+  cancel-two-proven-stale-writers:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.number == 893 &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact stale queue identities before mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain"
+          mkdir -p "$root"
+          live_head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/893" --jq '.head.sha')"
+          test "$live_head" = "$EXPECTED_EVENT_HEAD"
+          live_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$live_main" = "4e9137ec9887ed23cf76f435839827329c5592fe"
+          cat > "$root/targets.json" <<'JSON'
+          [
+            {
+              "id": 32985189717,
+              "name": "QIK-VRT expected-head promotion executor",
+              "head_sha": "fb744e5b5925d61c6b473e27aab3606f237f7e6d",
+              "created_at": "2026-08-26T15:27:31Z"
+            },
+            {
+              "id": 30295789608,
+              "name": "QIKVRT repository evidence materialization",
+              "head_sha": "d83babfc4e6d114d5ed8f95c4b0763e87197f5c0",
+              "created_at": "2026-07-27T18:53:19Z"
+            }
+          ]
+          JSON
+          : > "$root/before.jsonl"
+          while IFS=$'\t' read -r run_id expected_name expected_head expected_created; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-before.json"
+            jq -e \
+              --arg name "$expected_name" \
+              --arg head "$expected_head" \
+              --arg created "$expected_created" \
+              '.status == "queued" and .conclusion == null and .name == $name and .head_sha == $head and .created_at == $created' \
+              "$root/run-$run_id-before.json" >/dev/null
+            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
+              "$root/run-$run_id-before.json" >> "$root/before.jsonl"
+          done < <(jq -r '.[] | [.id,.name,.head_sha,.created_at] | @tsv' "$root/targets.json")
+
+      - name: Cancel only the two exact stale queued writers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain"
+          : > "$root/after.jsonl"
+          while read -r run_id; do
+            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel"
+            terminal=false
+            for _ in $(seq 1 30); do
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-after.json"
+              status="$(jq -r '.status' "$root/run-$run_id-after.json")"
+              conclusion="$(jq -r '.conclusion // ""' "$root/run-$run_id-after.json")"
+              if test "$status" = completed && test "$conclusion" = cancelled; then
+                terminal=true
+                break
+              fi
+              sleep 2
+            done
+            test "$terminal" = true
+            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
+              "$root/run-$run_id-after.json" >> "$root/after.jsonl"
+          done < <(jq -r '.[].id' "$root/targets.json")
+
+      - name: Write bounded drain receipt
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain"
+          source_tree="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$SOURCE_HEAD" --jq '.tree.sha')"
+          before='[]'
+          after='[]'
+          test -s "$root/before.jsonl" && before="$(jq -s '.' "$root/before.jsonl")"
+          test -s "$root/after.jsonl" && after="$(jq -s '.' "$root/after.jsonl")"
+          jq -n \
+            --arg schema qikvrt_bounded_stale_writer_queue_drain_v1 \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg source_head "$SOURCE_HEAD" \
+            --arg source_tree "$source_tree" \
+            --argjson run_id "$RUN_ID" \
+            --argjson run_attempt "$RUN_ATTEMPT" \
+            --argjson before "$before" \
+            --argjson after "$after" \
+            '{schema:$schema,repository:$repository,source_head:$source_head,source_tree:$source_tree,run_id:$run_id,run_attempt:$run_attempt,scope:"TWO_EXACT_STALE_QUEUED_WRITER_RUNS_ONLY",before:$before,after:$after,credentials_disclosed:false,repository_bytes_published:false,merge:false,pass:false,final_pass:false,effect_ack_done:false}' \
+            | tee "$root/receipt.json"
+
+      - name: Preserve bounded queue-drain receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-stale-writer-queue-drain-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-stale-writer-drain
+          if-no-files-found: error
+          retention-days: 30
