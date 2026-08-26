@@ -2,8 +2,9 @@
 name: QIKVRT bounded stale writer queue drain
 
 on:
-  pull_request:
-    types: [synchronize]
+  push:
+    branches:
+      - "feature/canonical-ai-firefox-current-main-20260827"
     paths:
       - ".github/workflows/qikvrt_stale_writer_queue_drain.yml"
 
@@ -19,15 +20,14 @@ jobs:
   delete-two-proven-irreconcilable-stale-runs:
     if: >-
       github.repository == 'Goldkelch/qik-vrt' &&
-      github.event.pull_request.number == 893 &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.ref == 'refs/heads/feature/canonical-ai-firefox-current-main-20260827'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Verify identities and delete only the two stale run records
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_EVENT_HEAD: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -66,7 +66,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+          SOURCE_HEAD: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         shell: bash
