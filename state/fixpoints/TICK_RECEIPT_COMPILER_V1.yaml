@@ -1,0 +1,20 @@
+schema: qikvrt_tick_receipt_compiler_v1
+id: QIKVRT-TICK-RECEIPT-COMPILER-V1
+mode: READ_ONLY
+input:
+  parent: { head: REQUIRED_SHA1, tree: REQUIRED_SHA1 }
+  child: { head: REQUIRED_SHA1, tree: REQUIRED_SHA1 }
+  node_time: { clock: PROCESS_MONOTONIC_NS, elapsed_ns: REQUIRED_NONNEGATIVE_INTEGER }
+  authority_observation: { head: REQUIRED_SHA1, observed_at_utc: REQUIRED_RFC3339 }
+  work_unit: REQUIRED_REPOSITORY_RELATIVE_PATH
+  test_receipts: REQUIRED_LIST
+output:
+  receipt: qikvrt_tick_receipt_v1
+  terminal_projection: READ_ONLY_PUBLIC_GET
+rules:
+  parent_and_child_must_differ: true
+  parent_history_mutation: FORBIDDEN
+  predecessor_evidence_transfer: FORBIDDEN
+  missing_or_drifted_input: HOLD
+  external_effect: FORBIDDEN
+  completion_claims: { PASS: false, FINAL_PASS: false, EFFECT_ACK_DONE: false }
