@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+modell QEMLCompilerCore
+zustand Compiler = SOURCE | TOKENS | AST | IR | C89 | TARGET | RECEIPT
+event Compile(source: digest, target: text)
+regel Tokenisieren
+  bei Compile
+  wenn Compiler == SOURCE
+  dann Compiler: SOURCE -> TOKENS
+  effect compile
+  beobachte receipt
+invariante Keine_stille_Behauptung
+  Compile.target != ""
+test Compilerkern_Fixpunkt
+  gegeben worker_count = 1
+  wenn bootstrap
+  dann STATUS PASS
+effect compile scope=LOCAL_COMPILER_ONLY observer=receipt receipt=QEML_COMPILER_RECEIPT_V1
+target c89 abi=qikvrt-c89-v1 endian=native word=32 calling=c89 memory=flat relocation=none
+target m68000 abi=qikvrt-m68000-v1 endian=big word=32 calling=register_d0 memory=flat relocation=absolute

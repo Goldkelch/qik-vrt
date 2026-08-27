@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+modell HeartbeatRing
+zustand Ring = NULL | EINS | ARBEIT | ERGEBNIS | REOBSERVATION | AUTHORITY_EFFEKT
+event Auftrag(id: digest, capability: text)
+event Heartbeat(node: node_id, sequence: u64, semantic_work_triggered: bool, polling: bool, blind_retry: bool)
+regel Auftrag_startet
+  bei Auftrag
+  wenn Ring == NULL und Auftrag.capability == "work"
+  dann Ring: NULL -> EINS
+  effect worker_spawn
+  beobachte receipt
+invariante Heartbeat_ist_nur_Liveness
+  Heartbeat.semantic_work_triggered == false und Heartbeat.polling == false und Heartbeat.blind_retry == false
+test Null_Worker
+  gegeben worker_count = 0
+  wenn run_workers
+  dann STATUS CONTINUE
+test Ein_Worker
+  gegeben worker_count = 1
+  wenn run_workers
+  dann STATUS PASS
+test Acht_Worker
+  gegeben worker_count = 8
+  wenn run_workers
+  dann STATUS PASS
+test Neunter_Worker_wird_abgewiesen
+  gegeben worker_count = 9
+  wenn run_workers
+  dann HOLD "worker_limit_exceeded"
+test Heartbeat_bleibt_quieszent
+  gegeben semantic_work_triggered = false
+  gegeben polling = false
+  gegeben blind_retry = false
+  wenn heartbeat
+  dann STATUS CONTINUE
+effect worker_spawn scope=LOCAL_TEST_LEDGER_ONLY observer=receipt receipt=QEML_EFFECT_RECEIPT_V1
+target c89 abi=qikvrt-c89-v1 endian=native word=32 calling=c89 memory=flat relocation=none
+target m68000 abi=qikvrt-m68000-v1 endian=big word=32 calling=register_d0 memory=flat relocation=absolute
