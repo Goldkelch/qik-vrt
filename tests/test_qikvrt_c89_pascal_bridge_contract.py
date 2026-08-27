@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "policy/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json"
 UNIT = ROOT / "pascal/qikvrt_atari_browser_pas.pas"
+UNIT_ALIAS = ROOT / "pascal/qikvrtataribrowserpas.pas"
 TEST_PROGRAM = ROOT / "tests/pascal/test_qikvrt_atari_browser_pas.pas"
 HARNESS = ROOT / "tools/qikvrt_c89_pascal_bridge.py"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_c89_turbo_pascal_delphi_bridge.yml"
@@ -69,6 +70,22 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         ):
             self.assertIn(required, source)
 
+    def test_compiler_lookup_alias_is_byte_identical_and_registered(self) -> None:
+        self.assertTrue(UNIT_ALIAS.is_file())
+        self.assertEqual(UNIT.read_bytes(), UNIT_ALIAS.read_bytes())
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        lookup = policy["compiler_lookup"]
+        self.assertEqual(lookup["declared_unit"], "QikVrtAtariBrowserPas")
+        self.assertEqual(
+            lookup["normalized_lookup_alias"],
+            "pascal/qikvrtataribrowserpas.pas",
+        )
+        self.assertTrue(lookup["alias_must_be_byte_identical"])
+        self.assertEqual(
+            lookup["failure_prevented"],
+            "FPC_UNIT_LOOKUP_FILENAME_MISMATCH",
+        )
+
     def test_semantic_vectors_cover_c89_reference_surface(self) -> None:
         tests = TEST_PROGRAM.read_text(encoding="utf-8")
         for marker in (
@@ -103,6 +120,7 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         self.assertIn("github.event.pull_request.head.sha || github.sha", workflow)
         self.assertIn("git rev-parse --verify HEAD^{commit}", workflow)
         self.assertIn("git rev-parse --verify HEAD^{tree}", workflow)
+        self.assertIn("pascal/qikvrtataribrowserpas.pas", workflow)
         self.assertIn("fp-compiler", workflow)
         self.assertIn("qikvrt_c89_pascal_bridge.py", workflow)
         self.assertIn("include-hidden-files: true", workflow)
@@ -127,6 +145,7 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         work = json.loads(WORK_UNIT.read_text(encoding="utf-8"))
         self.assertEqual(work["issue"], 888)
         self.assertTrue(work["machine_owned"])
+        self.assertIn("pascal/qikvrtataribrowserpas.pas", work["scope"])
         self.assertFalse(work["authority_effect"])
         self.assertFalse(work["deployment"])
         self.assertFalse(work["effect_ack_done"])
