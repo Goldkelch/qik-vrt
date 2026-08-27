@@ -7,7 +7,12 @@ from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from scripts.issue_agent.infer import SYSTEM_PROMPT
+from scripts.issue_agent.infer import (
+    OWNER_CYCLE,
+    SYSTEM_PROMPT,
+    deterministic_owner_answer,
+    extract_owner_contract,
+)
 from scripts.issue_agent.promote import promote
 from scripts.issue_agent.validate import validate
 
@@ -217,6 +222,81 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         ):
             self.assertIn(token, SYSTEM_PROMPT)
         self.assertIn("Do not leave an issue in an unclassified waiting state", SYSTEM_PROMPT)
+
+
+    def owner_contract(self):
+        return {
+            "schema": "qikvrt_owner_observed_repository_work_cycle_v1",
+            "repository": "Goldkelch/qik-vrt",
+            "carrier_pr": 902,
+            "observed_head": "4" * 40,
+            "observed_tree": "9" * 40,
+            "authority_main": "1" * 40,
+            "cycle": OWNER_CYCLE,
+            "observed_repository_reaction": {
+                "d0": 2,
+                "state": "REOBSERVE",
+            },
+            "finding": "One bounded repository work cycle is externally observable.",
+            "required_future_behavior": [
+                "Persist the finding.",
+                "Reobserve one exact next turn.",
+            ],
+            "non_claims": {
+                "independent_approval": False,
+                "merge": False,
+                "authority_main_effect": False,
+                "authority_mirror_synchronization": False,
+                "publication": False,
+                "deployment": False,
+                "PASS": False,
+                "FINAL_PASS": False,
+                "EFFECT_ACK_DONE": False,
+                "authority_review_fanout_end_to_end_observed": False,
+            },
+        }
+
+    def issue_with_owner_contract(self, contract):
+        body = (
+            "<!-- qikvrt-owner-insight:external-repository-work-cycle-v1 -->\n"
+            "\x60\x60\x60json\n"
+            + json.dumps(contract, sort_keys=True)
+            + "\n\x60\x60\x60\n"
+        )
+        return {"number": 888, "body": body}
+
+    def test_deterministic_owner_contract_needs_no_model(self):
+        issue = self.issue_with_owner_contract(self.owner_contract())
+        answer = deterministic_owner_answer(issue)
+        self.assertIsNotNone(answer)
+        self.assertIn("DETERMINISTIC_OWNER_CONTRACT_VALIDATED", answer)
+        self.assertIn("## Issue disposition\n\nEXECUTE_NOW", answer)
+        self.assertIn("## Gate result\n\nCONTINUE", answer)
+
+    def test_deterministic_owner_contract_fails_closed_on_false_nonclaim(self):
+        contract = self.owner_contract()
+        contract["non_claims"]["PASS"] = True
+        issue = self.issue_with_owner_contract(contract)
+        self.assertIsNone(extract_owner_contract(issue["body"]))
+        self.assertIsNone(deterministic_owner_answer(issue))
+
+    def test_promote_accepts_deterministic_contract_evaluation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            status_path = directory / "STATUS.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status.update({
+                "model_inference_completed": False,
+                "deterministic_contract_completed": True,
+                "evaluation_mode": "DETERMINISTIC_OWNER_CONTRACT",
+            })
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            promote(directory)
+            promoted = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(promoted["status"], "CONTINUE")
+            self.assertFalse(promoted["automatic_merge"])
+            validate(directory)
 
 
 if __name__ == "__main__":
