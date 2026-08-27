@@ -111,7 +111,7 @@ jobs:
           mkdir -p "$diagnostics_root"
           cp tools/qikvrt_autonomous_pr_failure_receipt.py "$diagnostic_tool"
 
-          failure_class=UNCLASSIFIED_COMMAND_FAILURE
+          failure_class=COMMAND_FAILED_AT_BOUND_PHASE
           failure_phase=PRECONDITION
           failure_line=0
           failure_command=unknown
@@ -205,8 +205,6 @@ jobs:
               git diff --name-only --diff-filter=U | sort -u \
                 > /tmp/qikvrt-merge-conflicts.txt
               test -s /tmp/qikvrt-merge-conflicts.txt
-              cp /tmp/qikvrt-merge-conflicts.txt \
-                "$diagnostics_root/all-merge-conflicts.txt"
               unexpected=()
               while IFS= read -r path; do
                 test -n "$path"
@@ -218,6 +216,8 @@ jobs:
                 fi
               done < /tmp/qikvrt-merge-conflicts.txt
               if ((${#unexpected[@]})); then
+                cp /tmp/qikvrt-merge-conflicts.txt \
+                  "$diagnostics_root/all-merge-conflicts.txt"
                 failure_class=NON_ALLOWLISTED_MERGE_CONFLICTS
                 failure_conflicts_file="$diagnostics_root/non-allowlisted-conflicts.txt"
                 printf '%s\n' "${unexpected[@]}" > "$failure_conflicts_file"
