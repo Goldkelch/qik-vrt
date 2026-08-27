@@ -46,12 +46,14 @@ def promote(directory: Path) -> None:
         raise SystemExit("BLOCK: answer is empty")
 
     inference_completed = status.get("model_inference_completed") is True
+    deterministic_contract_completed = status.get("deterministic_contract_completed") is True
+    evaluation_completed = inference_completed or deterministic_contract_completed
     explicit_block = "## Gate result\n\nBLOCK" in answer
     now = datetime.now(timezone.utc).isoformat()
 
     if disposition in CLOSURE_DISPOSITIONS:
-        if not inference_completed:
-            raise SystemExit("BLOCK: terminal closure requires completed inference")
+        if not evaluation_completed:
+            raise SystemExit("BLOCK: terminal closure requires completed trusted evaluation")
         if explicit_block:
             raise SystemExit("BLOCK: terminal closure conflicts with blocking gate result")
         status.update({
@@ -64,8 +66,8 @@ def promote(directory: Path) -> None:
             "no_false_pass": True,
         })
     elif disposition == "EXECUTE_NOW":
-        if not inference_completed:
-            raise SystemExit("BLOCK: executable disposition requires completed inference")
+        if not evaluation_completed:
+            raise SystemExit("BLOCK: executable disposition requires completed trusted evaluation")
         if explicit_block:
             raise SystemExit("BLOCK: executable disposition conflicts with blocking gate result")
         status.update({
