@@ -1412,6 +1412,78 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["derived_action"]["state"], "HOLD")
         self.assertFalse(result["derived_action"]["productive_effect"])
 
+    def test_active_writer_observation_is_exact_head_scoped(self):
+        writer_name = "QIK-VRT autonomous bounded self-heal"
+        runs = [
+            {
+                "id": 901,
+                "name": writer_name,
+                "status": "queued",
+                "head_sha": "e" * 40,
+                "workflow_id": 7001,
+                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                "event": "schedule",
+                "run_number": 1,
+                "run_attempt": 1,
+            },
+            {
+                "id": 902,
+                "name": writer_name,
+                "status": "queued",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 7001,
+                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                "event": "workflow_dispatch",
+                "run_number": 2,
+                "run_attempt": 1,
+            },
+            {
+                "id": 903,
+                "name": writer_name,
+                "status": "in_progress",
+                "head_sha": HEAD_SHA,
+                "workflow_id": 7001,
+                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                "event": "pull_request",
+                "run_number": 3,
+                "run_attempt": 1,
+            },
+            {
+                "id": 999,
+                "name": writer_name,
+                "status": "in_progress",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 7001,
+                "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                "event": "workflow_dispatch",
+                "run_number": 4,
+                "run_attempt": 1,
+            },
+        ]
+        with mock.patch.object(MODULE, "_gh_runs", return_value=runs) as gh_runs:
+            observed = MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {writer_name},
+                {MAIN_SHA, HEAD_SHA},
+            )
+
+        self.assertEqual([item["id"] for item in observed], [902, 903])
+        self.assertNotIn("e" * 40, {item["head_sha"] for item in observed})
+        self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
+
+    def test_active_writer_observation_rejects_unbound_head_set(self):
+        with self.assertRaisesRegex(
+            MODULE.ReviewObservationError,
+            "relevant-head binding",
+        ):
+            MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {"QIK-VRT autonomous bounded self-heal"},
+                {"not-a-git-sha"},
+            )
+
     def test_workflow_is_trusted_main_diff_bound_append_only_and_comment_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         core = (ROOT / "tools/qikvrt_requested_review_executor.py").read_text(
