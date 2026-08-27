@@ -9,7 +9,8 @@
     {"id":"transactional_workflow_verification","machine_readable":true},
     {"id":"content_disposition_evidence","machine_readable":true},
     {"id":"authority_mirror_traceability","machine_readable":true},
-    {"id":"publication_overview_discovery","machine_readable":true}
+    {"id":"publication_overview_discovery","machine_readable":true},
+    {"id":"firefox_proxy_delegation_bridge","machine_readable":true}
   ],
   "bindings": {
     "batch_002_evidence_head": "e594ce89c4a4efb7b2d8eeff82eb9ef40ec03328",
@@ -19,6 +20,14 @@
       "human_index_path": "docs/publications/index.html",
       "machine_index_path": "docs/publications/index.json",
       "maintenance_test": "python3 -B -m unittest -v tests.test_qikvrt_self_disclosure"
+    },
+    "firefox_proxy_delegation_bridge": {
+      "executor_contract_path": "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json",
+      "workflow_path": ".github/workflows/qikvrt_firefox_proxy_delegation.yml",
+      "policy_path": "policy/FIREFOX_PROXY_DELEGATION_V1.json",
+      "current_exact_head_gate_required": true,
+      "historical_gate_evidence_transferable": false,
+      "maintenance_test": "python3 -B -m unittest -v tests.test_qikvrt_firefox_proxy_delegate tests.test_qikvrt_workflow_executor_mesh_contract"
     }
   },
   "completion_claims": {"pass":false,"final_pass":false,"effect_ack_done":false}
