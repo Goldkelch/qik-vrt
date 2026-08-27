@@ -143,6 +143,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             ],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
+        self.assertEqual(
+            binding["writer_lease_projection"],
+            "CLEAR|HELD_SINGLE|CONTENDED; INDIVIDUAL_ACTIVE_RUN_IDENTITIES_ARE_DIAGNOSTIC_ONLY",
+        )
         self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
         self.assertEqual(
             binding["complete_diff_transport_acceptance"],
@@ -283,6 +287,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
         )
         self.assertEqual(policy_plane["receipt_ledger"]["ref"], plane["ledger"]["ref"])
+        self.assertEqual(
+            policy_plane["review_fingerprint"]["writer_lease_projection"],
+            plane["exact_subject_binding"]["writer_lease_projection"],
+        )
         self.assertEqual(
             policy_plane["receipt_ledger"]["receipt_path_template"],
             plane["ledger"]["receipt_path_template"],

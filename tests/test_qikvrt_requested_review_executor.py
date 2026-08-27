@@ -1068,6 +1068,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
 
         self.assertEqual(result["mesh_disposition"], "WAIT")
         self.assertEqual(result["first_blocker"], "COMPETING_WRITER_ACTIVE")
+        self.assertEqual(result["detail"], "productive repository writer lease is active")
         self.assertEqual(result["derived_action"]["d0"], 1)
         self.assertEqual(result["derived_action"]["state"], "HOLD")
         self.assertEqual(
@@ -1075,6 +1076,85 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "WAIT_FOR_SINGLE_WRITER_LEASE",
         )
         self.assertFalse(result["derived_action"]["productive_effect"])
+
+    def test_active_writer_membership_churn_preserves_an_active_lease_receipt(self):
+        initial_writer = {
+            "id": 901,
+            "name": "QIK-VRT autonomous bounded self-heal",
+            "status": "in_progress",
+            "head_sha": MAIN_SHA,
+            "workflow_id": 7001,
+            "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+            "event": "workflow_dispatch",
+            "run_number": 9,
+            "run_attempt": 1,
+        }
+        replacement_writer = {
+            **initial_writer,
+            "id": 902,
+            "name": "QIK-VRT expected-head promotion executor",
+            "status": "queued",
+            "workflow_id": 7002,
+            "path": ".github/workflows/qikvrt_expected_head_promotion.yml",
+            "event": "workflow_run",
+            "run_number": 10,
+        }
+        expected_snapshot = self.snapshot(active_writers=[initial_writer])
+        expected = self.evaluate(expected_snapshot)
+        churned_snapshot = self.snapshot(active_writers=[replacement_writer])
+
+        def reobserve(receipt, snapshot):
+            with mock.patch.object(
+                MODULE,
+                "observe_repository",
+                return_value=(snapshot, DEFAULT_DIFF_BYTES),
+            ):
+                return MODULE.verify_current_receipt(
+                    receipt,
+                    MODULE._pretty_json_bytes(receipt),
+                    DEFAULT_DIFF_BYTES,
+                    "example/qik-vrt",
+                    349,
+                    999,
+                    list(REQUIRED_GATE_PATHS),
+                    REQUIRED_GATE_PATHS,
+                    [],
+                )
+
+        report, fresh, observed_diff = reobserve(expected, churned_snapshot)
+
+        self.assertEqual(expected["writer_lease_state"], "HELD_SINGLE")
+        self.assertTrue(report["exact"])
+        self.assertIsNone(report["first_blocker"])
+        self.assertEqual(fresh, expected)
+        self.assertEqual(observed_diff, DEFAULT_DIFF_BYTES)
+
+        contended_snapshot = self.snapshot(
+            active_writers=[initial_writer, replacement_writer]
+        )
+        contended, fresh, _diff = reobserve(expected, contended_snapshot)
+        self.assertEqual(fresh["writer_lease_state"], "CONTENDED")
+        self.assertFalse(contended["exact"])
+        self.assertEqual(contended["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
+
+        expected_contended = self.evaluate(contended_snapshot)
+        single, fresh, _diff = reobserve(expected_contended, expected_snapshot)
+        self.assertEqual(expected_contended["writer_lease_state"], "CONTENDED")
+        self.assertEqual(fresh["writer_lease_state"], "HELD_SINGLE")
+        self.assertFalse(single["exact"])
+        self.assertEqual(single["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
+
+        released, fresh, _diff = reobserve(expected, self.snapshot())
+        self.assertEqual(fresh["writer_lease_state"], "CLEAR")
+        self.assertFalse(released["exact"])
+        self.assertEqual(released["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
+
+        expected_clear = self.evaluate(self.snapshot())
+        acquired, fresh, _diff = reobserve(expected_clear, expected_snapshot)
+        self.assertEqual(expected_clear["writer_lease_state"], "CLEAR")
+        self.assertEqual(fresh["writer_lease_state"], "HELD_SINGLE")
+        self.assertFalse(acquired["exact"])
+        self.assertEqual(acquired["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
 
     def test_every_repository_writer_queue_state_is_active(self):
         for status in MODULE.ACTIVE_WRITER_STATES:

@@ -6,6 +6,8 @@ The adaptive repository monitor is extended by a read-only watchdog that observe
 
 Each repository instance carries the same contract, controller, workflow, and regression test. The Authority remains the serialized source of the portable contract; Mirror and future mesh nodes must retain their own repository identity and integrity projections while satisfying the same structural acceptance.
 
+For exact review reobservation, individual active-run identities are diagnostic rather than causal: the receipt binds the stable lease category `CLEAR`, `HELD_SINGLE`, or `CONTENDED`. A replacement run therefore does not manufacture evidence drift, while acquiring, releasing, or contending a writer lease still does.
+
 The watchdog treats repository activity as a resource-allocation graph:
 
 - `REPOSITORY_WRITE_LEASE` has capacity one;
