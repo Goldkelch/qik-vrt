@@ -17,13 +17,19 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from qikvrt_api_handler import HandlerConfig, decode_secret_material, run_handler
+from qikvrt_api_handler import (
+    HandlerConfig,
+    decode_secret_material,
+    run_handler,
+    secure_read_bytes,
+)
 from qikvrt_effect_ack import EffectState
 
 REPOSITORY_COMPONENT = r"([A-Za-z0-9_.-]{1,100})"
 DISPATCH_RE = re.compile(rf"^/repos/{REPOSITORY_COMPONENT}/{REPOSITORY_COMPONENT}/actions/workflows/qikvrt_mesh_api\.yml/dispatches$")
 REPO_DISPATCH_RE = re.compile(rf"^/repos/{REPOSITORY_COMPONENT}/{REPOSITORY_COMPONENT}/dispatches$")
 MAX_REQUEST_BYTES = 1024 * 1024
+MAX_OPENAPI_BYTES = 512 * 1024
 _RATE_LOCK = threading.Lock()
 _RATE_WINDOWS: dict[str, tuple[int, int]] = {}
 
@@ -62,6 +68,17 @@ def _api_credential_valid() -> bool:
     return bool(expiry is not None and expiry > datetime.now(timezone.utc))
 
 
+def _default_branch_valid() -> bool:
+    branch = os.environ.get("QIKVRT_DEFAULT_BRANCH", "main")
+    forbidden = ("..", "//", "@{")
+    return bool(
+        1 <= len(branch) <= 255
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+        and not branch.endswith(("/", ".", ".lock"))
+        and not any(fragment in branch for fragment in forbidden)
+    )
+
+
 def _attestation_configuration_valid() -> bool:
     secret = os.environ.get("QIKVRT_REMOTE_ATTESTATION_SECRET", "")
     signer = os.environ.get("QIKVRT_TRUSTED_ATTESTATION_SIGNER", "").strip()
@@ -92,6 +109,7 @@ def _security_configuration_valid() -> bool:
     return bool(
         _api_credential_valid()
         and _attestation_configuration_valid()
+        and _default_branch_valid()
         and re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", repository)
         and principal
         and len(principal) <= 256
@@ -121,6 +139,42 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(data)
+
+    def _send_yaml(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/vnd.oai.openapi;version=3.0.3")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    @staticmethod
+    def _repository_root() -> Path:
+        configured = os.environ.get("QIKVRT_REPO_ROOT", "")
+        return Path(configured).resolve() if configured else Path(__file__).resolve().parents[1]
+
+    def _capabilities(self) -> dict:
+        configured = _security_configuration_valid()
+        return {
+            "schema": "qikvrt_mesh_api_capabilities_v1",
+            "service": "QIKVRT GitHub-Compatible REST API Shim",
+            "configuration_valid": configured,
+            "public_read_endpoints": ["/health", "/capabilities", "/openapi.yaml"],
+            "authenticated_command_endpoints": [
+                "/repos/{owner}/{repo}/actions/workflows/qikvrt_mesh_api.yml/dispatches",
+                "/repos/{owner}/{repo}/dispatches",
+            ],
+            "operations": ["ingest", "verify", "stage", "release_status"],
+            "workflow_dispatch_ref_policy": {
+                "mode": "exact-default-branch",
+                "required_ref": os.environ.get("QIKVRT_DEFAULT_BRANCH", "main"),
+            },
+            "execution_boundary": "GitHub dispatch acceptance and local handler results require exact-run/artifact reobservation.",
+            "ordinary_release": False,
+            "general_effect_ack_done": False,
+        }
 
     def _read_json(self) -> dict:
         if self.headers.get("Transfer-Encoding") is not None:
@@ -189,6 +243,20 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         raise ValueError(f"{field} must be true or false")
 
     def do_GET(self):
+        if self.path == "/capabilities":
+            self._send_json(200, self._capabilities())
+            return
+        if self.path == "/openapi.yaml":
+            try:
+                specification = secure_read_bytes(
+                    self._repository_root() / "api" / "qikvrt_github_api.openapi.yaml",
+                    max_bytes=MAX_OPENAPI_BYTES,
+                )
+            except (OSError, RuntimeError):
+                self._send_json(503, {"status": "BLOCK", "reason": "OpenAPI specification unavailable"})
+                return
+            self._send_yaml(200, specification)
+            return
         if self.path == "/health":
             valid = _security_configuration_valid()
             attestation_configured = bool(
@@ -236,6 +304,9 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
                 ref = body.get("ref")
                 if not isinstance(ref, str) or not ref.strip() or len(ref) > 255:
                     raise ValueError("workflow dispatch ref is required")
+                default_branch = os.environ.get("QIKVRT_DEFAULT_BRANCH", "main")
+                if not hmac.compare_digest(ref.encode("utf-8"), default_branch.encode("utf-8")):
+                    raise ValueError("workflow dispatch ref must equal the configured default branch")
                 inputs = body.get("inputs", {})
             else:
                 unknown = set(body) - {"event_type", "client_payload"}
@@ -342,6 +413,9 @@ def main() -> int:
         return 2
     if not principal or len(principal) > 256:
         print("BLOCK QIKVRT_API_PRINCIPAL must identify the authenticated responsibility owner", file=sys.stderr)
+        return 2
+    if not _default_branch_valid():
+        print("BLOCK QIKVRT_DEFAULT_BRANCH must be a valid exact branch name", file=sys.stderr)
         return 2
     expiry = _parse_expiry(os.environ.get("QIKVRT_API_TOKEN_EXPIRES_UTC", ""))
     if expiry is None or expiry <= datetime.now(timezone.utc):

@@ -60,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      QIKVRT_EVENT_NAME: ${{ github.event_name }}
+      QIKVRT_WORKFLOW_REF: ${{ github.ref }}
+      QIKVRT_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       QIKVRT_OPERATION: ${{ github.event.inputs.operation || github.event.client_payload.operation }}
       QIKVRT_ARTIFACT_ID: ${{ github.event.inputs.artifact_id || github.event.client_payload.artifact_id }}
       QIKVRT_PAYLOAD_B64: ${{ github.event.inputs.payload_b64 || github.event.client_payload.payload_b64 }}
@@ -73,7 +76,27 @@ jobs:
       QIKVRT_REMOTE_ATTESTATION_SECRET: ${{ secrets.QIKVRT_REMOTE_ATTESTATION_SECRET }}
       QIKVRT_TRUSTED_ATTESTATION_SIGNER: ${{ vars.QIKVRT_TRUSTED_ATTESTATION_SIGNER }}
     steps:
+      - name: Refuse non-default workflow dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$QIKVRT_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "$QIKVRT_WORKFLOW_REF" = "refs/heads/$QIKVRT_DEFAULT_BRANCH"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind current Authority default-branch head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD^{commit})"
+          remote_head="$(git ls-remote origin "refs/heads/$QIKVRT_DEFAULT_BRANCH" | awk 'NR == 1 { print $1 }')"
+          test -n "$remote_head"
+          test "$actual_head" = "$remote_head"
+          test -z "$(git status --porcelain)"
       - name: Validate state handoff
         env:
           QIKVRT_STATE_RUN_ID: ${{ github.event.inputs.state_run_id || github.event.client_payload.state_run_id }}

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -61,6 +62,85 @@ class ApiClientTests(unittest.TestCase):
                 mock.Mock(), None, 302, "Found", {}, "https://other.invalid/"
             )
         )
+
+    def test_github_workflow_dispatch_204_is_transport_continue(self) -> None:
+        class Response:
+            status = 204
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, limit):
+                return b""
+
+        opener = mock.Mock()
+        opener.open.return_value = Response()
+        with mock.patch.dict(os.environ, {"QIKVRT_API_TOKEN": "test-token"}, clear=False):
+            with mock.patch.object(client.urllib.request, "build_opener", return_value=opener):
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    result = self.invoke(
+                        "--base-url", "https://api.github.com",
+                        "--operation", "release_status",
+                        "--request-id", "github-204",
+                    )
+        self.assertEqual(result, 20)
+        receipt = json.loads(stdout.getvalue())
+        self.assertEqual(receipt["status"], "TRANSPORT_ACCEPTED_ASYNC")
+        self.assertEqual(receipt["effect_state"], "EFFECT_ACK_CONTINUE")
+        self.assertFalse(receipt["ordinary_release"])
+
+    def test_github_dispatch_payload_is_bounded_before_network(self) -> None:
+        with mock.patch.dict(os.environ, {"QIKVRT_API_TOKEN": "test-token"}, clear=False):
+            with mock.patch.object(
+                client,
+                "read_regular_file",
+                return_value=b"x" * (40 * 1024),
+            ):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as raised:
+                        self.invoke(
+                            "--base-url", "https://api.github.com",
+                            "--operation", "ingest",
+                            "--request-id", "oversized-github-dispatch",
+                            "--payload-file", "ignored-by-mock.bin",
+                        )
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_repository_dispatch_uses_fixed_event_envelope(self) -> None:
+        class Response:
+            status = 204
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, limit):
+                return b""
+
+        opener = mock.Mock()
+        opener.open.return_value = Response()
+        with mock.patch.dict(os.environ, {"QIKVRT_API_TOKEN": "test-token"}, clear=False):
+            with mock.patch.object(client.urllib.request, "build_opener", return_value=opener):
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    result = self.invoke(
+                        "--base-url", "https://api.github.com",
+                        "--dispatch-kind", "repository",
+                        "--operation", "release_status",
+                        "--request-id", "repository-dispatch",
+                    )
+        self.assertEqual(result, 20)
+        request = opener.open.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/repos/owner/repo/dispatches"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body["event_type"], "qikvrt_mesh_api")
+        self.assertEqual(body["client_payload"]["request_id"], "repository-dispatch")
+        receipt = json.loads(stdout.getvalue())
+        self.assertEqual(receipt["transport"], "github_repository_dispatch")
 
     def test_file_reader_rejects_symlinks_and_oversize(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
