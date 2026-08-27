@@ -1,0 +1,207 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT exact stale writer queue drain v2
+
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - ".github/workflows/qikvrt_stale_writer_queue_drain_v2.yml"
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qikvrt-exact-stale-writer-drain-pr-893
+  cancel-in-progress: false
+
+jobs:
+  drain-self-remove-materialize:
+    if: >-
+      github.repository == 'Goldkelch/qik-vrt' &&
+      github.event.pull_request.number == 893 &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PR_NUMBER: "893"
+      EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+      EVENT_BRANCH: ${{ github.event.pull_request.head.ref }}
+      EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out literal event head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact subject and exact stale queue identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain-v2"
+          mkdir -p "$root"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EVENT_HEAD"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$root/pr-before.json"
+          jq -e --arg h "$EVENT_HEAD" --arg b "$EVENT_BRANCH" --arg base "$EVENT_BASE" \
+            '.state == "open" and .head.repo.full_name == "Goldkelch/qik-vrt" and .head.sha == $h and .head.ref == $b and .base.sha == $base' \
+            "$root/pr-before.json" >/dev/null
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$EVENT_BASE"
+          cat > "$root/targets.json" <<'JSON'
+          [
+            {"id":32985189717,"name":"QIK-VRT expected-head promotion executor","head_sha":"fb744e5b5925d61c6b473e27aab3606f237f7e6d","created_at":"2026-08-26T15:27:31Z"},
+            {"id":30295789608,"name":"QIKVRT repository evidence materialization","head_sha":"d83babfc4e6d114d5ed8f95c4b0763e87197f5c0","created_at":"2026-07-27T18:53:19Z"}
+          ]
+          JSON
+
+      - name: Cancel or accept only exact already-cancelled targets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain-v2"
+          : > "$root/before.jsonl"
+          : > "$root/after.jsonl"
+          while IFS=$'\t' read -r id name head created; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" > "$root/$id-before.json"
+            jq -e --argjson id "$id" --arg name "$name" --arg head "$head" --arg created "$created" \
+              '.id == $id and .name == $name and .head_sha == $head and .created_at == $created' \
+              "$root/$id-before.json" >/dev/null
+            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
+              "$root/$id-before.json" >> "$root/before.jsonl"
+            status="$(jq -r '.status' "$root/$id-before.json")"
+            conclusion="$(jq -r '.conclusion // ""' "$root/$id-before.json")"
+            if test "$status" = queued && test -z "$conclusion"; then
+              gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/cancel"
+            elif ! (test "$status" = completed && test "$conclusion" = cancelled); then
+              echo "BLOCK: target $id is not queued or already cancelled: $status/$conclusion" >&2
+              exit 1
+            fi
+            done_flag=false
+            for _ in $(seq 1 60); do
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" > "$root/$id-after.json"
+              if test "$(jq -r '.status' "$root/$id-after.json")" = completed && \
+                 test "$(jq -r '.conclusion // ""' "$root/$id-after.json")" = cancelled; then
+                done_flag=true
+                break
+              fi
+              sleep 2
+            done
+            test "$done_flag" = true
+            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
+              "$root/$id-after.json" >> "$root/after.jsonl"
+          done < <(jq -r '.[] | [.id,.name,.head_sha,.created_at] | @tsv' "$root/targets.json")
+
+      - name: Remove both bounded queue-drain workflows by non-forced CAS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain-v2"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')" = "$EVENT_HEAD"
+          base_tree="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$EVENT_HEAD" --jq '.tree.sha')"
+          jq -n --arg base "$base_tree" \
+            '{base_tree:$base,tree:[
+              {path:".github/workflows/qikvrt_stale_writer_queue_drain.yml",mode:"100644",type:"blob",sha:null},
+              {path:".github/workflows/qikvrt_stale_writer_queue_drain_v2.yml",mode:"100644",type:"blob",sha:null}
+            ]}' > "$root/tree-request.json"
+          clean_tree="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/trees" --input "$root/tree-request.json" --jq '.sha')"
+          jq -n --arg tree "$clean_tree" --arg parent "$EVENT_HEAD" \
+            '{message:"ops(actions): remove exact stale writer drain",tree:$tree,parents:[$parent]}' > "$root/commit-request.json"
+          clean_head="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/commits" --input "$root/commit-request.json" --jq '.sha')"
+          jq -n --arg sha "$clean_head" '{sha:$sha,force:false}' > "$root/ref-request.json"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$EVENT_BRANCH" \
+            --input "$root/ref-request.json" > "$root/ref-response.json"
+          test "$(jq -r '.object.sha' "$root/ref-response.json")" = "$clean_head"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')" = "$clean_head"
+          printf '%s\n' "$clean_head" > "$root/clean-head.txt"
+          printf '%s\n' "$clean_tree" > "$root/clean-tree.txt"
+
+      - name: Dispatch and await repository-native integrity materialization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain-v2"
+          clean_head="$(cat "$root/clean-head.txt")"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')" = "$clean_head"
+          started="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/qikvrt_batch04_integrity.yml/dispatches" -f ref="$EVENT_BRANCH"
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/qikvrt_batch04_integrity.yml/runs?event=workflow_dispatch&per_page=100" \
+              | jq -r --arg branch "$EVENT_BRANCH" --arg started "$started" \
+                '[.workflow_runs[] | select(.head_branch == $branch and .created_at >= $started)][0].id // empty')"
+            test -n "$run_id" && break
+            sleep 2
+          done
+          test -n "$run_id"
+          printf '%s\n' "$run_id" > "$root/materializer-run-id.txt"
+          terminal=false
+          for _ in $(seq 1 240); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/materializer.json"
+            if test "$(jq -r '.status' "$root/materializer.json")" = completed; then
+              test "$(jq -r '.conclusion // ""' "$root/materializer.json")" = success
+              terminal=true
+              break
+            fi
+            sleep 2
+          done
+          test "$terminal" = true
+          final_head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+          final_tree="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$final_head" --jq '.tree.sha')"
+          printf '%s\n' "$final_head" > "$root/final-head.txt"
+          printf '%s\n' "$final_tree" > "$root/final-tree.txt"
+
+      - name: Persist exact bounded recovery receipt as PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-writer-drain-v2"
+          clean_head="$(cat "$root/clean-head.txt" 2>/dev/null || true)"
+          clean_tree="$(cat "$root/clean-tree.txt" 2>/dev/null || true)"
+          final_head="$(cat "$root/final-head.txt" 2>/dev/null || true)"
+          final_tree="$(cat "$root/final-tree.txt" 2>/dev/null || true)"
+          run_id="$(cat "$root/materializer-run-id.txt" 2>/dev/null || true)"
+          before='[]'; after='[]'
+          test -s "$root/before.jsonl" && before="$(jq -s '.' "$root/before.jsonl")"
+          test -s "$root/after.jsonl" && after="$(jq -s '.' "$root/after.jsonl")"
+          jq -n --arg source "$EVENT_HEAD" --arg clean_head "$clean_head" --arg clean_tree "$clean_tree" \
+            --arg final_head "$final_head" --arg final_tree "$final_tree" --arg run_id "$run_id" \
+            --argjson before "$before" --argjson after "$after" \
+            '{schema:"qikvrt_exact_stale_writer_drain_v2",source_head:$source,clean_head:$clean_head,clean_tree:$clean_tree,final_head:$final_head,final_tree:$final_tree,materializer_run_id:($run_id|if length>0 then tonumber else null end),before:$before,after:$after,scope:"EXACT_RUNS_32985189717_AND_30295789608_ONLY",credentials_disclosed:false,independent_approval:false,merge:false,publication:false,deployment:false,pass:false,final_pass:false,effect_ack_done:false}' \
+            | tee "$root/receipt.json"
+          cat > "$root/comment.md" <<EOF
+          <!-- qikvrt-exact-stale-writer-drain-v2 source=$EVENT_HEAD final=$final_head -->
+          Exact stale-writer drain receipt:
+
+          - source head: \`$EVENT_HEAD\`
+          - cleaned head/tree: \`$clean_head\` / \`$clean_tree\`
+          - final materialized head/tree: \`$final_head\` / \`$final_tree\`
+          - materializer run: \`$run_id\`
+          - cancelled scope: exactly \`32985189717\` and \`30295789608\`
+
+          Both one-shot workflow files were removed before materialization. Fresh current-head pull-request workflows and review reobservation remain separate. No merge, independent approval, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied.
+          EOF
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --raw-field body="$(cat "$root/comment.md")" > "$root/comment-response.json"
+
+      - name: Preserve exact recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-stale-writer-drain-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-stale-writer-drain-v2
+          if-no-files-found: error
+          retention-days: 30
