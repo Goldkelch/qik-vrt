@@ -48,6 +48,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           from pathlib import Path
+          import textwrap
 
           core_path = Path("tools/qikvrt_requested_review_executor.py")
           core = core_path.read_text(encoding="utf-8")
@@ -88,11 +89,11 @@ jobs:
           ) -> list[dict[str, Any]]:
               """Observe only writers that can still mutate this exact subject.
 
-              A repository-wide Actions query can retain queued admission ghosts
-              on immutable predecessor heads.  They are not a lease on the
-              current review.  Main-driven writers remain relevant at the exact
-              observed main head; candidate writers remain relevant at the exact
-              pull-request head.  Any malformed binding fails closed.
+              Repository-wide Actions queries can retain queued admission ghosts
+              on immutable predecessor heads. They are not leases on the current
+              review. Main-driven writers remain relevant at the exact observed
+              main head; candidate writers remain relevant at the exact PR head.
+              Malformed relevant-head bindings fail closed.
               """
               if (
                   not isinstance(relevant_heads, set)
@@ -152,14 +153,15 @@ jobs:
           tests = tests_path.read_text(encoding="utf-8")
           marker = '''    def test_workflow_is_trusted_main_diff_bound_append_only_and_comment_only(self):
           '''
-          insertion = '''    def test_active_writer_observation_is_exact_head_scoped(self):
+          methods = textwrap.dedent('''\
+          def test_active_writer_observation_is_exact_head_scoped(self):
               writer_name = "QIK-VRT autonomous bounded self-heal"
               runs = [
                   {
                       "id": 901,
                       "name": writer_name,
                       "status": "queued",
-                      "head_sha": "d" * 40,
+                      "head_sha": "e" * 40,
                       "workflow_id": 7001,
                       "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
                       "event": "schedule",
@@ -209,7 +211,7 @@ jobs:
                   )
 
               self.assertEqual([item["id"] for item in observed], [902, 903])
-              self.assertNotIn("d" * 40, {item["head_sha"] for item in observed})
+              self.assertNotIn("e" * 40, {item["head_sha"] for item in observed})
               self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
 
           def test_active_writer_observation_rejects_unbound_head_set(self):
@@ -223,14 +225,16 @@ jobs:
                       {"QIK-VRT autonomous bounded self-heal"},
                       {"not-a-git-sha"},
                   )
-
-          '''
+          ''')
+          insertion = textwrap.indent(methods, "    ") + "\n"
           if tests.count(marker) != 1:
               raise SystemExit("BLOCK: exact regression-test insertion point did not match once")
           tests_path.write_text(tests.replace(marker, insertion + marker), encoding="utf-8")
           PY
           git diff --check
-          python3 -B -m py_compile tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py
+          python3 -B -m py_compile \
+            tools/qikvrt_requested_review_executor.py \
+            tests/test_qikvrt_requested_review_executor.py
 
       - name: Execute focused deterministic regressions
         env:
@@ -241,19 +245,23 @@ jobs:
           set -euo pipefail
           python3 -B -m unittest -v tests.test_qikvrt_requested_review_executor
 
-      - name: Commit exact repair branch
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Publish exact repair branch
         shell: bash
         run: |
           set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/$REPAIR_BRANCH" >/dev/null 2>&1; then
+            echo "BLOCK: repair branch already exists" >&2
+            exit 1
+          fi
           git config user.name "qikvrt-repository-operations[bot]"
           git config user.email "qikvrt-repository-operations@users.noreply.github.com"
-          git checkout -B "$REPAIR_BRANCH"
-          git add tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py
+          git switch -c "$REPAIR_BRANCH"
+          git add \
+            tools/qikvrt_requested_review_executor.py \
+            tests/test_qikvrt_requested_review_executor.py
           git diff --cached --quiet && { echo "BLOCK: repair produced no exact delta" >&2; exit 1; }
           git commit -m "fix(review): bind active writer leases to exact heads"
-          git push --force-with-lease="refs/heads/$REPAIR_BRANCH:" origin "HEAD:refs/heads/$REPAIR_BRANCH"
+          git push origin "HEAD:refs/heads/$REPAIR_BRANCH"
           git rev-parse HEAD | tee /tmp/qikvrt-repair-head.txt
           git rev-parse HEAD^{tree} | tee /tmp/qikvrt-repair-tree.txt
 
@@ -265,11 +273,7 @@ jobs:
           set -euo pipefail
           head="$(cat /tmp/qikvrt-repair-head.txt)"
           tree="$(cat /tmp/qikvrt-repair-tree.txt)"
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=Goldkelch:$REPAIR_BRANCH&base=main&per_page=100" --jq '.[0].number // empty')"
-          if test -n "$existing"; then
-            pr="$existing"
-          else
-            body="$(cat <<EOF
+          body="$(cat <<EOF
           ## Causal repair
 
           GitHub retained two globally listed queued runs on immutable predecessor heads. Both were exact-identity verified, but the Actions cancel endpoint rejected them as not yet queued. The trusted reviewer nevertheless treated them as current productive writer leases.
@@ -287,9 +291,12 @@ jobs:
           Focused deterministic regression suite executed before branch publication. Repository integrity materialization and fresh exact-head gates remain separate effects. No merge, approval, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied.
           EOF
           )"
-            pr="$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls" -f title='fix(review): bind active writer leases to exact heads' -f head="$REPAIR_BRANCH" -f base=main -f body="$body" --jq '.number')"
-          fi
-          printf '%s\n' "$pr" | tee /tmp/qikvrt-repair-pr.txt
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pulls" \
+            -f title='fix(review): bind active writer leases to exact heads' \
+            -f head="$REPAIR_BRANCH" \
+            -f base=main \
+            -f body="$body" \
+            --jq '.number' | tee /tmp/qikvrt-repair-pr.txt
 
       - name: Preserve materialization receipt
         if: always()
