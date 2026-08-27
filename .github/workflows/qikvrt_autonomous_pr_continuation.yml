@@ -15,12 +15,14 @@ on:
       - ".github/workflows/qikvrt_workflow_executor.yml"
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
       - ".github/workflows/qikvrt_live_status_watch.yml"
+      - "tools/qikvrt_autonomous_pr_failure_receipt.py"
       - "tools/qikvrt_autonomous_self_heal.py"
       - "tools/qikvrt_workflow_executor.py"
       - "tools/qikvrt_seed_common.py"
       - "tools/qikvrt_publication_overview.py"
       - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
+      - "tests/test_qikvrt_autonomous_pr_failure_receipt.py"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
       - "tests/test_seed_workflows.py"
 
@@ -91,6 +93,7 @@ jobs:
           PY
 
       - name: Continue exact draft head through deterministic repairs
+        id: continue
         if: steps.select.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,7 +104,84 @@ jobs:
           OBSERVED_BASE: ${{ steps.select.outputs.base_sha }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+
+          diagnostics_root=.qikvrt/autonomous-pr-continuation
+          diagnostic_tool=/tmp/qikvrt-autonomous-pr-failure-receipt.py
+          mkdir -p "$diagnostics_root"
+          cp tools/qikvrt_autonomous_pr_failure_receipt.py "$diagnostic_tool"
+
+          failure_class=UNCLASSIFIED_COMMAND_FAILURE
+          failure_phase=PRECONDITION
+          failure_line=0
+          failure_command=unknown
+          failure_conflicts_file=
+          branch_push_state=NOT_ATTEMPTED
+          live_main="$OBSERVED_BASE"
+
+          on_err() {
+            local rc="$1"
+            failure_line="$2"
+            failure_command="$3"
+            trap - ERR
+            return "$rc"
+          }
+
+          on_exit() {
+            local rc=$?
+            trap - EXIT ERR
+            if [ "$rc" -ne 0 ]; then
+              set +e
+              receipt="$diagnostics_root/failure-receipt.json"
+              summary="$diagnostics_root/failure-summary.md"
+              annotation="$diagnostics_root/failure-annotation.txt"
+              args=(
+                write
+                --output "$receipt"
+                --summary-output "$summary"
+                --annotation-output "$annotation"
+                --repository "$GITHUB_REPOSITORY"
+                --run-id "$GITHUB_RUN_ID"
+                --run-attempt "$GITHUB_RUN_ATTEMPT"
+                --job "$GITHUB_JOB"
+                --pr-number "$PR_NUMBER"
+                --head-ref "$HEAD_REF"
+                --expected-head "$EXPECTED_HEAD"
+                --observed-base "$OBSERVED_BASE"
+                --current-main "$live_main"
+                --classification "$failure_class"
+                --exit-code "$rc"
+                --failing-phase "$failure_phase"
+                --failing-line "$failure_line"
+                --failing-command "$failure_command"
+                --branch-push-state "$branch_push_state"
+              )
+              if [ -n "$failure_conflicts_file" ]; then
+                args+=(--conflicts-file "$failure_conflicts_file")
+              fi
+              python3 -B "$diagnostic_tool" "${args[@]}"
+              diagnostic_rc=$?
+              if [ "$diagnostic_rc" -eq 0 ]; then
+                annotation_text="$(cat "$annotation")"
+                annotation_text="${annotation_text//'%'/'%25'}"
+                annotation_text="${annotation_text//$'\r'/'%0D'}"
+                annotation_text="${annotation_text//$'\n'/'%0A'}"
+                printf '::error title=%s::%s\n' \
+                  "$failure_class" "$annotation_text"
+                cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+                cat "$receipt"
+              else
+                printf '::error title=FAILURE_RECEIPT_GENERATION_FAILED::Original exit code %s; diagnostic exit code %s\n' \
+                  "$rc" "$diagnostic_rc"
+              fi
+              set -e
+            fi
+            exit "$rc"
+          }
+
+          trap 'on_err "$?" "$LINENO" "$BASH_COMMAND"' ERR
+          trap on_exit EXIT
+
           test "$BASE_REF" = "main"
           checked_main="$(git rev-parse --verify HEAD^{commit})"
           live_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
@@ -109,12 +189,14 @@ jobs:
           live_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           test "$live_head" = "$EXPECTED_HEAD"
 
+          failure_phase=FETCH_EXACT_HEAD
           git config user.name "qik-vrt-autonomous-pr-continuation"
           git config user.email "qik-vrt-autonomous-pr-continuation@users.noreply.github.com"
           git fetch origin "+refs/heads/${HEAD_REF}:refs/remotes/origin/${HEAD_REF}"
           git switch -C "$HEAD_REF" "$EXPECTED_HEAD"
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
 
+          failure_phase=INTEGRATE_CURRENT_MAIN
           merge_created=false
           if ! git merge-base --is-ancestor "$live_main" HEAD; then
             if git merge --no-ff --no-edit "$live_main"; then
@@ -123,6 +205,8 @@ jobs:
               git diff --name-only --diff-filter=U | sort -u \
                 > /tmp/qikvrt-merge-conflicts.txt
               test -s /tmp/qikvrt-merge-conflicts.txt
+              cp /tmp/qikvrt-merge-conflicts.txt \
+                "$diagnostics_root/all-merge-conflicts.txt"
               unexpected=()
               while IFS= read -r path; do
                 test -n "$path"
@@ -134,6 +218,11 @@ jobs:
                 fi
               done < /tmp/qikvrt-merge-conflicts.txt
               if ((${#unexpected[@]})); then
+                failure_class=NON_ALLOWLISTED_MERGE_CONFLICTS
+                failure_conflicts_file="$diagnostics_root/non-allowlisted-conflicts.txt"
+                printf '%s\n' "${unexpected[@]}" > "$failure_conflicts_file"
+                failure_command="git merge --no-ff --no-edit ${live_main}"
+                failure_line="$LINENO"
                 printf 'BLOCK: non-allowlisted merge conflicts: %s\n' \
                   "${unexpected[*]}" >&2
                 exit 2
@@ -150,6 +239,7 @@ jobs:
             fi
           fi
 
+          failure_phase=REGENERATE_REPOSITORY_PROJECTIONS
           python3 -B tools/qikvrt_autonomous_self_heal.py apply > /tmp/qikvrt-pr-self-heal.json
           cat /tmp/qikvrt-pr-self-heal.json
           python3 -B - <<'PY' > /tmp/qikvrt-pr-self-heal-paths
@@ -180,12 +270,18 @@ jobs:
             exit 0
           fi
 
+          failure_phase=VERIFY_REPAIRED_TREE
           make test
           candidate_head="$(git rev-parse --verify HEAD^{commit})"
           live_head_before_push="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           test "$live_head_before_push" = "$EXPECTED_HEAD"
-          git push origin "HEAD:refs/heads/${HEAD_REF}"
 
+          failure_phase=PUSH_HISTORY_PRESERVING_SUCCESSOR
+          branch_push_state=IN_PROGRESS
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
+          branch_push_state=OBSERVED
+
+          failure_phase=DISPATCH_EXACT_HEAD_REOBSERVATION
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${candidate_head}" \
             -f state=pending \
             -f context='QIKVRT autonomous exact-head verification' \
@@ -209,6 +305,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
             --input /tmp/qikvrt-autonomous-dispatch.json
 
+          failure_phase=COMMENT_SUCCESSOR_DISPOSITION
           conflict_summary=none
           if test -s /tmp/qikvrt-merge-conflicts.txt; then
             conflict_summary="$(tr '\n' ',' < /tmp/qikvrt-merge-conflicts.txt | sed 's/,$//')"
@@ -228,6 +325,48 @@ jobs:
           EOF
           gh pr comment "$PR_NUMBER" --body-file /tmp/qikvrt-autonomous-pr-comment.md
 
+      - name: Publish exact causal failure disposition
+        if: failure() && steps.select.outputs.found == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr_number }}
+          EXPECTED_HEAD: ${{ steps.select.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics_root=.qikvrt/autonomous-pr-continuation
+          receipt="$diagnostics_root/failure-receipt.json"
+          annotation="$diagnostics_root/failure-annotation.txt"
+          test -s "$receipt"
+          test -s "$annotation"
+          current_head="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          python3 -B /tmp/qikvrt-autonomous-pr-failure-receipt.py \
+            render-comment \
+            --input "$receipt" \
+            --current-head "$current_head" \
+            > "$diagnostics_root/failure-comment.md"
+          cat "$diagnostics_root/failure-comment.md"
+          gh pr comment "$PR_NUMBER" \
+            --body-file "$diagnostics_root/failure-comment.md"
+
+          description="$(tr '\n' ' ' < "$annotation" | cut -c1-140)"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${EXPECTED_HEAD}" \
+            -f state=error \
+            -f context='QIKVRT autonomous draft-PR continuation' \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
       - name: Confirm no eligible work is a strict NOOP
         if: steps.select.outputs.found != 'true'
         run: echo 'No opted-in same-repository draft PR requires continuation.'
+
+      - name: Preserve causal continuation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-autonomous-pr-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .qikvrt/autonomous-pr-continuation
