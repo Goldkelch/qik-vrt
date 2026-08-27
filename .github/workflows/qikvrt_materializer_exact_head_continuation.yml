@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT materializer exact-head continuation
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT repository evidence materialization"
+    types: [completed]
+
+# Creating repository_dispatch requires contents:write.  This workflow never
+# checks out candidate bytes and never mutates a repository ref or PR metadata.
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-materializer-exact-head-continuation-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  continue-exact-materialized-pr-head:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_branch != 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reobserve exact materialized PR successor and dispatch verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_HEAD: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$SOURCE_HEAD" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "BLOCK: malformed source head" >&2; exit 2 ;;
+          esac
+          test -n "$HEAD_REF"
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${HEAD_REF}&per_page=100" \
+            > /tmp/qikvrt-materializer-pr-pages.json
+
+          python3 -B - <<'PY' > /tmp/qikvrt-materializer-pr.json
+          import json
+          import os
+
+          pages = json.load(open('/tmp/qikvrt-materializer-pr-pages.json', encoding='utf-8'))
+          repo = os.environ['GITHUB_REPOSITORY']
+          head_ref = os.environ['HEAD_REF']
+          matches = []
+          for page in pages:
+              for pr in page:
+                  if pr.get('state') != 'open':
+                      continue
+                  if (pr.get('base') or {}).get('ref') != 'main':
+                      continue
+                  head = pr.get('head') or {}
+                  head_repo = (head.get('repo') or {}).get('full_name')
+                  if head_repo != repo or head.get('ref') != head_ref:
+                      continue
+                  matches.append(pr)
+          if len(matches) != 1:
+              raise SystemExit(f'BLOCK: expected exactly one open same-repository main PR, observed {len(matches)}')
+          pr = matches[0]
+          print(json.dumps({
+              'number': int(pr['number']),
+              'head_sha': pr['head']['sha'],
+              'base_sha': pr['base']['sha'],
+              'draft': bool(pr.get('draft')),
+          }, sort_keys=True))
+          PY
+
+          pr_number="$(jq -r '.number' /tmp/qikvrt-materializer-pr.json)"
+          live_head="$(jq -r '.head_sha' /tmp/qikvrt-materializer-pr.json)"
+          base_sha="$(jq -r '.base_sha' /tmp/qikvrt-materializer-pr.json)"
+
+          if [ "$live_head" = "$SOURCE_HEAD" ]; then
+            echo "NOOP: materializer completed without advancing the PR head."
+            exit 0
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${live_head}" \
+            > /tmp/qikvrt-materialized-commit.json
+          parent_count="$(jq '.parents | length' /tmp/qikvrt-materialized-commit.json)"
+          parent_sha="$(jq -r '.parents[0].sha // empty' /tmp/qikvrt-materialized-commit.json)"
+          commit_message="$(jq -r '.commit.message' /tmp/qikvrt-materialized-commit.json)"
+          author_login="$(jq -r '.author.login // empty' /tmp/qikvrt-materialized-commit.json)"
+
+          test "$parent_count" -eq 1 || {
+            echo "BLOCK: materialized successor is not a one-parent append-only commit" >&2
+            exit 2
+          }
+          test "$parent_sha" = "$SOURCE_HEAD" || {
+            echo "BLOCK: live PR head is not the direct successor of the observed materializer source" >&2
+            exit 2
+          }
+          test "$commit_message" = "ci: materialize repository evidence" || {
+            echo "BLOCK: successor commit is not the canonical repository-materializer commit" >&2
+            exit 2
+          }
+          test "$author_login" = "github-actions[bot]" || {
+            echo "BLOCK: successor author is not github-actions[bot]" >&2
+            exit 2
+          }
+
+          # Reobserve immediately before the effect so a later writer cannot be
+          # mistaken for the exact materialized successor just validated.
+          live_head_again="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha')"
+          test "$live_head_again" = "$live_head" || {
+            echo "BLOCK: PR head drifted before exact-head continuation dispatch" >&2
+            exit 2
+          }
+
+          python3 -B - <<PY > /tmp/qikvrt-materializer-continuation.json
+          import json
+          print(json.dumps({
+              'event_type': 'qikvrt_autonomous_exact_head_verify',
+              'client_payload': {
+                  'repository': '${GITHUB_REPOSITORY}',
+                  'pull_request': int('${pr_number}'),
+                  'head_ref': '${HEAD_REF}',
+                  'head_sha': '${live_head}',
+                  'source_head_sha': '${SOURCE_HEAD}',
+                  'base_sha': '${base_sha}',
+                  'source_materializer_run_id': int('${SOURCE_RUN_ID}'),
+              },
+          }))
+          PY
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            --input /tmp/qikvrt-materializer-continuation.json
+
+          {
+            echo '### Exact-head continuation dispatched'
+            echo
+            echo "- PR: #${pr_number}"
+            echo "- source materializer head: \`${SOURCE_HEAD}\`"
+            echo "- materialized exact head: \`${live_head}\`"
+            echo "- source materializer run: \`${SOURCE_RUN_ID}\`"
+            echo '- repository mutation: `NONE`'
+            echo '- review/merge authority: `NONE`'
+          } >> "$GITHUB_STEP_SUMMARY"
