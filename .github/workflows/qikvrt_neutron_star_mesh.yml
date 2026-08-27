@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT neutron-star 2D Mesh
+
+on:
+  pull_request:
+    paths:
+      - "runtime/m68000/QIKVRT_NEUTRON_STAR_MESH_V1.json"
+      - "tools/qikvrt_neutron_star_mesh.py"
+      - "tests/test_qikvrt_neutron_star_mesh.py"
+      - ".github/workflows/qikvrt_neutron_star_mesh.yml"
+  push:
+    branches: [main]
+    paths:
+      - "runtime/m68000/QIKVRT_NEUTRON_STAR_MESH_V1.json"
+      - "tools/qikvrt_neutron_star_mesh.py"
+      - "tests/test_qikvrt_neutron_star_mesh.py"
+      - ".github/workflows/qikvrt_neutron_star_mesh.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Execute two-dimensional variable-bitrate plans
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qikvrt-neutron-star-mesh
+          python3 -B tools/qikvrt_neutron_star_mesh.py \
+            --bitrate-bps 8 --evidence-level 0 --quantum-hz 1 --json \
+            > qikvrt-neutron-star-mesh/low.json
+          python3 -B tools/qikvrt_neutron_star_mesh.py \
+            --bitrate-bps 1000000 --evidence-level 7 --json \
+            > qikvrt-neutron-star-mesh/high.json
+      - name: Verify breadth depth bitrate M68000 ABI and boundaries
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_neutron_star_mesh
+      - name: Preserve exact-head plans
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-neutron-star-mesh-${{ github.sha }}
+          path: qikvrt-neutron-star-mesh/*.json
+          retention-days: 30
+          if-no-files-found: error
