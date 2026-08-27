@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT recursive virtual mesh roll-out
+
+on:
+  push:
+    paths:
+      - "tools/qikvrt_recursive_virtual_mesh.py"
+      - "state/virtual_meshes/**"
+      - "tests/test_qikvrt_recursive_virtual_mesh.py"
+      - ".github/workflows/qikvrt_recursive_virtual_mesh_rollout.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-recursive-virtual-mesh-rollout-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate recursive virtual mesh controller
+        run: python3 -m pytest -q tests/test_qikvrt_recursive_virtual_mesh.py
+
+      - name: Materialize exact-head roll-out receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          root = Path("state/virtual_meshes")
+          children = []
+          for path in sorted(root.glob("*.json")):
+              value = json.loads(path.read_text(encoding="utf-8"))
+              children.append({
+                  "path": str(path),
+                  "instance_id": value["instance_id"],
+                  "state": value["state"],
+                  "queued_work": value["work_queue"],
+                  "parent": value["parent"],
+              })
+          receipt = {
+              "schema": "qikvrt_recursive_virtual_mesh_rollout_receipt_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "head_sha": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "children": children,
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "MERGE": False,
+              },
+          }
+          canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+          receipt["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
+          Path("recursive-virtual-mesh-rollout-receipt.json").write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-recursive-virtual-mesh-rollout-${{ github.run_id }}
+          retention-days: 90
+          path: recursive-virtual-mesh-rollout-receipt.json
