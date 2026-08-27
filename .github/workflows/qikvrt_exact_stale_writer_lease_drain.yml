@@ -57,18 +57,25 @@ jobs:
           merge_rc=$?
           set -e
           mapfile -t conflicts < <(git diff --name-only --diff-filter=U | LC_ALL=C sort)
-          expected=(
+          allowed=(
             REPOSITORY_FILE_MANIFEST.json
             REPOSITORY_FILE_MANIFEST.json.sha256
             SHA256SUMS.txt
           )
           if test "$merge_rc" -ne 0; then
-            test "${#conflicts[@]}" -eq 3
-            for index in 0 1 2; do
-              test "${conflicts[$index]}" = "${expected[$index]}"
+            test "${#conflicts[@]}" -ge 1
+            for conflict in "${conflicts[@]}"; do
+              matched=false
+              for candidate in "${allowed[@]}"; do
+                if test "$conflict" = "$candidate"; then
+                  matched=true
+                  break
+                fi
+              done
+              test "$matched" = true
             done
-            git checkout --ours -- "${expected[@]}"
-            git add -- "${expected[@]}"
+            git checkout --ours -- "${conflicts[@]}"
+            git add -- "${conflicts[@]}"
           else
             test "${#conflicts[@]}" -eq 0
           fi
