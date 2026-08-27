@@ -1,0 +1,392 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT fixpoint positional DFS observation
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+    paths:
+      - "state/fixpoints/QIKVRT_HARDWARE_MACHINE_LANGUAGE_FIXPOINT_V1.json"
+      - "tools/qikvrt_fixpoint_dfs_observer.py"
+      - "tests/test_qikvrt_fixpoint_dfs_observer.py"
+      - "docs/QIKVRT_HARDWARE_MACHINE_LANGUAGE_FIXPOINT_V1.md"
+      - ".github/workflows/qikvrt_fixpoint_dfs_observer.yml"
+      - "REPOSITORY_FILE_MANIFEST.json"
+      - "REPOSITORY_FILE_MANIFEST.json.sha256"
+      - "SHA256SUMS.txt"
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT zero-bug continuous invariant"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT neutron-star 2D Mesh"
+      - "QIKVRT autonomous exact-head verification"
+      - "QIKVRT requested review executor"
+      - "QIKVRT code-owner review observer"
+    types: [completed]
+  repository_dispatch:
+    types: [qikvrt_fixpoint_dfs_observe]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Open same-repository PR number to observe"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: >-
+    qikvrt-fixpoint-positional-dfs-${{ github.repository }}-${{
+      github.event.workflow_run.head_sha ||
+      github.event.pull_request.head.sha ||
+      inputs.pr ||
+      github.event.client_payload.pull_request ||
+      github.run_id
+    }}
+  cancel-in-progress: false
+
+jobs:
+  observe-one-exact-subject:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      OBSERVER_MARKER: "<!-- qikvrt-fixpoint-positional-dfs-observation -->"
+      OPT_IN_MARKER: "<!-- qikvrt-fixpoint-positional-dfs:enabled -->"
+    steps:
+      - name: Check out exact observer implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Validate exact positional fixpoint contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_fixpoint_dfs_observer.py validate
+          python3 -B -m unittest -v tests.test_qikvrt_fixpoint_dfs_observer
+
+      - name: Select one exact same-repository pull request subject
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.pull_request.number || '' }}
+          WORKFLOW_RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+          WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
+          DISPATCH_PR: ${{ github.event.client_payload.pull_request || '' }}
+          INPUT_PR: ${{ inputs.pr || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import datetime
+          import json
+          import os
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          event = os.environ["EVENT_NAME"]
+          marker = os.environ["OPT_IN_MARKER"]
+
+          def gh(path):
+              return json.loads(subprocess.check_output(["gh", "api", path], text=True))
+
+          def open_prs():
+              pages = json.loads(subprocess.check_output(
+                  ["gh", "api", "--paginate", "--slurp",
+                   f"repos/{repo}/pulls?state=open&base=main&per_page=100"],
+                  text=True,
+              ))
+              return [pr for page in pages for pr in (page if isinstance(page, list) else [page])]
+
+          requested = ""
+          if event == "pull_request":
+              requested = os.environ.get("EVENT_PR", "").strip()
+          elif event == "workflow_run":
+              requested = os.environ.get("WORKFLOW_RUN_PR", "").strip()
+              if not requested:
+                  run_head = os.environ.get("WORKFLOW_RUN_HEAD", "").strip()
+                  matches = [pr for pr in open_prs() if pr["head"]["sha"] == run_head]
+                  matches.sort(key=lambda item: int(item["number"]))
+                  requested = str(matches[0]["number"]) if matches else ""
+          elif event == "repository_dispatch":
+              requested = os.environ.get("DISPATCH_PR", "").strip()
+          elif event == "workflow_dispatch":
+              requested = os.environ.get("INPUT_PR", "").strip()
+
+          if requested:
+              candidates = [gh(f"repos/{repo}/pulls/{int(requested)}")]
+          else:
+              candidates = [pr for pr in open_prs() if marker in (pr.get("body") or "")]
+              candidates.sort(key=lambda item: int(item["number"]))
+              if candidates:
+                  slot = int(datetime.datetime.now(datetime.timezone.utc).timestamp() // 300)
+                  candidates = [candidates[slot % len(candidates)]]
+
+          if not candidates:
+              print("found=false")
+              raise SystemExit(0)
+          pr = candidates[0]
+          if pr.get("state") != "open" or pr["base"]["ref"] != "main":
+              raise SystemExit("BLOCK: subject is not an open main-targeting PR")
+          if pr["head"]["repo"]["full_name"] != repo:
+              raise SystemExit("BLOCK: cross-repository subject is not admissible")
+          head = pr["head"]["sha"]
+          tree = gh(f"repos/{repo}/git/commits/{head}")["tree"]["sha"]
+          print("found=true")
+          print(f"pr={pr['number']}")
+          print(f"head={head}")
+          print(f"tree={tree}")
+          print(f"head_ref={pr['head']['ref']}")
+          print(f"base={pr['base']['sha']}")
+          PY
+
+      - name: Traverse exact execution evidence depth-first
+        id: observe
+        if: steps.select.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_SHA: ${{ steps.select.outputs.head }}
+          TREE_SHA: ${{ steps.select.outputs.tree }}
+          HEAD_REF: ${{ steps.select.outputs.head_ref }}
+          BASE_SHA: ${{ steps.select.outputs.base }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/fixpoint-positional-dfs
+          mkdir -p "$root"
+          python3 -B - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          pr_number = int(os.environ["PR_NUMBER"])
+          head = os.environ["HEAD_SHA"]
+          tree = os.environ["TREE_SHA"]
+          current_run = int(os.environ["CURRENT_RUN_ID"])
+          root = pathlib.Path(".qikvrt/fixpoint-positional-dfs")
+          contract = json.loads(pathlib.Path(
+              "state/fixpoints/QIKVRT_HARDWARE_MACHINE_LANGUAGE_FIXPOINT_V1.json"
+          ).read_text(encoding="utf-8"))
+          limits = contract["observation"]
+
+          def gh(path):
+              return json.loads(subprocess.check_output(["gh", "api", path], text=True))
+
+          def pages(path):
+              return json.loads(subprocess.check_output(
+                  ["gh", "api", "--paginate", "--slurp", path], text=True
+              ))
+
+          run_pages = pages(f"repos/{repo}/actions/runs?head_sha={head}&per_page=100")
+          runs = [
+              run for page in run_pages if isinstance(page, dict)
+              for run in page.get("workflow_runs", [])
+              if int(run["id"]) != current_run
+          ]
+          if len(runs) > int(limits["maximum_workflow_runs"]):
+              raise SystemExit("BLOCK: workflow inventory exceeds contract bound")
+
+          observed = []
+          for run in runs:
+              job_pages = pages(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")
+              reported = None
+              jobs = {}
+              for page in job_pages:
+                  if not isinstance(page, dict):
+                      continue
+                  total = int(page.get("total_count") or 0)
+                  reported = total if reported is None else reported
+                  if total != reported:
+                      raise SystemExit(f"BLOCK: inconsistent job total for run {run['id']}")
+                  jobs.update({int(job["id"]): job for job in page.get("jobs", [])})
+              if len(jobs) > int(limits["maximum_jobs_per_run"]):
+                  raise SystemExit(f"BLOCK: job inventory exceeds bound for run {run['id']}")
+              normalized_jobs = []
+              for job in jobs.values():
+                  steps = job.get("steps") or []
+                  if len(steps) > int(limits["maximum_steps_per_job"]):
+                      raise SystemExit(f"BLOCK: step inventory exceeds bound for job {job['id']}")
+                  normalized_jobs.append({
+                      "id": int(job["id"]),
+                      "name": job.get("name") or "",
+                      "status": job.get("status") or "",
+                      "conclusion": job.get("conclusion"),
+                      "steps": [{
+                          "number": int(step.get("number") or 0),
+                          "name": step.get("name") or "",
+                          "status": step.get("status") or "",
+                          "conclusion": step.get("conclusion"),
+                      } for step in steps],
+                  })
+              observed.append({
+                  "id": int(run["id"]),
+                  "name": run.get("name") or "",
+                  "event": run.get("event") or "",
+                  "status": run.get("status") or "",
+                  "conclusion": run.get("conclusion"),
+                  "created_at": run.get("created_at") or "",
+                  "jobs_total_reported": int(reported or 0),
+                  "jobs": normalized_jobs,
+              })
+
+          status_pages = pages(f"repos/{repo}/commits/{head}/statuses?per_page=100")
+          statuses = [status for page in status_pages for status in (page if isinstance(page, list) else [])]
+          latest = {}
+          for status in statuses:
+              context = status.get("context") or ""
+              if context == "QIKVRT fixpoint positional DFS observation":
+                  continue
+              key = (status.get("updated_at") or status.get("created_at") or "", int(status.get("id") or 0))
+              if context not in latest or key > latest[context][0]:
+                  latest[context] = (key, status)
+          for context, (_key, status) in latest.items():
+              state = status.get("state")
+              observed.append({
+                  "id": int(status["id"]),
+                  "name": f"status:{context}",
+                  "event": "commit_status",
+                  "status": "in_progress" if state == "pending" else "completed",
+                  "conclusion": {"success": "success", "failure": "failure", "error": "failure"}.get(state),
+                  "created_at": status.get("created_at") or "",
+                  "jobs_total_reported": 0,
+                  "jobs": [],
+              })
+
+          pr_now = gh(f"repos/{repo}/pulls/{pr_number}")
+          reviews = pages(f"repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
+          for page in reviews:
+              for review in (page if isinstance(page, list) else []):
+                  if review.get("commit_id") != head:
+                      continue
+                  state = review.get("state")
+                  observed.append({
+                      "id": int(review["id"]),
+                      "name": f"review:{review.get('user', {}).get('login', '')}:{state}",
+                      "event": "pull_request_review",
+                      "status": "completed",
+                      "conclusion": {"APPROVED": "success", "CHANGES_REQUESTED": "failure"}.get(state, "skipped"),
+                      "created_at": review.get("submitted_at") or "",
+                      "jobs_total_reported": 0,
+                      "jobs": [],
+                  })
+          for reviewer in pr_now.get("requested_reviewers") or []:
+              identity = sum((index + 1) * ord(char) for index, char in enumerate(reviewer["login"]))
+              observed.append({
+                  "id": 900000000000000 + identity,
+                  "name": f"review-request:{reviewer['login']}",
+                  "event": "review_requested",
+                  "status": "in_progress",
+                  "conclusion": None,
+                  "created_at": pr_now.get("updated_at") or "",
+                  "jobs_total_reported": 0,
+                  "jobs": [],
+              })
+
+          head_after = pr_now["head"]["sha"]
+          tree_after = gh(f"repos/{repo}/git/commits/{head_after}")["tree"]["sha"]
+          snapshot = {
+              "repository": repo,
+              "pull_request": pr_number,
+              "head_ref": os.environ["HEAD_REF"],
+              "base_sha": os.environ["BASE_SHA"],
+              "head_sha_before": head,
+              "tree_sha_before": tree,
+              "head_sha_after": head_after,
+              "tree_sha_after": tree_after,
+              "captured_at": datetime.datetime.now(
+                  datetime.timezone.utc
+              ).isoformat().replace("+00:00", "Z"),
+              "workflow_runs": observed,
+          }
+          (root / "snapshot.json").write_text(
+              json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+          python3 -B tools/qikvrt_fixpoint_dfs_observer.py observe \
+            --input "$root/snapshot.json" \
+            --output "$root/receipt.json" \
+            --markdown-output "$root/receipt.md"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value = json.load(open(".qikvrt/fixpoint-positional-dfs/receipt.json", encoding="utf-8"))
+          print(f"state={value['state']}")
+          print(f"head={value['binding']['head_sha_before']}")
+          print(f"receipt_sha256={value['receipt_sha256']}")
+          PY
+
+      - name: Publish deduplicated exact-head observation
+        if: steps.select.outputs.found == 'true' && steps.observe.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_SHA: ${{ steps.observe.outputs.head }}
+          OBSERVATION_STATE: ${{ steps.observe.outputs.state }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(cat .qikvrt/fixpoint-positional-dfs/receipt.md)"
+          comment_id="$(
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --jq ".[] | select(.body | contains(\"${OBSERVER_MARKER}\")) | .id" |
+              tail -n 1
+          )"
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" \
+              -f body="$body" >/dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -f body="$body" >/dev/null
+          fi
+          case "$OBSERVATION_STATE" in
+            OBSERVE) status=success; description="Exact-head positional DFS reached a local observation fixpoint" ;;
+            HOLD) status=failure; description="Exact-head positional DFS found a causal adverse node" ;;
+            CONTINUE) status=pending; description="Exact-head positional DFS observed active execution" ;;
+            REOBSERVE) status=pending; description="Exact binding drifted during positional DFS" ;;
+            *) status=error; description="Unexpected positional DFS state" ;;
+          esac
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$status" \
+            -f context="QIKVRT fixpoint positional DFS observation" \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Preserve positional depth-first evidence
+        if: always() && steps.select.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-fixpoint-positional-dfs-${{ steps.select.outputs.pr }}-${{ steps.select.outputs.head }}-${{ github.run_id }}
+          path: .qikvrt/fixpoint-positional-dfs
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
+
+      - name: Strict NOOP when no exact subject is available
+        if: steps.select.outputs.found != 'true'
+        shell: bash
+        run: |
+          echo "NOOP: no open same-repository fixpoint subject requires observation."
