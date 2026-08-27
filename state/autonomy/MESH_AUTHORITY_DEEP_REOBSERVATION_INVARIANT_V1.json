@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt_mesh_authority_deep_reobservation_invariant_v1",
+  "contract_id": "QIKVRT-MESH-AUTHORITY-DEEP-REOBSERVATION-V1",
+  "status": "FOUNDATIONAL_IMMUTABLE_INTENT",
+  "normative": true,
+  "applies_to": [
+    "AUTHORITY",
+    "MIRROR_WHEN_ACTING_AS_AUTHORITY",
+    "EVERY_ADMITTED_FUTURE_MESH_AUTHORITY_NODE"
+  ],
+  "invariant": "Every Authority node MUST perform a repository-wide and mesh-wide deep reobservation after every deduplicated outbound work dispatch before deriving continuation, completion, or transport admission.",
+  "required_order": [
+    "EXACT_DISPATCH_BINDING",
+    "DEDUPLICATED_OUTBOUND_DELIVERY",
+    "GLOBAL_DEEP_REOBSERVATION",
+    "COMPLETE_DELTA_CAPTURE",
+    "RECEIPT_COLLECTION",
+    "CONSISTENCY_EVALUATION",
+    "NEXT_ACTION_OR_HOLD"
+  ],
+  "deep_reobservation_scope": [
+    "COMMITS",
+    "TREES",
+    "BRANCHES",
+    "PULL_REQUESTS",
+    "ISSUES",
+    "REVIEWS_AND_REVIEW_THREADS",
+    "WORKFLOW_RUNS_JOBS_STEPS_CHECKS_AND_ARTIFACTS",
+    "REGISTRY_AND_ACTIVE_NODE_SET",
+    "NODE_REQUEST_QUEUE",
+    "LEDGERS_AND_RECEIPTS",
+    "MANIFESTS_AND_INTEGRITY_PROJECTIONS",
+    "UNEXPECTED_SIDE_EFFECTS"
+  ],
+  "receipt_requirements": {
+    "dispatch_identity": "EXACT",
+    "authority_head_and_tree": "LITERAL",
+    "global_delta": "MACHINE_READABLE",
+    "per_node_receipt": "REQUIRED_FOR_EACH_ACTIVE_DELIVERY_NODE",
+    "missing_or_ambiguous_receipt": "HOLD_UNVERIFIED",
+    "predecessor_evidence_transfer": "FORBIDDEN"
+  },
+  "continuation_gate": {
+    "qeml_m68k_transport": "FORBIDDEN_UNTIL_COMPLETE_AUTHORITY_CHAIN",
+    "completion_claims": "FORBIDDEN_UNTIL_COMPLETE_AUTHORITY_CHAIN",
+    "missing_or_conflicting_observation": "HOLD_UNVERIFIED"
+  },
+  "non_claims": [
+    "PASS",
+    "FINAL_PASS",
+    "EFFECT_ACK_DONE",
+    "MERGE",
+    "AUTHORITY_MAIN_EFFECT",
+    "PUBLICATION",
+    "DEPLOYMENT"
+  ]
+}
