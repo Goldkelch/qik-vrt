@@ -57,6 +57,7 @@ def live_shim(root: Path):
         "QIKVRT_API_TOKEN_EXPIRES_UTC": "2099-01-01T00:00:00Z",
         "QIKVRT_ALLOWED_REPOSITORY": "security/qik-vrt",
         "QIKVRT_API_PRINCIPAL": "security-test-owner",
+        "QIKVRT_DEFAULT_BRANCH": "main",
         "QIKVRT_REPO_ROOT": str(root),
         "QIKVRT_RATE_LIMIT_PER_MINUTE": "10000",
         "QIKVRT_API_LOG": "0",
@@ -227,12 +228,35 @@ class HandlerSecurityTests(unittest.TestCase):
             capabilities = json.loads(raw.decode("utf-8"))
             self.assertEqual(capabilities["schema"], "qikvrt_mesh_api_capabilities_v1")
             self.assertIn("/openapi.yaml", capabilities["public_read_endpoints"])
+            self.assertEqual(
+                capabilities["workflow_dispatch_ref_policy"],
+                {"mode": "exact-default-branch", "required_ref": "main"},
+            )
             self.assertFalse(capabilities["ordinary_release"])
 
             status, raw, content_type = http_get(address, "/openapi.yaml")
             self.assertEqual(status, 200)
             self.assertIn("openapi", content_type)
             self.assertIn(b"QIKVRT GitHub Dispatch Adapter API", raw)
+
+    def test_workflow_dispatch_ref_must_equal_configured_default_branch(self) -> None:
+        body = json.dumps(
+            {
+                "ref": "feature/untrusted-ref",
+                "inputs": {
+                    "operation": "release_status",
+                    "artifact_id": "status",
+                    "dry_run": "true",
+                    "request_id": "non-default-ref-check",
+                    "effect_accepted": "false",
+                },
+            }
+        ).encode("utf-8")
+        with live_shim(self.root) as address:
+            status, response = http_json(address, body)
+        self.assertEqual(status, 400)
+        self.assertEqual(response["status"], "BLOCK")
+        self.assertIn("configured default branch", str(response["reason"]))
 
     def test_client_cannot_claim_a_different_responsibility_owner(self) -> None:
         body = json.dumps(

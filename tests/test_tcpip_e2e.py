@@ -55,6 +55,7 @@ class TcpIpEndToEndTests(unittest.TestCase):
                 "QIKVRT_API_TOKEN_EXPIRES_UTC": "2099-01-01T00:00:00Z",
                 "QIKVRT_ALLOWED_REPOSITORY": "owner/repo",
                 "QIKVRT_API_PRINCIPAL": "e2e-responsible-operator",
+                "QIKVRT_DEFAULT_BRANCH": "main",
                 "QIKVRT_REPO_ROOT": str(self.state),
                 "QIKVRT_RATE_LIMIT_PER_MINUTE": "10000",
             }

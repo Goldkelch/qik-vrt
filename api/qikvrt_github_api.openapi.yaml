@@ -65,7 +65,11 @@ paths:
               additionalProperties: false
               required: [ref, inputs]
               properties:
-                ref: { type: string, minLength: 1, maxLength: 255 }
+                ref:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: Must exactly equal the adapter's configured default branch; aliases, tags, and other branches fail closed.
                 inputs: { $ref: '#/components/schemas/DispatchInputs' }
       responses:
         '202': { description: Local evaluation reached DONE or CONTINUE; inspect effect_state. }

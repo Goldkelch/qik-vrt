@@ -68,6 +68,17 @@ def _api_credential_valid() -> bool:
     return bool(expiry is not None and expiry > datetime.now(timezone.utc))
 
 
+def _default_branch_valid() -> bool:
+    branch = os.environ.get("QIKVRT_DEFAULT_BRANCH", "main")
+    forbidden = ("..", "//", "@{")
+    return bool(
+        1 <= len(branch) <= 255
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+        and not branch.endswith(("/", ".", ".lock"))
+        and not any(fragment in branch for fragment in forbidden)
+    )
+
+
 def _attestation_configuration_valid() -> bool:
     secret = os.environ.get("QIKVRT_REMOTE_ATTESTATION_SECRET", "")
     signer = os.environ.get("QIKVRT_TRUSTED_ATTESTATION_SIGNER", "").strip()
@@ -98,6 +109,7 @@ def _security_configuration_valid() -> bool:
     return bool(
         _api_credential_valid()
         and _attestation_configuration_valid()
+        and _default_branch_valid()
         and re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", repository)
         and principal
         and len(principal) <= 256
@@ -155,6 +167,10 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
                 "/repos/{owner}/{repo}/dispatches",
             ],
             "operations": ["ingest", "verify", "stage", "release_status"],
+            "workflow_dispatch_ref_policy": {
+                "mode": "exact-default-branch",
+                "required_ref": os.environ.get("QIKVRT_DEFAULT_BRANCH", "main"),
+            },
             "execution_boundary": "GitHub dispatch acceptance and local handler results require exact-run/artifact reobservation.",
             "ordinary_release": False,
             "general_effect_ack_done": False,
@@ -288,6 +304,9 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
                 ref = body.get("ref")
                 if not isinstance(ref, str) or not ref.strip() or len(ref) > 255:
                     raise ValueError("workflow dispatch ref is required")
+                default_branch = os.environ.get("QIKVRT_DEFAULT_BRANCH", "main")
+                if not hmac.compare_digest(ref.encode("utf-8"), default_branch.encode("utf-8")):
+                    raise ValueError("workflow dispatch ref must equal the configured default branch")
                 inputs = body.get("inputs", {})
             else:
                 unknown = set(body) - {"event_type", "client_payload"}
@@ -394,6 +413,9 @@ def main() -> int:
         return 2
     if not principal or len(principal) > 256:
         print("BLOCK QIKVRT_API_PRINCIPAL must identify the authenticated responsibility owner", file=sys.stderr)
+        return 2
+    if not _default_branch_valid():
+        print("BLOCK QIKVRT_DEFAULT_BRANCH must be a valid exact branch name", file=sys.stderr)
         return 2
     expiry = _parse_expiry(os.environ.get("QIKVRT_API_TOKEN_EXPIRES_UTC", ""))
     if expiry is None or expiry <= datetime.now(timezone.utc):
