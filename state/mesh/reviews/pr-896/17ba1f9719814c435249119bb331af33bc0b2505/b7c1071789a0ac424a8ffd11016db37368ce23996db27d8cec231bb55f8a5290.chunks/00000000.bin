@@ -1,0 +1,666 @@
+diff --git a/.github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml b/.github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..404a773a78c93b3cf3d462c14dd5a44d01b4f31f
+--- /dev/null
++++ b/.github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml
+@@ -0,0 +1,150 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++name: QIKVRT Pascal M68000 Linux hardware mapping
++
++on:
++  pull_request:
++    paths:
++      - ".github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml"
++      - "docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md"
++      - "policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++      - "state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++      - "tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py"
++      - "tools/qikvrt_pascal_m68k_linux_reobservation.py"
++      - "pascal/qikvrt_atari_browser_pas.pas"
++      - "pascal/qikvrtataribrowserpas.pas"
++      - "runtime/pascal/qikbrow_pas.pas"
++      - "tests/pascal/test_qikvrt_atari_browser_pas.pas"
++  push:
++    branches: [main]
++    paths:
++      - ".github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml"
++      - "docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md"
++      - "policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++      - "state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++      - "tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py"
++      - "tools/qikvrt_pascal_m68k_linux_reobservation.py"
++      - "pascal/qikvrt_atari_browser_pas.pas"
++      - "pascal/qikvrtataribrowserpas.pas"
++      - "runtime/pascal/qikbrow_pas.pas"
++      - "tests/pascal/test_qikvrt_atari_browser_pas.pas"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  cross-compile-execute-reobserve:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 45
++    steps:
++      - name: Check out literal exact head
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: ${{ github.event.pull_request.head.sha || github.sha }}
++          fetch-depth: 1
++          persist-credentials: false
++
++      - name: Bind exact head and tree
++        env:
++          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          root=.qikvrt/pascal-m68k-linux
++          mkdir -p "$root"
++          head="$(git rev-parse --verify HEAD^{commit})"
++          tree="$(git rev-parse --verify HEAD^{tree})"
++          test "$head" = "$EXPECTED_HEAD"
++          printf '%s\n' "$head" > "$root/source-head.txt"
++          printf '%s\n' "$tree" > "$root/source-tree.txt"
++          printf 'QIKVRT_HEAD_SHA=%s\n' "$head" >> "$GITHUB_ENV"
++          printf 'QIKVRT_TREE_SHA=%s\n' "$tree" >> "$GITHUB_ENV"
++
++      - name: Install bootstrap compiler, M68000 binutils and emulator
++        shell: bash
++        run: |
++          set -euo pipefail
++          sudo apt-get update -qq
++          sudo apt-get install -y --no-install-recommends \
++            build-essential ca-certificates git fp-compiler \
++            binutils-m68k-linux-gnu qemu-user file
++          fpc -iV | tee .qikvrt/pascal-m68k-linux/bootstrap-fpc-version.txt
++          m68k-linux-gnu-ld --version | head -n 1 \
++            | tee .qikvrt/pascal-m68k-linux/binutils-version.txt
++          qemu-m68k --version | head -n 1 \
++            | tee .qikvrt/pascal-m68k-linux/qemu-version.txt
++
++      - name: Verify repository target contract
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 -m json.tool policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json >/dev/null
++          python3 -m json.tool state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json >/dev/null
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
++            python3 -B -m unittest -v \
++              tests.test_qikvrt_pascal_m68k_linux_hardware_mapping
++
++      - name: Fetch exact Free Pascal source commit
++        shell: bash
++        run: |
++          set -euo pipefail
++          src="$RUNNER_TEMP/fpc-source"
++          rm -rf "$src"
++          git init -q "$src"
++          git -C "$src" remote add origin \
++            https://gitlab.com/freepascal.org/fpc/source.git
++          git -C "$src" fetch --no-tags --depth=1 origin \
++            6c4d218b8d1c00cec55f889ab5fab9639a8159fe
++          git -C "$src" checkout -q --detach FETCH_HEAD
++          test "$(git -C "$src" rev-parse HEAD)" = \
++            6c4d218b8d1c00cec55f889ab5fab9639a8159fe
++          printf '%s\n' "$src" > .qikvrt/pascal-m68k-linux/fpc-source-dir.txt
++          git -C "$src" rev-parse HEAD \
++            > .qikvrt/pascal-m68k-linux/fpc-source-commit.txt
++
++      - name: Build pinned m68k-linux cross compiler and RTL
++        shell: bash
++        run: |
++          set -euo pipefail
++          src="$(cat .qikvrt/pascal-m68k-linux/fpc-source-dir.txt)"
++          prefix="$RUNNER_TEMP/fpc-m68k-linux"
++          rm -rf "$prefix"
++          make -C "$src" -j2 crossall \
++            CPU_TARGET=m68k OS_TARGET=linux \
++            PP="$(command -v fpc)" \
++            CROSSBINDIR=/usr/bin BINUTILSPREFIX=m68k-linux-gnu- \
++            OPT='-O1' \
++            | tee .qikvrt/pascal-m68k-linux/crossall.log
++          make -C "$src" crossinstall \
++            CPU_TARGET=m68k OS_TARGET=linux \
++            PP="$(command -v fpc)" \
++            CROSSBINDIR=/usr/bin BINUTILSPREFIX=m68k-linux-gnu- \
++            INSTALL_PREFIX="$prefix" \
++            | tee .qikvrt/pascal-m68k-linux/crossinstall.log
++          find "$src" "$prefix" -type f -name ppcross68k -perm -111 -print \
++            | tee .qikvrt/pascal-m68k-linux/cross-compiler-candidates.txt
++          test -s .qikvrt/pascal-m68k-linux/cross-compiler-candidates.txt
++          sha256sum "$(head -n 1 .qikvrt/pascal-m68k-linux/cross-compiler-candidates.txt)" \
++            | tee .qikvrt/pascal-m68k-linux/cross-compiler.sha256
++          printf '%s\n' "$prefix" > .qikvrt/pascal-m68k-linux/toolchain-prefix.txt
++          printf '%s\n' "$src" >> .qikvrt/pascal-m68k-linux/toolchain-prefix.txt
++
++      - name: Produce and execute M68000 Linux binaries
++        shell: bash
++        run: |
++          set -euo pipefail
++          prefix="$(head -n 1 .qikvrt/pascal-m68k-linux/toolchain-prefix.txt)"
++          src="$(tail -n 1 .qikvrt/pascal-m68k-linux/toolchain-prefix.txt)"
++          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
++            python3 -B tools/qikvrt_pascal_m68k_linux_reobservation.py \
++              --toolchain-root "$prefix"
++
++      - name: Preserve target compiler, binary and execution receipts
++        if: always()
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-pascal-m68k-linux-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
++          path: .qikvrt/pascal-m68k-linux
++          if-no-files-found: error
++          include-hidden-files: true
++          retention-days: 30
+diff --git a/docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md b/docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd862986b0a4e0059ef08036d8ca0f05b4c90b7d
+--- /dev/null
++++ b/docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md
+@@ -0,0 +1,74 @@
++# Pascal → M68000 Linux: der nächste AD/DA-Hardware-Ring
++
++## Zweck
++
++Diese Tranche nimmt den auf PR #895 reobservierten Pascal-Semantikkern und bildet ihn mit einem realen Cross-Compiler auf Motorola-68000-Maschinenbytes ab. Die Zielplattform ist zunächst `m68k-linux` und nicht Atari/TOS. Dadurch wird die Compiler-/ISA-Brücke isoliert geprüft, bevor ein zweiter Ring das Atari-Dateiformat, TOS und Hatari/EmuTOS bindet.
++
++```text
++Pascal semantic receipt
++→ pinned Free Pascal source
++→ x86_64 bootstrap compiler
++→ m68k-linux cross compiler
++→ M68K ELF bytes
++→ qemu-m68k execution
++→ normalized output receipt
++```
++
++## Warum Linux vor TOS
++
++Divide-and-Conquer gilt auch für Zielplattformen. Der M68000-Befehlssatz, das Objektformat, der Betriebssystem-ABI, das Loaderformat und die konkrete Maschine sind unterscheidbare Schichten:
++
++```text
++Pascal semantics
++!= compiler implementation
++!= M68000 ISA
++!= M68K Linux ABI
++!= Atari TOS executable
++!= Hatari/EmuTOS execution
++!= physical Mega ST execution
++```
++
++Die erste Zieltranche isoliert Compiler, ISA und einen ausführbaren ABI. Der nachfolgende Atari-Ring darf dann nur noch die TOS-spezifischen Unterschiede hinzufügen.
++
++## Deterministische Toolchain
++
++Der Cross-Compiler wird aus einem fest gebundenen Commit des offiziellen Free-Pascal-Quellrepositorys gebaut. Der Workflow bindet:
++
++- Bootstrap-Compiler und Version,
++- FPC-Quellcommit,
++- Ziel-CPU `m68k`,
++- Ziel-OS `linux`,
++- GNU-M68K-Binutils,
++- erzeugten Cross-Compiler-Digest,
++- ELF-Maschinenheader,
++- Zielbinär-Digests,
++- QEMU-Version,
++- normalisierte Programmausgabe.
++
++## Beobachtungsgrenze
++
++Beobachtet werden soll:
++
++- reale Erzeugung von M68K-ELF-Maschinenbytes,
++- Cross-Kompilation im Turbo-Pascal- und Delphi-Modus,
++- Ausführung beider Binärfamilien unter `qemu-m68k`,
++- gleiche normalisierte Test- und Shell-Ausgaben wie im Host-Pascal-Receipt,
++- getrennte Binärdigests,
++- literal-exact-head und exact-tree Receipt-Bindung.
++
++Nicht behauptet werden:
++
++- Atari-/TOS-Binärformat,
++- Hatari-/EmuTOS-Ausführung,
++- physische Motorola-68000-Ausführung,
++- physische Mega-ST-Ausführung,
++- historischer Borland-Turbo-Pascal-Compiler,
++- Embarcadero Delphi,
++- externer Effekt,
++- `EFFECT_ACK_DONE`, `PASS` oder `FINAL_PASS`.
++
++## Kausalität
++
++Das sichtbare M68K-Binary ist die Frucht. Seine unsichtbaren Wurzeln sind Pascal-Source-Blob, Parent-Head, Toolchain-Commit, Bootstrap-Compiler, Binutils, Ziel-ABI und Testvektor. Erst das Receipt bindet Frucht und Wurzeln zu einer kausal rekonstruierbaren Compilerwirkung.
++
++q.e.d. — Ingolf Lohmann
+diff --git a/policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json b/policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..36aeadb0cd23839779dac34811ef2603df1ca86a
+--- /dev/null
++++ b/policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json
+@@ -0,0 +1,56 @@
++{
++  "schema": "qikvrt_pascal_m68k_linux_hardware_mapping_v1",
++  "state": "CANDIDATE",
++  "authority_repository": "Goldkelch/qik-vrt",
++  "stack_parent_pr": 895,
++  "stack_parent_head": "6a104554c72f189758944c55ce22f9ce0025e11d",
++  "stack_parent_tree": "5051694c5bc6eacb44214fb2aa3209fd74f2bfbd",
++  "semantic_source": {
++    "path": "pascal/qikvrt_atari_browser_pas.pas",
++    "compiler_wrapper": "pascal/qikvrtataribrowserpas.pas",
++    "test_program": "tests/pascal/test_qikvrt_atari_browser_pas.pas",
++    "shell_program": "runtime/pascal/qikbrow_pas.pas"
++  },
++  "toolchain": {
++    "bootstrap_compiler": "Free Pascal 3.2.2 on x86_64-linux",
++    "cross_compiler_source_repository": "https://gitlab.com/freepascal.org/fpc/source.git",
++    "cross_compiler_source_commit": "6c4d218b8d1c00cec55f889ab5fab9639a8159fe",
++    "cpu_target": "m68k",
++    "os_target": "linux",
++    "binutils_prefix": "m68k-linux-gnu-",
++    "emulator": "qemu-m68k"
++  },
++  "ad_da_mapping": {
++    "ad": "PASCAL_SEMANTIC_RECEIPT_TO_DECLARED_TARGET_CONTRACT",
++    "da": "DECLARED_M68K_COMPILER_TO_ELF_MACHINE_BYTES_AND_QEMU_REOBSERVATION",
++    "target_isa": "MOTOROLA_68000_FAMILY",
++    "target_abi": "M68K_LINUX_ELF",
++    "round_trip_invariant": "NORMALIZED_PASCAL_TEST_AND_SHELL_OUTPUT"
++  },
++  "acceptance": {
++    "cross_compiler_source_commit_verified": true,
++    "m68k_elf_machine_header_required": true,
++    "tp_mode_cross_compile_required": true,
++    "delphi_mode_cross_compile_required": true,
++    "qemu_execution_required": true,
++    "normalized_output_equal_to_host_receipt_required": true,
++    "binary_sha256_required": true,
++    "literal_exact_head_tree_receipt_required": true,
++    "repository_integrity_materialization_required": true
++  },
++  "claim_boundaries": {
++    "m68k_machine_bytes_produced": "PENDING_EXECUTION",
++    "m68k_emulator_execution_observed": "PENDING_EXECUTION",
++    "atari_tos_binary_produced": false,
++    "atari_tos_execution_observed": false,
++    "physical_m68000_execution_observed": false,
++    "physical_megast_execution_observed": false,
++    "borland_turbo_pascal_compiler_executed": false,
++    "embarcadero_delphi_compiler_executed": false,
++    "external_effect": "NONE",
++    "effect_ack_done": false,
++    "pass": false,
++    "final_pass": false
++  },
++  "next_stage": "M68K_ATARI_TOS_CROSS_LINK_AND_HATARI_EMUTOS_REOBSERVATION"
++}
+diff --git a/state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json b/state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..611ba1c0a79acf83ca69aa906f360f4935850dc5
+--- /dev/null
++++ b/state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json
+@@ -0,0 +1,33 @@
++{
++  "schema": "qikvrt_pascal_m68k_linux_hardware_mapping_work_unit_v1",
++  "issue": 888,
++  "authority_repository": "Goldkelch/qik-vrt",
++  "stack_parent_pr": 895,
++  "stack_parent_head": "6a104554c72f189758944c55ce22f9ce0025e11d",
++  "stack_parent_tree": "5051694c5bc6eacb44214fb2aa3209fd74f2bfbd",
++  "branch": "codex/pascal-m68k-linux-hardware-mapping-v1",
++  "state": "IMPLEMENTATION_CANDIDATE",
++  "scope": [
++    ".github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml",
++    "docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md",
++    "policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json",
++    "state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json",
++    "tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py",
++    "tools/qikvrt_pascal_m68k_linux_reobservation.py"
++  ],
++  "purpose": "Map the exact Pascal semantic receipt from PR #895 to real M68K Linux ELF bytes with a pinned Free Pascal cross compiler and reobserve the same bounded outputs under qemu-m68k.",
++  "machine_owned": true,
++  "target_cpu": "m68k",
++  "target_os": "linux",
++  "target_abi": "M68K_LINUX_ELF",
++  "integrity_materialization_required": true,
++  "review_required": true,
++  "authority_effect": false,
++  "physical_hardware_execution": false,
++  "atari_tos_execution": false,
++  "external_effect": "NONE",
++  "effect_ack_done": false,
++  "pass": false,
++  "final_pass": false,
++  "next_action": "BUILD_PINNED_FPC_M68K_LINUX_CROSS_COMPILER_COMPILE_EXECUTE_UNDER_QEMU_AND_BIND_LITERAL_EXACT_HEAD_RECEIPT"
++}
+diff --git a/tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py b/tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f77536badb7858484992111251c7f9888cb1d053
+--- /dev/null
++++ b/tests/test_qikvrt_pascal_m68k_linux_hardware_mapping.py
+@@ -0,0 +1,90 @@
++from __future__ import annotations
++
++import json
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++POLICY = ROOT / "policy/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++TOOL = ROOT / "tools/qikvrt_pascal_m68k_linux_reobservation.py"
++WORKFLOW = ROOT / ".github/workflows/qikvrt_pascal_m68k_linux_hardware_mapping.yml"
++WORK_UNIT = ROOT / "state/work_units/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.json"
++DOC = ROOT / "docs/PASCAL_M68K_LINUX_HARDWARE_MAPPING_V1.md"
++
++
++class PascalM68kLinuxHardwareMappingTests(unittest.TestCase):
++    def test_stack_and_toolchain_are_exactly_pinned(self) -> None:
++        policy = json.loads(POLICY.read_text(encoding="utf-8"))
++        self.assertEqual(policy["stack_parent_pr"], 895)
++        self.assertEqual(policy["stack_parent_head"], "6a104554c72f189758944c55ce22f9ce0025e11d")
++        self.assertEqual(policy["stack_parent_tree"], "5051694c5bc6eacb44214fb2aa3209fd74f2bfbd")
++        toolchain = policy["toolchain"]
++        self.assertEqual(toolchain["cross_compiler_source_commit"], "6c4d218b8d1c00cec55f889ab5fab9639a8159fe")
++        self.assertEqual(toolchain["cpu_target"], "m68k")
++        self.assertEqual(toolchain["os_target"], "linux")
++        self.assertEqual(toolchain["binutils_prefix"], "m68k-linux-gnu-")
++        self.assertEqual(toolchain["emulator"], "qemu-m68k")
++
++    def test_tool_requires_m68k_elf_qemu_and_literal_binding(self) -> None:
++        source = TOOL.read_text(encoding="utf-8")
++        for marker in (
++            '"-Tlinux"',
++            '"-Pm68k"',
++            '"-XPm68k-linux-gnu-"',
++            '"qemu-m68k"',
++            '"m68k-linux-gnu-readelf"',
++            'os.environ.get("QIKVRT_HEAD_SHA", "LOCAL")',
++            'os.environ.get("QIKVRT_TREE_SHA", "LOCAL")',
++            '"m68k_machine_bytes_produced": True',
++            '"m68k_emulator_execution_observed": True',
++        ):
++            self.assertIn(marker, source)
++
++    def test_workflow_builds_pinned_cross_compiler_without_schedule(self) -> None:
++        workflow = WORKFLOW.read_text(encoding="utf-8")
++        self.assertIn("pull_request:", workflow)
++        self.assertIn("workflow_dispatch:", workflow)
++        self.assertNotIn("schedule:", workflow)
++        self.assertIn("6c4d218b8d1c00cec55f889ab5fab9639a8159fe", workflow)
++        self.assertIn("CPU_TARGET=m68k", workflow)
++        self.assertIn("OS_TARGET=linux", workflow)
++        self.assertIn("binutils-m68k-linux-gnu", workflow)
++        self.assertIn("qemu-user", workflow)
++        self.assertIn("QIKVRT_HEAD_SHA=%s", workflow)
++        self.assertIn("QIKVRT_TREE_SHA=%s", workflow)
++        self.assertIn("include-hidden-files: true", workflow)
++
++    def test_claims_separate_isa_emulator_tos_and_physical_hardware(self) -> None:
++        policy = json.loads(POLICY.read_text(encoding="utf-8"))
++        boundaries = policy["claim_boundaries"]
++        self.assertEqual(boundaries["m68k_machine_bytes_produced"], "PENDING_EXECUTION")
++        self.assertEqual(boundaries["m68k_emulator_execution_observed"], "PENDING_EXECUTION")
++        for key in (
++            "atari_tos_binary_produced",
++            "atari_tos_execution_observed",
++            "physical_m68000_execution_observed",
++            "physical_megast_execution_observed",
++            "borland_turbo_pascal_compiler_executed",
++            "embarcadero_delphi_compiler_executed",
++            "effect_ack_done",
++            "pass",
++            "final_pass",
++        ):
++            self.assertFalse(boundaries[key], key)
++        self.assertEqual(boundaries["external_effect"], "NONE")
++
++    def test_work_unit_and_document_bind_next_atari_ring(self) -> None:
++        work = json.loads(WORK_UNIT.read_text(encoding="utf-8"))
++        self.assertEqual(work["stack_parent_pr"], 895)
++        self.assertTrue(work["machine_owned"])
++        self.assertFalse(work["authority_effect"])
++        self.assertFalse(work["physical_hardware_execution"])
++        text = DOC.read_text(encoding="utf-8")
++        self.assertIn("M68K Linux ABI", text)
++        self.assertIn("Atari TOS executable", text)
++        self.assertIn("AD/DA", text)
++        self.assertIn("Wurzeln", text)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/qikvrt_pascal_m68k_linux_reobservation.py b/tools/qikvrt_pascal_m68k_linux_reobservation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..15e0cb6e447eb092abc7d4ff7d89a7159b7ff0e2
+--- /dev/null
++++ b/tools/qikvrt_pascal_m68k_linux_reobservation.py
+@@ -0,0 +1,227 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++"""Compile Pascal sources to m68k-linux and reobserve under qemu-m68k."""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++import re
++import shutil
++import subprocess
++from pathlib import Path
++from typing import Any
++
++PARENT_PR = 895
++PARENT_HEAD = "6a104554c72f189758944c55ce22f9ce0025e11d"
++PARENT_TREE = "5051694c5bc6eacb44214fb2aa3209fd74f2bfbd"
++FPC_SOURCE_COMMIT = "6c4d218b8d1c00cec55f889ab5fab9639a8159fe"
++EXPECTED_TEST_OUTPUT = "QIKVRT Atari browser Pascal: PASS (bounded dialect bridge)\n"
++EXPECTED_SHELL_OUTPUT = (
++    "HOST=127.0.0.1\n"
++    "PORT=8771\n"
++    "PATH=/a/b?x=1\n"
++    "LOOPBACK=true\n"
++    "GET /a/b?x=1 HTTP/1.0\n"
++    "Host: 127.0.0.1:8771\n"
++    "Connection: close\n"
++    "User-Agent: QIKVRT-Atari-Pascal/1\n"
++    "Accept: text/html,text/plain\n\n"
++)
++
++
++def run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
++    result = subprocess.run(
++        command,
++        cwd=cwd,
++        text=True,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.STDOUT,
++        check=False,
++    )
++    if result.returncode != 0:
++        raise RuntimeError(
++            "command failed: " + " ".join(command) + "\n" + result.stdout
++        )
++    return result
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for chunk in iter(lambda: handle.read(65536), b""):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def require_exact_binding() -> tuple[str, str]:
++    head = os.environ.get("QIKVRT_HEAD_SHA", "LOCAL")
++    tree = os.environ.get("QIKVRT_TREE_SHA", "LOCAL")
++    for label, value in (("head", head), ("tree", tree)):
++        if value != "LOCAL" and re.fullmatch(r"[0-9a-f]{40}", value) is None:
++            raise RuntimeError(f"invalid literal {label}: {value!r}")
++    return head, tree
++
++
++def find_cross_compiler(search_root: Path) -> Path:
++    candidates = sorted(
++        path
++        for path in search_root.rglob("ppcross68k")
++        if path.is_file() and os.access(path, os.X_OK)
++    )
++    if not candidates:
++        raise RuntimeError("FPC_M68K_CROSS_COMPILER_NOT_FOUND")
++    return candidates[0]
++
++
++def compile_mode(
++    root: Path,
++    build: Path,
++    compiler: Path,
++    mode: str,
++) -> dict[str, Any]:
++    mode_dir = build / mode
++    units_dir = mode_dir / "units"
++    mode_dir.mkdir(parents=True, exist_ok=True)
++    units_dir.mkdir(parents=True, exist_ok=True)
++    common = [
++        str(compiler),
++        "-Tlinux",
++        "-Pm68k",
++        f"-M{mode}",
++        "-B",
++        "-O1",
++        "-Ci",
++        "-Co",
++        "-Cr",
++        "-Ct",
++        "-XPm68k-linux-gnu-",
++        f"-Fu{root / 'pascal'}",
++        f"-FU{units_dir}",
++        f"-FE{mode_dir}",
++    ]
++    test_source = root / "tests/pascal/test_qikvrt_atari_browser_pas.pas"
++    shell_source = root / "runtime/pascal/qikbrow_pas.pas"
++    compile_test = run(common + [f"-otest_m68k_{mode}", str(test_source)], cwd=root)
++    compile_shell = run(common + [f"-oqikbrow_m68k_{mode}", str(shell_source)], cwd=root)
++    test_binary = mode_dir / f"test_m68k_{mode}"
++    shell_binary = mode_dir / f"qikbrow_m68k_{mode}"
++
++    file_test = run(["file", "-b", str(test_binary)], cwd=root).stdout.strip()
++    file_shell = run(["file", "-b", str(shell_binary)], cwd=root).stdout.strip()
++    elf_test = run(["m68k-linux-gnu-readelf", "-h", str(test_binary)], cwd=root).stdout
++    elf_shell = run(["m68k-linux-gnu-readelf", "-h", str(shell_binary)], cwd=root).stdout
++    for value in (file_test, file_shell, elf_test, elf_shell):
++        if "68000" not in value and "MC68000" not in value and "Motorola 68000" not in value:
++            raise RuntimeError(f"M68K_ELF_MACHINE_HEADER_NOT_OBSERVED: {value}")
++
++    test_run = run(["qemu-m68k", str(test_binary)], cwd=root).stdout
++    shell_run = run(
++        [
++            "qemu-m68k",
++            str(shell_binary),
++            "http://127.0.0.1:8771/a/b?x=1#ignored",
++        ],
++        cwd=root,
++    ).stdout
++    if test_run != EXPECTED_TEST_OUTPUT:
++        raise RuntimeError(f"unexpected m68k test output: {test_run!r}")
++    if shell_run != EXPECTED_SHELL_OUTPUT:
++        raise RuntimeError(f"unexpected m68k shell output: {shell_run!r}")
++
++    return {
++        "mode": mode,
++        "compile_output": compile_test.stdout + compile_shell.stdout,
++        "test_binary": str(test_binary.relative_to(root)),
++        "test_binary_sha256": sha256(test_binary),
++        "test_file_identity": file_test,
++        "test_elf_header": elf_test,
++        "test_output": test_run,
++        "shell_binary": str(shell_binary.relative_to(root)),
++        "shell_binary_sha256": sha256(shell_binary),
++        "shell_file_identity": file_shell,
++        "shell_elf_header": elf_shell,
++        "shell_output": shell_run,
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--root", default=".")
++    parser.add_argument("--toolchain-root", required=True)
++    parser.add_argument("--build", default=".qikvrt/pascal-m68k-linux/build")
++    parser.add_argument("--receipt", default=".qikvrt/pascal-m68k-linux/receipt.json")
++    args = parser.parse_args()
++
++    root = Path(args.root).resolve()
++    toolchain_root = Path(args.toolchain_root).resolve()
++    build = (root / args.build).resolve()
++    receipt_path = (root / args.receipt).resolve()
++    if build.exists():
++        shutil.rmtree(build)
++    build.mkdir(parents=True)
++
++    compiler = find_cross_compiler(toolchain_root)
++    compiler_version = run([str(compiler), "-iV"], cwd=root).stdout.strip()
++    compiler_sha = sha256(compiler)
++    qemu_version = run(["qemu-m68k", "--version"], cwd=root).stdout.splitlines()[0]
++    binutils_version = run(["m68k-linux-gnu-ld", "--version"], cwd=root).stdout.splitlines()[0]
++
++    tp = compile_mode(root, build, compiler, "tp")
++    delphi = compile_mode(root, build, compiler, "delphi")
++    if tp["test_output"] != delphi["test_output"]:
++        raise RuntimeError("M68K_DIALECT_TEST_OUTPUT_MISMATCH")
++    if tp["shell_output"] != delphi["shell_output"]:
++        raise RuntimeError("M68K_DIALECT_SHELL_OUTPUT_MISMATCH")
++
++    head, tree = require_exact_binding()
++    receipt = {
++        "schema": "qikvrt_pascal_m68k_linux_hardware_mapping_receipt_v1",
++        "repository": os.environ.get("GITHUB_REPOSITORY", "Goldkelch/qik-vrt"),
++        "head_sha": head,
++        "tree_sha": tree,
++        "stack_parent": {"pr": PARENT_PR, "head": PARENT_HEAD, "tree": PARENT_TREE},
++        "toolchain": {
++            "source_repository": "https://gitlab.com/freepascal.org/fpc/source.git",
++            "source_commit": FPC_SOURCE_COMMIT,
++            "cross_compiler": str(compiler),
++            "cross_compiler_sha256": compiler_sha,
++            "cross_compiler_version": compiler_version,
++            "binutils": binutils_version,
++            "emulator": qemu_version,
++            "target_cpu": "m68k",
++            "target_os": "linux",
++            "target_abi": "M68K_LINUX_ELF",
++        },
++        "observations": {
++            "m68k_machine_bytes_produced": True,
++            "m68k_elf_machine_header_observed": True,
++            "m68k_emulator_execution_observed": True,
++            "tp_mode_cross_compiled_and_executed": True,
++            "delphi_mode_cross_compiled_and_executed": True,
++            "normalized_output_equal_between_modes": True,
++            "normalized_output_equal_to_parent_receipt": True,
++        },
++        "artifacts": {"tp": tp, "delphi": delphi},
++        "claim_boundaries": {
++            "atari_tos_binary_produced": False,
++            "atari_tos_execution_observed": False,
++            "physical_m68000_execution_observed": False,
++            "physical_megast_execution_observed": False,
++            "borland_turbo_pascal_compiler_executed": False,
++            "embarcadero_delphi_compiler_executed": False,
++            "external_effect": "NONE",
++            "effect_ack_done": False,
++            "pass": False,
++            "final_pass": False,
++        },
++    }
++    receipt_path.parent.mkdir(parents=True, exist_ok=True)
++    receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(json.dumps(receipt, sort_keys=True, indent=2))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
