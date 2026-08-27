@@ -24,6 +24,18 @@ explicit exact-PR-and-head dispatch, whose bytes can be observed. An explicit hu
 review request remains a useful event signal, but it is not an execution
 prerequisite.
 
+A native `pull_request_target: closed` event is handled on a separate
+non-reviewing path. For a merged pull request, the executor binds the event's
+exact PR number, head, base and merge commit to a fresh API observation, then
+requires the merge commit's ordered parents to be exactly `[base, head]` and
+its tree to equal the candidate head tree. The resulting
+`MERGE_ADOPTION_REOBSERVED` observation starts no review, writes no review
+ledger entry, projects no review comment or status, and implies no approval.
+A closed unmerged PR, any binding or history drift, or a non-identical merge
+tree fails closed. A `push`-originated `workflow_run` whose `pull_requests`
+array is empty remains `NO_EXACT_WORKFLOW_RUN_PULL_REQUEST`; the executor never
+reverse-maps that push to a PR and never blindly redispatches the same run.
+
 An explicit dispatch of that executor is a technical-review action only. Its
 completed manual workflow run is intentionally not a source for the required
 Code-Owner status; an operator who needs that status reobserved dispatches

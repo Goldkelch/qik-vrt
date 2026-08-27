@@ -4,7 +4,7 @@ name: QIKVRT requested review executor
 
 on:
   pull_request_target:
-    types: [opened, edited, converted_to_draft, review_requested, review_request_removed, labeled, unlabeled, synchronize, ready_for_review, reopened]
+    types: [opened, edited, converted_to_draft, review_requested, review_request_removed, labeled, unlabeled, synchronize, ready_for_review, reopened, closed]
   pull_request_review:
     types: [submitted]
   issue_comment:
@@ -92,7 +92,10 @@ jobs:
           REQUESTED_HEAD: ${{ inputs.head || '' }}
           EVENT_PR: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) || '' }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
           EVENT_EXPECTED_HEAD: ${{ inputs.head || github.event.pull_request.head.sha || github.event.workflow_run.head_sha || '' }}
+          EVENT_EXPECTED_BASE: ${{ github.event.pull_request.base.sha || '' }}
+          EVENT_EXPECTED_MERGE: ${{ github.event.pull_request.merge_commit_sha || '' }}
           EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
           EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
         shell: bash
@@ -110,12 +113,18 @@ jobs:
           requested_head=os.environ.get('REQUESTED_HEAD','').strip()
           event_pr=os.environ.get('EVENT_PR','').strip()
           event_name=os.environ.get('EVENT_NAME','').strip()
+          event_action=os.environ.get('EVENT_ACTION','').strip()
           expected_head=os.environ.get('EVENT_EXPECTED_HEAD','').strip()
+          expected_base=os.environ.get('EVENT_EXPECTED_BASE','').strip()
+          expected_merge=os.environ.get('EVENT_EXPECTED_MERGE','').strip()
           workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()
           workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')
 
           def one(number):
               return _gh_one(f'repos/{repo}/pulls/{number}')
+
+          def one_commit(sha):
+              return _gh_one(f'repos/{repo}/git/commits/{sha}')
 
           value=select_review_subject(
               repository=repo,
@@ -126,6 +135,10 @@ jobs:
               workflow_event=workflow_event,
               workflow_prs=workflow_prs,
               fetch_pull_request=one,
+              event_action=event_action,
+              expected_base=expected_base,
+              expected_merge=expected_merge,
+              fetch_git_commit=one_commit,
           )
           print(json.dumps(value,sort_keys=True))
           payload={}

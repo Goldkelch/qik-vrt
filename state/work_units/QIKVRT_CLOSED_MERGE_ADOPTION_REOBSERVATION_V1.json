@@ -1,0 +1,125 @@
+{
+  "schema": "qikvrt_human_ai_contribution_work_unit_v1",
+  "work_unit_id": "QIKVRT-CLOSED-MERGE-ADOPTION-REOBSERVATION-V1",
+  "created_at": "2026-08-27T16:13:18Z",
+  "source_repository": "Goldkelch/qik-vrt",
+  "source_ref": "fix/closed-merge-adoption-reobservation-v1",
+  "source_commit": "0dd0ffdbbd7b0f1e8ba4aa33c405bc06953fcf22",
+  "source_tree": "b35b9a615d3af0a05c63e1bb5708c4fd201aeb80",
+  "human_actor": {
+    "actor_class": "HUMAN",
+    "attribution_id": "Ingolf Lohmann",
+    "role": "Product Owner",
+    "identity_proof_boundary": "Repository and transport context attribute the directive; they are not biometric or universal identity proof."
+  },
+  "artificial_cognitive_actor": {
+    "actor_class": "ARTIFICIAL_COGNITIVE_SYSTEM",
+    "provider": "OpenAI",
+    "system_family": "ChatGPT Work / Codex",
+    "model_or_build": "GPT-5 family; exact serving build unavailable",
+    "session_or_run_id": "UNAVAILABLE",
+    "identity_and_observation_limits": "Runtime-supplied system-family information is recorded without a claim about hidden implementation internals, independent intent, legal personhood, independent approval, credentials, or external effects."
+  },
+  "human_contributions": [
+    "Required the merge-adoption executor edge to consume the native pull_request_target closed event with exact PR, head and base binding.",
+    "Required the adoption observation to remain non-reviewing and forbade reverse-mapping or blindly redispatching a push workflow_run with no PR association.",
+    "Preserved the boundaries against merge, ruleset mutation, impersonated review, PASS, FINAL_PASS, deployment, publication and EFFECT_ACK_DONE."
+  ],
+  "artificial_cognitive_contributions": [
+    "Reobserved PR #884, its submitted reviews, final head and base, merge commit history, current Authority main ancestry, Ruleset 19344903 and the native successor runs.",
+    "Extended the existing requested-review selector with a separate native closed-merge adoption state rather than creating a parallel executor.",
+    "Bound the event and current API observations to the exact PR, head, base and merge commit; verified ordered merge parents and candidate-tree identity; added fail-closed negative controls."
+  ],
+  "repair_binding": {
+    "pull_request": 884,
+    "original_head": "c4a1f140a3d8bf0a240071677dcdc3b036be49f1",
+    "original_tree": "4c0379dca16a3ce3628e74f5ca4efed2b2b0463b",
+    "final_head": "3df57f23e01b82f0da6456a0d4fafb1a3617c460",
+    "final_head_tree": "933e146766869663c57c98d0de6106fe49ef1420",
+    "base": "fb744e5b5925d61c6b473e27aab3606f237f7e6d",
+    "base_tree": "3642fcb3601a62bd478326faa01bc5ce9b083d0a",
+    "merge_commit": "0a89ddac8d881efbf59b5cbf8f1cb1454f373b30",
+    "merge_parents": [
+      "fb744e5b5925d61c6b473e27aab3606f237f7e6d",
+      "3df57f23e01b82f0da6456a0d4fafb1a3617c460"
+    ],
+    "merge_tree": "933e146766869663c57c98d0de6106fe49ef1420",
+    "step_1_satisfied": false,
+    "goldkelch_submitted_review_count": 0,
+    "requested_reviewer": "Goldkelch",
+    "invalidated_evidence": "Exact-head review, status and workflow observations on c4a1f140... or 3df57f23... do not transfer to merge commit 0a89ddac....",
+    "first_native_blocker": {
+      "run_id": 33019696061,
+      "job_id": 98346767620,
+      "artifact_id": 9625996087,
+      "artifact_sha256": "f5f99239fcebf234b32c89ffc5760096a26d1ccffe91f216423fc4b7e02af42f",
+      "failure_class": "NO_EXACT_WORKFLOW_RUN_PULL_REQUEST"
+    },
+    "confirmation_run": {
+      "run_id": 33019722658,
+      "plan_job_id": 98346822814,
+      "publish_job_id": 98346823105,
+      "native_job_ids": [98346889260, 98346889354],
+      "failure_class": "NO_EXACT_EXECUTOR_SUBJECT"
+    }
+  },
+  "implementation": {
+    "event": "pull_request_target.closed",
+    "success_state": "MERGE_ADOPTION_REOBSERVED",
+    "selection_basis": "EXACT_CLOSED_MERGE_ADOPTION",
+    "required_bindings": [
+      "event PR number equals fresh PR observation",
+      "event head equals fresh PR head",
+      "event base equals fresh PR base",
+      "event merge commit equals fresh PR merge commit",
+      "merge parents equal ordered [base, head]",
+      "merge tree equals exact candidate head tree"
+    ],
+    "review_execution": false,
+    "review_ledger_write": false,
+    "review_comment_projection": false,
+    "review_status_projection": false,
+    "push_workflow_run_without_pr": "NO_EXACT_WORKFLOW_RUN_PULL_REQUEST"
+  },
+  "outputs": [
+    ".github/workflows/qikvrt_requested_review_executor.yml",
+    "tools/qikvrt_requested_review_executor.py",
+    "tests/test_qikvrt_requested_review_executor.py",
+    "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json",
+    "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md",
+    "state/work_units/QIKVRT_CLOSED_MERGE_ADOPTION_REOBSERVATION_V1.json",
+    "REPOSITORY_FILE_MANIFEST.json",
+    "REPOSITORY_FILE_MANIFEST.json.sha256",
+    "SHA256SUMS.txt"
+  ],
+  "verification": {
+    "focused_requested_review_executor_tests": "60_TESTS_COMPLETED_WITHOUT_FAILURE",
+    "full_repository_tests": "MAKE_TEST_COMPLETED_WITHOUT_FAILURE_ON_PRECOMMIT_CANDIDATE",
+    "repository_integrity": "PASS_3944_CLASSIFIED_ENTRIES_3935_IMMUTABLE_DIGESTS",
+    "trusted_exact_head_ci": "PENDING_CANDIDATE_COMMIT_AND_REMOTE_REOBSERVATION"
+  },
+  "platform_residual": {
+    "ruleset_id": 19344903,
+    "required_approving_review_count": 0,
+    "require_code_owner_review": false,
+    "dismiss_stale_reviews_on_push": false,
+    "require_last_push_approval": false,
+    "mutation_performed": false
+  },
+  "external_effects": {
+    "repository_branch_update": "PENDING",
+    "pull_request": "PENDING",
+    "merge": false,
+    "ruleset_mutation": false,
+    "review_submission": false,
+    "release": false,
+    "deployment": false,
+    "publication": false
+  },
+  "release_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE": false
+  }
+}
