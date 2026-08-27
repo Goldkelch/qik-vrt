@@ -1859,5 +1859,21 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                         cursor += 1
 
 
+    def test_submitted_pull_request_review_selects_one_exact_subject(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_review",
+            expected_head=HEAD_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.selector_pr(number=number),
+        )
+        self.assertEqual(result["state"], "CANDIDATE")
+        self.assertEqual(result["event_source"], "PULL_REQUEST_EVENT")
+        self.assertEqual(result["expected_head"], HEAD_SHA)
+
+
 if __name__ == "__main__":
     unittest.main()
