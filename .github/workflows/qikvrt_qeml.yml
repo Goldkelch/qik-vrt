@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT QEML compiler tranche
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_qeml.yml"
+      - "docs/architecture/QEML_1.md"
+      - "policy/qeml/**"
+      - "examples/qeml/**"
+      - "src/qeml/**"
+      - "tools/qikvrt_qeml.py"
+      - "tools/qikvrt_qeml_systemtest.py"
+      - "tests/test_qikvrt_qeml.py"
+      - "work-units/issue-888/QEML_TRANCHE_V1.json"
+      - "Makefile"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_qeml.yml"
+      - "docs/architecture/QEML_1.md"
+      - "policy/qeml/**"
+      - "examples/qeml/**"
+      - "src/qeml/**"
+      - "tools/qikvrt_qeml.py"
+      - "tools/qikvrt_qeml_systemtest.py"
+      - "tests/test_qikvrt_qeml.py"
+      - "work-units/issue-888/QEML_TRANCHE_V1.json"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-qeml-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qeml:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout literal exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD^{commit})"
+          actual_tree="$(git rev-parse HEAD^{tree})"
+          test "$actual_head" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain)"
+          echo "head=$actual_head" >> "$GITHUB_OUTPUT"
+          echo "tree=$actual_tree" >> "$GITHUB_OUTPUT"
+
+      - name: Execute QEML compiler, C89 and M68000 tranche tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_qeml
+          rm -rf tests/__pycache__ tools/__pycache__
+
+      - name: Compile exact-head QEML evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/qeml/heartbeat"
+          mkdir -p "$(dirname "$out")"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_qeml.py compile \
+              examples/qeml/heartbeat_ring.qeml \
+              --output-prefix "$out" \
+              --expected-head '${{ steps.binding.outputs.head }}' \
+              --expected-tree '${{ steps.binding.outputs.tree }}'
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_qeml.py bootstrap \
+              examples/qeml/compiler_core.qeml \
+              > "$RUNNER_TEMP/qeml/bootstrap.json"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_qeml_systemtest.py \
+              --source examples/qeml/heartbeat_ring.qeml \
+              --compiler-core examples/qeml/compiler_core.qeml \
+              --expected-head '${{ steps.binding.outputs.head }}' \
+              --expected-tree '${{ steps.binding.outputs.tree }}' \
+              --output "$RUNNER_TEMP/qeml/system-receipt.json"
+          rm -rf tests/__pycache__ tools/__pycache__
+          test -z "$(git status --porcelain)"
+
+      - name: Upload exact QEML evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-qeml-${{ steps.binding.outputs.head }}
+          path: ${{ runner.temp }}/qeml
+          if-no-files-found: error
+          retention-days: 30
