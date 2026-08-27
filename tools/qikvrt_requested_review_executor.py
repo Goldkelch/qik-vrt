@@ -2059,7 +2059,7 @@ def select_review_subject(
             missing_head_blocker="WORKFLOW_DISPATCH_HEAD_MISSING",
         )
     if event_pr.strip():
-        if event_name == "pull_request_target":
+        if event_name in {"pull_request_target", "pull_request_review"}:
             return exact_number(
                 event_pr,
                 "PULL_REQUEST_EVENT",
