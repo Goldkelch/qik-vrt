@@ -431,7 +431,10 @@ def _exact_followup_event(intake: Mapping[str, Any]) -> bool:
     event_action = intake.get("event_action")
     if event_name == "workflow_dispatch":
         return event_action == ""
-    if event_name == "pull_request_target" and event_action == "review_requested":
+    if event_name == "pull_request_target" and event_action in {
+        "review_requested",
+        "review_request_removed",
+    }:
         return False
     return _exact_retraction_event(intake)
 

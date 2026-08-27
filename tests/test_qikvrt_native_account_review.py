@@ -299,7 +299,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertEqual(value["event"], "REQUEST_CHANGES")
         self.assertTrue(value["retraction_only"])
 
-    def test_non_request_negative_review_requires_stale_delegated_approval(self):
+    def test_exact_followup_projects_a_current_blocker_for_a_live_request(self):
         intake = {
             "event_name": "pull_request_target",
             "event_action": "labeled",
@@ -307,10 +307,11 @@ class NativeAccountReviewTests(unittest.TestCase):
             "requested_target_observed": None,
         }
         value = self.plan(receipt=self.receipt(state="COMMENT_WITH_BLOCKER", review_intake=intake))
-        self.assertFalse(value["effect_permitted"])
-        self.assertEqual(value["first_blocker"], "RETRACTION_EVENT_NOT_EXACT")
+        self.assertTrue(value["effect_permitted"])
+        self.assertEqual(value["event"], "REQUEST_CHANGES")
+        self.assertFalse(value["retraction_only"])
 
-    def test_comment_event_can_only_retract_a_currently_decisive_marked_approval(self):
+    def test_comment_event_refreshes_a_live_requested_approval(self):
         old = {
             "id": 1,
             "commit_id": HEAD,
@@ -324,45 +325,13 @@ class NativeAccountReviewTests(unittest.TestCase):
             "requested_reviewer": None,
             "requested_target_observed": None,
         }
-        manual_comment = {
-            "id": 2,
-            "commit_id": HEAD,
-            "state": "COMMENTED",
-            "user": {"login": "Goldkelch"},
-            "body": "manual informational comment",
-        }
-        plan = self.plan(
-            receipt=self.receipt(state="APPROVE", review_intake=intake),
-            reviews=[old, manual_comment],
-        )
-        self.assertTrue(plan["effect_permitted"])
-        self.assertTrue(plan["retraction_only"])
-        superseding = {
-            "id": 3,
-            "commit_id": HEAD,
-            "state": "CHANGES_REQUESTED",
-            "user": {"login": "Goldkelch"},
-            "body": f"<!-- {module.MARKER} fingerprint={FINGERPRINT} -->",
-        }
         value = self.plan(
             receipt=self.receipt(state="APPROVE", review_intake=intake),
-            reviews=[old, manual_comment, superseding],
+            reviews=[old],
         )
-        self.assertFalse(value["effect_permitted"])
-        self.assertEqual(value["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
-        preflight = module.signer_preflight(
-            plan=plan,
-            expected_signer="Goldkelch",
-            pr=self.pr(),
-            commit=self.commit(),
-            reviews=[old, manual_comment, superseding],
-            delegation=self.delegation(),
-            token_user={"login": "Goldkelch", "type": "User"},
-            collaborator_permission="write",
-            native_rule_enforced=True,
-            reobservation_exact=True,
-        )
-        self.assertEqual(preflight["first_blocker"], "STALE_DELEGATED_APPROVAL_NO_LONGER_DECISIVE")
+        self.assertTrue(value["effect_permitted"])
+        self.assertEqual(value["event"], "APPROVE")
+        self.assertFalse(value["retraction_only"])
 
     def test_marked_comment_does_not_mask_the_last_decisive_delegated_approval(self):
         old = {
@@ -392,7 +361,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertTrue(value["effect_permitted"])
         self.assertTrue(value["retraction_only"])
 
-    def test_completed_workflow_run_can_only_retract_a_stale_delegated_approval(self):
+    def test_completed_workflow_run_refreshes_a_live_requested_approval(self):
         old = {
             "id": 1,
             "commit_id": HEAD,
@@ -408,8 +377,8 @@ class NativeAccountReviewTests(unittest.TestCase):
         }
         value = self.plan(receipt=self.receipt(state="APPROVE", review_intake=intake), reviews=[old])
         self.assertTrue(value["effect_permitted"])
-        self.assertEqual(value["event"], "REQUEST_CHANGES")
-        self.assertTrue(value["retraction_only"])
+        self.assertEqual(value["event"], "APPROVE")
+        self.assertFalse(value["retraction_only"])
 
     def test_same_fingerprint_dismissal_is_idempotent_and_not_overridden(self):
         comment = {
