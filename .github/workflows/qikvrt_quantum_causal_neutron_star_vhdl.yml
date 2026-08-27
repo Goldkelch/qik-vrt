@@ -24,9 +24,10 @@ permissions:
 jobs:
   validate-inside-out:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_ROOT: ${{ runner.temp }}/qikvrt-quantum-causal-neutron-star
     steps:
       - name: Check out exact carrier head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -52,37 +53,66 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p qikvrt-quantum-causal-neutron-star
-          python3 -B tools/qikvrt_quantum_causal_neutron_star_fixpoint.py validate | tee qikvrt-quantum-causal-neutron-star/validation.json
-          python3 -B -m unittest -v tests.test_qikvrt_quantum_causal_neutron_star_fixpoint
-      - name: Analyze and execute VHDL when toolchain is present
+          mkdir -p "$EVIDENCE_ROOT"
+          python3 -B tools/qikvrt_quantum_causal_neutron_star_fixpoint.py validate \
+            | tee "$EVIDENCE_ROOT/validation.json"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_quantum_causal_neutron_star_fixpoint
+      - name: Provision and bind VHDL analyzer
         shell: bash
         run: |
           set -euo pipefail
-          receipt=qikvrt-quantum-causal-neutron-star/vhdl-toolchain.json
-          if command -v ghdl >/dev/null 2>&1; then
-            ghdl -a --std=08 hardware/vhdl/qikvrt_metatransistor_pkg.vhd
-            ghdl -a --std=08 hardware/vhdl/qikvrt_metatransistor.vhd
-            ghdl -a --std=08 hardware/vhdl/qikvrt_neutron_star_mesh.vhd
-            ghdl -a --std=08 hardware/vhdl/tb_qikvrt_metatransistor.vhd
-            ghdl -e --std=08 tb_qikvrt_metatransistor
-            ghdl -r --std=08 tb_qikvrt_metatransistor
-            printf '%s\n' '{"schema":"qikvrt.vhdl-toolchain-observation.v1","analysis":"OBSERVED_SUCCESS","testbench":"OBSERVED_SUCCESS","synthesis":"NOT_CLAIMED"}' > "$receipt"
-          else
-            printf '%s\n' '{"schema":"qikvrt.vhdl-toolchain-observation.v1","analysis":"NOT_AVAILABLE","testbench":"NOT_EXECUTED","synthesis":"NOT_CLAIMED"}' > "$receipt"
+          mkdir -p "$EVIDENCE_ROOT"
+          if ! command -v ghdl >/dev/null 2>&1; then
+            sudo apt-get update
+            candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
+            test -n "$candidate"
+            test "$candidate" != '(none)'
+            printf 'APT_CANDIDATE=%s\n' "$candidate" \
+              | tee "$EVIDENCE_ROOT/ghdl-package.txt"
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              --no-install-recommends "ghdl=$candidate"
           fi
-          cat "$receipt"
+          command -v ghdl | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
+          ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
+      - name: Analyze elaborate and execute VHDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/qikvrt-ghdl-work"
+          mkdir -p "$work" "$EVIDENCE_ROOT"
+          pushd "$work" >/dev/null
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor_pkg.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_neutron_star_mesh.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_metatransistor.vhd"
+          ghdl -e --std=08 tb_qikvrt_metatransistor
+          ghdl -r --std=08 tb_qikvrt_metatransistor
+          popd >/dev/null
+          cat > "$EVIDENCE_ROOT/vhdl-toolchain.json" <<'JSON'
+          {
+            "analysis": "OBSERVED_SUCCESS",
+            "elaboration": "OBSERVED_SUCCESS",
+            "schema": "qikvrt.vhdl-toolchain-observation.v1",
+            "synthesis": "NOT_CLAIMED",
+            "testbench": "OBSERVED_SUCCESS"
+          }
+          JSON
+          cat "$EVIDENCE_ROOT/vhdl-toolchain.json"
       - name: Reobserve immutable exact head
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = '${{ steps.bind.outputs.head }}'
           test "$(git rev-parse --verify HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
-          test -z "$(git status --porcelain)"
+          git status --porcelain=v1 --untracked-files=all \
+            | tee "$EVIDENCE_ROOT/worktree-status.txt"
+          test ! -s "$EVIDENCE_ROOT/worktree-status.txt"
       - name: Preserve exact-head evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-quantum-causal-neutron-star-${{ steps.bind.outputs.head }}
-          path: qikvrt-quantum-causal-neutron-star
+          name: qikvrt-quantum-causal-neutron-star-${{ steps.bind.outputs.head || env.EXACT_HEAD }}
+          path: ${{ env.EVIDENCE_ROOT }}
           retention-days: 30
           if-no-files-found: error
