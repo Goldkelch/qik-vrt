@@ -1825,18 +1825,26 @@ def _selection_subject(pr: Mapping[str, Any]) -> dict[str, Any]:
     base = pr.get("base")
     head = pr.get("head")
     base_ref = base.get("ref") if isinstance(base, Mapping) else None
+    base_sha = base.get("sha") if isinstance(base, Mapping) else None
     head_sha = head.get("sha") if isinstance(head, Mapping) else None
     head_repo = head.get("repo") if isinstance(head, Mapping) else None
+    merged = pr.get("merged")
+    merge_commit_sha = pr.get("merge_commit_sha")
     return {
         "number": _positive_integer(pr.get("number")),
         "state": pr.get("state") if isinstance(pr.get("state"), str) else None,
         "base_ref": base_ref if isinstance(base_ref, str) else None,
+        "base_sha": base_sha if isinstance(base_sha, str) else None,
         "head_sha": head_sha if isinstance(head_sha, str) else None,
         "head_repository": (
             head_repo.get("full_name")
             if isinstance(head_repo, Mapping)
             and isinstance(head_repo.get("full_name"), str)
             else None
+        ),
+        "merged": merged if isinstance(merged, bool) else None,
+        "merge_commit_sha": (
+            merge_commit_sha if isinstance(merge_commit_sha, str) else None
         ),
     }
 
@@ -1870,6 +1878,7 @@ def _selection_result(
         "observed_subject": dict(subject) if subject is not None else None,
         "review_execution": state == "CANDIDATE",
         "review_observation_started": False,
+        "adoption_reobservation": state == "MERGE_ADOPTION_REOBSERVED",
         "external_effect": "NONE",
         "completion_claims": {
             "PASS": False,
@@ -1896,6 +1905,336 @@ def _eligible_review_subject(
     if _git_sha1(subject["head_sha"]) is None:
         reasons.append("PULL_REQUEST_HEAD_SHA_INVALID")
     return subject, reasons
+
+
+def _git_commit_projection(
+    value: Mapping[str, Any], expected_sha: str
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return the exact commit/tree/parent projection used by adoption checks."""
+    commit_sha = _git_sha1(value.get("sha"))
+    tree = value.get("tree")
+    tree_sha = _git_sha1(tree.get("sha")) if isinstance(tree, Mapping) else None
+    raw_parents = value.get("parents")
+    if commit_sha is None or tree_sha is None:
+        return None, "MERGE_ADOPTION_COMMIT_OBSERVATION_MALFORMED"
+    if commit_sha != expected_sha:
+        return None, "MERGE_ADOPTION_COMMIT_SHA_DRIFT"
+    if not isinstance(raw_parents, Sequence) or isinstance(raw_parents, (str, bytes)):
+        return None, "MERGE_ADOPTION_COMMIT_OBSERVATION_MALFORMED"
+    parents: list[str] = []
+    for parent in raw_parents:
+        if not isinstance(parent, Mapping):
+            return None, "MERGE_ADOPTION_COMMIT_OBSERVATION_MALFORMED"
+        parent_sha = _git_sha1(parent.get("sha"))
+        if parent_sha is None:
+            return None, "MERGE_ADOPTION_COMMIT_OBSERVATION_MALFORMED"
+        parents.append(parent_sha)
+    return {"sha": commit_sha, "tree_sha": tree_sha, "parents": parents}, None
+
+
+def _reobserve_closed_merge_adoption(
+    *,
+    repository: str,
+    event_pr: str,
+    expected_head: str,
+    expected_base: str,
+    expected_merge: str,
+    fetch_pull_request: Callable[[int], Mapping[str, Any]],
+    fetch_git_commit: Callable[[str], Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    """Bind a native closed merge without starting or projecting a review."""
+    basis = "EXACT_CLOSED_MERGE_ADOPTION"
+    source = "PULL_REQUEST_CLOSED_MERGE_ADOPTION"
+    number = _positive_integer(event_pr)
+    if number is None:
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="INVALID_EXACT_PULL_REQUEST_NUMBER",
+            event_source=source,
+            eligibility_reasons=["INVALID_EXACT_PULL_REQUEST_NUMBER"],
+        )
+    if not expected_head:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_EVENT_HEAD_MISSING",
+            pr_number=number,
+            event_source=source,
+            eligibility_reasons=["PULL_REQUEST_EVENT_HEAD_MISSING"],
+            subject_count=1,
+        )
+    if not expected_base:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_EVENT_BASE_MISSING",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            eligibility_reasons=["PULL_REQUEST_EVENT_BASE_MISSING"],
+            subject_count=1,
+        )
+    if _git_sha1(expected_base) is None:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="INVALID_EVENT_EXPECTED_BASE",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            eligibility_reasons=["INVALID_EVENT_EXPECTED_BASE"],
+            subject_count=1,
+        )
+    try:
+        observed = fetch_pull_request(number)
+    except (OSError, ValueError, ReviewObservationError) as exc:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_OBSERVATION_UNAVAILABLE",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            eligibility_reasons=["PULL_REQUEST_OBSERVATION_UNAVAILABLE"],
+            subject_count=1,
+            detail=str(exc)[:300],
+        )
+    if not isinstance(observed, Mapping):
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_OBSERVATION_MALFORMED",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            eligibility_reasons=["PULL_REQUEST_OBSERVATION_MALFORMED"],
+            subject_count=1,
+        )
+
+    subject = _selection_subject(observed)
+    reasons: list[str] = []
+    if subject["number"] != number:
+        reasons.append("PULL_REQUEST_NUMBER_MISMATCH")
+    if subject["state"] != "closed":
+        reasons.append("MERGE_ADOPTION_PULL_REQUEST_NOT_CLOSED")
+    if subject["base_ref"] != "main":
+        reasons.append("PULL_REQUEST_BASE_NOT_MAIN")
+    if subject["head_repository"] != repository:
+        reasons.append("PULL_REQUEST_HEAD_NOT_ROLE_LOCAL")
+    if _git_sha1(subject["head_sha"]) is None:
+        reasons.append("PULL_REQUEST_HEAD_SHA_INVALID")
+    if _git_sha1(subject["base_sha"]) is None:
+        reasons.append("PULL_REQUEST_BASE_SHA_INVALID")
+    if subject["merged"] is None:
+        reasons.append("PULL_REQUEST_MERGED_FLAG_INVALID")
+    if reasons:
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker=reasons[0],
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=reasons,
+            subject_count=1,
+        )
+    if subject["head_sha"] != expected_head:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="EVENT_TARGET_HEAD_DRIFT",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["EVENT_TARGET_HEAD_DRIFT"],
+            subject_count=1,
+        )
+    if subject["base_sha"] != expected_base:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="EVENT_TARGET_BASE_DRIFT",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["EVENT_TARGET_BASE_DRIFT"],
+            subject_count=1,
+        )
+    if subject["merged"] is False:
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_CLOSED_WITHOUT_MERGE",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["PULL_REQUEST_CLOSED_WITHOUT_MERGE"],
+            subject_count=1,
+        )
+    if not expected_merge:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_EVENT_MERGE_COMMIT_MISSING",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["PULL_REQUEST_EVENT_MERGE_COMMIT_MISSING"],
+            subject_count=1,
+        )
+    if _git_sha1(expected_merge) is None:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="INVALID_EVENT_EXPECTED_MERGE_COMMIT",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["INVALID_EVENT_EXPECTED_MERGE_COMMIT"],
+            subject_count=1,
+        )
+    if _git_sha1(subject["merge_commit_sha"]) is None:
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="PULL_REQUEST_MERGE_COMMIT_SHA_INVALID",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["PULL_REQUEST_MERGE_COMMIT_SHA_INVALID"],
+            subject_count=1,
+        )
+    if subject["merge_commit_sha"] != expected_merge:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="EVENT_TARGET_MERGE_COMMIT_DRIFT",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["EVENT_TARGET_MERGE_COMMIT_DRIFT"],
+            subject_count=1,
+        )
+    if fetch_git_commit is None:
+        return _selection_result(
+            "REOBSERVE_EXACT_EVENT_TARGET",
+            basis,
+            first_blocker="MERGE_ADOPTION_COMMIT_OBSERVER_MISSING",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=subject,
+            eligibility_reasons=["MERGE_ADOPTION_COMMIT_OBSERVER_MISSING"],
+            subject_count=1,
+        )
+
+    projections: dict[str, dict[str, Any]] = {}
+    for label, commit_sha in (
+        ("base", expected_base),
+        ("head", expected_head),
+        ("merge", expected_merge),
+    ):
+        try:
+            commit = fetch_git_commit(commit_sha)
+        except (OSError, ValueError, ReviewObservationError) as exc:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                basis,
+                first_blocker="MERGE_ADOPTION_COMMIT_OBSERVATION_UNAVAILABLE",
+                pr_number=number,
+                event_source=source,
+                expected_head=expected_head,
+                subject=subject,
+                eligibility_reasons=["MERGE_ADOPTION_COMMIT_OBSERVATION_UNAVAILABLE"],
+                subject_count=1,
+                detail=f"{label}: {str(exc)[:260]}",
+            )
+        if not isinstance(commit, Mapping):
+            blocker = "MERGE_ADOPTION_COMMIT_OBSERVATION_MALFORMED"
+            return _selection_result(
+                "INELIGIBLE_EVENT_TARGET",
+                basis,
+                first_blocker=blocker,
+                pr_number=number,
+                event_source=source,
+                expected_head=expected_head,
+                subject=subject,
+                eligibility_reasons=[blocker],
+                subject_count=1,
+                detail=label,
+            )
+        projection, blocker = _git_commit_projection(commit, commit_sha)
+        if blocker is not None:
+            return _selection_result(
+                "REOBSERVE_EXACT_EVENT_TARGET",
+                basis,
+                first_blocker=blocker,
+                pr_number=number,
+                event_source=source,
+                expected_head=expected_head,
+                subject=subject,
+                eligibility_reasons=[blocker],
+                subject_count=1,
+                detail=label,
+            )
+        assert projection is not None
+        projections[label] = projection
+
+    merge = projections["merge"]
+    if merge["parents"] != [expected_base, expected_head]:
+        bound = dict(subject)
+        bound["merge_parents"] = merge["parents"]
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="MERGE_ADOPTION_PARENT_HISTORY_MISMATCH",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=bound,
+            eligibility_reasons=["MERGE_ADOPTION_PARENT_HISTORY_MISMATCH"],
+            subject_count=1,
+        )
+    bound = dict(subject)
+    bound.update(
+        {
+            "base_tree_sha": projections["base"]["tree_sha"],
+            "head_tree_sha": projections["head"]["tree_sha"],
+            "merge_tree_sha": merge["tree_sha"],
+            "merge_parents": merge["parents"],
+        }
+    )
+    if merge["tree_sha"] != projections["head"]["tree_sha"]:
+        return _selection_result(
+            "INELIGIBLE_EVENT_TARGET",
+            basis,
+            first_blocker="MERGE_ADOPTION_CANDIDATE_TREE_MISMATCH",
+            pr_number=number,
+            event_source=source,
+            expected_head=expected_head,
+            subject=bound,
+            eligibility_reasons=["MERGE_ADOPTION_CANDIDATE_TREE_MISMATCH"],
+            subject_count=1,
+        )
+    return _selection_result(
+        "MERGE_ADOPTION_REOBSERVED",
+        basis,
+        pr_number=number,
+        event_source=source,
+        expected_head=expected_head,
+        subject=bound,
+        subject_count=1,
+        detail="exact closed merge adoption reobserved without review execution",
+    )
 
 
 def _workflow_run_pr_number(
@@ -1927,6 +2266,10 @@ def select_review_subject(
     workflow_event: str,
     workflow_prs: Any,
     fetch_pull_request: Callable[[int], Mapping[str, Any]],
+    event_action: str = "",
+    expected_base: str = "",
+    expected_merge: str = "",
+    fetch_git_commit: Callable[[str], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Select one exact, eligible review subject without a fallback scan.
 
@@ -1935,7 +2278,9 @@ def select_review_subject(
     an eventless ``NOOP``. A native pull-request event must retain its literal
     head, while an issue comment is bound by its exact PR number. A workflow-run
     association must name this repository exactly, and a workflow head is never
-    reverse-mapped by listing PRs.
+    reverse-mapped by listing PRs. A native ``pull_request_target: closed``
+    event is a separate, non-reviewing merge-adoption reobservation whose exact
+    base/head/merge history and candidate tree must all remain bound.
     """
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise ReviewSnapshotError("selector repository is invalid")
@@ -2050,6 +2395,21 @@ def select_review_subject(
                 event_source="WORKFLOW_DISPATCH_AND_PULL_REQUEST_EVENT",
                 subject_count=2,
             )
+
+    if (
+        event_pr.strip()
+        and event_name == "pull_request_target"
+        and event_action == "closed"
+    ):
+        return _reobserve_closed_merge_adoption(
+            repository=repository,
+            event_pr=event_pr,
+            expected_head=bound_head,
+            expected_base=expected_base.strip(),
+            expected_merge=expected_merge.strip(),
+            fetch_pull_request=fetch_pull_request,
+            fetch_git_commit=fetch_git_commit,
+        )
 
     if requested_pr.strip():
         return exact_number(

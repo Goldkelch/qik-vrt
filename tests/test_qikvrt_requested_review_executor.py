@@ -33,6 +33,7 @@ MAIN_SHA = "a" * 40
 HEAD_SHA = "b" * 40
 HEAD_TREE_SHA = "c" * 40
 BASE_TREE_SHA = "d" * 40
+MERGE_SHA = "e" * 40
 REQUIRED_GATE_PATHS = {
     "QIKVRT CI": ".github/workflows/qikvrt_ci.yml",
     "QIKVRT repository evidence materialization": ".github/workflows/qikvrt_batch04_integrity.yml",
@@ -97,7 +98,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         value = {
             "number": 867,
             "state": "open",
-            "base": {"ref": "main"},
+            "base": {"ref": "main", "sha": MAIN_SHA},
             "head": {
                 "sha": HEAD_SHA,
                 "repo": {"full_name": "example/qik-vrt"},
@@ -105,6 +106,13 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         }
         value.update(overrides)
         return value
+
+    def git_commit(self, sha, tree_sha, parents=()):
+        return {
+            "sha": sha,
+            "tree": {"sha": tree_sha},
+            "parents": [{"sha": parent} for parent in parents],
+        }
 
     def review_intake(
         self,
@@ -1423,6 +1431,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assertIn("issue_comment:", text)
         self.assertIn("pull_request_target:", text)
+        self.assertIn("reopened, closed]", text)
         self.assertNotIn("\n  pull_request:\n", text)
         self.assertNotIn("\n  schedule:\n", text)
         self.assertNotIn("BOUNDED_SCHEDULE_ROTATION", text)
@@ -1431,6 +1440,15 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("select_review_subject", text)
         self.assertIn("qikvrt-mesh-review-selection-", text)
         self.assertIn("EVENT_NAME: ${{ github.event_name }}", text)
+        self.assertIn("EVENT_ACTION: ${{ github.event.action || '' }}", text)
+        self.assertIn(
+            "EVENT_EXPECTED_BASE: ${{ github.event.pull_request.base.sha || '' }}",
+            text,
+        )
+        self.assertIn(
+            "EVENT_EXPECTED_MERGE: ${{ github.event.pull_request.merge_commit_sha || '' }}",
+            text,
+        )
         self.assertIn("REQUESTED_HEAD: ${{ inputs.head || '' }}", text)
         self.assertIn("GITHUB_EVENT_PATH", text)
         self.assertIn("event_payload_sha256", text)
@@ -1538,6 +1556,170 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 self.assertEqual(
                     result["observed_subject"]["base_ref"], observed["base"]["ref"]
                 )
+
+    def test_closed_merge_adoption_is_exact_and_never_executes_review(self):
+        observed = self.selector_pr(
+            state="closed",
+            merged=True,
+            merge_commit_sha=MERGE_SHA,
+        )
+        fetched_commits: list[str] = []
+
+        def fetch_commit(sha):
+            fetched_commits.append(sha)
+            return {
+                MAIN_SHA: self.git_commit(MAIN_SHA, BASE_TREE_SHA),
+                HEAD_SHA: self.git_commit(HEAD_SHA, HEAD_TREE_SHA),
+                MERGE_SHA: self.git_commit(
+                    MERGE_SHA,
+                    HEAD_TREE_SHA,
+                    (MAIN_SHA, HEAD_SHA),
+                ),
+            }[sha]
+
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_target",
+            event_action="closed",
+            expected_head=HEAD_SHA,
+            expected_base=MAIN_SHA,
+            expected_merge=MERGE_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: observed,
+            fetch_git_commit=fetch_commit,
+        )
+
+        self.assertEqual(fetched_commits, [MAIN_SHA, HEAD_SHA, MERGE_SHA])
+        self.assertEqual(result["state"], "MERGE_ADOPTION_REOBSERVED")
+        self.assertEqual(result["selection_basis"], "EXACT_CLOSED_MERGE_ADOPTION")
+        self.assertEqual(result["pr_number"], 867)
+        self.assertIsNone(result["candidate_pr_number"])
+        self.assertTrue(result["adoption_reobservation"])
+        self.assertFalse(result["review_execution"])
+        self.assertFalse(result["review_observation_started"])
+        self.assertEqual(result["external_effect"], "NONE")
+        self.assertEqual(
+            result["observed_subject"]["merge_parents"],
+            [MAIN_SHA, HEAD_SHA],
+        )
+        self.assertEqual(
+            result["observed_subject"]["merge_tree_sha"], HEAD_TREE_SHA
+        )
+        self.assertEqual(
+            result["observed_subject"]["head_tree_sha"], HEAD_TREE_SHA
+        )
+        self.assertTrue(
+            all(value is False for value in result["completion_claims"].values())
+        )
+
+    def test_closed_merge_adoption_fails_closed_on_history_or_tree_drift(self):
+        observed = self.selector_pr(
+            state="closed",
+            merged=True,
+            merge_commit_sha=MERGE_SHA,
+        )
+        cases = {
+            "history": (
+                self.git_commit(MERGE_SHA, HEAD_TREE_SHA, (HEAD_SHA, MAIN_SHA)),
+                "MERGE_ADOPTION_PARENT_HISTORY_MISMATCH",
+            ),
+            "tree": (
+                self.git_commit(MERGE_SHA, "f" * 40, (MAIN_SHA, HEAD_SHA)),
+                "MERGE_ADOPTION_CANDIDATE_TREE_MISMATCH",
+            ),
+        }
+        for label, (merge_commit, blocker) in cases.items():
+            with self.subTest(label=label):
+                commits = {
+                    MAIN_SHA: self.git_commit(MAIN_SHA, BASE_TREE_SHA),
+                    HEAD_SHA: self.git_commit(HEAD_SHA, HEAD_TREE_SHA),
+                    MERGE_SHA: merge_commit,
+                }
+                result = MODULE.select_review_subject(
+                    repository="example/qik-vrt",
+                    requested_pr="",
+                    event_pr="867",
+                    event_name="pull_request_target",
+                    event_action="closed",
+                    expected_head=HEAD_SHA,
+                    expected_base=MAIN_SHA,
+                    expected_merge=MERGE_SHA,
+                    workflow_event="",
+                    workflow_prs=[],
+                    fetch_pull_request=lambda number: observed,
+                    fetch_git_commit=lambda sha: commits[sha],
+                )
+                self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+                self.assertEqual(result["first_blocker"], blocker)
+                self.assertFalse(result["review_execution"])
+                self.assertFalse(result["adoption_reobservation"])
+
+    def test_closed_unmerged_event_is_not_a_review_candidate(self):
+        result = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_target",
+            event_action="closed",
+            expected_head=HEAD_SHA,
+            expected_base=MAIN_SHA,
+            expected_merge="",
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.selector_pr(
+                number=number,
+                state="closed",
+                merged=False,
+                merge_commit_sha=None,
+            ),
+        )
+        self.assertEqual(result["state"], "INELIGIBLE_EVENT_TARGET")
+        self.assertEqual(result["first_blocker"], "PULL_REQUEST_CLOSED_WITHOUT_MERGE")
+        self.assertFalse(result["review_execution"])
+        self.assertFalse(result["adoption_reobservation"])
+
+    def test_closed_merge_adoption_requires_event_base_and_merge_binding(self):
+        observed = self.selector_pr(
+            state="closed",
+            merged=True,
+            merge_commit_sha=MERGE_SHA,
+        )
+        missing_base = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_target",
+            event_action="closed",
+            expected_head=HEAD_SHA,
+            expected_base="",
+            expected_merge=MERGE_SHA,
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: self.fail("missing base must not fetch"),
+        )
+        self.assertEqual(missing_base["first_blocker"], "PULL_REQUEST_EVENT_BASE_MISSING")
+
+        missing_merge = MODULE.select_review_subject(
+            repository="example/qik-vrt",
+            requested_pr="",
+            event_pr="867",
+            event_name="pull_request_target",
+            event_action="closed",
+            expected_head=HEAD_SHA,
+            expected_base=MAIN_SHA,
+            expected_merge="",
+            workflow_event="",
+            workflow_prs=[],
+            fetch_pull_request=lambda number: observed,
+        )
+        self.assertEqual(
+            missing_merge["first_blocker"],
+            "PULL_REQUEST_EVENT_MERGE_COMMIT_MISSING",
+        )
+        self.assertFalse(missing_merge["review_execution"])
 
     def test_exact_event_selection_accepts_only_one_eligible_subject(self):
         result = MODULE.select_review_subject(
