@@ -573,6 +573,20 @@ def _active_writers(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _writer_lease_state(writers: Sequence[Mapping[str, Any]]) -> str:
+    """Return the causal, identity-independent writer-lease category.
+
+    A receipt needs to distinguish no competing writer, one competing writer,
+    and a contention violation. It must not become stale merely because GitHub
+    replaces one queued writer run with another in the same category.
+    """
+    if not writers:
+        return "CLEAR"
+    if len(writers) == 1:
+        return "HELD_SINGLE"
+    return "CONTENDED"
+
+
 def _string_list(snapshot: Mapping[str, Any], field: str) -> list[str]:
     raw = snapshot.get(field, [])
     if not isinstance(raw, list) or not all(isinstance(value, str) and value for value in raw):
@@ -1057,7 +1071,7 @@ def _evidence_fingerprint(
     required_gate_paths: Mapping[str, str],
 ) -> str:
     payload = {
-        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v4",
+        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v5",
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
         "repository": snapshot.get("repository"),
@@ -1095,7 +1109,13 @@ def _evidence_fingerprint(
         "required_gate_workflow_ids": snapshot.get("required_gate_workflow_ids"),
         "required_gate_events": snapshot.get("required_gate_events"),
         "latest_workflows": _gate_projection(latest),
-        "active_writers": list(writers),
+        # Individual queued-run IDs legitimately churn while the same lease
+        # category remains held (for example when the next serialized
+        # executor run is admitted). Bind the causal category, not those
+        # diagnostic identities: it preserves a stable receipt for 1→1 or
+        # N→M churn, while still invalidating CLEAR↔HELD and
+        # HELD_SINGLE↔CONTENDED transitions.
+        "writer_lease_state": _writer_lease_state(writers),
     }
     return _canonical_sha256(payload)
 
@@ -1303,6 +1323,7 @@ def _result(
     diff_bytes: int | None = None,
     fingerprint: str | None = None,
     diff_transport: Mapping[str, Any] | None = None,
+    writer_lease_state: str | None = None,
     findings: Sequence[Mapping[str, Any]] = (),
     latest: Mapping[tuple[int, str, str, str], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -1351,6 +1372,7 @@ def _result(
         "requested_reviewers_observed": list(snapshot.get("requested_reviewers", [])) if isinstance(snapshot.get("requested_reviewers"), list) else [],
         "requested_team_reviewers_observed": list(snapshot.get("requested_team_reviewers", [])) if isinstance(snapshot.get("requested_team_reviewers"), list) else [],
         "review_intake": dict(snapshot.get("review_intake", {})) if isinstance(snapshot.get("review_intake"), Mapping) else {},
+        "writer_lease_state": writer_lease_state,
         "required_gate_paths": dict(snapshot.get("required_gate_paths", {})) if isinstance(snapshot.get("required_gate_paths"), Mapping) else {},
         "required_gate_workflow_ids": dict(snapshot.get("required_gate_workflow_ids", {})) if isinstance(snapshot.get("required_gate_workflow_ids"), Mapping) else {},
         "required_gate_events": dict(snapshot.get("required_gate_events", {})) if isinstance(snapshot.get("required_gate_events"), Mapping) else {},
@@ -1436,6 +1458,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         teams = _string_list(snapshot, "requested_team_reviewers")
         intake = _canonical_review_intake(snapshot.get("review_intake"))
         writers = _active_writers(snapshot)
+        writer_lease_state = _writer_lease_state(writers)
         required, required_gate_paths, required_gate_workflow_ids, required_gate_events = (
             _required_gate_binding(snapshot)
         )
@@ -1474,6 +1497,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             scope_sha256=observed_scope_digest,
             findings=[_finding("REVIEW_BYTES_UNAVAILABLE", "BLOCK", "complete exact diff bytes are required")],
             latest=latest,
+            writer_lease_state=writer_lease_state,
         )
 
     actual_diff_sha256 = hashlib.sha256(diff).hexdigest()
@@ -1494,6 +1518,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         "diff_sha256": actual_diff_sha256,
         "diff_bytes": len(diff),
         "fingerprint": fingerprint,
+        "writer_lease_state": writer_lease_state,
         "diff_transport": build_diff_transport(
             diff,
             f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
@@ -1616,7 +1641,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             snapshot,
             "WAIT",
             "COMPETING_WRITER_ACTIVE",
-            f"{len(writers)} productive repository writer(s) are active",
+            "productive repository writer lease is active",
             findings=findings
             + [_finding("COMPETING_WRITER_ACTIVE", "HOLD", "productive repository writer lease is active")],
             **common,
