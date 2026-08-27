@@ -1,2 +1,319 @@
 <!-- SPDX-License-Identifier: CC-BY-NC-ND-4.0; Copyright 2026 Ingolf Lohmann. -->
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QIK-VRT · Quantenkausal-Neutronenstern-Evidenz-Fixpunkt</title><style>:root{color-scheme:dark;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}body{margin:0;background:#07111f;color:#edf4ff}main{max-width:1200px;margin:auto;padding:1.25rem}h1{font-size:clamp(1.5rem,4vw,3rem)}.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.card{background:#0d2038;border:1px solid #31587e;border-radius:14px;padding:1rem;margin-bottom:1rem}.badge{display:inline-block;padding:.25rem .55rem;margin:.2rem;border:1px solid #65a8e8;border-radius:999px}button{font:inherit;padding:.7rem 1rem;border-radius:10px;border:1px solid #65a8e8;background:#12385e;color:white;cursor:pointer}code,pre{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#9fd0ff}.boundary{border-color:#b88b3c}.muted{color:#a9bed3}dt{color:#9fd0ff}dd{margin:0 0 .7rem}.workflow{padding:.45rem 0;border-bottom:1px solid #274663}.success{color:#9ee6b2}.active{color:#ffe59c}.adverse{color:#ffacac}.neutral{color:#a9bed3}</style></head><body><main><p><a href="../">← Repository-Terminal</a></p><h1>Quantenkausal-Neutronenstern-Evidenz-Fixpunkt-Menge</h1><p><code>./Goldkelch/qik-vrt/* · DoD · *=&lt;&gt;. · q.e.d. Ingolf Lohmann</code></p><p><span class="badge">READ_ONLY</span><span class="badge">PUBLIC_GET_ONLY</span><span class="badge">NO_BACKGROUND_POLLING</span><span class="badge">EXACT_HEAD</span></p><div class="grid"><section class="card"><h2>Live-Bindung</h2><button id="refresh" type="button">Jetzt öffentlich reobservieren</button><p class="muted">Nur beim Laden oder nach diesem Klick. Keine Hintergrundschleife.</p><dl><dt>Authority main</dt><dd id="mainHead">PENDING</dd><dt>Authority tree</dt><dd id="mainTree">PENDING</dd><dt>Carrier PR</dt><dd id="carrierPr">PENDING</dd><dt>Carrier head</dt><dd id="carrierHead">PENDING</dd><dt>Carrier tree</dt><dd id="carrierTree">PENDING</dd><dt>Merge-Zustand</dt><dd id="mergeState">PENDING</dd><dt>Offene Issues</dt><dd id="issueCount">PENDING</dd><dt>Offene PRs</dt><dd id="prCount">PENDING</dd><dt>Letzte lokale Reobservation</dt><dd id="observedAt">PENDING</dd></dl></section><section class="card"><h2>Von innen nach außen</h2><ol id="layers"></ol></section><section class="card"><h2>Backlog-Cluster</h2><div id="clusters"></div></section><section class="card boundary"><h2>Evidenzgrenze</h2><pre id="boundary"></pre></section></div><div class="grid"><section class="card"><h2>Exact-Head-Ausführung</h2><p id="workflowSummary" class="muted">PENDING</p><div id="workflows"></div></section><section class="card"><h2>Review- und Authority-Grenze</h2><dl><dt>Angeforderte Reviewer</dt><dd id="requestedReviewers">PENDING</dd><dt>Auf aktuellem Head eingereichte Reviews</dt><dd id="submittedReviews">PENDING</dd><dt>Nächster evidenzkorrekter Übergang</dt><dd id="nextTransition">PENDING</dd></dl></section></div><section class="card"><h2>Quellen</h2><p><a href="status.json">status.json</a> · <a href="https://github.com/Goldkelch/qik-vrt" rel="noopener">Repository</a></p><p class="muted">Eine sichtbare Seite ist kein Authority-, Pages-, Hardware-, Quanten- oder Publikationseffekt.</p></section></main><script>(()=>{"use strict";const repo="Goldkelch/qik-vrt",base=`https://api.github.com/repos/${repo}`,search="https://api.github.com/search/issues?q=",byId=id=>document.getElementById(id),text=(id,value)=>{byId(id).textContent=String(value)},terminalConclusions=new Set(["failure","timed_out","cancelled","action_required","startup_failure"]);async function get(url){const response=await fetch(url,{method:"GET",credentials:"omit",headers:{Accept:"application/vnd.github+json"}});if(!response.ok)throw new Error(`HTTP ${response.status}: ${url}`);return response.json()}function renderStatic(status){const layers=byId("layers");layers.replaceChildren(...status.layer_order.map(value=>{const item=document.createElement("li");item.textContent=value;return item}));const clusters=byId("clusters");clusters.replaceChildren(...status.backlog_clusters.map(cluster=>{const p=document.createElement("p");p.textContent=`P${cluster.priority} ${cluster.id}: Issues ${cluster.issues.join(", ")||"—"}; PRs ${cluster.pull_requests.join(", ")||"—"}`;return p}));byId("boundary").textContent=JSON.stringify({claim_boundary:status.claim_boundary,completion_claims:status.completion_claims},null,2)}function renderRuns(runs){const active=runs.filter(run=>["queued","in_progress","waiting","requested","pending"].includes(run.status)),adverse=runs.filter(run=>terminalConclusions.has(run.conclusion)),successful=runs.filter(run=>run.conclusion==="success");text("workflowSummary",`${runs.length} Läufe · ${active.length} aktiv · ${successful.length} erfolgreich · ${adverse.length} advers terminal`);const nodes=runs.slice(0,30).map(run=>{const row=document.createElement("div"),state=run.conclusion||run.status||"unknown";row.className=`workflow ${state==="success"?"success":terminalConclusions.has(state)?"adverse":["queued","in_progress","waiting","requested","pending"].includes(state)?"active":"neutral"}`;row.textContent=`${run.name}: ${state} · Run ${run.id}`;return row});byId("workflows").replaceChildren(...nodes)}async function refresh(){text("observedAt","RUNNING");try{const status=await get("status.json");renderStatic(status);const branch=status.carrier.branch,issueQuery=encodeURIComponent(`repo:${repo} is:issue is:open`),prQuery=encodeURIComponent(`repo:${repo} is:pr is:open`),headQuery=encodeURIComponent(`Goldkelch:${branch}`),[main,issues,prs,carrier]=await Promise.all([get(`${base}/commits/main`),get(`${search}${issueQuery}&per_page=1`),get(`${search}${prQuery}&per_page=1`),get(`${base}/pulls?state=open&head=${headQuery}&per_page=1`)]);text("mainHead",main.sha||"UNAVAILABLE");text("mainTree",main.commit&&main.commit.tree?main.commit.tree.sha:"UNAVAILABLE");text("issueCount",issues.total_count);text("prCount",prs.total_count);if(Array.isArray(carrier)&&carrier.length===1){const pr=carrier[0],head=pr.head.sha,[commit,runs,reviews]=await Promise.all([get(`${base}/git/commits/${head}`),get(`${base}/actions/runs?head_sha=${head}&per_page=100`),get(`${base}/pulls/${pr.number}/reviews?per_page=100`)]);text("carrierPr",`#${pr.number} · ${pr.state}`);text("carrierHead",head);text("carrierTree",commit.tree&&commit.tree.sha?commit.tree.sha:"UNAVAILABLE");text("mergeState",pr.merged?"MERGED":pr.mergeable===true?"OPEN_MERGEABLE":pr.mergeable===false?"OPEN_NOT_MERGEABLE":"OPEN_PENDING");renderRuns(Array.isArray(runs.workflow_runs)?runs.workflow_runs:[]);const requested=(pr.requested_reviewers||[]).map(value=>value.login);text("requestedReviewers",requested.join(", ")||"NONE");const currentReviews=(Array.isArray(reviews)?reviews:[]).filter(review=>review.commit_id===head).map(review=>`${review.user&&review.user.login?review.user.login:"unknown"}:${review.state}`);text("submittedReviews",currentReviews.join(", ")||"NONE");const active=(runs.workflow_runs||[]).some(run=>["queued","in_progress","waiting","requested","pending"].includes(run.status)),adverse=(runs.workflow_runs||[]).some(run=>terminalConclusions.has(run.conclusion));text("nextTransition",active?"CONTINUE_EXACT_HEAD_REOBSERVATION":adverse?"HOLD_FIRST_CAUSAL_ADVERSE_NODE":requested.length?"REQUESTED_REVIEW_DISPOSITION":currentReviews.some(value=>value.endsWith(":APPROVED"))?"AUTHORITY_INTEGRATION_REMAINS_SEPARATE":"OBSERVE_LOCAL_FIXPOINT")}else{text("carrierPr","NOT_RESOLVED");text("carrierHead","NOT_RESOLVED");text("carrierTree","NOT_RESOLVED");text("mergeState","NOT_RESOLVED");text("workflowSummary","NOT_RESOLVED");byId("workflows").replaceChildren();text("requestedReviewers","NOT_RESOLVED");text("submittedReviews","NOT_RESOLVED");text("nextTransition","REOBSERVE_CARRIER_RESOLUTION")}text("observedAt",new Date().toISOString())}catch(error){text("observedAt",`CONTINUE · ${error.message}`);text("nextTransition","REOBSERVE_PUBLIC_GET")}}byId("refresh").addEventListener("click",refresh);refresh()})();</script></body></html>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QIK-VRT · Quantenkausal-Neutronenstern-Evidenz-Fixpunkt</title>
+  <meta name="description" content="Öffentliche, rein lesende Exact-Head-Fortschrittsansicht der QIK-VRT Quantenkausal-Neutronenstern-Evidenz-Fixpunkt-Menge.">
+  <style>
+    :root{color-scheme:dark;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#06101d;color:#eef5ff}
+    *{box-sizing:border-box}body{margin:0}main{max-width:1180px;margin:auto;padding:1.25rem}h1{font-size:clamp(1.45rem,4vw,2.8rem);line-height:1.08}
+    h2{margin-top:0}.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(285px,1fr))}
+    .card{background:#0c2038;border:1px solid #31587e;border-radius:14px;padding:1rem;min-width:0}.wide{grid-column:1/-1}
+    .badge,.state{display:inline-block;padding:.25rem .55rem;margin:.15rem;border:1px solid #65a8e8;border-radius:999px}
+    .OBSERVE{border-color:#53c78b;color:#95efbd}.HOLD{border-color:#efb85d;color:#ffd791}.CONTINUE{border-color:#ef7474;color:#ffb0b0}
+    button{font:inherit;padding:.7rem 1rem;border-radius:10px;border:1px solid #65a8e8;background:#12385e;color:white;cursor:pointer}
+    button:disabled{opacity:.55;cursor:wait}code,pre{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#a9bed3}a{color:#9fd0ff}
+    dl{display:grid;grid-template-columns:minmax(8rem,auto) 1fr;gap:.35rem .8rem}dt{color:#9fd0ff}dd{margin:0;overflow-wrap:anywhere}
+    progress{width:100%;height:1.2rem}ol,ul{padding-left:1.35rem}.gate{margin:.55rem 0}.gate strong{display:inline-block;min-width:13rem}
+    .run{border-top:1px solid #31587e;padding:.6rem 0}.run:first-child{border-top:0}.boundary{border-color:#b88b3c}
+    .error{color:#ffb0b0}.ok{color:#95efbd}
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="../">← Repository-Terminal</a></p>
+  <h1>Quantenkausal-Neutronenstern-Evidenz-Fixpunkt-Menge</h1>
+  <p><code>./Goldkelch/qik-vrt/* · DoD · *=&lt;&gt;. · q.e.d. Ingolf Lohmann</code></p>
+  <p><span class="badge">READ_ONLY</span><span class="badge">PUBLIC_GET_ONLY</span><span class="badge">EVENT_DRIVEN</span><span class="badge">NO_BACKGROUND_TIMER</span></p>
+
+  <section class="card wide">
+    <h2>Ende-zu-Ende-Fortschritt</h2>
+    <button id="refresh" type="button">Jetzt exact-head reobservieren</button>
+    <p class="muted">Reobservation beim Laden, bei sichtbarer Rückkehr zur Seite oder nach diesem Klick. Kein Zeitgeber, kein Polling, kein Schreibpfad.</p>
+    <progress id="progress" max="7" value="0"></progress>
+    <p id="progressText">0 / 7 Evidenzgates beobachtet</p>
+    <ol id="gates"></ol>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Live-Bindung</h2>
+      <dl>
+        <dt>Authority main</dt><dd id="mainHead">PENDING</dd>
+        <dt>Authority tree</dt><dd id="mainTree">PENDING</dd>
+        <dt>Carrier PR</dt><dd id="carrierPr">PENDING</dd>
+        <dt>Carrier head</dt><dd id="carrierHead">PENDING</dd>
+        <dt>Carrier tree</dt><dd id="carrierTree">PENDING</dd>
+        <dt>Review-Anfrage</dt><dd id="reviewRequest">PENDING</dd>
+        <dt>Offene Issues</dt><dd id="issueCount">PENDING</dd>
+        <dt>Offene PRs</dt><dd id="prCount">PENDING</dd>
+        <dt>Reobservation</dt><dd id="observedAt">PENDING</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Von innen nach außen</h2>
+      <ol id="layers"></ol>
+    </section>
+
+    <section class="card">
+      <h2>Backlog-Cluster</h2>
+      <div id="clusters"></div>
+    </section>
+
+    <section class="card boundary">
+      <h2>Evidenzgrenze</h2>
+      <pre id="boundary"></pre>
+    </section>
+
+    <section class="card wide">
+      <h2>Exact-Head-Workflows</h2>
+      <div id="workflows">PENDING</div>
+    </section>
+
+    <section class="card wide">
+      <h2>Quellen</h2>
+      <p><a href="status.json">status.json</a> · <a id="prLink" href="https://github.com/Goldkelch/qik-vrt/pull/911" rel="noopener">PR #911</a> · <a href="https://github.com/Goldkelch/qik-vrt/actions" rel="noopener">Actions</a> · <a href="https://github.com/Goldkelch/qik-vrt" rel="noopener">Repository</a></p>
+      <p class="muted">Eine sichtbare Seite ist kein Merge, keine unabhängige Zustimmung, kein Authority-main-Effekt, keine Publikation und kein physischer oder quantenkausaler Nachweis.</p>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  "use strict";
+  const repo = "Goldkelch/qik-vrt";
+  const base = `https://api.github.com/repos/${repo}`;
+  const search = "https://api.github.com/search/issues?q=";
+  const raw = `https://raw.githubusercontent.com/${repo}`;
+  const byId = id => document.getElementById(id);
+  const text = (id, value) => { byId(id).textContent = String(value); };
+  const expectedDigests = {
+    "state/fixpoints/TICK_RECEIPT_COMPILER_V1.yaml": "13aaa23ce1cb408bc5644bc7422b55a1aa07ed1c41834f40643c053d69ef363f",
+    "schemas/qikvrt_tick_receipt_v1.schema.json": "fde9b8470daf10948e9745d499856e642f547181580c4d82777a6e9107a46c3e"
+  };
+  let running = false;
+
+  async function get(url) {
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "omit",
+      cache: "no-store",
+      headers: {Accept: "application/vnd.github+json"}
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+    return response.json();
+  }
+
+  async function digestUrl(url) {
+    const response = await fetch(url, {method: "GET", credentials: "omit", cache: "no-store"});
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+    const bytes = await response.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  function latestExecutable(runs, name) {
+    const matching = runs
+      .filter(run => run.name === name)
+      .sort((left, right) => right.id - left.id);
+    return matching.find(run => !["action_required", "skipped", "cancelled"].includes(run.conclusion)) || matching[0] || null;
+  }
+
+  async function jobsFor(run) {
+    if (!run) return [];
+    const payload = await get(`${run.jobs_url}?per_page=100`);
+    return Array.isArray(payload.jobs) ? payload.jobs : [];
+  }
+
+  function renderStatic(status) {
+    const layers = byId("layers");
+    layers.replaceChildren(...status.layer_order.map(value => {
+      const item = document.createElement("li");
+      item.textContent = value;
+      return item;
+    }));
+    const clusters = byId("clusters");
+    clusters.replaceChildren(...status.backlog_clusters.map(cluster => {
+      const p = document.createElement("p");
+      p.textContent = `P${cluster.priority} ${cluster.id}: Issues ${cluster.issues.join(", ") || "—"}; PRs ${cluster.pull_requests.join(", ") || "—"}`;
+      return p;
+    }));
+    byId("boundary").textContent = JSON.stringify({
+      claim_boundary: status.claim_boundary,
+      completion_claims: status.completion_claims
+    }, null, 2);
+  }
+
+  function gate(id, state, detail) {
+    return {id, state, detail};
+  }
+
+  function renderGates(values) {
+    const list = byId("gates");
+    list.replaceChildren(...values.map(value => {
+      const item = document.createElement("li");
+      item.className = "gate";
+      const strong = document.createElement("strong");
+      strong.textContent = value.id;
+      const state = document.createElement("span");
+      state.className = `state ${value.state}`;
+      state.textContent = value.state;
+      const detail = document.createElement("span");
+      detail.textContent = ` ${value.detail}`;
+      item.append(strong, state, detail);
+      return item;
+    }));
+    const observed = values.filter(value => value.state === "OBSERVE").length;
+    byId("progress").value = observed;
+    text("progressText", `${observed} / ${values.length} Evidenzgates beobachtet`);
+  }
+
+  function renderRuns(runs, jobSets, names) {
+    const root = byId("workflows");
+    const entries = names.map(name => {
+      const run = latestExecutable(runs, name);
+      const wrap = document.createElement("div");
+      wrap.className = "run";
+      const link = document.createElement("a");
+      link.rel = "noopener";
+      link.href = run ? run.html_url : `https://github.com/${repo}/actions`;
+      link.textContent = name;
+      const outcome = document.createElement("span");
+      const conclusion = run ? (run.conclusion || run.status) : "NOT_OBSERVED";
+      outcome.className = `state ${conclusion === "success" ? "OBSERVE" : conclusion === "in_progress" || conclusion === "queued" ? "CONTINUE" : "HOLD"}`;
+      outcome.textContent = conclusion;
+      wrap.append(link, document.createTextNode(" "), outcome);
+      if (run) {
+        const meta = document.createElement("div");
+        meta.className = "muted";
+        meta.textContent = `run ${run.id} · ${run.event} · head ${run.head_sha}`;
+        wrap.append(meta);
+        const jobs = jobSets.get(run.id) || [];
+        if (jobs.length) {
+          const jobLine = document.createElement("div");
+          jobLine.textContent = jobs.map(job => `${job.name}=${job.conclusion || job.status}`).join(" · ");
+          wrap.append(jobLine);
+        }
+      }
+      return wrap;
+    });
+    root.replaceChildren(...entries);
+  }
+
+  async function refresh() {
+    if (running) return;
+    running = true;
+    byId("refresh").disabled = true;
+    text("observedAt", "RUNNING");
+    try {
+      const status = await get(`status.json?at=${Date.now()}`);
+      renderStatic(status);
+      const prNumber = status.carrier.pull_request;
+      const issueQuery = encodeURIComponent(`repo:${repo} is:issue is:open`);
+      const prQuery = encodeURIComponent(`repo:${repo} is:pr is:open`);
+      const firstPr = await get(`${base}/pulls/${prNumber}`);
+      const head = firstPr.head.sha;
+      const runPayloadUrl = `${base}/actions/runs?head_sha=${head}&per_page=100`;
+      const [main, carrierCommit, issues, prs, reviews, runPayload, sourceDigests] = await Promise.all([
+        get(`${base}/commits/main`),
+        get(`${base}/git/commits/${head}`),
+        get(`${search}${issueQuery}&per_page=1`),
+        get(`${search}${prQuery}&per_page=1`),
+        get(`${base}/pulls/${prNumber}/reviews?per_page=100`),
+        get(runPayloadUrl),
+        Promise.all(Object.entries(expectedDigests).map(async ([path, expected]) => ({
+          path, expected, actual: await digestUrl(`${raw}/${head}/${path}`).catch(() => "UNAVAILABLE")
+        })))
+      ]);
+      const secondPr = await get(`${base}/pulls/${prNumber}`);
+      const runs = Array.isArray(runPayload.workflow_runs) ? runPayload.workflow_runs : [];
+      const workflowNames = status.tracking.workflow_names;
+      const names = Object.values(workflowNames);
+      const selectedRuns = names.map(name => latestExecutable(runs, name)).filter(Boolean);
+      const jobSets = new Map(await Promise.all(selectedRuns.map(async run => [run.id, await jobsFor(run)])));
+      renderRuns(runs, jobSets, names);
+
+      const ciRun = latestExecutable(runs, workflowNames.ci);
+      const ciJobs = ciRun ? (jobSets.get(ciRun.id) || []) : [];
+      const standardTest = ciJobs.find(job => job.name === "test");
+      const embeddedVhdl = ciJobs.find(job => job.name === "quantum-causal-vhdl");
+      const dedicatedRun = latestExecutable(runs, workflowNames.vhdl);
+      const dedicatedJobs = dedicatedRun ? (jobSets.get(dedicatedRun.id) || []) : [];
+      const dedicatedJob = dedicatedJobs.find(job => job.name === "validate-inside-out");
+      const sourceExact = sourceDigests.every(value => value.actual === value.expected);
+      const stable = firstPr.head.sha === secondPr.head.sha && secondPr.head.sha === head;
+      const vhdlExact = [embeddedVhdl, dedicatedJob].some(job => job && job.conclusion === "success");
+      const requiredRunNames = [
+        workflowNames.zero_bug,
+        workflowNames.collective_review,
+        workflowNames.real_mesh,
+        workflowNames.global_completion
+      ];
+      const requiredRuns = requiredRunNames.map(name => latestExecutable(runs, name));
+      const repositoryGates = Boolean(
+        standardTest && standardTest.conclusion === "success" &&
+        requiredRuns.every(run => run && run.conclusion === "success")
+      );
+
+      const exactReviews = reviews
+        .filter(review => review.commit_id === head && review.user && review.user.login === status.tracking.review_actor)
+        .sort((left, right) => String(left.submitted_at).localeCompare(String(right.submitted_at)));
+      const exactReview = exactReviews.at(-1) || null;
+      const independentReview = Boolean(exactReview && exactReview.state === "APPROVED");
+      const requested = (secondPr.requested_reviewers || []).map(value => value.login);
+
+      let authorityObserved = false;
+      let authorityDetail = "PR ist nicht auf Authority main integriert";
+      if (secondPr.merged_at && secondPr.merge_commit_sha) {
+        const comparison = await get(`${base}/compare/${secondPr.merge_commit_sha}...main`);
+        authorityObserved = ["ahead", "identical"].includes(comparison.status);
+        authorityDetail = authorityObserved
+          ? `Merge-Commit ist in main enthalten; main=${main.sha}`
+          : `Merge-Bindung nicht in aktuellem main beobachtet; compare=${comparison.status}`;
+      }
+      const pagesObserved = authorityObserved && location.hostname.toLowerCase() === "goldkelch.github.io";
+
+      text("mainHead", main.sha || "UNAVAILABLE");
+      text("mainTree", main.commit && main.commit.tree ? main.commit.tree.sha : "UNAVAILABLE");
+      text("carrierPr", `#${prNumber} · ${secondPr.state} · merged=${Boolean(secondPr.merged_at)}`);
+      text("carrierHead", head);
+      text("carrierTree", carrierCommit.tree.sha);
+      text("reviewRequest", requested.length ? requested.join(", ") : "keine offene Anfrage");
+      text("issueCount", issues.total_count);
+      text("prCount", prs.total_count);
+      byId("prLink").href = secondPr.html_url;
+
+      renderGates([
+        gate("SOURCE_CONTRACT_BYTES", sourceExact ? "OBSERVE" : "HOLD", sourceDigests.map(value => `${value.path}=${value.actual}`).join(" · ")),
+        gate("HEAD_STABILITY", stable ? "OBSERVE" : "HOLD", stable ? `${head} blieb während der Reobservation unverändert` : `${firstPr.head.sha} → ${secondPr.head.sha}`),
+        gate("VHDL_EXACT_HEAD", vhdlExact ? "OBSERVE" : "HOLD", vhdlExact ? `Analyse, Elaboration und Testbench auf ${head}` : "kein erfolgreiches exact-head VHDL-Job-Receipt"),
+        gate("REPOSITORY_GATES", repositoryGates ? "OBSERVE" : "HOLD", `CI/test=${standardTest ? standardTest.conclusion : "missing"} · ${requiredRuns.map((run, index) => `${requiredRunNames[index]}=${run ? run.conclusion : "missing"}`).join(" · ")}`),
+        gate("INDEPENDENT_REVIEW", independentReview ? "OBSERVE" : "HOLD", exactReview ? `${status.tracking.review_actor}=${exactReview.state} auf ${exactReview.commit_id}` : `${status.tracking.review_actor}: keine eingereichte Review auf ${head}`),
+        gate("AUTHORITY_MAIN", authorityObserved ? "OBSERVE" : "HOLD", authorityDetail),
+        gate("PAGES_REOBSERVATION", pagesObserved ? "OBSERVE" : "HOLD", pagesObserved ? `Browser liest ${location.href}` : "erst nach Authority-main-Integration und Pages-Browser-Reobservation")
+      ]);
+      text("observedAt", new Date().toISOString());
+    } catch (error) {
+      text("observedAt", `CONTINUE · ${error.message}`);
+      byId("workflows").innerHTML = "";
+      const message = document.createElement("p");
+      message.className = "error";
+      message.textContent = error.message;
+      byId("workflows").append(message);
+    } finally {
+      running = false;
+      byId("refresh").disabled = false;
+    }
+  }
+
+  byId("refresh").addEventListener("click", refresh);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refresh();
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>
