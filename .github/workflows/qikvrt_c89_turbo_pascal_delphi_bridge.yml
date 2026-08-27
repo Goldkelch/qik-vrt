@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT C89 Turbo Pascal Delphi bridge
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_c89_turbo_pascal_delphi_bridge.yml"
+      - "docs/C89_TURBO_PASCAL_DELPHI_AD_DA_BRIDGE_V1.md"
+      - "pascal/qikvrt_atari_browser_pas.pas"
+      - "policy/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json"
+      - "runtime/pascal/qikbrow_pas.pas"
+      - "state/work_units/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json"
+      - "tests/pascal/test_qikvrt_atari_browser_pas.pas"
+      - "tests/test_qikvrt_c89_pascal_bridge_contract.py"
+      - "tools/qikvrt_c89_pascal_bridge.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/qikvrt_c89_turbo_pascal_delphi_bridge.yml"
+      - "docs/C89_TURBO_PASCAL_DELPHI_AD_DA_BRIDGE_V1.md"
+      - "pascal/qikvrt_atari_browser_pas.pas"
+      - "policy/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json"
+      - "runtime/pascal/qikbrow_pas.pas"
+      - "state/work_units/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json"
+      - "tests/pascal/test_qikvrt_atari_browser_pas.pas"
+      - "tests/test_qikvrt_c89_pascal_bridge_contract.py"
+      - "tools/qikvrt_c89_pascal_bridge.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-execute-reobserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out literal exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/c89-pascal-bridge
+          mkdir -p "$root"
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          test "$head" = "$EXPECTED_HEAD"
+          printf '%s\n' "$head" > "$root/source-head.txt"
+          printf '%s\n' "$tree" > "$root/source-tree.txt"
+          printf 'QIKVRT_TREE_SHA=%s\n' "$tree" >> "$GITHUB_ENV"
+
+      - name: Install Free Pascal compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fp-compiler
+          fpc -iV
+
+      - name: Verify repository contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool policy/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json >/dev/null
+          python3 -m json.tool state/work_units/C89_TURBO_PASCAL_DELPHI_BRIDGE_V1.json >/dev/null
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v \
+              tests.test_qikvrt_c89_pascal_bridge_contract
+
+      - name: Compile and execute Turbo Pascal and Delphi modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B tools/qikvrt_c89_pascal_bridge.py
+
+      - name: Preserve compiler and execution receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-c89-pascal-bridge-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/c89-pascal-bridge
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
