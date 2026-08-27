@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-name: QIKVRT exact stale writer lease drain
+name: QIKVRT writer lease head-binding repair materializer
 
 on:
   push:
@@ -10,138 +10,296 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
-  group: qikvrt-exact-stale-writer-lease-drain-20260827
+  group: qikvrt-writer-lease-head-binding-repair-20260827
   cancel-in-progress: false
 
 jobs:
-  drain-two-exact-stale-writer-leases:
+  materialize-repair-candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      EXPECTED_MAIN: 0dd0ffdbbd7b0f1e8ba4aa33c405bc06953fcf22
+      REPAIR_BRANCH: fix/requested-review-writer-head-binding-v1
     steps:
-      - name: Bind exact operation carrier
+      - name: Check out exact Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_MAIN }}
+          fetch-depth: 0
+
+      - name: Bind unchanged Authority main
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_CARRIER_HEAD: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/qikvrt-stale-writer-lease-drain"
-          mkdir -p "$root"
-          live_carrier="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/ops/stale-writer-lease-drain-20260827" --jq '.object.sha')"
-          test "$live_carrier" = "$EXPECTED_CARRIER_HEAD"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_MAIN"
           live_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          live_pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/893" --jq '.head.sha')"
-          printf '%s\n' "$live_main" > "$root/live-main.txt"
-          printf '%s\n' "$live_pr" > "$root/live-pr-893.txt"
-          cat > "$root/targets.json" <<'JSON'
-          [
-            {
-              "id": 32985189717,
-              "name": "QIK-VRT expected-head promotion executor",
-              "head_sha": "fb744e5b5925d61c6b473e27aab3606f237f7e6d",
-              "created_at": "2026-08-26T15:27:31Z"
-            },
-            {
-              "id": 30295789608,
-              "name": "QIKVRT repository evidence materialization",
-              "head_sha": "d83babfc4e6d114d5ed8f95c4b0763e87197f5c0",
-              "created_at": "2026-07-27T18:53:19Z"
-            }
-          ]
-          JSON
+          test "$live_main" = "$EXPECTED_MAIN"
+          git rev-parse --verify HEAD^{tree} | tee /tmp/qikvrt-repair-base-tree.txt
 
-      - name: Verify exact stale identities before mutation
+      - name: Apply exact writer-head binding and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          core_path = Path("tools/qikvrt_requested_review_executor.py")
+          core = core_path.read_text(encoding="utf-8")
+          old_observer = '''def _active_writer_observation(
+              repository: str,
+              current_run_id: int,
+              writer_names: set[str],
+          ) -> list[dict[str, Any]]:
+              observed: dict[int, dict[str, Any]] = {}
+              for status in ACTIVE_WRITER_STATES:
+                  for run in _gh_runs(
+                      f"repos/{repository}/actions/runs?status={status}&per_page=100"
+                  ):
+                      run_id = run.get("id")
+                      if (
+                          isinstance(run_id, int)
+                          and run_id != current_run_id
+                          and run.get("name") in writer_names
+                      ):
+                          observed[run_id] = {
+                              "id": run_id,
+                              "name": run.get("name"),
+                              "status": run.get("status"),
+                              "head_sha": run.get("head_sha"),
+                              "workflow_id": run.get("workflow_id"),
+                              "path": run.get("path"),
+                              "event": run.get("event"),
+                              "run_number": run.get("run_number"),
+                              "run_attempt": run.get("run_attempt", 1),
+                          }
+              return sorted(observed.values(), key=lambda item: (str(item["name"]), item["id"]))
+          '''
+          new_observer = '''def _active_writer_observation(
+              repository: str,
+              current_run_id: int,
+              writer_names: set[str],
+              relevant_heads: set[str],
+          ) -> list[dict[str, Any]]:
+              """Observe only writers that can still mutate this exact subject.
+
+              A repository-wide Actions query can retain queued admission ghosts
+              on immutable predecessor heads.  They are not a lease on the
+              current review.  Main-driven writers remain relevant at the exact
+              observed main head; candidate writers remain relevant at the exact
+              pull-request head.  Any malformed binding fails closed.
+              """
+              if (
+                  not isinstance(relevant_heads, set)
+                  or not relevant_heads
+                  or any(_git_sha1(value) is None for value in relevant_heads)
+              ):
+                  raise ReviewObservationError(
+                      "active writer relevant-head binding is invalid"
+                  )
+              observed: dict[int, dict[str, Any]] = {}
+              for status in ACTIVE_WRITER_STATES:
+                  for run in _gh_runs(
+                      f"repos/{repository}/actions/runs?status={status}&per_page=100"
+                  ):
+                      run_id = run.get("id")
+                      if (
+                          isinstance(run_id, int)
+                          and run_id != current_run_id
+                          and run.get("name") in writer_names
+                          and run.get("head_sha") in relevant_heads
+                      ):
+                          observed[run_id] = {
+                              "id": run_id,
+                              "name": run.get("name"),
+                              "status": run.get("status"),
+                              "head_sha": run.get("head_sha"),
+                              "workflow_id": run.get("workflow_id"),
+                              "path": run.get("path"),
+                              "event": run.get("event"),
+                              "run_number": run.get("run_number"),
+                              "run_attempt": run.get("run_attempt", 1),
+                          }
+              return sorted(observed.values(), key=lambda item: (str(item["name"]), item["id"]))
+          '''
+          if core.count(old_observer) != 1:
+              raise SystemExit("BLOCK: exact active-writer observer source did not match once")
+          core = core.replace(old_observer, new_observer)
+
+          old_call = '''    writers = _active_writer_observation(
+                  repository,
+                  current_run_id,
+                  set(writer_workflows),
+              )
+          '''
+          new_call = '''    writers = _active_writer_observation(
+                  repository,
+                  current_run_id,
+                  set(writer_workflows),
+                  {main_sha, head},
+              )
+          '''
+          if core.count(old_call) != 1:
+              raise SystemExit("BLOCK: exact active-writer call source did not match once")
+          core_path.write_text(core.replace(old_call, new_call), encoding="utf-8")
+
+          tests_path = Path("tests/test_qikvrt_requested_review_executor.py")
+          tests = tests_path.read_text(encoding="utf-8")
+          marker = '''    def test_workflow_is_trusted_main_diff_bound_append_only_and_comment_only(self):
+          '''
+          insertion = '''    def test_active_writer_observation_is_exact_head_scoped(self):
+              writer_name = "QIK-VRT autonomous bounded self-heal"
+              runs = [
+                  {
+                      "id": 901,
+                      "name": writer_name,
+                      "status": "queued",
+                      "head_sha": "d" * 40,
+                      "workflow_id": 7001,
+                      "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                      "event": "schedule",
+                      "run_number": 1,
+                      "run_attempt": 1,
+                  },
+                  {
+                      "id": 902,
+                      "name": writer_name,
+                      "status": "queued",
+                      "head_sha": MAIN_SHA,
+                      "workflow_id": 7001,
+                      "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                      "event": "workflow_dispatch",
+                      "run_number": 2,
+                      "run_attempt": 1,
+                  },
+                  {
+                      "id": 903,
+                      "name": writer_name,
+                      "status": "in_progress",
+                      "head_sha": HEAD_SHA,
+                      "workflow_id": 7001,
+                      "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                      "event": "pull_request",
+                      "run_number": 3,
+                      "run_attempt": 1,
+                  },
+                  {
+                      "id": 999,
+                      "name": writer_name,
+                      "status": "in_progress",
+                      "head_sha": MAIN_SHA,
+                      "workflow_id": 7001,
+                      "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+                      "event": "workflow_dispatch",
+                      "run_number": 4,
+                      "run_attempt": 1,
+                  },
+              ]
+              with mock.patch.object(MODULE, "_gh_runs", return_value=runs) as gh_runs:
+                  observed = MODULE._active_writer_observation(
+                      "example/qik-vrt",
+                      999,
+                      {writer_name},
+                      {MAIN_SHA, HEAD_SHA},
+                  )
+
+              self.assertEqual([item["id"] for item in observed], [902, 903])
+              self.assertNotIn("d" * 40, {item["head_sha"] for item in observed})
+              self.assertEqual(gh_runs.call_count, len(MODULE.ACTIVE_WRITER_STATES))
+
+          def test_active_writer_observation_rejects_unbound_head_set(self):
+              with self.assertRaisesRegex(
+                  MODULE.ReviewObservationError,
+                  "relevant-head binding",
+              ):
+                  MODULE._active_writer_observation(
+                      "example/qik-vrt",
+                      999,
+                      {"QIK-VRT autonomous bounded self-heal"},
+                      {"not-a-git-sha"},
+                  )
+
+          '''
+          if tests.count(marker) != 1:
+              raise SystemExit("BLOCK: exact regression-test insertion point did not match once")
+          tests_path.write_text(tests.replace(marker, insertion + marker), encoding="utf-8")
+          PY
+          git diff --check
+          python3 -B -m py_compile tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py
+
+      - name: Execute focused deterministic regressions
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest -v tests.test_qikvrt_requested_review_executor
+
+      - name: Commit exact repair branch
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/qikvrt-stale-writer-lease-drain"
-          live_main="$(cat "$root/live-main.txt")"
-          live_pr="$(cat "$root/live-pr-893.txt")"
-          : > "$root/before.jsonl"
-          while IFS=$'\t' read -r run_id expected_name expected_head expected_created; do
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-before.json"
-            jq -e \
-              --arg name "$expected_name" \
-              --arg head "$expected_head" \
-              --arg created "$expected_created" \
-              --arg live_main "$live_main" \
-              --arg live_pr "$live_pr" \
-              '.status == "queued"
-               and .conclusion == null
-               and .name == $name
-               and .head_sha == $head
-               and .created_at == $created
-               and .head_sha != $live_main
-               and .head_sha != $live_pr' \
-              "$root/run-$run_id-before.json" >/dev/null
-            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
-              "$root/run-$run_id-before.json" >> "$root/before.jsonl"
-          done < <(jq -r '.[] | [.id,.name,.head_sha,.created_at] | @tsv' "$root/targets.json")
+          git config user.name "qikvrt-repository-operations[bot]"
+          git config user.email "qikvrt-repository-operations@users.noreply.github.com"
+          git checkout -B "$REPAIR_BRANCH"
+          git add tools/qikvrt_requested_review_executor.py tests/test_qikvrt_requested_review_executor.py
+          git diff --cached --quiet && { echo "BLOCK: repair produced no exact delta" >&2; exit 1; }
+          git commit -m "fix(review): bind active writer leases to exact heads"
+          git push --force-with-lease="refs/heads/$REPAIR_BRANCH:" origin "HEAD:refs/heads/$REPAIR_BRANCH"
+          git rev-parse HEAD | tee /tmp/qikvrt-repair-head.txt
+          git rev-parse HEAD^{tree} | tee /tmp/qikvrt-repair-tree.txt
 
-      - name: Cancel only the two exact stale queued writers
+      - name: Open one exact repair pull request
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/qikvrt-stale-writer-lease-drain"
-          : > "$root/after.jsonl"
-          while read -r run_id; do
-            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel"
-            terminal=false
-            for _ in $(seq 1 30); do
-              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$root/run-$run_id-after.json"
-              status="$(jq -r '.status' "$root/run-$run_id-after.json")"
-              conclusion="$(jq -r '.conclusion // ""' "$root/run-$run_id-after.json")"
-              if test "$status" = completed && test "$conclusion" = cancelled; then
-                terminal=true
-                break
-              fi
-              sleep 2
-            done
-            test "$terminal" = true
-            jq -c '{id,name,status,conclusion,head_sha,head_branch,event,created_at,updated_at}' \
-              "$root/run-$run_id-after.json" >> "$root/after.jsonl"
-          done < <(jq -r '.[].id' "$root/targets.json")
+          head="$(cat /tmp/qikvrt-repair-head.txt)"
+          tree="$(cat /tmp/qikvrt-repair-tree.txt)"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=Goldkelch:$REPAIR_BRANCH&base=main&per_page=100" --jq '.[0].number // empty')"
+          if test -n "$existing"; then
+            pr="$existing"
+          else
+            body="$(cat <<EOF
+          ## Causal repair
 
-      - name: Write exact bounded drain receipt
-        if: always()
-        env:
-          SOURCE_HEAD: ${{ github.sha }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          root="$RUNNER_TEMP/qikvrt-stale-writer-lease-drain"
-          before='[]'
-          after='[]'
-          test -s "$root/before.jsonl" && before="$(jq -s '.' "$root/before.jsonl")"
-          test -s "$root/after.jsonl" && after="$(jq -s '.' "$root/after.jsonl")"
-          jq -n \
-            --arg schema qikvrt_exact_stale_writer_lease_drain_v1 \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg source_head "$SOURCE_HEAD" \
-            --arg live_main "$(cat "$root/live-main.txt" 2>/dev/null || true)" \
-            --arg live_pr_893 "$(cat "$root/live-pr-893.txt" 2>/dev/null || true)" \
-            --argjson run_id "$RUN_ID" \
-            --argjson run_attempt "$RUN_ATTEMPT" \
-            --argjson before "$before" \
-            --argjson after "$after" \
-            '{schema:$schema,repository:$repository,source_head:$source_head,live_main:$live_main,live_pr_893:$live_pr_893,run_id:$run_id,run_attempt:$run_attempt,scope:"TWO_EXACT_STALE_QUEUED_WRITER_RUNS_ONLY",before:$before,after:$after,main_mutated:false,pr_893_mutated:false,credentials_disclosed:false,merge:false,publication:false,pass:false,final_pass:false,general_effect_ack_done:false}' \
-            | tee "$root/receipt.json"
+          GitHub retained two globally listed queued runs on immutable predecessor heads. Both were exact-identity verified, but the Actions cancel endpoint rejected them as not yet queued. The trusted reviewer nevertheless treated them as current productive writer leases.
 
-      - name: Preserve exact bounded queue-drain receipt
+          This candidate binds active writer observation to exactly two heads already observed inside the same stable repository snapshot:
+
+          - current Authority main: \`$EXPECTED_MAIN\`
+          - exact pull-request candidate head under review
+
+          Unrelated predecessor heads are excluded. A current-main or current-candidate queued writer remains fail-closed and active. Malformed or empty relevant-head bindings fail closed.
+
+          Exact candidate head: \`$head\`
+          Exact candidate tree: \`$tree\`
+
+          Focused deterministic regression suite executed before branch publication. Repository integrity materialization and fresh exact-head gates remain separate effects. No merge, approval, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied.
+          EOF
+          )"
+            pr="$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls" -f title='fix(review): bind active writer leases to exact heads' -f head="$REPAIR_BRANCH" -f base=main -f body="$body" --jq '.number')"
+          fi
+          printf '%s\n' "$pr" | tee /tmp/qikvrt-repair-pr.txt
+
+      - name: Preserve materialization receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-exact-stale-writer-lease-drain-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qikvrt-stale-writer-lease-drain
-          if-no-files-found: error
+          name: qikvrt-writer-head-binding-repair-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/qikvrt-repair-base-tree.txt
+            /tmp/qikvrt-repair-head.txt
+            /tmp/qikvrt-repair-tree.txt
+            /tmp/qikvrt-repair-pr.txt
+          if-no-files-found: warn
           retention-days: 30
