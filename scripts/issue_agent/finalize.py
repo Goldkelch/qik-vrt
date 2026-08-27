@@ -65,6 +65,11 @@ def main() -> None:
         )
 
     markdown = answer.read_text(encoding="utf-8")
+    deterministic_contract_completed = (
+        inference_succeeded
+        and section(markdown, "Inference mode") == "DETERMINISTIC_OWNER_CONTRACT"
+    )
+    model_inference_completed = inference_succeeded and not deterministic_contract_completed
     disposition = disposition_token(markdown)
     reason = section(markdown, "Disposition reason")
     next_action = section(markdown, "Required next action")
@@ -91,7 +96,13 @@ def main() -> None:
     status = {
         "status": status_value,
         "issue_materialized": True,
-        "model_inference_completed": inference_succeeded,
+        "model_inference_completed": model_inference_completed,
+        "deterministic_contract_completed": deterministic_contract_completed,
+        "evaluation_mode": (
+            "DETERMINISTIC_OWNER_CONTRACT"
+            if deterministic_contract_completed
+            else ("MODEL_INFERENCE" if model_inference_completed else "UNAVAILABLE")
+        ),
         "issue_disposition": disposition,
         "disposition_reason": reason,
         "next_action": next_action,
