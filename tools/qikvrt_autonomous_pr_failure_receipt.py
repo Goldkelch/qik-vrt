@@ -68,6 +68,19 @@ def read_conflict_paths(path: pathlib.Path | None) -> list[str]:
     return normalize_conflict_paths(path.read_text(encoding="utf-8").splitlines())
 
 
+def derive_next_evidence(classification: str, branch_push_state: str) -> str:
+    if classification == "NON_ALLOWLISTED_MERGE_CONFLICTS":
+        return (
+            "HISTORY_PRESERVING_CURRENT_MAIN_SUCCESSOR_WITH_EXPLICIT_"
+            "SEMANTIC_CONFLICT_RESOLUTION_AND_EXACT_HEAD_REOBSERVATION"
+        )
+    if branch_push_state == "OBSERVED":
+        return "EXACT_PUSHED_HEAD_REOBSERVATION_AND_TERMINAL_DISPOSITION"
+    if branch_push_state == "IN_PROGRESS":
+        return "LIVE_HEAD_CAS_REOBSERVATION_BEFORE_ANY_RETRY"
+    return "EXACT_BOUND_CAUSAL_REPAIR_AND_FRESH_CONTINUATION_REOBSERVATION"
+
+
 def build_receipt(
     *,
     repository: str,
@@ -140,10 +153,7 @@ def build_receipt(
             "productive_effect": False,
             "effect_ack": "NOT_REQUIRED",
         },
-        "next_evidence": (
-            "HISTORY_PRESERVING_CURRENT_MAIN_SUCCESSOR_WITH_EXPLICIT_"
-            "SEMANTIC_CONFLICT_RESOLUTION_AND_EXACT_HEAD_REOBSERVATION"
-        ),
+        "next_evidence": derive_next_evidence(classification, branch_push_state),
     }
 
 
@@ -207,8 +217,8 @@ def render_summary(receipt: dict[str, Any]) -> str:
             "",
             f"`{receipt['next_evidence']}`",
             "",
-            "No PASS, FINAL_PASS, merge, publication, deployment, or general "
-            "EFFECT_ACK_DONE is implied.",
+            "No PASS, FINAL_PASS, Authority-main merge, publication, deployment, "
+            "or general EFFECT_ACK_DONE is implied.",
         ]
     )
     return "\n".join(lines) + "\n"
