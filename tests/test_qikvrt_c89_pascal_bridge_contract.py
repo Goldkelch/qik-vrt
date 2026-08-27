@@ -41,8 +41,7 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         self.assertIn("{$V-}", wrapper)
         self.assertIn("{$I qikvrt_atari_browser_pas.pas}", wrapper)
         self.assertNotIn("function ParseUrl", wrapper)
-        policy = json.loads(POLICY.read_text(encoding="utf-8"))
-        lookup = policy["compiler_lookup"]
+        lookup = json.loads(POLICY.read_text(encoding="utf-8"))["compiler_lookup"]
         self.assertEqual(lookup["declared_unit"], "QikVrtAtariBrowserPas")
         self.assertEqual(lookup["normalized_lookup_wrapper"], "pascal/qikvrtataribrowserpas.pas")
         self.assertEqual(lookup["include_target"], "qikvrt_atari_browser_pas.pas")
@@ -55,12 +54,14 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         for marker in ("http://127.0.0.1:8771/a/b?x=1#ignored", "https://example.org/", "HTTP/1.0 200 OK", "QIK &amp; VRT", "hidden script", "hidden style", 'href="/two"', "A  B", "not http", "<p unterminated"):
             self.assertIn(marker, tests)
 
-    def test_harness_compiles_executes_both_modes_and_compares_receipts(self) -> None:
+    def test_harness_compiles_executes_both_modes_and_binds_literal_head(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn('compile_mode(root, build, fpc, "tp")', source)
         self.assertIn('compile_mode(root, build, fpc, "delphi")', source)
         self.assertIn('f"-M{mode}"', source)
         self.assertIn("normalized_semantic_output_equal", source)
+        self.assertIn('os.environ.get("QIKVRT_HEAD_SHA", "LOCAL")', source)
+        self.assertIn('"synthetic_merge_sha_used_as_receipt_head": False', source)
         self.assertIn("borland_turbo_pascal_compiler_executed", source)
         self.assertIn("embarcadero_delphi_compiler_executed", source)
         self.assertIn("m68000_binary_executed", source)
@@ -73,6 +74,8 @@ class C89TurboPascalDelphiBridgeContractTests(unittest.TestCase):
         self.assertIn("github.event.pull_request.head.sha || github.sha", workflow)
         self.assertIn("git rev-parse --verify HEAD^{commit}", workflow)
         self.assertIn("git rev-parse --verify HEAD^{tree}", workflow)
+        self.assertIn("QIKVRT_HEAD_SHA=%s", workflow)
+        self.assertIn("QIKVRT_TREE_SHA=%s", workflow)
         self.assertIn("pascal/qikvrtataribrowserpas.pas", workflow)
         self.assertIn("fp-compiler", workflow)
         self.assertIn("qikvrt_c89_pascal_bridge.py", workflow)

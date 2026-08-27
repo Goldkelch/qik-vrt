@@ -57,6 +57,7 @@ jobs:
           test "$head" = "$EXPECTED_HEAD"
           printf '%s\n' "$head" > "$root/source-head.txt"
           printf '%s\n' "$tree" > "$root/source-tree.txt"
+          printf 'QIKVRT_HEAD_SHA=%s\n' "$head" >> "$GITHUB_ENV"
           printf 'QIKVRT_TREE_SHA=%s\n' "$tree" >> "$GITHUB_ENV"
 
       - name: Install Free Pascal compiler

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -83,6 +84,19 @@ def compile_mode(root: Path, build: Path, fpc: str, mode: str) -> dict[str, Any]
     }
 
 
+def exact_binding() -> tuple[str, str, str | None]:
+    head = os.environ.get("QIKVRT_HEAD_SHA", "LOCAL")
+    tree = os.environ.get("QIKVRT_TREE_SHA", "LOCAL")
+    synthetic = os.environ.get("GITHUB_SHA")
+    if head != "LOCAL" and re.fullmatch(r"[0-9a-f]{40}", head) is None:
+        raise RuntimeError(f"invalid literal head binding: {head!r}")
+    if tree != "LOCAL" and re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        raise RuntimeError(f"invalid literal tree binding: {tree!r}")
+    if synthetic == head:
+        synthetic = None
+    return head, tree, synthetic
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".")
@@ -114,11 +128,18 @@ def main() -> int:
     if tp["test_output"] != expected_test:
         raise RuntimeError(f"unexpected test receipt: {tp['test_output']!r}")
 
+    head_sha, tree_sha, synthetic_merge_sha = exact_binding()
     receipt = {
         "schema": "qikvrt_c89_turbo_pascal_delphi_bridge_receipt_v1",
         "repository": os.environ.get("GITHUB_REPOSITORY", "Goldkelch/qik-vrt"),
-        "head_sha": os.environ.get("GITHUB_SHA", "LOCAL"),
-        "tree_sha": os.environ.get("QIKVRT_TREE_SHA", "LOCAL"),
+        "head_sha": head_sha,
+        "tree_sha": tree_sha,
+        "execution_binding": {
+            "literal_checkout_head_used": True,
+            "literal_checkout_tree_used": True,
+            "github_synthetic_merge_sha": synthetic_merge_sha,
+            "synthetic_merge_sha_used_as_receipt_head": False,
+        },
         "source_c89": {
             "pr": 848,
             "head": SOURCE_HEAD,
