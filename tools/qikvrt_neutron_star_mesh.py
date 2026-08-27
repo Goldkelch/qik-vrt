@@ -25,6 +25,9 @@ class Demand:
     bitrate_bps: int
     evidence_level: int
     quantum_hz: int = 1000
+    sample_rate_hz: int = 1
+    sample_bits: int = 8
+    channels: int = 1
 
     def validate(self) -> None:
         if self.bitrate_bps < 1:
@@ -33,6 +36,20 @@ class Demand:
             raise ValueError("evidence_level must be in range 0..7")
         if self.quantum_hz < 1:
             raise ValueError("quantum_hz must be positive")
+        if self.sample_rate_hz < 1:
+            raise ValueError("sample_rate_hz must be positive")
+        if self.sample_bits not in CARRIER_WIDTHS:
+            raise ValueError("sample_bits must be one of the bounded carrier widths")
+        if self.channels < 1 or self.channels > 256:
+            raise ValueError("channels must be in range 1..256")
+        if self.raw_signal_bps > self.bitrate_bps:
+            raise ValueError(
+                "transport bitrate is below lossless AD/DA signal requirement"
+            )
+
+    @property
+    def raw_signal_bps(self) -> int:
+        return self.sample_rate_hz * self.sample_bits * self.channels
 
 
 def _canonical(value: Any) -> bytes:
@@ -60,7 +77,11 @@ def plan_mesh(demand: Demand, witness_byte: int = 0xA5) -> dict[str, Any]:
     # Breadth grows with the square root of demand.  Width then adapts to the
     # load remaining in each sector.  If 256 bits are insufficient, breadth is
     # increased again until the bounded capacity is reached.
-    sectors = min(MAX_SECTORS, max(1, math.ceil(math.sqrt(bits_per_quantum / 8))))
+    minimum_octet_sectors = math.ceil(bits_per_quantum / 8)
+    sectors = math.isqrt(minimum_octet_sectors)
+    if sectors * sectors < minimum_octet_sectors:
+        sectors += 1
+    sectors = min(MAX_SECTORS, max(1, sectors))
     per_sector = math.ceil(bits_per_quantum / sectors)
     width = _carrier_width(per_sector)
     while sectors < MAX_SECTORS and sectors * width < bits_per_quantum:
@@ -98,7 +119,7 @@ def plan_mesh(demand: Demand, witness_byte: int = 0xA5) -> dict[str, Any]:
         "virtual_cells": virtual_cells,
     }
     bitrate = {
-        "requested_bps": demand.bitrate_bps,
+        "transport_bps": demand.bitrate_bps,
         "quantum_hz": demand.quantum_hz,
         "required_bits_per_quantum": bits_per_quantum,
         "carrier_width_bits": width,
@@ -106,6 +127,21 @@ def plan_mesh(demand: Demand, witness_byte: int = 0xA5) -> dict[str, Any]:
         "m68000_words_per_sector": m68000_words_per_sector,
         "aggregate_capacity_bps": aggregate_capacity_bps,
         "capacity_satisfies_request": aggregate_capacity_bps >= demand.bitrate_bps,
+    }
+    adda = {
+        "directions": ["AD_INWARD", "DA_OUTWARD"],
+        "sample_rate_hz": demand.sample_rate_hz,
+        "sample_bits": demand.sample_bits,
+        "channels": demand.channels,
+        "raw_signal_bps": demand.raw_signal_bps,
+        "transport_bps": demand.bitrate_bps,
+        "encoding": "LOSSLESS_FRAMED_V1",
+        "drop_policy": "NONE",
+        "lossless_transport_admitted": demand.bitrate_bps >= demand.raw_signal_bps,
+        "distinction": (
+            "sample_rate != sample_bits != transport_bps; bitrate adaptation "
+            "must not reduce evidentiary precision"
+        ),
     }
     abi = {
         "D0": "decision code: 0 NOOP, 1 HOLD, 2 REOBSERVE, 3 REQUEST_AUTHORITY",
@@ -122,6 +158,7 @@ def plan_mesh(demand: Demand, witness_byte: int = 0xA5) -> dict[str, Any]:
         "target": "Motorola 68000 virtual execution model",
         "model_kind": "TWO_DIMENSIONAL_BOUNDED_MESH_SCHEDULER",
         "topology": topology,
+        "adda": adda,
         "variable_bitrate": bitrate,
         "core": core,
         "abi": abi,
@@ -154,11 +191,21 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--bitrate-bps", type=int, required=True)
     parser.add_argument("--evidence-level", type=int, required=True)
     parser.add_argument("--quantum-hz", type=int, default=1000)
+    parser.add_argument("--sample-rate-hz", type=int, default=1)
+    parser.add_argument("--sample-bits", type=int, default=8)
+    parser.add_argument("--channels", type=int, default=1)
     parser.add_argument("--witness-byte", type=lambda value: int(value, 0), default=0xA5)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
     report = plan_mesh(
-        Demand(args.bitrate_bps, args.evidence_level, args.quantum_hz),
+        Demand(
+            args.bitrate_bps,
+            args.evidence_level,
+            args.quantum_hz,
+            args.sample_rate_hz,
+            args.sample_bits,
+            args.channels,
+        ),
         args.witness_byte,
     )
     print(json.dumps(report, sort_keys=True, indent=2 if args.json else None))

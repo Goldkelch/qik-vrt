@@ -41,6 +41,40 @@ class NeutronStarMeshTests(unittest.TestCase):
         )
         self.assertTrue(high["variable_bitrate"]["capacity_satisfies_request"])
 
+    def test_adda_dimensions_are_distinct_and_lossless(self):
+        plan = mod.plan_mesh(
+            mod.Demand(
+                768_000,
+                2,
+                quantum_hz=1000,
+                sample_rate_hz=48_000,
+                sample_bits=16,
+                channels=1,
+            )
+        )
+        adda = plan["adda"]
+        self.assertEqual(adda["sample_rate_hz"], 48_000)
+        self.assertEqual(adda["sample_bits"], 16)
+        self.assertEqual(adda["raw_signal_bps"], 768_000)
+        self.assertEqual(adda["transport_bps"], 768_000)
+        self.assertEqual(adda["drop_policy"], "NONE")
+        self.assertTrue(adda["lossless_transport_admitted"])
+
+        with self.assertRaisesRegex(ValueError, "below lossless"):
+            mod.plan_mesh(
+                mod.Demand(
+                    767_999,
+                    2,
+                    sample_rate_hz=48_000,
+                    sample_bits=16,
+                )
+            )
+
+    def test_planner_uses_integer_only_breadth_scaling(self):
+        source = TOOL.read_text(encoding="utf-8")
+        self.assertIn("math.isqrt", source)
+        self.assertNotIn("math.sqrt(", source)
+
     def test_depth_tracks_evidence_without_changing_witness(self):
         shallow = mod.plan_mesh(mod.Demand(1000, 0))
         deep = mod.plan_mesh(mod.Demand(1000, 7))
@@ -86,7 +120,7 @@ class NeutronStarMeshTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mod.plan_mesh(demand)
         with self.assertRaisesRegex(ValueError, "witness_byte"):
-            mod.plan_mesh(mod.Demand(1, 0), witness_byte=256)
+            mod.plan_mesh(mod.Demand(8, 0), witness_byte=256)
 
     def test_cli_emits_machine_readable_plan(self):
         proc = subprocess.run(
