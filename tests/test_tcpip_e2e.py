@@ -132,6 +132,9 @@ class TcpIpEndToEndTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(".qikvrt/api/provenance/**", workflow)
+        self.assertIn("Refuse non-default workflow dispatch", workflow)
+        self.assertIn("Bind current Authority default-branch head", workflow)
+        self.assertIn("ref: ${{ github.event.repository.default_branch }}", workflow)
         validator_command = "python3 -I tools/qikvrt_validate_state_run.py"
         download_action = "actions/download-artifact@"
         self.assertIn(validator_command, workflow)

@@ -16,6 +16,27 @@ servers:
   - url: https://api.github.com
     description: GitHub asynchronous REST dispatch API
 paths:
+  /capabilities:
+    get:
+      operationId: capabilities
+      security: []
+      summary: Public, read-only API capability and effect-boundary discovery.
+      responses:
+        '200':
+          description: Public API surface and its current configuration disposition.
+          content:
+            application/json:
+              schema: { type: object }
+  /openapi.yaml:
+    get:
+      operationId: openapiDocument
+      security: []
+      summary: Public, read-only copy of this exact OpenAPI document.
+      responses:
+        '200':
+          description: OpenAPI 3.0.3 YAML document served from the repository-bound path.
+          content:
+            application/vnd.oai.openapi;version=3.0.3: {}
   /health:
     get:
       operationId: health

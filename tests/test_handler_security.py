@@ -106,6 +106,16 @@ def http_health(address: tuple[str, int]) -> tuple[int, dict[str, object]]:
     return response.status, json.loads(raw.decode("utf-8"))
 
 
+def http_get(address: tuple[str, int], path: str) -> tuple[int, bytes, str]:
+    connection = http.client.HTTPConnection(*address, timeout=5)
+    connection.request("GET", path)
+    response = connection.getresponse()
+    raw = response.read()
+    content_type = response.getheader("Content-Type", "")
+    connection.close()
+    return response.status, raw, content_type
+
+
 class HandlerSecurityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="qikvrt-handler-security-")
@@ -208,6 +218,21 @@ class HandlerSecurityTests(unittest.TestCase):
             status, response = http_json(address, body)
             self.assertEqual(status, 202, response)
             self.assertEqual(response["status"], "CONTINUE")
+
+    def test_public_capabilities_and_openapi_are_read_only(self) -> None:
+        with live_shim(REPOSITORY_ROOT) as address:
+            status, raw, content_type = http_get(address, "/capabilities")
+            self.assertEqual(status, 200)
+            self.assertIn("application/json", content_type)
+            capabilities = json.loads(raw.decode("utf-8"))
+            self.assertEqual(capabilities["schema"], "qikvrt_mesh_api_capabilities_v1")
+            self.assertIn("/openapi.yaml", capabilities["public_read_endpoints"])
+            self.assertFalse(capabilities["ordinary_release"])
+
+            status, raw, content_type = http_get(address, "/openapi.yaml")
+            self.assertEqual(status, 200)
+            self.assertIn("openapi", content_type)
+            self.assertIn(b"QIKVRT GitHub Dispatch Adapter API", raw)
 
     def test_client_cannot_claim_a_different_responsibility_owner(self) -> None:
         body = json.dumps(

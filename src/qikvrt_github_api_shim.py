@@ -17,13 +17,19 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from qikvrt_api_handler import HandlerConfig, decode_secret_material, run_handler
+from qikvrt_api_handler import (
+    HandlerConfig,
+    decode_secret_material,
+    run_handler,
+    secure_read_bytes,
+)
 from qikvrt_effect_ack import EffectState
 
 REPOSITORY_COMPONENT = r"([A-Za-z0-9_.-]{1,100})"
 DISPATCH_RE = re.compile(rf"^/repos/{REPOSITORY_COMPONENT}/{REPOSITORY_COMPONENT}/actions/workflows/qikvrt_mesh_api\.yml/dispatches$")
 REPO_DISPATCH_RE = re.compile(rf"^/repos/{REPOSITORY_COMPONENT}/{REPOSITORY_COMPONENT}/dispatches$")
 MAX_REQUEST_BYTES = 1024 * 1024
+MAX_OPENAPI_BYTES = 512 * 1024
 _RATE_LOCK = threading.Lock()
 _RATE_WINDOWS: dict[str, tuple[int, int]] = {}
 
@@ -122,6 +128,38 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_yaml(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/vnd.oai.openapi;version=3.0.3")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    @staticmethod
+    def _repository_root() -> Path:
+        configured = os.environ.get("QIKVRT_REPO_ROOT", "")
+        return Path(configured).resolve() if configured else Path(__file__).resolve().parents[1]
+
+    def _capabilities(self) -> dict:
+        configured = _security_configuration_valid()
+        return {
+            "schema": "qikvrt_mesh_api_capabilities_v1",
+            "service": "QIKVRT GitHub-Compatible REST API Shim",
+            "configuration_valid": configured,
+            "public_read_endpoints": ["/health", "/capabilities", "/openapi.yaml"],
+            "authenticated_command_endpoints": [
+                "/repos/{owner}/{repo}/actions/workflows/qikvrt_mesh_api.yml/dispatches",
+                "/repos/{owner}/{repo}/dispatches",
+            ],
+            "operations": ["ingest", "verify", "stage", "release_status"],
+            "execution_boundary": "GitHub dispatch acceptance and local handler results require exact-run/artifact reobservation.",
+            "ordinary_release": False,
+            "general_effect_ack_done": False,
+        }
+
     def _read_json(self) -> dict:
         if self.headers.get("Transfer-Encoding") is not None:
             raise ValueError("Transfer-Encoding is not supported")
@@ -189,6 +227,20 @@ class QikvrtGitHubApiShim(BaseHTTPRequestHandler):
         raise ValueError(f"{field} must be true or false")
 
     def do_GET(self):
+        if self.path == "/capabilities":
+            self._send_json(200, self._capabilities())
+            return
+        if self.path == "/openapi.yaml":
+            try:
+                specification = secure_read_bytes(
+                    self._repository_root() / "api" / "qikvrt_github_api.openapi.yaml",
+                    max_bytes=MAX_OPENAPI_BYTES,
+                )
+            except (OSError, RuntimeError):
+                self._send_json(503, {"status": "BLOCK", "reason": "OpenAPI specification unavailable"})
+                return
+            self._send_yaml(200, specification)
+            return
         if self.path == "/health":
             valid = _security_configuration_valid()
             attestation_configured = bool(
