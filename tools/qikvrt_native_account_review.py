@@ -425,6 +425,17 @@ def _exact_retraction_event(intake: Mapping[str, Any]) -> bool:
     )
 
 
+def _exact_followup_event(intake: Mapping[str, Any]) -> bool:
+    """Accept one trusted exact event that can close a still-live request."""
+    event_name = intake.get("event_name")
+    event_action = intake.get("event_action")
+    if event_name == "workflow_dispatch":
+        return event_action == ""
+    if event_name == "pull_request_target" and event_action == "review_requested":
+        return False
+    return _exact_retraction_event(intake)
+
+
 def plan_native_account_review(
     *,
     repository: str,
@@ -522,12 +533,25 @@ def plan_native_account_review(
             )
         )
     target = intake.get("requested_reviewer")
-    exact_active_request = (
+    exact_requested_event = (
         intake.get("event_name") == "pull_request_target"
         and intake.get("event_action") == "review_requested"
         and intake.get("requested_target_observed") is True
         and isinstance(target, str)
         and target.casefold() == reviewer.casefold()
+    )
+    requested_reviewers = pr_object.get("requested_reviewers")
+    live_requested_counterpart = (
+        isinstance(requested_reviewers, list)
+        and any(
+            isinstance(item, Mapping)
+            and isinstance(item.get("login"), str)
+            and item["login"].casefold() == reviewer.casefold()
+            for item in requested_reviewers
+        )
+    )
+    exact_active_request = exact_requested_event or (
+        live_requested_counterpart and _exact_followup_event(intake)
     )
     stale_delegated_approval = _stale_delegated_approval_present(
         review_list, reviewer, binding["head_sha"], binding["fingerprint"]
@@ -562,7 +586,7 @@ def plan_native_account_review(
                     if intake.get("event_action") == "review_requested" and isinstance(target, str)
                     else "REVIEW_REQUEST_EVENT_NOT_EXACT"
                 ),
-                detail="a delegated native approval requires an observed exact review_requested counterpart event",
+                detail="a delegated native approval requires either the exact request event or a trusted exact follow-up while the counterpart remains requested",
             )
         )
     if event == "REQUEST_CHANGES" and not exact_active_request and not retraction_only:

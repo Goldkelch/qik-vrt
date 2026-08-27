@@ -241,7 +241,7 @@ jobs:
           run=gh(f'repos/{repo}/actions/runs/{run_id}')
           trusted_path='.github/workflows/qikvrt_requested_review_executor.yml'
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
-          allowed_events={'pull_request_target','issue_comment','workflow_run'}
+          allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}
           if (
               run.get('name') != 'QIKVRT requested review executor'
               or run.get('conclusion') != 'success'

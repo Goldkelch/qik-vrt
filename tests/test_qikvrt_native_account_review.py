@@ -119,6 +119,32 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertEqual(missing["first_blocker"], "REVIEW_INTAKE_INVALID")
         self.assertEqual(manual["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
 
+    def test_trusted_exact_followup_closes_a_live_request(self):
+        for intake in (
+            {"event_name": "workflow_run", "event_action": "completed"},
+            {"event_name": "workflow_dispatch", "event_action": ""},
+            {"event_name": "issue_comment", "event_action": "created"},
+        ):
+            with self.subTest(intake=intake):
+                value = self.plan(receipt=self.receipt(review_intake=intake))
+                self.assertTrue(value["effect_permitted"])
+                self.assertEqual(value["event"], "APPROVE")
+                self.assertTrue(value["active_requested_counterpart_required"])
+
+    def test_trusted_exact_followup_requires_counterpart_to_remain_requested(self):
+        intake = {"event_name": "workflow_run", "event_action": "completed"}
+        value = self.plan(
+            pr=self.pr(requested_reviewers=[]),
+            receipt=self.receipt(review_intake=intake),
+        )
+        self.assertFalse(value["effect_permitted"])
+        self.assertEqual(value["first_blocker"], "REVIEW_REQUEST_EVENT_NOT_EXACT")
+
+    def test_wrong_original_request_target_is_not_rescued_by_live_set(self):
+        value = self.plan(receipt=self.receipt(requested="ingolf-lohmann"))
+        self.assertFalse(value["effect_permitted"])
+        self.assertEqual(value["first_blocker"], "REQUESTED_REVIEWER_NOT_COUNTERPART")
+
     def test_approval_requires_platform_freshness_rules(self):
         value = self.plan(rule=False)
         self.assertFalse(value["effect_permitted"])
@@ -575,7 +601,7 @@ class NativeAccountReviewTests(unittest.TestCase):
         self.assertIn("verify-readback", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("run.get('workflow_id') != workflow.get('id')", workflow)
-        self.assertIn("allowed_events={'pull_request_target','issue_comment','workflow_run'}", workflow)
+        self.assertIn("allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}", workflow)
         self.assertIn("IMMUTABLE_EXECUTOR_ARTIFACT_RETRACTION_ONLY", workflow)
         self.assertIn("executor artifact name and receipt binding differ", workflow)
         self.assertIn("executor receipt event provenance differs from the trusted run", workflow)
