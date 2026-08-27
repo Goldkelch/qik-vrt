@@ -2452,7 +2452,24 @@ def _active_writer_observation(
     repository: str,
     current_run_id: int,
     writer_names: set[str],
+    relevant_heads: set[str],
 ) -> list[dict[str, Any]]:
+    """Observe only writers that can still mutate this exact subject.
+
+    Repository-wide Actions queries can retain queued admission ghosts
+    on immutable predecessor heads. They are not leases on the current
+    review. Main-driven writers remain relevant at the exact observed
+    main head; candidate writers remain relevant at the exact PR head.
+    Malformed relevant-head bindings fail closed.
+    """
+    if (
+        not isinstance(relevant_heads, set)
+        or not relevant_heads
+        or any(_git_sha1(value) is None for value in relevant_heads)
+    ):
+        raise ReviewObservationError(
+            "active writer relevant-head binding is invalid"
+        )
     observed: dict[int, dict[str, Any]] = {}
     for status in ACTIVE_WRITER_STATES:
         for run in _gh_runs(
@@ -2463,6 +2480,7 @@ def _active_writer_observation(
                 isinstance(run_id, int)
                 and run_id != current_run_id
                 and run.get("name") in writer_names
+                and run.get("head_sha") in relevant_heads
             ):
                 observed[run_id] = {
                     "id": run_id,
@@ -2554,6 +2572,7 @@ def observe_repository(
         repository,
         current_run_id,
         set(writer_workflows),
+        {main_sha, head},
     )
     final_main = _gh_one(f"repos/{repository}/commits/main")
     final_pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
