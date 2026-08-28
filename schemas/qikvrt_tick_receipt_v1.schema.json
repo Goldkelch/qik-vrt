@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qikvrt_tick_receipt_v1",
+  "type": "object",
+  "required": ["schema", "parent", "child", "node_time", "authority_observation", "state", "completion_claims"],
+  "properties": {
+    "schema": {"const": "qikvrt_tick_receipt_v1"},
+    "parent": {"$ref": "#/$defs/binding"},
+    "child": {"$ref": "#/$defs/binding"},
+    "node_time": {"type": "object", "required": ["clock", "elapsed_ns"], "properties": {"clock": {"const": "PROCESS_MONOTONIC_NS"}, "elapsed_ns": {"type": "integer", "minimum": 0}}},
+    "authority_observation": {"type": "object", "required": ["head", "observed_at_utc"]},
+    "state": {"enum": ["OBSERVE", "HOLD", "CONTINUE"]},
+    "completion_claims": {"const": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}}
+  },
+  "$defs": {"binding": {"type": "object", "required": ["head", "tree"], "properties": {"head": {"pattern": "^[0-9a-f]{40}$"}, "tree": {"pattern": "^[0-9a-f]{40}$"}}}}
+}

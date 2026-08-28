@@ -84,3 +84,103 @@ jobs:
         run: |
           cat audit/ci-diagnostics/MAKE_TEST_DIAGNOSTICS.log
           exit 1
+
+  quantum-causal-vhdl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EVIDENCE_ROOT: /tmp/qikvrt-quantum-causal-neutron-star-ci
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect inside-out VHDL carrier
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            state/fixpoints/QIKVRT_QUANTUM_CAUSAL_NEUTRON_STAR_EVIDENCE_FIXPOINT_SET_V1.json
+            hardware/vhdl/qikvrt_metatransistor_pkg.vhd
+            hardware/vhdl/qikvrt_metatransistor.vhd
+            hardware/vhdl/qikvrt_neutron_star_mesh.vhd
+            hardware/vhdl/tb_qikvrt_metatransistor.vhd
+            tools/qikvrt_quantum_causal_neutron_star_fixpoint.py
+            tests/test_qikvrt_quantum_causal_neutron_star_fixpoint.py
+          )
+          present=true
+          for path in "${required[@]}"; do
+            if [ ! -f "$path" ]; then
+              present=false
+            fi
+          done
+          echo "present=$present" >> "$GITHUB_OUTPUT"
+          printf 'INSIDE_OUT_VHDL_PRESENT=%s\n' "$present"
+      - name: Provision and bind GHDL
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          if ! command -v ghdl >/dev/null 2>&1; then
+            sudo apt-get update
+            candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
+            test -n "$candidate"
+            test "$candidate" != '(none)'
+            printf 'APT_CANDIDATE=%s\n' "$candidate" \
+              | tee "$EVIDENCE_ROOT/ghdl-package.txt"
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              --no-install-recommends "ghdl=$candidate"
+          fi
+          command -v ghdl | tee -a "$EVIDENCE_ROOT/ghdl-package.txt"
+          ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
+      - name: Validate analyze elaborate and execute inside-out VHDL
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          python3 -B tools/qikvrt_quantum_causal_neutron_star_fixpoint.py validate \
+            | tee "$EVIDENCE_ROOT/validation.json"
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_quantum_causal_neutron_star_fixpoint
+          work="$RUNNER_TEMP/qikvrt-ghdl-ci-work"
+          mkdir -p "$work"
+          pushd "$work" >/dev/null
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor_pkg.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_metatransistor.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_neutron_star_mesh.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_metatransistor.vhd"
+          ghdl -e --std=08 tb_qikvrt_metatransistor
+          ghdl -r --std=08 tb_qikvrt_metatransistor
+          popd >/dev/null
+          cat > "$EVIDENCE_ROOT/vhdl-toolchain.json" <<'JSON'
+          {
+            "analysis": "OBSERVED_SUCCESS",
+            "elaboration": "OBSERVED_SUCCESS",
+            "schema": "qikvrt.vhdl-toolchain-observation.v1",
+            "synthesis": "NOT_CLAIMED",
+            "testbench": "OBSERVED_SUCCESS"
+          }
+          JSON
+      - name: Reobserve immutable exact candidate
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$expected"
+          git status --porcelain=v1 --untracked-files=all \
+            | tee "$EVIDENCE_ROOT/worktree-status.txt"
+          test ! -s "$EVIDENCE_ROOT/worktree-status.txt"
+      - name: Preserve inside-out VHDL evidence
+        if: always() && steps.detect.outputs.present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-quantum-causal-neutron-star-ci-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          retention-days: 30
+          if-no-files-found: error
