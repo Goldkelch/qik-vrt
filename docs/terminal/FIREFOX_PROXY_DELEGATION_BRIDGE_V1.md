@@ -36,6 +36,11 @@ python3 -B tools/qikvrt_firefox_proxy_delegate.py \
 
 The local adapter does not claim that launching Firefox submitted a review. The content script may attempt `review_approve` only for `Goldkelch/qik-vrt`, only inside a live `Goldkelch` session, and only after the live PR/head/tree and the prior workflow-authored exact-head substantive `APPROVE` marker are reobserved. A UI click is still not effect evidence; the resulting GitHub review must be reobserved separately.
 
+When GitHub renders the review controls after the content script has started,
+the script waits on DOM mutation edges using `MutationObserver`; it does not
+periodically rescan the page. A single bounded `AbortSignal.timeout` edge turns
+an absent control into `HOLD` and never retries it implicitly.
+
 The bridge does not merge, mutate rulesets, publish, deploy, create credentials, enter secrets or perform arbitrary browser automation.
 
 ## Boundary invariants

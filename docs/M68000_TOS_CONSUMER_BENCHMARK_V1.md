@@ -89,6 +89,22 @@ receipts/<authority-main-head>/<workflow-run-id>.json
 
 The bounded ring closes only after the run-specific ledger receipt is read back and its exact Head, Tree, registry, five machine kernels, functional outputs, benchmark values, TOS image and GEMDOS receipt agree.
 
+### Non-polling acquisition and ledger boundary
+
+The CI path makes exactly one time-bounded EmuTOS download attempt and emits
+`QIKVRT_M68000_TOS_EMUTOS_ACQUISITION_RECEIPT_V1`.  A network failure is
+`HOLD_EMUTOS_SINGLE_FETCH_FAILED`; a digest mismatch is
+`BLOCK_EMUTOS_ARCHIVE_SHA256_MISMATCH`.  Neither condition retries or silently
+substitutes an archive.
+
+The Authority-main receipt uses one exact ledger-reference observation, one
+non-force fast-forward write attempt, and one post-write reference
+reobservation.  A missing ledger branch is a distinct initial-create case.  A
+transport failure, reference drift, collision, or failed post-write observation
+emits `QIKVRT_M68000_TOS_LEDGER_WRITE_RECEIPT_V3` with `HOLD` or `BLOCK`; it is
+not retried by that workflow run.  The post-write transport observation remains
+distinct from `EFFECT_ACK_DONE`.
+
 ## Non-claims
 
 ```text

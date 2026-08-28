@@ -1,0 +1,35 @@
+{
+  "schema": "qikvrt_patent_disclosure_v1",
+  "status": "TECHNICAL_DISCLOSURE_FOR_COUNSEL_REVIEW",
+  "inventor_attribution": "Ingolf Lohmann",
+  "dossier": "docs/patent/QIKVRT_DETERMINISTIC_MESH_DISCLOSURE_V1.md",
+  "technical_scope": "EVENT_DRIVEN_HTTP_TERMINAL_PEER_DURABLE_IDEMPOTENT_RECEIPT_FROZEN_FINITE_N_SQUARED_MESH_EPOCH_DETERMINISTIC_ADMISSION_RTL",
+  "technical_core": {
+    "canonical_frame": "N*N*WORD_BITS",
+    "mapping": "lane=row*N+column; bit=lane*WORD_BITS+bit; LSB_FIRST",
+    "admission_precedence": ["INCOMPLETE:CONTINUE", "AMBIGUITY:HOLD", "CANONICAL_MATCH:ACCEPT", "OTHER:BLOCK"],
+    "forbidden_decision_mechanisms": ["sampling", "random_choice", "implicit_ambiguity_resolution"],
+    "http_terminal": "SESSIONLESS_HTTP_REQUESTS_WITH_EXPLICIT_NODE_LOCAL_HASH_LINKED_IDEMPOTENCY_LEDGER",
+    "mesh_epoch": "ORDERED_ACTIVE_NODES_N_SQUARED_ROW_MAJOR_LANES_EPOCH_SHA256_AND_PRE_DISPATCH_REOBSERVATION"
+  },
+  "reference_artifacts": [
+    "hardware/vhdl/qikvrt_mesh_quadratic_codec.vhd",
+    "hardware/vhdl/qikvrt_deterministic_admission_gate.vhd",
+    "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype_top.vhd",
+    "tools/qikvrt_mesh_quadratic_codec.py",
+    "src/qikvrt_effect_ack_http_terminal.py",
+    ".github/workflows/qikvrt_authority_review_report_fanout.yml"
+  ],
+  "evidence_matrix": "state/patent/QIKVRT_DETERMINISTIC_MESH_EVIDENCE_MATRIX_V1.json",
+  "prior_art_search_log": "state/patent/QIKVRT_DETERMINISTIC_MESH_PRIOR_ART_SEARCH_V1.json",
+  "open_prerequisites": ["PATENT_COUNSEL_CLAIM_REVIEW", "INVENTOR_REVIEW", "APPLICANT_AND_JURISDICTION_BINDING", "DISCLOSURE_CHRONOLOGY_REVIEW", "PRIOR_ART_CLAIM_CHART", "TOOL_BOUND_SYNTHESIS", "PHYSICAL_BENCHMARK_IF_CLAIMED"],
+  "boundaries": {
+    "http_is_sessionless_not_system_stateless": true,
+    "firefox_v2_peer_runtime_observed": false,
+    "ietf_standard_or_consensus": false,
+    "physical_noise_eliminated": false,
+    "physical_hardware_manufactured": false,
+    "legal_advice": false
+  },
+  "claims": {"patentability_determined": false, "application_filed": false, "physical_performance_measured": false, "physical_hardware_observed": false, "PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+}

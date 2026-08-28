@@ -26,6 +26,11 @@
         <button class="qv-commit" data-act="commit" disabled>Commit</button>
         <span>Prepare ≠ effect · Commit requires DONE</span>
       </div>
+      <div class="qv-effect-row qv-peer-row">
+        <button class="qv-peer-prepare" data-act="peer-prepare">V2 Peer Prepare</button>
+        <button class="qv-peer-commit" data-act="peer-commit" disabled>V2 Peer Commit</button>
+        <span>closed JSON · configured 127.0.0.1 peer only · no external effect</span>
+      </div>
     </div>`;
   document.body.appendChild(host);
 
@@ -36,6 +41,7 @@
   const video = $("[data-role=video]");
   const mediaState = $("[data-role=media-state]");
   const commitButton = $("[data-act=commit]");
+  const peerCommitButton = $("[data-act=peer-commit]");
   const snapshotButton = $("[data-act=snapshot]");
 
   let audioStream = null;
@@ -46,6 +52,7 @@
   let snapshotBlob = null;
   let prepared = null;
   let preparedRequest = null;
+  let peerPrepared = null;
 
   function render(value) {
     output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -181,6 +188,39 @@
     await observe();
   }
 
+  async function peerPrepare() {
+    setState("PEER_PREPARE", "explicit local V2 request only");
+    peerCommitButton.disabled = true;
+    peerPrepared = null;
+    const request = {
+      schema: "qikvrt_terminal_input_v2",
+      submitted_at: new Date().toISOString(),
+      page: location.href,
+      text: command.value,
+      audio: await blobPayload(audioBlob, "audio"),
+      video: await blobPayload(snapshotBlob, "video_snapshot")
+    };
+    const result = await send("PREPARE_PEER_V2", request);
+    peerPrepared = result;
+    render(result);
+    const ready = result && result.record_validated === true && result.ordinary_release === false;
+    peerCommitButton.disabled = !ready;
+    setState(ready ? "PEER_PREPARED" : "HOLD", ready ? "explicit V2 local commit remains required" : (result.reason || "V2 peer prepare not validated"));
+  }
+
+  async function peerCommit() {
+    if (!peerPrepared || peerPrepared.record_validated !== true) {
+      setState("HOLD", "validated V2 peer prepare required");
+      return;
+    }
+    peerCommitButton.disabled = true;
+    setState("PEER_COMMIT", "explicit local V2 request and record reobservation");
+    const result = await send("COMMIT_PEER_V2", {confirmed: true, prepared: peerPrepared});
+    render(result);
+    setState(result && result.local_commit_receipt ? "PEER_LOCAL_COMMITTED" : "HOLD", result && result.local_commit_receipt ? "local ledger receipt; external effect remains NONE" : (result.reason || "V2 local commit not validated"));
+    peerPrepared = null;
+  }
+
   host.addEventListener("click", async event => {
     const button = event.target.closest("button[data-act]");
     if (!button) return;
@@ -192,6 +232,8 @@
       else if (act === "snapshot") await takeSnapshot();
       else if (act === "prepare") await prepare();
       else if (act === "commit") await commit();
+      else if (act === "peer-prepare") await peerPrepare();
+      else if (act === "peer-commit") await peerCommit();
       else if (act === "options") browser.runtime.openOptionsPage();
       else if (act === "collapse") host.classList.toggle("qv-collapsed");
     } catch (error) {
@@ -200,7 +242,9 @@
     }
   });
 
-  applyPreferences().then(observe).catch(error => {
+  applyPreferences().then(() => {
+    setState("READY", "explicit Observe required");
+  }).catch(error => {
     setState("HOLD", error.message);
     render({state: "HOLD", reason: error.message});
   });

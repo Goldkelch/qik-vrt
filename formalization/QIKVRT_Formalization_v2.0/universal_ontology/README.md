@@ -46,3 +46,18 @@ lake env lean QIKVRTUniversalOntology/AxiomAudit.lean
 The exact-head workflow creates an execution-bound receipt only after all three
 commands succeed. `PASS`, `FINAL_PASS`, and `EFFECT_ACK_DONE` remain outside the
 finite-model receipt.
+
+## Shell-only fallback acquisition boundary
+
+The shell-only fallback has one bounded network attempt to acquire the declared
+Lean release. It does not use a retry/backoff loop or an implicit replacement
+source. A failed fetch is recorded as `HOLD_LEAN_SINGLE_FETCH_FAILED`; an
+undersized, unextractable, or version-mismatched archive is `BLOCK`. Each path
+writes `QIKVRT_UNIVERSAL_ONTOLOGY_LEAN_ACQUISITION_RECEIPT_V1` as an Actions
+artifact with `attempts = 1` and `retry_policy = NONE`.
+
+The repository toolchain currently declares Lean through a version contract,
+not an archive-SHA lock. The receipt therefore records the observed archive
+SHA-256 and the observed Lean version; it does not represent that observation
+as a release signature, an external effect, or a proof beyond the exact
+workflow run.

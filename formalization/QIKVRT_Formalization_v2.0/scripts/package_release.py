@@ -69,6 +69,8 @@ FROZEN_ALPHA2_INPUTS = {
     path: "release/formalization-v2/alpha2-frozen/" + path
     for path in (
         ".github/workflows/qikvrt_manuscript_proof.yml",
+        "docs/publications/2026-07-22-effect-ack-universal-effect-control/"
+        "proof-report.json",
         "formalization/QIKVRT_Formalization_v2.0/README.md",
         "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
         "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",

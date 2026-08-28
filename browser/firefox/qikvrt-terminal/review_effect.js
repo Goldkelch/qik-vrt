@@ -14,16 +14,44 @@
     document.documentElement.dataset.qikvrtReviewEffect = `HOLD:${reason}`;
   };
 
-  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-  async function waitFor(getNode, description, timeoutMs = 5000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const node = getNode();
-      if (node) return node;
-      await wait(100);
+  // DOM controls are observed from browser mutation edges, never by repeatedly
+  // querying the page on a timer.  The one-shot AbortSignal timeout is a
+  // fail-closed bound for an absent control, not a retry mechanism.
+  function observeControl(getNode, description, timeoutMs = 5000) {
+    const available = getNode();
+    if (available) return Promise.resolve(available);
+    if (typeof MutationObserver !== "function" ||
+        typeof AbortSignal === "undefined" ||
+        typeof AbortSignal.timeout !== "function") {
+      return Promise.reject(new Error("event-driven DOM observation unavailable"));
     }
-    throw new Error(`missing control: ${description}`);
+    const root = document.documentElement;
+    if (!root) return Promise.reject(new Error("document root unavailable"));
+
+    return new Promise((resolve, reject) => {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      let settled = false;
+      let observer;
+      const finish = callback => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        timeout.removeEventListener("abort", onTimeout);
+        callback();
+      };
+      const onTimeout = () =>
+        finish(() => reject(new Error(`missing control: ${description}`)));
+      const onMutation = () => {
+        const node = getNode();
+        if (node) finish(() => resolve(node));
+      };
+
+      observer = new MutationObserver(onMutation);
+      observer.observe(root, {attributes: true, childList: true, subtree: true});
+      timeout.addEventListener("abort", onTimeout, {once: true});
+      if (timeout.aborted) onTimeout();
+      else onMutation();
+    });
   }
 
   const byText = (selector, pattern) =>
@@ -101,14 +129,14 @@
       return;
     }
 
-    const reviewButton = await waitFor(
+    const reviewButton = await observeControl(
       () => document.querySelector('button[data-hotkey="v"]') ||
         byText("button,summary", /Review changes|Änderungen überprüfen/i),
       "review changes",
     );
     reviewButton.click();
 
-    const approve = await waitFor(
+    const approve = await observeControl(
       () => document.querySelector('input[name="pull_request_review[event]"][value="approve"]') ||
         [...document.querySelectorAll('input[type="radio"]')].find(el => {
           const label = el.closest("label") || document.querySelector(`label[for="${el.id}"]`);
@@ -119,7 +147,7 @@
     approve.click();
 
     const form = approve.closest("form");
-    const submit = await waitFor(
+    const submit = await observeControl(
       () => form?.querySelector('button[type="submit"]') ||
         byText('button[type="submit"],button', /Submit review|Review abgeben|Überprüfung absenden/i),
       "submit review",

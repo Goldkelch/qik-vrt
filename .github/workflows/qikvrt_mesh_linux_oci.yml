@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+name: QIKVRT Mesh Linux OCI proof runtime
+
+on:
+  pull_request:
+    paths:
+      - "Makefile"
+      - "include/qikvrt/effect_ack.h"
+      - "src/effect_ack_core.c"
+      - "src/qikvrt_effect_ack.py"
+      - "platform/qikvrt-mesh-linux/**"
+      - "tools/qikvrt_mesh_linux_oci.py"
+      - "policy/QIKVRT_MESH_LINUX_CAPABILITY_MATRIX_V1.json"
+      - "docs/platform/QIKVRT_MESH_LINUX_PROTOTYPE_V1.md"
+      - "tests/test_qikvrt_meshd.py"
+      - "tests/test_qikvrt_mesh_linux_oci.py"
+      - "tests/test_effect_ack_cross_language.py"
+      - "tests/test_effect_ack_core.c"
+      - "tests/test_effect_ack_conformance.py"
+      - "state/work_units/QIKVRT_MESH_LINUX_OCI_C89_V1.json"
+      - "LICENSES/PolyForm-Noncommercial-1.0.0.txt"
+      - "runtime/toolchains/**"
+      - ".github/workflows/qikvrt_mesh_linux_oci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Makefile"
+      - "include/qikvrt/effect_ack.h"
+      - "src/effect_ack_core.c"
+      - "src/qikvrt_effect_ack.py"
+      - "platform/qikvrt-mesh-linux/**"
+      - "tools/qikvrt_mesh_linux_oci.py"
+      - "policy/QIKVRT_MESH_LINUX_CAPABILITY_MATRIX_V1.json"
+      - "docs/platform/QIKVRT_MESH_LINUX_PROTOTYPE_V1.md"
+      - "tests/test_qikvrt_meshd.py"
+      - "tests/test_qikvrt_mesh_linux_oci.py"
+      - "tests/test_effect_ack_cross_language.py"
+      - "tests/test_effect_ack_core.c"
+      - "tests/test_effect_ack_conformance.py"
+      - "state/work_units/QIKVRT_MESH_LINUX_OCI_C89_V1.json"
+      - "LICENSES/PolyForm-Noncommercial-1.0.0.txt"
+      - "runtime/toolchains/**"
+      - ".github/workflows/qikvrt_mesh_linux_oci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-proof-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.13"
+
+      - name: Verify repository tool-cache contract
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        run: python3 -B tools/qikvrt_tool_cache.py verify
+
+      - name: Run bounded C, HTTP and cross-language gates
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+        run: |
+          set -euo pipefail
+          make mesh-linux-proof-test
+
+      - name: Build deterministic OCI and Docker archives
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONNOUSERSITE: "1"
+          SOURCE_DATE_EPOCH: "0"
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_mesh_linux_oci.py build --output-dir /tmp/qikvrt-mesh-linux >/dev/null
+          python3 -B tools/qikvrt_mesh_linux_oci.py verify --output-dir /tmp/qikvrt-mesh-linux >/dev/null
+
+      - name: Preserve non-binary build receipt only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-mesh-linux-proof-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/qikvrt-mesh-linux/qikvrt-mesh-linux-receipt.json
+          if-no-files-found: error
+          retention-days: 14

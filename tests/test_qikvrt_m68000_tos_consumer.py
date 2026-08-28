@@ -117,9 +117,26 @@ class M68000TosConsumerTests(unittest.TestCase):
         )
         self.assertIn("QIKVRT_M68000_TOS_MAIN_EFFECT_RECEIPT_V2", text)
         self.assertIn("qikvrt/m68000-tos-systemtest-ledger-v1", text)
-        self.assertIn("M68000_TOS_LEDGER_FAST_FORWARD_CAS_EXHAUSTED", text)
+        self.assertIn("HOLD_M68000_TOS_LEDGER_SINGLE_CAS_FAILED", text)
         self.assertIn("physical_m68000_execution_observed': False", text)
         self.assertIn("physical_speedup_measured': False", text)
+
+    def test_network_and_ledger_paths_are_one_attempt_and_fail_closed(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("--retry", text)
+        self.assertNotIn("retry-all-errors", text)
+        self.assertNotIn("for attempt in", text)
+        self.assertNotIn("sleep ", text)
+        self.assertIn("--max-time 180", text)
+        self.assertIn("HOLD_EMUTOS_SINGLE_FETCH_FAILED", text)
+        self.assertIn("BLOCK_EMUTOS_ARCHIVE_SHA256_MISMATCH", text)
+        self.assertIn("QIKVRT_M68000_TOS_EMUTOS_ACQUISITION_RECEIPT_V1", text)
+        self.assertIn("HOLD_M68000_TOS_LEDGER_SINGLE_CAS_FAILED", text)
+        self.assertIn("HOLD_LEDGER_POST_WRITE_REF_DRIFT", text)
+        self.assertIn("BLOCK_LEDGER_POST_WRITE_RECEIPT_MISMATCH", text)
+        self.assertIn("QIKVRT_M68000_TOS_LEDGER_WRITE_RECEIPT_V3", text)
+        self.assertIn("emutos-acquisition-receipt.json", text)
+        self.assertIn("m68000-tos-ledger-write-receipt.json", text)
 
 
 if __name__ == "__main__":

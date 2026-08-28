@@ -227,6 +227,12 @@ class EffectAckStateConformanceTests(unittest.TestCase):
         self.assertIs(result.state, EffectState.EFFECT_ACK_CONTINUE)
         self.assertFalse(result.ordinary_release)
 
+    def test_identifier_and_digest_remain_checkable_without_transport_ack(self) -> None:
+        result = self.engine.evaluate(request(transport_ack=False))
+        self.assertIs(result.state, EffectState.EFFECT_ACK_CONTINUE)
+        self.assertIn("TRANSPORT_NOT_ACKNOWLEDGED", result.protocol.reasons)
+        self.assertFalse(result.ordinary_release)
+
     def test_json_facing_enum_values_are_normalized_at_request_boundary(self) -> None:
         item = request(risk_level="LOW", connection_decision="RELEASE")
         self.assertIs(item.risk_level, RiskLevel.LOW)

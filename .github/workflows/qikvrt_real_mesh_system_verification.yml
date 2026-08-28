@@ -11,8 +11,13 @@ on:
       - 'tools/qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_real_mesh_system_verification.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json'
       - 'REFLEXIVE_FINDING_WORKFLOW_STANDARD.json'
       - 'Makefile'
+      - 'tools/qikvrt_reflexive_repository_watchdog.py'
+      - 'tests/test_qikvrt_reflexive_repository_watchdog.py'
+      - '.github/workflows/qikvrt_live_status_watch.yml'
+      - '.github/workflows/qikvrt_reflexive_repository_watchdog.yml'
   push:
     branches: [main]
     paths:
@@ -21,8 +26,13 @@ on:
       - 'tools/qikvrt_real_mesh_system_verification.py'
       - 'tests/test_qikvrt_real_mesh_system_verification.py'
       - 'state/mesh/QIKVRT_REAL_MESH_V1.json'
+      - 'state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json'
       - 'REFLEXIVE_FINDING_WORKFLOW_STANDARD.json'
       - 'Makefile'
+      - 'tools/qikvrt_reflexive_repository_watchdog.py'
+      - 'tests/test_qikvrt_reflexive_repository_watchdog.py'
+      - '.github/workflows/qikvrt_live_status_watch.yml'
+      - '.github/workflows/qikvrt_reflexive_repository_watchdog.yml'
   workflow_dispatch:
 
 permissions:
@@ -82,3 +92,12 @@ jobs:
           assert audit['bounded_loopback_effect_ack_scope_confirmed'] is True
           print("PASS: all audit receipt assertions satisfied")
           PY
+
+      - name: Preserve exact-head system verification audit receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-real-mesh-system-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/real-mesh-sysverify
+          if-no-files-found: error
+          retention-days: 30

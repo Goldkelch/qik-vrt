@@ -24,6 +24,7 @@ STANDING = ROOT / "state/authorization/delegations/OWNER_WORLD_FORMULA_FORMALIZA
 WORK = ROOT / "state/work_units/UNIFIED_ONTOLOGY_KERNEL_PROGRAM_V2.json"
 IETF = ROOT / "external/ietf/UNIVERSAL_ONTOLOGY_FORMALIZATION_DISPOSITION_2026-08-06.json"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_universal_ontology_formalization.yml"
+SHELL_FALLBACK_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_universal_ontology_shell_fallback.yml"
 VERIFIER_PATH = FORMAL / "scripts/verify_universal_ontology.py"
 
 
@@ -182,6 +183,20 @@ class UniversalOntologyClaimClosureTests(unittest.TestCase):
         self.assertIn("make_universal_ontology_kernel_receipt.py", text)
         self.assertIn("UNIVERSAL_ONTOLOGY_KERNEL_RECEIPT.json", text)
         self.assertIn("universal-ontology-extended-axioms.txt", text)
+
+    def test_shell_fallback_is_single_attempt_and_receipt_bound(self):
+        text = SHELL_FALLBACK_WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("--retry", text)
+        self.assertNotIn("retry-all-errors", text)
+        self.assertNotIn("sleep ", text)
+        self.assertIn("--max-time 900", text)
+        self.assertIn("HOLD_LEAN_SINGLE_FETCH_FAILED", text)
+        self.assertIn("BLOCK_LEAN_VERSION_MISMATCH", text)
+        self.assertIn(
+            "QIKVRT_UNIVERSAL_ONTOLOGY_LEAN_ACQUISITION_RECEIPT_V1", text
+        )
+        self.assertIn("lean-acquisition-receipt.json", text)
+        self.assertIn("retry_policy\": \"NONE\"", text)
 
 
 class UniversalOntologySourceProvenanceTests(unittest.TestCase):

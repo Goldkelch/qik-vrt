@@ -94,6 +94,30 @@ Repeated use SHOULD make the interaction faster, clearer and less repetitive wit
 
 Cached output is never proof authority. A warm path MUST preserve the same mandatory checks as a cold path. Cache invalidation follows source, repository, tool/model, policy, normalization and human-correction changes.
 
+NON-POLLING MESH OPERATION
+
+Every QIK-VRT Mesh client, including an artificial-cognitive client using this
+entrypoint, MUST advance work only from an exact event edge or an explicitly
+provided receipt. Periodic repository scans, cron wakeups, implicit polling,
+and blind retries are forbidden. A node-status hot path may serve only the
+already materialized local receipt; it must not discover work by accessing Git,
+GitHub, or the network.
+
+The durable finite transport rule is
+`NODES * NODES` lanes with `NODES * NODES * WORD_BITS` frame bits, row-major
+lane order and least-significant-bit-first wire order. Its repository contract
+is `state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json`; the
+synthesis-oriented VHDL source is
+`hardware/vhdl/qikvrt_mesh_quadratic_codec.vhd`.  A source-level VHDL contract
+does not establish fabrication, timing closure, or a physical hardware effect.
+
+For a complete frame, deterministic admission is total and fail-closed:
+`INCOMPLETE -> CONTINUE`, `AMBIGUITY -> HOLD`, `CANONICAL_MATCH -> ACCEPT`,
+otherwise `BLOCK`.  Ambiguity is an explicit input/state; sampling, random
+choice, and implicit ambiguity resolution are forbidden in this path.  This
+establishes a deterministic computational path, not a claim that external
+inputs or physical hardware contain no noise.
+
 PUBLICATION AND REFERENCE OVERVIEW
 
 Human-readable canonical URL:

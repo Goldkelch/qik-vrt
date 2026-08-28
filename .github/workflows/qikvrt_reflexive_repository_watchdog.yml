@@ -4,17 +4,20 @@ name: QIKVRT reflexive repository watchdog
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_run:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
       - "QIK-VRT autonomous draft-PR continuation"
       - "QIK-VRT expected-head promotion executor"
       - "QIKVRT workflow executor"
+      - "QIKVRT workflow executor watchdog"
       - "QIKVRT live status watch"
       - "QIKVRT CI"
       - "QIKVRT repository evidence materialization"
+      - "QIKVRT Mesh non-polling quadratic codec"
+      - "QIKVRT real multi-pair Mesh runtime"
+      - "QIKVRT real mesh system verification"
+      - "QIKVRT requested review executor"
       - "QIKVRT Collective Proposal Review"
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
@@ -58,18 +61,24 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
+  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.ref_name || 'main' }}
   cancel-in-progress: true
 
 jobs:
   pre-deadlock-observation:
+    # `workflow_run` executes with the default-branch workflow context.  Never
+    # check out a fork-controlled SHA in that context; a fork observation is
+    # intentionally outside this read-only watchdog's authority.
+    if: >-
+      (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out the exact observed head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -83,8 +92,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+          SOURCE_WORKFLOW_NAME: ${{ github.event.workflow_run.name || '' }}
+          SOURCE_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          SOURCE_WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
@@ -93,23 +107,72 @@ jobs:
           mkdir -p "$root/jobs"
           local_head="$(git rev-parse --verify HEAD^{commit})"
           test "$local_head" = "$EXPECTED_HEAD"
-          if test "$EVENT_NAME" = pull_request; then
-            live_head="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
-          else
-            live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+
+          if test "$EVENT_NAME" = workflow_run; then
+            mapfile -t event_prs < <(
+              printf '%s' "$EVENT_WORKFLOW_PRS" | jq -r '[.[].number | tostring] | unique[]'
+            )
+            if test "${#event_prs[@]}" -gt 1; then
+              echo "HOLD: workflow_run event binds more than one pull request" >&2
+              exit 1
+            fi
+            if test "${#event_prs[@]}" -eq 1; then
+              EVENT_PR="${event_prs[0]}"
+            fi
           fi
-          test "$live_head" = "$EXPECTED_HEAD"
-          git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
-          printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
-          if test "$EVENT_NAME" = pull_request; then
-            if test "${{ github.event.pull_request.base.ref }}" = main; then
+
+          if test -n "$EVENT_PR"; then
+            pr_json="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR")"
+            live_head="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+            base_ref="$(printf '%s' "$pr_json" | jq -r '.base.ref')"
+            test "$live_head" = "$EXPECTED_HEAD"
+            if test "$base_ref" = main; then
               printf '%s\n' PULL_REQUEST_MAIN > "$root/observation-scope.txt"
             else
               printf '%s\n' PULL_REQUEST_STACKED > "$root/observation-scope.txt"
             fi
           else
+            live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
             printf '%s\n' MAIN > "$root/observation-scope.txt"
           fi
+          test "$live_head" = "$EXPECTED_HEAD"
+          git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
+          printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
+          python3 - "$root/terminal-observation-event.json" <<'PY'
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path('.qikvrt/reflexive-repository-watchdog')
+          receipt = {
+              'schema': 'qikvrt_terminal_observation_event_v1',
+              'event_name': os.environ['EVENT_NAME'],
+              'event_action': os.environ.get('EVENT_ACTION', ''),
+              'pull_request_number': os.environ.get('EVENT_PR', '') or None,
+              'head_sha': root.joinpath('observed-head.txt').read_text(encoding='utf-8').strip(),
+              'tree_sha': root.joinpath('observed-tree.txt').read_text(encoding='utf-8').strip(),
+              'observation_scope': root.joinpath('observation-scope.txt').read_text(encoding='utf-8').strip(),
+              'source_workflow_name': os.environ.get('SOURCE_WORKFLOW_NAME', '') or None,
+              'source_workflow_run_id': os.environ.get('SOURCE_WORKFLOW_RUN_ID', '') or None,
+              'source_workflow_conclusion': os.environ.get('SOURCE_WORKFLOW_CONCLUSION', '') or None,
+              'source_terminal_event': (
+                  os.environ['EVENT_NAME'] == 'workflow_run'
+                  and os.environ.get('EVENT_ACTION', '') == 'completed'
+              ),
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'GENERAL_EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+                  'DEPLOYMENT': False,
+              },
+          }
+          pathlib.Path(__import__('sys').argv[1]).write_text(
+              json.dumps(receipt, sort_keys=True, separators=(',', ':')) + '\n',
+              encoding='utf-8',
+          )
+          PY
           authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
           test "$authority_repository" != null
           gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
@@ -128,7 +191,7 @@ jobs:
               > "$root/jobs/$run_id.json"
           done
 
-          if test "$EVENT_NAME" != pull_request; then
+          if test -z "$EVENT_PR"; then
             previous_run="$(
               gh api "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
                 | jq -r --argjson current "$CURRENT_RUN_ID" \

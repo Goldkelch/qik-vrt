@@ -26,6 +26,8 @@ PREFIX = "QIKVRT_Formalization_v2.0-alpha.2/"
 FREEZE_ROOT = ROOT / "release/formalization-v2/alpha2-frozen"
 PATHS = (
     ".github/workflows/qikvrt_manuscript_proof.yml",
+    "docs/publications/2026-07-22-effect-ack-universal-effect-control/"
+    "proof-report.json",
     "formalization/QIKVRT_Formalization_v2.0/README.md",
     "formalization/QIKVRT_Formalization_v2.0/COMPLETION_PLAN.md",
     "formalization/QIKVRT_Formalization_v2.0/scripts/package_release.py",
@@ -89,8 +91,8 @@ def _load() -> tuple[dict[str, bytes], dict[str, object]]:
         ],
         "purpose": (
             "Preserve the tagged and published Alpha-2 archive bytes while live "
-            "workflow, entrypoints, axiom-audit sources, README, completion-plan "
-            "and package implementation status advance."
+            "workflow, proof report, entrypoints, axiom-audit sources, README, "
+            "completion-plan and package implementation status advance."
         ),
     }
     return projected, manifest

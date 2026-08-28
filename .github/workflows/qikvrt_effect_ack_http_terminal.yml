@@ -6,8 +6,10 @@ on:
     paths:
       - "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml"
       - "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json"
+      - "policy/QIKVRT_HTTP_TERMINAL_PEER_V2.json"
       - "browser/firefox/qikvrt-terminal/**"
       - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
+      - "docs/terminal/QIKVRT_HTTP_TERMINAL_PEER_V2.schema.json"
       - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -39,8 +41,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m json.tool policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json >/dev/null
+          python3 -m json.tool policy/QIKVRT_HTTP_TERMINAL_PEER_V2.json >/dev/null
           python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
           python3 -m json.tool docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json >/dev/null
+          python3 -m json.tool docs/terminal/QIKVRT_HTTP_TERMINAL_PEER_V2.schema.json >/dev/null
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
           ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml')
@@ -75,6 +79,7 @@ jobs:
           node --check browser/firefox/qikvrt-terminal/background.js
           node --check browser/firefox/qikvrt-terminal/content.js
           node --check browser/firefox/qikvrt-terminal/options.js
+          node --check browser/firefox/qikvrt-terminal/review_effect.js
 
       - name: Run HTTP terminal contract and E2E tests
         env:
@@ -90,12 +95,31 @@ jobs:
           (
             cd browser/firefox/qikvrt-terminal
             zip -X -9 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
-              manifest.json background.js content.js terminal.css options.html options.js README.md
+              manifest.json background.js content.js review_effect.js terminal.css options.html options.js README.md
           )
           sha256sum /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
             > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('/tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi')
+          manifest = json.loads(
+              Path('browser/firefox/qikvrt-terminal/manifest.json').read_text()
+          )
+          required = set(manifest['background']['scripts'])
+          required.add(manifest['options_ui']['page'])
+          for entry in manifest['content_scripts']:
+              required.update(entry.get('js', ()))
+              required.update(entry.get('css', ()))
+          with zipfile.ZipFile(archive) as package:
+              missing = sorted(required - set(package.namelist()))
+          if missing:
+              raise SystemExit(f'manifest references missing from XPI: {missing}')
+          PY
 
       - name: Preserve verified Firefox package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

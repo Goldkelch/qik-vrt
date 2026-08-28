@@ -1,0 +1,74 @@
+{
+  "schema": "qikvrt_deterministic_mesh_evidence_matrix_v1",
+  "status": "TECHNICAL_EVIDENCE_INDEX_NOT_LEGAL_OR_PHYSICAL_PROOF",
+  "dossier": "docs/patent/QIKVRT_DETERMINISTIC_MESH_DISCLOSURE_V1.md",
+  "evidence": [
+    {
+      "id": "QTM-HTTP-001",
+      "proposition": "The V2 local HTTP peer binds a closed canonical terminal input and detects conflicting idempotency reuse without a retained HTTP session.",
+      "artifacts": [
+        "src/qikvrt_effect_ack_http_terminal.py",
+        "policy/QIKVRT_HTTP_TERMINAL_PEER_V2.json",
+        "docs/terminal/QIKVRT_HTTP_TERMINAL_PEER_V2.schema.json",
+        "tests/test_qikvrt_effect_ack_http_terminal.py"
+      ],
+      "classification": "REFERENCE_IMPLEMENTATION_AND_NEGATIVE_TEST_SOURCE",
+      "boundary": "LOOPBACK_ONLY; TLS_MTLS_REMOTE_DEPLOYMENT_BROWSER_V2_AND_EXTERNAL_EFFECT_OPEN"
+    },
+    {
+      "id": "QTM-EPOCH-001",
+      "proposition": "The Authority fan-out freezes an ordered finite epoch with exactly N*N row-major lane IDs and holds before dispatch when the reobservation differs.",
+      "artifacts": [
+        ".github/workflows/qikvrt_authority_review_report_fanout.yml",
+        "docs/architecture/QIKVRT_AUTHORITY_REVIEW_REPORT_FANOUT_EPOCH_V1.md",
+        "tests/test_qikvrt_authority_review_report_fanout.py"
+      ],
+      "classification": "WORKFLOW_SOURCE_AND_STATIC_CONTRACT",
+      "boundary": "DISPATCH_ACCEPTANCE_IS_NOT_TARGET_DELIVERY_OR_EFFECT_ACK"
+    },
+    {
+      "id": "QTM-CODEC-001",
+      "proposition": "The reference codec and RTL use lane=row*N+column, LSB-first serialization, protected framing and fail-closed deserialization.",
+      "artifacts": [
+        "tools/qikvrt_mesh_quadratic_codec.py",
+        "hardware/vhdl/qikvrt_mesh_quadratic_codec.vhd",
+        "hardware/vhdl/qikvrt_mesh_quadratic_codec_tb.vhd",
+        "tests/test_qikvrt_mesh_nonpolling_quadratic_codec.py"
+      ],
+      "classification": "REFERENCE_AND_RTL_SOURCE",
+      "boundary": "CRC16_IS_ERROR_DETECTION_NOT_CRYPTOGRAPHIC_AUTHENTICITY; PHYSICAL_EXECUTION_OPEN"
+    },
+    {
+      "id": "QTM-GATE-001",
+      "proposition": "The admission gate implements incomplete-to-CONTINUE, ambiguity-to-HOLD, exact-canonical-match-to-ACCEPT, otherwise-BLOCK.",
+      "artifacts": [
+        "hardware/vhdl/qikvrt_deterministic_admission_gate.vhd",
+        "hardware/vhdl/qikvrt_deterministic_admission_gate_tb.vhd",
+        "tools/qikvrt_vhdl_admission_gate_contract.py"
+      ],
+      "classification": "RTL_AND_SELF_CHECKING_TESTBENCH_SOURCE",
+      "boundary": "LOCKED_GHDL_ANALYSIS_AND_SIMULATION_RECEIPT_OPEN; NO_PHYSICAL_METASTABILITY_CLAIM"
+    },
+    {
+      "id": "QTM-FPGA-001",
+      "proposition": "A 2x2, 8-bit iCE40UP5K bring-up target and reproducibility evidence list are specified.",
+      "artifacts": [
+        "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype_top.vhd",
+        "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype_top_tb.vhd",
+        "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype.pcf",
+        "hardware/fpga/ice40up5k_breakout/PROTOTYPE_REQUIREMENTS.json"
+      ],
+      "classification": "PROTOTYPE_PREPARATION_SOURCE",
+      "boundary": "SYNTHESIS_PLACE_ROUTE_TIMING_BITSTREAM_PROGRAMMING_AND_BOARD_OBSERVATION_OPEN"
+    }
+  ],
+  "claims": {
+    "novelty_established": false,
+    "patentability_determined": false,
+    "application_filed": false,
+    "physical_hardware_observed": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

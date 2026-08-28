@@ -345,6 +345,213 @@ def dispatch_plan(snapshot_value: Mapping[str, Any], runs_value: Mapping[str, An
     }
 
 
+def _positive_integer(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ExecutorBlock(f"{label} must be a positive integer")
+    return value
+
+
+def _validate_dispatch_candidate_binding(
+    candidate_value: Mapping[str, Any],
+    snapshot_value: Mapping[str, Any],
+    repository: str,
+    *,
+    root: Path = ROOT,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Bind a dispatch candidate to the local exact-head contract and tree.
+
+    The Action keeps the original snapshot alongside the plan.  That artifact
+    is useful evidence, but it is not trusted on its own: this validator
+    recomputes the local exact ``HEAD`` snapshot and requires byte-equivalent
+    workflow inventory data before it accepts the candidate.  It therefore
+    cannot turn a self-consistent, supplied candidate/run pair into accepted
+    evidence for a different workflow, commit, tree, or workflow blob.
+    """
+
+    candidate = dict(_mapping(candidate_value, "dispatch candidate"))
+    supplied_snapshot = dict(_mapping(snapshot_value, "dispatch snapshot"))
+    contract = load_contract(root)
+    _validate_contract_shape(contract, root)
+    authority = _mapping(contract.get("authority"), "dispatch contract authority")
+    if repository != authority.get("repository"):
+        raise ExecutorBlock("dispatch repository differs from the contract authority")
+
+    exact_snapshot = snapshot(root)
+    for field in ("schema", "contract_id", "contract_path", "contract_sha256", "head_sha", "tree_sha"):
+        if supplied_snapshot.get(field) != exact_snapshot.get(field):
+            raise ExecutorBlock(f"dispatch snapshot differs from the local exact snapshot: {field}")
+
+    supplied_inventory = supplied_snapshot.get("workflow_inventory")
+    if not isinstance(supplied_inventory, list):
+        raise ExecutorBlock("dispatch snapshot workflow inventory is missing")
+    supplied_inventory_sha256 = sha256_bytes(canonical_json_bytes(supplied_inventory))
+    if supplied_snapshot.get("workflow_inventory_sha256") != supplied_inventory_sha256:
+        raise ExecutorBlock("dispatch snapshot workflow inventory digest is invalid")
+    if supplied_inventory != exact_snapshot["workflow_inventory"]:
+        raise ExecutorBlock("dispatch snapshot workflow inventory differs from the local exact tree")
+    if supplied_snapshot.get("workflow_inventory_sha256") != exact_snapshot["workflow_inventory_sha256"]:
+        raise ExecutorBlock("dispatch snapshot workflow inventory digest differs from the local exact tree")
+
+    workflow_id = _string(candidate.get("workflow_id"), "dispatch candidate workflow id")
+    workflow_path = _string(candidate.get("workflow_path"), "dispatch candidate workflow path")
+    workflow_name = _string(candidate.get("workflow_name"), "dispatch candidate workflow name")
+    expected_ref = _string(candidate.get("ref"), "dispatch candidate ref")
+    expected_head = _sha(candidate.get("head_sha"), "dispatch candidate head")
+    expected_tree = _sha(candidate.get("tree_sha"), "dispatch candidate tree")
+    workflow_blob_sha = _sha(candidate.get("workflow_blob_sha"), "dispatch candidate workflow blob")
+
+    policy = _mapping(contract.get("dispatch_policy"), "dispatch policy")
+    if expected_ref != policy.get("dispatch_ref"):
+        raise ExecutorBlock("dispatch candidate ref differs from the contract dispatch ref")
+    authorized = [
+        _mapping(value, "authorized dispatch workflow")
+        for value in policy.get("authorized_workflows", [])
+    ]
+    matched = [
+        value
+        for value in authorized
+        if value.get("workflow_id") == workflow_id
+        and value.get("workflow_path") == workflow_path
+        and value.get("workflow_name") == workflow_name
+    ]
+    if len(matched) != 1:
+        raise ExecutorBlock("dispatch candidate workflow id/path/name is not exactly contract-authorized")
+    authorized_workflow = matched[0]
+    if candidate.get("external_effect") != authorized_workflow.get("external_effect"):
+        raise ExecutorBlock("dispatch candidate external-effect boundary differs from the contract")
+    if candidate.get("required_artifact_prefix") != authorized_workflow.get("required_artifact_prefix"):
+        raise ExecutorBlock("dispatch candidate artifact boundary differs from the contract")
+    if expected_head != exact_snapshot["head_sha"] or expected_tree != exact_snapshot["tree_sha"]:
+        raise ExecutorBlock("dispatch candidate head or tree differs from the local exact snapshot")
+
+    inventory_by_path = {
+        value["path"]: value["blob_sha"]
+        for value in exact_snapshot["workflow_inventory"]
+    }
+    if inventory_by_path.get(workflow_path) != workflow_blob_sha:
+        raise ExecutorBlock("dispatch candidate workflow blob differs from the local exact tree")
+    return candidate, exact_snapshot
+
+
+def validate_dispatch_reobservation(
+    dispatch_request_bytes: bytes,
+    dispatch_response_bytes: bytes,
+    workflow_value: Mapping[str, Any],
+    run_value: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    snapshot_value: Mapping[str, Any],
+    repository: str,
+    *,
+    root: Path = ROOT,
+) -> dict[str, Any]:
+    """Validate the one causal REST reobservation following a dispatch POST.
+
+    The workflow-dispatch endpoint returns the created run identifier.  This
+    validator deliberately consumes that identifier directly: it does not list
+    runs, retry, sleep, or infer a relationship from a matching workflow name.
+    The resulting receipt is technical transport evidence only and cannot
+    promote a workflow conclusion into a gate, merge, deployment, or effect.
+    """
+
+    try:
+        request_value = json.loads(dispatch_request_bytes.decode("utf-8"))
+        response_value = json.loads(dispatch_response_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ExecutorBlock("dispatch request or response is not exact UTF-8 JSON") from exc
+    request = _mapping(request_value, "dispatch request")
+    response = _mapping(response_value, "dispatch response")
+    candidate, exact_snapshot = _validate_dispatch_candidate_binding(
+        candidate, snapshot_value, repository, root=root
+    )
+    candidate_workflow_id = _string(candidate.get("workflow_id"), "dispatch candidate workflow id")
+    expected_ref = _string(candidate.get("ref"), "dispatch candidate ref")
+    expected_head = _sha(candidate.get("head_sha"), "dispatch candidate head")
+    expected_tree = _sha(candidate.get("tree_sha"), "dispatch candidate tree")
+    workflow_path = _string(candidate.get("workflow_path"), "dispatch candidate workflow path")
+    workflow_name = _string(candidate.get("workflow_name"), "dispatch candidate workflow name")
+    workflow_blob_sha = _sha(candidate.get("workflow_blob_sha"), "dispatch candidate workflow blob")
+    if dict(request) != {"ref": expected_ref}:
+        raise ExecutorBlock("dispatch request differs from the exact main ref")
+    if set(response) != {"workflow_run_id", "run_url", "html_url"}:
+        raise ExecutorBlock("dispatch response fields differ from the documented exact response")
+    run_id = _positive_integer(response.get("workflow_run_id"), "dispatch response workflow_run_id")
+    expected_run_url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
+    expected_html_url = f"https://github.com/{repository}/actions/runs/{run_id}"
+    if response.get("run_url") != expected_run_url or response.get("html_url") != expected_html_url:
+        raise ExecutorBlock("dispatch response URLs do not bind the returned run id and repository")
+
+    workflow = _mapping(workflow_value, "dispatched workflow")
+    workflow_id = _positive_integer(workflow.get("id"), "dispatched workflow id")
+    if workflow.get("name") != workflow_name or workflow.get("path") != workflow_path:
+        raise ExecutorBlock("dispatched workflow id/path/name does not match the authorized candidate")
+    if workflow.get("state") != "active":
+        raise ExecutorBlock("dispatched workflow is not active")
+
+    run = _mapping(run_value, "dispatched workflow run")
+    if _positive_integer(run.get("id"), "reobserved workflow run id") != run_id:
+        raise ExecutorBlock("reobserved workflow run id differs from dispatch response")
+    if _positive_integer(run.get("workflow_id"), "reobserved workflow id") != workflow_id:
+        raise ExecutorBlock("reobserved workflow id differs from authorized workflow")
+    if run.get("name") != workflow_name or run.get("event") != "workflow_dispatch":
+        raise ExecutorBlock("reobserved run name or event is not the authorized dispatch")
+    if _sha(run.get("head_sha"), "reobserved workflow head") != expected_head:
+        raise ExecutorBlock("reobserved workflow head differs from exact dispatch head")
+    if run.get("head_branch") != expected_ref:
+        raise ExecutorBlock("reobserved workflow branch differs from exact dispatch ref")
+    head_commit = _mapping(run.get("head_commit"), "reobserved workflow head commit")
+    if _sha(head_commit.get("tree_id"), "reobserved workflow head tree") != expected_tree:
+        raise ExecutorBlock("reobserved workflow tree differs from exact dispatch tree")
+    run_repository = _mapping(run.get("repository"), "reobserved run repository")
+    head_repository = _mapping(run.get("head_repository"), "reobserved run head repository")
+    if run_repository.get("full_name") != repository or head_repository.get("full_name") != repository:
+        raise ExecutorBlock("reobserved run repository or head repository differs from Authority")
+    status = _string(run.get("status"), "reobserved workflow status")
+    if status not in ACTIVE_RUN_STATUSES | {"completed"}:
+        raise ExecutorBlock("reobserved workflow status is not an admitted dispatch lifecycle state")
+
+    return {
+        "schema": "qikvrt_workflow_executor_dispatch_reobservation_v1",
+        "state": "DISPATCH_ACCEPTED_EXACT_RUN_REOBSERVED",
+        "repository": repository,
+        "dispatch": {
+            "request_sha256": sha256_bytes(dispatch_request_bytes),
+            "response_sha256": sha256_bytes(dispatch_response_bytes),
+            "workflow_run_id": run_id,
+            "run_url": expected_run_url,
+            "html_url": expected_html_url,
+        },
+        "workflow": {
+            "id": workflow_id,
+            "candidate_id": candidate_workflow_id,
+            "path": workflow_path,
+            "name": workflow_name,
+            "blob_sha": workflow_blob_sha,
+        },
+        "exact_snapshot": {
+            "contract_sha256": exact_snapshot["contract_sha256"],
+            "head_sha": exact_snapshot["head_sha"],
+            "tree_sha": exact_snapshot["tree_sha"],
+            "workflow_inventory_sha256": exact_snapshot["workflow_inventory_sha256"],
+        },
+        "run": {
+            "id": run_id,
+            "event": "workflow_dispatch",
+            "head_sha": expected_head,
+            "tree_sha": expected_tree,
+            "ref": expected_ref,
+            "status": status,
+        },
+        "external_effect": "NONE",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+            "DEPLOYMENT": False,
+        },
+    }
+
+
 def expected_node_receipt_url(node_repository: str, node_branch: str) -> str:
     _string(node_repository, "node repository")
     _string(node_branch, "node branch")
@@ -469,6 +676,18 @@ def _read_json_file(path: Path, label: str) -> Mapping[str, Any] | Sequence[Any]
     return value
 
 
+def _read_bytes(path: Path, label: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise ExecutorBlock(f"cannot read {label}: {exc}") from exc
+
+
+def _read_json_object(path: Path, label: str) -> Mapping[str, Any]:
+    value = _read_json_file(path, label)
+    return _mapping(value, label)
+
+
 def _emit(value: Mapping[str, Any], as_json: bool) -> None:
     if as_json:
         print(canonical_json_bytes(value).decode("utf-8"), end="")
@@ -503,6 +722,15 @@ def build_parser() -> argparse.ArgumentParser:
     receipt.add_argument("--node-repository", required=True)
     receipt.add_argument("--node-branch", required=True)
     receipt.add_argument("--json", action="store_true")
+    dispatch = subcommands.add_parser("validate-dispatch-reobservation")
+    dispatch.add_argument("--dispatch-request", type=Path, required=True)
+    dispatch.add_argument("--dispatch-response", type=Path, required=True)
+    dispatch.add_argument("--workflow", type=Path, required=True)
+    dispatch.add_argument("--run", type=Path, required=True)
+    dispatch.add_argument("--candidate", type=Path, required=True)
+    dispatch.add_argument("--snapshot", type=Path, required=True)
+    dispatch.add_argument("--repository", required=True)
+    dispatch.add_argument("--json", action="store_true")
     return parser
 
 
@@ -519,11 +747,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 value = dispatch_plan(value, runs, arguments.ref)
         elif arguments.command == "node-receipt-template":
             value = build_node_receipt(arguments.node_repository, arguments.node_branch)
-        else:
+        elif arguments.command == "validate-node-receipt":
             receipt = _read_json_file(arguments.receipt, "node continuity receipt")
             if not isinstance(receipt, Mapping):
                 raise ExecutorBlock("node continuity receipt must be an object")
             value = validate_node_receipt(receipt, arguments.node_repository, arguments.node_branch)
+        else:
+            value = validate_dispatch_reobservation(
+                _read_bytes(arguments.dispatch_request, "dispatch request"),
+                _read_bytes(arguments.dispatch_response, "dispatch response"),
+                _read_json_object(arguments.workflow, "dispatched workflow"),
+                _read_json_object(arguments.run, "dispatched workflow run"),
+                _read_json_object(arguments.candidate, "dispatch candidate"),
+                _read_json_object(arguments.snapshot, "dispatch snapshot"),
+                _string(arguments.repository, "repository"),
+            )
         _emit(value, arguments.json)
         return 0
     except ExecutorBlock as exc:

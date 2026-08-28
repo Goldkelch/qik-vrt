@@ -1,6 +1,6 @@
 # Reflexive repository Gatewatch and pre-deadlock admission
 
-The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance every five minutes and at relevant workflow transitions. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
+The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance only at declared repository events, including exact `workflow_run` transitions. It does not wake on a schedule, cron timer, retry loop, or branch scan. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
 
 ## Operational model
 
@@ -20,7 +20,7 @@ The first deterministic response is admission control, not destructive recovery:
 
 ## Continuous exact-head Gatewatch
 
-Every scheduled or event-driven observation materializes an artifact-only
+Every declared source-event observation materializes an artifact-only
 `reflexive-watchdog-receipt.json` and the identically bound
 `gatewatch-receipt.json`. Both records contain the literal observed head and
 tree, a trusted-workflow matrix, node-liveness observations, and the prior
@@ -36,7 +36,7 @@ a stacked pull request: only the former requires the evidence-materialization
 workflow, because that workflow is configured to trigger only for `main`-base
 pull requests. A stacked successor therefore still requires exact-head CI but
 never treats an impossible materializer run as proof. Main observations
-distinguish an optional scheduled gate from a missing pull-request gate, so a
+distinguish a non-required main observation from a missing pull-request gate, so a
 missing main-only run is never silently invented as a successful verification.
 
 For repository nodes that carry the onboarding records, the same observation
@@ -51,21 +51,24 @@ An Authority instance without all three node-local records is explicitly
 `NOT_APPLICABLE`; a partial record set, malformed record, stale seed
 acceptance, overdue renewal, or expired health becomes a read-only `HOLD`.
 Records approaching expiry remain visible as `EXPIRING` without a fabricated
-renewal. The observer also detects a missed continuous observation only when a
-previous receipt is bound to the same head and tree and exceeds the declared
-fifteen-minute freshness bound. A burst of cancelled, zero-job observer runs is
+renewal. The observer also detects a stale same-head receipt only when a later
+declared source event reobserves it and it exceeds the declared freshness bound.
+Silence itself is not converted into evidence of a heartbeat; an independent
+node-published event source is required to observe silence or a physical timeout.
+A burst of cancelled, zero-job observer runs is
 coalesced only when a later exact-head receipt remains within that bound;
 otherwise it is a deterministic observation-cadence `HOLD`, not a claim of
 pipeline quiescence.
 
-The workflow remains five-minute, exact-head-bound, and read-only. It fetches
-the current Authority head only for comparison, materializes Action artifacts
-only, and never writes a repository liveness record, dispatches a productive
-workflow, or treats its own terminality as gate success.
+The workflow remains event-driven, exact-head-bound, and read-only. It fetches
+the current Authority head only for comparison at an incoming event,
+materializes Action artifacts only, and never writes a repository liveness
+record, dispatches a productive workflow, or treats its own terminality as gate
+success.
 
 ## Reflexivity
 
-The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A completed codec, bounded real-Mesh runtime, or real-Mesh system-verification workflow therefore creates a new exact-head fan-in edge and receipt. No repository workflow asserts that an unchanged head is continuously observed in the absence of a new source event.
 
 ## Database comparison boundary
 

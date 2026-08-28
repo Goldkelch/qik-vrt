@@ -44,6 +44,10 @@ from src.qikvrt_effect_ack import (  # noqa: E402
     RiskLevel,
     sha256_identifier,
 )
+from src.qikvrt_deterministic_admission import (  # noqa: E402
+    DeterministicDisposition,
+    deterministic_disposition,
+)
 
 MESH_ID = "QIKVRT_REAL_MULTI_PAIR_MESH_V1"
 TOPOLOGY_SCHEMA = "qikvrt_real_mesh_topology_v1"
@@ -345,6 +349,7 @@ def normalize_message(value: Any) -> dict[str, Any]:
             "receipt_chain",
             "payload",
             "payload_sha256",
+            "ambiguity_present",
         },
         "message",
     )
@@ -406,6 +411,8 @@ def normalize_message(value: Any) -> dict[str, Any]:
     payload_hash = canonical_sha256(payload)
     if message["payload_sha256"] != payload_hash:
         raise MeshRuntimeError("payload_sha256 mismatch")
+    if not isinstance(message["ambiguity_present"], bool):
+        raise MeshRuntimeError("ambiguity_present must be a boolean")
     return {
         "schema": MESSAGE_SCHEMA,
         "mesh_id": MESH_ID,
@@ -417,6 +424,7 @@ def normalize_message(value: Any) -> dict[str, Any]:
         "receipt_chain": normalized_chain,
         "payload": payload,
         "payload_sha256": payload_hash,
+        "ambiguity_present": message["ambiguity_present"],
     }
 
 
@@ -428,6 +436,7 @@ def build_message(
     nonce: str,
     source_head: str,
     source_tree: str,
+    ambiguity_present: bool = False,
 ) -> dict[str, Any]:
     normalized_topology = normalize_topology(topology)
     normalized_route = [_identifier(node_id, "route node") for node_id in route]
@@ -458,6 +467,7 @@ def build_message(
         "receipt_chain": [],
         "payload": payload,
         "payload_sha256": canonical_sha256(payload),
+        "ambiguity_present": ambiguity_present,
     }
     return normalize_message(message)
 
@@ -676,6 +686,27 @@ class NodeRuntime:
 
     async def _handle_valid(self, message: dict[str, Any]) -> dict[str, Any]:
         message_id = message["message_id"]
+        admission = deterministic_disposition(
+            frame_complete=True,
+            canonical_equal=True,
+            ambiguity_present=message["ambiguity_present"],
+        )
+        if admission is DeterministicDisposition.HOLD:
+            return hold_response(
+                message_id=message_id,
+                node_id=self.identity.node_id,
+                state=EffectState.EFFECT_ACK_CONTINUE,
+                reason="EXPLICIT_AMBIGUITY_HOLD",
+                retryable=False,
+            )
+        if admission is not DeterministicDisposition.ACCEPT:
+            return hold_response(
+                message_id=message_id,
+                node_id=self.identity.node_id,
+                state=EffectState.EFFECT_ACK_BLOCK,
+                reason="DETERMINISTIC_ADMISSION_NOT_ACCEPTED",
+                retryable=False,
+            )
         hop_index = message["hop_index"]
         expected_node_id = message["route"][hop_index]
         if expected_node_id != self.identity.node_id:
@@ -744,6 +775,7 @@ class NodeRuntime:
                 "inbound_message_sha256": message_sha256,
                 "predecessor_hop_receipt_sha256": predecessor,
                 "payload_sha256": message["payload_sha256"],
+                "deterministic_admission": admission.value,
                 "observed_effect": "MESH_MESSAGE_ACCEPTED_AND_LEDGERED",
                 "network_scope": NETWORK_SCOPE,
                 "external_effect": "NONE",

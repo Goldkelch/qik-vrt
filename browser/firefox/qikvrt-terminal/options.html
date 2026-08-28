@@ -10,6 +10,16 @@
     <label>Schriftgröße <input id="fontScale" type="range" min="0.8" max="1.4" value="1" step="0.05"></label>
     <label>Dichte <select id="density"><option value="comfortable">komfortabel</option><option value="compact">kompakt</option></select></label>
     <label>Position <select id="position"><option value="right">rechts</option><option value="left">links</option></select></label>
+  </fieldset>
+  <fieldset>
+    <legend>V2 lokaler HTTP-Peer</legend>
+    <p><small>Standardmäßig gesperrt. Diese Konfiguration erlaubt nur eine ausdrücklich ausgelöste Anfrage an einen der beiden lokalen Referenz-Daemons; sie ist keine Remote- oder Wirkungsfreigabe.</small></p>
+    <label>V2 aktiv <input id="peerV2Enabled" type="checkbox"></label>
+    <label>Lokales Ziel <select id="peerV2Backend"><option value="http://127.0.0.1:8771">127.0.0.1:8771</option></select></label>
+    <label>Quellknoten <input id="peerV2SourceNode" type="text" maxlength="128" autocomplete="off" placeholder="peer-a"></label>
+    <label>Zielknoten <input id="peerV2TargetNode" type="text" maxlength="128" autocomplete="off" placeholder="peer-b"></label>
+    <label>Ziel-Endpunkt <input id="peerV2TargetEndpoint" type="text" maxlength="128" autocomplete="off" placeholder="terminal-b"></label>
+    <label>Verantwortung <input id="peerV2ResponsibilityOwner" type="text" maxlength="256" autocomplete="off" value="LOCAL_INTERACTIVE_USER"></label>
     <button id="save" type="button">Lokal speichern</button> <span id="status" role="status"></span>
   </fieldset>
   <small>Audio und Video werden nicht durch diese Einstellungen freigeschaltet. Gerätezugriff erfordert weiterhin eine explizite Browser-Berechtigung und Nutzeraktion.</small>
