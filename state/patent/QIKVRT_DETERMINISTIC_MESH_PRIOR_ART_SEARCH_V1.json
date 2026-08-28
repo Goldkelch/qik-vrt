@@ -8,13 +8,52 @@
     "deterministic serialization mesh canonical"
   ],
   "sources": [
-    {"source": "Google Patents", "url": "https://patents.google.com/", "scope": "public search-index query"}
+    {"source": "Google Patents", "url": "https://patents.google.com/", "scope": "supplementary public search-index query"},
+    {"source": "WIPO patent information", "url": "https://www.wipo.int/en/web/patents", "scope": "official patent-system and PATENTSCOPE entry point"},
+    {"source": "WIPO IPC/PATENTSCOPE information", "url": "https://www.wipo.int/en/web/classification-ipc", "scope": "official classification and international-search entry point"},
+    {"source": "EPO Espacenet", "url": "https://www.epo.org/en/searching-for-patents/technical/espacenet", "scope": "official worldwide patent-search entry point"},
+    {"source": "USPTO Patent Public Search", "url": "https://www.uspto.gov/patents/search", "scope": "official US published-patent and application search entry point"}
   ],
   "reviewed_results": [
     {"publication": "US8949170B2", "url": "https://patents.google.com/patent/US8949170B2/en", "relation": "ambiguity analysis for NLP; no determination of the claimed square-lane codec plus precedence gate in this preliminary review"},
     {"publication": "KR20080058459A", "url": "https://patents.google.com/patent/KR20080058459A/en", "relation": "P2P service composition; no determination of the claimed codec plus gate combination in this preliminary review"}
   ],
-  "limitations": ["not a jurisdiction-specific search", "not a classification search", "not a family or legal-status review", "not a claim-chart analysis", "does not establish novelty or freedom to operate"],
-  "next_required": ["PATENT_COUNSEL_SEARCH_STRATEGY", "CPC_IPC_CLASSIFICATION_SEARCH", "CLAIM_CHART", "INVENTOR_AND_APPLICANT_REVIEW", "JURISDICTION_AND_FILING_ROUTE"],
+  "search_plan": {
+    "status": "COUNSEL_REVIEW_REQUIRED_BEFORE_ANY_NOVELTY_CONCLUSION",
+    "technical_partitions": [
+      "sessionless_http_prepare_commit_with_durable_idempotency_ledger",
+      "closed_canonical_json_cross_language_serialization",
+      "frozen_mesh_epoch_ordered_node_set_n_squared_row_major_lanes",
+      "pre_dispatch_drift_reobservation_and_target_idempotency",
+      "finite_serial_codec_sync_sequence_crc_and_fail_closed_deserialization",
+      "deterministic_hardware_admission_incomplete_ambiguity_match_other"
+    ],
+    "query_families": [
+      "(idempotent OR idempotency) AND (HTTP OR terminal) AND (prepare OR commit) AND (durable OR ledger OR replay)",
+      "(canonical JSON OR deterministic serialization) AND (cross language OR Unicode OR closed domain)",
+      "(mesh epoch OR frozen topology OR membership snapshot) AND (fanout OR dispatch) AND (idempotency OR reobservation)",
+      "(square mesh OR N squared OR row major) AND (serializer OR deserializer OR lane)",
+      "(hardware admission OR fail closed) AND (ambiguity OR incomplete OR canonical match) AND (FPGA OR VHDL OR circuit)"
+    ],
+    "required_methods": [
+      "keyword_and_synonym_search",
+      "CPC_IPC_CLASSIFICATION_SEARCH_CONFIRMED_BY_COUNSEL",
+      "backward_and_forward_citation_review",
+      "patent_family_and_legal_status_review",
+      "non_patent_literature_standards_and_open_source_search",
+      "claim_element_by_element_chart",
+      "public_disclosure_priority_and_filing_chronology_review"
+    ],
+    "result_record_minimum": [
+      "database_query_or_classification_and_timestamp",
+      "result_count_and_export_or_permalinks",
+      "publication_priority_and_family_information_when_available",
+      "cited_passages_drawings_and_relevance_category",
+      "reviewer_attribution_and_unresolved_differences",
+      "claim_element_mapping_not_keyword_overlap_only"
+    ]
+  },
+  "limitations": ["not a jurisdiction-specific search", "not a classification search", "not a family or legal-status review", "not a claim-chart analysis", "initial keyword candidates must be independently rerun and documented", "does not establish novelty or freedom to operate"],
+  "next_required": ["PATENT_COUNSEL_SEARCH_STRATEGY", "CPC_IPC_CLASSIFICATION_SEARCH", "NON_PATENT_LITERATURE_AND_STANDARDS_SEARCH", "CLAIM_CHART", "PUBLIC_DISCLOSURE_CHRONOLOGY_REVIEW", "INVENTOR_AND_APPLICANT_REVIEW", "JURISDICTION_AND_FILING_ROUTE"],
   "claims": {"novelty_established": false, "inventive_step_established": false, "freedom_to_operate_established": false}
 }

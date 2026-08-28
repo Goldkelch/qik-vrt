@@ -1,0 +1,80 @@
+{
+  "schema": "qikvrt_http_terminal_peer_v2",
+  "version": "2.0",
+  "status": "LOCAL_REFERENCE_CANDIDATE",
+  "policy_id": "QIKVRT_HTTP_TERMINAL_PEER_V2",
+  "policy_projection": {
+    "policy_id": "QIKVRT_HTTP_TERMINAL_PEER_V2",
+    "policy_version": 2,
+    "wire_version": 2,
+    "commit_bindings": [
+      "effective_method",
+      "effective_target",
+      "request_content_sha256",
+      "policy_sha256",
+      "responsibility_owner",
+      "record_hash",
+      "expires_at",
+      "source_node_id",
+      "target_node_id",
+      "target_endpoint_id",
+      "request_id"
+    ],
+    "terminal_input_schema": "qikvrt_terminal_input_v2",
+    "serialization_profile": "QIKVRT_CLOSED_JSON_V2",
+    "terminal_input_forbidden": ["floating_point", "array", "untyped_object", "duplicate_json_member", "noncanonical_base64", "invalid_utf8"],
+    "media_descriptor_schema": "qikvrt_terminal_media_descriptor_v1",
+    "external_effect": "NONE"
+  },
+  "policy_sha256": "sha256:4a0d59cc17ccc5750b17cb66a9be3e83f36631e739f9974e27b44252655b8af4",
+  "transport": {
+    "scope": "LOOPBACK_HTTP_ONLY",
+    "request_is_sessionless": true,
+    "http_method": "POST",
+    "prepare_target": "/terminal/prepare",
+    "commit_target": "/terminal/commit",
+    "effect_ack_request_header": "Effect-Ack-Request",
+    "idempotency_header": "Idempotency-Key",
+    "node_headers": [
+      "X-QIKVRT-Source-Node",
+      "X-QIKVRT-Target-Node",
+      "X-QIKVRT-Target-Endpoint"
+    ]
+  },
+  "state_model": {
+    "transport_session_state": "NONE",
+    "retained_state": "EXPLICIT_NODE_LOCAL_HASH_LINKED_LEDGER",
+    "retained_lifecycle": ["RECORD", "PREPARED", "COMMITTED"],
+    "restart_replay": "SAME_IDEMPOTENCY_KEY_AND_EXACT_FINGERPRINT_RETURNS_THE_ORIGINAL_LOCAL_RECEIPT",
+    "idempotency_conflict": "SAME_IDEMPOTENCY_KEY_WITH_DIFFERENT_FINGERPRINT_IS_BLOCKED",
+    "ledger_location": "OPERATOR_SUPPLIED_PRIVATE_STATE_DIRECTORY"
+  },
+  "deterministic_serialization": {
+    "canonical_json": "QIKVRT_CLOSED_JSON_V2_UTF8_UNICODE_SCALAR_KEY_ORDER_FIXED_STRING_ESCAPES_COMPACT_SEPARATORS",
+    "input_hash": "SHA-256_OF_CLOSED_qikvrt_terminal_input_v2",
+    "terminal_input_schema": "qikvrt_terminal_input_v2",
+    "terminal_input_domain": "CLOSED_OBJECT_WITH_BOUNDED_UTF8_STRINGS_AND_NULL_OR_TYPED_MEDIA_DESCRIPTORS",
+    "forbidden_terminal_input_values": ["floating_point", "array", "untyped_object", "noncanonical_base64", "duplicate_json_member"],
+    "integer_domain": "IEEE_754_SAFE_INTEGER_RANGE_ONLY",
+    "media_descriptor": "KIND_CONTENT_TYPE_BYTE_LENGTH_SHA256_CANONICAL_BASE64_MUST_EXACTLY_AGREE",
+    "object_key_order": "UNICODE_SCALAR_VALUE_LEXICOGRAPHIC_ASCENDING",
+    "string_escaping": "QUOTE_BACKSLASH_B_F_N_R_T_AND_U0000_TO_U001F_ONLY_LOWERCASE_U_ESCAPE",
+    "wire_order": "HTTP_HEADERS_THEN_CANONICAL_JSON_BODY",
+    "randomness": "NO_RANDOM_DECISION_PATH; A_NODE_LOCAL_SECRET_PROTECTS_TOKEN_UNFORGEABILITY"
+  },
+  "boundaries": {
+    "prepare_executes_external_effect": false,
+    "external_effect": "NONE",
+    "transport_ack_is_external_effect_ack": false,
+    "browser_runtime_observed": false,
+    "remote_or_public_deployment_observed": false,
+    "tls_mtls": "OPEN",
+    "ietf_standard_or_consensus": "OPEN",
+    "physical_hardware_or_performance_claim": "OUT_OF_SCOPE"
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

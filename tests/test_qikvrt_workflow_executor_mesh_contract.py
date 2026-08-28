@@ -407,6 +407,128 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         )
         self.assertEqual(writer["candidates"][0]["first_blocker"], "COMPETING_WRITER_ACTIVE")
 
+    def test_dispatch_response_is_bound_to_one_directly_reobserved_run(self) -> None:
+        snapshot = MODULE.snapshot(ROOT)
+        candidate = MODULE.dispatch_plan(snapshot, {"workflow_runs": []}, "main")["candidates"][0]
+        self.assertEqual(candidate["disposition"], "DISPATCH")
+        repository = "Goldkelch/qik-vrt"
+        workflow = {
+            "id": 77,
+            "name": candidate["workflow_name"],
+            "path": candidate["workflow_path"],
+            "state": "active",
+        }
+        run_id = 88
+        response = {
+            "workflow_run_id": run_id,
+            "run_url": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}",
+            "html_url": f"https://github.com/{repository}/actions/runs/{run_id}",
+        }
+        run = {
+            "id": run_id,
+            "workflow_id": workflow["id"],
+            "name": candidate["workflow_name"],
+            "event": "workflow_dispatch",
+            "head_sha": candidate["head_sha"],
+            "head_branch": "main",
+            "head_commit": {"tree_id": candidate["tree_sha"]},
+            "repository": {"full_name": repository},
+            "head_repository": {"full_name": repository},
+            "status": "queued",
+        }
+        request_bytes = b'{"ref":"main"}'
+        response_bytes = json.dumps(response, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        receipt = MODULE.validate_dispatch_reobservation(
+            request_bytes, response_bytes, workflow, run, candidate, snapshot, repository, root=ROOT
+        )
+        self.assertEqual(receipt["state"], "DISPATCH_ACCEPTED_EXACT_RUN_REOBSERVED")
+        self.assertEqual(receipt["dispatch"]["workflow_run_id"], run_id)
+        self.assertEqual(receipt["run"]["tree_sha"], candidate["tree_sha"])
+        self.assertEqual(receipt["workflow"]["candidate_id"], candidate["workflow_id"])
+        self.assertEqual(receipt["workflow"]["blob_sha"], candidate["workflow_blob_sha"])
+        self.assertFalse(receipt["completion_claims"]["EFFECT_ACK_DONE"])
+
+        for label, response_override, run_override in (
+            ("missing run id", {"workflow_run_id": None}, {}),
+            ("wrong run url", {"run_url": "https://api.github.com/repos/other/actions/runs/88"}, {}),
+            ("wrong event", {}, {"event": "push"}),
+            ("wrong head", {}, {"head_sha": "0" * 40}),
+            ("wrong tree", {}, {"head_commit": {"tree_id": "1" * 40}}),
+            ("wrong repository", {}, {"repository": {"full_name": "other/repository"}}),
+        ):
+            damaged_response = dict(response)
+            damaged_response.update(response_override)
+            damaged_run = copy.deepcopy(run)
+            damaged_run.update(run_override)
+            with self.subTest(label=label), self.assertRaises(MODULE.ExecutorBlock):
+                MODULE.validate_dispatch_reobservation(
+                    request_bytes,
+                    json.dumps(damaged_response, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                    workflow,
+                    damaged_run,
+                    candidate,
+                    snapshot,
+                    repository,
+                    root=ROOT,
+                )
+
+        for label, candidate_override, run_override, snapshot_override in (
+            ("unauthorized workflow id", {"workflow_id": "unrelated.yml"}, {}, {}),
+            (
+                "candidate head and run head differ from exact snapshot",
+                {"head_sha": "0" * 40},
+                {"head_sha": "0" * 40},
+                {},
+            ),
+            (
+                "candidate tree and run tree differ from exact snapshot",
+                {"tree_sha": "1" * 40},
+                {"head_commit": {"tree_id": "1" * 40}},
+                {},
+            ),
+            ("candidate workflow blob differs from inventory", {"workflow_blob_sha": "2" * 40}, {}, {}),
+            (
+                "supplied inventory differs from local exact tree",
+                {},
+                {},
+                {"workflow_inventory_sha256": "3" * 64},
+            ),
+        ):
+            damaged_candidate = copy.deepcopy(candidate)
+            damaged_candidate.update(candidate_override)
+            damaged_run = copy.deepcopy(run)
+            damaged_run.update(run_override)
+            damaged_snapshot = copy.deepcopy(snapshot)
+            damaged_snapshot.update(snapshot_override)
+            with self.subTest(label=label), self.assertRaises(MODULE.ExecutorBlock):
+                MODULE.validate_dispatch_reobservation(
+                    request_bytes,
+                    response_bytes,
+                    workflow,
+                    damaged_run,
+                    damaged_candidate,
+                    damaged_snapshot,
+                    repository,
+                    root=ROOT,
+                )
+
+        forged_snapshot = copy.deepcopy(snapshot)
+        forged_snapshot["workflow_inventory"][0]["blob_sha"] = "3" * 40
+        forged_snapshot["workflow_inventory_sha256"] = MODULE.sha256_bytes(
+            MODULE.canonical_json_bytes(forged_snapshot["workflow_inventory"])
+        )
+        with self.assertRaisesRegex(MODULE.ExecutorBlock, "inventory differs"):
+            MODULE.validate_dispatch_reobservation(
+                request_bytes,
+                response_bytes,
+                workflow,
+                run,
+                candidate,
+                forged_snapshot,
+                repository,
+                root=ROOT,
+            )
+
     def test_node_receipt_requires_the_declared_acceptance_order(self) -> None:
         receipt = MODULE.build_node_receipt("example/node", "main", ROOT)
         validation = MODULE.validate_node_receipt(receipt, "example/node", "main", ROOT)
@@ -436,6 +558,11 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("qikvrt_workflow_executor.py", executor)
         self.assertIn("/dispatches", executor)
         self.assertIn("test \"$refreshed_head\" = \"$head\"", executor)
+        self.assertIn("validate-dispatch-reobservation", executor)
+        self.assertIn("workflow_run_id", executor)
+        self.assertIn("--snapshot .qikvrt/workflow-executor/workflow-executor-snapshot.json", executor)
+        self.assertNotIn("/runs?event=workflow_dispatch", executor)
+        self.assertNotIn("sleep ", executor)
         self.assertNotIn("gh pr merge", executor)
         self.assertNotIn("zenodo", executor.casefold())
         self.assertNotIn("ietf", executor.casefold())
@@ -444,6 +571,21 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)
+        self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", live_watch)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", live_watch)
+        self.assertNotIn("issues: write", live_watch)
+        self.assertNotIn("pull-requests: write", live_watch)
+        self.assertNotIn("issues/comments", live_watch)
+        self.assertNotIn("gh api --method PATCH", live_watch)
+        self.assertNotIn("gh api --method POST", live_watch)
+        self.assertIn("?ref=$base_sha", live_watch)
+        self.assertIn("base-contract.json", live_watch)
+        self.assertIn("base-registered-workflows.json", live_watch)
+        self.assertIn("BASE_WORKFLOW_IDENTITY_NOT_UNIQUE", live_watch)
+        self.assertIn("jobs/$run_id.json", live_watch)
+        self.assertIn("job_count", live_watch)
+        self.assertNotIn("sleep ", live_watch)
+        self.assertNotIn("while :", live_watch)
 
     def test_watchdog_binds_the_literal_pull_request_head(self) -> None:
         watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")

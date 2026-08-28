@@ -31,6 +31,10 @@ jobs:
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
       SOURCE_HEAD: ${{ github.event.workflow_run.head_sha }}
       SOURCE_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+      MESH_EPOCH_POLICY_PATH: state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json
+      # Finite, reviewable ceiling for the registry snapshot and its N*N lane
+      # matrix. A larger registry must be split or explicitly re-reviewed.
+      MAX_ACTIVE_MESH_NODES: "64"
     steps:
       - name: Check out trusted Authority main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -112,6 +116,186 @@ jobs:
           PY
           cat /tmp/authority-review-report.json
 
+      - name: Materialize frozen active Registry Mesh epoch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          SHA40 = re.compile(r"^[0-9a-f]{40}$")
+          SHA64 = re.compile(r"^[0-9a-f]{64}$")
+          REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+          GUID = re.compile(
+              r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          )
+          BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,255}$")
+
+          def hold(message):
+              raise SystemExit(f"HOLD_UNVERIFIED: {message}")
+
+          def canonical(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+          def required_string(value, name, pattern=None):
+              if not isinstance(value, str) or not value:
+                  hold(f"{name} must be a non-empty string")
+              if pattern is not None and pattern.fullmatch(value) is None:
+                  hold(f"{name} has an invalid format")
+              return value
+
+          def required_integer(value, name):
+              if type(value) is not int or value < 0:
+                  hold(f"{name} must be a non-negative integer")
+              return value
+
+          repository = required_string(os.environ["REPOSITORY"], "Authority repository", REPOSITORY)
+          registry_path = "registry/NODEMESH_INDEX.json"
+          policy_path = os.environ["MESH_EPOCH_POLICY_PATH"]
+          try:
+              maximum_nodes = int(os.environ["MAX_ACTIVE_MESH_NODES"])
+          except ValueError:
+              hold("MAX_ACTIVE_MESH_NODES is not an integer")
+          if not 1 <= maximum_nodes <= 64:
+              hold("MAX_ACTIVE_MESH_NODES is outside the reviewed finite range")
+
+          policy_raw = open(policy_path, "rb").read()
+          try:
+              policy = json.loads(policy_raw)
+          except json.JSONDecodeError as error:
+              hold(f"quadratic codec policy is invalid JSON: {error}")
+          if not isinstance(policy, dict):
+              hold("quadratic codec policy is not an object")
+          if policy.get("schema") != "qikvrt_mesh_nonpolling_quadratic_codec_v1":
+              hold("quadratic codec policy schema is not exact")
+          quadratic = policy.get("quadratic_scaling")
+          mapping = policy.get("canonical_mapping")
+          if not isinstance(quadratic, dict) or not isinstance(mapping, dict):
+              hold("quadratic codec policy sections are unavailable")
+          if quadratic.get("lane_count") != "N*N" or quadratic.get("finite_generic_required") is not True:
+              hold("quadratic lane-count policy is not exact")
+          if mapping.get("lane_index") != "row*N+column":
+              hold("row-major lane-index policy is not exact")
+
+          authority_head = subprocess.check_output(
+              ["git", "rev-parse", "HEAD^{commit}"], text=True
+          ).strip()
+          authority_tree = subprocess.check_output(
+              ["git", "rev-parse", "HEAD^{tree}"], text=True
+          ).strip()
+          registry_git_blob = subprocess.check_output(
+              ["git", "rev-parse", f"HEAD:{registry_path}"], text=True
+          ).strip()
+          for value, name in (
+              (authority_head, "Authority main head"),
+              (authority_tree, "Authority main tree"),
+              (registry_git_blob, "Registry Git blob"),
+          ):
+              required_string(value, name, SHA40)
+
+          registry_raw = open(registry_path, "rb").read()
+          try:
+              registry = json.loads(registry_raw)
+          except json.JSONDecodeError as error:
+              hold(f"Registry index is invalid JSON: {error}")
+          if not isinstance(registry, dict):
+              hold("Registry index is not an object")
+          if registry.get("seed_repository") != repository:
+              hold("Registry seed repository differs from Authority repository")
+          nodes = registry.get("nodes")
+          if not isinstance(nodes, list):
+              hold("Registry nodes are not an array")
+          registry_node_count = required_integer(registry.get("node_count"), "Registry node_count")
+          if registry_node_count != len(nodes):
+              hold("Registry node_count differs from node array length")
+          if registry_node_count > maximum_nodes:
+              hold("Registry node_count exceeds the reviewed finite bound")
+
+          active = []
+          seen_repositories = set()
+          seen_guids = set()
+          for entry in nodes:
+              if not isinstance(entry, dict) or entry.get("effective_status") != "ACTIVE":
+                  continue
+              node_repository = required_string(entry.get("repository"), "active node repository", REPOSITORY)
+              node_guid = required_string(entry.get("guid"), "active node GUID", GUID)
+              node_branch = required_string(entry.get("node_branch"), "active node branch", BRANCH)
+              if entry.get("registry_path") != f"registry/nodes/{node_guid}.json":
+                  hold("active node registry path is not bound to its GUID")
+              if node_repository in seen_repositories:
+                  hold("Registry has duplicate active node repositories")
+              if node_guid in seen_guids:
+                  hold("Registry has duplicate active node GUIDs")
+              seen_repositories.add(node_repository)
+              seen_guids.add(node_guid)
+              active.append(
+                  {
+                      "guid": node_guid,
+                      "repository": node_repository,
+                      "node_branch": node_branch,
+                      "registry_path": entry["registry_path"],
+                  }
+              )
+          active.sort(key=lambda node: (node["repository"], node["guid"]))
+          active_count = required_integer(registry.get("active_count"), "Registry active_count")
+          if active_count != len(active):
+              hold("Registry active_count differs from active node projection")
+          node_count = len(active)
+          if not 1 <= node_count <= maximum_nodes:
+              hold("active Registry node count is outside the reviewed finite bound")
+          for index, node in enumerate(active):
+              node["index"] = index
+
+          row_major_lane_ids = []
+          for row, source in enumerate(active):
+              for column, target in enumerate(active):
+                  row_major_lane_ids.append(
+                      f"qikvrt-mesh-lane-v1/{row:04d}/{column:04d}/"
+                      f"{source['guid']}/{target['guid']}"
+                  )
+          lane_count = node_count * node_count
+          if lane_count != len(row_major_lane_ids) or lane_count > maximum_nodes * maximum_nodes:
+              hold("row-major lane cardinality is not exactly bounded")
+
+          epoch = {
+              "schema": "qikvrt_authority_review_mesh_epoch_v1",
+              "authority_repository": repository,
+              "authority_main_head_sha": authority_head,
+              "authority_main_tree_sha": authority_tree,
+              "registry_path": registry_path,
+              "registry_git_blob_sha": registry_git_blob,
+              "registry_sha256": hashlib.sha256(registry_raw).hexdigest(),
+              "quadratic_codec_policy_path": policy_path,
+              "quadratic_codec_policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
+              "registry_node_count": registry_node_count,
+              "node_count": node_count,
+              "maximum_node_count": maximum_nodes,
+              "lane_count": lane_count,
+              "lane_index_rule": "row*N+column",
+              "lane_order": "ROW_MAJOR_SOURCE_THEN_TARGET",
+              "ordered_active_nodes": active,
+              "row_major_lane_ids": row_major_lane_ids,
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "MESH_DELIVERY_COMPLETE": False,
+              },
+          }
+          epoch["epoch_sha256"] = hashlib.sha256(canonical(epoch)).hexdigest()
+          if SHA64.fullmatch(epoch["epoch_sha256"]) is None:
+              hold("Mesh epoch digest is unavailable")
+          with open("/tmp/authority-review-mesh-epoch.json", "w", encoding="utf-8") as handle:
+              json.dump(epoch, handle, sort_keys=True, indent=2)
+              handle.write("\n")
+          PY
+          cat /tmp/authority-review-mesh-epoch.json
+
       - name: Deduplicate Authority report delivery
         id: dedupe
         shell: bash
@@ -119,7 +303,7 @@ jobs:
           set -euo pipefail
           key="$(jq -r .dedupe_key /tmp/authority-review-report.json)"
           pr="$(jq -r .pr_number /tmp/authority-review-report.json)"
-          existing="$(gh api --paginate "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq ".[] | select((.body // \"\" | contains(\"qikvrt-authority-review-fanout:v1 key=$key\"))) | .id" | head -n 1)"
+          existing="$(gh api --paginate "repos/$REPOSITORY/issues/$pr/comments?per_page=100" --jq ".[] | select((.body // \"\" | contains(\"qikvrt-authority-review-fanout:v1 key=$key\") or (.body // \"\" | contains(\"qikvrt-authority-review-fanout:v2 key=$key\"))) | .id" | head -n 1)"
           if [ -n "$existing" ]; then
             echo "duplicate=true" >> "$GITHUB_OUTPUT"
             echo "existing_comment=$existing" >> "$GITHUB_OUTPUT"
@@ -127,7 +311,83 @@ jobs:
             echo "duplicate=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Dispatch exact report to every active Registry node
+      - name: Reobserve frozen Mesh epoch immediately before dispatch
+        if: steps.dedupe.outputs.duplicate != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/commits/main" > /tmp/authority-review-main-before-dispatch.json
+          gh api "repos/$REPOSITORY/contents/registry/NODEMESH_INDEX.json?ref=main" > /tmp/authority-review-registry-before-dispatch.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import sys
+
+          SHA40 = re.compile(r"^[0-9a-f]{40}$")
+          SHA64 = re.compile(r"^[0-9a-f]{64}$")
+
+          def hold(message):
+              raise SystemExit(f"HOLD_UNVERIFIED: {message}")
+
+          def canonical(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+          epoch = json.load(open("/tmp/authority-review-mesh-epoch.json", encoding="utf-8"))
+          if not isinstance(epoch, dict) or epoch.get("schema") != "qikvrt_authority_review_mesh_epoch_v1":
+              hold("frozen Mesh epoch is unavailable")
+          expected_epoch = epoch.get("epoch_sha256")
+          if not isinstance(expected_epoch, str) or SHA64.fullmatch(expected_epoch) is None:
+              hold("frozen Mesh epoch digest is invalid")
+          epoch_core = dict(epoch)
+          epoch_core.pop("epoch_sha256", None)
+          if hashlib.sha256(canonical(epoch_core)).hexdigest() != expected_epoch:
+              hold("frozen Mesh epoch bytes differ from its digest")
+          if epoch.get("node_count") != len(epoch.get("ordered_active_nodes", [])):
+              hold("frozen Mesh epoch node count is inconsistent")
+          if epoch.get("lane_count") != len(epoch.get("row_major_lane_ids", [])):
+              hold("frozen Mesh epoch lane count is inconsistent")
+          if epoch.get("lane_count") != epoch["node_count"] * epoch["node_count"]:
+              hold("frozen Mesh epoch is not quadratic")
+
+          current = json.load(open("/tmp/authority-review-main-before-dispatch.json", encoding="utf-8"))
+          registry = json.load(open("/tmp/authority-review-registry-before-dispatch.json", encoding="utf-8"))
+          current_head = current.get("sha") if isinstance(current, dict) else None
+          current_tree = current.get("commit", {}).get("tree", {}).get("sha") if isinstance(current, dict) else None
+          current_registry_blob = registry.get("sha") if isinstance(registry, dict) else None
+          for value, name in (
+              (current_head, "reobserved Authority main head"),
+              (current_tree, "reobserved Authority main tree"),
+              (current_registry_blob, "reobserved Registry blob"),
+          ):
+              if not isinstance(value, str) or SHA40.fullmatch(value) is None:
+                  hold(f"{name} is unavailable")
+          if (
+              current_head != epoch.get("authority_main_head_sha")
+              or current_tree != epoch.get("authority_main_tree_sha")
+              or current_registry_blob != epoch.get("registry_git_blob_sha")
+          ):
+              hold("Registry drift or Authority main drift observed before dispatch")
+          receipt = {
+              "schema": "qikvrt_authority_review_mesh_epoch_reobservation_v1",
+              "epoch_sha256": expected_epoch,
+              "authority_main_head_sha": current_head,
+              "authority_main_tree_sha": current_tree,
+              "registry_git_blob_sha": current_registry_blob,
+              "state": "EPOCH_FROZEN_FOR_FINITE_DISPATCH",
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "MESH_DELIVERY_COMPLETE": False,
+              },
+          }
+          with open("/tmp/authority-review-mesh-epoch-reobservation.json", "w", encoding="utf-8") as handle:
+              json.dump(receipt, handle, sort_keys=True, indent=2)
+              handle.write("\n")
+          PY
+
+      - name: Dispatch exact report to every frozen Registry node
         if: steps.dedupe.outputs.duplicate != 'true'
         shell: bash
         run: |
@@ -136,26 +396,123 @@ jobs:
             echo "HOLD_UNVERIFIED: QIKVRT_MESH_TOKEN is unavailable; no node report was attempted." >&2
             exit 1
           }
-          jq -e '
-            .node_count == (.nodes | length)
-            and (.nodes | all(
-              .effective_status == "ACTIVE"
-              and (.repository | type == "string")
-              and (.repository | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
-            ))
-          ' registry/NODEMESH_INDEX.json >/dev/null
-          jq -r '.nodes[] | select(.effective_status == "ACTIVE") | .repository' registry/NODEMESH_INDEX.json             | sort -u > /tmp/active-registry-nodes.txt
-          test -s /tmp/active-registry-nodes.txt || {
-            echo "HOLD_UNVERIFIED: Registry contains no active delivery nodes." >&2
-            exit 1
-          }
-          payload="$(jq -c . /tmp/authority-review-report.json)"
-          request="$(jq -cn --arg event_type qikvrt_authority_review_report_v1 --argjson client_payload "$payload" '{event_type:$event_type,client_payload:$client_payload}')"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import sys
+
+          SHA64 = re.compile(r"^[0-9a-f]{64}$")
+
+          def hold(message):
+              raise SystemExit(f"HOLD_UNVERIFIED: {message}")
+
+          def canonical(value):
+              return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+          report = json.load(open("/tmp/authority-review-report.json", encoding="utf-8"))
+          epoch = json.load(open("/tmp/authority-review-mesh-epoch.json", encoding="utf-8"))
+          reobservation = json.load(
+              open("/tmp/authority-review-mesh-epoch-reobservation.json", encoding="utf-8")
+          )
+          if report.get("schema") != "qikvrt_authority_review_report_v1":
+              hold("Authority review report is unavailable")
+          if epoch.get("schema") != "qikvrt_authority_review_mesh_epoch_v1":
+              hold("frozen Mesh epoch is unavailable")
+          if reobservation.get("epoch_sha256") != epoch.get("epoch_sha256"):
+              hold("pre-dispatch Mesh epoch reobservation is not bound")
+          source_head = report.get("head_sha")
+          epoch_sha256 = epoch.get("epoch_sha256")
+          if not isinstance(source_head, str) or not re.fullmatch(r"[0-9a-f]{40}", source_head):
+              hold("Authority report source head is invalid")
+          if not isinstance(epoch_sha256, str) or SHA64.fullmatch(epoch_sha256) is None:
+              hold("frozen Mesh epoch digest is invalid")
+          nodes = epoch.get("ordered_active_nodes")
+          lane_ids = epoch.get("row_major_lane_ids")
+          node_count = epoch.get("node_count")
+          if not isinstance(nodes, list) or not isinstance(lane_ids, list) or type(node_count) is not int:
+              hold("frozen Mesh epoch topology is unavailable")
+          if len(nodes) != node_count or len(lane_ids) != node_count * node_count:
+              hold("frozen Mesh epoch topology is inconsistent")
+
+          with open("/tmp/authority-review-delivery-plan.jsonl", "w", encoding="utf-8") as handle:
+              seen_keys = set()
+              for target in nodes:
+                  if not isinstance(target, dict):
+                      hold("frozen Mesh epoch target is invalid")
+                  index = target.get("index")
+                  repository = target.get("repository")
+                  guid = target.get("guid")
+                  if type(index) is not int or not 0 <= index < node_count:
+                      hold("frozen Mesh epoch target index is invalid")
+                  if not isinstance(repository, str) or not isinstance(guid, str):
+                      hold("frozen Mesh epoch target identity is invalid")
+                  self_lane_id = lane_ids[index * node_count + index]
+                  binding = {
+                      "schema": "qikvrt_authority_review_report_delivery_idempotency_v1",
+                      "epoch_sha256": epoch_sha256,
+                      "source_head_sha": source_head,
+                      "target_repository": repository,
+                      "target_guid": guid,
+                      "target_index": index,
+                      "target_self_lane_id": self_lane_id,
+                      "event_type": "qikvrt_authority_review_report_v1",
+                  }
+                  binding["idempotency_key"] = hashlib.sha256(canonical(binding)).hexdigest()
+                  if binding["idempotency_key"] in seen_keys:
+                      hold("per-target delivery idempotency binding is ambiguous")
+                  seen_keys.add(binding["idempotency_key"])
+                  epoch_projection = {
+                      "schema": epoch["schema"],
+                      "epoch_sha256": epoch_sha256,
+                      "authority_main_head_sha": epoch["authority_main_head_sha"],
+                      "authority_main_tree_sha": epoch["authority_main_tree_sha"],
+                      "registry_git_blob_sha": epoch["registry_git_blob_sha"],
+                      "registry_sha256": epoch["registry_sha256"],
+                      "node_count": node_count,
+                      "lane_count": epoch["lane_count"],
+                      "lane_index_rule": epoch["lane_index_rule"],
+                      "lane_order": epoch["lane_order"],
+                      "target_self_lane_id": self_lane_id,
+                  }
+                  payload = {
+                      "schema": "qikvrt_authority_review_report_fanout_delivery_v2",
+                      "authority_review_report": report,
+                      "mesh_epoch": epoch_projection,
+                      "delivery_binding": binding,
+                      "completion_claims": {
+                          "PASS": False,
+                          "FINAL_PASS": False,
+                          "EFFECT_ACK_DONE": False,
+                          "MESH_DELIVERY_COMPLETE": False,
+                      },
+                  }
+                  plan = {
+                      "target_repository": repository,
+                      "target_node": target,
+                      "delivery_binding": binding,
+                      "request": {
+                          "event_type": "qikvrt_authority_review_report_v1",
+                          "client_payload": payload,
+                      },
+                  }
+                  handle.write(json.dumps(plan, sort_keys=True, separators=(",", ":")))
+                  handle.write("\n")
+          PY
           : > /tmp/authority-review-delivery.jsonl
-          while IFS= read -r node; do
+          while IFS= read -r plan; do
+            node="$(jq -er .target_repository <<<"$plan")"
+            request="$(jq -ce .request <<<"$plan")"
             GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$node/dispatches" --input - <<<"$request"
-            jq -cn --arg repository "$node" --arg state "DISPATCH_ACCEPTED" '{repository:$repository,state:$state}'               >> /tmp/authority-review-delivery.jsonl
-          done < /tmp/active-registry-nodes.txt
+            jq -ce '{
+              epoch_sha256: .delivery_binding.epoch_sha256,
+              repository: .target_repository,
+              target_index: .target_node.index,
+              target_self_lane_id: .delivery_binding.target_self_lane_id,
+              idempotency_key: .delivery_binding.idempotency_key,
+              state: "DISPATCH_ACCEPTED"
+            }' <<<"$plan" >> /tmp/authority-review-delivery.jsonl
+          done < /tmp/authority-review-delivery-plan.jsonl
 
       - name: Record one Authority delivery projection
         if: steps.dedupe.outputs.duplicate != 'true'
@@ -164,12 +521,16 @@ jobs:
           set -euo pipefail
           key="$(jq -r .dedupe_key /tmp/authority-review-report.json)"
           pr="$(jq -r .pr_number /tmp/authority-review-report.json)"
+          epoch="$(jq -r .epoch_sha256 /tmp/authority-review-mesh-epoch.json)"
+          node_count="$(jq -r .node_count /tmp/authority-review-mesh-epoch.json)"
           nodes="$(jq -r .repository /tmp/authority-review-delivery.jsonl | paste -sd ', ' -)"
-          body="<!-- qikvrt-authority-review-fanout:v1 key=$key -->
+          body="<!-- qikvrt-authority-review-fanout:v2 key=$key epoch=$epoch -->
           Authority review report dispatch accepted for exact PR #$pr.
 
           - dedupe key: `$key`
-          - active Registry nodes: `$nodes`
+          - frozen Mesh epoch: `$epoch`
+          - frozen active Registry node count: `$node_count`
+          - ordered active Registry nodes: `$nodes`
           - receipt: `HOLD_UNVERIFIED`
           - no merge, approval, Authority-main effect, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
           gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body"             > /tmp/authority-review-delivery-comment.json
@@ -183,5 +544,8 @@ jobs:
           retention-days: 90
           path: |
             /tmp/authority-review-report.json
+            /tmp/authority-review-mesh-epoch.json
+            /tmp/authority-review-mesh-epoch-reobservation.json
+            /tmp/authority-review-delivery-plan.jsonl
             /tmp/authority-review-delivery.jsonl
             /tmp/authority-review-delivery-comment.json

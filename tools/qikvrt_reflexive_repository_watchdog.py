@@ -169,6 +169,45 @@ def load_contract(root: Path = ROOT) -> dict[str, Any]:
             raise ReflexiveWatchdogBlock(
                 f"reflexive gatewatch required workflow for {scope} is not observed"
             )
+    terminal_observation = _mapping(
+        gatewatch.get("terminal_observation"), "reflexive terminal observation profile"
+    )
+    if terminal_observation.get("mode") != "EVENT_DRIVEN_EXACT_HEAD_FAN_IN":
+        raise ReflexiveWatchdogBlock("reflexive terminal observation is not event-driven exact-head fan-in")
+    if terminal_observation.get("source_event") != "WORKFLOW_RUN_COMPLETED":
+        raise ReflexiveWatchdogBlock("reflexive terminal observation source is not workflow_run completed")
+    required_terminal_binding = {
+        "PULL_REQUEST_NUMBER",
+        "PULL_REQUEST_HEAD_SHA",
+        "PULL_REQUEST_HEAD_TREE_SHA",
+        "SOURCE_WORKFLOW_NAME",
+        "SOURCE_WORKFLOW_RUN_ID",
+        "SOURCE_WORKFLOW_CONCLUSION",
+        "REQUIRED_EXACT_HEAD_GATE_MATRIX",
+    }
+    if set(
+        _string_list(
+            terminal_observation.get("required_binding"),
+            "reflexive terminal observation binding",
+        )
+    ) != required_terminal_binding:
+        raise ReflexiveWatchdogBlock("reflexive terminal observation binding is incomplete")
+    if terminal_observation.get("artifact_projection") != "ACTIONS_ARTIFACT_ONLY":
+        raise ReflexiveWatchdogBlock("reflexive terminal observation must remain artifact-only")
+    if set(
+        _string_list(
+            terminal_observation.get("permitted_dispositions"),
+            "reflexive terminal observation dispositions",
+        )
+    ) != {"HOLD", "CONTINUE", "READY_FOR_SEPARATE_AUTHORITY"}:
+        raise ReflexiveWatchdogBlock("reflexive terminal observation dispositions are invalid")
+    for key in (
+        "terminality_is_gate_success",
+        "automatic_merge_or_deployment",
+        "general_effect_ack_done",
+    ):
+        if terminal_observation.get(key) is not False:
+            raise ReflexiveWatchdogBlock(f"reflexive terminal observation {key} must remain false")
     liveness = _mapping(gatewatch.get("node_liveness"), "reflexive gatewatch node liveness")
     if liveness.get("enabled") is not True:
         raise ReflexiveWatchdogBlock("reflexive gatewatch node liveness is not enabled")
@@ -755,7 +794,7 @@ def analyze(
     state = "SAFE_PROGRESS"
     disposition = "OBSERVE"
     productive_edge = "CONTINUE_REFLEXIVE_OBSERVATION"
-    safe_continuation = "Preserve one writer, exact-head evidence, and the five-minute observer cadence."
+    safe_continuation = "Preserve one writer, exact-head evidence, and the next declared source-event observation edge."
 
     if len(active_writers) > max_writers:
         state = "PREEMPTIVE_HOLD_COMPETING_WRITERS"
@@ -813,8 +852,8 @@ def analyze(
         state = "PREEMPTIVE_HOLD_OBSERVATION_CADENCE_BREACH"
         blocker = "EXACT_HEAD_GATEWATCH_RECEIPT_EXCEEDED_FRESHNESS_BOUND"
         disposition = "HOLD"
-        productive_edge = "REESTABLISH_EXACT_HEAD_FIVE_MINUTE_GATEWATCH_RECEIPT"
-        safe_continuation = "Do not infer a continuous observer tick from an old receipt; reobserve the exact head."
+        productive_edge = "REESTABLISH_EXACT_HEAD_EVENT_BOUND_GATEWATCH_RECEIPT"
+        safe_continuation = "Do not infer an observation edge from an old receipt; reobserve only from a declared exact-head source event."
     elif untrusted:
         state = "UNTRUSTED_EXECUTION_GAP"
         blocker = "LATEST_TERMINAL_RUN_LACKS_TRUSTED_JOB_EVIDENCE"
@@ -823,8 +862,8 @@ def analyze(
         safe_continuation = "Use a repository-declared trusted exact-head verification path; do not infer success."
     elif not active_productive:
         state = "QUIESCENT_OBSERVATION"
-        productive_edge = "KEEP_REFLEXIVE_OBSERVER_FRESH"
-        safe_continuation = "Continue periodic observation; quiescence is not a PIPELINE_EMPTY claim."
+        productive_edge = "AWAIT_NEXT_DECLARED_SOURCE_EVENT"
+        safe_continuation = "Await the next declared source event; quiescence is not a PIPELINE_EMPTY claim."
 
     resource_graph = _resource_graph(active_writers, waiting_productive, active_productive)
     observed_at = _iso(now)

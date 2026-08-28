@@ -9,24 +9,38 @@ on:
       - "AI"
       - "hardware/**"
       - "state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json"
+      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "docs/architecture/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.md"
       - "tools/qikvrt_mesh_quadratic_codec.py"
+      - "tools/qikvrt_reflexive_repository_watchdog.py"
       - "tests/test_qikvrt_mesh_nonpolling_quadratic_codec.py"
+      - "tests/test_qikvrt_reflexive_repository_watchdog.py"
       - ".github/workflows/qikvrt_mesh_nonpolling_quadratic_codec.yml"
+      - ".github/workflows/qikvrt_live_status_watch.yml"
+      - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
   push:
     branches: [main]
     paths:
       - "AI"
       - "hardware/**"
       - "state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json"
+      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
       - "docs/architecture/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.md"
       - "tools/qikvrt_mesh_quadratic_codec.py"
+      - "tools/qikvrt_reflexive_repository_watchdog.py"
       - "tests/test_qikvrt_mesh_nonpolling_quadratic_codec.py"
+      - "tests/test_qikvrt_reflexive_repository_watchdog.py"
       - ".github/workflows/qikvrt_mesh_nonpolling_quadratic_codec.yml"
+      - ".github/workflows/qikvrt_live_status_watch.yml"
+      - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: qikvrt-mesh-nonpolling-quadratic-codec-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -35,11 +49,77 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
-      - name: Verify non-polling rule and quadratic codec round trip
-        run: >-
-          python3 -B -m unittest -v
-          tests.test_qikvrt_mesh_nonpolling_quadratic_codec
+      - name: Bind exact candidate head and clean worktree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain)"
+      - name: Verify codec and materialize exact-head validation receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=.qikvrt/mesh-nonpolling-quadratic-codec
+          mkdir -p "$root"
+          set +e
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_mesh_nonpolling_quadratic_codec \
+            > "$root/test-output.txt" 2>&1
+          test_status=$?
+          set -e
+          TEST_STATUS="$test_status" python3 - "$root/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_RECEIPT_V1.json" <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          root = pathlib.Path('.qikvrt/mesh-nonpolling-quadratic-codec')
+          output = root.joinpath('test-output.txt').read_bytes()
+          status = int(os.environ['TEST_STATUS'])
+          receipt = {
+              'schema': 'qikvrt_mesh_nonpolling_quadratic_codec_receipt_v1',
+              'source_head': subprocess.check_output(
+                  ['git', 'rev-parse', '--verify', 'HEAD^{commit}'], text=True
+              ).strip(),
+              'source_tree': subprocess.check_output(
+                  ['git', 'rev-parse', '--verify', 'HEAD^{tree}'], text=True
+              ).strip(),
+              'workflow_run_id': os.environ.get('GITHUB_RUN_ID', ''),
+              'workflow_run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', ''),
+              'validation_exit_status': status,
+              'validation_state': 'SUCCESS' if status == 0 else 'HOLD_TEST_FAILURE',
+              'test_output_sha256': hashlib.sha256(output).hexdigest(),
+              'operation_mode': 'EVENT_DRIVEN_NO_PERIODIC_POLLING',
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'GENERAL_EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+                  'DEPLOYMENT': False,
+              },
+          }
+          pathlib.Path(sys.argv[1]).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8'
+          )
+          PY
+          cat "$root/test-output.txt"
+          exit "$test_status"
+      - name: Preserve exact-head codec validation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-nonpolling-quadratic-codec-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .qikvrt/mesh-nonpolling-quadratic-codec
+          if-no-files-found: error
+          retention-days: 30

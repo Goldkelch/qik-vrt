@@ -131,13 +131,32 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertEqual(gatewatch["observation_freshness_seconds"], 900)
         self.assertEqual(
             gatewatch["required_workflow_names_by_scope"]["PULL_REQUEST_MAIN"],
-            ["QIKVRT CI", "QIKVRT repository evidence materialization"],
+            [
+                "QIKVRT CI",
+                "QIKVRT repository evidence materialization",
+                "QIKVRT Mesh non-polling quadratic codec",
+                "QIKVRT real multi-pair Mesh runtime",
+                "QIKVRT real mesh system verification",
+            ],
         )
         self.assertEqual(
             gatewatch["required_workflow_names_by_scope"]["PULL_REQUEST_STACKED"],
             ["QIKVRT CI"],
         )
         self.assertTrue(gatewatch["node_liveness"]["artifact_only_materialization"])
+        terminal = gatewatch["terminal_observation"]
+        self.assertEqual(terminal["mode"], "EVENT_DRIVEN_EXACT_HEAD_FAN_IN")
+        self.assertEqual(terminal["source_event"], "WORKFLOW_RUN_COMPLETED")
+        self.assertEqual(terminal["artifact_projection"], "ACTIONS_ARTIFACT_ONLY")
+        self.assertEqual(
+            terminal["permitted_dispositions"],
+            ["HOLD", "CONTINUE", "READY_FOR_SEPARATE_AUTHORITY"],
+        )
+        self.assertFalse(terminal["terminality_is_gate_success"])
+        self.assertFalse(terminal["automatic_merge_or_deployment"])
+        self.assertFalse(terminal["general_effect_ack_done"])
+        self.assertEqual(prevention["platform_minimum_schedule"], "NONE_EVENT_SOURCE_REQUIRED")
+        self.assertNotIn("SCHEDULE", prevention["event_triggers"])
         self.assertEqual(
             prevention["observer_run_policy"],
             "CANCEL_SUPERSEDED_OBSERVER_ONLY",
@@ -336,6 +355,45 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             "REQUIRED_TRUSTED_GATE_EVIDENCE_MISSING_OR_UNTRUSTED",
         )
 
+    def test_nonpolling_codec_runtime_and_system_receipts_complete_the_main_pr_fan_in(self) -> None:
+        names = [
+            "QIKVRT CI",
+            "QIKVRT repository evidence materialization",
+            "QIKVRT Mesh non-polling quadratic codec",
+            "QIKVRT real multi-pair Mesh runtime",
+            "QIKVRT real mesh system verification",
+        ]
+        runs = [
+            run(
+                800 + index,
+                name,
+                "completed",
+                "2026-08-10T17:58:00Z",
+                "2026-08-10T17:59:00Z",
+                "success",
+            )
+            for index, name in enumerate(names)
+        ]
+        job_value = {
+            "jobs_by_run": {
+                str(800 + index): [
+                    {
+                        "id": (800 + index) * 10,
+                        "name": "verified exact-head job",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+                for index in range(len(names))
+            }
+        }
+        value = self.analyze(runs, job_value, scope="PULL_REQUEST_MAIN")
+        gates = {gate["name"]: gate for gate in value["gatewatch"]["gates"]}
+        self.assertEqual(value["gatewatch"]["required_workflow_names"], sorted(names))
+        self.assertTrue(all(gates[name]["state"] == "SUCCESS" for name in names))
+        self.assertFalse(value["gatewatch"]["required_evidence_gaps"])
+        self.assertFalse(value["completion_claims"]["PASS"])
+
     def test_stacked_pull_request_requires_only_gates_its_base_can_trigger(self) -> None:
         value = self.analyze(
             [
@@ -444,12 +502,25 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("qikvrt-reflexive-repository-watchdog-", workflow)
         self.assertIn("QIKVRT CI", workflow)
         self.assertIn("QIKVRT repository evidence materialization", workflow)
+        self.assertIn("QIKVRT Mesh non-polling quadratic codec", workflow)
+        self.assertIn("QIKVRT real multi-pair Mesh runtime", workflow)
+        self.assertIn("QIKVRT real mesh system verification", workflow)
+        self.assertIn("QIKVRT requested review executor", workflow)
+        exact_event_head = "${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}"
+        self.assertIn(f"ref: {exact_event_head}", workflow)
+        self.assertIn(f"EXPECTED_HEAD: {exact_event_head}", workflow)
+        self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", workflow)
+        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", workflow)
+        self.assertIn("EVENT_WORKFLOW_PRS", workflow)
+        self.assertIn("terminal-observation-event.json", workflow)
         self.assertIn("observed-authority-main-head.txt", workflow)
         self.assertIn("gatewatch-receipt.json", workflow)
         self.assertIn("jq -r '.workflow_runs[].id'", workflow)
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
         self.assertNotIn("select(.id != $current)][0]", workflow)
         self.assertNotIn(".workflow_runs[0:20]", workflow)
+        self.assertNotIn("sleep ", workflow)
+        self.assertNotIn("while :", workflow)
         self.assertNotIn("/dispatches", workflow)
         self.assertNotIn("gh pr merge", workflow)
         self.assertNotIn("issues/comments", workflow)

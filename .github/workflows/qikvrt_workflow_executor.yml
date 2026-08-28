@@ -105,21 +105,45 @@ jobs:
             refreshed_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
             test "$refreshed_head" = "$head"
             dispatched_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            candidate=".qikvrt/workflow-executor/dispatch-candidate-${workflow_id}.json"
+            request=".qikvrt/workflow-executor/dispatch-request-${workflow_id}.json"
+            response=".qikvrt/workflow-executor/dispatch-response-${workflow_id}.json"
+            workflow=".qikvrt/workflow-executor/dispatched-workflow-${workflow_id}.json"
+            run=".qikvrt/workflow-executor/dispatched-run-${workflow_id}.json"
+            receipt=".qikvrt/workflow-executor/dispatch-reobservation-${workflow_id}.json"
+            jq -e --arg workflow_id "$workflow_id" \
+              '.candidates[] | select(.workflow_id == $workflow_id and .disposition == "DISPATCH")' \
+              "$plan" > "$candidate"
+            printf '{"ref":"main"}' > "$request"
             gh api --method POST \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
-              -f ref=main
-            run_id=""
-            for _ in $(seq 1 12); do
-              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&branch=main&per_page=100" \
-                | jq -r --arg head "$head" --arg started "$dispatched_at" \
-                  '[.workflow_runs[] | select(.head_sha == $head and .created_at >= $started)][0].id // empty')"
-              test -n "$run_id" && break
-              sleep 5
-            done
-            test -n "$run_id"
-            printf '{"workflow_id":"%s","workflow_name":"%s","ref":"main","head_sha":"%s","tree_sha":"%s","run_id":%s}\n' \
-              "$workflow_id" "$workflow_name" "$head" "$tree" "$run_id" \
-              >> .qikvrt/workflow-executor/dispatched-runs.jsonl
+              --input "$request" > "$response"
+            run_id="$(jq -er '.workflow_run_id | select(type == "number" and floor == . and . > 0)' "$response")"
+            # The POST result gives the exact created run. Reobserve that one
+            # resource and its workflow metadata once; no run-list scan, retry,
+            # sleep, or same-name inference is allowed.
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}" > "$workflow"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > "$run"
+            refreshed_head_after="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            test "$refreshed_head_after" = "$head"
+            python3 -B tools/qikvrt_workflow_executor.py validate-dispatch-reobservation \
+              --dispatch-request "$request" \
+              --dispatch-response "$response" \
+              --workflow "$workflow" \
+              --run "$run" \
+              --candidate "$candidate" \
+              --snapshot .qikvrt/workflow-executor/workflow-executor-snapshot.json \
+              --repository "${GITHUB_REPOSITORY}" \
+              --json > "$receipt"
+            python3 - "$receipt" "$dispatched_at" >> .qikvrt/workflow-executor/dispatched-runs.jsonl <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          value["dispatched_at"] = sys.argv[2]
+          print(json.dumps(value, sort_keys=True, separators=(",", ":")))
+          PY
           done < <(jq -r '.candidates[] | select(.disposition == "DISPATCH") | [.workflow_id, .workflow_name] | @tsv' "$plan")
 
       - name: Preserve exact-head plan and dispatch receipt

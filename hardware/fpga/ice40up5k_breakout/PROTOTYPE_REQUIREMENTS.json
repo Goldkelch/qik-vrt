@@ -2,9 +2,25 @@
   "schema": "qikvrt_ice40up5k_prototype_requirements_v1",
   "target": {"board": "iCE40UP5K-B-EVN", "device": "iCE40UP5K", "package": "SG48"},
   "rtl": ["hardware/vhdl/qikvrt_mesh_quadratic_codec.vhd", "hardware/vhdl/qikvrt_deterministic_admission_gate.vhd", "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype_top.vhd"],
+  "vhdl_testbench": "hardware/vhdl/qikvrt_deterministic_admission_gate_tb.vhd",
+  "framing_vhdl_testbench": "hardware/vhdl/qikvrt_mesh_quadratic_codec_tb.vhd",
+  "top_vhdl_testbench": "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype_top_tb.vhd",
+  "vhdl_test_invocation": "tools/qikvrt_vhdl_admission_gate_contract.py",
   "constraints": "hardware/fpga/ice40up5k_breakout/qikvrt_mesh_prototype.pcf",
   "required_tools": ["oss-cad-suite with ghdl, yosys, nextpnr-ice40, icepack, iceprog"],
-  "required_evidence": ["tool archive digest", "VHDL analysis log", "synthesis report", "place-route timing report", "bitstream digest", "programmer readback", "board LED observation", "deterministic admission truth-table observation"],
+  "required_evidence": ["tool archive digest", "VHDL analysis log", "synthesis report", "place-route timing report", "bitstream digest", "programmer readback", "board LED observation", "deterministic admission truth-table observation", "framing integrity fault-injection observation", "external fresh-session provisioning observation"],
+  "toolchain_readiness": {
+    "runtime_toolchain_lock": "OPEN_REQUIRED_TOOLS_NOT_YET_PINNED",
+    "locked_ghdl_cache_binary": "OPEN_PATH_AND_DIGEST_REQUIRED",
+    "self_checking_vhdl_testbench_present": true,
+    "vhdl_analysis_executed": false,
+    "vhdl_testbench_executed": false,
+    "framing_integrity_testbench_executed": false,
+    "target_synthesis_executed": false,
+    "place_route_timing_executed": false,
+    "bitstream_generated": false,
+    "board_io_or_led_polarity_observed": false
+  },
   "status": "READY_FOR_LOCKED_TOOLCHAIN_AND_BOARD_EXECUTION",
-  "claims": {"synthesis_executed": false, "bitstream_programmed": false, "physical_prototype_observed": false, "PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+  "claims": {"synthesis_executed": false, "bitstream_programmed": false, "physical_prototype_observed": false, "external_session_provisioning_observed": false, "all_channel_corruption_detection_proven": false, "PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
 }

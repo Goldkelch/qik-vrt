@@ -1,23 +1,26 @@
 name: QIKVRT live status watch
 
 on:
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Mesh non-polling quadratic codec"
+      - "QIKVRT real multi-pair Mesh runtime"
+      - "QIKVRT real mesh system verification"
+      - "QIKVRT requested review executor"
+    types: [completed]
   pull_request:
     paths:
       - ".github/workflows/qikvrt_live_status_watch.yml"
       - ".github/workflows/qikvrt_workflow_executor.yml"
       - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
+      - ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
       - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
-      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
-      - "tools/qikvrt_workflow_executor.py"
-      - "tools/qikvrt_seed_common.py"
+      - "tools/qikvrt_reflexive_repository_watchdog.py"
+      - "tests/test_qikvrt_reflexive_repository_watchdog.py"
       - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
-      - "tests/test_seed_workflows.py"
-      - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
-      - "registry/NODE_DISCOVERY_POLICY.json"
       - "AI"
-      - "Makefile"
-  issue_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       pr:
@@ -28,130 +31,320 @@ on:
 permissions:
   actions: read
   contents: read
-  issues: write
-  pull-requests: write
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
+  group: qikvrt-live-status-${{ github.repository }}-${{ github.event.workflow_run.head_sha || inputs.pr || github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  watch:
+  project-exact-event:
     if: >-
-      github.event_name == 'pull_request' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/qikvrt-status-watch'))
+      (github.event_name == 'workflow_run' ||
+       github.event_name == 'pull_request' ||
+       github.event_name == 'workflow_dispatch') &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.head_repository.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Observe repository workflow, job, and step transitions serially
+      - name: Materialize one exact-head event projection without polling
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number || github.event.issue.number }}
-          WATCH_WORKFLOW: QIKVRT live status watch
-          MARKER: '<!-- qikvrt-live-status-watch -->'
-          MAX_CYCLES: "12"
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
+          EVENT_PR: ${{ inputs.pr || github.event.pull_request.number || '' }}
+          EVENT_WORKFLOW_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+          SOURCE_WORKFLOW_NAME: ${{ github.event.workflow_run.name || '' }}
+          SOURCE_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          SOURCE_WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          SOURCE_WORKFLOW_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
+          SOURCE_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id || '' }}
+        shell: bash
         run: |
           set -euo pipefail
-          pr="$EVENT_PR"
-          test -n "$pr"
-          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+          root=.qikvrt/live-status-watch
+          mkdir -p "$root"
 
-          update_status() {
-            body="$1"
-            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" |
-              jq -r --arg marker "$MARKER" \
-                '.[] | select(.body | contains($marker)) | .id' |
-              tail -n 1)"
-            if [ -n "$comment_id" ]; then
-              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
-
-          $body" >/dev/null
-            else
-              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
-
-          $body" >/dev/null
+          if test "$EVENT_NAME" = workflow_run; then
+            mapfile -t event_prs < <(
+              printf '%s' "$EVENT_WORKFLOW_PRS" | jq -r '[.[].number | tostring] | unique[]'
+            )
+            if test "${#event_prs[@]}" -gt 1; then
+              printf '%s\n' '{"schema":"qikvrt_live_status_watch_receipt_v1","disposition":"HOLD","reason":"AMBIGUOUS_WORKFLOW_RUN_PULL_REQUEST_BINDING"}' \
+                > "$root/terminal-observation-receipt.json"
+              echo "HOLD: workflow_run event binds more than one pull request" >&2
+              exit 1
             fi
+            if test "${#event_prs[@]}" -eq 0; then
+              python3 - "$root/terminal-observation-receipt.json" <<'PY'
+          import json
+          import os
+          import pathlib
+
+          receipt = {
+              "schema": "qikvrt_live_status_watch_receipt_v1",
+              "event_name": os.environ["EVENT_NAME"],
+              "event_action": os.environ.get("EVENT_ACTION", ""),
+              "source_workflow_name": os.environ.get("SOURCE_WORKFLOW_NAME", "") or None,
+              "source_workflow_run_id": os.environ.get("SOURCE_WORKFLOW_RUN_ID", "") or None,
+              "source_workflow_head_sha": os.environ.get("SOURCE_WORKFLOW_HEAD", "") or None,
+              "disposition": "NOT_APPLICABLE_NON_PULL_REQUEST_SOURCE_EVENT",
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "MERGE": False,
+                  "DEPLOYMENT": False,
+              },
+          }
+          pathlib.Path(__import__('sys').argv[1]).write_text(
+              json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+              exit 0
+            fi
+            EVENT_PR="${event_prs[0]}"
+            test -n "$SOURCE_WORKFLOW_HEAD"
+            expected_head="$SOURCE_WORKFLOW_HEAD"
+          else
+            expected_head=""
+          fi
+
+          write_short_receipt() {
+            RECEIPT_DISPOSITION="$1" RECEIPT_REASON="$2" python3 - "$root/terminal-observation-receipt.json" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          value = {
+              "schema": "qikvrt_live_status_watch_receipt_v1",
+              "repository": os.environ["REPOSITORY"],
+              "event_name": os.environ["EVENT_NAME"],
+              "event_action": os.environ.get("EVENT_ACTION", ""),
+              "source_workflow_name": os.environ.get("SOURCE_WORKFLOW_NAME", "") or None,
+              "source_workflow_run_id": os.environ.get("SOURCE_WORKFLOW_RUN_ID", "") or None,
+              "disposition": os.environ["RECEIPT_DISPOSITION"],
+              "reason": os.environ["RECEIPT_REASON"],
+              "completion_claims": {
+                  "PASS": False,
+                  "FINAL_PASS": False,
+                  "EFFECT_ACK_DONE": False,
+                  "GENERAL_EFFECT_ACK_DONE": False,
+                  "MERGE": False,
+                  "DEPLOYMENT": False,
+              },
+          }
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
           }
 
-          state_signature=""
-          cycle=0
-          while :; do
-            cycle=$((cycle + 1))
-            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
-            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
-            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
-            active_count="$(printf '%s' "$active" | jq 'length')"
+          case "$EVENT_PR" in
+            ''|0|*[!0-9]*)
+              write_short_receipt HOLD INVALID_EXACT_PULL_REQUEST_NUMBER
+              exit 0
+              ;;
+          esac
+          pr_json="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR")"
+          current_head="$(printf '%s' "$pr_json" | jq -er '.head.sha')"
+          base_ref="$(printf '%s' "$pr_json" | jq -er '.base.ref')"
+          base_sha="$(printf '%s' "$pr_json" | jq -er '.base.sha')"
+          head_repository="$(printf '%s' "$pr_json" | jq -er '.head.repo.full_name // empty')"
+          if test "$head_repository" != "$REPOSITORY"; then
+            write_short_receipt HOLD FORK_OR_DELETED_HEAD_REPOSITORY_NOT_ADMITTED
+            exit 0
+          fi
+          if test "$base_ref" != main; then
+            write_short_receipt HOLD NON_MAIN_BASE_REQUIRES_SEPARATE_BASE_BOUND_OBSERVER
+            exit 0
+          fi
+          current_main="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if test "$current_main" != "$base_sha"; then
+            write_short_receipt HOLD PULL_REQUEST_BASE_IS_NOT_CURRENT_AUTHORITY_MAIN
+            exit 0
+          fi
+          if test -z "$expected_head"; then
+            expected_head="$current_head"
+          fi
+          observed_tree="$(gh api "repos/$REPOSITORY/git/commits/$expected_head" --jq '.tree.sha')"
+          base_tree="$(gh api "repos/$REPOSITORY/git/commits/$base_sha" --jq '.tree.sha')"
+          scope=PULL_REQUEST_MAIN
 
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end')"
-            step_rows=''
-            total_steps=0
-            completed_steps=0
-            while IFS= read -r run_id; do
-              [ -n "$run_id" ] || continue
-              jobs="$(gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100")"
-              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv')"
-              while IFS=$'\t' read -r job step status conclusion; do
-                [ -n "$step" ] || continue
-                total_steps=$((total_steps + 1))
-                marker='⟳'
-                effective="$status"
-                if [ "$status" = completed ]; then
-                  completed_steps=$((completed_steps + 1))
-                  effective="$conclusion"
-                  if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then marker='✓'; else marker='✗'; fi
-                elif [ "$status" = queued ] || [ "$status" = pending ]; then
-                  marker='□'
-                fi
-                step_rows="$step_rows
-          | $marker | $job | $step | $effective |"
-              done <<< "$rows"
-            done < <(printf '%s' "$latest" | jq -r '.[].id')
+          gh api "repos/$REPOSITORY/actions/runs?head_sha=$expected_head&per_page=100" \
+            > "$root/exact-head-runs.json"
+          mkdir -p "$root/jobs"
+          while IFS= read -r run_id; do
+            gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" > "$root/jobs/$run_id.json"
+          done < <(jq -r '.workflow_runs[] | .id' "$root/exact-head-runs.json")
+          gh api "repos/$REPOSITORY/contents/state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json?ref=$base_sha" \
+            --jq '.content' | base64 --decode > "$root/base-contract.json"
+          gh api "repos/$REPOSITORY/actions/workflows?per_page=100" > "$root/base-registered-workflows.json"
 
-            if [ "$total_steps" -eq 0 ]; then
-              percent=0
-              step_rows='| □ | none | awaiting workflow jobs | PENDING |'
-            else
-              percent=$((completed_steps * 100 / total_steps))
-            fi
-            filled=$((percent / 5))
-            empty=$((20 - filled))
-            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
-            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
+          pr_json_after="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR")"
+          current_head_after="$(printf '%s' "$pr_json_after" | jq -er '.head.sha')"
+          base_sha_after="$(printf '%s' "$pr_json_after" | jq -er '.base.sha')"
+          current_main_after="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if test "$current_head" = "$expected_head" && test "$current_head_after" = "$expected_head"; then
+            head_drift=false
+          else
+            head_drift=true
+          fi
+          if test "$base_sha_after" = "$base_sha" && test "$current_main_after" = "$base_sha"; then
+            base_drift=false
+          else
+            base_drift=true
+          fi
 
-            if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT bounded repository runtime observation
+          EVENT_PR="$EVENT_PR" EXPECTED_HEAD="$expected_head" OBSERVED_TREE="$observed_tree" \
+          BASE_SHA="$base_sha" BASE_TREE="$base_tree" OBSERVATION_SCOPE="$scope" \
+          HEAD_DRIFT="$head_drift" BASE_DRIFT="$base_drift" \
+          python3 - "$root/exact-head-runs.json" "$root/jobs" "$root/base-contract.json" \
+            "$root/base-registered-workflows.json" "$root/terminal-observation-receipt.json" <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import sys
 
-          **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
+          runs_path, jobs_dir, contract_path, registry_path, receipt_path = map(pathlib.Path, sys.argv[1:])
+          runs_bytes = runs_path.read_bytes()
+          contract_bytes = contract_path.read_bytes()
+          registry_bytes = registry_path.read_bytes()
+          runs = json.loads(runs_bytes.decode("utf-8"))
+          contract = json.loads(contract_bytes.decode("utf-8"))
+          registry = json.loads(registry_bytes.decode("utf-8"))
+          scope = os.environ["OBSERVATION_SCOPE"]
+          required = contract["reflexive_deadlock_prevention"]["gatewatch"]["required_workflow_names_by_scope"][scope]
+          expected_head = os.environ["EXPECTED_HEAD"]
+          head_drift = os.environ["HEAD_DRIFT"] == "true"
+          base_drift = os.environ["BASE_DRIFT"] == "true"
+          by_name = {}
+          for value in registry.get("workflows", []):
+              if isinstance(value, dict) and isinstance(value.get("name"), str):
+                  by_name.setdefault(value["name"], []).append(value)
 
-          - Repository: \`$REPOSITORY\`
-          - Branch: \`$branch\`
-          - Observation cycle: \`$cycle/$MAX_CYCLES\`
-          - Observed at: \`$now\`
-          - Active external runs: \`$active_count\`
+          def job_state(value):
+              run_id = value.get("id")
+              if not isinstance(run_id, int) or run_id <= 0:
+                  return "FAILED_OR_UNTRUSTED", 0
+              path = jobs_dir / f"{run_id}.json"
+              try:
+                  payload = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, UnicodeError, json.JSONDecodeError):
+                  return "FAILED_OR_UNTRUSTED", 0
+              jobs = payload.get("jobs")
+              if not isinstance(jobs, list) or not jobs:
+                  return "FAILED_OR_UNTRUSTED", 0
+              if any(not isinstance(job, dict) for job in jobs):
+                  return "FAILED_OR_UNTRUSTED", len(jobs)
+              if any(job.get("status") != "completed" for job in jobs):
+                  return "ACTIVE", len(jobs)
+              if any(job.get("conclusion") != "success" for job in jobs):
+                  return "FAILED_OR_UNTRUSTED", len(jobs)
+              return "SUCCESS", len(jobs)
 
-          ### Workflows
+          matrix = []
+          for name in required:
+              registered = by_name.get(name, [])
+              if len(registered) != 1:
+                  matrix.append({"name": name, "state": "FAILED_OR_UNTRUSTED", "reason": "BASE_WORKFLOW_IDENTITY_NOT_UNIQUE"})
+                  continue
+              expected = registered[0]
+              workflow_id = expected.get("id")
+              workflow_path = expected.get("path")
+              values = [
+                  value for value in runs.get("workflow_runs", [])
+                  if isinstance(value, dict)
+                  and value.get("head_sha") == expected_head
+                  and value.get("workflow_id") == workflow_id
+                  and isinstance(value.get("path"), str)
+                  and value["path"].split("@", 1)[0] == workflow_path
+              ]
+              value = max(values, key=lambda item: (item.get("run_number", -1), item.get("id", -1)), default=None)
+              if value is None:
+                  state = "MISSING"
+                  row = {"name": name, "state": state, "workflow_id": workflow_id, "workflow_path": workflow_path}
+              else:
+                  status = value.get("status") or "unknown"
+                  conclusion = value.get("conclusion")
+                  if status != "completed":
+                      state = "ACTIVE"
+                      job_count = 0
+                  elif conclusion != "success":
+                      state = "FAILED_OR_UNTRUSTED"
+                      job_count = 0
+                  else:
+                      state, job_count = job_state(value)
+                  row = {
+                      "name": name,
+                      "state": state,
+                      "workflow_id": workflow_id,
+                      "workflow_path": workflow_path,
+                      "run_id": value.get("id"),
+                      "run_number": value.get("run_number"),
+                      "status": status,
+                      "conclusion": conclusion,
+                      "job_count": job_count,
+                      "url": value.get("html_url"),
+                  }
+              matrix.append(row)
 
-          | Workflow | State | Run | Run ID |
-          |---|---|---:|---:|
-          $workflow_lines
+          states = {row["state"] for row in matrix}
+          if head_drift:
+              disposition = "HOLD"
+              reason = "EVENT_HEAD_NO_LONGER_EQUALS_CURRENT_PULL_REQUEST_HEAD"
+          elif base_drift:
+              disposition = "HOLD"
+              reason = "AUTHORITY_BASE_DRIFTED_DURING_EVENT_PROJECTION"
+          elif "FAILED_OR_UNTRUSTED" in states:
+              disposition = "HOLD"
+              reason = "EXACT_HEAD_REQUIRED_WORKFLOW_OR_JOB_NOT_TRUSTED"
+          elif states == {"SUCCESS"} and matrix:
+              disposition = "READY_FOR_SEPARATE_AUTHORITY"
+              reason = "ALL_BASE_DECLARED_EXACT_HEAD_WORKFLOW_JOBS_SUCCESSFUL"
+          else:
+              disposition = "CONTINUE"
+              reason = "AWAIT_BASE_DECLARED_EXACT_HEAD_WORKFLOW_COMPLETION"
 
-          ### Jobs and steps
+          matrix_bytes = json.dumps(matrix, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          receipt = {
+              "schema": "qikvrt_live_status_watch_receipt_v1",
+              "repository": os.environ["REPOSITORY"],
+              "pull_request_number": int(os.environ["EVENT_PR"]),
+              "head_sha": expected_head,
+              "tree_sha": os.environ["OBSERVED_TREE"],
+              "base_sha": os.environ["BASE_SHA"],
+              "base_tree_sha": os.environ["BASE_TREE"],
+              "observation_scope": scope,
+              "event_name": os.environ["EVENT_NAME"],
+              "event_action": os.environ.get("EVENT_ACTION", ""),
+              "source_workflow_name": os.environ.get("SOURCE_WORKFLOW_NAME", "") or None,
+              "source_workflow_run_id": os.environ.get("SOURCE_WORKFLOW_RUN_ID", "") or None,
+              "source_workflow_conclusion": os.environ.get("SOURCE_WORKFLOW_CONCLUSION", "") or None,
+              "source_terminal_event": os.environ["EVENT_NAME"] == "workflow_run" and os.environ.get("EVENT_ACTION", "") == "completed",
+              "head_drift": head_drift,
+              "base_drift": base_drift,
+              "required_workflow_matrix": matrix,
+              "required_workflow_matrix_sha256": hashlib.sha256(matrix_bytes).hexdigest(),
+              "exact_head_runs_sha256": hashlib.sha256(runs_bytes).hexdigest(),
+              "base_contract_sha256": hashlib.sha256(contract_bytes).hexdigest(),
+              "base_registered_workflows_sha256": hashlib.sha256(registry_bytes).hexdigest(),
+              "disposition": disposition,
+              "reason": reason,
+              "completion_claims": {"PASS": False, "FINAL_PASS": False, "EFFECT_ACK_DONE": False, "GENERAL_EFFECT_ACK_DONE": False, "MERGE": False, "DEPLOYMENT": False},
+          }
+          receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          PY
 
-          | | Job | Step | State |
-          |---|---|---|---|
-          $step_rows
-
-          Observation is opt-in and bounded so the watcher cannot monopolize a runner while the observed jobs wait behind it. A new explicit invocation supersedes any older invocation for the same pull request."
-              state_signature="$signature"
-            fi
-
-            if [ "$active_count" -eq 0 ] || [ "$cycle" -ge "$MAX_CYCLES" ]; then
-              break
-            fi
-            sleep 5
-          done
+      - name: Preserve exact event projection
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-live-status-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          path: .qikvrt/live-status-watch

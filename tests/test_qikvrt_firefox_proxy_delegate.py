@@ -78,9 +78,19 @@ class FirefoxProxyDelegateTests(unittest.TestCase):
             'body.includes(treeLine)',
             'independent Code-Owner approval: **not implied**',
             'SUBMITTED_REOBSERVE_REQUIRED',
+            'MutationObserver',
+            'AbortSignal.timeout',
         ]
         for needle in required:
             self.assertIn(needle, source)
+
+    def test_review_effect_waits_only_on_dom_edges(self):
+        source = (ROOT / "browser/firefox/qikvrt-terminal/review_effect.js").read_text(encoding="utf-8")
+        self.assertIn('observer.observe(root, {attributes: true, childList: true, subtree: true})', source)
+        self.assertIn('timeout.addEventListener("abort", onTimeout, {once: true})', source)
+        self.assertNotIn("setTimeout", source)
+        self.assertNotIn("while (Date.now() < deadline)", source)
+        self.assertNotIn("waitFor(", source)
 
     def test_policy_binds_the_same_prior_disposition(self):
         policy = json.loads((ROOT / "policy/FIREFOX_PROXY_DELEGATION_V1.json").read_text(encoding="utf-8"))

@@ -6,8 +6,10 @@ on:
     paths:
       - "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml"
       - "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json"
+      - "policy/QIKVRT_HTTP_TERMINAL_PEER_V2.json"
       - "browser/firefox/qikvrt-terminal/**"
       - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
+      - "docs/terminal/QIKVRT_HTTP_TERMINAL_PEER_V2.schema.json"
       - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
@@ -39,8 +41,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m json.tool policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json >/dev/null
+          python3 -m json.tool policy/QIKVRT_HTTP_TERMINAL_PEER_V2.json >/dev/null
           python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
           python3 -m json.tool docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json >/dev/null
+          python3 -m json.tool docs/terminal/QIKVRT_HTTP_TERMINAL_PEER_V2.schema.json >/dev/null
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
           ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml')

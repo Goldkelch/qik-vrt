@@ -3,8 +3,11 @@
 --
 -- Deterministic, fail-closed admission for a complete canonical mesh frame.
 -- Uncertainty is represented by an explicit ambiguity input and never by a
--- random or sampled branch.  Encodings: 00 CONTINUE, 01 HOLD, 10 ACCEPT,
--- 11 BLOCK.
+-- random or sampled branch.  ACCEPT is possible only for the exact two-valued
+-- combination frame_complete='1', ambiguity_present='0' and
+-- canonical_equal='1'.  Any non-'0' ambiguity std_logic value (including
+-- U/X/Z in simulation) remains visible as HOLD rather than being silently
+-- admitted.  Encodings: 00 CONTINUE, 01 HOLD, 10 ACCEPT, 11 BLOCK.
 library ieee;
 use ieee.std_logic_1164.all;
 
@@ -27,7 +30,7 @@ begin
   begin
     if frame_complete_i /= '1' then
       decision_o <= DECISION_CONTINUE;
-    elsif ambiguity_present_i = '1' then
+    elsif ambiguity_present_i /= '0' then
       decision_o <= DECISION_HOLD;
     elsif canonical_equal_i = '1' then
       decision_o <= DECISION_ACCEPT;
