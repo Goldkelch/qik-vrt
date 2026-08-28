@@ -1,117 +1,379 @@
-name: Issue agent auto-finish
+name: Issue agent exact candidate verifier
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
+  workflow_run:
+    workflows: [QIKVRT CI]
+    types: [completed]
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
   workflow_dispatch:
     inputs:
-      issue_number:
-        description: Optional single issue number
-        required: false
+      pr_number:
+        description: Exact pull request number
+        required: true
+        type: string
+      expected_head:
+        description: Exact candidate head
+        required: true
         type: string
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  actions: read
   checks: read
+  contents: read
+  issues: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
-  group: issue-agent-autofinish
+  group: >-
+    issue-agent-candidate-verify-${{ github.event.pull_request.number || inputs.pr_number || github.event.workflow_run.id }}-
+    ${{ github.event.pull_request.head.sha || inputs.expected_head || github.event.workflow_run.head_sha }}-
+    ${{ github.event.action || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  finish:
-    runs-on: ubuntu-latest
+  verify-exact-candidate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.repository.full_name == github.repository &&
+       github.event.workflow_run.event == 'workflow_dispatch' &&
+       startsWith(github.event.workflow_run.head_branch, 'issue-agent/')) ||
+      (github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'issue-agent/'))
+    runs-on: ubuntu-24.04
     env:
-      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
-      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
-      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
-      REQUESTED_ISSUE: ${{ inputs.issue_number }}
       GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || inputs.expected_head || github.event.workflow_run.head_sha }}
+      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out trusted current Authority main only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: main
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Resume all eligible issue-agent transactions
+      - name: Reobserve exact PR, Authority, and CI jobs
+        id: observe
         shell: bash
         run: |
           set -euo pipefail
-          issue_numbers=""
-          if [ -n "${REQUESTED_ISSUE:-}" ]; then
-            issue_numbers="$REQUESTED_ISSUE"
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          pr_number="${PR_NUMBER:-}"
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            [[ "$TRIGGER_BRANCH" =~ ^issue-agent/[1-9][0-9]*/[0-9a-f]{64}$ ]]
+            mapfile -t candidates < <(
+              gh pr list --repo "$REPOSITORY" --head "$TRIGGER_BRANCH" --base main --state open \
+                --json number,headRefOid --jq ".[] | select(.headRefOid == \"$EXPECTED_HEAD\") | .number"
+            )
+            test "${#candidates[@]}" -eq 1
+            pr_number="${candidates[0]}"
+          fi
+          [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$REPOSITORY/pulls/$pr_number" > /tmp/pr.json
+          test "$(jq -r .state /tmp/pr.json)" = open
+          test "$(jq -r .base.ref /tmp/pr.json)" = main
+          test "$(jq -r .head.repo.full_name /tmp/pr.json)" = "$REPOSITORY"
+          test "$(jq -r .head.sha /tmp/pr.json)" = "$EXPECTED_HEAD"
+          branch="$(jq -r .head.ref /tmp/pr.json)"
+          [[ "$branch" =~ ^issue-agent/([1-9][0-9]*)/([0-9a-f]{64})$ ]]
+          issue_number="${BASH_REMATCH[1]}"
+          fingerprint="${BASH_REMATCH[2]}"
+          current_main="$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)"
+          test "$(git rev-parse HEAD)" = "$current_main"
+          test "$(jq -r .base.sha /tmp/pr.json)" = "$current_main"
+
+          gh api --method GET --paginate --slurp \
+            "repos/$REPOSITORY/actions/workflows/qikvrt_ci.yml/runs" \
+            -f branch="$branch" -f per_page=100 --jq '[.[].workflow_runs[]]' > /tmp/ci-runs.json
+          if [ -n "${TRIGGER_RUN_ID:-}" ]; then
+            jq --argjson run "$TRIGGER_RUN_ID" --arg head "$EXPECTED_HEAD" \
+              '[.[] | select(.id == $run and .head_sha == $head and .event == "workflow_dispatch")] | if length == 1 then .[0] else empty end' \
+              /tmp/ci-runs.json > /tmp/ci-run.json
           else
-            issue_numbers="$(gh issue list --repo "$AUTHORITY_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')"
+            jq --arg head "$EXPECTED_HEAD" \
+              '[.[] | select(.head_sha == $head and .event == "workflow_dispatch")] | sort_by(.run_number) | last // empty' \
+              /tmp/ci-runs.json > /tmp/ci-run.json
+          fi
+          ci_run_id="$(jq -r '.id // empty' /tmp/ci-run.json)"
+          [[ "$ci_run_id" =~ ^[1-9][0-9]*$ ]]
+          test "$(jq -r .status /tmp/ci-run.json)" = completed
+          test "$(jq -r .conclusion /tmp/ci-run.json)" = success
+          test "$(jq -r .head_sha /tmp/ci-run.json)" = "$EXPECTED_HEAD"
+          test "$(jq -r .head_branch /tmp/ci-run.json)" = "$branch"
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$ci_run_id/jobs?per_page=100" \
+            --jq '[.[].jobs[]]' > /tmp/ci-jobs.json
+          test "$(jq 'length' /tmp/ci-jobs.json)" -gt 0
+          test "$(jq '[.[] | select(.status != "completed" or .conclusion != "success")] | length' /tmp/ci-jobs.json)" -eq 0
+          test "$(jq '[.[] | select(.name == "test" and .conclusion == "success")] | length' /tmp/ci-jobs.json)" -eq 1
+
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "current_main=$current_main" >> "$GITHUB_OUTPUT"
+          echo "ci_run_id=$ci_run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Extract candidate bytes without executing changed candidate code
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ steps.observe.outputs.issue_number }}
+          FINGERPRINT: ${{ steps.observe.outputs.fingerprint }}
+          CURRENT_MAIN: ${{ steps.observe.outputs.current_main }}
+        run: |
+          set -euo pipefail
+          root="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          mkdir -p /tmp/candidate
+          git fetch --no-tags origin "$EXPECTED_HEAD"
+          test "$(git rev-list --parents -n 1 "$EXPECTED_HEAD" | wc -w)" -eq 2
+          test "$(git rev-parse "$EXPECTED_HEAD^")" = "$CURRENT_MAIN"
+          candidate_tree="$(git rev-parse "$EXPECTED_HEAD^{tree}")"
+          test -z "$(git diff-tree --no-commit-id --name-only -r "$EXPECTED_HEAD" | awk -v root="$root/" '
+            index($0,root)==1 || $0=="REPOSITORY_FILE_MANIFEST.json" ||
+            $0=="REPOSITORY_FILE_MANIFEST.json.sha256" || $0=="SHA256SUMS.txt" {next}
+            {print}')"
+          git worktree add --detach /tmp/candidate-tree "$EXPECTED_HEAD"
+          (cd /tmp/candidate-tree && python3 -B tools/qikvrt_integrity.py verify)
+          git archive "$EXPECTED_HEAD" "$root" | tar -x -C /tmp/candidate
+          test -f "/tmp/candidate/$root/REQUEST.json"
+          echo "CANDIDATE_TREE=$candidate_tree" >> "$GITHUB_ENV"
+
+      - name: Validate static evidence, reobserve mutable state, and emit bounded handoff
+        id: handoff
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.observe.outputs.pr_number }}
+          ISSUE_NUMBER: ${{ steps.observe.outputs.issue_number }}
+          FINGERPRINT: ${{ steps.observe.outputs.fingerprint }}
+          BRANCH: ${{ steps.observe.outputs.branch }}
+          CURRENT_MAIN: ${{ steps.observe.outputs.current_main }}
+          CI_RUN_ID: ${{ steps.observe.outputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          root="/tmp/candidate/evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          test "$(jq -r .request_fingerprint "$root/REQUEST.json")" = "$FINGERPRINT"
+          test "$(jq -r .binding.authority_head "$root/REQUEST.json")" = "$CURRENT_MAIN"
+          issue_run_id="$(jq -r .workflow_run_id "$root/FANIN.json")"
+          issue_run_attempt="$(jq -r .workflow_run_attempt "$root/FANIN.json")"
+          [[ "$issue_run_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$issue_run_attempt" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$REPOSITORY/actions/runs/$issue_run_id" > /tmp/issue-run-final.json
+          test "$(jq -r .head_sha /tmp/issue-run-final.json)" = "$CURRENT_MAIN"
+          test "$(jq -r .run_attempt /tmp/issue-run-final.json)" = "$issue_run_attempt"
+          test "$(jq -r .status /tmp/issue-run-final.json)" = completed
+          test "$(jq -r .conclusion /tmp/issue-run-final.json)" = success
+          test "$(jq -r .path /tmp/issue-run-final.json | cut -d@ -f1)" = .github/workflows/issue-autonomous-processing.yml
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$issue_run_id/attempts/$issue_run_attempt/jobs?per_page=100" \
+            --jq '[.[].jobs[]]' > /tmp/issue-jobs-final.json
+          python3 -B - "$root/WORK_EPOCH.json" /tmp/issue-jobs-final.json <<'PY'
+          import json
+          import sys
+
+          epoch = json.load(open(sys.argv[1], encoding="utf-8"))
+          jobs = json.load(open(sys.argv[2], encoding="utf-8"))
+          expected = {
+              f"lane-{lane['lane_index']}-{lane['lane_id']}"
+              for lane in epoch["lanes"]
+          }
+          observed = [
+              job for job in jobs
+              if isinstance(job.get("name"), str) and job["name"].startswith("lane-")
+          ]
+          if len(observed) != len(expected):
+              raise SystemExit("quadratic lane job cardinality mismatch")
+          if {job["name"] for job in observed} != expected:
+              raise SystemExit("quadratic lane job identity mismatch")
+          if any(job.get("status") != "completed" or job.get("conclusion") != "success" for job in observed):
+              raise SystemExit("quadratic lane job is not successful")
+          PY
+          epoch_id="$(jq -r .epoch_id "$root/WORK_EPOCH.json")"
+          reduction_artifact="issue-reduction-$epoch_id-attempt-$issue_run_attempt"
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$issue_run_id/artifacts?per_page=100" \
+            --jq '[.[].artifacts[]]' > /tmp/issue-artifacts-final.json
+          reduction_artifact_id="$(jq -r --arg name "$reduction_artifact" '[.[] | select(.name == $name and .expired == false)] | if length == 1 then .[0].id else empty end' /tmp/issue-artifacts-final.json)"
+          [[ "$reduction_artifact_id" =~ ^[1-9][0-9]*$ ]]
+          mkdir -p /tmp/run-reduction
+          gh run download "$issue_run_id" --repo "$REPOSITORY" \
+            --name "$reduction_artifact" --dir /tmp/run-reduction
+          python3 -B scripts/issue_agent/validate.py /tmp/run-reduction
+          cp -a /tmp/run-reduction /tmp/expected-promoted
+          python3 -B scripts/issue_agent/promote.py /tmp/expected-promoted
+          diff -qr /tmp/expected-promoted "$root"
+          python3 -B scripts/issue_agent/validate.py "$root"
+          candidate_status="$(jq -r .status "$root/STATUS.json")"
+          issue_disposition="$(jq -r .issue_disposition "$root/STATUS.json")"
+          handler_id="$(jq -r .handler_id "$root/STATUS.json")"
+          handler_sha256="$(jq -r .handler_sha256 "$root/STATUS.json")"
+          work_order_payload_sha256="$(jq -r .binding.selected_body_sha256 "$root/REQUEST.json")"
+          [[ "$handler_sha256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$work_order_payload_sha256" =~ ^[0-9a-f]{64}$ ]]
+          declared_executor_contract="$(
+            jq -r --arg handler "$handler_id" \
+              '[.handlers[] | select(.handler_id == $handler) | .executor_contract] | if length == 1 then .[0] else "UNREGISTERED" end' \
+              policy/ISSUE_AGENT_DETERMINISTIC_INTAKE_V1.json
+          )"
+          test -n "$declared_executor_contract"
+          executor_registration_state=NOT_REGISTERED_BY_THIS_REPOSITORY_REVISION
+          case "$candidate_status:$issue_disposition" in
+            CONTINUE:EXECUTE_NOW)
+              candidate_class=WORK_ADMISSION
+              receipt_schema=qikvrt_issue_agent_work_admission_receipt_v2
+              handoff_state=READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH
+              review_required=false
+              ;;
+            TERMINAL_CANDIDATE:CLOSE_COMPLETED|TERMINAL_CANDIDATE:CLOSE_NOT_PLANNED|TERMINAL_CANDIDATE:CLOSE_INVALID_OR_UNSUPPORTED)
+              candidate_class=CLOSURE_CANDIDATE
+              receipt_schema=qikvrt_issue_agent_terminal_candidate_receipt_v2
+              handoff_state=READY_FOR_SEPARATE_EXPECTED_HEAD_AUTHORITY_DECISION
+              review_required=true
+              ;;
+            *)
+              echo "BLOCK: unsupported candidate status/disposition $candidate_status/$issue_disposition" >&2
+              exit 1
+              ;;
+          esac
+
+          # First complete mutable observation set; a final causal identity check follows it.
+          test "$(git rev-parse HEAD)" = "$CURRENT_MAIN"
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$CURRENT_MAIN"
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$EXPECTED_HEAD"
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr-emission.json
+          test "$(jq -r .state /tmp/pr-emission.json)" = open
+          test "$(jq -r .base.ref /tmp/pr-emission.json)" = main
+          test "$(jq -r .base.sha /tmp/pr-emission.json)" = "$CURRENT_MAIN"
+          test "$(jq -r .head.sha /tmp/pr-emission.json)" = "$EXPECTED_HEAD"
+          test "$(jq -r .head.ref /tmp/pr-emission.json)" = "$BRANCH"
+          test "$(jq -r .head.repo.full_name /tmp/pr-emission.json)" = "$REPOSITORY"
+          if [ "$review_required" = true ]; then
+            test "$(jq -r .draft /tmp/pr-emission.json)" = false
+            test "$(jq -r .mergeable /tmp/pr-emission.json)" = true
+            test "$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json reviewDecision --jq .reviewDecision)" = APPROVED
+            review_gate=EXACT_HEAD_REPOSITORY_ACCOUNT_APPROVAL_OBSERVED
+          else
+            test "$(jq -r .draft /tmp/pr-emission.json)" = true
+            review_gate=NOT_REQUIRED_FOR_WORK_ADMISSION
+          fi
+          gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID" > /tmp/ci-run-emission.json
+          test "$(jq -r .head_sha /tmp/ci-run-emission.json)" = "$EXPECTED_HEAD"
+          test "$(jq -r .event /tmp/ci-run-emission.json)" = workflow_dispatch
+          test "$(jq -r .status /tmp/ci-run-emission.json)" = completed
+          test "$(jq -r .conclusion /tmp/ci-run-emission.json)" = success
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$CI_RUN_ID/jobs?per_page=100" \
+            --jq '[.[].jobs[]]' > /tmp/ci-jobs-emission.json
+          test "$(jq 'length' /tmp/ci-jobs-emission.json)" -gt 0
+          test "$(jq '[.[] | select(.status != "completed" or .conclusion != "success")] | length' /tmp/ci-jobs-emission.json)" -eq 0
+          test "$(jq '[.[] | select(.name == "test" and .conclusion == "success")] | length' /tmp/ci-jobs-emission.json)" -eq 1
+
+          # Final mutable observation: serialize immediately after this exact causal sequence.
+          gh api "repos/$REPOSITORY/actions/runs/$issue_run_id" > /tmp/issue-run-emission.json
+          test "$(jq -r .head_sha /tmp/issue-run-emission.json)" = "$CURRENT_MAIN"
+          test "$(jq -r .run_attempt /tmp/issue-run-emission.json)" = "$issue_run_attempt"
+          test "$(jq -r .status /tmp/issue-run-emission.json)" = completed
+          test "$(jq -r .conclusion /tmp/issue-run-emission.json)" = success
+          gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID" > /tmp/ci-run-emission.json
+          test "$(jq -r .head_sha /tmp/ci-run-emission.json)" = "$EXPECTED_HEAD"
+          test "$(jq -r .event /tmp/ci-run-emission.json)" = workflow_dispatch
+          test "$(jq -r .status /tmp/ci-run-emission.json)" = completed
+          test "$(jq -r .conclusion /tmp/ci-run-emission.json)" = success
+          if [ "$review_required" = true ]; then
+            gh api --paginate --slurp "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" \
+              --jq add > /tmp/reviews-emission.json
+            test "$(jq --arg head "$EXPECTED_HEAD" '[.[] | select(.state == "APPROVED" and .commit_id == $head and (.user.login == "Goldkelch" or .user.login == "ingolf-lohmann"))] | length' /tmp/reviews-emission.json)" -gt 0
+            owner="${REPOSITORY%%/*}"
+            repo="${REPOSITORY#*/}"
+            gh api graphql \
+              -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}pageInfo{hasNextPage}}}}}' \
+              -f owner="$owner" -f repo="$repo" -F number="$PR_NUMBER" > /tmp/threads-emission.json
+            test "$(jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' /tmp/threads-emission.json)" -eq 0
+            test "$(jq -r .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage /tmp/threads-emission.json)" = false
+          else
+            printf '[]\n' > /tmp/reviews-emission.json
+            printf '{"review_threads":"NOT_REQUIRED_FOR_WORK_ADMISSION"}\n' > /tmp/threads-emission.json
+          fi
+          test "$(git rev-parse HEAD)" = "$CURRENT_MAIN"
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$CURRENT_MAIN"
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$EXPECTED_HEAD"
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr-emission.json
+          test "$(jq -r .state /tmp/pr-emission.json)" = open
+          test "$(jq -r .base.ref /tmp/pr-emission.json)" = main
+          test "$(jq -r .base.sha /tmp/pr-emission.json)" = "$CURRENT_MAIN"
+          test "$(jq -r .head.sha /tmp/pr-emission.json)" = "$EXPECTED_HEAD"
+          test "$(jq -r .head.ref /tmp/pr-emission.json)" = "$BRANCH"
+          test "$(jq -r .head.repo.full_name /tmp/pr-emission.json)" = "$REPOSITORY"
+          if [ "$review_required" = true ]; then
+            test "$(jq -r .draft /tmp/pr-emission.json)" = false
+            test "$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json reviewDecision --jq .reviewDecision)" = APPROVED
+          else
+            test "$(jq -r .draft /tmp/pr-emission.json)" = true
           fi
 
-          for issue in $issue_numbers; do
-            branch="issue-agent/$issue"
-            authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
-            [ -n "$authority_pr" ] || continue
-            authority_state="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state --jq '.state')"
-            authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
+          pr_snapshot_sha256="$(sha256sum /tmp/pr-emission.json | awk '{print $1}')"
+          reviews_sha256="$(sha256sum /tmp/reviews-emission.json | awk '{print $1}')"
+          threads_sha256="$(sha256sum /tmp/threads-emission.json | awk '{print $1}')"
+          jobs_sha256="$(sha256sum /tmp/ci-jobs-emission.json | awk '{print $1}')"
+          issue_jobs_sha256="$(sha256sum /tmp/issue-jobs-final.json | awk '{print $1}')"
+          jq -n \
+            --arg schema "$receipt_schema" \
+            --arg repository "$REPOSITORY" \
+            --argjson pr "$PR_NUMBER" \
+            --arg head "$EXPECTED_HEAD" \
+            --arg tree "$CANDIDATE_TREE" \
+            --arg main "$CURRENT_MAIN" \
+            --arg fingerprint "$FINGERPRINT" \
+            --arg candidate_class "$candidate_class" \
+            --arg issue_disposition "$issue_disposition" \
+            --arg handler_id "$handler_id" \
+            --arg handler_sha256 "$handler_sha256" \
+            --arg work_order_payload_sha256 "$work_order_payload_sha256" \
+            --arg declared_executor_contract "$declared_executor_contract" \
+            --arg executor_registration_state "$executor_registration_state" \
+            --arg handoff_state "$handoff_state" \
+            --argjson review_required "$review_required" \
+            --arg review_gate "$review_gate" \
+            --arg pr_snapshot_sha256 "$pr_snapshot_sha256" \
+            --arg reviews_sha256 "$reviews_sha256" \
+            --arg threads_sha256 "$threads_sha256" \
+            --argjson ci_run_id "$CI_RUN_ID" \
+            --arg ci_jobs_sha256 "$jobs_sha256" \
+            --argjson issue_run_id "$issue_run_id" \
+            --arg issue_jobs_sha256 "$issue_jobs_sha256" \
+            --argjson issue_reduction_artifact_id "$reduction_artifact_id" \
+            '{schema:$schema,repository:$repository,pull_request:$pr,head:$head,tree:$tree,current_main:$main,request_fingerprint:$fingerprint,candidate_class:$candidate_class,issue_disposition:$issue_disposition,handler_id:$handler_id,handler_sha256:$handler_sha256,work_order_payload_sha256:$work_order_payload_sha256,declared_executor_contract:$declared_executor_contract,executor_registration_state:$executor_registration_state,review_required:$review_required,review_gate:$review_gate,pr_snapshot_sha256:$pr_snapshot_sha256,reviews_sha256:$reviews_sha256,threads_sha256:$threads_sha256,ci_run_id:$ci_run_id,ci_jobs_sha256:$ci_jobs_sha256,issue_agent_run_id:$issue_run_id,issue_agent_jobs_sha256:$issue_jobs_sha256,issue_reduction_artifact_id:$issue_reduction_artifact_id,state:$handoff_state,repository_content_effect:"NONE",authority_lifecycle_effect:"NONE",platform_transport_effects_declared:["ACTIONS_ARTIFACT_UPLOAD","ACTIONS_JOB_SUMMARY_WRITE"],claims:{MERGE:false,ISSUE_CLOSE:false,MIRROR_SYNC:false,TAG:false,PUBLICATION:false,DEPLOYMENT:false,PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false}}' \
+            > /tmp/CANDIDATE_VERIFICATION_RECEIPT.json
+          (cd /tmp && sha256sum CANDIDATE_VERIFICATION_RECEIPT.json > CANDIDATE_VERIFICATION_RECEIPT.sha256)
+          echo "candidate_class=$candidate_class" >> "$GITHUB_OUTPUT"
+          echo "handoff_state=$handoff_state" >> "$GITHUB_OUTPUT"
 
-            if [ "$authority_state" = "OPEN" ]; then
-              status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch")"
-              status="$(printf '%s' "$status_json" | jq -r '.status')"
-              if [ "$status" != "DONE" ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed."
-                continue
-              fi
-              checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
-              failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. At least one authority check failed."
-                continue
-              fi
-              [ "$pending" -eq 0 ] || continue
-              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch
-              authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
+      - name: Upload candidate verification transport receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-candidate-verification-${{ steps.observe.outputs.issue_number }}-${{ steps.observe.outputs.fingerprint }}
+          path: /tmp/CANDIDATE_VERIFICATION_RECEIPT.*
+          if-no-files-found: error
+          retention-days: 30
 
-            [ -n "$authority_merged" ] || continue
-            if [ -z "${MESH_TOKEN:-}" ]; then
-              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created."
-              continue
-            fi
-
-            authority_sha="$(gh api "repos/$AUTHORITY_REPOSITORY/commits/main" --jq '.sha')"
-            sync_branch="issue-sync/$issue-$authority_sha"
-            git remote remove mirror 2>/dev/null || true
-            git remote add mirror "https://x-access-token:${MESH_TOKEN}@github.com/${MIRROR_REPOSITORY}.git"
-            git fetch origin main
-            git fetch mirror main
-            git checkout -B "$sync_branch" origin/main
-            git push --force-with-lease mirror "$sync_branch"
-
-            mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state all --head "$sync_branch" --limit 1 --json number --jq '.[0].number // empty')"
-            if [ -z "$mirror_pr" ]; then
-              GH_TOKEN="$MESH_TOKEN" gh pr create --repo "$MIRROR_REPOSITORY" --base main --head "$sync_branch" --title "Synchronize completed issue #$issue" --body "Byte-content synchronization from authority after autonomous completion of Goldkelch/qik-vrt#$issue."
-              mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state open --head "$sync_branch" --limit 1 --json number --jq '.[0].number')"
-            fi
-
-            mirror_state="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json state --jq '.state')"
-            mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            if [ "$mirror_state" = "OPEN" ]; then
-              mirror_checks="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json statusCheckRollup)"
-              mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$mirror_failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks."
-                continue
-              fi
-              [ "$mirror_pending" -eq 0 ] || continue
-              GH_TOKEN="$MESH_TOKEN" gh pr merge "$mirror_pr" --repo "$MIRROR_REPOSITORY" --squash --delete-branch
-              mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$mirror_merged" ] || continue
-            tag="qikvrt-issue-$issue"
-            mirror_sha="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/commits/main" --jq '.sha')"
-            gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
-            GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
-            gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **EFFECT_ACK_DONE**\n\n- authority PR #$authority_pr merged\n- mirror PR #$mirror_pr merged\n- common tag \`$tag\` created in both repositories\n- issue closed automatically"
-            gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
-          done
+      - name: State the executor or Authority boundary
+        shell: bash
+        run: |
+          {
+            echo '## Exact issue candidate verification'
+            echo
+            echo "- pull request: ${{ steps.observe.outputs.pr_number }}"
+            echo "- head: $EXPECTED_HEAD"
+            echo "- request fingerprint: ${{ steps.observe.outputs.fingerprint }}"
+            echo "- QIKVRT CI run: ${{ steps.observe.outputs.ci_run_id }}"
+            echo "- candidate class: ${{ steps.handoff.outputs.candidate_class }}"
+            echo "- state: ${{ steps.handoff.outputs.handoff_state }}"
+            echo '- repository content and Authority lifecycle are read-only in this workflow'
+            echo '- Actions artifact upload and job-summary write are declared transport effects'
+            echo '- no merge, close, mirror sync, tag, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is claimed'
+          } >> "$GITHUB_STEP_SUMMARY"

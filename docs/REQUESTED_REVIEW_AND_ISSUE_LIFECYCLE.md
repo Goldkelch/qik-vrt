@@ -215,16 +215,41 @@ external effect. Every such completion claim remains false in the receipt.
 
 ## Issues
 
+Issue intake is exact-event and repository-bound. `issues` events, typed owner
+`issue_comment` events, and direct manual reobservations bind the selected source,
+issue snapshot, comment identity when present, Authority head/tree, policy, registry,
+implementation code, context, and active mesh into one full SHA-256 fingerprint. A
+registered owner handler runs before the optional model path; an external model-credit
+failure is a bounded redirect, not a new semantic task.
+
+The finite `N×N` matrix executes real GitHub jobs, but their scope is deliberately
+limited to local read/verify/plan/receipt. Canonical fan-in and a successful lifecycle
+classification do not prove that the substantive handler work was implemented. In
+particular, `EXECUTE_NOW` means *admitted work unit*, not completed implementation.
+Substantive completion requires a separately registered executor, digest-bound work
+products, tests, and a new exact evaluation.
+
+One create-only candidate-ref writer may materialize
+`issue-agent/<issue>/<64hex>` and the corresponding immutable evidence epoch. It may
+not update an existing ref, merge, close the issue, synchronize a mirror, tag,
+publish, or deploy. A closure classification is only a terminal candidate for
+separate exact-head repository-account review and a separate Authority decision.
+
 Every observed open issue must have a current repository-native lifecycle disposition. The allowed dispositions are:
 
-- `EXECUTE_NOW`: the request is clear, supported, and technically actionable; begin or continue the smallest bounded work unit;
+- `EXECUTE_NOW`: the request is clear, supported, and technically actionable; admit the smallest bounded work unit and identify its exact registered executor or next action. The intake result itself does not begin or complete the substantive work;
 - `CLARIFICATION_REQUIRED`: a specific ambiguity prevents safe execution; record the minimum missing information and ask only the bounded clarification required;
 - `BLOCKED_WITH_NEXT_ACTION`: the issue is valid but a precise internal or external blocker exists; record evidence, owner, retry condition, and the next technically possible action;
 - `CLOSE_COMPLETED`: the requested result is already fully evidenced or has been completed through a canonical successor;
 - `CLOSE_NOT_PLANNED`: the request is understood but intentionally outside the supported or authorized scope;
 - `CLOSE_INVALID_OR_UNSUPPORTED`: the request is not reproducible, not traceable to evidence, internally contradictory, untrue, or technically unsupported.
 
-An issue must not remain open merely because it is old, broad, inconvenient, or repeatedly retried. If actionable, it must progress. If unclear, it must be concretized. If completed, superseded, invalid, unsupported, or not planned, it must be closed with a concise evidence-bound reason. Closure is reversible, must preserve the discussion and provenance, and must not be used to hide a real unresolved defect.
+An issue must not remain open merely because it is old, broad, inconvenient, or repeatedly retried.
+If actionable, intake must progress it to an exact admitted work unit and an explicit executor
+registration or dispatch boundary; intake alone does not perform that work. If unclear, it must be
+concretized. If completed, superseded, invalid, unsupported, or not planned, it must be closed with
+a concise evidence-bound reason. Closure is reversible, must preserve the discussion and
+provenance, and must not be used to hide a real unresolved defect.
 
 No issue may be left in an unclassified waiting state. A `BLOCKED_WITH_NEXT_ACTION` disposition is not a generic parking state: it requires a deterministic failure class, evidence references, and a single continuation path.
 

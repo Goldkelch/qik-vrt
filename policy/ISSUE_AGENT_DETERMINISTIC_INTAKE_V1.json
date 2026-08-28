@@ -1,0 +1,188 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_governance",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_issue_agent_deterministic_intake_v1",
+  "policy_id": "QIKVRT-ISSUE-AGENT-DETERMINISTIC-INTAKE-V1",
+  "authority_repository": "Goldkelch/qik-vrt",
+  "trusted_owner_logins": [
+    "Goldkelch",
+    "ingolf-lohmann"
+  ],
+  "accepted_event_actions": {
+    "issues": ["opened", "reopened", "edited"],
+    "issue_comment": ["created", "edited", "reobserved"],
+    "workflow_dispatch": ["requested"]
+  },
+  "owner_marker_prefix": "qikvrt-owner-",
+  "handlers": [
+    {
+      "marker": "qikvrt-owner-insight:external-repository-work-cycle-v1",
+      "handler_id": "OWNER-OBSERVED-REPOSITORY-WORK-CYCLE-V1",
+      "executor_contract": "QIKVRT-TYPED-WORK-ORDER-HANDOFF-V1",
+      "materialization_scope": "VALIDATED_ENVELOPE_REFERENCES_REQUIRE_EXACT_REOBSERVATION",
+      "payload_contract": "qikvrt_owner_observed_repository_work_cycle_v1",
+      "repository": "Goldkelch/qik-vrt",
+      "required_cycle": [
+        "EXTERNAL_REQUEST_OR_EVENT",
+        "EXACT_BINDING",
+        "CLASSIFY",
+        "WORK",
+        "RESULT",
+        "MATERIALIZE",
+        "REOBSERVE",
+        "TERMINAL_STATUS",
+        "REPORT",
+        "RETURN_TO_ZERO"
+      ],
+      "required_false_non_claims": [
+        "independent_approval",
+        "merge",
+        "authority_main_effect",
+        "authority_mirror_synchronization",
+        "publication",
+        "deployment",
+        "PASS",
+        "FINAL_PASS",
+        "EFFECT_ACK_DONE",
+        "authority_review_fanout_end_to_end_observed"
+      ],
+      "work_class": "EXTERNAL_REPOSITORY_WORK_CYCLE_REOBSERVATION",
+      "disposition": "EXECUTE_NOW",
+      "formal_status": "DETERMINISTIC_OWNER_CONTRACT_VALIDATED",
+      "empirical_status": "REFERENCED_EVIDENCE_REQUIRES_EXACT_REOBSERVATION",
+      "required_next_action": "Persist the validated contract on a history-preserving carrier and reobserve its exact referenced head, tree, Authority main and repository reaction before deriving one next causal turn."
+    },
+    {
+      "marker": "qikvrt-owner-fractal-physics-spacetime-additive-work-order-v1",
+      "handler_id": "OWNER-FRACTAL-PHYSICS-SPACETIME-ADDITIVE-WORK-ORDER-V1",
+      "executor_contract": "QIKVRT-TYPED-WORK-ORDER-HANDOFF-V1",
+      "materialization_scope": "REGISTERED_HANDLER_WORK_PRODUCT_REQUIRED_SEPARATELY",
+      "work_class": "FORMAL_MODEL_AND_EVIDENCE_BRIDGE",
+      "disposition": "EXECUTE_NOW",
+      "required_next_action": "Materialize the bounded article, claim-evidence matrix, QCE_StateSpace and QCE_Uncertainty work unit; preserve formal-model, physical-correspondence and empirical-confirmation boundaries."
+    },
+    {
+      "marker": "qikvrt-root-blocker-repair-order-v1",
+      "handler_id": "OWNER-REPOSITORY-NATIVE-ROOT-BLOCKER-REPAIR-V1",
+      "executor_contract": "QIKVRT-TYPED-WORK-ORDER-HANDOFF-V1",
+      "materialization_scope": "REGISTERED_HANDLER_WORK_PRODUCT_REQUIRED_SEPARATELY",
+      "work_class": "REPOSITORY_CONTROL_PLANE_REPAIR",
+      "disposition": "EXECUTE_NOW",
+      "required_next_action": "Admit this exact root-repair order, then register or dispatch a separate repository executor to implement and test the current-main-bound repair; the intake workflow itself only freezes and reduces one finite N-by-N read/verify/plan epoch and may expose one compare-and-swap candidate ref."
+    }
+  ],
+  "external_agent_failure_signatures": [
+    "You don't have sufficient GitHub AI Credits to start a session",
+    "The agent encountered an error and was unable to start working on this issue",
+    "GitHub Models inference failed"
+  ],
+  "external_agent_failure_provenance": {
+    "selected_source": "ISSUE_BODY",
+    "issue_author_type": "Bot",
+    "event_actor_must_equal_issue_author": true,
+    "result": "BOUNDED_REDIRECT_RECEIPT_NO_WORK_CANDIDATE"
+  },
+  "event_binding": [
+    "event_name",
+    "event_action",
+    "issue_number",
+    "source_updated_at",
+    "comment_id_or_null",
+    "comment_node_id_or_null",
+    "comment_url_or_null",
+    "actor_login",
+    "selected_author_association",
+    "selected_author_login",
+    "selected_source",
+    "selected_body_sha256",
+    "issue_snapshot_sha256",
+    "context_sha256",
+    "authority_head",
+    "authority_tree",
+    "handler_policy_sha256",
+    "registry_sha256",
+    "intake_code_sha256",
+    "active_registered_nodes",
+    "active_mesh_nodes"
+  ],
+  "deduplication": {
+    "algorithm": "SHA256",
+    "canonical_input": "CANONICAL_JSON_OF_EVENT_BINDING",
+    "identical_fingerprint": "NOOP",
+    "any_bound_field_drift": "NEW_EVENT_EPOCH",
+    "branch_pattern": "issue-agent/<issue>/<full-64-hex-fingerprint>",
+    "forced_existing_ref_update": false,
+    "history_rewrite": false,
+    "same_fingerprint_existing_candidate_semantics": "IMMUTABLE_STORED_STATUS_WINS_OVER_FRESH_OPTIONAL_INFERENCE",
+    "writer": "ONE_APPEND_ONLY_EXPECTED_ABSENT_REF_CREATE",
+    "create_transport": "GIT_PUSH_WITH_EMPTY_EXPECTED_REMOTE_LEASE",
+    "empty_expected_remote_lease_is_create_only_not_ref_update": true,
+    "existing_ref_update_allowed": false
+  },
+  "quadratic_epoch": {
+    "node_set": "AUTHORITY_UNION_ACTIVE_REGISTERED_NODES_CANONICALLY_SORTED",
+    "lane_count": "N*N",
+    "lane_index": "row*N+column",
+    "allowed_lane_effects": ["READ", "VERIFY", "PLAN", "RECEIPT"],
+    "canonical_fan_in": "ROW_MAJOR_BY_LANE_INDEX",
+    "maximum_nodes": 16,
+    "maximum_lanes": 256,
+    "candidate_ref_writer_count": 1,
+    "competing_writer": "HOLD",
+    "drift": "HOLD_AND_REQUIRE_NEW_EVENT_EPOCH",
+    "missing_duplicate_surplus_foreign_or_tampered_receipt": "HOLD",
+    "runtime_job_attestation": "CANDIDATE_VERIFIER_REOBSERVES_EXACT_WORKFLOW_RUN_ATTEMPT_AND_ALL_CANONICAL_LANE_JOB_NAMES"
+  },
+  "execution_boundary": {
+    "EXECUTE_NOW": "WORK_UNIT_ADMISSION_NOT_SUBSTANTIVE_HANDLER_COMPLETION",
+    "n_squared_lanes": "LOCAL_READ_VERIFY_PLAN_RECEIPT_ONLY",
+    "arbitrary_lane_target_repository_contacted": false,
+    "control_plane_may_contact_authority_repository": true,
+    "arbitrary_handler_work_executed_by_intake_workflow": false,
+    "substantive_executor_registry_present": false,
+    "required_for_substantive_completion": "SEPARATELY_REGISTERED_EXECUTOR_AND_BOUND_WORK_PRODUCT_DIGESTS",
+    "silent_drop_allowed": false,
+    "unexecuted_admitted_work_state": "CONTINUE_WITH_EXACT_NEXT_ACTION"
+  },
+  "terminal_boundary": {
+    "verifier": "REPOSITORY_READ_ONLY_WITH_DECLARED_ACTIONS_ARTIFACT_AND_SUMMARY_TRANSPORT",
+    "required_event": "EXACT_QIKVRT_CI_WORKFLOW_RUN_OR_EXACT_PR_REVIEW_OR_MANUAL_EXACT_REOBSERVATION",
+    "work_admission_state": "READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH",
+    "closure_candidate_state": "READY_FOR_SEPARATE_EXPECTED_HEAD_AUTHORITY_DECISION",
+    "authority_main_decision": "SEPARATE",
+    "review_thread_resolution_without_supported_event": "MANUAL_EXACT_REOBSERVATION_REQUIRED"
+  },
+  "model_boundary": {
+    "optional_model": "openai/gpt-4.1",
+    "typed_owner_order_calls_model": false,
+    "external_agent_failure_calls_model": false,
+    "untyped_request_may_delegate_to_model": true,
+    "model_unavailable_state": "BLOCKED_WITH_NEXT_ACTION",
+    "model_result_is_effect_authority": false
+  },
+  "forbidden": [
+    "schedule",
+    "cron",
+    "blind_retry",
+    "forced_existing_ref_update",
+    "non_empty_force_lease",
+    "history_rewrite",
+    "execute_untrusted_comment_text",
+    "treat_zero_job_skipped_cancelled_or_action_required_as_success"
+  ],
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE": false,
+    "PUBLICATION": false,
+    "ISSUE_CLOSE": false,
+    "MIRROR_SYNC": false,
+    "TAG": false,
+    "DEPLOYMENT": false
+  }
+}
