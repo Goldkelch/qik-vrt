@@ -17,6 +17,13 @@
     "watchdog_timeout_is_domain_work": false,
     "general_internet_reachability": false
   },
+  "deterministic_admission": {
+    "module": "src/qikvrt_deterministic_admission.py",
+    "message_field": "ambiguity_present",
+    "precedence": ["INCOMPLETE:CONTINUE", "AMBIGUITY:HOLD", "CANONICAL_MATCH:ACCEPT", "OTHER:BLOCK"],
+    "sampling": false,
+    "implicit_ambiguity_resolution": false
+  },
   "node_contract": {
     "independent_process": true,
     "append_only_hash_linked_ledger": true,

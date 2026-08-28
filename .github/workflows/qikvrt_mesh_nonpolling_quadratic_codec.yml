@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+
+name: QIKVRT Mesh non-polling quadratic codec
+
+on:
+  pull_request:
+    paths:
+      - "AI"
+      - "hardware/**"
+      - "state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json"
+      - "docs/architecture/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.md"
+      - "tools/qikvrt_mesh_quadratic_codec.py"
+      - "tests/test_qikvrt_mesh_nonpolling_quadratic_codec.py"
+      - ".github/workflows/qikvrt_mesh_nonpolling_quadratic_codec.yml"
+  push:
+    branches: [main]
+    paths:
+      - "AI"
+      - "hardware/**"
+      - "state/mesh/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.json"
+      - "docs/architecture/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.md"
+      - "tools/qikvrt_mesh_quadratic_codec.py"
+      - "tests/test_qikvrt_mesh_nonpolling_quadratic_codec.py"
+      - ".github/workflows/qikvrt_mesh_nonpolling_quadratic_codec.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify non-polling rule and quadratic codec round trip
+        run: >-
+          python3 -B -m unittest -v
+          tests.test_qikvrt_mesh_nonpolling_quadratic_codec

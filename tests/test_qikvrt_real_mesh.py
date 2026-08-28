@@ -93,6 +93,22 @@ class RealMeshPureContractTests(unittest.TestCase):
                 source_tree=SOURCE_TREE,
             )
 
+    def test_explicit_ambiguity_is_a_deterministic_hold_not_an_admission(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="qikvrt-real-mesh-hold-") as directory:
+            with mesh.MeshHarness(pathlib.Path(directory), SOURCE_TREE) as harness:
+                assert harness.topology is not None
+                route = ["pair-a-authority", "pair-a-mirror", "pair-b-mirror", "pair-b-authority"]
+                message = mesh.build_message(
+                    harness.topology, route, message_id="explicit-hold-0001",
+                    nonce="EXPLICIT-HOLD-NONCE", source_head=SOURCE_HEAD,
+                    source_tree=SOURCE_TREE, ambiguity_present=True,
+                )
+                first = mesh.node_by_id(harness.topology, route[0])
+                response = mesh.send_message(first["host"], first["port"], message)
+                self.assertEqual(response["effect_state"], "EFFECT_ACK_CONTINUE")
+                self.assertEqual(response["reason"], "EXPLICIT_AMBIGUITY_HOLD")
+                self.assertFalse(response["ordinary_release"])
+
 
 class RealMeshNetworkTests(unittest.TestCase):
     def test_four_process_two_pair_mesh_executes_two_routes_and_restart_replay(self) -> None:
@@ -218,6 +234,8 @@ class RealMeshRepositoryContractTests(unittest.TestCase):
         self.assertEqual(contract["transport"]["network_scope"], mesh.NETWORK_SCOPE)
         self.assertFalse(contract["effect_boundary"]["general_effect_ack_done"])
         self.assertFalse(contract["effect_boundary"]["authority_mirror_synchronization"])
+        self.assertEqual(contract["deterministic_admission"]["message_field"], "ambiguity_present")
+        self.assertFalse(contract["deterministic_admission"]["sampling"])
         workflow = (
             root / ".github" / "workflows" / "qikvrt_real_mesh.yml"
         ).read_text(encoding="utf-8")

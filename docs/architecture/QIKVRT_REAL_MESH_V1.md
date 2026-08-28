@@ -31,6 +31,15 @@ Jedes Authority/Mirror-Paar enthält genau eine `AUTHORITY`- und eine `MIRROR`-R
 
 Node-Arbeit beginnt ausschließlich durch einen eingehenden Socket-Frame. Es gibt keinen fachlichen Timer und kein periodisches Polling. Socket- und Prozess-Timeouts sind nur begrenzte Watchdog-/Lease-Grenzen und lösen keine neue fachliche Arbeit aus.
 
+## Deterministische Admission
+
+Vor der Ledger-Aufnahme bewertet jeder normalisierte Frame den expliziten
+Booleschen Wert `ambiguity_present` mit dem gemeinsamen Admission-Operator.
+`true` führt deterministisch zu `EXPLICIT_AMBIGUITY_HOLD` und verhindert die
+Aufnahme; ein vollständiger kanonischer Frame mit `false` wird akzeptiert.
+Malformed oder nicht kanonische Eingaben bleiben fail-closed blockiert. Der
+Pfad enthält weder Sampling noch implizite Mehrdeutigkeitsauflösung.
+
 ```text
 SOCKET_EVENT
 -> exact envelope validation

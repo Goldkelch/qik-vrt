@@ -1,0 +1,46 @@
+{
+  "schema": "qikvrt_mesh_nonpolling_quadratic_codec_v1",
+  "status": "SPECIFIED_AND_TESTED_REFERENCE",
+  "operation_model": "EVENT_DRIVEN_NO_PERIODIC_POLLING",
+  "event_sources": ["push", "pull_request", "workflow_run", "workflow_dispatch", "repository_dispatch"],
+  "forbidden_sources": ["schedule", "cron", "blind_retry"],
+  "quadratic_scaling": {
+    "node_count_symbol": "N",
+    "lane_count": "N*N",
+    "frame_bits": "N*N*WORD_BITS",
+    "finite_generic_required": true
+  },
+  "serial_transport_accounting": {
+    "physical_edge_model": "ONE_SERIAL_READY_VALID_BIT_EDGE",
+    "payload_handshakes_per_complete_frame": "N*N*WORD_BITS",
+    "ideal_no_stall_raw_frame_rate_at_clock_hz": "CLOCK_HZ/(N*N*WORD_BITS)",
+    "excluded_from_raw_frame_rate": ["frame_launch", "backpressure", "hashing", "receipt_construction", "ledger_persistence", "deduplication", "fanout", "network_transport"],
+    "prohibited_inference": "RAW_FRAME_RATE_IS_NOT_RECEIPT_RATE_OR_COGNITIVE_WORKLOAD_THROUGHPUT"
+  },
+  "canonical_mapping": {
+    "lane_index": "row*N+column",
+    "wire_bit_index": "lane_index*WORD_BITS+bit",
+    "wire_order": "row_major_lane_order_then_least_significant_bit_first",
+    "round_trip": "deserialize(serialize(lanes))=lanes"
+  },
+  "deterministic_admission": {
+    "decision_order": ["FRAME_INCOMPLETE_TO_CONTINUE", "AMBIGUITY_PRESENT_TO_HOLD", "CANONICAL_MATCH_TO_ACCEPT", "OTHER_COMPLETE_INPUT_TO_BLOCK"],
+    "uncertainty_representation": "EXPLICIT_INPUT_AND_VISIBLE_HOLD_OR_BLOCK_STATE",
+    "forbidden_mechanisms": ["sampling", "random_choice", "implicit_ambiguity_resolution"],
+    "vhdl_source": "hardware/vhdl/qikvrt_deterministic_admission_gate.vhd",
+    "software_reference": "tools/qikvrt_mesh_quadratic_codec.py:deterministic_disposition"
+  },
+  "hardware": {
+    "vhdl_source": "hardware/vhdl/qikvrt_mesh_quadratic_codec.vhd",
+    "admission_vhdl_source": "hardware/vhdl/qikvrt_deterministic_admission_gate.vhd",
+    "style": "clocked_rtl_no_wait_or_after",
+    "synthesis_status": "SOURCE_IS_SYNTHESIS_ORIENTED; TOOL_AND_TARGET_BOUND_SYNTHESIS_RECEIPT_OPEN",
+    "physical_manufacture_or_measurement": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "PHYSICAL_HARDWARE_MANUFACTURED": false
+  }
+}

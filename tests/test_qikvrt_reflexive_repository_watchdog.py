@@ -118,7 +118,10 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             prevention["applies_to"],
             ["AUTHORITY", "MIRROR", "EVERY_FUTURE_MESH_NODE"],
         )
-        self.assertEqual(prevention["observation_cadence"], "PT5M")
+        self.assertEqual(
+            prevention["observation_cadence"],
+            "EVENT_DRIVEN_NO_PERIODIC_POLLING",
+        )
         self.assertEqual(
             prevention["admission_policy"],
             "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
@@ -142,7 +145,10 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         node_policy = json.loads(NODE_POLICY.read_text(encoding="utf-8"))
         node_acceptance = node_policy["reflexive_watchdog_acceptance"]
         self.assertTrue(node_acceptance["required_for_authority_mirror_and_future_nodes"])
-        self.assertEqual(node_acceptance["maximum_observation_interval"], "PT5M")
+        self.assertEqual(
+            node_acceptance["maximum_observation_interval"],
+            "EVENT_DRIVEN_SOURCE_FRESHNESS_BOUND",
+        )
         self.assertEqual(node_acceptance["gatewatch_receipt_path"], "gatewatch-receipt.json")
         self.assertEqual(node_acceptance["trusted_gate_matrix"], "EXACT_HEAD_ARTIFACT_ONLY")
 
@@ -425,9 +431,10 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertFalse(value["baseline"]["same_head_and_tree"])
         self.assertEqual(value["state"], "QUIESCENT_OBSERVATION")
 
-    def test_workflow_is_five_minute_reflexive_and_read_only(self) -> None:
+    def test_workflow_is_event_driven_non_polling_and_read_only(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('cron: "*/5 * * * *"', workflow)
+        self.assertNotIn("schedule:", workflow)
+        self.assertNotIn("cron:", workflow)
         self.assertIn("workflow_run:", workflow)
         self.assertIn("types: [requested, in_progress, completed]", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
