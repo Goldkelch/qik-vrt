@@ -201,7 +201,12 @@ static void test_effect_checkable_truth_table(void)
     input.input_identifier_available = 1;
     expect_true(
         qikvrt_effect_ack_effect_checkable(&input),
-        "identifier and digest are effect-checkable without transport ACK");
+        "transport ACK, identifier and digest are effect-checkable");
+
+    input.transport_ack = 0;
+    expect_true(
+        qikvrt_effect_ack_effect_checkable(&input),
+        "identifier and digest remain effect-checkable without transport ACK");
     expect_true(
         !qikvrt_effect_ack_effect_checkable(0),
         "null snapshot is not effect-checkable");

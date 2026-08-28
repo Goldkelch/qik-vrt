@@ -769,12 +769,6 @@ class EffectAckEngine:
         return EffectAckResult(state=state, protocol=protocol)
 
     def _evaluate_facts(self, request: EffectAckRequest) -> dict[str, Any]:
-        effect_checkable = bool(
-            request.transport_ack
-            and request.payload is not None
-            and request.protocol_root_id
-            and request.input_id
-        )
         payload_too_large = bool(
             request.payload is not None
             and len(request.payload) > self.max_payload_bytes
@@ -789,6 +783,11 @@ class EffectAckEngine:
         else:
             actual = sha256_identifier(request.payload)
         hash_mismatch = bool(declared and actual and declared != actual)
+        # Draft -03 defines an effect-checkable reception by an available
+        # input identifier and digest.  Transport receipt remains a separate
+        # mandatory CoreDone conjunct, so its absence selects CONTINUE rather
+        # than granting release or erasing an otherwise checkable input.
+        effect_checkable = bool(request.input_id and (actual or declared))
         return {
             "effect_checkable": effect_checkable,
             "payload_too_large": payload_too_large,

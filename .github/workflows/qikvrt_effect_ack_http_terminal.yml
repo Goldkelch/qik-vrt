@@ -79,6 +79,7 @@ jobs:
           node --check browser/firefox/qikvrt-terminal/background.js
           node --check browser/firefox/qikvrt-terminal/content.js
           node --check browser/firefox/qikvrt-terminal/options.js
+          node --check browser/firefox/qikvrt-terminal/review_effect.js
 
       - name: Run HTTP terminal contract and E2E tests
         env:
@@ -94,12 +95,31 @@ jobs:
           (
             cd browser/firefox/qikvrt-terminal
             zip -X -9 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
-              manifest.json background.js content.js terminal.css options.html options.js README.md
+              manifest.json background.js content.js review_effect.js terminal.css options.html options.js README.md
           )
           sha256sum /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
             > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('/tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi')
+          manifest = json.loads(
+              Path('browser/firefox/qikvrt-terminal/manifest.json').read_text()
+          )
+          required = set(manifest['background']['scripts'])
+          required.add(manifest['options_ui']['page'])
+          for entry in manifest['content_scripts']:
+              required.update(entry.get('js', ()))
+              required.update(entry.get('css', ()))
+          with zipfile.ZipFile(archive) as package:
+              missing = sorted(required - set(package.namelist()))
+          if missing:
+              raise SystemExit(f'manifest references missing from XPI: {missing}')
+          PY
 
       - name: Preserve verified Firefox package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
