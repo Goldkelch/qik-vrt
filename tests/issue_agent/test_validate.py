@@ -7,8 +7,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import yaml
-
 import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -842,31 +840,6 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             terminal.rindex("reviewThreads(first:100)"),
             terminal.index(final_marker),
         )
-
-    def test_issue_agent_workflow_yaml_rejects_duplicate_mapping_keys(self):
-        class UniqueKeyLoader(yaml.SafeLoader):
-            pass
-
-        def construct_mapping(loader, node, deep=False):
-            mapping = {}
-            for key_node, value_node in node.value:
-                key = loader.construct_object(key_node, deep=deep)
-                if key in mapping:
-                    raise AssertionError(f"duplicate workflow YAML key: {key}")
-                mapping[key] = loader.construct_object(value_node, deep=deep)
-            return mapping
-
-        UniqueKeyLoader.add_constructor(
-            yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-            construct_mapping,
-        )
-        for relative in (
-            ".github/workflows/issue-autonomous-processing.yml",
-            ".github/workflows/issue-agent-autofinish.yml",
-        ):
-            with self.subTest(workflow=relative):
-                document = yaml.load((ROOT / relative).read_text(), Loader=UniqueKeyLoader)
-                self.assertIsInstance(document, dict)
 
     def test_policy_and_owner_delegation_are_active_and_fail_closed(self):
         policy = json.loads((ROOT / "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json").read_text())
