@@ -105,6 +105,19 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     offenders.append(f"{path.relative_to(ROOT)}:{line_number}")
         self.assertEqual([], offenders)
 
+    def test_review_contract_normalizes_semantic_document_whitespace(self):
+        contract = (
+            ROOT / ".github" / "workflows" / "qikvrt_requested_review_contract.yml"
+        ).read_text(encoding="utf-8")
+        documentation = (
+            ROOT / "docs" / "DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "delegated platform-account action",
+            " ".join(documentation.split()),
+        )
+        self.assertIn("tr '\\n' ' '", contract)
+
     def selector_pr(self, **overrides):
         value = {
             "number": 867,

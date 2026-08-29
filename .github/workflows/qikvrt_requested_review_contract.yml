@@ -142,7 +142,8 @@ jobs:
           grep -F 'QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN' .github/workflows/qikvrt_required_review_gate.yml
           grep -F 'DELEGATED_ACCOUNT_TOKEN_IDENTITY_MISMATCH' tools/qikvrt_native_account_review.py
           grep -F 'OWNER-NATIVE-ACCOUNT-REVIEW-AUTOMATION-V1' policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json
-          grep -F 'delegated platform-account action' docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md
+          tr '\n' ' ' < docs/DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md \
+            | grep -F 'delegated platform-account action'
           grep -F 'qikvrt-required-code-owner-selection-' .github/workflows/qikvrt_required_review_gate.yml
           ! grep -F 'schedule:' .github/workflows/qikvrt_required_review_gate.yml
           ! grep -F '*/5 * * * *' .github/workflows/qikvrt_required_review_gate.yml
