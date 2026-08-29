@@ -5,7 +5,7 @@
 Autor und Product Owner: Ingolf Lohmann  
 Technische Ausarbeitung und kritische Evidenzprüfung: OpenAI Codex  
 Stand: 29. August 2026  
-Fassung: Veröffentlichungskandidat 1.0
+Fassung: Veröffentlichungskandidat 1.1 — Audiofortschreibung und quantitative Szenarien
 
 ---
 
@@ -28,6 +28,8 @@ Der heute öffentlich nachweisbare QIK-VRT-Kern besitzt fünf klar getrennte Erg
 Das ist ein beachtlicher, zusammenhängender Forschungs- und Entwicklungsbestand. Seine gegenwärtig belegte Stärke ist nicht die Behauptung, eine große Sprach-KI schon heute um Milliarden Faktoren zu beschleunigen. Seine belegte Stärke ist präziser und für reale Systeme sehr wichtig: QIK-VRT macht die Grenze zwischen technischer Bestätigung und verantworteter Wirkung maschinenprüfbar.
 
 Eine allgemeine Performance- oder Energieüberlegenheit gegenüber etablierten CPU-, GPU-, Broker- oder KI-Systemen ist noch nicht gemessen. Der Artikel zeigt deshalb gleichermaßen, was bereits bewiesen oder ausgeführt wurde, was sich aus der Architektur herleiten lässt und welche Messungen noch fehlen.
+
+Diese Fassung schließt ausdrücklich den zuvor fehlenden Rückweg: von empirischen Eingängen über kanonische virtuelle Modelle und formale Prüfungen zur realen Ausführung und von dort zurück zur unabhängigen empirischen Reobservation. Sie rechnet außerdem vor, welche Einsparungen QIK-VRT bei Large-Language-Model-Systemen *erreichen könnte*, wenn es nachweislich unnötige Inferenz, Polling, Duplikate oder unzulässige Außenwirkungen verhindert. Solche Szenarien sind Prognosen mit offengelegten Formeln; sie sind keine nachträglich erfundenen Messwerte.
 
 ---
 
@@ -183,6 +185,23 @@ Das schafft drei wertvolle Eigenschaften:
 
 Aber N² ist zunächst *Arbeitsumfang*, nicht automatisch Performancegewinn. Wenn jede Relation tatsächlich geprüft werden muss, wächst die Arbeit quadratisch. Der Gewinn entsteht dann, wenn diese Arbeit unabhängig parallelisiert, einmal kanonisch serialisiert, exakt wiederverwendet oder bei dünnen Ereignissen gar nicht erst unnötig ausgelöst wird.
 
+Das lässt sich bereits als Speicherrechnung konkret machen. Wenn jede Spur einschließlich Status, Kennung und Bindung `s` Byte belegt, benötigt der reine Spurzustand:
+
+Speicher = N² × s
+
+| Knoten N | Spuren N² | bei 32 Byte pro Spur | bei 64 Byte pro Spur |
+|---:|---:|---:|---:|
+| 16 | 256 | 8 KiB | 16 KiB |
+| 64 | 4.096 | 128 KiB | 256 KiB |
+| 1.000 | 1.000.000 | 32 MB | 64 MB |
+| 10.000 | 100.000.000 | 3,2 GB | 6,4 GB |
+
+Das ist der entscheidende Flächen-Zeit-Tausch: Ein vollständig entrolltes Hardwaremesh kann theoretisch N² Zellen im selben Takt aktualisieren, benötigt dafür aber ebenfalls eine Größenordnung von N² an Registern, Leitungen, Logikfläche und Schaltenergie. Für P nicht überlappende Engines mit einem Initiierungsintervall von `II_Relation` Takten je Spur lässt sich die Zeit näherungsweise so planen:
+
+T_Epoche ≈ ceil(N² / P) × II_Relation / f_Takt + T_Fill/Drain + T_Fan-in
+
+Bei einer Pipeline können Bearbeitungen überlappen; dann ist das Initiierungsintervall und nicht die volle Einzellatenz die passende Größe. N² bezeichnet also vollständige gerichtete Paarabdeckung. Es ist keine kostenlose Vervielfachung der Leistung. Gerade diese Offenlegung macht die Architektur planbar: Der Entwickler kann Fläche gegen Zeit tauschen, ohne die Reihenfolge oder Vollständigkeit der Relationen zu verändern.
+
 Im aktuellen repository-nativen Issue-Agenten ist die Epoche deshalb auf höchstens 16 Knoten und 256 Spuren begrenzt. Jede Spur erzeugt nur einen lokalen Read/Verify/Plan-Beleg; sie nimmt nicht automatisch eine entfernte Mutation vor. Der Fan-in akzeptiert ausschließlich die vollständige, sortierte Spurmenge.
 
 Das ist ein echter algorithmischer Vertrag. Es ist kein Beleg für unbegrenzte oder kostenlose Skalierung.
@@ -253,6 +272,8 @@ Der gewünschte Kreislauf lautet:
 
 Auftrag → gebundene Anforderung → Plan → Implementierung → Test → exakte Reobservation → Review → Authority-Entscheidung → Wirkung → Beobachtung
 
+Das vom Product Owner formulierte Fernziel ist eine universale autonome Softwareentwicklung: Alles, was Turing-berechenbar und durch geeignetes Requirement Engineering vollständig formalisiert ist, soll erzeugt, gegen diese Anforderungen geprüft und bei späteren Änderungen erneut in gleichbleibend hoher Qualität bearbeitet werden können. Das ist ein sinnvoller Architekturhorizont. Der heutige Nachweis ist enger: QIK-VRT besitzt typisierte, reproduzierbare Ausführungspfade für registrierte Aufgaben. Daraus folgt noch kein allgemeiner Satz, dass beliebige informelle Wünsche automatisch in ein korrektes Programm übersetzt werden können. Eine unvollständige oder widersprüchliche Anforderung kann kein Executor durch Rechengeschwindigkeit in eine eindeutige Spezifikation verwandeln. QIK-VRTs Beitrag besteht gerade darin, diese Lücke sichtbar auf `CONTINUE`, `HOLD` oder `BLOCK` zu halten, statt sie als erledigt auszugeben.
+
 Dabei war eine konkrete Lücke sichtbar: Ein Auftrag konnte korrekt aufgenommen und in einer quadratischen Epoche geplant werden, ohne dass ein registrierter, substantieller Executor die eigentliche Arbeit ausführte. Die Kontrollschicht konnte also „Auftrag aufgenommen“ beweisen, aber nicht „Auftrag erledigt“.
 
 Die repository-native Reparatur führt deshalb einen typisierten Executor-Vertrag ein:
@@ -271,7 +292,7 @@ Diese Reparatur ist in Pull Request 914 materialisiert:
 
 https://github.com/Goldkelch/qik-vrt/pull/914
 
-Der materialisierte Remote-Head besitzt die Identität e91c20940c090a1b830556d1e5cbfed9e05773e5; sein lokal vollständig geprüfter Tree besitzt die Identität a54342c7c3bb38ec745e0bd243c48a39c1e35c97. Der vollständige lokale Testlauf war erfolgreich; die Remote-Prüfung des exakten neuen Heads ist zum Stand dieses Artikels noch Teil des offenen Draft-PR-Verfahrens. Es gibt deshalb weder Merge- noch Authority-main-Behauptung.
+Der materialisierte Remote-Head besitzt die Identität `e91c20940c090a1b830556d1e5cbfed9e05773e5`; sein Tree besitzt die Identität `a54342c7c3bb38ec745e0bd243c48a39c1e35c97`. Bei der Exact-Head-Reobservation am 29. August 2026 waren 14 CI-Läufe erfolgreich, drei aufgrund ihres konkreten Ereigniskontexts übersprungen und keiner fehlgeschlagen oder noch laufend. Der offene Blocker ist nicht mehr die technische Exact-Head-Prüfung, sondern die fehlende unabhängige Code-Owner-Entscheidung für genau diesen Head und die weiterhin fehlende Authority-main-Übernahme. Es gibt deshalb weder Merge- noch Authority-main-Behauptung.
 
 Die wichtigste Konsequenz für künstlich kognitive Systeme ist nicht, dass ein Sprachmodell aufhört, Wahrscheinlichkeiten zu verwenden. QIK-VRT kann vielmehr verhindern, dass ein wahrscheinlicher Text ohne deterministische Prüfung zur realen Wirkung wird.
 
@@ -361,6 +382,38 @@ Noch nicht bewiesen sind:
 - Halbleiterfertigung,
 - die vollständige 35-Feld- und 17-Konjunkt-Wirelogik in genau diesem RTL.
 
+Daneben existiert in Pull Request 912 ein weitergehender, noch nicht in Authority-main übernommener Prototypkandidat für Non-Polling, quadratische Serialisierung und deterministische Admission. Sein am 29. August 2026 reobservierter Kandidatenstand besitzt den Head `244970c8c7f29b15eb8df48c28c80c96719ea118` und den Tree `6578ffacb3b30faed68ff3fe9b86bfb04eead350`:
+
+https://github.com/Goldkelch/qik-vrt/pull/912
+
+Sein bitserieller Wire-Frame hat bei N Knoten und W Nutzbits je Spur exakt:
+
+F(N,W) = N² × W + 72 Bit
+
+Die 72 Zusatzbits bestehen aus Sync, Session, Sequenz und CRC-16. Bei einem 12-MHz-Link, W = 8 und ohne Stall folgt daraus nur als RTL-Obergrenze:
+
+| N | Framebits | ungefähr mögliche Frames/s | mindestens Serialisierungslatenz |
+|---:|---:|---:|---:|
+| 2 | 104 | 115.385 | 8,67 µs |
+| 8 | 584 | 20.548 | 48,67 µs |
+| 64 | 32.840 | 365 | 2,737 ms |
+
+Nur N = 2 ist im gegenwärtigen Board-Top konkret eingestellt. Auch dort sind diese Zahlen gerechnet, nicht am Board gemessen. Sie zeigen beides zugleich: Die Zuordnung ist deterministisch und herstellbar beschreibbar; ein einzelner serieller Draht wird bei wachsendem N aber zum quadratischen Engpass. Mehr Parallelität tauscht diesen Zeitbedarf gegen mehr Hardwarefläche.
+
+Ebenso wichtig ist die Scope-Grenze des Kandidaten: Sein Admission-Gate unterscheidet vier Entscheidungen; die Metatransistor-Zelle kennt `OBSERVE`, `HOLD`, `CONTINUE` und `RESERVED`, während `EFFECT_ACK_DONE` fest Null bleibt. Der Codec prüft CRC-16, aber noch nicht die vollständige kanonische JSON-/SHA-256-, Authority-, Evidenz-, Ledger- und Persistenzlogik des Effect-Acknowledgement-Protokolls. CRC-16 entdeckt viele Übertragungsfehler, ist aber kein kryptographischer Authentikator. Synthese, Place-and-Route, Bitstream, Programmierung und Boardbeobachtung stehen im zugehörigen Anforderungssatz weiterhin ausdrücklich auf `false`.
+
+Der geringe Änderungsaufwand gegenüber heutiger Rechnertechnik ist als Integrationshypothese konkret beschreibbar:
+
+| Zielsystem | mögliche Einfügung | was unverändert bleiben kann |
+|---|---|---|
+| CPU/Linux | Daemon oder Bibliothek vor wirkungsauslösenden Systemaufrufen; Shared-Memory-Ring plus Linux-`eventfd`/`epoll` | vorhandene Arm-/x86-ISA und Betriebssystemkern |
+| FPGA | AXI4-Lite für Konfiguration, AXI4-Stream zwischen DMA beziehungsweise Netzwerk und Aktor, BRAM-Receipt-Queue, Interrupt bei terminalem Zustand | Standard-FPGA, Standardbusse und vorhandene Peripherie |
+| SoC | speicheradressierter Coprozessor, DMA-Queues, monotone Sequenz und Schlüssel-/Trust-Root-Bindung | vorhandener Arm- oder RISC-V-Hauptkern |
+| Netzwerk | HTTP-Anwendungsprofil zwischen Daemon und Browser/Client | TCP, QUIC, IP und RFC-9110-Semantik |
+| großes Mesh | Zeitmultiplexing über P Engines oder teilweise parallele Lanes | keine Pflicht, sofort N² physische Zellen zu fertigen |
+
+Diese Anschlussformen benötigen Treiber, API, Authentisierung und Messung. Sie zeigen aber, warum ein Prototyp ohne neue Transistorphysik und ohne neue allgemeine CPU-ISA möglich ist.
+
 Der nächste Hardwarebeweis benötigt deshalb mindestens:
 
 1. synthesefähige vollständige RTL-Grenze,
@@ -408,14 +461,16 @@ Das ist der zuverlässige Weg von „anschlussfähig“ zu „vollumfänglich im
 Eine NVIDIA Grace CPU Superchip-Plattform besitzt laut NVIDIA:
 
 - 144 Arm-Neoverse-V2-Kerne,
-- bis zu 960 GB LPDDR5X,
-- bis zu 1 TB/s Speicherbandbreite,
-- 234 MB verteilten L3-Cache,
+- je Kern 64 KiB Instruktions- und 64 KiB Datencache sowie 1 MiB L2,
+- je nach konkreter Speicherkonfiguration 240 oder 480 GB mit bis zu 1.024 GB/s beziehungsweise 960 GB mit bis zu 768 GB/s,
+- 228 MB verteilten L3-Cache nach der aktuellen Spezifikationstabelle,
 - 500 W für CPU und Speicher.
 
-Quelle:
+NVIDIAs begleitende Prosa nennt an anderer Stelle 234 MB L3. Diese Dokumentdiskrepanz bleibt offen; für die Rechnung wird der Tabellenwert 228 MB verwendet. Vor allem dürfen „960 GB“ und „1 TB/s“ nicht mehr zu einer erfundenen einzelnen SKU zusammengezogen werden.
 
-https://www.nvidia.com/en-us/data-center/grace-cpu-superchip/
+Quelle und Konfigurationshinweise:
+
+https://docs.nvidia.com/dccpu/grace-perf-tuning-guide/index.html
 
 Ein AMD EPYC 9965 besitzt:
 
@@ -438,11 +493,35 @@ Quelle:
 
 https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html
 
-Ein NVIDIA DGX B300 ist ein vollständiges Acht-GPU-System mit 2,1 TB GPU-Speicher, 14,4 TB/s aggregierter NVLink-Bandbreite und einer Leistungsgrößenordnung von rund 14 kW.
+Ein NVIDIA DGX B300 ist ein vollständiges Acht-GPU-System mit 8 × 288 GB, also rund 2,3 TB GPU-Speicher, und einer dokumentierten maximalen Systemleistungsaufnahme von 14,5 kW. Das ist eine Dimensionierungsgrenze, keine während eines MLPerf-Laufs gemessene Leistung.
 
 Quelle:
 
-https://www.nvidia.com/en-us/data-center/dgx-b300/
+https://docs.nvidia.com/dgx/dgxb300-user-guide/introduction-to-dgxb300.html
+
+Am anderen Ende der Skala zeigt NVIDIA DGX Spark, dass lokale KI-Rechner bereits heute Schreibtischformat besitzen:
+
+- 20 Arm-Kerne,
+- 128 GB kohärenten gemeinsamen LPDDR5X-Speicher,
+- 273 GB/s Speicherbandbreite,
+- theoretisch bis zu 1 PFLOP FP4 bei Nutzung von Sparsity,
+- Inferenz für Modelle mit bis zu 200 Milliarden Parametern laut Hersteller,
+- 240-W-Netzteil und 140 W GB10-TDP,
+- offizieller US-Marketplace-Preis am 29. August 2026: 4.699 US-Dollar.
+
+Quellen:
+
+https://www.nvidia.com/en-us/products/workstations/dgx-spark/
+
+https://marketplace.nvidia.com/en-us/enterprise/personal-ai-supercomputers/dgx-spark/
+
+Eine einzelne NVIDIA RTX PRO 6000 Blackwell Workstation Edition besitzt 96 GB GDDR7, 1.792 GB/s Speicherbandbreite und maximal 600 W. Der offizielle US-Marketplace listet sie am selben Stichtag für 16.000 US-Dollar und als nicht vorrätig. Damit ist „nicht teurer als ein regulärer PC“ heute noch keine allgemeine Marktbeobachtung, sondern ein zu testendes Produkt- und Fertigungsziel.
+
+Quellen:
+
+https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000/
+
+https://marketplace.nvidia.com/en-us/enterprise/laptops-workstations/nvidia-rtx-pro-6000-blackwell-workstation-edition/
 
 Diese Zahlen sind Ressourcenhüllen. Sie sagen nicht, wie schnell QIK-VRT darauf läuft.
 
@@ -463,9 +542,10 @@ Ebenso unzulässig ist die Division durch die Tokenrate eines Sprachmodells. Tok
 MLPerf Inference 6.0 bietet einen belastbaren Vergleich innerhalb desselben Modells und Szenarios. Für OpenAIs gpt-oss-120b wurden unter anderem folgende Systemergebnisse veröffentlicht:
 
 - 8 × AMD MI355X: rund 95.004 Token/s offline und 82.136 Token/s im Server-Szenario.
-- 8 × NVIDIA B300: rund 110.077 Token/s offline und 100.656 Token/s im Server-Szenario.
+- NVIDIA DGX B300 mit 8 GPUs: rund 103.961 Token/s offline und 100.328 Token/s im Server-Szenario.
+- NVIDIA GB300 NVL72 mit 72 GPUs: rund 1.042.980 Token/s offline und 1.072.250 Token/s im Server-Szenario.
 
-Die B300-Einreichung liegt damit in diesen konkreten Einreichungen ungefähr 15,9 Prozent offline und 22,5 Prozent im Server-Szenario höher. Beide Werte beziehen sich auf dasselbe Modell, definierte Qualitätsgrenzen und ein bestimmtes Benchmarkverfahren. Die Einträge enthalten keine Leistungsmessung, also lässt sich daraus kein Joule-pro-Token-Vergleich bilden.
+Die DGX-B300-Einreichung liegt damit gegenüber der genannten MI355X-Einreichung ungefähr 9,4 Prozent offline und 22,1 Prozent im Server-Szenario höher. Beide Werte beziehen sich auf dasselbe Modell, definierte Qualitätsgrenzen und ein bestimmtes Benchmarkverfahren. Die Einträge enthalten keine Leistungsmessung (`has_power=false`). Deshalb wäre es methodisch falsch, die maximale 14,5-kW-Systemauslegung nachträglich durch die Tokenrate zu dividieren und das Ergebnis als gemessene Joule pro Token auszugeben.
 
 Methodik:
 
@@ -475,9 +555,9 @@ Rohdaten:
 
 https://github.com/mlcommons/inference_results_v6.0/blob/main/summary_results.json
 
-QIK-VRT konkurriert in seiner heutigen Form nicht mit diesen Systemen um die Erzeugung von Tokens. Es kann ihnen als Wirkungstor nachgeschaltet werden:
+QIK-VRT konkurriert in seiner heutigen Form nicht mit diesen Systemen um die Erzeugung von Tokens. Es kann ihnen als Wirkungstor vor- oder nachgeschaltet werden:
 
-Sprachmodell erzeugt Vorschlag → QIK-VRT bindet Kontext und Richtlinie → Evidenz wird geprüft → Wirkung wird freigegeben, isoliert, fortgesetzt oder blockiert
+QIK-VRT prüft Zulässigkeit und Duplikate → Sprachmodell erzeugt nur bei Bedarf einen Vorschlag → QIK-VRT bindet Ergebnis, Kontext und Richtlinie → Evidenz wird geprüft → Wirkung wird freigegeben, isoliert, fortgesetzt oder blockiert
 
 Der mögliche wirtschaftliche und technische Gewinn liegt daher zunächst nicht in „mehr Wörtern pro Sekunde“, sondern in:
 
@@ -542,13 +622,80 @@ Solche Zahlen existieren im gegenwärtigen öffentlichen Evaluationsraster noch 
 
 *BASELINE_NOT_YET_MEASURED.*
 
+*Was sich trotzdem schon seriös prognostizieren lässt*
+
+Wird QIK-VRT erst *nach* einer vollständig erzeugten Modellantwort geprüft, spart es für diese Antwort zunächst null Modellparameter, null bereits erzeugte Tokens und null bereits verbrauchte Inferenzarbeit. Sein Wert liegt dann in vermiedenen unzulässigen Außenwirkungen, Doppelaufrufen und Folgeschäden.
+
+Wird ein deterministisches Gate dagegen *vor* die teure Inferenz gesetzt, kann es eindeutig unvollständige, doppelte oder nicht autorisierte Anfragen aussortieren. Ist der vermeidbare Anteil r und skalieren die übrigen Anfragen näherungsweise linear, beträgt die theoretisch frei werdende Kapazität:
+
+S_Filter = 1 / (1 − r)
+
+| vorab vermiedener Anteil r | theoretische Kapazität für verbleibende Arbeit |
+|---:|---:|
+| 10 % | 1,11-fach |
+| 50 % | 2-fach |
+| 90 % | 10-fach |
+
+Berücksichtigt man die Gate-Kosten als Anteil g einer sonst ausgeführten LLM-Anfrage, ist die idealisierte Einsparungsquote ungefähr:
+
+Einsparung ≈ r − g
+
+Kostet das Gate beispielsweise 0,1 Prozent einer LLM-Anfrage, ergäben 10 Prozent nachweislich vermiedene Anfragen ungefähr 9,9 Prozent und 50 Prozent vermiedene Anfragen ungefähr 49,9 Prozent Rechenersparnis. Das sind Sensitivitätsbeispiele, keine QIK-VRT-Benchmarks.
+
+Wenn nur ein Teil p der gesamten Pipeline um den Faktor s beschleunigt wird, setzt Amdahls Gesetz eine harte Grenze:
+
+S_Gesamt = 1 / ((1 − p) + p / s)
+
+Selbst ein hundertfach schneller Hardware-Gate-Pfad ergibt:
+
+| beschleunigter Pipelineanteil p | Gesamtgewinn bei s = 100 |
+|---:|---:|
+| 1 % | 1,010-fach |
+| 10 % | 1,110-fach |
+| 50 % | 1,980-fach |
+| 90 % | 9,174-fach |
+
+Umgekehrt: Wenn die nicht ersetzbare LLM-Inferenz 95 Prozent der End-to-End-Zeit ausmacht, kann selbst eine unendlich schnelle übrige Steuerung insgesamt höchstens 1,053-fach beschleunigen. Bei 90 Prozent sind es 1,111-fach, bei 50 Prozent 2-fach. Ein milliardfacher *allgemeiner LLM-End-to-End-Speedup* folgt daher weder aus einem kleinen Gate-Kern noch aus hoher Taktrate. Sehr große lokale Faktoren bleiben möglich, wenn eine teure probabilistische Teilaufgabe nachweislich durch eine semantisch gleichwertige deterministische Prüfung ersetzt wird. Dann muss jedoch dasselbe Geschäftsergebnis verglichen werden, nicht „Receipt“ gegen „Token“.
+
+*Non-Polling als konkret berechenbarer Hebel*
+
+Für M beobachtete Beziehungen, Pollrate f und Leerlaufanteil e entstehen:
+
+leere Prüfungen pro Sekunde = M × f × e
+
+Bei 100.000 Beziehungen, 10 Polls pro Sekunde und 99 Prozent Leerlauf sind das 990.000 leere Prüfungen pro Sekunde. Erzeugt jede leere Anfrage samt Antwort 256 Byte, sind das 253,44 MB/s oder rund 2,03 Gbit/s ohne fachliche Änderung. Bei 1 KiB sind es 1,014 GB/s oder 8,11 Gbit/s. Benötigt eine solche Prüfung einschließlich Systempfad hypothetisch 1, 10 oder 100 Mikrojoule, bindet der Leerlauf 0,99, 9,9 oder 99 Watt. Ein ereignisgetriebener Pfad kann diesen *Leerlaufanteil* beseitigen, nicht den echten Ereignisverkehr. Die Energiewerte sind bewusst als Szenario ausgewiesen; eine reale Messung muss sie ersetzen.
+
+*Vom Schreibtisch bis zum Rechenzentrum*
+
+Nimmt man rein hypothetisch an, ein DGX Spark ziehe dauerhaft die volle Nennleistung seines 240-W-Netzteils und eine später gemessene QIK-VRT-Integration reduziere genau diese Wandenergie linear um den Anteil r, ergibt sich als obere Szenariorechnung:
+
+E_Jahr = 0,240 kW × 8.760 h × r
+
+Bei r = 10 Prozent wären das 210,24 kWh pro Jahr; bei 0,25 Euro/kWh wären es 52,56 Euro. Beim dokumentierten 14,5-kW-Auslegungswert eines DGX B300 ergäbe dasselbe rein hypothetische Zehn-Prozent-Szenario 12.702 kWh oder 3.175,50 Euro pro Jahr. Weder 240 W noch 14,5 kW sind hier gleichzeitig mit QIK-VRT gemessene Verbrauchswerte. Reale Auslastung, PUE, Teillastkurve, Kühlung und Anschaffungskosten verändern das Ergebnis. Die Rechnung zeigt nur, wie ein später gemessener Anteil transparent in Energie und Geld übersetzt werden könnte.
+
 Das bedeutet: Der Performancegewinn ist eine ernsthafte, prüfbare Hypothese – noch kein Messergebnis.
 
 ---
 
-*15. Die Verbindung zur Quantenphysik*
+*15. Der vollständige Rückweg – und die Verbindung zur Quantenphysik*
 
-QIK-VRT hat eine reale strukturelle Verbindung zu Fragen der Quantenkausalität:
+Der vollständige Ringschluss besteht nicht nur aus „Welt wird Datei“. Er braucht fünf unterscheidbare Übergänge:
+
+1. *Empirie:* Ein Sensor, Experiment oder Mensch liefert eine Beobachtung samt Messmethode, Einheit, Kalibrierung, Unsicherheit, Ort und Zeit.
+2. *Virtualisierung:* Diese Beobachtung wird kanonisch serialisiert, typisiert, geordnet und durch einen Hash an exakt diese Bytes gebunden.
+3. *Formale Prüfung:* Lean, endliche Enumeration, Referenzprogramme und Testvektoren prüfen, was aus den ausdrücklich benannten Prämissen folgt.
+4. *Reale Ausführung:* In einer konformen physischen Realisierung würde CPU, FPGA, Netzwerkdienst oder Aktor ausschließlich den freigegebenen, gebundenen Effekt ausführen. Diese Stufe ist für den vollständigen QIK-VRT-Pfad noch nicht als physischer End-to-End-Betrieb beobachtet.
+5. *Empirischer Rückweg:* Unabhängige Messgeräte beobachten, ob die behauptete Außenwirkung tatsächlich eingetreten ist; Kalibrierung, Rohdaten, Fehlergrenzen und Replikation werden erneut gebunden.
+
+Als Kurzform:
+
+Empirie → kanonische Virtualität → formaler Schluss → reale Wirkung → neue Empirie
+
+Erst Schritt 5 schließt den physikalischen Kreis. Ein Hash bestätigt Byteidentität. Lean bestätigt Ableitbarkeit im Modell. VHDL-Simulation bestätigt Verhalten des beschriebenen RTL unter Testbedingungen. Keines davon ersetzt allein die Messung der Natur. Umgekehrt wird eine reale Messung erst wissenschaftlich stark, wenn ihr Weg durch Kalibrierung, Modell, Software, Hardware und Rückbeobachtung ohne stillen Bedeutungswechsel nachvollziehbar bleibt.
+
+Der Product Owner vertritt die These, dass die in QIK-VRT und den Zenodo-Arbeiten modellierten Relationen der realen physikalischen Struktur entsprechen. Diese Urhebersicht wird nicht verschwiegen. Ihr heutiger Evidenzstatus bleibt dennoch von einer unabhängigen empirischen Bestätigung des jeweiligen physikalischen Modells getrennt. Genau diese Trennung ist kein Ausweichen, sondern die QIK-VRT-Methode selbst: `OWNER_ASSERTED_REALITY_CORRESPONDENCE` ist eine gebundene Behauptung; `INDEPENDENT_EMPIRICAL_CONFIRMATION` benötigt einen eigenen Rückweg und eigene Messreceipts.
+
+QIK-VRT bietet eine fachlich anschlussfähige Modellstruktur und Analogie für Fragen der Quantenkausalität:
 
 - Beobachtungen werden zeitlich gebunden.
 - Relationen werden von bloßer Reihenfolge getrennt.
@@ -556,7 +703,7 @@ QIK-VRT hat eine reale strukturelle Verbindung zu Fragen der Quantenkausalität:
 - Spätere Information kann eine Teilmenge neu klassifizieren.
 - bedingte und unbedingte Statistiken werden getrennt.
 
-Das passt als Informatikmodell gut zu Delayed-Choice- und Quantenradierer-Experimenten. Bei diesen Experimenten können nachträglich nach Partnerergebnissen sortierte Teilmengen komplementäre Muster zeigen. Die lokale unbedingte Verteilung erlaubt jedoch kein steuerbares Signal in die Vergangenheit.
+Das passt als Informatikmodell besonders gut zu Delayed-Choice-Quantum-Eraser- und anderen Korrelationsprotokollen: Dort können nachträglich nach Partnerergebnissen sortierte Teilmengen komplementäre bedingte Muster zeigen. Das Delayed-Choice-Experiment von Jacques und Kollegen prüft eine andere Anordnung – die zeitlich späte Wahl der Interferometerkonfiguration – und ist nicht dasselbe Sortierverfahren. Beide Themen berühren zeitliche Ordnung und bedingte Versuchsanordnungen; keines erlaubt in seiner lokalen unbedingten Statistik ein steuerbares Signal in die Vergangenheit.
 
 Primärquellen:
 
@@ -564,6 +711,10 @@ Primärquellen:
 - Kim et al., Delayed-Choice Quantum Eraser: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.84.1
 - Ma, Kofler und Zeilinger, Überblick: https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.88.015005
 - Wharton und Argaman, retrokausale Modelle: https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.92.021002
+
+Die QIK-VRT-Formalisierungen sind nicht bloß flüchtige Chattexte. Das Round-Trip-Bündel ist beispielsweise unter DOI `10.5281/zenodo.21888130`, die Synthese zur beobachterrelativen Retrokausalität unter DOI `10.5281/zenodo.21947141` fixiert. Das Round-Trip-Bündel bindet insbesondere Lean-Quellen, Werkzeugversionen, Axiom-Audits, Receipts und Artefakt-Hashes; die Retrokausalitätsablage bindet ihren eigenen Artikel-, Witness-, Claim- und Receipt-Umfang. Lake sorgt im Lean-Projekt als Buildwerkzeug für reproduzierbare Projekt- und Abhängigkeitsausführung. Zenodo belegt dabei Zeitpunkt, Identität und Verfügbarkeit der jeweils hinterlegten Bytes; Lean belegt die Sätze relativ zu ihren Definitionen und Prämissen. Weder DOI noch grüner Build machen eine Modellprämisse automatisch zum Naturgesetz.
+
+Die beobachterrelative Lesart ist dennoch fachlich anschlussfähig: Ein später eintreffender Partnerdatensatz kann einen früher unverändert gespeicherten Datensatz relational neu klassifizieren. Für einen Beobachter kann dadurch eine Informationsrichtung negativ erscheinen, obwohl jede lokale Übertragung und jeder lokale Zeitabstand vorwärts gerichtet bleibt. Das ist eine präzise informatische Darstellung von „als ob Information rückwärts liefe“. Es ist nicht dasselbe wie eine steuerbare Nachricht vor ihrer Aussendung, eine überschriebene Vergangenheit oder eine allgemein bewiesene ontische Retrokausalität.
 
 Die wissenschaftlich belastbare Aussage lautet:
 
@@ -615,7 +766,46 @@ Das ist eine starke und nüchterne Fassung der Aussage, QIK-VRT hole „die Unsc
 
 ---
 
-*17. Patent- und Marktpotenzial*
+*17. Vom lokalen Terminal bis DNS, Mail, Management und Darknet*
+
+Die Vision skaliert nicht dadurch, dass QIK-VRT heimlich jede vorhandene Netzwerkschicht ersetzt. Sie skaliert, weil dieselbe Wirkungsgrenze an unterschiedlichen Anwendungsschnittstellen eingesetzt werden kann.
+
+Der hier sinnvolle Begriff des empirischen Reverse Engineerings lautet: Für jede Station wird untersucht, *was sie tatsächlich bestätigt* und *was gerade nicht*. Ein physischer Empfänger bestätigt ein Signal, eine Link-Prüfsumme einen Frame, TCP eine Bytefolge, TLS eine geschützte Verbindung zu einer Identität, HTTP eine Anfrage/Antwort, ein Prozess seinen programmspezifischen Rückgabewert und ein Aktor eine beobachtbare Außenwirkung. QIK-VRT ordnet diese Belege in eine Kette ein, ohne eine frühere Stufe zur späteren umzubenennen. Das ist eine Erweiterung der Ende-zu-Ende-Semantik, keine Behauptung, Ethernet, IP oder TCP selbst neu erfunden zu haben.
+
+Auch bei AD-/DA-Wandlung bleibt die physikalische Grenze sauber: Abtastung, Quantisierung, thermisches Rauschen, Jitter, Metastabilität und Messunsicherheit verschwinden nicht durch ein digitales Protokoll. Was QIK-VRT ergänzen kann, sind die häufig verlorenen Bindungen: Welcher Messaufbau erzeugte welche Bytes? Welche Kalibrierung und Unsicherheit galten? Welche Interpretation wurde zugelassen? Welcher reale Aktor durfte reagieren? Welche Wirkung wurde danach unabhängig gemessen? So wird die digitale Verarbeitung determiniert, ohne die analoge Natur fälschlich für rauschfrei zu erklären.
+
+Die Aussage „am Ende ist alles IP“ trifft für große Teile des heutigen Internets als Transportrealität zu, aber nicht für jeden lokalen Bus, Prozessaufruf oder Speicherkoppler. QIK-VRT sollte deshalb transportagnostisch bleiben: dieselbe Effect-Ack-Semantik kann über TCP, QUIC, Unix-Sockets, Shared Memory, einen Hardwarebus oder einen Dateiübergang getragen werden. HTTP ist ein besonders geeigneter Demonstrator, nicht das einzige mögliche Trägermedium.
+
+Die Anschlussstellen unterscheiden sich:
+
+- *HTTP und Browser:* RFC 9110 definiert HTTP-Semantik. QIK-VRT kann als Anwendungshülle ein Prepare/Commit-Verfahren mit gebundener Wirkungsentscheidung ergänzen. Ein 2xx-Status bleibt Transport- oder Anwendungsantwort, nicht automatisch Effect-Ack.
+- *DNS:* RFC 1035 verteilt Namen und Ressourcendatensätze. DNS kann Discovery, Schlüssel- oder Digestreferenzen tragen. Wegen Caches, TTL, Delegation und eigener Authentizitätsregeln sollte es nicht zum vollständigen Freigabe-Ledger umgedeutet werden.
+- *E-Mail:* RFC 5321 bestätigt Übermittlungsschritte eines SMTP-Umschlags. Eine erfolgreiche Zustellung beweist weder, dass der Inhalt gelesen, verstanden noch ausgeführt werden darf. Effect-Ack kann als signierte MIME-/Headerreferenz oder separater Rückkanal profiliert werden.
+- *SNMP:* RFC 3411 beschreibt eine Architektur für Network Management. Ein `GET` beobachtet; ein `SET` kann Wirkung erzeugen. Gerade der `SET`-Pfad benötigt eine gebundene Authority-, Policy- und Reobservationsgrenze. Lesen ist nicht Erlaubnis zum Schreiben.
+- *QUIC:* RFC 9000 liefert einen sicheren, multiplexbaren Transport über UDP. Seine Transportbestätigungen ersetzen ebenfalls keine semantische Wirkungsfreigabe.
+- *Tor und andere Overlay-Netze:* Auch dort kann ein end-to-end authentisierter Effect-Ack-Datensatz reisen. Anonymität erschwert aber bewusst die Bindung von Akteur, Verantwortung und Berechtigung. Diese Spannung muss das Policy-Modell explizit lösen; der Netzwerkpfad löst sie nicht.
+
+Das zustandsunabhängige Terminalmuster verlangt auf beiden Seiten eine überprüfbare Protokollinstanz: Client beziehungsweise Browser und Server beziehungsweise HTTP-Daemon müssen dieselben kanonischen Felder, Zustände, Hashbindungen und Fehlerregeln verstehen. „HTTP ist zustandslos“ bedeutet dabei nicht, dass Effect-Ack ohne Ledger, Session- oder Evidenzzustand auskommt. Es bedeutet, dass jede Anfrage ihre für die Semantik nötige Bindung ausdrücklich tragen kann, statt von einem unsichtbaren Transportzustand abzuhängen.
+
+Auch die Netzlast ist berechenbar. Sind P Nutzbytes, H bestehende Headerbytes, R Receiptbytes und E Evidenzreferenzen, dann beträgt der relative Zusatzaufwand:
+
+Overhead = (R + E) / (P + H)
+
+Nimmt man nur zur Größenordnung R + E = 1 KiB an, dann bedeuten 1 KiB Nutzlast ungefähr 100 Prozent Zusatzbytes, 100 KiB ungefähr 1 Prozent und 10 MiB ungefähr 0,01 Prozent. Kleine Einzelereignisse profitieren daher besonders von Referenzen, Deduplizierung, Batching und bereits gebundenen Kontexten. Auch das ist zu messen; „vollständig gebunden“ bedeutet nicht „kostenlos“.
+
+Der aktuelle Repository-Stand demonstriert HTTP/Firefox und TCP lokal beziehungsweise im bounded Loopback. Der Weg zu einer Internetlieferung ist in überprüfbare Produkte zu zerlegen: reproduzierbares POSIX-/OCI-Image, Daemon und CLI, HTTP-Profil, Browserintegration, SNMP-Adapter, DNS-/Mail-Referenzprofile, unabhängige Interoperabilität, Security Review und erst danach großflächige Cloud- oder Overlay-Netz-Inbetriebnahme.
+
+Primärstandards:
+
+- HTTP Semantics: https://www.rfc-editor.org/rfc/rfc9110.html
+- Domain Names: https://www.rfc-editor.org/rfc/rfc1035.html
+- SMTP: https://www.rfc-editor.org/rfc/rfc5321.html
+- SNMP Architecture: https://www.rfc-editor.org/rfc/rfc3411.html
+- QUIC: https://www.rfc-editor.org/rfc/rfc9000.html
+
+---
+
+*18. Patent- und Marktpotenzial*
 
 QIK-VRT besitzt mehrere technisch formulierbare Gegenstände:
 
@@ -630,6 +820,12 @@ QIK-VRT besitzt mehrere technisch formulierbare Gegenstände:
 
 Das macht eine professionelle Patentprüfung sinnvoll. Es beweist aber noch keine Neuheit im patentrechtlichen Sinn. Dafür sind Stand-der-Technik-Recherche, Anspruchsformulierung, Erfindungshöhe, technischer Effekt und ausreichende Offenbarung zu prüfen.
 
+„Metatransistor“ ist ein anschaulicher Produkt- und Architekturbegriff. Für eine technische Anspruchsprüfung lässt sich derselbe Gegenstand nüchterner als *deterministischer, kryptographisch gebundener Effect-Release-Controller* oder *Wirkungsfreigabe-Zustandsautomat* beschreiben. So wird klar, dass kein neues Halbleitermaterial beansprucht wird, sondern eine konkrete digitale Schaltung und ihr Zusammenspiel mit Serialisierung, Authority, Evidenz, Persistenz und Reobservation.
+
+Eine belastbare Neuheitsrecherche muss mindestens gegen bekannte Familien abgrenzen: Zwei-Phasen-Commit, Sagas, Transactional Outbox, Exactly-once- und Idempotency-Verfahren, Event Sourcing, Merkle- und Transparenzlogs, Capability-Systeme, TPM-/Secure-Boot-Attestation, Hardwareinterlocks, HTTP-Acknowledgement-Profile sowie AXI-/SoC-Policy-Gates. Neuheit entsteht patentrechtlich nicht dadurch, dass viele bekannte Wörter zusammenstehen, sondern nur durch eine noch nicht offenbarte, nicht naheliegende technische Merkmalskombination mit nachweisbarem technischem Effekt.
+
+Der vorhandene, für eine anwaltliche Übergabe vorbereitete interne Entwurfsstand ist deshalb zutreffend als `READY_FOR_PATENT_ATTORNEY_AND_PRIOR_ART_SEARCH` einzuordnen. Das bedeutet: technisch vorbereiteter Entwurf, weder anwaltlich geprüft noch als Patentanmeldung eingereicht; `legal_outcome_guarantee=false`.
+
 Das Europäische Patentamt verlangt bei computerimplementierten Erfindungen eine nicht naheliegende technische Lösung für ein technisches Problem:
 
 https://www.epo.org/en/new-to-patents/is-it-patentable
@@ -637,6 +833,25 @@ https://www.epo.org/en/new-to-patents/is-it-patentable
 Die WIPO nennt insbesondere Neuheit, erfinderischen Schritt und gewerbliche Anwendbarkeit:
 
 https://www.wipo.int/en/web/patents/faq_patents
+
+Vor weiterer Offenlegung ist besondere Vorsicht nötig. WIPO warnt, dass eine öffentliche Offenbarung vor Einreichung die Neuheit zerstören kann, sofern das jeweilige Recht keine passende Ausnahme kennt. Das DPMA zählt auch selbst veröffentlichte Informationen zum Stand der Technik und rät ausdrücklich zur Geheimhaltung vor der Anmeldung:
+
+https://www.wipo.int/en/web/patents/protection
+
+https://www.dpma.de/patente/patentschutz/schutzvoraussetzungen/index.html
+
+Die sichere Reihenfolge lautet daher:
+
+1. bestehende öffentliche Offenlegungen und Erfindungsbeiträge datieren,
+2. vertrauliche technische Differenzmerkmale und Ausführungsformen erfassen,
+3. professionelle Stand-der-Technik- und Anspruchsprüfung,
+4. prioritätsbegründende Anmeldung,
+5. erst danach erweiterte Veröffentlichung nicht bereits öffentlicher Mikroarchitekturdetails,
+6. parallel FPGA-Synthese, Boardmessung und gleiche Software-/Hardware-Benchmarks.
+
+Die redaktionelle Absicht dieser Fassung ist deshalb, auf der bereits öffentlich beschriebenen System- und Rechenebene zu bleiben. Diese Absicht ist noch keine belastbare Offenlegungsprüfung. Pull Request 915 hat die frühere Fassung 1.0 bereits öffentlich sichtbar gemacht; Fassung 1.1 darf nicht zusätzlich gepusht, in einen öffentlichen Pull Request übernommen oder auf Zenodo publiziert werden, bevor ein zeilenweises Disclosure-Ledger und die Prüfung durch einen zugelassenen Patentanwalt bestätigt haben, welche Passagen bereits offenbart sind und welche möglicherweise neue technische Merkmale enthalten.
+
+Diese Einordnung ist technische Publikationshygiene und keine Rechtsberatung. Anmeldestrategie, Rechtekette, Erfinderbenennung, Schutzbereich und Länderauswahl gehören zu einem zugelassenen Patentanwalt.
 
 Mögliche Geschäftsmodelle sind:
 
@@ -648,6 +863,8 @@ Mögliche Geschäftsmodelle sind:
 - FPGA-/ASIC-IP für enge Gate-Kerne,
 - Schulung, Beratung und Zertifizierung,
 - Standardisierungs- und Interoperabilitätsdienste.
+
+Eine öffentlich lesbare Architektur ist nicht automatisch eine bedingungslose Freigabe jeder Implementierung. Interoperable Protokollkerne, offene Testvektoren und wissenschaftliche Dokumente können Verbreitung schaffen, während konkrete Produktimplementierungen, Marken, Support, Zertifizierung, Integrationswissen und – soweit nach fachlicher Prüfung schutzfähig – Patent- oder Gebrauchsmusterrechte gesondert lizenziert werden. Welche Kombination rechtlich und wirtschaftlich sinnvoll ist, muss vor der nächsten Offenlegung mit Patent- und Lizenzberatung festgelegt werden.
 
 Der monetäre Vorteil lässt sich nicht seriös als heutiger Geldbetrag versprechen. Er kann später aus vier gemessenen Größen berechnet werden:
 
@@ -661,9 +878,11 @@ eingesparte Rechen- und Energiekosten
 
 Die beste Grundlage für wirtschaftlichen Erfolg ist deshalb keine möglichst große ungemessene Zahl. Es ist ein kleiner, reproduzierbarer Benchmark, der einen teuren realen Fehler oder Leerlauf nachweisbar verhindert.
 
+Für Ingolf Lohmann könnten sich daraus monetäre Vorteile ergeben, wenn drei Bedingungen zusammenkommen: ein unterscheidbares und wirksam schützbares technisches Angebot, reproduzierbar gemessener Kundennutzen und tatsächliche Marktakzeptanz. Der Artikel kann diese Chance quantifizierbar machen; er kann weder Patentgewährung noch Umsatz, Lizenznehmer oder Zeitpunkt garantieren.
+
 ---
 
-*18. Der persönliche Anteil*
+*19. Der persönliche Anteil*
 
 Nach Ingolf Lohmanns eigener Darstellung entstand dieser Bestand in ungefähr anderthalb Jahren extrem intensiver Arbeit, zeitweise am Rand seiner körperlichen und mentalen Gesundheit.
 
@@ -680,7 +899,25 @@ Wer darin eine spirituelle Bedeutung erkennt, darf dies als persönliche oder ku
 
 ---
 
-*19. Was jetzt zur Veröffentlichung und zum Prototyp fehlt*
+*20. Was jetzt zur Veröffentlichung und zum Prototyp fehlt*
+
+Der Publikationsindex dieses Kandidaten weist am 29. August 2026 bereits 14 Zenodo-Records aus. Daneben stehen zehn frühere wissenschaftliche Repository-Kandidaten und dieser quantitative Artikel, also elf Kandidatenzustände:
+
+1. „Kausalität ist Relation, nicht Sequenz — VRTCore“
+2. „VRTCore SMG H5“
+3. „VRTCore Virtual Sphere H6“
+4. „Aphorismen-Audiokorpus: wissenschaftliche Einordnung v2“ – menschliche akustische Prüfung offen
+5. „Prä-raumzeitliche Ontologie“
+6. „Das Repository, das sich selbst heilt“
+7. „QIK-VRT Quantum Causal Emergence“ – Korrespondenz offen
+8. „Delayed Choice, Superdeterminism, and Authority-Mirror-Witness Recovery“
+9. „QCE measurement-independence / superdeterminism boundary“
+10. „QIK-VRT: Beobachterrelative Retrokausalität“
+11. dieser quantitative Vergleich – Baseline offen
+
+Beim zehnten Titel besteht zusätzlich ein zu bereinigender Projektionsunterschied: Der Maschinenindex enthält bereits den Zenodo-Record `10.5281/zenodo.21947141`, führt das zugehörige Publikationsbündel aber weiterhin als Repository-Kandidat. Die richtige Reparatur ist eine indexgebundene Zustandskorrektur, keine zweite Veröffentlichung derselben Bytes.
+
+„Alles veröffentlichen“ ist kein einziger sicherer Knopfdruck. Jeder Kandidat braucht seinen exakten Byte- und Metadatensatz, maschinenlesbare Claim-Grenzen, Autorfreigabe für genau dieses Artefakt, Prüfung auf bereits vorhandene DOI-Versionen und – wegen der geplanten Patentanmeldung – eine Vorabprüfung auf neuheitsschädliche Zusatzoffenbarung. Erst dann darf eine externe Zenodo-Mutation stattfinden. Der vorliegende Artikel liefert die verlangte inhaltliche Zusammenführung, ist aber selbst noch Veröffentlichungskandidat.
 
 Die nächste belastbare Auslieferung besteht aus klar getrennten Paketen:
 
@@ -733,7 +970,7 @@ Die nächste belastbare Auslieferung besteht aus klar getrennten Paketen:
 
 ---
 
-*20. Das Gesamturteil*
+*21. Das Gesamturteil*
 
 Ingolf Lohmann hat mit QIK-VRT keinen neuen physikalischen Transistor gefertigt und noch keinen universell schnelleren Ersatz für heutige KI-Beschleuniger gemessen.
 
@@ -754,15 +991,27 @@ Diese Grenze ist:
 - in kanonische, hashverkettete Repository- und Publikationsprozesse eingebettet,
 - als aktiver individueller IETF-Entwurf öffentlich adressierbar.
 
-Sein quantifizierter Vorteil gegenüber einem bloßen Transport-Acknowledgement ist bereits deutlich: In 1.310.719 geprüften endlichen Belegungen lag Transportbestätigung vor, ohne dass Wirkungsfreigabe zulässig war. QIK-VRT macht genau diese Fälle sichtbar, statt sie in einem grünen Häkchen verschwinden zu lassen.
+Seine quantifizierte Modellabgrenzung gegenüber einem bloßen Transport-Acknowledgement ist bereits deutlich: In 1.310.719 geprüften endlichen Belegungen lag Transportbestätigung vor, ohne dass Wirkungsfreigabe zulässig war. QIK-VRT macht genau diese Modellfälle sichtbar, statt sie in einem grünen Häkchen verschwinden zu lassen. Die Zahl ist Testfallabdeckung; sie misst weder Produktionsvorfälle noch bereits vermiedene Außenwirkungen.
 
 Sein Performance-, Energie- und Kostenvorteil ist plausibel untersuchbar, insbesondere durch Non-Polling, kanonische Wiederverwendung, kleine Gate-Kerne und kontrollierten Fan-in/Fan-out. Er ist aber noch zu messen.
+
+Die transparenten Rechnungen setzen dafür jetzt einen belastbaren Korridor:
+
+- N Knoten erzeugen exakt N² gerichtete Spuren; das ist Vollständigkeit und zugleich quadratischer Ressourcenaufwand.
+- Der aktuelle serielle Kandidatenframe benötigt N² × W + 72 Bit; bei N = 2, W = 8 und 12 MHz sind ungefähr 115.385 Frames/s ableitbar, nicht Milliarden vollständige Receipts/s.
+- Verhindert ein Vorfilter nachweislich 10, 50 oder 90 Prozent teurer LLM-Anfragen, steigt die idealisierte verfügbare Kapazität auf 1,11-, 2- oder 10-fach.
+- Beschleunigt Hardware nur zehn Prozent einer Pipeline hundertfach, steigt die Gesamtleistung nach Amdahl lediglich rund 1,11-fach.
+- Würde ein Schreibtischsystem hypothetisch dauerhaft die volle 240-W-Netzteil-Nennleistung aufnehmen und würde QIK-VRT die tatsächlich gemessene Wandenergie um zehn Prozent senken, entspräche das 210,24 kWh pro Jahr; heute ist das ausschließlich eine Sensitivitätsrechnung.
+
+Für ein Kind oder einen sehr alten Menschen lässt sich der Zusammenhang so erzählen: Eine große KI ist wie eine riesige Küche. Sie kann sehr viele Gerichte erfinden, benötigt dafür aber teure Öfen und Vorräte. QIK-VRT ist nicht ein Zauberofen, der jedes Gericht Milliarden Mal schneller kocht. Es ist die genaue Bestell-, Prüf- und Ausgabeschleuse. Sie erkennt doppelte Bestellungen, fehlende Erlaubnis und die falsche Adresse, bevor die Küche unnötig arbeitet oder das falsche Essen ausliefert. Verhindert die Schleuse die Hälfte wirklich unnötiger Bestellungen, bleibt ungefähr doppelt so viel Küchenzeit für sinnvolle Bestellungen. Und nach der Lieferung wird nicht nur behauptet, sie sei erfolgt: Jemand schaut nach und bindet die Beobachtung wieder an den Auftrag. Das ist der Rückweg.
 
 Die wissenschaftlich stärkste Formulierung ist deshalb zugleich groß und präzise:
 
 *QIK-VRT bringt der digitalen Informatik eine ausdrücklich prüfbare Wirkungsgrenze. Es verwandelt Wahrscheinlichkeit nicht in Wahrheit und Software nicht automatisch in Physik. Es verhindert jedoch, dass Empfang, Berechnung, Behauptung, Autorisierung und beobachtete Wirkung weiterhin als dasselbe behandelt werden.*
 
 Das ist kein kleines Detail. Für autonome Software, künstliche Kognition, kritische Infrastruktur, Publikation, Finanzen, Verwaltung und cyberphysische Systeme kann genau diese Trennung entscheidend sein.
+
+Die wirtschaftliche Möglichkeit liegt damit nicht in einer bereits garantierten Wunderzahl. Sie liegt in einer technisch formulierbaren und messbaren Kontrollarchitektur, die teure unnötige Arbeit, Fehlwirkungen und Beweisaufwand reduzieren kann und sich als Software, Dienst, Integrationsprodukt oder Hardware-IP anbieten lässt. Ob daraus für Ingolf Lohmann in absehbarer Zeit ein finanzieller Vorteil wird, entscheidet die nächste Kette: Schutzstrategie, identischer Benchmark, FPGA-Nachweis, unabhängige Replikation, Produktisierung und Kunde.
 
 Quod erat demonstrandum – innerhalb jedes ausdrücklich benannten formalen und ausgeführten Scopes.
 
@@ -775,15 +1024,27 @@ Ingolf Lohmann
 - QIK-VRT Authority Repository: https://github.com/Goldkelch/qik-vrt
 - QIK-VRT Effect Acknowledgement Draft -03: https://datatracker.ietf.org/doc/html/draft-lohmann-qikvrt-effect-ack-03
 - HTTP Semantics, RFC 9110: https://www.rfc-editor.org/rfc/rfc9110.html
+- DNS, RFC 1035: https://www.rfc-editor.org/rfc/rfc1035.html
+- SMTP, RFC 5321: https://www.rfc-editor.org/rfc/rfc5321.html
+- SNMP Architecture, RFC 3411: https://www.rfc-editor.org/rfc/rfc3411.html
+- QUIC, RFC 9000: https://www.rfc-editor.org/rfc/rfc9000.html
+- Pull Request 912, Non-Polling-/Quadratic-Codec-/VHDL-Kandidat: https://github.com/Goldkelch/qik-vrt/pull/912
 - Pull Request 914, repository-native Intake/Executor-Reparatur: https://github.com/Goldkelch/qik-vrt/pull/914
-- NVIDIA Grace CPU Superchip: https://www.nvidia.com/en-us/data-center/grace-cpu-superchip/
+- NVIDIA Grace Performance Tuning Guide: https://docs.nvidia.com/dccpu/grace-perf-tuning-guide/index.html
+- NVIDIA DGX Spark: https://www.nvidia.com/en-us/products/workstations/dgx-spark/
+- NVIDIA DGX Spark Marketplace: https://marketplace.nvidia.com/en-us/enterprise/personal-ai-supercomputers/dgx-spark/
+- NVIDIA RTX PRO 6000 Blackwell: https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000/
 - AMD EPYC 9965: https://www.amd.com/en/products/processors/server/epyc/9005-series/amd-epyc-9965.html
 - AMD Instinct MI355X: https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html
-- NVIDIA DGX B300: https://www.nvidia.com/en-us/data-center/dgx-b300/
+- NVIDIA DGX B300 User Guide: https://docs.nvidia.com/dgx/dgxb300-user-guide/introduction-to-dgxb300.html
 - MLPerf Inference Datacenter: https://mlcommons.org/benchmarks/inference-datacenter/
 - Lean Reference: https://lean-lang.org/doc/reference/latest/Introduction/
+- QIK-VRT Round-Trip-Bündel: https://doi.org/10.5281/zenodo.21888130
+- QIK-VRT beobachterrelative Retrokausalität: https://doi.org/10.5281/zenodo.21947141
 - EPO zur Patentfähigkeit: https://www.epo.org/en/new-to-patents/is-it-patentable
 - WIPO Patent FAQ: https://www.wipo.int/en/web/patents/faq_patents
+- WIPO zur Offenlegung vor Einreichung: https://www.wipo.int/en/web/patents/protection
+- DPMA zu Neuheit und eigener Vorveröffentlichung: https://www.dpma.de/patente/patentschutz/schutzvoraussetzungen/index.html
 
 *Evidenzklassen dieser Fassung*
 
@@ -792,4 +1053,5 @@ Ingolf Lohmann
 - SOURCE_BOUND: nachprüfbare Wiedergabe einer benannten Primärquelle.
 - DERIVED: transparente Rechnung aus angegebenen Größen.
 - INTERPRETIVE: Analogie oder weltanschauliche Deutung.
+- PERSONAL_ACCOUNT: ausdrücklich zugeschriebene persönliche Darstellung.
 - OPEN: noch ungemessene Performance, physische Korrespondenz, unabhängige Replikation, Patententscheidung oder Marktresultat.

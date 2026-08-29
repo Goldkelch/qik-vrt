@@ -2,7 +2,7 @@
   "schema": "qikvrt_quantitative_comparison_claim_matrix_v1",
   "article": {
     "path": "docs/publications/2026-08-29-qikvrt-quantitative-comparison/QIKVRT_QUANTITATIVER_VERGLEICHSARTIKEL_DE_2026-08-29.md",
-    "sha256": "14f20f3473bbde7dbbd3ab01f25a88b544e1f878c9ce70b2fde789c9349312f3",
+    "sha256": "021127c53b817195b9a87f4c262b7e280a6fa5cd070117707b708ca2730405b1",
     "language": "de",
     "author_product_owner": "Ingolf Lohmann",
     "technical_elaboration": "OpenAI Codex",
@@ -87,7 +87,7 @@
       "statement": "The typed executor accepts only an exact registered handler-id and handler-digest pair; unmapped work holds.",
       "class": "EXECUTED",
       "status": "DRAFT_PR",
-      "source": "state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json",
+      "source": "https://github.com/Goldkelch/qik-vrt/blob/e91c20940c090a1b830556d1e5cbfed9e05773e5/state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json",
       "boundary": "The one registered executor produces only a bounded control-plane attestation, not arbitrary issue completion."
     },
     {
@@ -148,11 +148,11 @@
     },
     {
       "id": "QCOMP-017",
-      "statement": "NVIDIA specifies 144 cores, up to 960 GB LPDDR5X, up to 1 TB/s and 500 W CPU-plus-memory power for the Grace CPU Superchip.",
+      "statement": "NVIDIA specifies 144 cores and 500 W CPU-plus-memory power for the Grace CPU Superchip; the current configuration table couples 960 GB with up to 768 GB/s and 240/480 GB configurations with up to 1,024 GB/s.",
       "class": "SOURCE_BOUND",
       "status": "SUPPORTED",
-      "source": "https://www.nvidia.com/en-us/data-center/grace-cpu-superchip/",
-      "boundary": "These are platform specifications, not QIK-VRT benchmark results."
+      "source": "https://docs.nvidia.com/dccpu/grace-perf-tuning-guide/index.html",
+      "boundary": "These are SKU-specific platform specifications, not QIK-VRT benchmark results; NVIDIA documentation also contains a 228 MB versus 234 MB L3 discrepancy."
     },
     {
       "id": "QCOMP-018",
@@ -172,7 +172,7 @@
     },
     {
       "id": "QCOMP-020",
-      "statement": "MLPerf v6.0 reports approximately 95,004 offline and 82,136 server token/s for an 8x MI355X gpt-oss-120b system and 110,077 offline and 100,656 server token/s for an 8x B300 system.",
+      "statement": "MLPerf v6.0 reports approximately 95,004 offline and 82,136 server token/s for the cited 8x MI355X gpt-oss-120b result, 103,961 offline and 100,328 server token/s for NVIDIA DGX B300, and 1,042,980 offline and 1,072,250 server token/s for NVIDIA GB300 NVL72.",
       "class": "SOURCE_BOUND",
       "status": "SUPPORTED",
       "source": "https://github.com/mlcommons/inference_results_v6.0/blob/main/summary_results.json",
@@ -233,15 +233,130 @@
       "status": "ATTRIBUTED",
       "source": "Product Owner statements in the originating conversation",
       "boundary": "Attributed personal history; not independently medically or historically verified by this bundle."
+    },
+    {
+      "id": "QCOMP-028",
+      "statement": "The non-polling quadratic VHDL candidate reobserved for PR #912 has head 244970c8c7f29b15eb8df48c28c80c96719ea118 and tree 6578ffacb3b30faed68ff3fe9b86bfb04eead350.",
+      "class": "EXECUTED",
+      "status": "DRAFT_PR",
+      "source": "https://github.com/Goldkelch/qik-vrt/pull/912",
+      "boundary": "The candidate is not asserted to be Authority-main, merged, deployed or physically synthesized."
+    },
+    {
+      "id": "QCOMP-029",
+      "statement": "The protected serial quadratic codec frame has N squared times W plus 72 wire bits; at 12 MHz with W=8 its approximate no-stall rates are 115,385 frames/s for N=2, 20,548 for N=8 and 365 for N=64.",
+      "class": "DERIVED",
+      "status": "SUPPORTED_BY_CANDIDATE_RTL",
+      "source": "https://github.com/Goldkelch/qik-vrt/blob/244970c8c7f29b15eb8df48c28c80c96719ea118/docs/architecture/QIKVRT_MESH_NONPOLLING_QUADRATIC_CODEC_V1.md",
+      "boundary": "Only N=2 is configured in the candidate board top; these are serial-link arithmetic bounds, not board measurements or complete receipts per second."
+    },
+    {
+      "id": "QCOMP-030",
+      "statement": "The PR #912 codec and admission RTL do not implement the complete five-state Effect-Acknowledgement wire, authority, SHA-256, evidence, ledger and persistence semantics.",
+      "class": "SOURCE_BOUND",
+      "status": "SCOPE_BOUNDARY",
+      "source": "https://github.com/Goldkelch/qik-vrt/blob/244970c8c7f29b15eb8df48c28c80c96719ea118/hardware/fpga/ice40up5k_breakout/PROTOTYPE_REQUIREMENTS.json",
+      "boundary": "Synthesis, place-and-route, bitstream, programming, board observation, PASS, FINAL_PASS and EFFECT_ACK_DONE remain false."
+    },
+    {
+      "id": "QCOMP-031",
+      "statement": "NVIDIA lists DGX Spark with a 20-core Arm CPU, 128 GB unified LPDDR5X, 273 GB/s, up to 1 PFLOP FP4 with sparsity, a 240 W power supply and a US marketplace price of USD 4,699 on 2026-08-29.",
+      "class": "SOURCE_BOUND",
+      "status": "SUPPORTED_AT_DATE",
+      "source": "https://www.nvidia.com/en-us/products/workstations/dgx-spark/ ; https://marketplace.nvidia.com/en-us/enterprise/personal-ai-supercomputers/dgx-spark/",
+      "boundary": "Vendor specifications and a dated listed price do not establish QIK-VRT performance, energy savings or future pricing."
+    },
+    {
+      "id": "QCOMP-032",
+      "statement": "Amdahl's law bounds end-to-end speedup to 1/((1-p)+p/s) when only fraction p is accelerated by factor s.",
+      "class": "DERIVED",
+      "status": "SUPPORTED",
+      "source": "transparent arithmetic",
+      "boundary": "The relevant pipeline fraction and accelerator factor must be measured under identical semantics."
+    },
+    {
+      "id": "QCOMP-033",
+      "statement": "If a deterministic prefilter avoids fraction r of otherwise linearly scaling LLM requests, the idealized capacity multiplier is 1/(1-r), before accounting for gate and system overhead.",
+      "class": "DERIVED",
+      "status": "SCENARIO_ONLY",
+      "source": "transparent arithmetic",
+      "boundary": "The 1.11x, 2x and 10x examples for r=10%, 50% and 90% are sensitivities, not QIK-VRT benchmark results."
+    },
+    {
+      "id": "QCOMP-034",
+      "statement": "A physical correspondence claim requires the full path from calibrated empirical input through canonical representation and formal processing to real execution and independent empirical reobservation.",
+      "class": "DERIVED",
+      "status": "EPISTEMIC_REQUIREMENT",
+      "source": "measurement and evidence-boundary analysis",
+      "boundary": "Hash identity, Lean proof and RTL simulation do not individually substitute for calibrated physical measurement and independent replication."
+    },
+    {
+      "id": "QCOMP-035",
+      "statement": "Ingolf Lohmann asserts that QIK-VRT and the bound Zenodo formalizations correspond to real physical relations.",
+      "class": "PERSONAL_ACCOUNT",
+      "status": "OWNER_ASSERTED_REALITY_CORRESPONDENCE",
+      "source": "Product Owner statements in the originating conversation",
+      "boundary": "The attributed assertion is distinct from independent empirical confirmation and scientific consensus."
+    },
+    {
+      "id": "QCOMP-036",
+      "statement": "Effect Acknowledgement is an application-level semantic envelope that can be profiled over HTTP, DNS references, SMTP, SNMP, QUIC or overlay transport without creating a new OSI or IP layer.",
+      "class": "DERIVED",
+      "status": "PROPOSED_ARCHITECTURAL_MAPPING",
+      "source": "https://datatracker.ietf.org/doc/html/draft-lohmann-qikvrt-effect-ack-03 ; https://www.rfc-editor.org/rfc/rfc9110.html ; https://www.rfc-editor.org/rfc/rfc1035.html ; https://www.rfc-editor.org/rfc/rfc5321.html ; https://www.rfc-editor.org/rfc/rfc3411.html ; https://www.rfc-editor.org/rfc/rfc9000.html",
+      "boundary": "The repository currently demonstrates bounded HTTP/Firefox and TCP loopback only, not production conformance for all named services."
+    },
+    {
+      "id": "QCOMP-037",
+      "statement": "For payload P, existing headers H, receipt R and evidence references E, relative byte overhead is (R+E)/(P+H).",
+      "class": "DERIVED",
+      "status": "SUPPORTED",
+      "source": "transparent arithmetic",
+      "boundary": "The 1 KiB overhead examples are illustrative; actual encoding, batching and reference sizes must be measured."
+    },
+    {
+      "id": "QCOMP-038",
+      "statement": "The candidate publication index contains 14 Zenodo records and eleven candidate states including this quantitative article.",
+      "class": "EXECUTED",
+      "status": "INDEX_AUDIT_2026_08_29",
+      "source": "docs/publications/index.json",
+      "boundary": "One observer-relative-retrocausality bundle is still projected as a candidate despite an indexed published Zenodo record and needs state reconciliation, not duplicate publication."
+    },
+    {
+      "id": "QCOMP-039",
+      "statement": "Public disclosure before filing can destroy patent novelty, and the DPMA states that an inventor's own public information can form prior art.",
+      "class": "SOURCE_BOUND",
+      "status": "SUPPORTED",
+      "source": "https://www.dpma.de/patente/patentschutz/schutzvoraussetzungen/index.html",
+      "boundary": "Jurisdiction-specific exceptions require professional legal advice; this matrix does not determine patentability."
+    },
+    {
+      "id": "QCOMP-040",
+      "statement": "Universal autonomous software development for precisely specified Turing-computable tasks is the Product Owner's architecture target, while the current evidence is a bounded typed executor and not a proof of correct synthesis from arbitrary informal requirements.",
+      "class": "INTERPRETIVE",
+      "status": "TARGET_DISTINCT_FROM_CURRENT_EVIDENCE",
+      "source": "Product Owner audio instruction and PR #914 typed-executor contract",
+      "boundary": "Incomplete, inconsistent or informal requirements do not become complete specifications through automation alone."
+    },
+    {
+      "id": "QCOMP-041",
+      "statement": "If a system hypothetically draws the full 240 W power-supply nameplate continuously and a later measurement establishes a linear 10% wall-energy reduction, the arithmetic sensitivity is 210.24 kWh per year before utilization, cooling and load-curve corrections.",
+      "class": "DERIVED",
+      "status": "SCENARIO_ONLY",
+      "source": "0.240 kW * 8760 h * 0.10",
+      "boundary": "The 240 W figure is a power-supply rating, not a measured QIK-VRT workload draw; this is not a measured saving or a guaranteed electricity cost reduction."
     }
   ],
   "release_claims": {
+    "article_published": false,
     "peer_reviewed": false,
     "ietf_consensus": false,
+    "pr_912_authority_main": false,
     "hardware_synthesized": false,
     "physical_prototype_observed": false,
     "qikvrt_speedup_measured": false,
     "qikvrt_energy_saving_measured": false,
+    "universal_autonomous_software_development_proved": false,
     "patentability_established": false,
     "market_revenue_established": false,
     "PASS": false,
