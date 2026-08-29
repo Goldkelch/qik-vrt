@@ -93,6 +93,18 @@ def scope_sha256(changed_files: list[dict[str, object]]) -> str:
 
 
 class RequestedReviewExecutorTests(unittest.TestCase):
+    def test_github_workflow_expression_tokens_are_line_closed(self):
+        offenders = []
+        workflows = ROOT / ".github" / "workflows"
+        for path in sorted((*workflows.glob("*.yml"), *workflows.glob("*.yaml"))):
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if "${{" in line and "}}" not in line:
+                    offenders.append(f"{path.relative_to(ROOT)}:{line_number}")
+        self.assertEqual([], offenders)
+
     def selector_pr(self, **overrides):
         value = {
             "number": 867,
