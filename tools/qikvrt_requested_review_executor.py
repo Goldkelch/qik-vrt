@@ -33,9 +33,16 @@ SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
 LEDGER_ROOT = "state/mesh/reviews"
+REVIEW_QUEUE_ROOT = "state/mesh/review-queue"
+REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
+LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
+TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
+    f"<!-- {REVIEW_MARKER} ",
+    f"<!-- {LIVE_STATUS_MARKER} -->",
+)
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
@@ -50,6 +57,31 @@ VALID_FILE_STATES = {
     "renamed",
     "unchanged",
 }
+
+# These receipt fields are the complete, explicit projection of workflow/run
+# progress.  Historical ledger admission removes only these known fields.  An
+# unknown future field therefore remains part of the causal binding and fails
+# closed until it is deliberately classified here.
+REOBSERVATION_PROGRESS_FIELDS = frozenset({
+    "state",
+    "mesh_disposition",
+    "first_blocker",
+    "detail",
+    "evidence_fingerprint",
+    "ledger_path",
+    "ledger_diff_path",
+    "diff_transport",
+    "findings",
+    "latest_workflows",
+    "active_writers_observed",
+    "derived_action",
+    "receipt_payload_sha256",
+})
+REPOSITORY_FEEDBACK_PROGRESS_FIELDS = frozenset({
+    "receipt_path",
+    "diff_path",
+    "diff_transport",
+})
 
 
 class ReviewSnapshotError(ValueError):
@@ -89,6 +121,108 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _historical_receipt_binding(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Return every causal field except the enumerated progress projection.
+
+    This is intentionally subtraction-based.  Adding a new receipt field does
+    not silently make it history-safe: it is bound automatically unless the
+    field is explicitly classified as workflow progress above.
+    """
+    result: dict[str, Any] = {}
+    for field, value in receipt.items():
+        if field in REOBSERVATION_PROGRESS_FIELDS:
+            continue
+        if field == "repository_feedback" and isinstance(value, Mapping):
+            result[field] = {
+                key: nested
+                for key, nested in value.items()
+                if key not in REPOSITORY_FEEDBACK_PROGRESS_FIELDS
+            }
+        else:
+            result[field] = value
+    return result
+
+
+def review_queue_intent(
+    receipt: Mapping[str, Any],
+    predecessor_fingerprint: str,
+) -> tuple[str, dict[str, Any]]:
+    """Create one immutable, content-addressed recursive review work unit."""
+    predecessor = _sha256(predecessor_fingerprint, "predecessor fingerprint")
+    repository = receipt.get("repository")
+    pr_number = receipt.get("pr_number")
+    head = _sha(receipt.get("head_sha"), "queue head_sha")
+    tree = _sha(receipt.get("tree_sha"), "queue tree_sha")
+    base = _sha(receipt.get("base_sha"), "queue base_sha")
+    fingerprint = _sha256(
+        receipt.get("evidence_fingerprint"),
+        "queue successor fingerprint",
+    )
+    receipt_path = receipt.get("ledger_path")
+    diff_path = receipt.get("ledger_diff_path")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("queue repository is invalid")
+    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
+        raise ReviewSnapshotError("queue pull request number is invalid")
+    if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
+        raise ReviewSnapshotError("queue evidence paths are invalid")
+    path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
+    return path, {
+        "schema": "qikvrt_mesh_review_queue_intent_v1",
+        "work_unit_id": f"pr-{pr_number}/{head}/{fingerprint}",
+        "repository": repository,
+        "pr_number": pr_number,
+        "head_sha": head,
+        "tree_sha": tree,
+        "base_sha": base,
+        "predecessor_fingerprint": predecessor,
+        "successor_fingerprint": fingerprint,
+        "receipt_path": receipt_path,
+        "diff_path": diff_path,
+        "state": "QUEUED_RECURSIVE_REOBSERVATION",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+
+
+def review_queue_ack(
+    repository: str,
+    pr_number: int,
+    head_sha: str,
+    predecessor_fingerprint: str,
+    successor_fingerprint: str,
+) -> tuple[str, dict[str, Any]]:
+    """Bind completion of one work unit to the observed successor receipt."""
+    head = _sha(head_sha, "queue acknowledgement head_sha")
+    predecessor = _sha256(predecessor_fingerprint, "ack predecessor fingerprint")
+    successor = _sha256(successor_fingerprint, "ack successor fingerprint")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("queue acknowledgement repository is invalid")
+    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
+        raise ReviewSnapshotError("queue acknowledgement PR number is invalid")
+    path = f"{REVIEW_QUEUE_ACK_ROOT}/pr-{pr_number}/{head}/{predecessor}.json"
+    return path, {
+        "schema": "qikvrt_mesh_review_queue_ack_v1",
+        "work_unit_id": f"pr-{pr_number}/{head}/{predecessor}",
+        "repository": repository,
+        "pr_number": pr_number,
+        "head_sha": head,
+        "predecessor_fingerprint": predecessor,
+        "successor_fingerprint": successor,
+        "state": "SUPERSEDED_BY_CAUSAL_REOBSERVATION",
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
 
 
 def _pretty_json_bytes(value: Any) -> bytes:
@@ -703,6 +837,10 @@ def _review_intake(
         event_context.get("requested_team"),
         "requested reviewer team",
     )
+    predecessor_successor_fingerprint = _optional_sha256(
+        event_context.get("predecessor_successor_fingerprint"),
+        "predecessor successor fingerprint",
+    )
     source = _optional_text(event_context.get("source"), "review event source") or "UNSPECIFIED"
     native_delivery_identity = (
         _optional_text(event_context.get("native_delivery_identity"), "native delivery identity")
@@ -785,6 +923,7 @@ def _review_intake(
         "event_actor": event_actor,
         "requested_reviewer": requested_reviewer,
         "requested_team": requested_team,
+        "predecessor_successor_fingerprint": predecessor_successor_fingerprint,
         "requester_role": requester_role,
         "requested_reviewer_role": requested_reviewer_role,
         "requested_target_observed": requested_target_observed,
@@ -817,6 +956,7 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
         "event_actor",
         "requested_reviewer",
         "requested_team",
+        "predecessor_successor_fingerprint",
         "requester_role",
         "requested_reviewer_role",
         "requested_target_observed",
@@ -854,6 +994,10 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
     normalized["event_payload_sha256"] = _optional_sha256(
         value.get("event_payload_sha256"),
         "review_intake event_payload_sha256",
+    )
+    normalized["predecessor_successor_fingerprint"] = _optional_sha256(
+        value.get("predecessor_successor_fingerprint"),
+        "review_intake predecessor_successor_fingerprint",
     )
     raw_reason_labels = value.get("reason_labels")
     if (
@@ -905,6 +1049,7 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
                 "event_actor",
                 "requested_reviewer",
                 "requested_team",
+                "predecessor_successor_fingerprint",
                 "native_delivery_identity",
             )
         },
@@ -932,6 +1077,7 @@ def _event_context_from_review_intake(receipt: Mapping[str, Any]) -> dict[str, A
             "event_actor",
             "requested_reviewer",
             "requested_team",
+            "predecessor_successor_fingerprint",
             "native_delivery_identity",
         )
     }
@@ -1347,9 +1493,13 @@ def _result(
         "ledger_diff_path": diff_path,
         "diff_transport": dict(diff_transport) if isinstance(diff_transport, Mapping) else None,
         "findings": [dict(finding) for finding in findings],
-        "discussion_sha256": _canonical_sha256(snapshot.get("discussion_items", [])),
+        "discussion_sha256": _canonical_sha256({
+            "review_threads": snapshot.get("review_threads", []),
+            "discussion_items": snapshot.get("discussion_items", []),
+        }),
         "requested_reviewers_observed": list(snapshot.get("requested_reviewers", [])) if isinstance(snapshot.get("requested_reviewers"), list) else [],
         "requested_team_reviewers_observed": list(snapshot.get("requested_team_reviewers", [])) if isinstance(snapshot.get("requested_team_reviewers"), list) else [],
+        "active_writers_observed": list(snapshot.get("active_writers", [])) if isinstance(snapshot.get("active_writers"), list) else [],
         "review_intake": dict(snapshot.get("review_intake", {})) if isinstance(snapshot.get("review_intake"), Mapping) else {},
         "required_gate_paths": dict(snapshot.get("required_gate_paths", {})) if isinstance(snapshot.get("required_gate_paths"), Mapping) else {},
         "required_gate_workflow_ids": dict(snapshot.get("required_gate_workflow_ids", {})) if isinstance(snapshot.get("required_gate_workflow_ids"), Mapping) else {},
@@ -1440,8 +1590,10 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             _required_gate_binding(snapshot)
         )
         snapshot["discussion_items"] = discussion
+        snapshot["review_threads"] = threads
         snapshot["requested_reviewers"] = reviewers
         snapshot["requested_team_reviewers"] = teams
+        snapshot["active_writers"] = writers
         snapshot["review_intake"] = intake
         snapshot["required_gate_paths"] = required_gate_paths
         snapshot["required_gate_workflow_ids"] = required_gate_workflow_ids
@@ -2372,7 +2524,13 @@ def _discussion_observation(repository: str, number: int) -> list[dict[str, Any]
         for item in _gh_pages(endpoint):
             body = item.get("body") or ""
             author = (item.get("user") or {}).get("login")
-            if author == "github-actions[bot]" and REVIEW_MARKER in body:
+            if (
+                author == "github-actions[bot]"
+                and any(
+                    body.startswith(prefix)
+                    for prefix in TRUSTED_AUTOMATION_DISCUSSION_PREFIXES
+                )
+            ):
                 continue
             updated = (
                 item.get("updated_at")
@@ -2702,27 +2860,57 @@ def verify_current_receipt(
         stored_receipt = None
     sealed_payload = dict(expected)
     claimed_payload_sha256 = sealed_payload.pop("receipt_payload_sha256", None)
+    expected_binding = _historical_receipt_binding(expected)
+    fresh_binding = _historical_receipt_binding(fresh)
     checks = {
         "expected_receipt_self_seal": claimed_payload_sha256 == _canonical_sha256(sealed_payload),
         "stored_receipt_parses_as_expected": stored_receipt == dict(expected),
-        "stored_receipt_bytes": expected_receipt_bytes == _pretty_json_bytes(fresh),
+        "stored_receipt_bytes": expected_receipt_bytes == _pretty_json_bytes(expected),
         "repository": expected.get("repository") == repository,
         "pr_number": expected.get("pr_number") == pr_number,
-        "evidence_fingerprint": expected.get("evidence_fingerprint") == fresh.get("evidence_fingerprint"),
-        "receipt_payload_sha256": expected.get("receipt_payload_sha256") == fresh.get("receipt_payload_sha256"),
+        "causal_binding": expected_binding == fresh_binding,
         "diff_sha256": expected.get("diff_sha256") == hashlib.sha256(diff).hexdigest(),
         "diff_bytes": expected.get("diff_bytes") == len(diff),
         "stored_diff_bytes": expected_diff == diff,
+        "evidence_fingerprint": expected.get("evidence_fingerprint") == fresh.get("evidence_fingerprint"),
+        "receipt_payload_sha256": expected.get("receipt_payload_sha256") == fresh.get("receipt_payload_sha256"),
     }
-    exact = all(checks.values())
+    ledger_checks = (
+        "expected_receipt_self_seal",
+        "stored_receipt_parses_as_expected",
+        "stored_receipt_bytes",
+        "repository",
+        "pr_number",
+        "causal_binding",
+        "diff_sha256",
+        "diff_bytes",
+        "stored_diff_bytes",
+    )
+    ledger_safe = all(checks[name] for name in ledger_checks)
+    exact = ledger_safe and checks["evidence_fingerprint"] and checks["receipt_payload_sha256"]
+    progress_successor = ledger_safe and not exact
     report = {
         "schema": "qikvrt_mesh_review_reobservation_v1",
-        "state": "HOLD_UNVERIFIED",
+        "state": (
+            "EXACT_CURRENT"
+            if exact
+            else "PROGRESS_SUCCESSOR_OBSERVED"
+            if progress_successor
+            else "HOLD_UNVERIFIED"
+        ),
         "exact": exact,
+        "ledger_safe": ledger_safe,
+        "progress_successor": progress_successor,
         "checks": checks,
         "expected_fingerprint": expected.get("evidence_fingerprint"),
         "observed_fingerprint": fresh.get("evidence_fingerprint"),
-        "first_blocker": None if exact else "CAUSAL_REVIEW_EVIDENCE_DRIFT",
+        "first_blocker": (
+            None
+            if exact
+            else "WORKFLOW_PROGRESS_SUCCESSOR_REQUIRED"
+            if progress_successor
+            else "CAUSAL_REVIEW_EVIDENCE_DRIFT"
+        ),
         "completion_claims": {
             "PASS": False,
             "FINAL_PASS": False,
@@ -2779,6 +2967,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify_parser.add_argument("--receipt", required=True)
     verify_parser.add_argument("--expected-diff", required=True)
     verify_parser.add_argument("--output-dir", required=True)
+    verify_parser.add_argument(
+        "--mode",
+        choices=("strict", "ledger-history"),
+        default="strict",
+        help="strict projection check or history-safe workflow-progress admission",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "evaluate":
@@ -2845,7 +3039,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         (output / "review.diff").write_bytes(diff)
         _write_json(output / "verification.json", report)
         print(json.dumps(report, sort_keys=True, indent=2))
-        return 0 if report["exact"] else 3
+        accepted = report["exact"] or (
+            args.mode == "ledger-history" and report["ledger_safe"]
+        )
+        return 0 if accepted else 3
     except (
         OSError,
         KeyError,
