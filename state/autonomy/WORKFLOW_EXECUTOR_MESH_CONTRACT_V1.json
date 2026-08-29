@@ -217,13 +217,10 @@
     "acceptance_test_path": "tests/test_qikvrt_reflexive_repository_watchdog.py",
     "documentation_path": "docs/REFLEXIVE_REPOSITORY_WATCHDOG.md",
     "work_unit_path": "state/work_units/REFLEXIVE_REPOSITORY_WATCHDOG_V1.json",
-    "observation_cadence": "PT5M",
-    "platform_minimum_schedule": "GITHUB_ACTIONS_FIVE_MINUTES",
+    "observation_cadence": "EVENT_BOUND",
+    "platform_minimum_schedule": "NOT_USED",
     "event_triggers": [
-      "SCHEDULE",
       "WORKFLOW_RUN_REQUESTED",
-      "WORKFLOW_RUN_IN_PROGRESS",
-      "WORKFLOW_RUN_COMPLETED",
       "PUSH_MAIN",
       "PULL_REQUEST",
       "WORKFLOW_DISPATCH"
@@ -288,7 +285,7 @@
     "max_simultaneous_active_writers": 1,
     "max_queued_productive_runs": 2,
     "admission_policy": "PREEMPTIVE_HOLD_BEFORE_SECOND_WRITER",
-    "observer_run_policy": "CANCEL_SUPERSEDED_OBSERVER_ONLY",
+    "observer_run_policy": "EVENT_BOUND_EXACT_HEAD_RECEIPT_NO_CANCELLATION",
     "progress_evidence": [
       "EXACT_HEAD_AND_TREE",
       "WORKFLOW_STATUS_TRANSITION",

@@ -4,8 +4,6 @@ name: QIKVRT reflexive repository watchdog
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_run:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
@@ -19,7 +17,10 @@ on:
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    # One immutable upstream-run identity admits exactly one observation.  Do
+    # not use the later lifecycle transitions as cancellation signals: they
+    # may arrive while the receipt for this exact input is still materializing.
+    types: [requested]
   push:
     branches: [main]
     paths:
@@ -56,10 +57,6 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
-
-concurrency:
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
 
 jobs:
   pre-deadlock-observation:
