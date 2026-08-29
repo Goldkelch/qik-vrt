@@ -127,7 +127,7 @@ class MaterializationScopeTests(unittest.TestCase):
             self.assertIn(pattern, trigger)
         self.assertNotIn('      - "**"', trigger)
         self.assertNotIn('      - "*"', trigger)
-        self.assertIn("  cancel-in-progress: true", workflow)
+        self.assertIn("  cancel-in-progress: false", workflow)
         for name in (
             "Regenerate and verify repository integrity",
             "Run complete repository gates",

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,9 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             "closure_recommended": False,
             "automatic_issue_close": False,
             "automatic_merge": False,
+            "generated_at": "2026-08-25T00:00:00Z",
+            "request_sha256": digest,
+            "transaction_id": f"issue-76-{digest[:24]}",
             "no_false_pass": True,
         }), encoding="utf-8")
 
@@ -217,6 +221,97 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         ):
             self.assertIn(token, SYSTEM_PROMPT)
         self.assertIn("Do not leave an issue in an unclassified waiting state", SYSTEM_PROMPT)
+
+    def test_failed_inference_materialization_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            command = [
+                sys.executable,
+                str(ROOT / "scripts/issue_agent/finalize.py"),
+                "--directory",
+                str(directory),
+                "--inference-outcome",
+                "failure",
+            ]
+            subprocess.run(command, cwd=ROOT, check=True)
+            first = {
+                path.name: path.read_bytes()
+                for path in directory.iterdir()
+                if path.is_file()
+            }
+            subprocess.run(command, cwd=ROOT, check=True)
+            second = {
+                path.name: path.read_bytes()
+                for path in directory.iterdir()
+                if path.is_file()
+            }
+            self.assertEqual(first, second)
+
+    def test_issue_writer_is_history_preserving_and_integrity_atomic(self):
+        workflow = (
+            ROOT / ".github/workflows/issue-autonomous-processing.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$RUNNER_TEMP/qikvrt-issue.json", workflow)
+        self.assertIn(
+            "group: qikvrt-repository-evidence-issue-agent/",
+            workflow,
+        )
+        self.assertNotIn("git checkout -B", workflow)
+        self.assertNotIn("git push --force", workflow)
+        self.assertNotIn("git push --force-with-lease", workflow)
+        self.assertIn("git merge-base --is-ancestor", workflow)
+        self.assertIn("issue branch advanced before history-preserving persistence", workflow)
+        self.assertIn("git push origin \"HEAD:refs/heads/$BRANCH\"", workflow)
+
+        generate = workflow.index("tools/qikvrt_integrity.py generate")
+        verify = workflow.index("tools/qikvrt_integrity.py verify", generate)
+        gates = workflow.index("make test", verify)
+        persistence = workflow.index(
+            "- name: Create or update issue work branch and pull request"
+        )
+        stage = workflow.index('"evidence/issues/$ISSUE_NUMBER"', persistence)
+        commit = workflow.index('git commit -m "issue-agent: process issue')
+        push = workflow.index('git push origin "HEAD:refs/heads/$BRANCH"')
+        self.assertLess(generate, verify)
+        self.assertLess(verify, gates)
+        self.assertLess(gates, stage)
+        self.assertLess(stage, commit)
+        self.assertLess(commit, push)
+        for path in (
+            "REPOSITORY_FILE_MANIFEST.json",
+            "REPOSITORY_FILE_MANIFEST.json.sha256",
+            "SHA256SUMS.txt",
+        ):
+            self.assertIn(path, workflow[stage:commit])
+        self.assertIn("persisted_head", workflow[push:])
+
+    def test_internal_bot_pr_materialization_is_admitted_without_bot_push_loop(self):
+        workflow = (
+            ROOT / ".github/workflows/qikvrt_batch04_integrity.yml"
+        ).read_text(encoding="utf-8")
+        predicate_end = workflow.index("    runs-on:", workflow.index("  materialize:"))
+        predicate = workflow[workflow.index("    if:", workflow.index("  materialize:")):predicate_end]
+        self.assertIn("github.event_name == 'pull_request'", predicate)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            predicate,
+        )
+        self.assertIn("github.actor != 'dependabot[bot]'", predicate)
+        self.assertIn("github.event_name == 'workflow_dispatch'", predicate)
+        self.assertIn("github.event_name == 'push'", predicate)
+        self.assertIn("github.actor != 'github-actions[bot]'", predicate)
+        pull_request_clause = predicate[:predicate.index("github.event_name == 'workflow_dispatch'")]
+        self.assertNotIn("github.actor != 'github-actions[bot]'", pull_request_clause)
+
+    def test_backlog_resume_is_explicit_not_time_driven(self):
+        workflow = (
+            ROOT / ".github/workflows/issue-agent-backlog-resume.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("schedule:", workflow)
+        self.assertNotIn("minimum_age_seconds", workflow)
+        self.assertNotIn("generated_at", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
 
 
 if __name__ == "__main__":
