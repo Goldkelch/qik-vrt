@@ -1,0 +1,142 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_governance",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_issue_agent_typed_executor_contract_v1",
+  "contract_id": "QIKVRT-TYPED-WORK-ORDER-HANDOFF-V1",
+  "status": "ACTIVE",
+  "authority": {
+    "repository": "Goldkelch/qik-vrt",
+    "default_branch": "main",
+    "intake_policy_path": "policy/ISSUE_AGENT_DETERMINISTIC_INTAKE_V1.json"
+  },
+  "controller": {
+    "path": "scripts/issue_agent/executor.py",
+    "workflow_path": ".github/workflows/issue-agent-executor.yml",
+    "input_receipt_schema": "qikvrt_issue_agent_work_admission_receipt_v2",
+    "output_receipt_schema": "qikvrt_issue_agent_execution_receipt_v1",
+    "trigger": "COMPLETED_EXACT_CANDIDATE_VERIFIER_RUN",
+    "trusted_code_ref": "CURRENT_AUTHORITY_MAIN_ONLY",
+    "candidate_code_execution": false,
+    "unmapped_handler": "HOLD",
+    "drift": "HOLD"
+  },
+  "candidate": {
+    "branch_template": "issue-executor/<issue>/<full-64-hex-execution-id>",
+    "base": "EXACT_REOBSERVED_AUTHORITY_MAIN",
+    "parent_count": 1,
+    "ref_write": "EMPTY_EXPECTED_REMOTE_LEASE_CREATE_ONLY",
+    "pull_request_mode": "DRAFT",
+    "history_rewrite": false,
+    "automatic_ready": false,
+    "automatic_merge": false
+  },
+  "output": {
+    "root_template": "evidence/issues/<issue>/executions/<request-fingerprint>/<execution-id>",
+    "executor_files": [
+      "EXECUTION_RECEIPT.json",
+      "EXECUTION_RECEIPT.sha256"
+    ],
+    "workflow_owned_additional_paths": [
+      "REPOSITORY_FILE_MANIFEST.json",
+      "REPOSITORY_FILE_MANIFEST.json.sha256",
+      "SHA256SUMS.txt"
+    ],
+    "any_other_path": "HOLD"
+  },
+  "handlers": [
+    {
+      "handler_id": "OWNER-REPOSITORY-NATIVE-ROOT-BLOCKER-REPAIR-V1",
+      "handler_sha256": "3b9c0d2679ebfabdbab73003bfe1b4d98828f846f94cbcccd0109229eefa2082",
+      "executor_id": "ROOT-CONTROL-PLANE-ATTESTATION-V1",
+      "implementation": "ROOT_CONTROL_PLANE_ATTESTATION_V1",
+      "input_contract": "FIXED_REGISTERED_HANDLER_DESCRIPTOR",
+      "work_product": "EXACT_MAIN_BOUNDED_ROOT_CONTROL_PLANE_ATTESTATION_NOT_REPAIR_COMPLETION",
+      "selected_body_controls_operations": false,
+      "required_files": [
+        ".github/workflows/issue-agent-autofinish.yml",
+        ".github/workflows/issue-agent-executor.yml",
+        ".github/workflows/issue-autonomous-processing.yml",
+        "docs/ISSUE_AUTONOMOUS_PROCESSING.md",
+        "policy/ISSUE_AGENT_DETERMINISTIC_INTAKE_V1.json",
+        "scripts/issue_agent/binding.py",
+        "scripts/issue_agent/epoch.py",
+        "scripts/issue_agent/executor.py",
+        "scripts/issue_agent/handlers.py",
+        "scripts/issue_agent/validate.py",
+        "state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json"
+      ],
+      "required_absent_files": [
+        ".github/workflows/issue-agent-backlog-resume.yml"
+      ],
+      "allowed_repository_effects": [
+        "MATERIALIZE_BOUND_EXECUTION_RECEIPT_ON_IMMUTABLE_DRAFT_CANDIDATE"
+      ]
+    }
+  ],
+  "required_admission_receipt_fields": [
+    "repository",
+    "pull_request",
+    "head",
+    "tree",
+    "current_main",
+    "request_fingerprint",
+    "candidate_class",
+    "issue_disposition",
+    "handler_id",
+    "handler_sha256",
+    "work_order_payload_sha256",
+    "declared_executor_contract",
+    "executor_registry_sha256",
+    "executor_entry_sha256",
+    "executor_controller_path",
+    "executor_controller_blob_sha1",
+    "executor_workflow_path",
+    "executor_workflow_blob_sha1",
+    "registered_executor_id",
+    "executor_registration_state",
+    "verifier_workflow_run_id",
+    "verifier_workflow_run_attempt",
+    "verifier_workflow_name",
+    "verifier_workflow_ref",
+    "verifier_workflow_sha",
+    "verifier_workflow_blob_sha1",
+    "verifier_authority_tree",
+    "state"
+  ],
+  "boundaries": {
+    "repository_content_effect": "IMMUTABLE_DRAFT_CANDIDATE_ONLY",
+    "authority_main_effect": "FORBIDDEN",
+    "issue_lifecycle_effect": "FORBIDDEN",
+    "candidate_code_execution": "FORBIDDEN",
+    "free_form_command_execution": "FORBIDDEN",
+    "unregistered_handler_execution": "FORBIDDEN",
+    "foreign_repository_write": "FORBIDDEN",
+    "force_push": "FORBIDDEN",
+    "nonempty_expected_remote_lease_update": "FORBIDDEN",
+    "merge": "FORBIDDEN",
+    "release": "FORBIDDEN",
+    "publication": "FORBIDDEN",
+    "deployment": "FORBIDDEN"
+  },
+  "interpretation_boundaries": {
+    "root_control_plane_attestation_is_repair_completion": false,
+    "work_admission_is_substantive_execution": false,
+    "execution_receipt_is_authority_main": false,
+    "draft_candidate_is_merge_authority": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE": false,
+    "ISSUE_CLOSE": false,
+    "MIRROR_SYNC": false,
+    "TAG": false,
+    "PUBLICATION": false,
+    "DEPLOYMENT": false
+  }
+}

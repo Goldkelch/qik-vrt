@@ -357,7 +357,7 @@
       "CLOSE_NOT_PLANNED",
       "CLOSE_INVALID_OR_UNSUPPORTED"
     ],
-    "execute_now_rule": "When clear supported and technically actionable begin or resume the smallest bounded work unit.",
+    "execute_now_rule": "When clear supported and technically actionable admit the smallest bounded work unit and identify its exact registered executor or next action. Intake alone is not substantive execution.",
     "clarification_rule": "Ask only the minimum bounded question whose answer is required for safe execution and record the missing field or decision.",
     "blocked_rule": "A blocker requires a deterministic failure class evidence references retry condition and one next technically possible action.",
     "close_completed_rule": "Close only when completion or canonical supersession is evidenced.",
@@ -370,13 +370,38 @@
     "closure_may_not_hide_a_real_unresolved_defect": true
   },
   "issue_agent_integration": {
+    "deterministic_intake_policy": "policy/ISSUE_AGENT_DETERMINISTIC_INTAKE_V1.json",
+    "processing_workflow": ".github/workflows/issue-autonomous-processing.yml",
+    "terminal_verifier_workflow": ".github/workflows/issue-agent-autofinish.yml",
+    "binding_core": "scripts/issue_agent/binding.py",
+    "quadratic_epoch_executor": "scripts/issue_agent/epoch.py",
     "system_prompt": "scripts/issue_agent/infer.py",
     "status_materializer": "scripts/issue_agent/finalize.py",
+    "candidate_promoter": "scripts/issue_agent/promote.py",
     "bundle_validator": "scripts/issue_agent/validate.py",
+    "event_sources": [
+      "ISSUES_OPENED_REOPENED_EDITED",
+      "TYPED_OWNER_ISSUE_COMMENT_CREATED_EDITED",
+      "DIRECT_MANUAL_EXACT_REOBSERVATION"
+    ],
+    "immutable_candidate_ref": "issue-agent/<issue>/<full-64-hex-request-fingerprint>",
+    "immutable_evidence_path": "evidence/issues/<issue>/epochs/<full-64-hex-request-fingerprint>",
+    "typed_owner_handler_precedes_optional_model": true,
+    "quadratic_lane_boundary": "LOCAL_READ_VERIFY_PLAN_RECEIPT_ONLY",
+    "candidate_ref_write": "ONE_EMPTY_EXPECTED_LEASE_CREATE_ONLY",
+    "terminal_candidate_is_authority_main": false,
+    "execute_now_semantics": "WORK_UNIT_ADMISSION_NOT_SUBSTANTIVE_HANDLER_COMPLETION",
     "required_status_fields": [
+      "request_fingerprint",
+      "evaluation_mode",
+      "handler_id",
+      "handler_sha256",
       "issue_disposition",
       "next_action",
       "disposition_reason",
+      "closure_recommended",
+      "automatic_issue_close",
+      "automatic_merge",
       "no_false_pass"
     ]
   },

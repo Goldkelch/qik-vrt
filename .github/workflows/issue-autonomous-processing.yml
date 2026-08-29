@@ -1,120 +1,632 @@
-name: Autonomous issue processing
+name: Deterministic issue intake
 
 on:
   issues:
     types: [opened, reopened, edited]
+  issue_comment:
+    types: [created, edited]
   workflow_dispatch:
     inputs:
       issue_number:
         description: Existing issue number to process
         required: true
         type: string
+      comment_id:
+        description: Optional exact owner work-order comment id
+        required: false
+        type: string
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  models: read
+  contents: read
+  issues: read
 
 concurrency:
-  group: issue-agent-${{ github.event.issue.number || inputs.issue_number }}
+  group: issue-agent-event-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  process:
-    runs-on: ubuntu-latest
+  prepare:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request == null &&
+       (github.actor == 'ingolf-lohmann' || github.actor == 'Goldkelch') &&
+       (contains(github.event.comment.body, '<!-- qikvrt-owner-') ||
+        contains(github.event.comment.body, '<!-- qikvrt-root-blocker-repair-order-v1 -->')))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+      models: read
+    outputs:
+      issue_number: ${{ steps.bundle.outputs.issue_number }}
+      fingerprint: ${{ steps.bundle.outputs.fingerprint }}
+      epoch_id: ${{ steps.bundle.outputs.epoch_id }}
+      authority_head: ${{ steps.bundle.outputs.authority_head }}
+      authority_tree: ${{ steps.bundle.outputs.authority_tree }}
+      matrix: ${{ steps.bundle.outputs.matrix }}
+      artifact: ${{ steps.bundle.outputs.artifact }}
+      candidate_eligible: ${{ steps.bundle.outputs.candidate_eligible }}
+      candidate_class: ${{ steps.bundle.outputs.candidate_class }}
+      issue_disposition: ${{ steps.bundle.outputs.issue_disposition }}
+      evaluation_mode: ${{ steps.bundle.outputs.evaluation_mode }}
+      reuse_existing: ${{ steps.bundle.outputs.reuse_existing }}
+      existing_head: ${{ steps.bundle.outputs.existing_head }}
+      existing_tree: ${{ steps.bundle.outputs.existing_tree }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact event Authority head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: main
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Resolve issue
+      - name: Resolve exact issue or owner comment event
         id: issue
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          INPUT_COMMENT_ID: ${{ inputs.comment_id }}
           REPOSITORY: ${{ github.repository }}
+        shell: bash
         run: |
           set -euo pipefail
+          remote_main="$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)"
+          test "$(git rev-parse HEAD)" = "$remote_main"
           number="$EVENT_ISSUE_NUMBER"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then number="$INPUT_ISSUE_NUMBER"; fi
-          test -n "$number"
-          gh api "repos/$REPOSITORY/issues/$number" > issue.json
-          jq -e '.pull_request | not' issue.json >/dev/null
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then number="$INPUT_ISSUE_NUMBER"; fi
+          [[ "$number" =~ ^[1-9][0-9]*$ ]]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            gh api "repos/$REPOSITORY/issues/$number" > /tmp/issue.json
+          else
+            jq .issue "$GITHUB_EVENT_PATH" > /tmp/issue.json
+            gh api "repos/$REPOSITORY/issues/$number" > /tmp/live-issue.json
+            jq -S '{number,title,body,user:{login:.user.login,type:.user.type},html_url,created_at,updated_at}' /tmp/issue.json > /tmp/event-issue-semantic.json
+            jq -S '{number,title,body,user:{login:.user.login,type:.user.type},html_url,created_at,updated_at}' /tmp/live-issue.json > /tmp/live-issue-semantic.json
+            cmp /tmp/event-issue-semantic.json /tmp/live-issue-semantic.json
+          fi
+          jq -e '.pull_request | not' /tmp/issue.json >/dev/null
+          event_name="$EVENT_NAME"
+          event_action="${{ github.event.action || 'requested' }}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ -n "${INPUT_COMMENT_ID:-}" ]; then
+            [[ "$INPUT_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]
+            gh api "repos/$REPOSITORY/issues/comments/$INPUT_COMMENT_ID" > /tmp/comment.json
+            test "$(jq -r .issue_url /tmp/comment.json)" = "$(jq -r .url /tmp/issue.json)"
+            jq -n \
+              --arg dispatcher "$GITHUB_ACTOR" \
+              --slurpfile issue /tmp/issue.json \
+              --slurpfile comment /tmp/comment.json \
+              '{action:"reobserved",issue:$issue[0],comment:$comment[0],sender:{login:$dispatcher}}' \
+              > /tmp/event.json
+            event_name=issue_comment
+            event_action=reobserved
+          else
+            cp "$GITHUB_EVENT_PATH" /tmp/event.json
+          fi
           echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "event_name=$event_name" >> "$GITHUB_OUTPUT"
+          echo "event_action=$event_action" >> "$GITHUB_OUTPUT"
 
-      - name: Materialize request and repository context
-        env:
-          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          python3 scripts/issue_agent/materialize.py \
-            --issue issue.json \
-            --repository "$REPOSITORY" \
-            --output-dir "evidence/issues/$ISSUE_NUMBER"
-
-      - name: Generate repository-grounded answer
+      - name: Materialize and classify exact request
         id: inference
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ steps.issue.outputs.event_name }}
+          EVENT_ACTION: ${{ steps.issue.outputs.event_action }}
+        shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/issue_agent/infer.py \
-            --issue issue.json \
-            --context "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
-            --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
-            --model "openai/gpt-4.1"
+          root=/tmp/issue-agent-prepared
+          authority_head="$(git rev-parse HEAD)"
+          authority_tree="$(git rev-parse 'HEAD^{tree}')"
+          python3 -B scripts/issue_agent/materialize.py \
+            --issue /tmp/issue.json \
+            --event /tmp/event.json \
+            --event-name "$EVENT_NAME" \
+            --event-action "$EVENT_ACTION" \
+            --repository "$REPOSITORY" \
+            --authority-head "$authority_head" \
+            --authority-tree "$authority_tree" \
+            --output-dir "$root"
+          python3 -B scripts/issue_agent/infer.py \
+            --issue /tmp/issue.json \
+            --request "$root/REQUEST.json" \
+            --context "$root/CONTEXT.md" \
+            --output "$root/ANSWER.md" \
+            --model openai/gpt-4.1
 
-      - name: Enforce truthful status
+      - name: Finalize fail-closed evaluation and prepare N-squared matrix
+        id: bundle
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           INFERENCE_OUTCOME: ${{ steps.inference.outcome }}
+        shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/issue_agent/finalize.py \
-            --directory "evidence/issues/$ISSUE_NUMBER" \
+          root=/tmp/issue-agent-prepared
+          python3 -B scripts/issue_agent/finalize.py \
+            --directory "$root" \
             --inference-outcome "$INFERENCE_OUTCOME"
-
-      - name: Validate and promote generated artifacts
-        env:
-          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
-        run: |
-          set -euo pipefail
-          python3 -m unittest discover -s tests/issue_agent -p 'test_*.py'
-          python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
-          python3 scripts/issue_agent/promote.py "evidence/issues/$ISSUE_NUMBER"
-          python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
-
-      - name: Create or update issue work branch and pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
-        run: |
-          set -euo pipefail
-          branch="issue-agent/$ISSUE_NUMBER"
-          git config user.name "qik-vrt-issue-agent[bot]"
-          git config user.email "qik-vrt-issue-agent[bot]@users.noreply.github.com"
-          git checkout -B "$branch"
-          git add "evidence/issues/$ISSUE_NUMBER"
-          if ! git diff --cached --quiet; then
-            git commit -m "issue-agent: process issue #$ISSUE_NUMBER"
-            git push --force-with-lease origin "$branch"
+          python3 -B scripts/issue_agent/epoch.py prepare "$root"
+          fingerprint="$(jq -r .request_fingerprint "$root/REQUEST.json")"
+          epoch_id="$(jq -r .epoch_id "$root/WORK_EPOCH.json")"
+          authority_head="$(jq -r .binding.authority_head "$root/REQUEST.json")"
+          authority_tree="$(jq -r .binding.authority_tree "$root/REQUEST.json")"
+          evaluation_mode="$(jq -r .evaluation_mode "$root/STATUS.json")"
+          issue_disposition="$(jq -r .issue_disposition "$root/STATUS.json")"
+          candidate_eligible=false
+          candidate_class=NONE
+          case "$issue_disposition" in
+            EXECUTE_NOW)
+              candidate_eligible=true
+              candidate_class=WORK_ADMISSION
+              ;;
+            CLOSE_COMPLETED|CLOSE_NOT_PLANNED|CLOSE_INVALID_OR_UNSUPPORTED)
+              candidate_eligible=true
+              candidate_class=CLOSURE_CANDIDATE
+              ;;
+          esac
+          reuse_existing=false
+          existing_head=''
+          existing_tree=''
+          branch="issue-agent/$ISSUE_NUMBER/$fingerprint"
+          existing_head="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+          if [ -n "$existing_head" ]; then
+            git fetch --no-tags origin "refs/heads/$branch"
+            existing_tree="$(git rev-parse "$existing_head^{tree}")"
+            existing_parent="$(git rev-parse "$existing_head^")"
+            test "$existing_parent" = "$authority_head"
+            target="evidence/issues/$ISSUE_NUMBER/epochs/$fingerprint"
+            test "$(git rev-list --parents -n 1 "$existing_head" | wc -w)" -eq 2
+            test -z "$(git diff-tree --no-commit-id --name-only -r "$existing_head" | awk -v root="$target/" '
+              index($0,root)==1 || $0=="REPOSITORY_FILE_MANIFEST.json" ||
+              $0=="REPOSITORY_FILE_MANIFEST.json.sha256" || $0=="SHA256SUMS.txt" {next}
+              {print}')"
+            git worktree add --detach /tmp/existing-candidate-tree "$existing_head"
+            (cd /tmp/existing-candidate-tree && python3 -B tools/qikvrt_integrity.py verify)
+            mkdir -p /tmp/existing-candidate
+            git archive "$existing_head" "$target" | tar -x -C /tmp/existing-candidate
+            python3 -B scripts/issue_agent/validate.py "/tmp/existing-candidate/$target"
+            test "$(jq -r .request_fingerprint "/tmp/existing-candidate/$target/REQUEST.json")" = "$fingerprint"
+            existing_status="$(jq -r .status "/tmp/existing-candidate/$target/STATUS.json")"
+            issue_disposition="$(jq -r .issue_disposition "/tmp/existing-candidate/$target/STATUS.json")"
+            evaluation_mode="$(jq -r .evaluation_mode "/tmp/existing-candidate/$target/STATUS.json")"
+            case "$existing_status:$issue_disposition" in
+              CONTINUE:EXECUTE_NOW)
+                candidate_class=WORK_ADMISSION
+                ;;
+              TERMINAL_CANDIDATE:CLOSE_COMPLETED|TERMINAL_CANDIDATE:CLOSE_NOT_PLANNED|TERMINAL_CANDIDATE:CLOSE_INVALID_OR_UNSUPPORTED)
+                candidate_class=CLOSURE_CANDIDATE
+                ;;
+              *)
+                echo "existing immutable candidate has no supported class: $existing_status/$issue_disposition" >&2
+                exit 1
+                ;;
+            esac
+            candidate_eligible=true
+            reuse_existing=true
           fi
+          artifact="issue-prepare-$epoch_id-attempt-$GITHUB_RUN_ATTEMPT"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "epoch_id=$epoch_id" >> "$GITHUB_OUTPUT"
+          echo "authority_head=$authority_head" >> "$GITHUB_OUTPUT"
+          echo "authority_tree=$authority_tree" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c '{include:.include}' "$root/MATRIX.json")" >> "$GITHUB_OUTPUT"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+          echo "candidate_eligible=$candidate_eligible" >> "$GITHUB_OUTPUT"
+          echo "candidate_class=$candidate_class" >> "$GITHUB_OUTPUT"
+          echo "issue_disposition=$issue_disposition" >> "$GITHUB_OUTPUT"
+          echo "evaluation_mode=$evaluation_mode" >> "$GITHUB_OUTPUT"
+          echo "reuse_existing=$reuse_existing" >> "$GITHUB_OUTPUT"
+          echo "existing_head=$existing_head" >> "$GITHUB_OUTPUT"
+          echo "existing_tree=$existing_tree" >> "$GITHUB_OUTPUT"
 
-          pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+      - name: Upload immutable prepared epoch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.bundle.outputs.artifact }}
+          path: /tmp/issue-agent-prepared
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record non-candidate redirect boundary
+        if: steps.bundle.outputs.candidate_eligible != 'true'
+        shell: bash
+        run: |
+          {
+            echo '## Deterministic issue intake'
+            echo
+            echo "- evaluation mode: ${{ steps.bundle.outputs.evaluation_mode }}"
+            echo "- fingerprint: ${{ steps.bundle.outputs.fingerprint }}"
+            echo '- state: BOUNDED_REDIRECT_RECEIPT_NO_WORK_CANDIDATE'
+            echo '- no branch, pull request, merge, issue closure, publication, PASS, FINAL_PASS, or general EFFECT_ACK_DONE effect is authorized'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  lane:
+    name: lane-${{ matrix.lane_index }}-${{ matrix.lane_id }}
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.candidate_eligible == 'true' && needs.prepare.outputs.reuse_existing != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Check out exact prepared Authority head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.authority_head }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact prepared epoch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.prepare.outputs.artifact }}
+          path: /tmp/issue-agent-prepared
+
+      - name: Execute one fixed read-verify-plan lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.authority_head }}"
+          test "$(git rev-parse 'HEAD^{tree}')" = "${{ needs.prepare.outputs.authority_tree }}"
+          test "$(jq -r '.include[${{ matrix.lane_index }}].lane_id' /tmp/issue-agent-prepared/MATRIX.json)" = "${{ matrix.lane_id }}"
+          python3 -B scripts/issue_agent/epoch.py run-lane /tmp/issue-agent-prepared \
+            --lane-index "${{ matrix.lane_index }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output /tmp/lane-receipt
+
+      - name: Upload exact lane receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-lane-${{ needs.prepare.outputs.epoch_id }}-attempt-${{ github.run_attempt }}-${{ matrix.lane_index }}
+          path: /tmp/lane-receipt
+          if-no-files-found: error
+          retention-days: 30
+
+  reduce:
+    needs: [prepare, lane]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.candidate_eligible == 'true' && needs.prepare.outputs.reuse_existing != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact: ${{ steps.reduce.outputs.artifact }}
+    steps:
+      - name: Check out exact prepared Authority head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.authority_head }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact prepared epoch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.prepare.outputs.artifact }}
+          path: /tmp/issue-agent-prepared
+
+      - name: Download every observed lane receipt
+        id: download_lanes
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: issue-lane-${{ needs.prepare.outputs.epoch_id }}-attempt-${{ github.run_attempt }}-*
+          path: /tmp/lane-receipts
+
+      - name: Canonically reduce the complete receipt set
+        id: reduce
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a /tmp/issue-agent-prepared /tmp/issue-agent-reduced
+          mkdir -p /tmp/lane-receipts
+          python3 -B scripts/issue_agent/epoch.py reduce /tmp/issue-agent-prepared \
+            --receipts-root /tmp/lane-receipts \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output /tmp/issue-agent-reduced
+          artifact="issue-reduction-${{ needs.prepare.outputs.epoch_id }}-attempt-$GITHUB_RUN_ATTEMPT"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Upload READY or HOLD reduction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-reduction-${{ needs.prepare.outputs.epoch_id }}-attempt-${{ github.run_attempt }}
+          path: /tmp/issue-agent-reduced
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Gate candidate writer on a complete executed fan-in
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.download_lanes.outcome }}" = success
+          test "${{ steps.reduce.outcome }}" = success
+          test "$(jq -r .state /tmp/issue-agent-reduced/FANIN.json)" = READY_FOR_CANDIDATE_REF_CAS
+          test "$(jq -r .received_lane_count /tmp/issue-agent-reduced/FANIN.json)" = "$(jq -r .lane_count /tmp/issue-agent-reduced/WORK_EPOCH.json)"
+
+  candidate-writer:
+    needs: [prepare, reduce]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.candidate_eligible == 'true' && (needs.prepare.outputs.reuse_existing == 'true' || needs.reduce.result == 'success')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: issue-agent-candidate-${{ needs.prepare.outputs.issue_number }}-${{ needs.prepare.outputs.fingerprint }}
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
+      FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+      CANDIDATE_CLASS: ${{ needs.prepare.outputs.candidate_class }}
+      ISSUE_DISPOSITION: ${{ needs.prepare.outputs.issue_disposition }}
+      AUTHORITY_HEAD: ${{ needs.prepare.outputs.authority_head }}
+      AUTHORITY_TREE: ${{ needs.prepare.outputs.authority_tree }}
+    steps:
+      - name: Check out exact prepared Authority head for candidate construction
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.authority_head }}
+          fetch-depth: 0
+
+      - name: Download exact reduced candidate bundle
+        if: needs.prepare.outputs.reuse_existing != 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: issue-reduction-${{ needs.prepare.outputs.epoch_id }}-attempt-${{ github.run_attempt }}
+          path: /tmp/issue-agent-reduced
+
+      - name: Reverify and atomically create or reobserve one candidate ref
+        if: needs.prepare.outputs.reuse_existing != 'true'
+        id: ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AUTHORITY_HEAD"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$AUTHORITY_TREE"
+          python3 -B scripts/issue_agent/promote.py /tmp/issue-agent-reduced
+          python3 -B scripts/issue_agent/validate.py /tmp/issue-agent-reduced
+          selected_status="$(jq -r .status /tmp/issue-agent-reduced/STATUS.json)"
+          selected_disposition="$(jq -r .issue_disposition /tmp/issue-agent-reduced/STATUS.json)"
+          selected_class=NONE
+          case "$selected_status:$selected_disposition" in
+            CONTINUE:EXECUTE_NOW)
+              selected_class=WORK_ADMISSION
+              ;;
+            TERMINAL_CANDIDATE:CLOSE_COMPLETED|TERMINAL_CANDIDATE:CLOSE_NOT_PLANNED|TERMINAL_CANDIDATE:CLOSE_INVALID_OR_UNSUPPORTED)
+              selected_class=CLOSURE_CANDIDATE
+              ;;
+            *)
+              echo "reduced bundle has no supported candidate class: $selected_status/$selected_disposition" >&2
+              exit 1
+              ;;
+          esac
+          test "$selected_class" = "$CANDIDATE_CLASS"
+          test "$selected_disposition" = "$ISSUE_DISPOSITION"
+          remote_main="$(git ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          test "$remote_main" = "$AUTHORITY_HEAD"
+          branch="issue-agent/$ISSUE_NUMBER/$FINGERPRINT"
+          root="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          test ! -e "$root"
+          mkdir -p "$root"
+          cp -a /tmp/issue-agent-reduced/. "$root/"
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          git config user.name qik-vrt-issue-agent
+          git config user.email qik-vrt-issue-agent@users.noreply.github.com
+          git add "$root" REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256 SHA256SUMS.txt
+          test -n "$(git diff --cached --name-only)"
+          test -z "$(git diff --cached --name-only | awk -v root="$root/" '
+            index($0,root)==1 || $0=="REPOSITORY_FILE_MANIFEST.json" ||
+            $0=="REPOSITORY_FILE_MANIFEST.json.sha256" || $0=="SHA256SUMS.txt" {next}
+            {print}')"
+          git commit -m "issue-agent: materialize #$ISSUE_NUMBER epoch ${FINGERPRINT:0:20}"
+          candidate_head="$(git rev-parse HEAD)"
+          candidate_tree="$(git rev-parse 'HEAD^{tree}')"
+          existing="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+          state=CREATED_EXPECTED_ABSENT_REF
+          if [ -z "$existing" ]; then
+            if ! git push --porcelain \
+              --force-with-lease="refs/heads/$branch:" \
+              origin "HEAD:refs/heads/$branch" >/tmp/create-ref.out 2>/tmp/create-ref.err; then
+              existing="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+            fi
+          fi
+          if [ -n "$existing" ]; then
+            git fetch --no-tags origin "refs/heads/$branch"
+            test "$(git rev-list --parents -n 1 "$existing" | wc -w)" -eq 2
+            existing_tree="$(git rev-parse "$existing^{tree}")"
+            existing_parent="$(git rev-parse "$existing^")"
+            test "$existing_parent" = "$AUTHORITY_HEAD"
+            test -z "$(git diff-tree --no-commit-id --name-only -r "$existing" | awk -v root="$root/" '
+              index($0,root)==1 || $0=="REPOSITORY_FILE_MANIFEST.json" ||
+              $0=="REPOSITORY_FILE_MANIFEST.json.sha256" || $0=="SHA256SUMS.txt" {next}
+              {print}')"
+            git worktree add --detach /tmp/collision-candidate-tree "$existing"
+            (cd /tmp/collision-candidate-tree && python3 -B tools/qikvrt_integrity.py verify)
+            mkdir -p /tmp/collision-candidate
+            git archive "$existing" "$root" | tar -x -C /tmp/collision-candidate
+            python3 -B scripts/issue_agent/validate.py "/tmp/collision-candidate/$root"
+            test "$(jq -r .request_fingerprint "/tmp/collision-candidate/$root/REQUEST.json")" = "$FINGERPRINT"
+            selected_status="$(jq -r .status "/tmp/collision-candidate/$root/STATUS.json")"
+            selected_disposition="$(jq -r .issue_disposition "/tmp/collision-candidate/$root/STATUS.json")"
+            case "$selected_status:$selected_disposition" in
+              CONTINUE:EXECUTE_NOW)
+                selected_class=WORK_ADMISSION
+                ;;
+              TERMINAL_CANDIDATE:CLOSE_COMPLETED|TERMINAL_CANDIDATE:CLOSE_NOT_PLANNED|TERMINAL_CANDIDATE:CLOSE_INVALID_OR_UNSUPPORTED)
+                selected_class=CLOSURE_CANDIDATE
+                ;;
+              *)
+                echo "colliding immutable candidate has no supported class: $selected_status/$selected_disposition" >&2
+                exit 1
+                ;;
+            esac
+            candidate_head="$existing"
+            candidate_tree="$existing_tree"
+            state=IDEMPOTENT_REF_ALREADY_MATERIALIZED
+          fi
+          readback="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+          test "$readback" = "$candidate_head"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "candidate_head=$candidate_head" >> "$GITHUB_OUTPUT"
+          echo "candidate_tree=$candidate_tree" >> "$GITHUB_OUTPUT"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "candidate_class=$selected_class" >> "$GITHUB_OUTPUT"
+          echo "issue_disposition=$selected_disposition" >> "$GITHUB_OUTPUT"
+
+      - name: Reobserve an already valid exact candidate ref
+        if: needs.prepare.outputs.reuse_existing == 'true'
+        id: reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="issue-agent/$ISSUE_NUMBER/$FINGERPRINT"
+          readback="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+          test "$readback" = "${{ needs.prepare.outputs.existing_head }}"
+          git fetch --no-tags origin "refs/heads/$branch"
+          test "$(git rev-parse "$readback^{tree}")" = "${{ needs.prepare.outputs.existing_tree }}"
+          test "$(git rev-parse "$readback^")" = "$AUTHORITY_HEAD"
+          root="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          candidate_status="$(git show "$readback:$root/STATUS.json" | jq -r .status)"
+          issue_disposition="$(git show "$readback:$root/STATUS.json" | jq -r .issue_disposition)"
+          case "$candidate_status:$issue_disposition" in
+            CONTINUE:EXECUTE_NOW)
+              candidate_class=WORK_ADMISSION
+              ;;
+            TERMINAL_CANDIDATE:CLOSE_COMPLETED|TERMINAL_CANDIDATE:CLOSE_NOT_PLANNED|TERMINAL_CANDIDATE:CLOSE_INVALID_OR_UNSUPPORTED)
+              candidate_class=CLOSURE_CANDIDATE
+              ;;
+            *)
+              echo "reobserved immutable candidate has no supported class: $candidate_status/$issue_disposition" >&2
+              exit 1
+              ;;
+          esac
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "candidate_head=$readback" >> "$GITHUB_OUTPUT"
+          echo "candidate_tree=${{ needs.prepare.outputs.existing_tree }}" >> "$GITHUB_OUTPUT"
+          echo "state=IDEMPOTENT_VALIDATED_REF_REUSED" >> "$GITHUB_OUTPUT"
+          echo "candidate_class=$candidate_class" >> "$GITHUB_OUTPUT"
+          echo "issue_disposition=$issue_disposition" >> "$GITHUB_OUTPUT"
+
+      - name: Idempotently expose the admission or closure candidate
+        env:
+          BRANCH: ${{ steps.ref.outputs.branch || steps.reuse.outputs.branch }}
+          CANDIDATE_HEAD: ${{ steps.ref.outputs.candidate_head || steps.reuse.outputs.candidate_head }}
+          CANDIDATE_TREE: ${{ steps.ref.outputs.candidate_tree || steps.reuse.outputs.candidate_tree }}
+          REF_STATE: ${{ steps.ref.outputs.state || steps.reuse.outputs.state }}
+          CANDIDATE_CLASS: ${{ steps.ref.outputs.candidate_class || steps.reuse.outputs.candidate_class }}
+          ISSUE_DISPOSITION: ${{ steps.ref.outputs.issue_disposition || steps.reuse.outputs.issue_disposition }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(git ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')"
+          base_state=EXACT_BOUND_AUTHORITY_BASE
+          if [ "$current_main" != "$AUTHORITY_HEAD" ]; then
+            base_state=HOLD_AUTHORITY_MAIN_DRIFT_AFTER_IMMUTABLE_REF_CREATE
+          fi
+          gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state all --limit 100 \
+            --json number,state,headRefOid,baseRefName > /tmp/candidate-prs.json
+          test "$(jq --arg head "$CANDIDATE_HEAD" '[.[] | select(.headRefOid == $head and .baseRefName == "main")] | length' /tmp/candidate-prs.json)" -le 1
+          pr_number="$(jq -r --arg head "$CANDIDATE_HEAD" '.[] | select(.headRefOid == $head and .baseRefName == "main" and .state == "OPEN") | .number' /tmp/candidate-prs.json)"
+          closed_number="$(jq -r --arg head "$CANDIDATE_HEAD" '.[] | select(.headRefOid == $head and .baseRefName == "main" and .state != "OPEN") | .number' /tmp/candidate-prs.json)"
+          if [ -n "$closed_number" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "<!-- qikvrt-issue-agent-exposure-hold:v1 fingerprint=$FINGERPRINT head=$CANDIDATE_HEAD -->
+          Immutable candidate ref $BRANCH is already represented by closed PR #$closed_number. A new exact event bound to current Authority main is required; the ref is not updated.
+
+          No merge, closure, publication, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
+            exit 1
+          fi
+          status_path="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT/STATUS.json"
+          handler_id="$(git show "$CANDIDATE_HEAD:$status_path" | jq -r .handler_id)"
+          handler_sha256="$(git show "$CANDIDATE_HEAD:$status_path" | jq -r .handler_sha256)"
+          if [ "$(jq --arg id "$handler_id" --arg digest "$handler_sha256" \
+            '[.handlers[] | select(.handler_id == $id and .handler_sha256 == $digest)] | length' \
+            state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json)" -eq 1 ]; then
+            executor_boundary="The exact handler id/digest pair is registered only for a bounded root-control-plane attestation; exact verifier dispatch is still required and does not establish repair completion."
+          else
+            executor_boundary="No exact handler id/digest executor is registered; the verifier must emit HOLD_EXECUTOR_NOT_REGISTERED."
+          fi
           if [ -z "$pr_number" ]; then
-            gh pr create \
-              --base main \
-              --head "$branch" \
-              --title "Issue agent: process #$ISSUE_NUMBER" \
-              --body "Repository-native processing artifacts for #$ISSUE_NUMBER.\n\nThe resumable auto-finish workflow may merge this PR only after EFFECT_ACK_DONE and successful repository checks. It then synchronizes the mirror, creates the common tag, and closes the issue."
-          fi
+            title="Issue intake admission: #$ISSUE_NUMBER"
+            draft_args=(--draft)
+            review_boundary="This draft persists an admitted work unit. $executor_boundary"
+            if [ "$base_state" != EXACT_BOUND_AUTHORITY_BASE ]; then
+              title="HOLD: stale-base issue candidate #$ISSUE_NUMBER"
+              review_boundary="This draft only exposes an immutable stale-base candidate. It is not a work admission or a receipt-eligible closure candidate; a fresh exact event is required."
+            elif [ "$CANDIDATE_CLASS" = CLOSURE_CANDIDATE ]; then
+              title="Issue lifecycle closure candidate: #$ISSUE_NUMBER"
+              draft_args=()
+              review_boundary="This closure classification requires separate exact-head repository-account review and an Authority decision."
+            fi
+            if ! gh pr create --repo "$REPOSITORY" --base main --head "$BRANCH" "${draft_args[@]}" \
+              --title "$title" \
+              --body "Repository-native exact-event candidate for #$ISSUE_NUMBER.\n\nFingerprint: \`$FINGERPRINT\`\nHead: \`$CANDIDATE_HEAD\`\nTree: \`$CANDIDATE_TREE\`\nDisposition: \`$ISSUE_DISPOSITION\`\nCandidate class: \`$CANDIDATE_CLASS\`\nBase state: \`$base_state\`\n\nEach N-squared job verifies a source/target-specific local handoff plan; it does not execute the substantive handler. $review_boundary No merge, issue closure, mirror synchronization, tag, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."; then
+              gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "<!-- qikvrt-issue-agent-exposure-hold:v1 fingerprint=$FINGERPRINT head=$CANDIDATE_HEAD -->
+          Immutable candidate ref $BRANCH was created, but PR exposure failed. Reobserve this exact ref through a direct event-bound dispatch; do not update or force-push it.
 
-          pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
-          status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
-          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe repository auto-finish transaction now owns merge, mirror synchronization, common tagging, and issue closure. Any failed gate remains BLOCK."
+          No merge, closure, publication, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
+              exit 1
+            fi
+            pr_number="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state open --json number,headRefOid --jq ".[] | select(.headRefOid == \"$CANDIDATE_HEAD\") | .number")"
+          fi
+          test -n "$pr_number"
+          marker="<!-- qikvrt-issue-agent-epoch:v2 fingerprint=$FINGERPRINT head=$CANDIDATE_HEAD -->"
+          present="$(gh api --paginate "repos/$REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)"
+          if [ -z "$present" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "$marker
+          Repository candidate materialized without equating intake with execution.
+
+          - PR: #$pr_number
+          - candidate head: \`$CANDIDATE_HEAD\`
+          - candidate tree: \`$CANDIDATE_TREE\`
+          - request fingerprint: \`$FINGERPRINT\`
+          - ref result: \`$REF_STATE\`
+          - disposition: \`$ISSUE_DISPOSITION\`
+          - candidate class: \`$CANDIDATE_CLASS\`
+          - base state: \`$base_state\`
+
+          No merge, issue closure, mirror synchronization, tag, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
+          fi
+          test "$(git ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$CANDIDATE_HEAD"
+          if [ "$base_state" != EXACT_BOUND_AUTHORITY_BASE ]; then
+            echo "CI_DISPATCH=HOLD_AUTHORITY_MAIN_DRIFT" >> "$GITHUB_ENV"
+            {
+              echo '## Immutable candidate exposed on stale base'
+              echo
+              echo "- candidate: $CANDIDATE_HEAD"
+              echo "- bound base: $AUTHORITY_HEAD"
+              echo "- current main: $current_main"
+              echo '- state: HOLD_AUTHORITY_MAIN_DRIFT_AFTER_IMMUTABLE_REF_CREATE'
+              echo '- next action: a fresh exact event must derive a new fingerprint; this ref remains immutable'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/actions/workflows/qikvrt_ci.yml/runs?branch=$BRANCH&event=workflow_dispatch&per_page=100" \
+            --jq '[.[].workflow_runs[]]' > /tmp/exact-ci-runs.json
+          existing_ci="$(jq --arg head "$CANDIDATE_HEAD" '[.[] | select(.head_sha == $head)] | length' /tmp/exact-ci-runs.json)"
+          if [ "$existing_ci" -eq 0 ]; then
+            gh workflow run qikvrt_ci.yml --repo "$REPOSITORY" --ref "$BRANCH"
+            echo "CI_DISPATCH=EXACT_CANDIDATE_REQUESTED" >> "$GITHUB_ENV"
+          else
+            echo "CI_DISPATCH=EXACT_CANDIDATE_ALREADY_OBSERVED" >> "$GITHUB_ENV"
+          fi
