@@ -1,0 +1,358 @@
+name: Issue agent registered executor
+
+on:
+  workflow_run:
+    workflows: [Issue agent exact candidate verifier]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      verifier_run_id:
+        description: Exact completed verifier workflow run id
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: issue-agent-executor-${{ github.event.workflow_run.id || inputs.verifier_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  observe-plan:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.repository.full_name == github.repository &&
+       github.event.workflow_run.status == 'completed' &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    outputs:
+      state: ${{ steps.plan.outputs.state }}
+      execution_id: ${{ steps.plan.outputs.execution_id }}
+      issue_number: ${{ steps.plan.outputs.issue_number }}
+      request_fingerprint: ${{ steps.plan.outputs.request_fingerprint }}
+      authority_main: ${{ steps.plan.outputs.authority_main }}
+      verifier_run_id: ${{ steps.artifact.outputs.verifier_run_id }}
+      verifier_run_attempt: ${{ steps.artifact.outputs.verifier_run_attempt }}
+      receipt_artifact_id: ${{ steps.artifact.outputs.receipt_artifact_id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      VERIFIER_RUN_ID: ${{ github.event.workflow_run.id || inputs.verifier_run_id }}
+    steps:
+      - name: Check out trusted current Authority main only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reobserve exact verifier run and attempt-qualified artifact
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERIFIER_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          authority_main="$(git rev-parse --verify HEAD^{commit})"
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$authority_main"
+          gh api "repos/$REPOSITORY/actions/runs/$VERIFIER_RUN_ID" > /tmp/verifier-run.json
+          test "$(jq -r .name /tmp/verifier-run.json)" = 'Issue agent exact candidate verifier'
+          test "$(jq -r .path /tmp/verifier-run.json | cut -d@ -f1)" = .github/workflows/issue-agent-autofinish.yml
+          test "$(jq -r .head_sha /tmp/verifier-run.json)" = "$authority_main"
+          test "$(jq -r .status /tmp/verifier-run.json)" = completed
+          test "$(jq -r .conclusion /tmp/verifier-run.json)" = success
+          verifier_attempt="$(jq -r .run_attempt /tmp/verifier-run.json)"
+          [[ "$verifier_attempt" =~ ^[1-9][0-9]*$ ]]
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$VERIFIER_RUN_ID/artifacts?per_page=100" \
+            --jq '[.[].artifacts[]]' > /tmp/verifier-artifacts.json
+          suffix="-run-$VERIFIER_RUN_ID-attempt-$verifier_attempt"
+          mapfile -t matches < <(jq -r --arg suffix "$suffix" \
+            '.[] | select(.expired == false and (.name | startswith("issue-candidate-verification-") and endswith($suffix))) | [.id,.name] | @tsv' \
+            /tmp/verifier-artifacts.json)
+          test "${#matches[@]}" -eq 1
+          IFS=$'\t' read -r artifact_id artifact_name <<< "${matches[0]}"
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$artifact_name" =~ ^issue-candidate-verification-([1-9][0-9]*)-([0-9a-f]{64})-run-$VERIFIER_RUN_ID-attempt-$verifier_attempt$ ]]
+          issue_number="${BASH_REMATCH[1]}"
+          fingerprint="${BASH_REMATCH[2]}"
+          gh api "repos/$REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/verifier-receipt.zip
+          python3 -B - /tmp/verifier-receipt.zip /tmp/verifier-receipt <<'PY'
+          import stat, sys, zipfile
+          from pathlib import Path
+          source, target = Path(sys.argv[1]), Path(sys.argv[2])
+          expected = {"CANDIDATE_VERIFICATION_RECEIPT.json", "CANDIDATE_VERIFICATION_RECEIPT.sha256"}
+          target.mkdir(mode=0o700)
+          with zipfile.ZipFile(source) as archive:
+              infos = archive.infolist()
+              if {info.filename for info in infos} != expected or len(infos) != 2:
+                  raise SystemExit("verifier artifact entry set differs")
+              for info in infos:
+                  mode = info.external_attr >> 16
+                  if info.is_dir() or (mode and not stat.S_ISREG(mode)) or info.file_size > 1_048_576:
+                      raise SystemExit("verifier artifact contains an unsafe entry")
+                  (target / info.filename).write_bytes(archive.read(info))
+          PY
+          test "$(jq -r .verifier_workflow_run_id /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json)" = "$VERIFIER_RUN_ID"
+          test "$(jq -r .verifier_workflow_run_attempt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json)" = "$verifier_attempt"
+          test "$(jq -r .request_fingerprint /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json)" = "$fingerprint"
+          echo "verifier_run_id=$VERIFIER_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "verifier_run_attempt=$verifier_attempt" >> "$GITHUB_OUTPUT"
+          echo "receipt_artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+          echo "request_fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Extract only fixed candidate evidence blobs
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ steps.artifact.outputs.issue_number }}
+          FINGERPRINT: ${{ steps.artifact.outputs.request_fingerprint }}
+        run: |
+          set -euo pipefail
+          receipt=/tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json
+          candidate_head="$(jq -r .head "$receipt")"
+          [[ "$candidate_head" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$candidate_head"
+          root="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          mkdir -m 0700 /tmp/candidate-bundle
+          files=(REQUEST.json REQUEST.sha256 EVENT.json EVENT.sha256 CONTEXT.md ANSWER.md EVALUATION.json EVALUATION.sha256 STATUS.json WORK_EPOCH.json WORK_EPOCH.sha256 MATRIX.json MATRIX.sha256 LANE_RECEIPTS.json LANE_RECEIPTS.sha256 FANIN.json FANIN.sha256)
+          for name in "${files[@]}"; do
+            git show "$candidate_head:$root/$name" > "/tmp/candidate-bundle/$name"
+          done
+
+      - name: Build exact-head bounded executor plan
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ""
+        run: |
+          set -euo pipefail
+          set +e
+          python3 -B scripts/issue_agent/executor.py plan \
+            --bundle /tmp/candidate-bundle \
+            --verification-receipt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json \
+            > /tmp/EXECUTOR_PLAN.json
+          result=$?
+          set -e
+          state="$(jq -r .state /tmp/EXECUTOR_PLAN.json)"
+          if [ "$state" = READY_TO_MATERIALIZE ]; then
+            test "$result" -eq 0
+          else
+            test "$state" = HOLD
+            test "$result" -eq 2
+          fi
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "execution_id=$(jq -r '.execution_id // "UNMAPPED"' /tmp/EXECUTOR_PLAN.json)" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$(jq -r '.issue_number // "${{ steps.artifact.outputs.issue_number }}"' /tmp/EXECUTOR_PLAN.json)" >> "$GITHUB_OUTPUT"
+          echo "request_fingerprint=$(jq -r '.request_fingerprint // "${{ steps.artifact.outputs.request_fingerprint }}"' /tmp/EXECUTOR_PLAN.json)" >> "$GITHUB_OUTPUT"
+          echo "authority_main=$(git rev-parse --verify HEAD^{commit})" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded plan transport
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-executor-plan-run-${{ steps.artifact.outputs.verifier_run_id }}-attempt-${{ steps.artifact.outputs.verifier_run_attempt }}
+          path: /tmp/EXECUTOR_PLAN.json
+          if-no-files-found: error
+          retention-days: 30
+
+  candidate-writer:
+    needs: observe-plan
+    if: needs.observe-plan.outputs.state == 'READY_TO_MATERIALIZE'
+    concurrency:
+      group: issue-agent-executor-result-${{ needs.observe-plan.outputs.execution_id }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      VERIFIER_RUN_ID: ${{ needs.observe-plan.outputs.verifier_run_id }}
+      VERIFIER_RUN_ATTEMPT: ${{ needs.observe-plan.outputs.verifier_run_attempt }}
+      RECEIPT_ARTIFACT_ID: ${{ needs.observe-plan.outputs.receipt_artifact_id }}
+      ISSUE_NUMBER: ${{ needs.observe-plan.outputs.issue_number }}
+      FINGERPRINT: ${{ needs.observe-plan.outputs.request_fingerprint }}
+      EXECUTION_ID: ${{ needs.observe-plan.outputs.execution_id }}
+      AUTHORITY_MAIN: ${{ needs.observe-plan.outputs.authority_main }}
+    steps:
+      - name: Check out exact trusted Authority main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.observe-plan.outputs.authority_main }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Independently reobserve verifier artifact and candidate bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$AUTHORITY_MAIN"
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+          gh api "repos/$REPOSITORY/actions/runs/$VERIFIER_RUN_ID" > /tmp/verifier-run.json
+          test "$(jq -r .name /tmp/verifier-run.json)" = 'Issue agent exact candidate verifier'
+          test "$(jq -r .path /tmp/verifier-run.json | cut -d@ -f1)" = .github/workflows/issue-agent-autofinish.yml
+          test "$(jq -r .head_sha /tmp/verifier-run.json)" = "$AUTHORITY_MAIN"
+          test "$(jq -r .run_attempt /tmp/verifier-run.json)" = "$VERIFIER_RUN_ATTEMPT"
+          test "$(jq -r .status /tmp/verifier-run.json)" = completed
+          test "$(jq -r .conclusion /tmp/verifier-run.json)" = success
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$VERIFIER_RUN_ID/artifacts?per_page=100" \
+            --jq '[.[].artifacts[]]' > /tmp/verifier-artifacts.json
+          expected_name="issue-candidate-verification-$ISSUE_NUMBER-$FINGERPRINT-run-$VERIFIER_RUN_ID-attempt-$VERIFIER_RUN_ATTEMPT"
+          test "$(jq --argjson id "$RECEIPT_ARTIFACT_ID" --arg name "$expected_name" '[.[] | select(.id == $id and .name == $name and .expired == false)] | length' /tmp/verifier-artifacts.json)" -eq 1
+          gh api "repos/$REPOSITORY/actions/artifacts/$RECEIPT_ARTIFACT_ID/zip" > /tmp/verifier-receipt.zip
+          python3 -B - /tmp/verifier-receipt.zip /tmp/verifier-receipt <<'PY'
+          import stat, sys, zipfile
+          from pathlib import Path
+          source, target = Path(sys.argv[1]), Path(sys.argv[2])
+          expected = {"CANDIDATE_VERIFICATION_RECEIPT.json", "CANDIDATE_VERIFICATION_RECEIPT.sha256"}
+          target.mkdir(mode=0o700)
+          with zipfile.ZipFile(source) as archive:
+              infos = archive.infolist()
+              if {info.filename for info in infos} != expected or len(infos) != 2:
+                  raise SystemExit("verifier artifact entry set differs")
+              for info in infos:
+                  mode = info.external_attr >> 16
+                  if info.is_dir() or (mode and not stat.S_ISREG(mode)) or info.file_size > 1_048_576:
+                      raise SystemExit("verifier artifact contains an unsafe entry")
+                  (target / info.filename).write_bytes(archive.read(info))
+          PY
+          receipt=/tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json
+          test "$(jq -r .verifier_workflow_run_id "$receipt")" = "$VERIFIER_RUN_ID"
+          test "$(jq -r .verifier_workflow_run_attempt "$receipt")" = "$VERIFIER_RUN_ATTEMPT"
+          candidate_head="$(jq -r .head "$receipt")"
+          [[ "$candidate_head" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$candidate_head"
+          root="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT"
+          mkdir -m 0700 /tmp/candidate-bundle
+          files=(REQUEST.json REQUEST.sha256 EVENT.json EVENT.sha256 CONTEXT.md ANSWER.md EVALUATION.json EVALUATION.sha256 STATUS.json WORK_EPOCH.json WORK_EPOCH.sha256 MATRIX.json MATRIX.sha256 LANE_RECEIPTS.json LANE_RECEIPTS.sha256 FANIN.json FANIN.sha256)
+          for name in "${files[@]}"; do
+            git show "$candidate_head:$root/$name" > "/tmp/candidate-bundle/$name"
+          done
+
+      - name: Replan and materialize only the registered bounded work product
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/issue_agent/executor.py plan \
+            --bundle /tmp/candidate-bundle \
+            --verification-receipt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json \
+            > /tmp/EXECUTOR_PLAN.json
+          test "$(jq -r .state /tmp/EXECUTOR_PLAN.json)" = READY_TO_MATERIALIZE
+          test "$(jq -r .execution_id /tmp/EXECUTOR_PLAN.json)" = "$EXECUTION_ID"
+          worktree="$(mktemp -d)/tree"
+          git worktree add --detach "$worktree" "$AUTHORITY_MAIN"
+          echo "WORKTREE=$worktree" >> "$GITHUB_ENV"
+          python3 -B scripts/issue_agent/executor.py materialize \
+            --bundle /tmp/candidate-bundle \
+            --verification-receipt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json \
+            --output-worktree "$worktree" > /tmp/MATERIALIZATION.json
+          test "$(jq -r .state /tmp/MATERIALIZATION.json)" = MATERIALIZED
+          (cd "$worktree" && python3 -B tools/qikvrt_integrity.py generate)
+          python3 -B scripts/issue_agent/executor.py verify \
+            --bundle /tmp/candidate-bundle \
+            --verification-receipt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json \
+            --output-worktree "$worktree" > /tmp/VERIFIED_MATERIALIZATION.json
+          test "$(jq -r .state /tmp/VERIFIED_MATERIALIZATION.json)" = VERIFIED_MATERIALIZATION
+          while IFS= read -r path; do git -C "$worktree" add -- "$path"; done < <(jq -r '.allowed_candidate_paths[]' /tmp/EXECUTOR_PLAN.json)
+          python3 -B - "$worktree" /tmp/EXECUTOR_PLAN.json <<'PY'
+          import json, subprocess, sys
+          root, plan_path = sys.argv[1:]
+          plan = json.load(open(plan_path, encoding="utf-8"))
+          raw = subprocess.check_output(["git", "-C", root, "diff", "--cached", "--name-only", "-z"])
+          actual = sorted(p.decode("utf-8") for p in raw.split(b"\0") if p)
+          if actual != plan["allowed_candidate_paths"]:
+              raise SystemExit(f"staged path set differs: {actual}")
+          raw = subprocess.check_output(["git", "-C", root, "ls-files", "-s", "-z", "--", *actual])
+          for record in raw.split(b"\0"):
+              if record and not record.startswith(b"100644 "):
+                  raise SystemExit("staged output contains non-100644 content")
+          PY
+
+      - name: Create or reobserve immutable candidate ref and draft PR
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="issue-executor/$ISSUE_NUMBER/$EXECUTION_ID"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$AUTHORITY_MAIN"
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+          commit_date="$(git show -s --format=%cI "$(jq -r .execution_identity.admission_candidate_head /tmp/EXECUTOR_PLAN.json)")"
+          git -C "$WORKTREE" config user.name qikvrt-issue-executor
+          git -C "$WORKTREE" config user.email qikvrt-issue-executor@users.noreply.github.com
+          GIT_AUTHOR_DATE="$commit_date" GIT_COMMITTER_DATE="$commit_date" \
+            git -C "$WORKTREE" commit -m "issue-agent: bounded execution $EXECUTION_ID"
+          local_commit="$(git -C "$WORKTREE" rev-parse HEAD)"
+          remote_commit="$(git ls-remote origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')"
+          if [ -z "$remote_commit" ]; then
+            test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+            git -C "$WORKTREE" push origin "$local_commit:refs/heads/$branch" \
+              --force-with-lease="refs/heads/$branch:"
+            remote_commit="$local_commit"
+          else
+            git fetch --no-tags origin "refs/heads/$branch"
+            existing_worktree="$(mktemp -d)/existing"
+            git worktree add --detach "$existing_worktree" "$remote_commit"
+            python3 -B scripts/issue_agent/executor.py verify-existing \
+              --bundle /tmp/candidate-bundle \
+              --verification-receipt /tmp/verifier-receipt/CANDIDATE_VERIFICATION_RECEIPT.json \
+              --output-worktree "$existing_worktree" > /tmp/EXISTING_RESULT.json
+            test "$(jq -r .state /tmp/EXISTING_RESULT.json)" = VERIFIED_EXISTING_RESULT
+          fi
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+          test "$(git ls-remote origin "refs/heads/$branch" | awk 'NR == 1 {print $1}')" = "$remote_commit"
+          mapfile -t existing < <(gh pr list --repo "$REPOSITORY" --state all --head "$branch" --base main \
+            --json number,state,isDraft,headRefOid --jq '.[] | [.number,.state,.isDraft,.headRefOid] | @tsv')
+          if [ "${#existing[@]}" -eq 0 ]; then
+            test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+            pr_url="$(gh pr create --repo "$REPOSITORY" --draft --base main --head "$branch" \
+              --title "Issue $ISSUE_NUMBER: bounded registered executor attestation" \
+              --body "Exact-head bounded attestation only. This draft is not repair completion, merge authority, PASS, FINAL_PASS, or general EFFECT_ACK_DONE.")"
+            pr_number="$(gh pr view "$pr_url" --repo "$REPOSITORY" --json number --jq .number)"
+          else
+            test "${#existing[@]}" -eq 1
+            IFS=$'\t' read -r pr_number pr_state pr_draft pr_head <<< "${existing[0]}"
+            test "$pr_state" = OPEN
+            test "$pr_draft" = true
+            test "$pr_head" = "$remote_commit"
+            pr_url="$(gh pr view "$pr_number" --repo "$REPOSITORY" --json url --jq .url)"
+          fi
+          test "$(gh api "repos/$REPOSITORY/commits/main" --jq .sha)" = "$AUTHORITY_MAIN"
+          gh api "repos/$REPOSITORY/pulls/$pr_number" > /tmp/executor-pr.json
+          test "$(jq -r .state /tmp/executor-pr.json)" = open
+          test "$(jq -r .draft /tmp/executor-pr.json)" = true
+          test "$(jq -r .base.ref /tmp/executor-pr.json)" = main
+          test "$(jq -r .base.sha /tmp/executor-pr.json)" = "$AUTHORITY_MAIN"
+          test "$(jq -r .head.ref /tmp/executor-pr.json)" = "$branch"
+          test "$(jq -r .head.sha /tmp/executor-pr.json)" = "$remote_commit"
+          test "$(jq -r .head.repo.full_name /tmp/executor-pr.json)" = "$REPOSITORY"
+          echo "candidate_ref=$branch" >> "$GITHUB_OUTPUT"
+          echo "candidate_head=$remote_commit" >> "$GITHUB_OUTPUT"
+          echo "draft_pr=$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded execution transport receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-executor-result-${{ env.ISSUE_NUMBER }}-${{ env.EXECUTION_ID }}
+          path: |
+            /tmp/EXECUTOR_PLAN.json
+            /tmp/MATERIALIZATION.json
+            /tmp/VERIFIED_MATERIALIZATION.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: State the bounded draft-candidate boundary
+        shell: bash
+        run: |
+          {
+            echo '## Registered issue executor'
+            echo
+            echo "- execution id: $EXECUTION_ID"
+            echo "- immutable candidate ref: ${{ steps.publish.outputs.candidate_ref }}"
+            echo "- candidate head: ${{ steps.publish.outputs.candidate_head }}"
+            echo "- draft PR: ${{ steps.publish.outputs.draft_pr }}"
+            echo '- work product: exact-main bounded root-control-plane attestation; not repair completion'
+            echo '- no merge, issue close, mirror sync, tag, publication, deployment, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is claimed'
+          } >> "$GITHUB_STEP_SUMMARY"

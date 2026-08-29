@@ -15,8 +15,11 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 POLICY_PATH = "policy/ISSUE_AGENT_DETERMINISTIC_INTAKE_V1.json"
 REGISTRY_PATH = "registry/NODEMESH_INDEX.json"
 INTAKE_CODE_PATHS = (
+    ".github/workflows/issue-agent-executor.yml",
+    "state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json",
     "scripts/issue_agent/binding.py",
     "scripts/issue_agent/epoch.py",
+    "scripts/issue_agent/executor.py",
     "scripts/issue_agent/finalize.py",
     "scripts/issue_agent/handlers.py",
     "scripts/issue_agent/infer.py",

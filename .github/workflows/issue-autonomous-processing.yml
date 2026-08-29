@@ -555,10 +555,20 @@ jobs:
           No merge, closure, publication, PASS, FINAL_PASS, or general EFFECT_ACK_DONE is implied."
             exit 1
           fi
+          status_path="evidence/issues/$ISSUE_NUMBER/epochs/$FINGERPRINT/STATUS.json"
+          handler_id="$(git show "$CANDIDATE_HEAD:$status_path" | jq -r .handler_id)"
+          handler_sha256="$(git show "$CANDIDATE_HEAD:$status_path" | jq -r .handler_sha256)"
+          if [ "$(jq --arg id "$handler_id" --arg digest "$handler_sha256" \
+            '[.handlers[] | select(.handler_id == $id and .handler_sha256 == $digest)] | length' \
+            state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json)" -eq 1 ]; then
+            executor_boundary="The exact handler id/digest pair is registered only for a bounded root-control-plane attestation; exact verifier dispatch is still required and does not establish repair completion."
+          else
+            executor_boundary="No exact handler id/digest executor is registered; the verifier must emit HOLD_EXECUTOR_NOT_REGISTERED."
+          fi
           if [ -z "$pr_number" ]; then
             title="Issue intake admission: #$ISSUE_NUMBER"
             draft_args=(--draft)
-            review_boundary="This draft persists an admitted work unit. A separately registered executor and digest-bound work products are still required."
+            review_boundary="This draft persists an admitted work unit. $executor_boundary"
             if [ "$base_state" != EXACT_BOUND_AUTHORITY_BASE ]; then
               title="HOLD: stale-base issue candidate #$ISSUE_NUMBER"
               review_boundary="This draft only exposes an immutable stale-base candidate. It is not a work admission or a receipt-eligible closure candidate; a fresh exact event is required."

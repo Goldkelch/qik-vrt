@@ -187,9 +187,12 @@ threads are additionally required only for closure candidates.
 
 `EXECUTE_NOW` means that a work unit was admitted; it is not evidence that arbitrary substantive
 handler work was executed. Such completion requires a separately registered executor and
-digest-bound work products. No general substantive issue-work executor is registered by this intake
-contract. Work admission therefore yields only `READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH`;
-closure classification may yield a separate terminal candidate. A candidate ref, receipt, or exact
+digest-bound work products. Exactly one fixed `(handler_id, handler_sha256)` pair is registered:
+`OWNER-REPOSITORY-NATIVE-ROOT-BLOCKER-REPAIR-V1` may produce only an exact-main bounded
+root-control-plane attestation. That work product is not arbitrary issue-body execution and not
+repair completion. Its exact verified handoff is `READY_FOR_EXACT_HEAD_EXECUTOR_DISPATCH`; every
+unmapped work admission is `HOLD_EXECUTOR_NOT_REGISTERED`. Closure classification may yield a
+separate terminal candidate. A candidate ref, receipt, or exact
 review is not Authority main. Merge, issue closure, mirror synchronization, tag, publication,
 deployment, PASS, FINAL_PASS, and general EFFECT_ACK_DONE remain separate effects.
 

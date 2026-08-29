@@ -13,6 +13,11 @@ This control plane is not a general coding agent. `EXECUTE_NOW` means that a bou
 admitted. It does not mean that the requested substantive implementation, article, formal proof,
 merge, publication, deployment, or physical effect occurred. A substantive handler must have a
 separately registered executor and digest-bound work products before completion can be claimed.
+This revision registers exactly one fixed `(handler_id, handler_sha256)` pair in
+`state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json`: the root-blocker handler may produce
+only an exact-main, bounded control-plane attestation. That attestation is not arbitrary issue-body
+execution and is expressly not repair completion. Every other handler remains unmapped and must
+stop at `HOLD_EXECUTOR_NOT_REGISTERED`.
 
 ## Events and exact binding
 
@@ -127,25 +132,30 @@ triggered by the exact explicitly dispatched
 `QIKVRT CI` `workflow_run`, an exact PR/review event, or manual exact reobservation. It checks the
 same-repository one-parent candidate, current Authority base, candidate and global integrity, the
 successful CI run and jobs, and the successful N-squared issue-agent run and lane jobs. A work
-admission must remain draft and yields only `READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH`; this
-state deliberately does not claim that an executor is registered or that dispatch occurred. A
+admission must remain draft. An exact `(handler_id, handler_sha256)` registry match yields
+`READY_FOR_EXACT_HEAD_EXECUTOR_DISPATCH`; an unmapped handler yields
+`HOLD_EXECUTOR_NOT_REGISTERED`. The only current match is the fixed root-control-plane attestation
+executor, whose output is an immutable draft candidate and not repair completion. A
 receipt-eligible closure candidate must be non-draft and additionally requires exact-head
 repository-account approval and no unresolved review threads. A newly exposed candidate already
 observed after Authority-main drift is created as a draft `HOLD`. Every stale-base candidate is
 `HOLD` and not verifier-eligible, even if a previously opened PR remains non-draft. Mutable
 observations are repeated immediately before receipt emission.
 
-The work-admission receipt binds the handler id and digest, selected work-order payload digest, and
-declared executor-contract identifier. It also records
-`NOT_REGISTERED_BY_THIS_REPOSITORY_REVISION`: the contract identifier is not an executable registry
-entry. A later dispatcher therefore has enough immutable identity to fail closed or to match a
-future exact-head registration without pretending that such a dispatcher exists today.
+The work-admission receipt binds the handler id and digest, selected work-order payload digest,
+registry and registry-entry digests, trusted executor controller and workflow blobs, and exact
+verifier workflow run/attempt provenance. The event-driven executor reobserves the attempt-qualified
+artifact and candidate bytes, executes trusted current-main code only, and permits one create-only
+`issue-executor/<issue>/<execution-id>` ref plus a draft PR. Candidate or issue-body code is never
+executed. Sequential delivery reuses an existing semantically identical result; a collision holds.
 
 GitHub Actions has no native review-thread-resolution trigger. If resolving the last thread is the
 last state change, the external webhook integration or a direct manual exact dispatch must cause
 reobservation; the repository does not claim an event it did not receive.
 
-The two possible receipts are `READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH` for admitted but
-unexecuted work and `READY_FOR_SEPARATE_EXPECTED_HEAD_AUTHORITY_DECISION` for a reviewed closure
-candidate. Neither workflow merges, closes an issue, synchronizes a mirror, tags, publishes,
-deploys, or claims `PASS`, `FINAL_PASS`, or general `EFFECT_ACK_DONE`.
+The handoff states are `READY_FOR_EXACT_HEAD_EXECUTOR_DISPATCH` for the one registered fixed
+attestation, `HOLD_EXECUTOR_NOT_REGISTERED` for all unmapped admitted work, and
+`READY_FOR_SEPARATE_EXPECTED_HEAD_AUTHORITY_DECISION` for a reviewed closure candidate. None of
+these states is Authority-main takeover or substantive completion. No workflow here merges, closes
+an issue, synchronizes a mirror, tags, publishes, deploys, or claims `PASS`, `FINAL_PASS`, or
+general `EFFECT_ACK_DONE`.

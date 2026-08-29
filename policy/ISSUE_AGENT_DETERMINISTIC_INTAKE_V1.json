@@ -18,6 +18,11 @@
     "workflow_dispatch": ["requested"]
   },
   "owner_marker_prefix": "qikvrt-owner-",
+  "executor_registry": {
+    "path": "state/autonomy/ISSUE_AGENT_TYPED_EXECUTOR_CONTRACT_V1.json",
+    "schema": "qikvrt_issue_agent_typed_executor_contract_v1",
+    "contract_id": "QIKVRT-TYPED-WORK-ORDER-HANDOFF-V1"
+  },
   "handlers": [
     {
       "marker": "qikvrt-owner-insight:external-repository-work-cycle-v1",
@@ -151,7 +156,9 @@
   "terminal_boundary": {
     "verifier": "REPOSITORY_READ_ONLY_WITH_DECLARED_ACTIONS_ARTIFACT_AND_SUMMARY_TRANSPORT",
     "required_event": "EXACT_QIKVRT_CI_WORKFLOW_RUN_OR_EXACT_PR_REVIEW_OR_MANUAL_EXACT_REOBSERVATION",
-    "work_admission_state": "READY_FOR_EXECUTOR_REGISTRATION_OR_DISPATCH",
+    "work_admission_state": "REGISTRATION_DEPENDENT",
+    "registered_work_admission_state": "READY_FOR_EXACT_HEAD_EXECUTOR_DISPATCH",
+    "unregistered_work_admission_state": "HOLD_EXECUTOR_NOT_REGISTERED",
     "closure_candidate_state": "READY_FOR_SEPARATE_EXPECTED_HEAD_AUTHORITY_DECISION",
     "authority_main_decision": "SEPARATE",
     "review_thread_resolution_without_supported_event": "MANUAL_EXACT_REOBSERVATION_REQUIRED"
