@@ -180,9 +180,11 @@ class AutonomousPrHeadContinuationTests(unittest.TestCase):
         self.assertIn("trap - EXIT", self.text)
 
     def test_named_exact_head_gate_surface_is_restored(self) -> None:
+        self.assertIn("qikvrt_batch04_integrity.yml", self.text)
         self.assertIn("qikvrt_ci.yml", self.text)
         self.assertIn("qikvrt_collective_review.yml", self.text)
         self.assertIn("qikvrt_global_completion.yml", self.text)
+        self.assertIn("qikvrt_requested_review_contract.yml", self.text)
         self.assertIn('-f ref="$HEAD_REF"', self.text)
 
     def test_continuation_is_exact_head_bound_and_never_dispatches_review(self) -> None:
