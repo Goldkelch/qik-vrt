@@ -7,10 +7,21 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
-REQUIRED = ("REQUEST.json", "REQUEST.sha256", "CONTEXT.md", "ANSWER.md", "STATUS.json")
+try:  # module execution and direct script execution are both supported
+    from .continuation import ContinuationError, build_record, validate_record, write_record
+except ImportError:  # pragma: no cover - exercised by the workflow command
+    from continuation import ContinuationError, build_record, validate_record, write_record
+
+REQUIRED = (
+    "REQUEST.json",
+    "REQUEST.sha256",
+    "CONTEXT.md",
+    "ANSWER.md",
+    "STATUS.json",
+    "CONTINUATION.json",
+)
 ALLOWED_DISPOSITIONS = {
     "EXECUTE_NOW",
     "CLARIFICATION_REQUIRED",
@@ -38,6 +49,12 @@ def promote(directory: Path) -> None:
     answer = (directory / "ANSWER.md").read_text(encoding="utf-8").strip()
     status_path = directory / "STATUS.json"
     status = json.loads(status_path.read_text(encoding="utf-8"))
+    request = json.loads((directory / "REQUEST.json").read_text(encoding="utf-8"))
+    continuation = json.loads((directory / "CONTINUATION.json").read_text(encoding="utf-8"))
+    try:
+        validate_record(continuation, request, status)
+    except ContinuationError as exc:
+        raise SystemExit(f"BLOCK: invalid exact continuation binding: {exc}") from exc
     disposition = status.get("issue_disposition")
 
     if disposition not in ALLOWED_DISPOSITIONS:
@@ -47,8 +64,6 @@ def promote(directory: Path) -> None:
 
     inference_completed = status.get("model_inference_completed") is True
     explicit_block = "## Gate result\n\nBLOCK" in answer
-    now = datetime.now(timezone.utc).isoformat()
-
     if disposition in CLOSURE_DISPOSITIONS:
         if not inference_completed:
             raise SystemExit("BLOCK: terminal closure requires completed inference")
@@ -60,7 +75,6 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": True,
             "mirror_sync_required": True,
             "common_tag_required": True,
-            "validated_completion_promoted_at": now,
             "no_false_pass": True,
         })
     elif disposition == "EXECUTE_NOW":
@@ -74,7 +88,6 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": False,
             "mirror_sync_required": False,
             "common_tag_required": False,
-            "validated_disposition_at": now,
             "no_false_pass": True,
         })
     elif disposition in BLOCKING_DISPOSITIONS:
@@ -84,14 +97,30 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": False,
             "mirror_sync_required": False,
             "common_tag_required": False,
-            "validated_disposition_at": now,
             "no_false_pass": True,
         })
+
+    # A timestamp is observation transport, never a new issue work product.
+    # Strip legacy volatile fields before writing the semantic status that is
+    # bound into CONTINUATION.json.
+    for key in (
+        "generated_at",
+        "validated_disposition_at",
+        "validated_completion_promoted_at",
+    ):
+        status.pop(key, None)
 
     status_path.write_text(
         json.dumps(status, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    # Promotion may change the semantic gate state (for example CONTINUE →
+    # DONE).  Rebind the logical continuation in the same atomic work-unit
+    # materialization so predecessor evidence cannot be transferred.
+    source = continuation.get("current_binding", {}).get("source")
+    if not isinstance(source, dict):
+        raise SystemExit("BLOCK: continuation has no exact source binding")
+    write_record(directory / "CONTINUATION.json", build_record(request, status, source=source))
 
 
 def main() -> None:

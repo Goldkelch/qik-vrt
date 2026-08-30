@@ -4,7 +4,19 @@ import json
 import sys
 from pathlib import Path
 
-REQUIRED = ("REQUEST.json", "REQUEST.sha256", "CONTEXT.md", "ANSWER.md", "STATUS.json")
+try:  # module execution and direct script execution are both supported
+    from .continuation import ContinuationError, validate_record
+except ImportError:  # pragma: no cover - exercised by the workflow command
+    from continuation import ContinuationError, validate_record
+
+REQUIRED = (
+    "REQUEST.json",
+    "REQUEST.sha256",
+    "CONTEXT.md",
+    "ANSWER.md",
+    "STATUS.json",
+    "CONTINUATION.json",
+)
 ALLOWED_DISPOSITIONS = {
     "EXECUTE_NOW",
     "CLARIFICATION_REQUIRED",
@@ -66,6 +78,12 @@ def validate(directory: Path) -> None:
             raise SystemExit("NON_DONE_MUST_NOT_AUTO_CLOSE_ISSUE")
     if status.get("no_false_pass") is not True:
         raise SystemExit("NO_FALSE_PASS_GATE_FAILED")
+
+    try:
+        continuation = json.loads((directory / "CONTINUATION.json").read_text(encoding="utf-8"))
+        validate_record(continuation, request_data, status)
+    except (ContinuationError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"INVALID_CONTINUATION_BINDING: {exc}") from exc
 
     answer = (directory / "ANSWER.md").read_text(encoding="utf-8").strip()
     if not answer:

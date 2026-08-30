@@ -1,0 +1,105 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_continuation_ledger_contract_v1",
+  "contract_id": "qikvrt-continuation-ledger-v1",
+  "title": "Persist repository-native next actions until an evidence-bound outcome",
+  "enabled": false,
+  "activation_status": "DRAFT_ONLY_REQUIRES_DEDICATED_SINGLE_WRITER_AND_EXACT_READBACK",
+  "applies_to": [
+    "AUTHORITY",
+    "MIRROR",
+    "EVERY_FUTURE_MESH_NODE"
+  ],
+  "controller_path": "tools/qikvrt_continuation_ledger.py",
+  "record_schema_path": "schemas/qikvrt_continuation_ledger_entry_v1.schema.json",
+  "acceptance_test_path": "tests/test_qikvrt_continuation_ledger.py",
+  "logical_liveness": "INDEFINITE_UNTIL_EVIDENCED_OUTCOME",
+  "ledger": {
+    "ref": "refs/heads/qikvrt/continuation-ledger-v1",
+    "root": "state/mesh/continuations",
+    "append_only": true,
+    "write_protocol": "FAST_FORWARD_COMPARE_AND_SWAP_ONLY",
+    "force_push": "FORBIDDEN",
+    "history_rewrite": "FORBIDDEN",
+    "candidate_branch_write": "FORBIDDEN",
+    "main_branch_write": "FORBIDDEN",
+    "record_retention": "INDEFINITE_WHILE_LEDGER_REF_EXISTS",
+    "artifact_retention_is_continuation_retention": false
+  },
+  "activation_preconditions": [
+    "DEDICATED_REPOSITORY_NATIVE_SINGLE_WRITER",
+    "ORPHAN_ROOT_OR_FAST_FORWARD_COMPARE_AND_SWAP",
+    "EXACT_REF_AND_RAW_EVENT_READBACK",
+    "NO_CANDIDATE_OR_MAIN_BRANCH_LEDGER_WRITE"
+  ],
+  "identity": {
+    "key_fields": [
+      "repository",
+      "subject.kind",
+      "subject.identifier",
+      "binding.ref",
+      "binding.head_sha",
+      "binding.tree_sha",
+      "binding.base_sha",
+      "binding.workflow_run_id",
+      "binding.workflow_run_attempt",
+      "binding.job_id",
+      "binding.review_id",
+      "binding.receipt_sha256",
+      "semantic_input",
+      "first_blocker",
+      "next_action",
+      "wake_predicates"
+    ],
+    "excluded_temporal_or_self_generated_fields": [
+      "updated_at",
+      "observed_at",
+      "last_observed_at",
+      "generated_at",
+      "refreshed_at",
+      "polled_at",
+      "created_at",
+      "started_at",
+      "completed_at",
+      "run_started_at",
+      "dispatched_at",
+      "dispatch_id",
+      "workflow_dispatch_id",
+      "self_generated_*"
+    ],
+    "time_elapsed_alone_creates_new_continuation": false
+  },
+  "states": {
+    "live": [
+      "LIVE",
+      "REOBSERVE_PENDING"
+    ],
+    "evidenced_outcomes": [
+      "POSTCONDITION_OBSERVED",
+      "REBOUND",
+      "EXTERNAL_HOLD"
+    ],
+    "external_hold_requires": [
+      "immutable_source",
+      "responsible_authority",
+      "reason"
+    ]
+  },
+  "boundaries": {
+    "hold_block_continue_action_required_zero_job_cancellation_or_candidate_are_terminal": false,
+    "head_tree_review_or_workflow_binding_drift_marks_predecessor_stale": true,
+    "predecessor_evidence_supports_successor": false,
+    "logical_continuation_changes_writer_queue_liveness_or_effect_token_ttl": false,
+    "repository_wide_PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "MERGE": false,
+    "SYNCHRONIZATION": false
+  }
+}

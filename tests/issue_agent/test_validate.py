@@ -8,13 +8,38 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.issue_agent.infer import SYSTEM_PROMPT
+from scripts.issue_agent.continuation import build_record
 from scripts.issue_agent.promote import promote
 from scripts.issue_agent.validate import validate
 
+SOURCE = {
+    "repository": "Goldkelch/qik-vrt",
+    "ref": "refs/heads/main",
+    "head_sha": "4ea0491a5484075215f17dbcd157a2a5f18ef633",
+    "tree_sha": "2f3a9ba1bbc645037a937614700e606ac99ebe58",
+}
+
 
 class ValidateIssueAgentBundleTest(unittest.TestCase):
+    @staticmethod
+    def rebind_continuation(directory: Path, status: dict[str, object]) -> None:
+        request = json.loads((directory / "REQUEST.json").read_text(encoding="utf-8"))
+        (directory / "CONTINUATION.json").write_text(
+            json.dumps(build_record(request, status, source=SOURCE), sort_keys=True),
+            encoding="utf-8",
+        )
+
     def make_bundle(self, directory: Path) -> None:
-        request = json.dumps({"issue_number": 76}, sort_keys=True) + "\n"
+        request_value = {
+            "repository": "Goldkelch/qik-vrt",
+            "issue_number": 76,
+            "title": "Test issue",
+            "body": "Bounded test body.",
+            "author": "example",
+            "html_url": "https://github.com/Goldkelch/qik-vrt/issues/76",
+            "created_at": "2026-08-30T12:00:00Z",
+        }
+        request = json.dumps(request_value, sort_keys=True) + "\n"
         (directory / "REQUEST.json").write_text(request, encoding="utf-8")
         digest = hashlib.sha256(request.encode()).hexdigest()
         (directory / "REQUEST.sha256").write_text(f"{digest}  REQUEST.json\n", encoding="utf-8")
@@ -26,7 +51,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             "## Gate result\n\nCONTINUE\n",
             encoding="utf-8",
         )
-        (directory / "STATUS.json").write_text(json.dumps({
+        status = {
             "status": "CONTINUE",
             "model_inference_completed": True,
             "issue_disposition": "EXECUTE_NOW",
@@ -36,7 +61,12 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             "automatic_issue_close": False,
             "automatic_merge": False,
             "no_false_pass": True,
-        }), encoding="utf-8")
+        }
+        (directory / "STATUS.json").write_text(json.dumps(status), encoding="utf-8")
+        (directory / "CONTINUATION.json").write_text(
+            json.dumps(build_record(request_value, status, source=SOURCE), sort_keys=True),
+            encoding="utf-8",
+        )
 
     def test_valid_bundle_passes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -79,6 +109,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
                 "closure_recommended": True,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
+            self.rebind_continuation(directory, status)
             validate(directory)
 
     def test_execute_now_remains_nonterminal_after_validation(self):
@@ -115,11 +146,31 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
                 "closure_recommended": False,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
+            self.rebind_continuation(directory, status)
             promote(directory)
             promoted = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(promoted["status"], "BLOCK")
             self.assertFalse(promoted["automatic_merge"])
             self.assertFalse(promoted["automatic_issue_close"])
+            validate(directory)
+
+    def test_promotion_strips_legacy_observation_timestamps_from_durable_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_bundle(directory)
+            status_path = directory / "STATUS.json"
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            status.update({
+                "generated_at": "2026-08-30T12:00:00Z",
+                "validated_disposition_at": "2026-08-30T12:01:00Z",
+            })
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+            self.rebind_continuation(directory, status)
+            promote(directory)
+            promoted = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertNotIn("generated_at", promoted)
+            self.assertNotIn("validated_disposition_at", promoted)
+            self.assertNotIn("validated_completion_promoted_at", promoted)
             validate(directory)
 
     def test_terminal_closure_alone_promotes_to_done(self):
@@ -142,6 +193,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
                 "closure_recommended": True,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
+            self.rebind_continuation(directory, status)
             promote(directory)
             promoted = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(promoted["status"], "DONE")

@@ -49,31 +49,91 @@ jobs:
             branch="issue-agent/$issue"
             authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
             [ -n "$authority_pr" ] || continue
-            authority_state="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state --jq '.state')"
-            authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
+            authority_binding="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state,mergedAt,headRefOid,baseRefOid)"
+            authority_state="$(printf '%s' "$authority_binding" | jq -r '.state')"
+            authority_merged="$(printf '%s' "$authority_binding" | jq -r '.mergedAt // empty')"
+            authority_head="$(printf '%s' "$authority_binding" | jq -r '.headRefOid // empty')"
+            authority_base="$(printf '%s' "$authority_binding" | jq -r '.baseRefOid // empty')"
 
             if [ "$authority_state" = "OPEN" ]; then
-              status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch")"
-              status="$(printf '%s' "$status_json" | jq -r '.status')"
+              evidence_dir="$(mktemp -d)"
+              trap 'rm -rf "$evidence_dir"' EXIT
+              if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/REQUEST.json?ref=$authority_head" > "$evidence_dir/REQUEST.json" \
+                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/REQUEST.sha256?ref=$authority_head" > "$evidence_dir/REQUEST.sha256" \
+                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/CONTEXT.md?ref=$authority_head" > "$evidence_dir/CONTEXT.md" \
+                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/ANSWER.md?ref=$authority_head" > "$evidence_dir/ANSWER.md" \
+                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$authority_head" > "$evidence_dir/STATUS.json" \
+                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/CONTINUATION.json?ref=$authority_head" > "$evidence_dir/CONTINUATION.json"; then
+                echo "issue=$issue state=HOLD reason=UNBOUND_OR_MISSING_EXACT_HEAD_EVIDENCE"
+                rm -rf "$evidence_dir"
+                trap - EXIT
+                continue
+              fi
+              if ! python3 scripts/issue_agent/continuation.py check --directory "$evidence_dir" \
+                || ! python3 scripts/issue_agent/validate.py "$evidence_dir"; then
+                echo "issue=$issue state=HOLD reason=INVALID_EXACT_CONTINUATION_BINDING"
+                rm -rf "$evidence_dir"
+                trap - EXIT
+                continue
+              fi
+              status="$(jq -r '.status' "$evidence_dir/STATUS.json")"
               if [ "$status" != "DONE" ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed."
+                echo "issue=$issue state=HOLD reason=NONTERMINAL_EXACT_STATUS value=$status"
+                rm -rf "$evidence_dir"
+                trap - EXIT
+                continue
+              fi
+              source_repository="$(jq -r '.current_binding.source.repository // empty' "$evidence_dir/CONTINUATION.json")"
+              source_ref="$(jq -r '.current_binding.source.ref // empty' "$evidence_dir/CONTINUATION.json")"
+              source_head="$(jq -r '.current_binding.source.head_sha // empty' "$evidence_dir/CONTINUATION.json")"
+              source_tree="$(jq -r '.current_binding.source.tree_sha // empty' "$evidence_dir/CONTINUATION.json")"
+              source_actual_tree="$(gh api "repos/$AUTHORITY_REPOSITORY/git/commits/$source_head" --jq '.tree.sha' 2>/dev/null || true)"
+              source_relation="$(gh api "repos/$AUTHORITY_REPOSITORY/compare/$source_head...$authority_head" --jq '.status' 2>/dev/null || true)"
+              if [ "$source_repository" != "$AUTHORITY_REPOSITORY" ] \
+                || [ "$source_ref" != "refs/heads/main" ] \
+                || [ -z "$source_head" ] \
+                || [ "$source_tree" != "$source_actual_tree" ] \
+                || [ "$authority_base" != "$source_head" ] \
+                || { [ "$source_relation" != "ahead" ] && [ "$source_relation" != "identical" ]; }; then
+                echo "issue=$issue state=HOLD reason=STALE_OR_UNVERIFIED_CONTINUATION_SOURCE_BINDING"
+                rm -rf "$evidence_dir"
+                trap - EXIT
                 continue
               fi
               checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
               failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
               pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. At least one authority check failed."
+                echo "issue=$issue state=HOLD reason=AUTHORITY_CHECK_FAILED"
+                rm -rf "$evidence_dir"
+                trap - EXIT
                 continue
               fi
-              [ "$pending" -eq 0 ] || continue
-              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch
+              if [ "$pending" -ne 0 ]; then
+                echo "issue=$issue state=HOLD reason=AUTHORITY_CHECK_PENDING"
+                rm -rf "$evidence_dir"
+                trap - EXIT
+                continue
+              fi
+              latest_binding="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state,headRefOid,baseRefOid)"
+              latest_state="$(printf '%s' "$latest_binding" | jq -r '.state')"
+              latest_head="$(printf '%s' "$latest_binding" | jq -r '.headRefOid // empty')"
+              latest_base="$(printf '%s' "$latest_binding" | jq -r '.baseRefOid // empty')"
+              if [ "$latest_state" != "OPEN" ] || [ "$latest_head" != "$authority_head" ] || [ "$latest_base" != "$authority_base" ]; then
+                echo "issue=$issue state=HOLD reason=PR_HEAD_OR_BASE_CHANGED_DURING_REOBSERVATION"
+                rm -rf "$evidence_dir"
+                trap - EXIT
+                continue
+              fi
+              rm -rf "$evidence_dir"
+              trap - EXIT
+              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch --match-head-commit "$authority_head"
               authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
             fi
 
             [ -n "$authority_merged" ] || continue
             if [ -z "${MESH_TOKEN:-}" ]; then
-              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created."
+              echo "issue=$issue state=HOLD reason=MESH_TOKEN_UNAVAILABLE_AFTER_AUTHORITY_MERGE"
               continue
             fi
 
@@ -99,7 +159,7 @@ jobs:
               mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
               mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$mirror_failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks."
+                echo "issue=$issue state=HOLD reason=MIRROR_CHECK_FAILED pr=$mirror_pr"
                 continue
               fi
               [ "$mirror_pending" -eq 0 ] || continue

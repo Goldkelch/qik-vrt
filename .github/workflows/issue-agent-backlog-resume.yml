@@ -28,16 +28,29 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       REQUESTED_ISSUE: ${{ inputs.issue_number }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Discover and resume stale non-final issue transactions
         shell: bash
         run: |
           set -euo pipefail
 
-          now_epoch="$(date -u +%s)"
-          minimum_age_seconds=1500
+          source_ref="refs/heads/main"
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          source_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$source_head" != "$remote_head" ]; then
+            echo "state=HOLD reason=AUTHORITY_MAIN_MOVED_DURING_REOBSERVATION"
+            exit 0
+          fi
 
           if [ -n "${REQUESTED_ISSUE:-}" ]; then
             issues="$REQUESTED_ISSUE"
+            requested=true
           else
             issues="$(gh pr list \
               --repo "$REPOSITORY" \
@@ -45,26 +58,26 @@ jobs:
               --limit 200 \
               --json headRefName \
               --jq '.[] | select(.headRefName | startswith("issue-agent/")) | .headRefName | split("/")[1]')"
+            requested=false
           fi
 
-          resumed=0
-          skipped_fresh=0
+          resumed_on_causal_wake=0
+          held_identical_live=0
           skipped_final=0
-          blocked_missing_status=0
+          blocked_unbound=0
 
           for issue in $issues; do
             branch="issue-agent/$issue"
             status_url="repos/$REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch"
+            continuation_url="repos/$REPOSITORY/contents/evidence/issues/$issue/CONTINUATION.json?ref=$branch"
 
             if ! status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "$status_url" 2>/dev/null)"; then
-              echo "issue=$issue state=BLOCK reason=missing_status"
-              blocked_missing_status=$((blocked_missing_status + 1))
+              echo "issue=$issue state=HOLD reason=UNBOUND_OR_MISSING_STATUS"
+              blocked_unbound=$((blocked_unbound + 1))
               continue
             fi
 
             status="$(printf '%s' "$status_json" | jq -r '.status // "BLOCK"')"
-            generated_at="$(printf '%s' "$status_json" | jq -r '.generated_at // "1970-01-01T00:00:00Z"')"
-
             case "$status" in
               DONE|EFFECT_ACK_DONE)
                 echo "issue=$issue state=FINAL_OR_AWAITING_AUTOFINISH"
@@ -74,32 +87,75 @@ jobs:
               BLOCK|CONTINUE|EFFECT_ACK_CONTINUE)
                 ;;
               *)
-                echo "issue=$issue state=BLOCK reason=unknown_status value=$status"
+                echo "issue=$issue state=HOLD reason=UNKNOWN_STATUS value=$status"
                 continue
                 ;;
             esac
 
-            generated_epoch="$(date -u -d "$generated_at" +%s 2>/dev/null || echo 0)"
-            age=$((now_epoch - generated_epoch))
-            if [ "$age" -lt "$minimum_age_seconds" ]; then
-              echo "issue=$issue state=WAIT reason=fresh_attempt age_seconds=$age"
-              skipped_fresh=$((skipped_fresh + 1))
+            if ! continuation_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "$continuation_url" 2>/dev/null)"; then
+              # A legacy branch without the exact logical continuation is a
+              # live boundary, not permission to retry indefinitely.  The
+              # next exact issue event or an explicit bounded dispatch will
+              # materialize the successor under the current main code.
+              if [ "$requested" = true ]; then
+                gh workflow run issue-autonomous-processing.yml \
+                  --repo "$REPOSITORY" \
+                  --ref main \
+                  -f issue_number="$issue"
+                echo "issue=$issue state=REOBSERVE reason=EXPLICIT_LEGACY_CONTINUATION_MATERIALIZATION"
+                resumed_on_causal_wake=$((resumed_on_causal_wake + 1))
+                continue
+              fi
+              echo "issue=$issue state=HOLD reason=LEGACY_UNBOUND_CONTINUATION"
+              blocked_unbound=$((blocked_unbound + 1))
               continue
             fi
 
-            gh workflow run issue-autonomous-processing.yml \
-              --repo "$REPOSITORY" \
-              --ref main \
-              -f issue_number="$issue"
-            echo "issue=$issue state=RESUMED previous_status=$status age_seconds=$age"
-            resumed=$((resumed + 1))
+            issue_file="$(mktemp)"
+            continuation_file="$(mktemp)"
+            trap 'rm -f "$issue_file" "$continuation_file"' EXIT
+            gh api "repos/$REPOSITORY/issues/$issue" > "$issue_file"
+            printf '%s\n' "$continuation_json" > "$continuation_file"
+            if ! wake="$(python3 scripts/issue_agent/continuation.py should-resume \
+              --issue "$issue_file" \
+              --repository "$REPOSITORY" \
+              --continuation "$continuation_file" \
+              --source-ref "$source_ref" \
+              --source-head "$source_head" \
+              --source-tree "$source_tree")"; then
+              echo "issue=$issue state=HOLD reason=INVALID_OR_UNBOUND_CONTINUATION_BINDING"
+              blocked_unbound=$((blocked_unbound + 1))
+              rm -f "$issue_file" "$continuation_file"
+              trap - EXIT
+              continue
+            fi
+            dispatch="$(printf '%s' "$wake" | jq -r '.dispatch')"
+            reason="$(printf '%s' "$wake" | jq -r '.reason')"
+
+            if [ "$requested" = true ]; then
+              dispatch=true
+              reason=EXPLICIT_BOUNDED_MANUAL_REOBSERVATION
+            fi
+            if [ "$dispatch" = true ]; then
+              gh workflow run issue-autonomous-processing.yml \
+                --repo "$REPOSITORY" \
+                --ref main \
+                -f issue_number="$issue"
+              echo "issue=$issue state=REOBSERVE reason=$reason"
+              resumed_on_causal_wake=$((resumed_on_causal_wake + 1))
+            else
+              echo "issue=$issue state=HOLD reason=$reason"
+              held_identical_live=$((held_identical_live + 1))
+            fi
+            rm -f "$issue_file" "$continuation_file"
+            trap - EXIT
           done
 
           {
             echo "## Issue-agent backlog resume"
             echo
-            echo "- resumed: $resumed"
-            echo "- skipped fresh: $skipped_fresh"
+            echo "- resumed on causal wake: $resumed_on_causal_wake"
+            echo "- identical live continuations held: $held_identical_live"
             echo "- final/awaiting auto-finish: $skipped_final"
-            echo "- missing status blockers: $blocked_missing_status"
+            echo "- unbound continuation holds: $blocked_unbound"
           } >> "$GITHUB_STEP_SUMMARY"

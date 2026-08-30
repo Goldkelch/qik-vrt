@@ -19,7 +19,11 @@ on:
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    # A completed run is the one immutable lifecycle edge that can carry a
+    # terminal receipt.  Requested/in-progress events previously shared this
+    # group and cancelled the very observer needed to see the completion.
+    types: [completed]
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -58,8 +62,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
+  # The upstream workflow-run id is immutable.  Different lifecycle receipts
+  # therefore cannot supersede one another before the earlier exact-head
+  # observation has been materialized.
+  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.workflow_run.id || github.event.pull_request.head.sha || github.sha }}
+  # Observers may serialize, but lifecycle transitions must never cancel an
+  # earlier exact-head observer.  Worker leases remain finite in the analyzer.
+  cancel-in-progress: false
 
 jobs:
   pre-deadlock-observation:
@@ -69,7 +78,7 @@ jobs:
       - name: Check out the exact observed head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -84,7 +93,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |

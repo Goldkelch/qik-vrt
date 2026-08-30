@@ -2,7 +2,6 @@
 import argparse
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 ALLOWED_DISPOSITIONS = {
@@ -98,7 +97,6 @@ def main() -> None:
         "closure_recommended": disposition in CLOSURE_DISPOSITIONS,
         "automatic_issue_close": False,
         "automatic_merge": False,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
         "no_false_pass": True,
     }
     (directory / "STATUS.json").write_text(
