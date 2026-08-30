@@ -1,10 +1,10 @@
 # Reflexive repository Gatewatch and pre-deadlock admission
 
-The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance every five minutes and at relevant workflow transitions. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
+The adaptive repository monitor is extended by a read-only watchdog that observes its own repository instance for each relevant event. Its purpose is not to wait for a deadlock and then diagnose it. It models writer leases, runner pressure, exact-head execution evidence, and unchanged progress topology early enough to issue a deterministic `HOLD` before a second writer or replacement writer is admitted.
 
 ## Operational model
 
-Each repository instance carries the same contract, controller, workflow, and regression test. The Authority remains the serialized source of the portable contract; Mirror and future mesh nodes must retain their own repository identity and integrity projections while satisfying the same structural acceptance.
+Each repository instance carries the same contract, controller, workflow, and regression test. The Authority remains the serialized source of the portable contract; Mirror and future mesh nodes must retain their own repository identity and integrity projections while satisfying the same structural acceptance. The watchdog is event-bound: it has no scheduled trigger and no concurrency cancellation group. A read-only observation may therefore complete its own exact-head receipt even while other observations are running.
 
 The watchdog treats repository activity as a resource-allocation graph:
 
@@ -20,7 +20,7 @@ The first deterministic response is admission control, not destructive recovery:
 
 ## Continuous exact-head Gatewatch
 
-Every scheduled or event-driven observation materializes an artifact-only
+Every event-driven observation materializes an artifact-only
 `reflexive-watchdog-receipt.json` and the identically bound
 `gatewatch-receipt.json`. Both records contain the literal observed head and
 tree, a trusted-workflow matrix, node-liveness observations, and the prior
@@ -58,14 +58,14 @@ coalesced only when a later exact-head receipt remains within that bound;
 otherwise it is a deterministic observation-cadence `HOLD`, not a claim of
 pipeline quiescence.
 
-The workflow remains five-minute, exact-head-bound, and read-only. It fetches
+The workflow remains event-bound, exact-head-bound, and read-only. It fetches
 the current Authority head only for comparison, materializes Action artifacts
 only, and never writes a repository liveness record, dispatches a productive
 workflow, or treats its own terminality as gate success.
 
 ## Reflexivity
 
-The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. It observes the `requested` transition of each upstream workflow run once. A later `in_progress` or `completed` notification does not cancel that observation, and an observer never consumes the repository write lease. An unchanged head without a new input is intentionally not polled; a new repository or workflow event starts a new exact-head observation.
 
 ## Database comparison boundary
 

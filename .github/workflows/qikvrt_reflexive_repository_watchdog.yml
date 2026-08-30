@@ -4,8 +4,6 @@ name: QIKVRT reflexive repository watchdog
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_run:
     workflows:
       - "QIK-VRT autonomous bounded self-heal"
@@ -19,7 +17,9 @@ on:
       - "QIK-VRT global claim completion"
       - "QIKVRT Batch-003 remaining subject disposition"
       - "QIKVRT adaptive runtime"
-    types: [requested, in_progress, completed]
+    # One immutable upstream-run identity admits exactly one observation.
+    # Later lifecycle transitions are not cancellation signals.
+    types: [requested]
   push:
     branches: [main]
     paths:
@@ -57,19 +57,19 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: qikvrt-reflexive-watchdog-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
-
 jobs:
   pre-deadlock-observation:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      OBSERVED_HEAD: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.sha }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+      UPSTREAM_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
     steps:
       - name: Check out the exact observed head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.OBSERVED_HEAD }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -78,29 +78,63 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Reobserve exact head, tree, runs, jobs, and previous reflexive receipt
+      - name: Reobserve exact trigger identity, head, tree, runs, jobs, and previous receipt
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
           root=.qikvrt/reflexive-repository-watchdog
           mkdir -p "$root/jobs"
+
           local_head="$(git rev-parse --verify HEAD^{commit})"
-          test "$local_head" = "$EXPECTED_HEAD"
-          if test "$EVENT_NAME" = pull_request; then
+          test "$local_head" = "$OBSERVED_HEAD"
+
+          if test "$EVENT_NAME" = workflow_run; then
+            test -n "$UPSTREAM_RUN_ID"
+            test -n "$UPSTREAM_RUN_ATTEMPT"
+            gh api "repos/$REPOSITORY/actions/runs/$UPSTREAM_RUN_ID" > "$root/upstream-run.json"
+            jq -e \
+              --arg head "$OBSERVED_HEAD" \
+              --argjson run "$UPSTREAM_RUN_ID" \
+              --argjson attempt "$UPSTREAM_RUN_ATTEMPT" \
+              '.id == $run and .run_attempt == $attempt and .head_sha == $head' \
+              "$root/upstream-run.json" >/dev/null
+            gh api "repos/$REPOSITORY/actions/runs/$UPSTREAM_RUN_ID/jobs?per_page=100" \
+              > "$root/upstream-run-jobs.json"
+          elif test "$EVENT_NAME" = pull_request; then
             live_head="$(gh api "repos/$REPOSITORY/pulls/$EVENT_PR" --jq '.head.sha')"
+            test "$live_head" = "$OBSERVED_HEAD"
           else
             live_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            test "$live_head" = "$OBSERVED_HEAD"
           fi
-          test "$live_head" = "$EXPECTED_HEAD"
+
           git rev-parse --verify HEAD^{tree} > "$root/observed-tree.txt"
-          printf '%s\n' "$EXPECTED_HEAD" > "$root/observed-head.txt"
+          printf '%s\n' "$OBSERVED_HEAD" > "$root/observed-head.txt"
+
+          python3 - "$EVENT_NAME" "$UPSTREAM_RUN_ID" "$UPSTREAM_RUN_ATTEMPT" "$OBSERVED_HEAD" > "$root/trigger-identity.json" <<'PY'
+          import hashlib
+          import json
+          import sys
+
+          event, run_id, attempt, head = sys.argv[1:]
+          identity = {
+              "event": event,
+              "workflow_run_id": int(run_id) if run_id else None,
+              "workflow_run_attempt": int(attempt) if attempt else None,
+              "workflow_run_head_sha": head if event == "workflow_run" else None,
+              "observed_head_sha": head,
+          }
+          canonical = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+          identity["identity_sha256"] = hashlib.sha256(canonical).hexdigest()
+          print(json.dumps(identity, sort_keys=True))
+          PY
+
           if test "$EVENT_NAME" = pull_request; then
             if test "${{ github.event.pull_request.base.ref }}" = main; then
               printf '%s\n' PULL_REQUEST_MAIN > "$root/observation-scope.txt"
@@ -110,25 +144,21 @@ jobs:
           else
             printf '%s\n' MAIN > "$root/observation-scope.txt"
           fi
+
           authority_repository="$(jq -r '.authority.repository' state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json)"
           test "$authority_repository" != null
           gh api "repos/$authority_repository/git/ref/heads/main" --jq '.object.sha' \
             > "$root/observed-authority-main-head.txt"
-          gh api "repos/$REPOSITORY/actions/runs?head_sha=$EXPECTED_HEAD&per_page=100" \
+          gh api "repos/$REPOSITORY/actions/runs?head_sha=$OBSERVED_HEAD&per_page=100" \
             > "$root/current-runs.json"
 
-          # The analyzer considers every returned run. Fetch the matching jobs for
-          # every one of those runs so missing observation data is never confused
-          # with a genuine terminal zero-job execution.
-          mapfile -t run_ids < <(
-            jq -r '.workflow_runs[].id' "$root/current-runs.json"
-          )
+          mapfile -t run_ids < <(jq -r '.workflow_runs[].id' "$root/current-runs.json")
           for run_id in "${run_ids[@]}"; do
             gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
               > "$root/jobs/$run_id.json"
           done
 
-          if test "$EVENT_NAME" != pull_request; then
+          if test "$EVENT_NAME" != pull_request && test "$EVENT_NAME" != workflow_run; then
             previous_run="$(
               gh api "repos/$REPOSITORY/actions/workflows/qikvrt_reflexive_repository_watchdog.yml/runs?branch=main&status=completed&per_page=20" \
                 | jq -r --argjson current "$CURRENT_RUN_ID" \
@@ -176,9 +206,14 @@ jobs:
             args+=(--baseline "$root/previous-receipt.json")
           fi
           python3 -B tools/qikvrt_reflexive_repository_watchdog.py "${args[@]}" \
+            > "$root/reflexive-watchdog-receipt.base.json"
+          jq \
+            --slurpfile trigger "$root/trigger-identity.json" \
+            '. + {trigger_identity: $trigger[0]}' \
+            "$root/reflexive-watchdog-receipt.base.json" \
             > "$root/reflexive-watchdog-receipt.json"
           cp "$root/reflexive-watchdog-receipt.json" "$root/gatewatch-receipt.json"
-          jq '{state, disposition, first_blocker, productive_edge, semantic_fingerprint}' \
+          jq '{state, disposition, first_blocker, productive_edge, semantic_fingerprint, trigger_identity}' \
             "$root/reflexive-watchdog-receipt.json"
 
       - name: Verify reflexive prevention and mesh continuity contracts
@@ -189,6 +224,12 @@ jobs:
             tests.test_qikvrt_reflexive_repository_watchdog \
             tests.test_qikvrt_workflow_executor_mesh_contract \
             tests.test_seed_workflows
+          grep -F 'github.event.workflow_run.head_sha' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+          grep -F 'github.event.workflow_run.id' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+          grep -F 'github.event.workflow_run.run_attempt' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+          grep -F 'trigger-identity.json' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+          ! grep -F 'cancel-in-progress:' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
+          ! grep -F 'schedule:' .github/workflows/qikvrt_reflexive_repository_watchdog.yml
 
       - name: Preserve the exact-head pre-deadlock receipt
         if: always()
