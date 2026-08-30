@@ -34,7 +34,7 @@ For every review, the executor must act without deliberate queueing:
 1. reobserve the repository role, current base commit and tree, exact candidate head and tree, changed paths, comments, prior reviews, unresolved threads, every queued or active competing writer, supersession state and every applicable exact-head gate;
 2. inspect the actual diff and record concrete findings;
 3. return one of `APPROVE`, `REQUEST_CHANGES`, or `COMMENT_WITH_BLOCKER` as soon as the evidence supports that disposition;
-4. sort and bind the reviewed scope, hash that scope and the exact diff bytes, and derive one SHA-256 review fingerprint from the canonical trusted evaluator/workflow blobs, repository, pull-request eligibility and draft state, base, head, tree, scope, declared and observed diff, discussion, latest gate identity/attempt/jobs and active-writer binding;
+4. sort and bind the reviewed scope, hash that scope and the exact diff bytes, and derive one SHA-256 review fingerprint from the canonical trusted evaluator/workflow blobs, repository, pull-request eligibility and draft state, base, head, tree, scope, declared and observed diff, discussion, latest gate identity/attempt/jobs and the semantic active-writer lease state;
 5. derive exactly one causal next action using the D0 mapping below;
 6. distinguish an automated technical Mesh disposition from a natural-person or independent Code-Owner disposition and from GitHub's account-level review state.
 
@@ -96,6 +96,16 @@ transition is therefore `UNOBSERVABLE_WITHOUT_EXACT_EVENT`: it does not permit
 a scheduled scan, a rotating candidate selection, a review dispatch, or a
 metadata mutation. The next exact repository event or explicit dispatch may
 reobserve a bound subject; no prior evidence is transferred.
+
+Every raw queued or active writer record remains in the exact observation and
+reobservation artifacts for audit and watchdog use. For the repository-review
+receipt, however, its causal meaning is canonicalized to `ACTIVE` or
+`QUIESCENT`: every validated nonempty writer set produces the same
+nonproductive `WAIT / COMPETING_WRITER_ACTIVE` disposition. Run IDs, attempts,
+queue ordering, counts and transitions among active queue states are transport
+telemetry, not distinct review opportunities. A transition from `ACTIVE` to
+`QUIESCENT` (or back) remains fingerprint-bound drift and requires a fresh
+receipt before any ledger or platform effect.
 
 The complete diff is transported as ordered, content-addressed packets of at
 most 1 MiB. Its canonical manifest binds an explicit packet count, every
