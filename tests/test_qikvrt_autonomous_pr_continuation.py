@@ -50,6 +50,9 @@ class AutonomousPRContinuationTests(unittest.TestCase):
         self.assertIn("BLOCK: non-allowlisted merge conflicts", source)
         self.assertIn("git checkout --ours", source)
         self.assertIn("generated-output reset", source)
+        self.assertIn("HOLD conflict fingerprint", source)
+        self.assertIn("QIKVRT autonomous draft continuation", source)
+        self.assertIn("commits/" + "$" + "{EXPECTED_HEAD}/statuses", source)
         self.assertNotIn("git checkout --theirs", source)
         self.assertNotIn("git merge --abort || true", source)
 
