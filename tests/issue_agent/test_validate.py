@@ -96,7 +96,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 validate(directory)
 
-    def test_closure_disposition_may_use_none_next_action(self):
+    def test_closure_disposition_requires_reobservation_action(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             self.make_bundle(directory)
@@ -105,7 +105,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             status.update({
                 "issue_disposition": "CLOSE_INVALID_OR_UNSUPPORTED",
                 "disposition_reason": "The request is not reproducible from repository evidence.",
-                "next_action": "NONE",
+                "next_action": "REOBSERVE_EXACT_CLOSURE_POSTCONDITION",
                 "closure_recommended": True,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
@@ -173,7 +173,7 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             self.assertNotIn("validated_completion_promoted_at", promoted)
             validate(directory)
 
-    def test_terminal_closure_alone_promotes_to_done(self):
+    def test_closure_candidate_stays_live_and_cannot_enable_effects(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             self.make_bundle(directory)
@@ -189,18 +189,19 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
             status.update({
                 "issue_disposition": "CLOSE_COMPLETED",
                 "disposition_reason": "The canonical successor fully evidences completion.",
-                "next_action": "NONE",
+                "next_action": "REOBSERVE_EXACT_CLOSURE_POSTCONDITION",
                 "closure_recommended": True,
             })
             status_path.write_text(json.dumps(status), encoding="utf-8")
             self.rebind_continuation(directory, status)
             promote(directory)
             promoted = json.loads(status_path.read_text(encoding="utf-8"))
-            self.assertEqual(promoted["status"], "DONE")
-            self.assertTrue(promoted["automatic_merge"])
-            self.assertTrue(promoted["automatic_issue_close"])
-            self.assertTrue(promoted["mirror_sync_required"])
-            self.assertTrue(promoted["common_tag_required"])
+            self.assertEqual(promoted["status"], "CONTINUE")
+            self.assertEqual(promoted["next_action"], "REOBSERVE_EXACT_CLOSURE_POSTCONDITION")
+            self.assertFalse(promoted["automatic_merge"])
+            self.assertFalse(promoted["automatic_issue_close"])
+            self.assertFalse(promoted["mirror_sync_required"])
+            self.assertFalse(promoted["common_tag_required"])
             validate(directory)
 
     def test_policy_and_owner_delegation_are_active_and_fail_closed(self):
@@ -269,6 +270,8 @@ class ValidateIssueAgentBundleTest(unittest.TestCase):
         ):
             self.assertIn(token, SYSTEM_PROMPT)
         self.assertIn("Do not leave an issue in an unclassified waiting state", SYSTEM_PROMPT)
+        self.assertIn("NONE is forbidden", SYSTEM_PROMPT)
+        self.assertNotIn("one of DONE, CONTINUE, ISOLATE, BLOCK", SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

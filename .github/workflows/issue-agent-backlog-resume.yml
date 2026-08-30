@@ -80,8 +80,8 @@ jobs:
             status="$(printf '%s' "$status_json" | jq -r '.status // "BLOCK"')"
             case "$status" in
               DONE|EFFECT_ACK_DONE)
-                echo "issue=$issue state=FINAL_OR_AWAITING_AUTOFINISH"
-                skipped_final=$((skipped_final + 1))
+                echo "issue=$issue state=HOLD reason=TERMINAL_STATUS_WITH_LIVE_CONTINUATION_REQUIRES_EXACT_POSTCONDITION"
+                blocked_unbound=$((blocked_unbound + 1))
                 continue
                 ;;
               BLOCK|CONTINUE|EFFECT_ACK_CONTINUE)

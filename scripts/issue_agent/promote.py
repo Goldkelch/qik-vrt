@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate an issue-agent lifecycle disposition and promote only terminal closures.
+"""Validate an issue-agent lifecycle disposition without terminalizing live work.
 
 This attests the repository processing state, not universal scientific truth.
 """
@@ -69,12 +69,16 @@ def promote(directory: Path) -> None:
             raise SystemExit("BLOCK: terminal closure requires completed inference")
         if explicit_block:
             raise SystemExit("BLOCK: terminal closure conflicts with blocking gate result")
+        # A model's CLOSE_* assessment is a candidate disposition, not proof
+        # that the requested action executed.  Keep the continuation live
+        # until an exact current binding supplies one of its typed outcomes.
         status.update({
-            "status": "DONE",
-            "automatic_merge": True,
-            "automatic_issue_close": True,
-            "mirror_sync_required": True,
-            "common_tag_required": True,
+            "status": "CONTINUE",
+            "next_action": "REOBSERVE_EXACT_CLOSURE_POSTCONDITION",
+            "automatic_merge": False,
+            "automatic_issue_close": False,
+            "mirror_sync_required": False,
+            "common_tag_required": False,
             "no_false_pass": True,
         })
     elif disposition == "EXECUTE_NOW":

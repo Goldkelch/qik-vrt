@@ -159,16 +159,18 @@ class IssueContinuationTests(unittest.TestCase):
         self.assertNotIn("git push --force-with-lease", workflow)
         self.assertNotIn('git add "evidence/issues/$ISSUE_NUMBER"', workflow)
 
-    def test_autofinish_requires_current_exact_continuation_source_and_head_cas(self) -> None:
+    def test_reobserver_retains_current_exact_pr_binding_without_effect_authority(self) -> None:
         workflow = (ROOT / ".github/workflows/issue-agent-autofinish.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("CONTINUATION.json?ref=$authority_head", workflow)
-        self.assertIn("continuation.py check", workflow)
-        self.assertIn("scripts/issue_agent/validate.py", workflow)
-        self.assertIn("STALE_OR_UNVERIFIED_CONTINUATION_SOURCE_BINDING", workflow)
-        self.assertIn("PR_HEAD_OR_BASE_CHANGED_DURING_REOBSERVATION", workflow)
-        self.assertIn("--match-head-commit", workflow)
+        self.assertIn("headRefOid", workflow)
+        self.assertIn("git/commits/$head", workflow)
+        self.assertIn("REOBSERVE_EXACT_POSTCONDITION_OR_REBIND", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("gh pr merge", workflow)
+        self.assertNotIn("git push", workflow)
+        self.assertNotIn("gh issue close", workflow)
 
 
 if __name__ == "__main__":

@@ -62,6 +62,17 @@ VOLATILE_SEMANTIC_FIELDS = frozenset(
         "self_generated_comment",
         "self_generated_comment_id",
         "self_generated_comment_update",
+        # Delivery is observation transport.  A report, chat turn, progress
+        # frame, or client-session transition must never create or complete a
+        # logical continuation.
+        "report_delivered",
+        "report_id",
+        "notification_sent",
+        "notification_id",
+        "chat_turn_ended",
+        "client_session_ended",
+        "progress_frame",
+        "delivery_id",
     }
 )
 
@@ -387,7 +398,10 @@ def build_live_record(
         "immutable_source": source,
         "predecessor_continuation_key": predecessor_continuation_key,
         "outcome": None,
-        "observation": dict(observation) if observation is not None else {},
+        # Observations are deliberately excluded from persisted record bytes.
+        # Otherwise a changed polling timestamp collides with the same
+        # deterministic append-only path and turns a non-event into a HOLD.
+        "observation": {},
         "completion_claims": _completion_claims(),
     }
     validate_record(record)
@@ -420,6 +434,9 @@ def build_outcome_record(
     if state == "POSTCONDITION_OBSERVED":
         condition = _string(postcondition, "postcondition")
         assert condition is not None
+        prohibited = ("REPORT", "NOTIFICATION", "CHAT", "CLIENT", "PROGRESS", "DELIVER")
+        if any(token in condition.upper() for token in prohibited):
+            raise ContinuationLedgerError("delivery transport cannot be a terminal postcondition")
         if any(value is not None for value in (replacement_continuation_key, external_authority, external_reason)):
             raise ContinuationLedgerError("postcondition outcome has incompatible fields")
         outcome = {"postcondition": condition}
@@ -448,7 +465,7 @@ def build_outcome_record(
         "state": state,
         "immutable_source": source,
         "outcome": outcome,
-        "observation": dict(observation) if observation is not None else {},
+        "observation": {},
         "predecessor_record_id": previous["record_id"],
     }
     validate_record(record)
@@ -623,8 +640,8 @@ def validate_record(value: Mapping[str, Any]) -> None:
     predecessor_key = record.get("predecessor_continuation_key")
     if predecessor_key is not None:
         _sha256(predecessor_key, "predecessor continuation key")
-    if not isinstance(record.get("observation"), Mapping):
-        raise ContinuationLedgerError("record observation must be an object")
+    if not isinstance(record.get("observation"), Mapping) or record["observation"]:
+        raise ContinuationLedgerError("persisted observation must be an empty transport object")
     if record.get("completion_claims") != _completion_claims():
         raise ContinuationLedgerError("continuation completion claims are invalid")
 
@@ -641,7 +658,10 @@ def validate_record(value: Mapping[str, Any]) -> None:
         if state == "POSTCONDITION_OBSERVED":
             if set(outcome) != {"postcondition"}:
                 raise ContinuationLedgerError("postcondition outcome fields are invalid")
-            _string(outcome.get("postcondition"), "postcondition")
+            condition = _string(outcome.get("postcondition"), "postcondition")
+            assert condition is not None
+            if any(token in condition.upper() for token in ("REPORT", "NOTIFICATION", "CHAT", "CLIENT", "PROGRESS", "DELIVER")):
+                raise ContinuationLedgerError("delivery transport cannot be a terminal postcondition")
         elif state == "REBOUND":
             if set(outcome) != {"replacement_continuation_key"}:
                 raise ContinuationLedgerError("rebound outcome fields are invalid")

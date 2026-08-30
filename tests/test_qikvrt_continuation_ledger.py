@@ -106,6 +106,8 @@ class ContinuationLedgerTests(unittest.TestCase):
         self.assertTrue(contract["ledger"]["append_only"])
         self.assertEqual(contract["ledger"]["write_protocol"], "FAST_FORWARD_COMPARE_AND_SWAP_ONLY")
         self.assertFalse(contract["boundaries"]["logical_continuation_changes_writer_queue_liveness_or_effect_token_ttl"])
+        self.assertFalse(contract["boundaries"]["report_notification_chat_turn_client_session_or_progress_frame_are_terminal"])
+        self.assertFalse(contract["boundaries"]["delivery_transport_is_a_postcondition"])
         self.assertEqual(schema["properties"]["schema"]["const"], MODULE.RECORD_SCHEMA)
         self.assertEqual(
             set(contract["states"]["evidenced_outcomes"]), MODULE.OUTCOME_STATES
@@ -133,6 +135,8 @@ class ContinuationLedgerTests(unittest.TestCase):
         self.assertNotIn("updated_at", first["semantic_input"])
         self.assertNotIn("self_generated_status_update", first["semantic_input"])
         self.assertNotIn("observed_at", first["semantic_input"]["nested"])
+        self.assertEqual(first["observation"], {})
+        self.assertEqual(MODULE.canonical_json_bytes(first), MODULE.canonical_json_bytes(second))
 
     def test_material_human_or_exact_binding_change_creates_a_new_key(self) -> None:
         initial = live()
@@ -198,6 +202,13 @@ class ContinuationLedgerTests(unittest.TestCase):
                 state="EXTERNAL_HOLD",
                 immutable_source=source(sha256="5" * 64),
                 external_authority="GitHub Actions admission control",
+            )
+        with self.assertRaises(MODULE.ContinuationLedgerError):
+            MODULE.build_outcome_record(
+                previous,
+                state="POSTCONDITION_OBSERVED",
+                immutable_source=source(sha256="6" * 64),
+                postcondition="REPORT_DELIVERED",
             )
 
     def test_append_plan_is_fast_forward_only_and_deduplicates_exact_bytes(self) -> None:

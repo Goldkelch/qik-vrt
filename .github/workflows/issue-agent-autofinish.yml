@@ -1,4 +1,4 @@
-name: Issue agent auto-finish
+name: Issue agent exact continuation reobservation
 
 on:
   schedule:
@@ -10,168 +10,53 @@ on:
         required: false
         type: string
 
+# This observer has no effect authority. A scheduled wake, status text, or
+# closure candidate never proves execution and never authorizes mutation.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
+  issues: read
+  pull-requests: read
   checks: read
 
 concurrency:
-  group: issue-agent-autofinish
+  group: issue-agent-exact-reobservation
   cancel-in-progress: false
 
 jobs:
-  finish:
+  reobserve:
     runs-on: ubuntu-latest
     env:
       AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
-      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
-      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
       REQUESTED_ISSUE: ${{ inputs.issue_number }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Resume all eligible issue-agent transactions
+      - name: Retain every candidate as a live exact-binding continuation
         shell: bash
         run: |
           set -euo pipefail
-          issue_numbers=""
           if [ -n "${REQUESTED_ISSUE:-}" ]; then
             issue_numbers="$REQUESTED_ISSUE"
           else
             issue_numbers="$(gh issue list --repo "$AUTHORITY_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')"
           fi
-
           for issue in $issue_numbers; do
             branch="issue-agent/$issue"
-            authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
-            [ -n "$authority_pr" ] || continue
-            authority_binding="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state,mergedAt,headRefOid,baseRefOid)"
-            authority_state="$(printf '%s' "$authority_binding" | jq -r '.state')"
-            authority_merged="$(printf '%s' "$authority_binding" | jq -r '.mergedAt // empty')"
-            authority_head="$(printf '%s' "$authority_binding" | jq -r '.headRefOid // empty')"
-            authority_base="$(printf '%s' "$authority_binding" | jq -r '.baseRefOid // empty')"
-
-            if [ "$authority_state" = "OPEN" ]; then
-              evidence_dir="$(mktemp -d)"
-              trap 'rm -rf "$evidence_dir"' EXIT
-              if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/REQUEST.json?ref=$authority_head" > "$evidence_dir/REQUEST.json" \
-                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/REQUEST.sha256?ref=$authority_head" > "$evidence_dir/REQUEST.sha256" \
-                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/CONTEXT.md?ref=$authority_head" > "$evidence_dir/CONTEXT.md" \
-                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/ANSWER.md?ref=$authority_head" > "$evidence_dir/ANSWER.md" \
-                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$authority_head" > "$evidence_dir/STATUS.json" \
-                || ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/CONTINUATION.json?ref=$authority_head" > "$evidence_dir/CONTINUATION.json"; then
-                echo "issue=$issue state=HOLD reason=UNBOUND_OR_MISSING_EXACT_HEAD_EVIDENCE"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              if ! python3 scripts/issue_agent/continuation.py check --directory "$evidence_dir" \
-                || ! python3 scripts/issue_agent/validate.py "$evidence_dir"; then
-                echo "issue=$issue state=HOLD reason=INVALID_EXACT_CONTINUATION_BINDING"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              status="$(jq -r '.status' "$evidence_dir/STATUS.json")"
-              if [ "$status" != "DONE" ]; then
-                echo "issue=$issue state=HOLD reason=NONTERMINAL_EXACT_STATUS value=$status"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              source_repository="$(jq -r '.current_binding.source.repository // empty' "$evidence_dir/CONTINUATION.json")"
-              source_ref="$(jq -r '.current_binding.source.ref // empty' "$evidence_dir/CONTINUATION.json")"
-              source_head="$(jq -r '.current_binding.source.head_sha // empty' "$evidence_dir/CONTINUATION.json")"
-              source_tree="$(jq -r '.current_binding.source.tree_sha // empty' "$evidence_dir/CONTINUATION.json")"
-              source_actual_tree="$(gh api "repos/$AUTHORITY_REPOSITORY/git/commits/$source_head" --jq '.tree.sha' 2>/dev/null || true)"
-              source_relation="$(gh api "repos/$AUTHORITY_REPOSITORY/compare/$source_head...$authority_head" --jq '.status' 2>/dev/null || true)"
-              if [ "$source_repository" != "$AUTHORITY_REPOSITORY" ] \
-                || [ "$source_ref" != "refs/heads/main" ] \
-                || [ -z "$source_head" ] \
-                || [ "$source_tree" != "$source_actual_tree" ] \
-                || [ "$authority_base" != "$source_head" ] \
-                || { [ "$source_relation" != "ahead" ] && [ "$source_relation" != "identical" ]; }; then
-                echo "issue=$issue state=HOLD reason=STALE_OR_UNVERIFIED_CONTINUATION_SOURCE_BINDING"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
-              failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$failed" -gt 0 ]; then
-                echo "issue=$issue state=HOLD reason=AUTHORITY_CHECK_FAILED"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              if [ "$pending" -ne 0 ]; then
-                echo "issue=$issue state=HOLD reason=AUTHORITY_CHECK_PENDING"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              latest_binding="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state,headRefOid,baseRefOid)"
-              latest_state="$(printf '%s' "$latest_binding" | jq -r '.state')"
-              latest_head="$(printf '%s' "$latest_binding" | jq -r '.headRefOid // empty')"
-              latest_base="$(printf '%s' "$latest_binding" | jq -r '.baseRefOid // empty')"
-              if [ "$latest_state" != "OPEN" ] || [ "$latest_head" != "$authority_head" ] || [ "$latest_base" != "$authority_base" ]; then
-                echo "issue=$issue state=HOLD reason=PR_HEAD_OR_BASE_CHANGED_DURING_REOBSERVATION"
-                rm -rf "$evidence_dir"
-                trap - EXIT
-                continue
-              fi
-              rm -rf "$evidence_dir"
-              trap - EXIT
-              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch --match-head-commit "$authority_head"
-              authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$authority_merged" ] || continue
-            if [ -z "${MESH_TOKEN:-}" ]; then
-              echo "issue=$issue state=HOLD reason=MESH_TOKEN_UNAVAILABLE_AFTER_AUTHORITY_MERGE"
+            pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
+            if [ -z "$pr" ]; then
+              echo "issue=$issue state=HOLD reason=NO_CURRENT_REPOSITORY_NATIVE_PR_BINDING"
               continue
             fi
-
-            authority_sha="$(gh api "repos/$AUTHORITY_REPOSITORY/commits/main" --jq '.sha')"
-            sync_branch="issue-sync/$issue-$authority_sha"
-            git remote remove mirror 2>/dev/null || true
-            git remote add mirror "https://x-access-token:${MESH_TOKEN}@github.com/${MIRROR_REPOSITORY}.git"
-            git fetch origin main
-            git fetch mirror main
-            git checkout -B "$sync_branch" origin/main
-            git push --force-with-lease mirror "$sync_branch"
-
-            mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state all --head "$sync_branch" --limit 1 --json number --jq '.[0].number // empty')"
-            if [ -z "$mirror_pr" ]; then
-              GH_TOKEN="$MESH_TOKEN" gh pr create --repo "$MIRROR_REPOSITORY" --base main --head "$sync_branch" --title "Synchronize completed issue #$issue" --body "Byte-content synchronization from authority after autonomous completion of Goldkelch/qik-vrt#$issue."
-              mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state open --head "$sync_branch" --limit 1 --json number --jq '.[0].number')"
+            binding="$(gh pr view "$pr" --repo "$AUTHORITY_REPOSITORY" --json state,headRefOid,baseRefOid,reviews,statusCheckRollup)"
+            state="$(printf '%s' "$binding" | jq -r '.state')"
+            head="$(printf '%s' "$binding" | jq -r '.headRefOid // empty')"
+            base="$(printf '%s' "$binding" | jq -r '.baseRefOid // empty')"
+            tree="$(gh api "repos/$AUTHORITY_REPOSITORY/git/commits/$head" --jq '.tree.sha' 2>/dev/null || true)"
+            if [ "$state" != OPEN ] || [ -z "$head" ] || [ -z "$tree" ]; then
+              echo "issue=$issue pr=$pr state=HOLD reason=PR_BINDING_REPLACED_OR_UNVERIFIED"
+              continue
             fi
-
-            mirror_state="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json state --jq '.state')"
-            mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            if [ "$mirror_state" = "OPEN" ]; then
-              mirror_checks="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json statusCheckRollup)"
-              mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$mirror_failed" -gt 0 ]; then
-                echo "issue=$issue state=HOLD reason=MIRROR_CHECK_FAILED pr=$mirror_pr"
-                continue
-              fi
-              [ "$mirror_pending" -eq 0 ] || continue
-              GH_TOKEN="$MESH_TOKEN" gh pr merge "$mirror_pr" --repo "$MIRROR_REPOSITORY" --squash --delete-branch
-              mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$mirror_merged" ] || continue
-            tag="qikvrt-issue-$issue"
-            mirror_sha="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/commits/main" --jq '.sha')"
-            gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
-            GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
-            gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **EFFECT_ACK_DONE**\n\n- authority PR #$authority_pr merged\n- mirror PR #$mirror_pr merged\n- common tag \`$tag\` created in both repositories\n- issue closed automatically"
-            gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
+            echo "issue=$issue pr=$pr state=CONTINUE head=$head tree=$tree base=$base next_action=REOBSERVE_EXACT_POSTCONDITION_OR_REBIND"
           done
