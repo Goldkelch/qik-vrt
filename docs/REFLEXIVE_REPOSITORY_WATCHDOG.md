@@ -63,9 +63,23 @@ the current Authority head only for comparison, materializes Action artifacts
 only, and never writes a repository liveness record, dispatches a productive
 workflow, or treats its own terminality as gate success.
 
-## Reflexivity
+## Continuation and reflexivity
 
-The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions use a coalescing concurrency group so newer observations replace obsolete observations without consuming the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+The watchdog observes the workflows that create and verify repository state, while its own executions are classified as observers rather than productive writers. Observer executions are bound to immutable upstream lifecycle identities and serialize without cross-event cancellation; they do not consume the repository write lease. A scheduled observation prevents unchanged heads from becoming permanently invisible merely because no new event occurs.
+
+The logical obligation to reobserve a blocker has no expiry: it remains live
+until an exact postcondition is observed, its head/tree binding is replaced, or
+a sourced external hold names its authority and reason. This does **not** make
+worker, queue, progress, node-health, credential, or artifact-retention leases
+infinite. Those finite leases remain the detector for a lost worker or stale
+receipt.
+
+To keep lifecycle evidence causal, the watchdog consumes only the immutable
+`workflow_run: completed` edge on `main`. Its concurrency key includes the
+upstream run id and never cancels an earlier lifecycle observation. A GitHub
+`updated_at` refresh is retained as observation metadata but is excluded from
+the progress and receipt semantic fingerprints; only a run/job topology or
+state transition can renew the progress lease.
 
 ## Database comparison boundary
 

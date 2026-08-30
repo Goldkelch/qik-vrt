@@ -26,7 +26,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Issue events do not provide a pull-request head.  Bind processing
+          # to the Authority's current main commit explicitly instead of an
+          # ambient event SHA.
+          ref: main
           fetch-depth: 0
+
+      - name: Bind the exact Authority source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          source_ref="refs/heads/main"
+          source_head="$(git rev-parse --verify HEAD^{commit})"
+          source_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_head="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$source_head" = "$remote_head"
+          {
+            echo "ref=$source_ref"
+            echo "head=$source_head"
+            echo "tree=$source_tree"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Resolve issue
         id: issue
@@ -80,6 +102,20 @@ jobs:
             --directory "evidence/issues/$ISSUE_NUMBER" \
             --inference-outcome "$INFERENCE_OUTCOME"
 
+      - name: Materialize the non-expiring logical continuation
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/issue_agent/continuation.py materialize \
+            --directory "evidence/issues/$ISSUE_NUMBER" \
+            --issue issue.json \
+            --repository "$REPOSITORY" \
+            --source-ref "${{ steps.source.outputs.ref }}" \
+            --source-head "${{ steps.source.outputs.head }}" \
+            --source-tree "${{ steps.source.outputs.tree }}"
+
       - name: Validate and promote generated artifacts
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
@@ -97,13 +133,69 @@ jobs:
         run: |
           set -euo pipefail
           branch="issue-agent/$ISSUE_NUMBER"
+          continuation_path="evidence/issues/$ISSUE_NUMBER/CONTINUATION.json"
+          context_path="evidence/issues/$ISSUE_NUMBER/CONTEXT.md"
+          answer_path="evidence/issues/$ISSUE_NUMBER/ANSWER.md"
+          current_continuation_id="$(jq -r '.continuation_id' "$continuation_path")"
+          current_context_sha256="$(sha256sum "$context_path" | awk '{print $1}')"
+          current_answer_sha256="$(sha256sum "$answer_path" | awk '{print $1}')"
+          # The issue branch is a materialized work product.  Compare its
+          # exact continuation identity before selecting branch lineage: a
+          # byte refresh of an observation must neither push nor create another
+          # repository status comment.
+          if prior_branch_head="$(gh api "repos/${{ github.repository }}/git/ref/heads/$branch" --jq '.object.sha' 2>/dev/null)" \
+            && prior_continuation="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/${{ github.repository }}/contents/$continuation_path?ref=$prior_branch_head" 2>/dev/null)" \
+            && prior_context_sha256="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/${{ github.repository }}/contents/$context_path?ref=$prior_branch_head" 2>/dev/null | sha256sum | awk '{print $1}')" \
+            && prior_answer_sha256="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/${{ github.repository }}/contents/$answer_path?ref=$prior_branch_head" 2>/dev/null | sha256sum | awk '{print $1}')"; then
+            prior_continuation_id="$(printf '%s' "$prior_continuation" | jq -r '.continuation_id // empty')"
+            if [ -n "$prior_continuation_id" ] \
+              && [ "$prior_continuation_id" = "$current_continuation_id" ] \
+              && [ "$prior_context_sha256" = "$current_context_sha256" ] \
+              && [ "$prior_answer_sha256" = "$current_answer_sha256" ]; then
+              echo "NOOP: identical exact continuation; no branch update or repository status comment is emitted."
+              exit 0
+            fi
+          fi
           git config user.name "qik-vrt-issue-agent[bot]"
           git config user.email "qik-vrt-issue-agent[bot]@users.noreply.github.com"
-          git checkout -B "$branch"
-          git add "evidence/issues/$ISSUE_NUMBER"
+          # Preserve an existing issue branch as an ancestor rather than
+          # rewriting it.  That keeps predecessor evidence available while
+          # the new exact continuation binds the successor to current main.
+          artifact_snapshot="$(mktemp -d)"
+          mkdir -p "$artifact_snapshot/evidence/issues"
+          cp -a "evidence/issues/$ISSUE_NUMBER" "$artifact_snapshot/evidence/issues/$ISSUE_NUMBER"
+          rm -rf "evidence/issues/$ISSUE_NUMBER"
+          remote_branch_ref="refs/remotes/origin/$branch"
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/heads/$branch:$remote_branch_ref"
+            prior_branch_commit="$(git rev-parse --verify "$remote_branch_ref^{commit}")"
+            git checkout -B "$branch" "$remote_branch_ref"
+            git merge --no-ff --no-edit "${{ steps.source.outputs.head }}"
+          else
+            prior_branch_commit=""
+            git checkout -B "$branch" "${{ steps.source.outputs.head }}"
+          fi
+          mkdir -p "evidence/issues"
+          cp -a "$artifact_snapshot/evidence/issues/$ISSUE_NUMBER" "evidence/issues/$ISSUE_NUMBER"
+          rm -rf "$artifact_snapshot"
+          # Observation-only timestamps are intentionally not part of the
+          # branch work product.  They cannot manufacture a fresh retry,
+          # comment, or continuation binding.
+          git add \
+            "evidence/issues/$ISSUE_NUMBER/REQUEST.json" \
+            "evidence/issues/$ISSUE_NUMBER/REQUEST.sha256" \
+            "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
+            "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
+            "evidence/issues/$ISSUE_NUMBER/STATUS.json" \
+            "evidence/issues/$ISSUE_NUMBER/CONTINUATION.json"
+          changed=false
           if ! git diff --cached --quiet; then
             git commit -m "issue-agent: process issue #$ISSUE_NUMBER"
-            git push --force-with-lease origin "$branch"
+            changed=true
+          fi
+          if [ -z "$prior_branch_commit" ] || [ "$(git rev-parse --verify HEAD^{commit})" != "$prior_branch_commit" ]; then
+            git push origin "$branch"
+            changed=true
           fi
 
           pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
@@ -117,4 +209,8 @@ jobs:
 
           pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
           status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
-          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe repository auto-finish transaction now owns merge, mirror synchronization, common tagging, and issue closure. Any failed gate remains BLOCK."
+          if [ "$changed" = true ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe exact semantic continuation is now persisted on the issue work branch. Identical observation refreshes do not create another status comment or retry."
+          else
+            echo "NOOP: identical issue continuation; no repository status comment is emitted."
+          fi

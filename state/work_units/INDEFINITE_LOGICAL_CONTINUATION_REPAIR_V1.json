@@ -1,0 +1,84 @@
+{
+  "_license": {
+    "classification": "machine_readable_repository_control",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "license_text_ref": "LICENSES/PolyForm-Noncommercial-1.0.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_indefinite_logical_continuation_repair_work_unit_v1",
+  "work_unit_id": "INDEFINITE_LOGICAL_CONTINUATION_REPAIR_V1",
+  "title": "Keep repository continuations live without making operational leases infinite",
+  "repository": "Goldkelch/qik-vrt",
+  "source_binding": {
+    "ref": "refs/heads/main",
+    "head_sha": "4ea0491a5484075215f17dbcd157a2a5f18ef633",
+    "tree_sha": "2f3a9ba1bbc645037a937614700e606ac99ebe58"
+  },
+  "owner_decision": {
+    "language": "de",
+    "decision": "AUTHORITY_DRAFT_PR_CREATE",
+    "scope": "SAFE_LOGICAL_TTL_INFINITY_REPAIR_ONLY"
+  },
+  "problem_statement": {
+    "reflexive_failure_class": "VOLATILE_OBSERVATION_OR_LIFECYCLE_CANCELLATION_MASQUERADES_AS_CAUSAL_PROGRESS",
+    "logical_liveness": "INDEFINITE_UNTIL_EVIDENCED_OUTCOME",
+    "terminal_outcomes_only": [
+      "EXACT_POSTCONDITION_REOBSERVED",
+      "EXACT_BINDING_REPLACED_WITH_PREDECESSOR_STALE",
+      "SOURCED_EXTERNAL_HOLD_WITH_AUTHORITY_AND_REASON"
+    ]
+  },
+  "finite_operational_boundaries": [
+    "WORKER_LEASE",
+    "QUEUE_LEASE",
+    "PROGRESS_LEASE",
+    "NODE_HEALTH_LEASE",
+    "CREDENTIAL_LEASE",
+    "ARTIFACT_RETENTION"
+  ],
+  "implementation_paths": [
+    "tools/qikvrt_continuation_ledger.py",
+    "state/autonomy/CONTINUATION_LEDGER_CONTRACT_V1.json",
+    "schemas/qikvrt_continuation_ledger_entry_v1.schema.json",
+    "scripts/issue_agent/continuation.py",
+    "scripts/issue_agent/materialize.py",
+    "scripts/issue_agent/finalize.py",
+    "scripts/issue_agent/promote.py",
+    "scripts/issue_agent/validate.py",
+    ".github/workflows/issue-autonomous-processing.yml",
+    ".github/workflows/issue-agent-backlog-resume.yml",
+    ".github/workflows/issue-agent-autofinish.yml",
+    "tools/qikvrt_reflexive_repository_watchdog.py",
+    ".github/workflows/qikvrt_reflexive_repository_watchdog.yml"
+  ],
+  "safety_properties": {
+    "timestamp_or_self_generated_comment_is_not_causal_identity": true,
+    "exact_source_ref_head_tree_required_for_issue_continuation": true,
+    "same_exact_continuation_does_not_push_or_comment": true,
+    "issue_branch_predecessor_history_is_not_force_rewritten": true,
+    "stale_or_unverified_done_binding_holds_before_autofinish_merge": true,
+    "watchdog_lifecycle_observers_do_not_cancel_each_other": true,
+    "generic_ledger_writer_activated_by_this_work_unit": false,
+    "review_routing": "REPOSITORY_NATIVE_ONLY_NO_REQUESTED_REVIEW_CREATED"
+  },
+  "effect_boundary": {
+    "authority_branch": true,
+    "draft_pull_request": true,
+    "requested_reviewer": false,
+    "merge": false,
+    "mirror_mutation": false,
+    "tag": false,
+    "release": false,
+    "publication": false,
+    "deployment": false,
+    "credential_or_ruleset_change": false
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false,
+    "AUTHORITY_MIRROR_SYNCHRONIZED": false,
+    "DEPLOYED": false
+  }
+}

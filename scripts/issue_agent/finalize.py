@@ -2,7 +2,6 @@
 import argparse
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 ALLOWED_DISPOSITIONS = {
@@ -72,10 +71,7 @@ def main() -> None:
         disposition is not None
         and bool(reason)
         and bool(next_action)
-        and (
-            disposition in CLOSURE_DISPOSITIONS
-            or next_action.strip().upper() != "NONE"
-        )
+        and next_action.strip().upper() != "NONE"
     )
 
     if not disposition_valid:
@@ -83,11 +79,12 @@ def main() -> None:
         reason = "ISSUE_DISPOSITION_MISSING_OR_INVALID"
         next_action = "Regenerate the repository-grounded answer with one allowed disposition, a reason, and one concrete next action."
 
-    status_value = (
-        "BLOCK"
-        if disposition in {"CLARIFICATION_REQUIRED", "BLOCKED_WITH_NEXT_ACTION"}
-        else "CONTINUE"
-    )
+    # CLOSE_* is a classification candidate, never a terminal execution state.
+    # It must stay alive for an exact current postcondition, rebind, or sourced
+    # external HOLD just like every other issue continuation.
+    if disposition in CLOSURE_DISPOSITIONS:
+        next_action = "REOBSERVE_EXACT_CLOSURE_POSTCONDITION"
+    status_value = "BLOCK" if disposition in {"CLARIFICATION_REQUIRED", "BLOCKED_WITH_NEXT_ACTION"} else "CONTINUE"
     status = {
         "status": status_value,
         "issue_materialized": True,
@@ -98,7 +95,6 @@ def main() -> None:
         "closure_recommended": disposition in CLOSURE_DISPOSITIONS,
         "automatic_issue_close": False,
         "automatic_merge": False,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
         "no_false_pass": True,
     }
     (directory / "STATUS.json").write_text(

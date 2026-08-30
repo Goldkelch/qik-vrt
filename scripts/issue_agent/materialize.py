@@ -20,6 +20,9 @@ def main() -> None:
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    # ``updated_at`` advances for repository-generated comments and refreshes.
+    # It is observation metadata, not a causal change to the issue request, so
+    # it must not enter REQUEST.sha256 or create another continuation.
     request = {
         "repository": args.repository,
         "issue_number": issue["number"],
@@ -28,11 +31,14 @@ def main() -> None:
         "author": (issue.get("user") or {}).get("login"),
         "html_url": issue.get("html_url"),
         "created_at": issue.get("created_at"),
-        "updated_at": issue.get("updated_at"),
     }
     canonical = json.dumps(request, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     (out / "REQUEST.json").write_text(canonical, encoding="utf-8")
     (out / "REQUEST.sha256").write_text(hashlib.sha256(canonical.encode()).hexdigest() + "  REQUEST.json\n", encoding="utf-8")
+    # Do not persist a second observation artifact containing ``updated_at``:
+    # a later broad staging command must not be able to turn it into a fresh
+    # branch update.  The exact semantic request and source binding are the
+    # durable evidence product.
 
     seen = set()
     selected = []

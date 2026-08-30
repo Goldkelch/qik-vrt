@@ -318,6 +318,29 @@ def _normalize_run(run: Mapping[str, Any], jobs: Sequence[Mapping[str, Any]]) ->
     }
 
 
+def _progress_projection(run: Mapping[str, Any]) -> dict[str, Any]:
+    """Return only causal run topology for no-progress detection.
+
+    GitHub advances ``updated_at`` on a metadata refresh.  That timestamp is
+    useful observational context, but it is not a job or step transition and
+    must never renew the progress lease.
+    """
+    return {key: value for key, value in run.items() if key != "updated_at"}
+
+
+def _semantic_projection(value: Any) -> Any:
+    """Strip refresh-only fields before deriving a receipt semantic digest."""
+    if isinstance(value, Mapping):
+        return {
+            key: _semantic_projection(item)
+            for key, item in value.items()
+            if key not in {"observed_at", "updated_at", "age_seconds"}
+        }
+    if isinstance(value, list):
+        return [_semantic_projection(item) for item in value]
+    return value
+
+
 def _latest_by_exact_name(
     runs: Sequence[Mapping[str, Any]], name: str
 ) -> Mapping[str, Any] | None:
@@ -731,7 +754,9 @@ def analyze(
         now=now,
     )
 
-    progress_material = [item for item in normalized if item["name"] not in observer_names]
+    progress_material = [
+        _progress_projection(item) for item in normalized if item["name"] not in observer_names
+    ]
     progress_fingerprint = sha256_bytes(canonical_json_bytes(progress_material))
     baseline_same = False
     baseline_binding_same = False
@@ -894,11 +919,13 @@ def analyze(
     }
     receipt["semantic_fingerprint"] = sha256_bytes(
         canonical_json_bytes(
-            {
-                key: value
-                for key, value in receipt.items()
-                if key not in {"observed_at", "semantic_fingerprint"}
-            }
+            _semantic_projection(
+                {
+                    key: value
+                    for key, value in receipt.items()
+                    if key != "semantic_fingerprint"
+                }
+            )
         )
     )
     return receipt

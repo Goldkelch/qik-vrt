@@ -137,7 +137,7 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertTrue(gatewatch["node_liveness"]["artifact_only_materialization"])
         self.assertEqual(
             prevention["observer_run_policy"],
-            "CANCEL_SUPERSEDED_OBSERVER_ONLY",
+            "IMMUTABLE_LIFECYCLE_RECEIPTS_NO_CROSS_EVENT_CANCELLATION",
         )
         node_policy = json.loads(NODE_POLICY.read_text(encoding="utf-8"))
         node_acceptance = node_policy["reflexive_watchdog_acceptance"]
@@ -191,6 +191,31 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
             value["first_blocker"],
             "ACTIVE_TOPOLOGY_UNCHANGED_BEYOND_PROGRESS_LEASE",
         )
+
+    def test_metadata_only_run_refresh_does_not_renew_progress_or_receipt_semantics(self) -> None:
+        first_runs = [
+            run(41, "QIKVRT CI", "in_progress", "2026-08-10T17:43:00Z", "2026-08-10T17:44:00Z")
+        ]
+        refreshed_runs = [
+            run(41, "QIKVRT CI", "in_progress", "2026-08-10T17:43:00Z", "2026-08-10T17:59:00Z")
+        ]
+        first = self.analyze(first_runs, jobs(41), now="2026-08-10T17:44:00Z")
+        refreshed = self.analyze(refreshed_runs, jobs(41), now="2026-08-10T17:44:30Z")
+        self.assertEqual(first["progress_fingerprint"], refreshed["progress_fingerprint"])
+        self.assertEqual(first["semantic_fingerprint"], refreshed["semantic_fingerprint"])
+        baseline = {
+            "head_sha": HEAD,
+            "tree_sha": TREE,
+            "observed_at": "2026-08-10T17:44:00Z",
+            "progress_fingerprint": first["progress_fingerprint"],
+        }
+        held = self.analyze(
+            refreshed_runs,
+            jobs(41),
+            now="2026-08-10T18:00:00Z",
+            baseline=baseline,
+        )
+        self.assertEqual(held["state"], "PREEMPTIVE_HOLD_NO_PROGRESS_TRANSITION")
 
     def test_post_pr326_cancelled_observer_burst_requires_a_fresh_successor_receipt(self) -> None:
         observer = "QIKVRT reflexive repository watchdog"
@@ -429,8 +454,13 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('cron: "*/5 * * * *"', workflow)
         self.assertIn("workflow_run:", workflow)
-        self.assertIn("types: [requested, in_progress, completed]", workflow)
-        self.assertIn("cancel-in-progress: true", workflow)
+        self.assertIn("types: [completed]", workflow)
+        self.assertIn("branches: [main]", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("github.event.workflow_run.head_sha", workflow)
+        self.assertIn("github.event.workflow_run.id", workflow)
+        self.assertNotIn("types: [requested, in_progress, completed]", workflow)
+        self.assertNotIn("cancel-in-progress: true", workflow)
         self.assertIn("actions: read", workflow)
         self.assertIn("contents: read", workflow)
         self.assertIn("qikvrt_reflexive_repository_watchdog.py", workflow)

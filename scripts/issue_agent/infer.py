@@ -17,17 +17,18 @@ Every open issue must receive exactly one current lifecycle disposition:
 - EXECUTE_NOW: clear, supported, and technically actionable; identify the smallest bounded work unit.
 - CLARIFICATION_REQUIRED: a specific ambiguity prevents safe execution; identify the minimum missing information.
 - BLOCKED_WITH_NEXT_ACTION: a precise blocker exists; identify the failure class, evidence, retry condition, and one next action.
-- CLOSE_COMPLETED: the requested result is already fully evidenced or canonically superseded.
-- CLOSE_NOT_PLANNED: the request is understood but outside the supported or authorized scope.
-- CLOSE_INVALID_OR_UNSUPPORTED: the request is not reproducible, not traceable, internally contradictory, untrue, or technically unsupported.
+- CLOSE_COMPLETED: a closure candidate; it still requires exact-current postcondition reobservation.
+- CLOSE_NOT_PLANNED: a closure candidate; it still requires exact-current external-hold evidence.
+- CLOSE_INVALID_OR_UNSUPPORTED: a closure candidate; it still requires exact-current external-hold evidence.
 
 Do not leave an issue in an unclassified waiting state. Age alone is not a closure reason, broadness alone is not a waiting reason, and closure may not hide a real unresolved defect. If work is possible, progress it; if safe execution needs clarification, ask only the bounded clarification; if closure is warranted, provide a concise evidence-bound reason.
 
 Produce Markdown with sections: Repository answer, Evidence used, Formal status, Empirical status,
 Issue disposition, Disposition reason, Required next action, Gate result.
 The Issue disposition section must contain exactly one allowed disposition token.
-The Required next action section must contain one concrete action, or NONE only for a justified closure disposition.
-The final gate result must be one of DONE, CONTINUE, ISOLATE, BLOCK.
+The Required next action section must always contain one concrete reobservation or rebind action; NONE is forbidden.
+The final gate result must be one of CONTINUE, ISOLATE, BLOCK. A report, inference, workflow completion,
+or closure disposition is never a terminal outcome.
 """
 
 

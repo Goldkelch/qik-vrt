@@ -4,7 +4,19 @@ import json
 import sys
 from pathlib import Path
 
-REQUIRED = ("REQUEST.json", "REQUEST.sha256", "CONTEXT.md", "ANSWER.md", "STATUS.json")
+try:  # module execution and direct script execution are both supported
+    from .continuation import ContinuationError, validate_record
+except ImportError:  # pragma: no cover - exercised by the workflow command
+    from continuation import ContinuationError, validate_record
+
+REQUIRED = (
+    "REQUEST.json",
+    "REQUEST.sha256",
+    "CONTEXT.md",
+    "ANSWER.md",
+    "STATUS.json",
+    "CONTINUATION.json",
+)
 ALLOWED_DISPOSITIONS = {
     "EXECUTE_NOW",
     "CLARIFICATION_REQUIRED",
@@ -38,7 +50,7 @@ def validate(directory: Path) -> None:
 
     status = json.loads((directory / "STATUS.json").read_text(encoding="utf-8"))
     gate = status.get("status")
-    if gate not in {"DONE", "CONTINUE", "ISOLATE", "BLOCK"}:
+    if gate not in {"CONTINUE", "ISOLATE", "BLOCK"}:
         raise SystemExit("INVALID_GATE_STATUS")
 
     disposition = status.get("issue_disposition")
@@ -48,24 +60,24 @@ def validate(directory: Path) -> None:
         raise SystemExit("MISSING_DISPOSITION_REASON")
     if not isinstance(status.get("next_action"), str) or not status["next_action"].strip():
         raise SystemExit("MISSING_NEXT_ACTION")
-    if disposition not in CLOSURE_DISPOSITIONS and status["next_action"].strip().upper() == "NONE":
-        raise SystemExit("NON_CLOSURE_REQUIRES_NEXT_ACTION")
+    if status["next_action"].strip().upper() == "NONE":
+        raise SystemExit("LIVE_CONTINUATION_REQUIRES_NEXT_ACTION")
     if status.get("closure_recommended") is not (disposition in CLOSURE_DISPOSITIONS):
         raise SystemExit("CLOSURE_RECOMMENDATION_MISMATCH")
 
-    if gate == "DONE":
-        if status.get("automatic_merge") is not True:
-            raise SystemExit("DONE_REQUIRES_AUTOMATIC_MERGE")
-        for key in ("automatic_issue_close", "mirror_sync_required", "common_tag_required"):
-            if status.get(key) is not True:
-                raise SystemExit(f"DONE_REQUIRES_{key.upper()}")
-    else:
-        if status.get("automatic_merge") is not False:
-            raise SystemExit("NON_DONE_MUST_NOT_AUTO_MERGE")
-        if status.get("automatic_issue_close") is not False:
-            raise SystemExit("NON_DONE_MUST_NOT_AUTO_CLOSE_ISSUE")
+    for key in ("automatic_merge", "automatic_issue_close", "mirror_sync_required", "common_tag_required"):
+        # Legacy bundles may omit a later-added effect flag, but no live
+        # continuation may explicitly grant it.
+        if status.get(key, False) is not False:
+            raise SystemExit(f"LIVE_CONTINUATION_MUST_NOT_ENABLE_{key.upper()}")
     if status.get("no_false_pass") is not True:
         raise SystemExit("NO_FALSE_PASS_GATE_FAILED")
+
+    try:
+        continuation = json.loads((directory / "CONTINUATION.json").read_text(encoding="utf-8"))
+        validate_record(continuation, request_data, status)
+    except (ContinuationError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"INVALID_CONTINUATION_BINDING: {exc}") from exc
 
     answer = (directory / "ANSWER.md").read_text(encoding="utf-8").strip()
     if not answer:
