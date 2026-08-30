@@ -573,6 +573,21 @@ def _active_writers(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _active_writer_lease_state(writers: Sequence[Mapping[str, Any]]) -> str:
+    """Return the only writer fact that changes a review disposition.
+
+    Individual Actions run IDs, attempts, queue positions, and active-state
+    transitions are operational telemetry.  They are retained in the raw
+    snapshot artifact for audit and watchdog consumers, but every nonempty
+    validated writer set has the same safe review outcome: a nonproductive
+    ``WAIT`` until the repository has a single-writer opportunity.  Binding
+    those volatile transport identities into the ledger receipt would make a
+    correctly held review nonconvergent whenever one active writer is replaced
+    by another equivalent active writer.
+    """
+    return "ACTIVE" if writers else "QUIESCENT"
+
+
 def _string_list(snapshot: Mapping[str, Any], field: str) -> list[str]:
     raw = snapshot.get(field, [])
     if not isinstance(raw, list) or not all(isinstance(value, str) and value for value in raw):
@@ -1057,7 +1072,7 @@ def _evidence_fingerprint(
     required_gate_paths: Mapping[str, str],
 ) -> str:
     payload = {
-        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v4",
+        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v5",
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
         "repository": snapshot.get("repository"),
@@ -1095,7 +1110,7 @@ def _evidence_fingerprint(
         "required_gate_workflow_ids": snapshot.get("required_gate_workflow_ids"),
         "required_gate_events": snapshot.get("required_gate_events"),
         "latest_workflows": _gate_projection(latest),
-        "active_writers": list(writers),
+        "active_writer_lease_state": _active_writer_lease_state(writers),
     }
     return _canonical_sha256(payload)
 
@@ -1305,6 +1320,7 @@ def _result(
     diff_transport: Mapping[str, Any] | None = None,
     findings: Sequence[Mapping[str, Any]] = (),
     latest: Mapping[tuple[int, str, str, str], Mapping[str, Any]] | None = None,
+    active_writer_lease_state: str | None = None,
 ) -> dict[str, Any]:
     pr_number = snapshot.get("pr_number")
     head = snapshot.get("head_sha")
@@ -1343,6 +1359,7 @@ def _result(
         "diff_sha256": diff_sha256,
         "diff_bytes": diff_bytes,
         "evidence_fingerprint": fingerprint,
+        "active_writer_lease_state": active_writer_lease_state,
         "ledger_path": ledger_path,
         "ledger_diff_path": diff_path,
         "diff_transport": dict(diff_transport) if isinstance(diff_transport, Mapping) else None,
@@ -1499,6 +1516,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             f"{LEDGER_ROOT}/pr-{snapshot['pr_number']}/{snapshot['head_sha']}/{fingerprint}",
         ) if diff else None,
         "latest": latest,
+        "active_writer_lease_state": _active_writer_lease_state(writers),
     }
     if intake["reason_state"] == "AMBIGUOUS_FAIL_CLOSED":
         return _result(
@@ -1616,7 +1634,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             snapshot,
             "WAIT",
             "COMPETING_WRITER_ACTIVE",
-            f"{len(writers)} productive repository writer(s) are active",
+            "a productive repository writer lease is active",
             findings=findings
             + [_finding("COMPETING_WRITER_ACTIVE", "HOLD", "productive repository writer lease is active")],
             **common,
@@ -2722,6 +2740,11 @@ def verify_current_receipt(
         "checks": checks,
         "expected_fingerprint": expected.get("evidence_fingerprint"),
         "observed_fingerprint": fresh.get("evidence_fingerprint"),
+        "active_writer_lease_state": fresh.get("active_writer_lease_state"),
+        # Retain raw concurrent-writer telemetry in the artifact, but keep it
+        # out of receipt identity: only its nonempty/empty lease predicate
+        # changes the review disposition.
+        "observed_active_writers": snapshot.get("active_writers", []),
         "first_blocker": None if exact else "CAUSAL_REVIEW_EVIDENCE_DRIFT",
         "completion_claims": {
             "PASS": False,

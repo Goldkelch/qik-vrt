@@ -1074,7 +1074,116 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             result["derived_action"]["next_action"],
             "WAIT_FOR_SINGLE_WRITER_LEASE",
         )
+        self.assertEqual(result["active_writer_lease_state"], "ACTIVE")
+        self.assertEqual(
+            result["detail"],
+            "a productive repository writer lease is active",
+        )
         self.assertFalse(result["derived_action"]["productive_effect"])
+
+    def test_active_writer_lifecycle_churn_preserves_the_same_hold_receipt(self):
+        first_writer = {
+            "id": 901,
+            "name": "QIK-VRT autonomous bounded self-heal",
+            "status": "in_progress",
+            "head_sha": MAIN_SHA,
+            "workflow_id": 7001,
+            "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+            "event": "workflow_dispatch",
+            "run_number": 9,
+            "run_attempt": 1,
+        }
+        successor_writer = {
+            "id": 902,
+            "name": "QIK-VRT expected-head promotion executor",
+            "status": "queued",
+            "head_sha": MAIN_SHA,
+            "workflow_id": 7002,
+            "path": ".github/workflows/qikvrt_expected_head_promotion.yml",
+            "event": "workflow_run",
+            "run_number": 10,
+            "run_attempt": 2,
+        }
+        additional_writer = {
+            "id": 903,
+            "name": "QIKVRT repository evidence materialization",
+            "status": "waiting",
+            "head_sha": HEAD_SHA,
+            "workflow_id": 7003,
+            "path": ".github/workflows/qikvrt_batch04_integrity.yml",
+            "event": "pull_request",
+            "run_number": 11,
+            "run_attempt": 1,
+        }
+        expected = self.evaluate(self.snapshot(active_writers=[first_writer]))
+        replacement_snapshot = self.snapshot(
+            active_writers=[successor_writer, additional_writer]
+        )
+
+        fresh = self.evaluate(replacement_snapshot)
+        self.assertEqual(expected["active_writer_lease_state"], "ACTIVE")
+        self.assertEqual(fresh["active_writer_lease_state"], "ACTIVE")
+        self.assertEqual(expected["evidence_fingerprint"], fresh["evidence_fingerprint"])
+        self.assertEqual(expected, fresh)
+
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(replacement_snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, verified, observed_diff = MODULE.verify_current_receipt(
+                expected,
+                MODULE._pretty_json_bytes(expected),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+        self.assertTrue(report["exact"])
+        self.assertIsNone(report["first_blocker"])
+        self.assertEqual(report["active_writer_lease_state"], "ACTIVE")
+        self.assertEqual(report["observed_active_writers"], replacement_snapshot["active_writers"])
+        self.assertEqual(verified, expected)
+        self.assertEqual(observed_diff, DEFAULT_DIFF_BYTES)
+
+    def test_active_writer_lease_end_invalidates_a_held_receipt(self):
+        active_writer = {
+            "id": 901,
+            "name": "QIK-VRT autonomous bounded self-heal",
+            "status": "in_progress",
+            "head_sha": MAIN_SHA,
+            "workflow_id": 7001,
+            "path": ".github/workflows/qikvrt_autonomous_self_heal.yml",
+            "event": "workflow_dispatch",
+            "run_number": 9,
+            "run_attempt": 1,
+        }
+        expected = self.evaluate(self.snapshot(active_writers=[active_writer]))
+        quiescent_snapshot = self.snapshot(active_writers=[])
+
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(quiescent_snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, fresh, _ = MODULE.verify_current_receipt(
+                expected,
+                MODULE._pretty_json_bytes(expected),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+        self.assertFalse(report["exact"])
+        self.assertEqual(report["first_blocker"], "CAUSAL_REVIEW_EVIDENCE_DRIFT")
+        self.assertEqual(fresh["active_writer_lease_state"], "QUIESCENT")
+        self.assertNotEqual(expected["evidence_fingerprint"], fresh["evidence_fingerprint"])
 
     def test_every_repository_writer_queue_state_is_active(self):
         for status in MODULE.ACTIVE_WRITER_STATES:

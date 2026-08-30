@@ -138,11 +138,15 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
                 "DIFF_SHA256",
                 "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
                 "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
-                "ACTIVE_WRITER_QUEUE_STATE",
+                "ACTIVE_WRITER_LEASE_STATE",
                 "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK",
             ],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
+        self.assertEqual(
+            binding["active_writer_lease_semantics"],
+            "ACTIVE_OR_QUIESCENT_ONLY_RAW_WRITER_QUEUE_TELEMETRY_RETAINED_IN_OBSERVATION_ARTIFACT",
+        )
         self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
         self.assertEqual(
             binding["complete_diff_transport_acceptance"],
