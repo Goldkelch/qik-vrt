@@ -29,15 +29,18 @@ KONTROLLIERBARER PHYSIKALISCHER RÜCKWÄRTSKANAL
 
 Die ersten drei Ebenen werden experimentell, quellengebunden, formal beziehungsweise technisch behandelt. Ein positiver, frei modulierbarer physikalischer Rückwärtskanal wird nicht behauptet; dafür wird ein falsifizierbarer Kanaltest spezifiziert.
 
-## Artefakte
+## Repository-Artefakte
 
-- `main.tex`: reproduzierbare wissenschaftliche Fassung;
+- `SCIENTIFIC_MANUSCRIPT.md`: wissenschaftlicher Haupttext;
 - `PROSA_ARTIKEL.md`: vorlesbare allgemeinverständliche Fassung;
 - `CLAIM_MATRIX.json`: maschinenlesbare Claim-/Evidenzgrenzen;
 - `ZENODO_METADATA.json`: Zenodo-Metadatenkandidat;
 - `ARXIV_METADATA.txt`: arXiv-Metadatenkandidat;
 - `WIKIPEDIA_READINESS.md`: enzyklopädische Publikationsgrenze;
-- `PDF_SHA256.txt`: Digest des lokal gerenderten, visuell und technisch geprüften PDFs.
+- `PDF_SHA256.txt`: Digest des lokal gerenderten, visuell und technisch geprüften PDFs;
+- `SOURCE_PACKAGE_SHA256.txt`: Digests des reproduzierbaren arXiv-Quellpakets und des vollständigen Einreichungspakets.
+
+Die vollständige LaTeX-Quelle liegt im digestgebundenen arXiv-Quellpaket. Binärartefakte werden nicht durch manuell nachgebildete Repository-Dateien ersetzt.
 
 ## Exakter lokaler PDF-Kandidat
 
@@ -48,7 +51,7 @@ FORMAT = PDF 1.7 / A4
 SHA256 = 5e852934e0def64a930d50ebafb455eb35d87fbe1953f624cb27a9002c79ae99
 ```
 
-Der Digest bindet den lokal erzeugten Publikationskandidaten. Der PDF-Binärcode wird in dieser Source-Generation nicht als Ersatz für repository-native Materialisierung handgeschrieben.
+Der Digest bindet den lokal erzeugten Publikationskandidaten. `SOURCE_PACKAGE_SHA256.txt` bindet das reproduzierbare Quellpaket und das vollständige Einreichungspaket.
 
 ## Effektgrenze
 
