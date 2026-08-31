@@ -77,13 +77,43 @@ jobs:
           mkdir -p "$root"
           : > "$root/decisions.jsonl"
 
+          # Reuse the repository's bounded installation-rate-limit contract:
+          # retry only the exact GitHub installation quota response, after the
+          # same two backoff intervals used by the read-only observer.  A
+          # different API failure remains fail-closed; this cannot turn an
+          # authorization or malformed-request error into a blind retry loop.
+          gh_read() {
+            local output error delay
+            output="$(mktemp)"
+            error="$(mktemp)"
+            for delay in 0 15 45; do
+              if [ "$delay" -gt 0 ]; then
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay"
+                sleep "$delay"
+              fi
+              if gh api "$@" >"$output" 2>"$error"; then
+                cat "$output"
+                rm -f "$output" "$error"
+                return 0
+              fi
+              if ! grep -Fq "API rate limit exceeded for installation." "$error"; then
+                cat "$error" >&2
+                rm -f "$output" "$error"
+                return 1
+              fi
+            done
+            cat "$error" >&2
+            rm -f "$output" "$error"
+            return 1
+          }
+
           selected_pr=""
           selected_ref=""
           selected_head=""
           selected_base=""
 
           # Bounded discovery: newest 30 open PRs only, one REOBSERVE edge per run.
-          gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
+          gh_read "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
             > "$root/open-prs.json"
           while IFS=$'\t' read -r pr ref head base head_repo; do
             test -n "$pr" || continue
@@ -102,7 +132,7 @@ jobs:
               continue
             fi
 
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
+            gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
               > "$root/runs-${pr}.json"
             : > "$root/observations-${pr}.jsonl"
             # Read one JSON object per line.  A tab-separated projection loses
@@ -119,7 +149,7 @@ jobs:
               jobs_total=0
               case "$conclusion" in
                 action_required|cancelled|failure|startup_failure|timed_out)
-                  jobs_total="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
+                  jobs_total="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
                   ;;
                 success)
                   # A completed success is executed evidence; the classifier only
@@ -143,7 +173,7 @@ jobs:
             jq -s '.' "$root/observations-${pr}.jsonl" > "$root/observations-${pr}.json"
 
             exact_head_status="$(
-              gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
+              gh_read "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
                 --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"'
             )"
             python3 -B tools/qikvrt_pr_head_recovery.py classify \
