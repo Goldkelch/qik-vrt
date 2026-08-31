@@ -45,6 +45,28 @@ jobs:
             issue_numbers="$(gh issue list --repo "$AUTHORITY_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')"
           fi
 
+          publish_receipt() {
+            local issue="$1"
+            local receipt_file
+            receipt_file="$(mktemp)"
+            cat > "$receipt_file"
+
+            local existing_comment
+            existing_comment="$(gh api --paginate "repos/${AUTHORITY_REPOSITORY}/issues/$issue/comments?per_page=100" \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- qikvrt-issue-agent-autofinish-status:v1 -->")) | .id' \
+              | tail -n 1)"
+            if [ -z "$existing_comment" ]; then
+              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body-file "$receipt_file"
+              return
+            fi
+            current_body="$(gh api "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" --jq '.body')"
+            desired_body="$(cat "$receipt_file")"
+            if [ "$current_body" != "$desired_body" ]; then
+              gh api --method PATCH "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" \
+                --raw-field "body=$desired_body" >/dev/null
+            fi
+          }
+
           for issue in $issue_numbers; do
             branch="issue-agent/$issue"
             authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
@@ -56,14 +78,20 @@ jobs:
               status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch")"
               status="$(printf '%s' "$status_json" | jq -r '.status')"
               if [ "$status" != "DONE" ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed."
+                publish_receipt "$issue" <<EOF
+<!-- qikvrt-issue-agent-autofinish-status:v1 -->
+Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed.
+EOF
                 continue
               fi
               checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
               failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
               pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **BLOCK**. At least one authority check failed."
+                publish_receipt "$issue" <<'EOF'
+<!-- qikvrt-issue-agent-autofinish-status:v1 -->
+Repository auto-finish: **BLOCK**. At least one authority check failed.
+EOF
                 continue
               fi
               [ "$pending" -eq 0 ] || continue
@@ -73,7 +101,10 @@ jobs:
 
             [ -n "$authority_merged" ] || continue
             if [ -z "${MESH_TOKEN:-}" ]; then
-              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created."
+              publish_receipt "$issue" <<'EOF'
+<!-- qikvrt-issue-agent-autofinish-status:v1 -->
+Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created.
+EOF
               continue
             fi
 
@@ -99,7 +130,10 @@ jobs:
               mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
               mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$mirror_failed" -gt 0 ]; then
-                gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks."
+                publish_receipt "$issue" <<EOF
+<!-- qikvrt-issue-agent-autofinish-status:v1 -->
+Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks.
+EOF
                 continue
               fi
               [ "$mirror_pending" -eq 0 ] || continue
@@ -112,6 +146,14 @@ jobs:
             mirror_sha="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/commits/main" --jq '.sha')"
             gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
             GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
-            gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body "Repository auto-finish: **EFFECT_ACK_DONE**\n\n- authority PR #$authority_pr merged\n- mirror PR #$mirror_pr merged\n- common tag \`$tag\` created in both repositories\n- issue closed automatically"
+            publish_receipt "$issue" <<EOF
+<!-- qikvrt-issue-agent-autofinish-status:v1 -->
+Repository auto-finish: **EFFECT_ACK_DONE**
+
+- authority PR #$authority_pr merged
+- mirror PR #$mirror_pr merged
+- common tag \`$tag\` created in both repositories
+- issue closed automatically
+EOF
             gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
           done

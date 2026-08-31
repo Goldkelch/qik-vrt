@@ -37,6 +37,13 @@ def validate(directory: Path) -> None:
         raise SystemExit("INVALID_ISSUE_NUMBER")
 
     status = json.loads((directory / "STATUS.json").read_text(encoding="utf-8"))
+    if status.get("request_sha256") != actual:
+        raise SystemExit("STATUS_REQUEST_SHA256_MISMATCH")
+    expected_transaction_id = (
+        f"issue-{request_data['issue_number']}-{actual[:24]}"
+    )
+    if status.get("transaction_id") != expected_transaction_id:
+        raise SystemExit("STATUS_TRANSACTION_ID_MISMATCH")
     gate = status.get("status")
     if gate not in {"DONE", "CONTINUE", "ISOLATE", "BLOCK"}:
         raise SystemExit("INVALID_GATE_STATUS")
