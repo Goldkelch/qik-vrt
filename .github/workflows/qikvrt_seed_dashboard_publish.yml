@@ -70,11 +70,38 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .qikvrt/seed-workflow
-          {
-            sh tools/qikvrt_seed_mesh_maintenance.sh
-            sh tools/qikvrt_seed_node_revalidation.sh
-            sh tools/qikvrt_seed_dashboard_publish.sh
-          } 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
+          sh tools/qikvrt_seed_mesh_maintenance.sh 2>&1 | tee .qikvrt/seed-workflow/dashboard.log
+          set +e
+          sh tools/qikvrt_seed_node_revalidation.sh 2>&1 | tee -a .qikvrt/seed-workflow/dashboard.log
+          revalidation_exit=$?
+          set -e
+          if [ "$revalidation_exit" = 10 ]; then
+            python3 -B - <<'PY'
+            import json
+            import os
+            import pathlib
+
+            payload = {
+                "schema": "qikvrt_seed_dashboard_nonterminal_boundary_v1",
+                "status": "HOLD",
+                "reason": "NODE_REVALIDATION_CONTINUE",
+                "resume_input": "FRESH_NODE_REVALIDATION",
+                "source_head": os.environ["GITHUB_SHA"],
+                "run_id": os.environ["GITHUB_RUN_ID"],
+                "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+            }
+            pathlib.Path(
+                ".qikvrt/seed-workflow/dashboard-nonterminal-boundary.json"
+            ).write_text(
+                json.dumps(payload, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            PY
+            echo "HOLD QIKVRT_SEED_DASHBOARD NODE_REVALIDATION_CONTINUE" | tee -a .qikvrt/seed-workflow/dashboard.log
+            exit 0
+          fi
+          test "$revalidation_exit" = 0
+          sh tools/qikvrt_seed_dashboard_publish.sh 2>&1 | tee -a .qikvrt/seed-workflow/dashboard.log
       - name: Preserve local dashboard evidence without mutating the repository
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -85,6 +112,7 @@ jobs:
           path: |
             .qikvrt/seed-workflow/dashboard.log
             .qikvrt/seed-workflow/dashboard-exact-head-binding.json
+            .qikvrt/seed-workflow/dashboard-nonterminal-boundary.json
             docs/qikvrt_mesh_dashboard.html
             docs/QIKVRT_MESH_DASHBOARD.md
             registry/NODEMESH_INDEX.json
