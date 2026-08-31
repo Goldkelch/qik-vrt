@@ -1,0 +1,44 @@
+name: QIKVRT main ruleset reconciler
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - qikvrt_ruleset_reconcile
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-main-ruleset-reconciler
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Reconcile exact ruleset and require post-effect readback
+        env:
+          QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_ruleset_reconcile.py \
+            --apply \
+            --receipt "$RUNNER_TEMP/qikvrt-main-ruleset-receipt.json"
+      - name: Preserve exact reconciliation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qikvrt-main-ruleset-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-main-ruleset-receipt.json
+          if-no-files-found: error
+          retention-days: 90

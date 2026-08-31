@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 REQUIRED = ("REQUEST.json", "REQUEST.sha256", "CONTEXT.md", "ANSWER.md", "STATUS.json")
@@ -47,7 +46,9 @@ def promote(directory: Path) -> None:
 
     inference_completed = status.get("model_inference_completed") is True
     explicit_block = "## Gate result\n\nBLOCK" in answer
-    now = datetime.now(timezone.utc).isoformat()
+    observed_at = status.get("generated_at")
+    if not isinstance(observed_at, str) or not observed_at:
+        raise SystemExit("BLOCK: deterministic issue transaction timestamp is missing")
 
     if disposition in CLOSURE_DISPOSITIONS:
         if not inference_completed:
@@ -60,7 +61,7 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": True,
             "mirror_sync_required": True,
             "common_tag_required": True,
-            "validated_completion_promoted_at": now,
+            "validated_completion_promoted_at": observed_at,
             "no_false_pass": True,
         })
     elif disposition == "EXECUTE_NOW":
@@ -74,7 +75,7 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": False,
             "mirror_sync_required": False,
             "common_tag_required": False,
-            "validated_disposition_at": now,
+            "validated_disposition_at": observed_at,
             "no_false_pass": True,
         })
     elif disposition in BLOCKING_DISPOSITIONS:
@@ -84,7 +85,7 @@ def promote(directory: Path) -> None:
             "automatic_issue_close": False,
             "mirror_sync_required": False,
             "common_tag_required": False,
-            "validated_disposition_at": now,
+            "validated_disposition_at": observed_at,
             "no_false_pass": True,
         })
 

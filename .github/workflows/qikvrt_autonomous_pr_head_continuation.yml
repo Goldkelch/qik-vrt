@@ -262,9 +262,11 @@ jobs:
 
           : > "$root/dispatched-workflows.jsonl"
           for workflow in \
+            qikvrt_batch04_integrity.yml \
             qikvrt_ci.yml \
             qikvrt_collective_review.yml \
-            qikvrt_global_completion.yml
+            qikvrt_global_completion.yml \
+            qikvrt_requested_review_contract.yml
           do
             live_ref="$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | awk 'NR == 1 {print $1}')"
             test "$live_ref" = "$HEAD_SHA"

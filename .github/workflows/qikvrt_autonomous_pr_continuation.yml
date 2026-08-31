@@ -134,9 +134,32 @@ jobs:
                 fi
               done < /tmp/qikvrt-merge-conflicts.txt
               if ((${#unexpected[@]})); then
-                printf 'BLOCK: non-allowlisted merge conflicts: %s\n' \
-                  "${unexpected[*]}" >&2
-                exit 2
+                conflict_paths="$(paste -sd, /tmp/qikvrt-merge-conflicts.txt)"
+                conflict_fingerprint="$(
+                  printf '%s\0%s\0%s\0%s' \
+                    "$PR_NUMBER" "$EXPECTED_HEAD" "$live_main" "$conflict_paths" \
+                    | sha256sum | awk '{print $1}'
+                )"
+                existing_hold="$(
+                  gh api --paginate \
+                    "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD}/statuses?per_page=100" \
+                    | jq -r --arg context 'QIKVRT autonomous draft continuation' \
+                      --arg fingerprint "$conflict_fingerprint" \
+                      '.[] | select(.context == $context) | select(.description == ("HOLD conflict fingerprint=" + $fingerprint)) | .id' \
+                    | tail -n 1
+                )"
+                if [ -n "$existing_hold" ]; then
+                  echo "HOLD: duplicate non-allowlisted merge conflict fingerprint=$conflict_fingerprint" >&2
+                  exit 0
+                fi
+                gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${EXPECTED_HEAD}" \
+                  -f state=error \
+                  -f context='QIKVRT autonomous draft continuation' \
+                  -f description="HOLD conflict fingerprint=$conflict_fingerprint" \
+                  -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+                printf 'HOLD: non-allowlisted merge conflicts: %s (fingerprint=%s)\n' \
+                  "${unexpected[*]}" "$conflict_fingerprint" >&2
+                exit 0
               fi
               while IFS= read -r path; do
                 test -n "$path"

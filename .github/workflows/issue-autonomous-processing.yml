@@ -17,7 +17,7 @@ permissions:
   models: read
 
 concurrency:
-  group: issue-agent-${{ github.event.issue.number || inputs.issue_number }}
+  group: qikvrt-repository-evidence-issue-agent/${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
 jobs:
@@ -41,9 +41,70 @@ jobs:
           number="$EVENT_ISSUE_NUMBER"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then number="$INPUT_ISSUE_NUMBER"; fi
           test -n "$number"
-          gh api "repos/$REPOSITORY/issues/$number" > issue.json
-          jq -e '.pull_request | not' issue.json >/dev/null
+          issue_path="$RUNNER_TEMP/qikvrt-issue.json"
+          gh api "repos/$REPOSITORY/issues/$number" > "$issue_path"
+          jq -e '.pull_request | not' "$issue_path" >/dev/null
           echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "path=$issue_path" >> "$GITHUB_OUTPUT"
+
+      - name: Bind history-preserving issue work branch
+        id: branch
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="issue-agent/$ISSUE_NUMBER"
+          base_head="$(git rev-parse --verify HEAD^{commit})"
+          base_tree="$(git rev-parse --verify HEAD^{tree})"
+          remote_head="$({
+            git ls-remote --heads origin "refs/heads/$branch" || true
+          } | awk 'NR == 1 { print $1 }')"
+
+          git config user.name "qik-vrt-issue-agent[bot]"
+          git config user.email "qik-vrt-issue-agent[bot]@users.noreply.github.com"
+          if [ -n "$remote_head" ]; then
+            git fetch --no-tags origin "$remote_head"
+            git switch --detach "$remote_head"
+            git switch -c "$branch"
+            test "$(git rev-parse --verify HEAD^{commit})" = "$remote_head"
+            if ! git merge-base --is-ancestor "$base_head" HEAD; then
+              set +e
+              git merge --no-ff --no-edit "$base_head"
+              merge_status=$?
+              set -e
+              if [ "$merge_status" -ne 0 ]; then
+                mapfile -t conflicts < <(git diff --name-only --diff-filter=U | sort -u)
+                test "${#conflicts[@]}" -gt 0
+                allowed=(
+                  REPOSITORY_FILE_MANIFEST.json
+                  REPOSITORY_FILE_MANIFEST.json.sha256
+                  SHA256SUMS.txt
+                )
+                for path in "${conflicts[@]}"; do
+                  permitted=false
+                  for candidate in "${allowed[@]}"; do
+                    if [ "$path" = "$candidate" ]; then permitted=true; fi
+                  done
+                  if [ "$permitted" != true ]; then
+                    echo "BLOCK: non-generated issue-branch merge conflict: $path" >&2
+                    exit 2
+                  fi
+                  git checkout --theirs -- "$path"
+                  git add -- "$path"
+                done
+                test -z "$(git diff --name-only --diff-filter=U)"
+                git commit --no-edit
+              fi
+            fi
+          else
+            git switch -c "$branch" "$base_head"
+          fi
+
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+          echo "base_head=$base_head" >> "$GITHUB_OUTPUT"
+          echo "base_tree=$base_tree" >> "$GITHUB_OUTPUT"
+          echo "remote_head=$remote_head" >> "$GITHUB_OUTPUT"
 
       - name: Materialize request and repository context
         env:
@@ -52,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/issue_agent/materialize.py \
-            --issue issue.json \
+            --issue "${{ steps.issue.outputs.path }}" \
             --repository "$REPOSITORY" \
             --output-dir "evidence/issues/$ISSUE_NUMBER"
 
@@ -65,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/issue_agent/infer.py \
-            --issue issue.json \
+            --issue "${{ steps.issue.outputs.path }}" \
             --context "evidence/issues/$ISSUE_NUMBER/CONTEXT.md" \
             --output "evidence/issues/$ISSUE_NUMBER/ANSWER.md" \
             --model "openai/gpt-4.1"
@@ -90,31 +151,87 @@ jobs:
           python3 scripts/issue_agent/promote.py "evidence/issues/$ISSUE_NUMBER"
           python3 scripts/issue_agent/validate.py "evidence/issues/$ISSUE_NUMBER"
 
+      - name: Close deterministic repository projection before persistence
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/qikvrt_integrity.py generate
+          python3 -B tools/qikvrt_integrity.py verify
+          make test
+          python3 -B tools/qikvrt_integrity.py verify
+
       - name: Create or update issue work branch and pull request
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          EXPECTED_REMOTE_HEAD: ${{ steps.branch.outputs.remote_head }}
         run: |
           set -euo pipefail
-          branch="issue-agent/$ISSUE_NUMBER"
-          git config user.name "qik-vrt-issue-agent[bot]"
-          git config user.email "qik-vrt-issue-agent[bot]@users.noreply.github.com"
-          git checkout -B "$branch"
-          git add "evidence/issues/$ISSUE_NUMBER"
+          test "$BRANCH" = "issue-agent/$ISSUE_NUMBER"
+          git add -- \
+            "evidence/issues/$ISSUE_NUMBER" \
+            REPOSITORY_FILE_MANIFEST.json \
+            REPOSITORY_FILE_MANIFEST.json.sha256 \
+            SHA256SUMS.txt
+          git diff --cached --check
           if ! git diff --cached --quiet; then
             git commit -m "issue-agent: process issue #$ISSUE_NUMBER"
-            git push --force-with-lease origin "$branch"
           fi
 
-          pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          python3 -B tools/qikvrt_integrity.py verify
+          live_remote_head="$({
+            git ls-remote --heads origin "refs/heads/$BRANCH" || true
+          } | awk 'NR == 1 { print $1 }')"
+          if [ "$live_remote_head" != "$EXPECTED_REMOTE_HEAD" ]; then
+            echo "BLOCK: issue branch advanced before history-preserving persistence" >&2
+            echo "expected_remote_head=$EXPECTED_REMOTE_HEAD" >&2
+            echo "live_remote_head=$live_remote_head" >&2
+            exit 2
+          fi
+          candidate_head="$(git rev-parse --verify HEAD^{commit})"
+          candidate_tree="$(git rev-parse --verify HEAD^{tree})"
+          if [ "$candidate_head" != "$EXPECTED_REMOTE_HEAD" ]; then
+            git push origin "HEAD:refs/heads/$BRANCH"
+          fi
+          persisted_head="$({
+            git ls-remote --exit-code --heads origin "refs/heads/$BRANCH"
+          } | awk 'NR == 1 { print $1 }')"
+          test "$persisted_head" = "$candidate_head"
+
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [ -z "$pr_number" ]; then
             gh pr create \
               --base main \
-              --head "$branch" \
+              --head "$BRANCH" \
               --title "Issue agent: process #$ISSUE_NUMBER" \
-              --body "Repository-native processing artifacts for #$ISSUE_NUMBER.\n\nThe resumable auto-finish workflow may merge this PR only after EFFECT_ACK_DONE and successful repository checks. It then synchronizes the mirror, creates the common tag, and closes the issue."
+              --body "Repository-native, history-preserving processing artifacts for #$ISSUE_NUMBER.\n\nExact-head gates, current review evidence, and separately authorized promotion remain mandatory. This carrier does not itself imply merge, Mirror synchronization, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE."
           fi
 
-          pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url')"
+          pr_url="$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url')"
           status="$(jq -r '.status' "evidence/issues/$ISSUE_NUMBER/STATUS.json")"
-          gh issue comment "$ISSUE_NUMBER" --body "Repository processing status: **$status**\n\nWork product: $pr_url\n\nThe repository auto-finish transaction now owns merge, mirror synchronization, common tagging, and issue closure. Any failed gate remains BLOCK."
+          comment_file="$RUNNER_TEMP/qikvrt-issue-agent-comment.md"
+          cat > "$comment_file" <<EOF
+          <!-- qikvrt-issue-agent-current-transaction -->
+          Repository processing status: **$status**
+
+          Work product: $pr_url
+          Exact candidate: \`$candidate_head\` / tree \`$candidate_tree\`
+
+          The repository persisted and reread the history-preserving candidate. Exact-head gates and independent authority remain separate; no merge, synchronization, publication, PASS, FINAL_PASS, or EFFECT_ACK_DONE is asserted.
+          EOF
+          existing_comment="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/$ISSUE_NUMBER/comments?per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- qikvrt-issue-agent-current-transaction -->")) | .id' \
+            | tail -n 1)"
+          if [ -z "$existing_comment" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"
+          else
+            current_body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/comments/$existing_comment" --jq '.body')"
+            desired_body="$(cat "$comment_file")"
+            if [ "$current_body" != "$desired_body" ]; then
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/$existing_comment" \
+                --raw-field "body=$desired_body" >/dev/null
+            fi
+          fi
