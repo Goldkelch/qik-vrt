@@ -61,6 +61,7 @@ open checks, controlled isolation, responsible blocking, and a fully bound
 - [Competition and evaluator entry point](docs/competition/README.md)
 - [Evidence matrix](docs/competition/EVIDENCE.md)
 - [Current authority map](docs/CURRENT_AUTHORITY.md)
+- [Canonical argumentation entrypoint](docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md)
 - [Project site](https://goldkelch.github.io/qik-vrt/)
 - [Canonical publication and reference overview](https://goldkelch.github.io/qik-vrt/publications/)
 - [Machine-readable publication index](docs/publications/index.json)

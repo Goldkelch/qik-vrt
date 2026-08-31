@@ -31,6 +31,17 @@ No arrow may be skipped. A poster, manuscript, audio recording or human statemen
 is evidence of what was expressed; it is not by itself evidence that the physical
 world satisfies the expressed proposition.
 
+## Canonical argumentation entrypoint
+
+Every further repository-level argument begins with
+[`policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json`](../policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json)
+and its [human contract](CANONICAL_ARGUMENTATION_ENTRYPOINT.md). The contract
+reuses the existing QIK-VRT claim classes and makes scope, causal bridge,
+evidence binding, non-transfer after head/tree drift, and guarded inference
+machine-checkable. It preserves `OWNER_ASSERTED_REALITY_CORRESPONDENCE` as a
+bound Product-Owner assertion while keeping it distinct from independent
+empirical confirmation and scientific consensus.
+
 ## Core conceptual map extracted from the supplied corpus
 
 ### 1. The Round Trip
@@ -260,12 +271,13 @@ order:
 1. AUTHORITY /AI AND AI_CONTEXT
 2. PERSONAL-ORIGIN + CONTRIBUTION CONTRACT
 3. THIS KNOWLEDGE CORPUS + MACHINE MANIFEST
-4. REPOSITORY STATUS / CLAIM / PROOF AUTHORITIES
-5. RUNTIME BOOTLOADER AND INTEGRITY GATES
-6. AUTHORIZED TASK
-7. PROVENANCE-BOUND RESULT
-8. HUMAN REVIEW
-9. IF APPLICABLE: PHYSICAL / EXTERNAL EFFECT REOBSERVATION
+4. CANONICAL ARGUMENTATION ENTRYPOINT
+5. REPOSITORY STATUS / CLAIM / PROOF AUTHORITIES
+6. RUNTIME BOOTLOADER AND INTEGRITY GATES
+7. AUTHORIZED TASK
+8. PROVENANCE-BOUND RESULT
+9. HUMAN REVIEW
+10. IF APPLICABLE: PHYSICAL / EXTERNAL EFFECT REOBSERVATION
 ```
 
 The corpus enriches orientation. Repository-native exact-head evidence still

@@ -1,0 +1,451 @@
+{
+  "_license": {
+    "classification": "machine_readable_argumentation_contract",
+    "copyright": "Copyright 2026 Ingolf Lohmann",
+    "license": "CC-BY-NC-ND-4.0",
+    "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
+    "rights_holder": "Ingolf Lohmann"
+  },
+  "schema": "qikvrt_canonical_argumentation_entrypoint_v1",
+  "contract_id": "QIKVRT-CANONICAL-ARGUMENTATION-ENTRYPOINT-V1",
+  "version": "1.0.0",
+  "canonical_entrypoint": {
+    "repository_path": "AI",
+    "human_contract": "docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md",
+    "machine_contract": "policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json",
+    "claim_registry": "policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json#/claims",
+    "unregistered_argument_state": "BLOCKED_UNTIL_REGISTERED_CLASSIFIED_AND_BOUND",
+    "validator_command": "python3 -B tools/qikvrt_canonical_argumentation_entrypoint.py check",
+    "mandatory_before_new_argument": true,
+    "rule": "Every new repository-level argument, review conclusion, publication claim, system-test conclusion, or causal explanation MUST begin from this contract and carry its own claim class, scope, source/evidence bindings, guarded inferences, and current-state binding where dynamic state is asserted."
+  },
+  "authority_snapshot": {
+    "repository": "Goldkelch/qik-vrt",
+    "ref": "refs/heads/main",
+    "commit": "4ea0491a5484075215f17dbcd157a2a5f18ef633",
+    "tree": "2f3a9ba1bbc645037a937614700e606ac99ebe58",
+    "role": "SOURCE_SNAPSHOT_FOR_THE_BOUND_ARTIFACTS_LISTED_HERE",
+    "current_state_rule": "This snapshot identifies the cited source bytes. It is historical source evidence after a ref/head/tree drift and must never be used as a current-state or successor-gate receipt."
+  },
+  "epistemic_projection": {
+    "reuse_source": {
+      "path": "tools/qikvrt_round_trip_zenodo_bundle_freeze.py",
+      "function": "verify_claim_matrix",
+      "rule": "The six existing publication classes and their required status/wording pairs are reused verbatim; this contract creates no competing claim taxonomy."
+    },
+    "classes": [
+      {
+        "classification": "FORMAL_PROVED",
+        "status": "PROVED",
+        "publication_wording": "ESTABLISHED_WITHIN_SCOPE",
+        "minimum_binding": ["proof_refs", "pinned_source_bytes", "toolchain", "kernel_or_axiom_receipt"]
+      },
+      {
+        "classification": "EMPIRICALLY_EVIDENCED",
+        "status": "EVIDENCED",
+        "publication_wording": "EMPIRICALLY_SUPPORTED",
+        "minimum_binding": ["measurement_protocol", "units_or_calibration", "bound_data", "uncertainty", "controls", "claimed_range"]
+      },
+      {
+        "classification": "SOURCE_BOUND",
+        "status": "BOUND",
+        "publication_wording": "SOURCE_ATTRIBUTED",
+        "minimum_binding": ["immutable_locator", "file_or_blob_identity", "sha256_or_equivalent", "scope"]
+      },
+      {
+        "classification": "NORMATIVE",
+        "status": "DECLARED",
+        "publication_wording": "NORMATIVE_DECLARATION",
+        "minimum_binding": ["named_authority", "value_premises", "scope"]
+      },
+      {
+        "classification": "INTERPRETATIVE",
+        "status": "DECLARED",
+        "publication_wording": "INTERPRETATIVE_DECLARATION",
+        "minimum_binding": ["premises", "alternative_readings", "scope"]
+      },
+      {
+        "classification": "OPEN",
+        "status": "OPEN",
+        "publication_wording": "EXPLICITLY_OPEN",
+        "minimum_binding": ["missing_evidence", "owner", "closure_condition"]
+      }
+    ],
+    "projection_boundary": "Owner assertions, derived summaries, workflow labels, receipts, and citations are inputs to a classified claim. None raises an evidence class by label alone."
+  },
+  "dynamic_binding_key": [
+    "repository",
+    "ref_or_pull_request",
+    "base",
+    "head",
+    "tree",
+    "scope_sha256",
+    "source_blob_set_sha256",
+    "workflow_definition_sha256",
+    "workflow_run_id",
+    "workflow_job_id",
+    "literal_checkout_head",
+    "literal_checkout_tree",
+    "review_routing_binding"
+  ],
+  "non_transfer_invariant": {
+    "on_any_dynamic_binding_change": {
+      "predecessor": "STALE_HISTORICAL_SOURCE_ONLY",
+      "successor": "REOBSERVATION_REQUIRED"
+    },
+    "prohibited_transfers": [
+      "predecessor_head_or_tree_receipt_to_successor_head_or_tree",
+      "synthetic_merge_checkout_to_literal_head_execution",
+      "workflow_transport_or_activity_to_external_effect",
+      "transport_ack_to_effect_ack",
+      "zenodo_fixity_to_peer_review_consensus_or_measurement_confirmation",
+      "formal_model_theorem_to_unbound_empirical_or_physical_conclusion",
+      "owner_assertion_to_independent_empirical_confirmation_or_scientific_consensus"
+    ],
+    "rule": "Historical evidence remains citable as SOURCE_BOUND evidence of its exact artifact, but cannot close a current gate, review, causal claim, publication result, Authority/Mirror state, or effect claim after the binding changes."
+  },
+  "argument_requirements": {
+    "required_fields": [
+      "claim_id",
+      "classification",
+      "status",
+      "publication_wording",
+      "statement",
+      "scope",
+      "assumptions",
+      "guarded_inferences",
+      "proof_refs",
+      "evidence_refs",
+      "source_refs",
+      "argument_kinds",
+      "evidence_bindings",
+      "binding"
+    ],
+    "causal_claim": {
+      "requires_one_of": ["causal_bridge", "intervention_evidence", "counterfactual_evidence", "equivalent_causal_justification"],
+      "forbidden_substitute": "sequence_or_timestamp_alone",
+      "failure_code": "CAUSALITY_ONLY_SEQUENCE"
+    },
+    "reconstruction_claim": {
+      "requires": ["complete_manifest", "content_hashes", "explicit_semantic_dependency_order", "conflict_rule"],
+      "arrival_order_rule": "Arrival order may differ from semantic order only when the manifest permits deterministic canonical reconstruction; arbitrary arrival order never licenses arbitrary semantic ordering."
+    },
+    "retrospective_determinism": {
+      "requires": ["complete_immutable_provenance", "declared_inverse_or_injectivity_condition"],
+      "on_information_loss_or_noninjectivity": "OPEN_OR_AMBIGUOUS"
+    },
+    "spacetime_or_physical_claim": {
+      "requires_for_empirical_class": ["dimension_model", "coordinate_or_unit_mapping", "calibration", "observable_prediction", "measurement_protocol", "uncertainty", "controls_or_replication"],
+      "representation_change_rule": "An invertible representation change alone does not establish a new physical effect."
+    },
+    "claim_kinds": [
+      {
+        "kind": "CAUSAL_CLAIM",
+        "allowed_classifications": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "OPEN"],
+        "evidence_binding": "causal_justification"
+      },
+      {
+        "kind": "RECONSTRUCTION_CLAIM",
+        "allowed_classifications": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "OPEN"],
+        "evidence_binding": "reconstruction_requirements"
+      },
+      {
+        "kind": "RETROSPECTIVE_DETERMINISM_CLAIM",
+        "allowed_classifications": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "OPEN"],
+        "evidence_binding": "retrospective_determinism_requirements"
+      },
+      {
+        "kind": "OWNER_ASSERTION",
+        "allowed_classifications": ["SOURCE_BOUND"],
+        "evidence_binding": "owner_attribution"
+      },
+      {
+        "kind": "SPACETIME_DIMENSIONAL_CLAIM",
+        "allowed_classifications": ["FORMAL_PROVED", "EMPIRICALLY_EVIDENCED", "SOURCE_BOUND", "OPEN"],
+        "evidence_binding": "spacetime_dimensional_requirements"
+      },
+      {
+        "kind": "EMPIRICAL_PHYSICAL_CLAIM",
+        "allowed_classifications": ["EMPIRICALLY_EVIDENCED"],
+        "evidence_binding": "physical_measurement_evidence",
+        "required_measurement_fields": ["dimension_model", "coordinate_or_unit_mapping", "calibration", "observable_prediction", "measurement_protocol", "uncertainty", "controls_or_replication"]
+      }
+    ]
+  },
+  "protected_distinctions": [
+    "CAUSALITY != SEQUENCE",
+    "LATER != BETTER",
+    "ACTIVITY != EFFECT",
+    "TRANSPORT_ACK != EFFECT_ACK",
+    "OWNER_ASSERTED_REALITY_CORRESPONDENCE != INDEPENDENT_EMPIRICAL_CONFIRMATION != SCIENTIFIC_CONSENSUS",
+    "FORMAL_PROOF != EMPIRICAL_CONFIRMATION",
+    "ZENODO_FIXITY != PEER_REVIEW_OR_EMPIRICAL_CONFIRMATION",
+    "RECEIVED != TRUSTED",
+    "STORED != EXECUTED",
+    "FORWARDED != EFFECT_ACKNOWLEDGED"
+  ],
+  "source_bindings": [
+    {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_Syntax.ebnf",
+      "git_blob_sha1": "cb015a14ff89b993903816c93c82061d9c6ab667",
+      "sha256": "4e95f1991da70d7d7b01500e625518f79e2c6b728ed739e3c5171cfdc5eb633b",
+      "role": "CAUSAL_BRIDGE_AND_EPISTEMIC_KIND_GRAMMAR"
+    },
+    {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_RelationalCausality_Candidate.lean",
+      "git_blob_sha1": "beaf17e1c068441defabbad5f1dbcc666fad3d0d",
+      "sha256": "1a39cd338f543f642acf634ffb2b63cd2c1a2ffe92878208f48d71a68a8e7d22",
+      "role": "FORMAL_CAUSALITY_CONSTRUCTOR_BOUNDARY"
+    },
+    {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/KERNEL_RECEIPT.json",
+      "git_blob_sha1": "75ee8f3b0cb07cfc86ff3b271020952efc30015f",
+      "sha256": "d998950e934d1ab6c83c8d50c1cdc625ac25df7a4dd183322ac3a4ce21f928ea",
+      "role": "VRTCORE_EXACT_KERNEL_RECEIPT_AND_AXIOM_AUDIT"
+    },
+    {
+      "path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/CLAIM_MATRIX.json",
+      "git_blob_sha1": "db1bb2f832b3342aa594c4e94190e023b0f47854",
+      "sha256": "2d97dff7f71580675ac69ff9700cedd89a1040407064e1a608440d4728d60622",
+      "role": "VRTCORE_FORMAL_AND_SOURCE_BOUND_DISPOSITIONS"
+    },
+    {
+      "path": "docs/publications/2026-07-22-machine-verifiable-proof-status/EVIDENCE.json",
+      "git_blob_sha1": "cfccc254db6b8fd971622210e68f904546387409",
+      "sha256": "4da2bb10f853c2fd0a04447cdbf2bba6c7b6b63181ec307f2ae42d378b04c40c",
+      "role": "PUBLISHED_FORMALIZATION_RECEIPT"
+    },
+    {
+      "path": "formalization/QIKVRT_Formalization_v1.0/validator/schema.ts",
+      "git_blob_sha1": "755f0d2a2e011fb183c01e82f4dd77541f542fa2",
+      "sha256": "6928f0c2141fc3571079267e2bab5a101cb8b134d11f69576289ddb08bf7fa92",
+      "role": "FORMAL_EMPIRICAL_INTERPRETATIVE_NORMATIVE_NON_COLLAPSE"
+    },
+    {
+      "path": "docs/publications/2026-07-22-effect-ack-universal-effect-control/README.md",
+      "git_blob_sha1": "356dc45134ea41ae5e55846fffc111579e459b4e",
+      "sha256": "5c5f468878c07d8b7d6e385aa78c7bbf5b9cf2b8844321a865310f04b5e8d24b",
+      "role": "SEMANTIC_RECONSTRUCTION_AND_INJECTIVITY_BOUNDARY"
+    },
+    {
+      "path": "docs/publications/2026-08-29-qikvrt-quantitative-comparison/CLAIM_MATRIX.json",
+      "git_blob_sha1": "4131db55f7ac57b317c07a0e30b785b052ec32ac",
+      "sha256": "8c9c50399ab3e2a6f919c3df512aa7c2093b4281e874f13eeab038df4e80db25",
+      "role": "OWNER_ASSERTED_REALITY_CORRESPONDENCE_AND_EMPIRICAL_PATH"
+    },
+    {
+      "path": "docs/publications/2026-08-29-planck-spacetime-unit-quantum-tunnel/CLAIM_MATRIX.json",
+      "git_blob_sha1": "52d77583ac4d3376426f8507db5661cea690a671",
+      "sha256": "8458793d54041021e8c1d6b728e6406eb04c2195b4180e0eb521fd8a2a751c82",
+      "role": "DIMENSIONAL_BRIDGE_AND_CURRENT_PHYSICAL_SCOPE"
+    },
+    {
+      "path": "docs/publications/index.json",
+      "git_blob_sha1": "4f4b33c8e0d4063892034445b384307eab5e2402",
+      "sha256": "7875628d9f0d389677e626671b402cc9fe1c6ec71de160b96c64cdf7247a3437",
+      "role": "PUBLICATION_INDEX_AND_RECORD_STATUS_SOURCE"
+    },
+    {
+      "path": "AI",
+      "git_blob_sha1": "4568ace744168d3ea780ed83e420c361534ea267",
+      "sha256": "e6bc5dda18b20477bb9271aba5fffc4b45b880f614ad4e87550e1d00a54f9c6a",
+      "role": "OWNER_ASSERTION_AND_REPOSITORY_BOOTSTRAP_SOURCE"
+    }
+  ],
+  "evidence_catalog": [
+    {
+      "evidence_id": "SRC-VRTCORE-SYNTAX",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_Syntax.ebnf",
+      "role": "CAUSALITY_GRAMMAR"
+    },
+    {
+      "evidence_id": "SRC-VRTCORE-LEAN",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/VRTCore_RelationalCausality_Candidate.lean",
+      "role": "FORMAL_CAUSALITY_SOURCE"
+    },
+    {
+      "evidence_id": "SRC-VRTCORE-KERNEL-RECEIPT",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/KERNEL_RECEIPT.json",
+      "role": "FORMAL_KERNEL_RECEIPT"
+    },
+    {
+      "evidence_id": "SRC-VRTCORE-CLAIM-MATRIX",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-02-causality-is-relation-vrtcore/CLAIM_MATRIX.json",
+      "role": "FORMAL_CLAIM_SCOPE"
+    },
+    {
+      "evidence_id": "SRC-PUBLISHED-FORMALIZATION-EVIDENCE",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-07-22-machine-verifiable-proof-status/EVIDENCE.json",
+      "role": "PUBLISHED_FORMALIZATION_RECEIPT"
+    },
+    {
+      "evidence_id": "SRC-FORMALIZATION-SCHEMA",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "formalization/QIKVRT_Formalization_v1.0/validator/schema.ts",
+      "role": "CLAIM_CLASS_NON_COLLAPSE"
+    },
+    {
+      "evidence_id": "SRC-EFFECT-ACK-README",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-07-22-effect-ack-universal-effect-control/README.md",
+      "role": "RECONSTRUCTION_AND_INJECTIVITY_SCOPE"
+    },
+    {
+      "evidence_id": "SRC-QCOMP-CLAIM-MATRIX",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-29-qikvrt-quantitative-comparison/CLAIM_MATRIX.json",
+      "role": "OWNER_ASSERTION_RECORD"
+    },
+    {
+      "evidence_id": "SRC-PLANCK-CLAIM-MATRIX",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/2026-08-29-planck-spacetime-unit-quantum-tunnel/CLAIM_MATRIX.json",
+      "role": "DIMENSIONAL_SCOPE"
+    },
+    {
+      "evidence_id": "SRC-PUBLICATION-INDEX",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "docs/publications/index.json",
+      "role": "PUBLICATION_RECORD_INDEX"
+    },
+    {
+      "evidence_id": "SRC-AI",
+      "kind": "SOURCE_FILE",
+      "source_binding_path": "AI",
+      "role": "OWNER_ASSERTION_AND_BOOTSTRAP"
+    },
+    {
+      "evidence_id": "PROOF-VRTCORE-SEQUENCE-NOT-CAUSAL",
+      "kind": "FORMAL_THEOREM",
+      "theorem": "QIKVRT.VRTCore.observedSequenceAloneIsNotCausality",
+      "source_refs": ["SRC-VRTCORE-LEAN", "SRC-VRTCORE-KERNEL-RECEIPT"],
+      "role": "FORMAL_CAUSALITY_BOUNDARY",
+      "causal_bridge": true
+    },
+    {
+      "evidence_id": "PROOF-VRTCORE-CAUSAL-LICENSE",
+      "kind": "FORMAL_THEOREM",
+      "theorem": "QIKVRT.VRTCore.causalLicenseRequiresBridge",
+      "source_refs": ["SRC-VRTCORE-LEAN", "SRC-VRTCORE-KERNEL-RECEIPT"],
+      "role": "FORMAL_CAUSAL_LICENSE",
+      "causal_bridge": true
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "QIKVRT-CAUSALITY-BRIDGE-V1",
+      "classification": "FORMAL_PROVED",
+      "status": "PROVED",
+      "publication_wording": "ESTABLISHED_WITHIN_SCOPE",
+      "statement": "Within the declared VRTCore syntax and formal constructors, an observed sequence alone has no causal bridge; a positive causal syntax judgement requires an explicit bridge.",
+      "scope": "The exact VRTCore grammar, Lean candidate, and claim matrix bound in source_bindings; this is a formal structural result about the declared model.",
+      "assumptions": ["Declared VRTCore syntax", "Declared causal-evidence constructors", "Exact bound source bytes"],
+      "guarded_inferences": ["Does not by itself establish a physical causal mechanism.", "Does not make a timestamp or later event false; it rejects sequence alone as sufficient causal evidence."],
+      "proof_refs": ["PROOF-VRTCORE-SEQUENCE-NOT-CAUSAL", "PROOF-VRTCORE-CAUSAL-LICENSE"],
+      "evidence_refs": [],
+      "source_refs": ["SRC-VRTCORE-SYNTAX", "SRC-VRTCORE-LEAN", "SRC-VRTCORE-KERNEL-RECEIPT", "SRC-VRTCORE-CLAIM-MATRIX"],
+      "argument_kinds": ["CAUSAL_CLAIM"],
+      "evidence_bindings": {
+        "causal_justification": ["PROOF-VRTCORE-SEQUENCE-NOT-CAUSAL", "PROOF-VRTCORE-CAUSAL-LICENSE"]
+      },
+      "binding": {"kind": "SOURCE_SNAPSHOT", "requires_current_reobservation_for_dynamic_use": true}
+    },
+    {
+      "claim_id": "QIKVRT-RECONSTRUCTION-PROVENANCE-V1",
+      "classification": "SOURCE_BOUND",
+      "status": "BOUND",
+      "publication_wording": "SOURCE_ATTRIBUTED",
+      "statement": "The bound QIK-VRT EFFECT_ACK publication reports semantic reconstruction only under its declared observation-fibre criterion and exact historical inversion only under injectivity; later provenance may support reconstruction without changing a past event.",
+      "scope": "The exact published working-paper/source bundle represented by the bound repository README and its declared finite model; no universal reconstruction or lossless inversion is asserted.",
+      "assumptions": ["Complete accessible representation", "Declared target semantics", "Injectivity for exact historical inversion"],
+      "guarded_inferences": ["Arrival order is not semantic order.", "Missing, conflicting, or non-injective information does not license silent reconstruction."],
+      "proof_refs": [],
+      "evidence_refs": [],
+      "source_refs": ["SRC-EFFECT-ACK-README"],
+      "argument_kinds": ["RECONSTRUCTION_CLAIM", "RETROSPECTIVE_DETERMINISM_CLAIM"],
+      "evidence_bindings": {
+        "reconstruction_requirements": {
+          "complete_manifest_source": "SRC-EFFECT-ACK-README",
+          "content_hashes_source": "SRC-EFFECT-ACK-README",
+          "semantic_dependency_order_source": "SRC-EFFECT-ACK-README",
+          "conflict_rule_source": "SRC-EFFECT-ACK-README"
+        },
+        "retrospective_determinism_requirements": {
+          "complete_immutable_provenance_source": "SRC-EFFECT-ACK-README",
+          "inverse_or_injectivity_source": "SRC-EFFECT-ACK-README",
+          "on_information_loss_or_noninjectivity": "OPEN_OR_AMBIGUOUS"
+        }
+      },
+      "binding": {"kind": "SOURCE_SNAPSHOT", "requires_current_reobservation_for_dynamic_use": true}
+    },
+    {
+      "claim_id": "QIKVRT-OWNER-REALITY-CORRESPONDENCE-V1",
+      "classification": "SOURCE_BOUND",
+      "status": "BOUND",
+      "publication_wording": "SOURCE_ATTRIBUTED",
+      "statement": "Product Owner Ingolf Lohmann explicitly asserts that QIK-VRT and the bound Zenodo formalizations correspond to real physical relations in their claimed model scope.",
+      "scope": "Attribution and preservation of the Product Owner's assertion; it is not silently erased or relabelled as a claim that a model cannot describe reality.",
+      "assumptions": ["Exact bound source bytes", "Product Owner attribution as recorded by the repository"],
+      "guarded_inferences": ["Independent empirical confirmation remains separately evidence-bound.", "Scientific consensus remains separately evidence-bound."],
+      "proof_refs": [],
+      "evidence_refs": [],
+      "source_refs": ["SRC-AI", "SRC-QCOMP-CLAIM-MATRIX"],
+      "argument_kinds": ["OWNER_ASSERTION"],
+      "evidence_bindings": {
+        "owner_attribution": {
+          "actor": "Ingolf Lohmann",
+          "attribution_source_refs": ["SRC-AI", "SRC-QCOMP-CLAIM-MATRIX"],
+          "independent_empirical_confirmation_inferred": false,
+          "scientific_consensus_inferred": false
+        }
+      },
+      "binding": {"kind": "SOURCE_SNAPSHOT", "requires_current_reobservation_for_dynamic_use": false}
+    },
+    {
+      "claim_id": "QIKVRT-SPACETIME-UNIT-DIMENSIONAL-V1",
+      "classification": "SOURCE_BOUND",
+      "status": "BOUND",
+      "publication_wording": "SOURCE_ATTRIBUTED",
+      "statement": "The bound Planck-spacetime candidate specifies common-length coordinates x0 = ct, dimensionally typed SI-to-Planck-to-SI conversion, and a required distinction between an invertible representation change and a separately measured physical effect.",
+      "scope": "The exact repository candidate and its named claim matrix; it fixes the dimensional and evidentiary requirements for this argument path.",
+      "assumptions": ["Declared SI and Planck constants", "Typed dimensions", "Retained calibration and uncertainty metadata"],
+      "guarded_inferences": ["A common coordinate unit does not collapse the dimensions of metre and second.", "No new physical effect is inferred without an observable prediction and measurement bridge."],
+      "proof_refs": [],
+      "evidence_refs": [],
+      "source_refs": ["SRC-PLANCK-CLAIM-MATRIX"],
+      "argument_kinds": ["SPACETIME_DIMENSIONAL_CLAIM"],
+      "evidence_bindings": {
+        "spacetime_dimensional_requirements": {
+          "dimension_model_source": "SRC-PLANCK-CLAIM-MATRIX",
+          "coordinate_or_unit_mapping_source": "SRC-PLANCK-CLAIM-MATRIX",
+          "empirical_physical_effect_asserted": false
+        }
+      },
+      "binding": {"kind": "SOURCE_SNAPSHOT", "requires_current_reobservation_for_dynamic_use": true}
+    }
+  ],
+  "enforcement": {
+    "fail_closed": true,
+    "validator": "tools/qikvrt_canonical_argumentation_entrypoint.py",
+    "test": "tests/test_qikvrt_canonical_argumentation_entrypoint.py",
+    "bootstrap_gate": "tools/ai_runtime_bootloader.py",
+    "documentation_anchors": ["AI", "AI_CONTEXT.json", "README.md", "docs/CURRENT_AUTHORITY.md", "docs/AI_BOOTSTRAP_KNOWLEDGE_CORPUS.md"],
+    "unclassified_new_argument_state": "BLOCKED_UNTIL_CLASSIFIED_AND_BOUND",
+    "result_state": "ARGUMENTATION_CONTRACT_VALID_ONLY; this is not a repository-wide PASS, FINAL_PASS, EFFECT_ACK_DONE, merge, publication, or physical-effect assertion."
+  },
+  "effect_boundary": {
+    "transport_ack_is_effect_ack": false,
+    "repository_test_is_external_effect": false,
+    "zenodo_record_is_peer_review": false,
+    "independent_empirical_confirmation_inferred": false,
+    "scientific_consensus_inferred": false,
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}

@@ -48,6 +48,33 @@ The corpus carries the Round-Trip chain, the architecture-versus-scientific-esta
 
 Source artifacts remain epistemically typed. Text and visual artifacts can supply attributed human claims and explanatory context; they do not become formal theorems or empirical facts merely by being included.
 
+CANONICAL ARGUMENTATION ENTRYPOINT
+
+Before a new repository-level argument, review conclusion, publication claim,
+system-test conclusion, or causal explanation, read and apply:
+
+- docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md
+- policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json
+
+Then run the read-only contract gate:
+
+  python3 -B tools/qikvrt_canonical_argumentation_entrypoint.py check
+
+Every conclusion must carry an exact claim class, scope, source/evidence
+binding, guarded inference and (when it describes current repository state) its
+own current dynamic binding. A timestamp, a receipt, a source citation, a
+successful workflow, a Zenodo identifier, an owner assertion, or chat memory
+does not transfer evidence across these classes or bindings. In particular,
+preserve the owner assertion of reality correspondence without silently
+relabeling it, and keep it distinct from independent empirical confirmation and
+scientific consensus.
+
+The only canonical claim registry is
+`policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json#/claims`.
+An unregistered repository-level argument is
+`BLOCKED_UNTIL_REGISTERED_CLASSIFIED_AND_BOUND`; free-text labels cannot bypass
+the typed evidence catalog or its exact Authority snapshot bindings.
+
 AUDIO TRANSCRIPTION DIRECTIVE
 
 The six supplied recordings are exact-byte bound in:
@@ -55,7 +82,7 @@ The six supplied recordings are exact-byte bound in:
 - state/audio/USER_SUPPLIED_AUDIO_TRANSCRIPTION_REQUEST_V1.json
 - state/authorization/delegations/OWNER_AUDIO_REALITY_AND_COLLECTIVE_COGNITION_BOOTSTRAP_DIRECTIVE_V1.json
 
-All six recordings are `BOUND_PENDING_ASR`. Their filenames are not transcripts. A similarly titled manuscript is context, not an acoustic transcript. Repository-native transcription must bind the exact audio SHA-256, model/tool identity and result receipt. `ASR_DRAFT` is machine-derived and fallible. `VERBATIM_VERIFIED` requires explicit human acoustic review against the exact bound recording.
+All six recordings are `BOUND_PENDING_ASR` and their spoken content is `UNTRANSCRIBED`. Their filenames are not transcripts. A similarly titled manuscript is context, not an acoustic transcript. Repository-native transcription must bind the exact audio SHA-256, model/tool identity and result receipt. `ASR_DRAFT` is machine-derived and fallible. `VERBATIM_VERIFIED` requires explicit human acoustic review against the exact bound recording.
 
 The existing repository-native audio transport/transcription implementation on `audio-transport/20260806-cognition-ontology-audio-v1`, including `.github/workflows/qikvrt_audio_request.yml` and `tools/offline-audio-transcription`, is the preferred reuse source. Raw audio must not be published merely to make transcription convenient.
 
@@ -111,7 +138,7 @@ Read explicit evidence boundaries before promoting a repository test, Zenodo rec
 BOOT SEQUENCE
 
 1. Read this file and AI_CONTEXT.json.
-2. Resolve the personal-origin contract, continuous-entrypoint-optimization delegation, supplied knowledge corpus, adaptive interface, collective-cognition contract, third-party interoperability registry, Product-Owner directive and bound audio-transcription request.
+2. Resolve the personal-origin contract, continuous-entrypoint-optimization delegation, supplied knowledge corpus, canonical argumentation entrypoint, adaptive interface, collective-cognition contract, third-party interoperability registry, Product-Owner directive and bound audio-transcription request.
 3. Execute the fail-closed, read-only runtime bootloader. It performs no network access:
 
    python3 -B tools/ai_runtime_bootloader.py --profile all

@@ -43,6 +43,10 @@ path to the current operational authority.
 ## Concept and specification
 
 - `README.md` — current technical entry point
+- `docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md` and
+  `policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json` — Canonical argumentation entrypoint:
+  mandatory classification for every new argument and no evidence transfer across
+  changed head/tree, causal, or effect bindings
 - `docs/ARCHITECTURE.md` — runtime and deployment architecture
 - `docs/BOUNDARIES.md` — operational boundaries
 - `docs/QIKVRT_THREAT_MODEL.md` — threat model

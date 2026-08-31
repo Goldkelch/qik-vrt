@@ -33,12 +33,14 @@
       "tools/ai_handoff.py",
       "tools/qikvrt_integrity.py",
       "tools/qikvrt_tool_cache.py",
-      "tools/bootstrap-runtime.sh"
+      "tools/bootstrap-runtime.sh",
+      "tools/qikvrt_canonical_argumentation_entrypoint.py"
     ],
     "lifecycle": [
       "Read AI and AI_CONTEXT.json.",
       "Load the personal-origin and contribution-attribution contract.",
       "Load and validate the supplied bootstrap knowledge corpus and its epistemic boundaries.",
+      "Validate the canonical evidence-bound argumentation entrypoint.",
       "Load and validate the adaptive human-machine interface policy and evaluation matrix.",
       "Resolve and verify repository identity and Git ref.",
       "Validate required repository evidence and adapters.",
@@ -71,6 +73,14 @@
     "untranscribed_audio_count": 6,
     "untranscribed_audio_semantic_claims_allowed": false,
     "rule": "Supplied manuscripts, visuals and audio are durable orientation sources only through their declared epistemic class; repository exact-head evidence remains authoritative for current technical state, and untranscribed audio content must never be invented."
+  },
+  "canonical_argumentation_entrypoint": {
+    "human_contract": "docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md",
+    "machine_contract": "policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json",
+    "validator": "tools/qikvrt_canonical_argumentation_entrypoint.py",
+    "command": "python3 -B tools/qikvrt_canonical_argumentation_entrypoint.py check",
+    "mandatory_before_new_argument": true,
+    "rule": "Every new repository-level argument must be classified and bound through the canonical contract; source and predecessor evidence never transfers to a changed dynamic binding."
   },
   "human_machine_interface_adaptation": {
     "policy": "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json",
@@ -109,6 +119,8 @@
     "policy/AI_PERSONAL_WORKING_MEMORY_ORIGIN_AND_ATTRIBUTION_V1.json",
     "docs/AI_BOOTSTRAP_KNOWLEDGE_CORPUS.md",
     "policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json",
+    "docs/CANONICAL_ARGUMENTATION_ENTRYPOINT.md",
+    "policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json",
     "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json",
     "state/interface_adaptation/EVALUATION_MATRIX.json",
     "docs/HUMAN_MACHINE_PROGRESS_PROTOCOL.md",
