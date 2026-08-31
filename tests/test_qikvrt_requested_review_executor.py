@@ -93,6 +93,31 @@ def scope_sha256(changed_files: list[dict[str, object]]) -> str:
 
 
 class RequestedReviewExecutorTests(unittest.TestCase):
+    def test_github_workflow_expression_tokens_are_line_closed(self):
+        offenders = []
+        workflows = ROOT / ".github" / "workflows"
+        for path in sorted((*workflows.glob("*.yml"), *workflows.glob("*.yaml"))):
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if "${{" in line and "}}" not in line:
+                    offenders.append(f"{path.relative_to(ROOT)}:{line_number}")
+        self.assertEqual([], offenders)
+
+    def test_review_contract_normalizes_semantic_document_whitespace(self):
+        contract = (
+            ROOT / ".github" / "workflows" / "qikvrt_requested_review_contract.yml"
+        ).read_text(encoding="utf-8")
+        documentation = (
+            ROOT / "docs" / "DELEGATED_NATIVE_ACCOUNT_REVIEW_AUTOMATION.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "delegated platform-account action",
+            " ".join(documentation.split()),
+        )
+        self.assertIn("tr '\\n' ' '", contract)
+
     def selector_pr(self, **overrides):
         value = {
             "number": 867,
@@ -1182,6 +1207,215 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertNotEqual(fresh["evidence_fingerprint"], expected["evidence_fingerprint"])
         self.assertEqual(observed_diff, DEFAULT_DIFF_BYTES)
 
+    def test_reobservation_preserves_workflow_progress_as_bound_successor(self):
+        waiting_snapshot = self.snapshot()
+        waiting_snapshot["workflow_runs"][0] = self.workflow_run(
+            "QIKVRT CI",
+            identifier=101,
+            run_number=10,
+            status="in_progress",
+            conclusion=None,
+        )
+        expected = self.evaluate(waiting_snapshot)
+        self.assertEqual(expected["first_blocker"], "REQUIRED_GATE_NOT_TERMINAL")
+
+        fresh_snapshot = self.snapshot()
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(fresh_snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, fresh, observed_diff = MODULE.verify_current_receipt(
+                expected,
+                MODULE._pretty_json_bytes(expected),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+
+        self.assertFalse(report["exact"])
+        self.assertTrue(report["ledger_safe"])
+        self.assertTrue(report["progress_successor"])
+        self.assertEqual(report["state"], "PROGRESS_SUCCESSOR_OBSERVED")
+        self.assertEqual(
+            report["first_blocker"],
+            "WORKFLOW_PROGRESS_SUCCESSOR_REQUIRED",
+        )
+        self.assertTrue(report["checks"]["causal_binding"])
+        self.assertNotEqual(
+            fresh["evidence_fingerprint"], expected["evidence_fingerprint"]
+        )
+        self.assertEqual(observed_diff, DEFAULT_DIFF_BYTES)
+
+    def test_reobservation_never_admits_decision_input_drift_as_progress(self):
+        expected = self.evaluate(self.snapshot())
+        changed_scope = self.changed_files()
+        changed_scope[0] = {**changed_scope[0], "path": "renamed.txt"}
+        cases = {
+            "draft": self.snapshot(draft=True),
+            "reviewer": self.snapshot(requested_reviewers=["Goldkelch"]),
+            "team": self.snapshot(requested_team_reviewers=["authority-team"]),
+            "head": self.snapshot(head_sha="1" * 40),
+            "tree": self.snapshot(tree_sha="2" * 40),
+            "base": self.snapshot(base_sha="3" * 40),
+            "base-tree": self.snapshot(base_tree_sha="4" * 40),
+            "current-main": self.snapshot(current_main_sha="5" * 40),
+            "current-main-tree": self.snapshot(current_main_tree_sha="6" * 40),
+            "base-ref": self.snapshot(base_ref="release"),
+            "scope": self.snapshot(
+                changed_files=changed_scope,
+                scope_sha256=scope_sha256(changed_scope),
+            ),
+            "discussion": self.snapshot(
+                discussion_items=[{
+                    "kind": "ISSUE_COMMENT",
+                    "id": "88",
+                    "author": "reviewer",
+                    "author_association": "MEMBER",
+                    "state": None,
+                    "commit_id": None,
+                    "updated_at": "2026-08-29T17:00:00Z",
+                    "body_sha256": "8" * 64,
+                }]
+            ),
+            "review-thread": self.snapshot(
+                review_threads=[{
+                    "id": "PRRT_1",
+                    "is_resolved": False,
+                    "body_sha256": "7" * 64,
+                }],
+                unresolved_review_threads=1,
+            ),
+        }
+        for label, fresh_snapshot in cases.items():
+            with self.subTest(label=label), mock.patch.object(
+                MODULE,
+                "observe_repository",
+                return_value=(fresh_snapshot, DEFAULT_DIFF_BYTES),
+            ):
+                report, _fresh, _diff = MODULE.verify_current_receipt(
+                    expected,
+                    MODULE._pretty_json_bytes(expected),
+                    DEFAULT_DIFF_BYTES,
+                    "example/qik-vrt",
+                    349,
+                    999,
+                    list(REQUIRED_GATE_PATHS),
+                    REQUIRED_GATE_PATHS,
+                    [],
+                )
+            self.assertFalse(report["exact"])
+            self.assertFalse(report["ledger_safe"])
+            self.assertFalse(report["progress_successor"])
+            self.assertFalse(report["checks"]["causal_binding"])
+            self.assertEqual(report["state"], "HOLD_UNVERIFIED")
+
+    def test_unknown_future_receipt_field_is_causally_bound_by_default(self):
+        snapshot = self.snapshot()
+        expected = self.evaluate(snapshot)
+        expected["future_decision_input"] = {"version": 1, "authority": "bound"}
+        expected = MODULE._seal(expected)
+
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, _fresh, _diff = MODULE.verify_current_receipt(
+                expected,
+                MODULE._pretty_json_bytes(expected),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+
+        self.assertTrue(report["checks"]["expected_receipt_self_seal"])
+        self.assertFalse(report["checks"]["causal_binding"])
+        self.assertFalse(report["ledger_safe"])
+        self.assertFalse(report["progress_successor"])
+
+    def test_active_writer_change_is_a_nonprojectable_bound_successor(self):
+        waiting = self.snapshot(active_writers=[{
+            "id": 777,
+            "name": "QIKVRT repository evidence materialization",
+            "status": "in_progress",
+            "head_sha": HEAD_SHA,
+            "workflow_id": 222,
+            "path": ".github/workflows/qikvrt_batch04_integrity.yml",
+            "event": "pull_request",
+            "run_number": 10,
+            "run_attempt": 1,
+        }])
+        expected = self.evaluate(waiting)
+        fresh_snapshot = self.snapshot()
+
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(fresh_snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, fresh, _diff = MODULE.verify_current_receipt(
+                expected,
+                MODULE._pretty_json_bytes(expected),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+
+        self.assertTrue(report["ledger_safe"])
+        self.assertTrue(report["progress_successor"])
+        self.assertFalse(report["exact"])
+        self.assertNotEqual(
+            expected["active_writers_observed"],
+            fresh["active_writers_observed"],
+        )
+
+    def test_review_thread_order_is_canonical_but_resolution_is_semantic(self):
+        threads = [
+            {"id": "PRRT_2", "is_resolved": True, "body_sha256": "2" * 64},
+            {"id": "PRRT_1", "is_resolved": True, "body_sha256": "1" * 64},
+        ]
+        first = self.evaluate(self.snapshot(review_threads=threads))
+        second = self.evaluate(self.snapshot(review_threads=list(reversed(threads))))
+        self.assertEqual(first["discussion_sha256"], second["discussion_sha256"])
+        self.assertEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
+
+        resolved = self.evaluate(self.snapshot(review_threads=[threads[0]]))
+        unresolved_snapshot = self.snapshot(
+            review_threads=[{**threads[0], "is_resolved": False}],
+            unresolved_review_threads=1,
+        )
+        with mock.patch.object(
+            MODULE,
+            "observe_repository",
+            return_value=(unresolved_snapshot, DEFAULT_DIFF_BYTES),
+        ):
+            report, _fresh, _diff = MODULE.verify_current_receipt(
+                resolved,
+                MODULE._pretty_json_bytes(resolved),
+                DEFAULT_DIFF_BYTES,
+                "example/qik-vrt",
+                349,
+                999,
+                list(REQUIRED_GATE_PATHS),
+                REQUIRED_GATE_PATHS,
+                [],
+            )
+        self.assertFalse(report["ledger_safe"])
+        self.assertFalse(report["checks"]["causal_binding"])
+
     def test_reobservation_rejects_tampered_receipt_or_stored_diff(self):
         snapshot = self.snapshot()
         expected = self.evaluate(snapshot)
@@ -1256,17 +1490,44 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "created_at": "2026-08-22T20:01:00Z",
             "author_association": "MEMBER",
         }
+        live_status = {
+            "id": 3,
+            "body": "<!-- qikvrt-live-status-watch -->\nExact status projection.",
+            "user": {"login": "github-actions[bot]"},
+            "created_at": "2026-08-22T20:02:00Z",
+        }
+        human_marker = {
+            **live_status,
+            "id": 4,
+            "user": {"login": "reviewer"},
+            "created_at": "2026-08-22T20:03:00Z",
+        }
+        embedded_marker = {
+            **live_status,
+            "id": 5,
+            "body": "Telemetry follows <!-- qikvrt-live-status-watch -->",
+            "created_at": "2026-08-22T20:04:00Z",
+        }
+        other_bot = {
+            **live_status,
+            "id": 6,
+            "user": {"login": "dependabot[bot]"},
+            "created_at": "2026-08-22T20:05:00Z",
+        }
 
         def pages(endpoint):
             if endpoint.endswith("/reviews?per_page=100"):
                 return [own]
             if endpoint.endswith("/comments?per_page=100") and "/issues/" in endpoint:
-                return [foreign]
+                return [foreign, live_status, human_marker, embedded_marker, other_bot]
             return []
 
         with mock.patch.object(MODULE, "_gh_pages", side_effect=pages):
             observed = MODULE._discussion_observation("example/qik-vrt", 349)
-        self.assertEqual([item["id"] for item in observed], ["2"])
+        self.assertEqual(
+            [item["id"] for item in observed],
+            ["2", "4", "5", "6"],
+        )
 
     def test_status_dedup_considers_only_latest_context_projection(self):
         fingerprint = "a" * 64
@@ -1396,6 +1657,41 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                         for value in collision["completion_claims"].values()
                     )
                 )
+
+    def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
+        receipt = self.evaluate(self.snapshot())
+        predecessor = "a" * 64
+        path, intent = MODULE.review_queue_intent(receipt, predecessor)
+        self.assertEqual(
+            path,
+            f"{MODULE.REVIEW_QUEUE_ROOT}/pr-349/{HEAD_SHA}/"
+            f"{receipt['evidence_fingerprint']}.json",
+        )
+        self.assertEqual(intent["predecessor_fingerprint"], predecessor)
+        self.assertEqual(
+            intent["successor_fingerprint"], receipt["evidence_fingerprint"]
+        )
+        self.assertEqual(intent["tree_sha"], HEAD_TREE_SHA)
+        self.assertEqual(intent["base_sha"], MAIN_SHA)
+        self.assertFalse(any(intent["completion_claims"].values()))
+        self.assertEqual(
+            MODULE.review_queue_intent(receipt, predecessor),
+            (path, intent),
+        )
+
+        ack_path, ack = MODULE.review_queue_ack(
+            "example/qik-vrt",
+            349,
+            HEAD_SHA,
+            predecessor,
+            receipt["evidence_fingerprint"],
+        )
+        self.assertEqual(
+            ack_path,
+            f"{MODULE.REVIEW_QUEUE_ACK_ROOT}/pr-349/{HEAD_SHA}/{predecessor}.json",
+        )
+        self.assertEqual(ack["state"], "SUPERSEDED_BY_CAUSAL_REOBSERVATION")
+        self.assertFalse(any(ack["completion_claims"].values()))
 
     def test_conflict_marker_is_a_deterministic_review_finding(self):
         snap = self.snapshot(diff_payload=CONFLICT_DIFF_BYTES)
@@ -1533,6 +1829,27 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("'parents':[]", text)
         self.assertIn("pre-ledger-cas", text)
         self.assertIn("post-ledger-cas", text)
+        self.assertIn("actions: write", text)
+        self.assertIn("'--mode','ledger-history'", text)
+        self.assertIn("projection_current", text)
+        self.assertIn("Dispatch exactly one exact-head progress successor", text)
+        self.assertIn("'gh','workflow','run','qikvrt_requested_review_executor.yml'", text)
+        self.assertIn("f'head={head}'", text)
+        self.assertIn("f'fingerprint={fingerprint}'", text)
+        self.assertIn("steps.queue.outputs.needed == 'true'", text)
+        self.assertNotIn("steps.ledger.outputs.duplicate != 'true'", text)
+        self.assertIn("Select exactly one durable recursive review work unit", text)
+        self.assertIn("review_queue_intent", text)
+        self.assertIn("review_queue_ack", text)
+        self.assertIn("successor_evidence_persisted", text)
+        self.assertIn("RECURSIVE_QUEUE_EVIDENCE_MISSING", text)
+        self.assertIn("SUPERSEDED_BY_CAUSAL_REOBSERVATION", core)
+        self.assertIn("PROGRESS_SUCCESSOR_TRANSPORT_ACK_NOT_OBSERVED", text)
+        self.assertIn("Reobserve successor transport and literal subject binding", text)
+        self.assertIn("PROGRESS_SUCCESSOR_REOBSERVATION_FAILED", text)
+        self.assertIn("_historical_receipt_binding", core)
+        self.assertIn("REOBSERVATION_PROGRESS_FIELDS", core)
+        self.assertIn("LIVE_STATUS_MARKER", core)
         self.assertIn("pre-review-comment", text)
         self.assertIn("post-status", text)
         self.assertIn("event=COMMENT", text)

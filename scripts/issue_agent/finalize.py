@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 ALLOWED_DISPOSITIONS = {
@@ -44,6 +44,12 @@ def main() -> None:
 
     directory = Path(args.directory)
     answer = directory / "ANSWER.md"
+    request_bytes = (directory / "REQUEST.json").read_bytes()
+    request = json.loads(request_bytes)
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    source_created_at = request.get("created_at")
+    if not isinstance(source_created_at, str) or not source_created_at:
+        source_created_at = "1970-01-01T00:00:00Z"
     inference_succeeded = (
         args.inference_outcome == "success"
         and answer.exists()
@@ -98,7 +104,9 @@ def main() -> None:
         "closure_recommended": disposition in CLOSURE_DISPOSITIONS,
         "automatic_issue_close": False,
         "automatic_merge": False,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": source_created_at,
+        "request_sha256": request_sha256,
+        "transaction_id": f"issue-{request.get('issue_number')}-{request_sha256[:24]}",
         "no_false_pass": True,
     }
     (directory / "STATUS.json").write_text(

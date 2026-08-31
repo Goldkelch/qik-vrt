@@ -28,7 +28,6 @@ def main() -> None:
         "author": (issue.get("user") or {}).get("login"),
         "html_url": issue.get("html_url"),
         "created_at": issue.get("created_at"),
-        "updated_at": issue.get("updated_at"),
     }
     canonical = json.dumps(request, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     (out / "REQUEST.json").write_text(canonical, encoding="utf-8")

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import unittest
 
 
@@ -29,6 +30,26 @@ class RepositoryWriterLeaseTests(unittest.TestCase):
         self.assertIn('Bind exact source head before materialization', text)
         self.assertIn('target ref advanced before Batch-003 evidence persistence', text)
         self.assertIn('target ref advanced after local Batch-003 commit; refusing push', text)
+
+    def test_issue_writer_shares_nonpreemptive_branch_lease(self):
+        path = Path('.github/workflows/issue-autonomous-processing.yml')
+        text = path.read_text(encoding='utf-8')
+        self.assertIn(
+            'group: qikvrt-repository-evidence-issue-agent/${{ github.event.issue.number || inputs.issue_number }}',
+            text,
+        )
+        self.assertIn('cancel-in-progress: false', text)
+        self.assertNotIn('git push --force', text)
+        self.assertIn('issue branch advanced before history-preserving persistence', text)
+
+    def test_zero_bug_writer_inventory_includes_issue_producer(self):
+        policy = json.loads(
+            Path('policy/ZERO_BUG_CONTINUOUS_V1.json').read_text(encoding='utf-8')
+        )
+        self.assertIn(
+            'Autonomous issue processing',
+            policy['audit_surface']['writer_workflows'],
+        )
 
 
 if __name__ == '__main__':
