@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS_PATH = ROOT / "policy/AI_BOOTSTRAP_KNOWLEDGE_CORPUS_V1.json"
 ADAPTATION_POLICY_PATH = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
 ADAPTATION_MATRIX_PATH = ROOT / "state/interface_adaptation/EVALUATION_MATRIX.json"
+ARGUMENTATION_ENTRYPOINT_PATH = ROOT / "policy/CANONICAL_ARGUMENTATION_ENTRYPOINT_V1.json"
+ARGUMENTATION_VALIDATOR_PATH = ROOT / "tools/qikvrt_canonical_argumentation_entrypoint.py"
 
 
 class BootBlock(RuntimeError):
@@ -101,6 +103,7 @@ def load_bootstrap_corpus() -> dict[str, Any]:
             raise BootBlock(f"bootstrap knowledge corpus status is invalid: {name}")
     required_invariants = {
         "REPOSITORY_EVIDENCE_OVERRIDES_CHAT_AND_MODEL_MEMORY",
+        "CANONICAL_ARGUMENTATION_ENTRYPOINT_REQUIRED",
         "FORMAL_PROOF_IS_NOT_EMPIRICAL_CONFIRMATION",
         "ARTIFICIAL_COGNITION_IS_NOT_AN_AUTOMATIC_TRUTH_MACHINE",
         "HUMAN_AND_AI_CONTRIBUTIONS_REMAIN_SEPARATELY_ATTRIBUTABLE",
@@ -112,6 +115,22 @@ def load_bootstrap_corpus() -> dict[str, Any]:
     if not isinstance(audio_policy, dict) or audio_policy.get("untranscribed_audio_may_supply_semantic_claims") is not False:
         raise BootBlock("bootstrap knowledge corpus must fail closed on untranscribed audio")
     return corpus
+
+
+def validate_canonical_argumentation_entrypoint() -> dict[str, Any]:
+    if not ARGUMENTATION_ENTRYPOINT_PATH.is_file():
+        raise BootBlock("canonical argumentation entrypoint policy is missing")
+    if not ARGUMENTATION_VALIDATOR_PATH.is_file():
+        raise BootBlock("canonical argumentation entrypoint validator is missing")
+    return run_gate(
+        "canonical argumentation entrypoint",
+        [
+            sys.executable,
+            "-B",
+            str(ARGUMENTATION_VALIDATOR_PATH.relative_to(ROOT)),
+            "check",
+        ],
+    )
 
 
 def load_interface_adaptation() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -181,6 +200,7 @@ def main() -> int:
             "read AI and AI_CONTEXT.json",
             "load personal-origin and contribution-attribution contract",
             "load supplied bootstrap knowledge corpus with epistemic boundaries",
+            "validate canonical evidence-bound argumentation entrypoint",
             "load adaptive human-machine interface cache and evaluation contracts",
             "verify repository identity and Git ref",
             "verify handoff and required repository evidence",
@@ -196,6 +216,7 @@ def main() -> int:
     try:
         context = load_context()
         corpus = load_bootstrap_corpus()
+        argumentation_gate = validate_canonical_argumentation_entrypoint()
         adaptation_policy, adaptation_matrix = load_interface_adaptation()
         artifacts = corpus["source_artifacts"]
         untranscribed = [item for item in artifacts if item.get("content_status") == "UNTRANSCRIBED"]
@@ -232,6 +253,7 @@ def main() -> int:
                 "state": "PASS",
             }
         )
+        report["gates"].append(argumentation_gate)
         report["gates"].append(
             {
                 "name": "human machine interface adaptation",
