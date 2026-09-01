@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import io
 import importlib.util
 import json
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -12,6 +14,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "src" / "qikvrt_effect_ack_http_terminal.py"
@@ -39,7 +42,8 @@ class EffectAckHttpTerminalContractTests(unittest.TestCase):
         ET.parse(ROOT / "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml")
         self.assertEqual(manifest["manifest_version"], 3)
         self.assertIn("alarms", manifest["permissions"])
-        self.assertIn("http://127.0.0.1:8771/*", manifest["host_permissions"])
+        self.assertIn("http://127.0.0.1/*", manifest["host_permissions"])
+        self.assertIn("http://127.0.0.1:8771", manifest["content_security_policy"]["extension_pages"])
         self.assertEqual(policy["http"]["request_field"], "Effect-Ack-Request")
         self.assertEqual(policy["http"]["response_field"], "Effect-Ack")
         self.assertEqual(policy["http"]["link_relation"], "effect-ack")
@@ -248,6 +252,90 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         self.assertEqual(body["state"], "HOLD")
         self.assertEqual(body["reason"], "HATARI_UNAVAILABLE")
         self.assertFalse(body["effect_ack_done"])
+
+    def test_atari_boot_requires_bound_rom_after_hatari_is_available(self) -> None:
+        with mock.patch.object(terminal.shutil, "which", return_value="/opt/hatari"), \
+             mock.patch.dict(terminal.os.environ, {"EMUTOS_ROM": ""}):
+            status, _, body = self.request(
+                "/qikvrt/atari/boot",
+                method="POST",
+                body={
+                    "schema": "qikvrt.atari-terminal-boot.v1",
+                    "mlp_sha256": terminal.MLP_TOS_SHA256,
+                },
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(body["state"], "HOLD")
+        self.assertEqual(body["reason"], "EMUTOS_ROM_REQUIRED")
+        self.assertFalse(body["effect_ack_done"])
+
+    def test_atari_boot_starts_adapter_and_exposes_reobservable_receipt(self) -> None:
+        class FakeProcess:
+            def __init__(self, *_args, **kwargs) -> None:
+                workdir = Path(kwargs["env"]["QIKVRT_MLP_WORKDIR"])
+                drive = workdir / "drive" / "C"
+                drive.mkdir(parents=True)
+                request = b"QIKMLP1\r\nPROGRAM MLP\r\n"
+                trace = b"Hatari v2.4.1\nPexec(0, C:\\MLP.TOS\n"
+                (drive / "MLP.OPEN").write_bytes(request)
+                (workdir / "hatari.log").write_bytes(trace)
+                (workdir / "receipt.env").write_text(
+                    "\n".join((
+                        f"MLP_TOS_SHA256={terminal.MLP_TOS_SHA256}",
+                        f"MLP_OPEN_SHA256={terminal.sha256(request)}",
+                        f"HATARI_TRACE_SHA256={terminal.sha256(trace)}",
+                        "MEGAST_VIRTUAL_EXECUTION_OBSERVED=true",
+                        "PHYSICAL_MEGAST_EXECUTION=false",
+                        "EFFECT_ACK_DONE=false",
+                    )) + "\n",
+                    encoding="utf-8",
+                )
+                self.stdout = io.StringIO("Hatari v2.4.1\nPexec(0, C:\\MLP.TOS\n")
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self):
+                self.returncode = 0
+                return 0
+
+        with tempfile.TemporaryDirectory() as temp:
+            rom = Path(temp) / "etos512ca.img"
+            rom.write_bytes(b"bound test rom")
+            with mock.patch.object(terminal.shutil, "which", return_value="/opt/hatari"), \
+                 mock.patch.object(terminal.subprocess, "Popen", FakeProcess), \
+                 mock.patch.object(terminal, "EMUTOS_ROM_SHA256", terminal.sha256(rom.read_bytes())), \
+                 mock.patch.dict(terminal.os.environ, {"EMUTOS_ROM": str(rom)}):
+                status, _, accepted = self.request(
+                    "/qikvrt/atari/boot",
+                    method="POST",
+                    body={
+                        "schema": "qikvrt.atari-terminal-boot.v1",
+                        "mlp_sha256": terminal.MLP_TOS_SHA256,
+                    },
+                )
+        self.assertEqual(status, 202)
+        self.assertEqual(accepted["state"], "BOOTING")
+        self.assertRegex(accepted["boot_id"], r"^[0-9a-f]{32}$")
+        for _ in range(30):
+            status, _, observed = self.request("/qikvrt/atari/status/" + accepted["boot_id"])
+            if observed["state"] != "BOOTING":
+                break
+            time.sleep(0.01)
+        self.assertEqual(status, 200)
+        self.assertEqual(observed["state"], "VIRTUAL_MEGAST_EXECUTION_OBSERVED")
+        self.assertTrue(observed["virtual_megast_execution_observed"])
+        self.assertFalse(observed["effect_ack_done"])
+        self.assertEqual(observed["external_effect"], "NONE")
+
+    def test_atari_status_rejects_invalid_or_unknown_boot_identifier(self) -> None:
+        status, _, invalid = self.request("/qikvrt/atari/status/not-a-boot-id")
+        self.assertEqual(status, 400)
+        self.assertEqual(invalid["reason"], "INVALID_ATARI_BOOT_ID")
+        status, _, unknown = self.request("/qikvrt/atari/status/" + "0" * 32)
+        self.assertEqual(status, 404)
+        self.assertEqual(unknown["reason"], "ATARI_BOOT_NOT_FOUND")
 
 
 if __name__ == "__main__":

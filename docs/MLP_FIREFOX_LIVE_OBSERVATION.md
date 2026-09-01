@@ -5,10 +5,13 @@ This stage turns the existing MLP/Firefox integration from a presence check into
 The proof chain is bound to:
 
 - proven Mega-ST guest TCP/IP head `a71484ba02f6ebe9169af5a291244e99468caec3`;
+- exact predecessor tree `b45556a6c4ea2d9946c73264c1ed47d4f3128a76` and unchanged `MLP.TOS` subtree bytes;
 - deterministic `MLP.TOS` SHA-256 `5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e`;
 - Firefox-terminal predecessor `e48f50a0419bea9bbdcca47a7673356d372f7400`.
 
 The workflow starts the installed Firefox process in headless mode against a loopback-only proof page. The page executes JavaScript and sends a nonce plus the Firefox user agent back to a loopback HTTP endpoint. Firefox also produces a color PNG screenshot. The receipt binds source head, source tree, MLP digest, TCP/IP predecessor, Firefox version and screenshot digest.
+
+The TCP/IP evidence is a separately bound predecessor tuple, not an ancestry requirement for every downstream candidate. The workflow therefore fetches PR #745's exact source ref, verifies its exact commit/tree identity, and compares the current `MLP.TOS` subtree before it starts Firefox. A candidate that changes that source subtree holds; an unrelated branch topology does not falsely fail the observation gate.
 
 This establishes `BROWSER_RENDERING_OBSERVED` and `BROWSER_JAVASCRIPT_OBSERVED` for the exact workflow tuple. It does not establish a protected external effect, extension distribution, owner-authenticated browser authority, `EFFECT_ACK_DONE`, physical original-Mega-ST execution, empirical retrocausal signalling, merge, PASS or FINAL_PASS.
 

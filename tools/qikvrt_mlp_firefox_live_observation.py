@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MLP_SHA256 = "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e"
 TCPIP_SOURCE_HEAD = "a71484ba02f6ebe9169af5a291244e99468caec3"
+TCPIP_SOURCE_TREE = "b45556a6c4ea2d9946c73264c1ed47d4f3128a76"
 NONCE = "QIKVRT-FIREFOX-LIVE-0001"
 
 
@@ -18,6 +19,7 @@ def page(head, tree):
 <h1>QIK-VRT · MLP.TOS → Firefox live witness</h1>
 <p class="ok">✓ MLP.TOS deterministic image bound: <code>{MLP_SHA256}</code></p>
 <p class="ok">✓ Mega-ST guest TCP/IP predecessor bound: <code>{TCPIP_SOURCE_HEAD}</code></p>
+<p class="ok">✓ Mega-ST guest TCP/IP predecessor tree: <code>{TCPIP_SOURCE_TREE}</code></p>
 <p class="ok">✓ Firefox rendered this page and executed JavaScript.</p>
 <p>Exact head: <code>{head}</code><br>Exact tree: <code>{tree}</code></p>
 <p class="hold">● EFFECT_ACK_DONE = false — protected external effect not executed.</p>
@@ -53,6 +55,7 @@ def serve(args):
                     "tree_sha": args.tree,
                     "mlp_tos_sha256": MLP_SHA256,
                     "tcpip_source_head": TCPIP_SOURCE_HEAD,
+                    "tcpip_source_tree": TCPIP_SOURCE_TREE,
                     "nonce": q.get("nonce", [""])[0],
                     "user_agent": q.get("ua", [""])[0],
                     "browser_javascript_observed": True,

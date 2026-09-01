@@ -1,5 +1,6 @@
 const AUTHORITY = "Goldkelch/qik-vrt";
 const DEFAULT_BACKEND = "http://127.0.0.1:8771";
+const MLP_TOS_SHA256 = "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e";
 const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
 const WATCHDOG_ALARM = "qikvrt-repository-watchdog";
 const WATCHDOG_PERIOD_MINUTES = 5;
@@ -189,6 +190,33 @@ async function discover() {
   return {...result, discovered: result.http_status >= 200 && result.http_status < 300};
 }
 
+async function atariBoot(payload) {
+  if (!payload || payload.schema !== "qikvrt.atari-terminal-boot.v1" || payload.mlp_sha256 !== MLP_TOS_SHA256) {
+    return fail("exact MLP.TOS boot binding required");
+  }
+  return backendRequest("/qikvrt/atari/boot", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+}
+
+async function atariStatus(payload) {
+  if (!payload || payload.schema !== "qikvrt.atari-terminal-status.v1" || !/^[0-9a-f]{32}$/.test(payload.boot_id || "")) {
+    return fail("exact Atari boot identifier required");
+  }
+  return backendRequest(`/qikvrt/atari/status/${payload.boot_id}`, {method: "GET"});
+}
+
+function isAtariTerminalSender(sender) {
+  try {
+    const url = new URL(sender && sender.url);
+    return url.origin === "https://goldkelch.github.io" && url.pathname === "/qik-vrt/atari-terminal/";
+  } catch (_) {
+    return false;
+  }
+}
+
 async function validatePreparedRecord(result) {
   const effect = result.effect_ack;
   const body = result.body;
@@ -241,10 +269,12 @@ browser.runtime.onStartup.addListener(() => { ensureWatchdog().catch(() => undef
 browser.alarms.onAlarm.addListener(alarm => { if (alarm.name === WATCHDOG_ALARM) persistWatchdogFrame().catch(() => undefined); });
 ensureWatchdog().catch(() => undefined);
 
-browser.runtime.onMessage.addListener(message => {
+browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
   if (message.kind === "OBSERVE_AUTHORITY") return persistWatchdogFrame().catch(error => fail(error.message));
   if (message.kind === "OBSERVE_PR") return observePullRequest(message.payload).catch(error => fail(error.message));
+  if (message.kind === "ATARI_BOOT") return isAtariTerminalSender(sender) ? atariBoot(message.payload).catch(error => fail(error.message)) : Promise.resolve(fail("Atari boot sender outside terminal page"));
+  if (message.kind === "ATARI_STATUS") return isAtariTerminalSender(sender) ? atariStatus(message.payload).catch(error => fail(error.message)) : Promise.resolve(fail("Atari status sender outside terminal page"));
   if (message.kind === "DISCOVER_EFFECT_ACK") return discover().catch(error => fail(error.message));
   if (message.kind === "PREPARE_EFFECT") return prepareEffect(message.payload).catch(error => fail(error.message));
   if (message.kind === "COMMIT_EFFECT") return commitEffect(message.payload).catch(error => fail(error.message));

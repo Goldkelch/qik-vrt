@@ -9,8 +9,11 @@ on:
       - "browser/firefox/qikvrt-terminal/**"
       - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
       - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
+      - "docs/atari-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "tests/test_qikvrt_effect_ack_http_terminal.py"
+      - "tests/test_qikvrt_atari_terminal.py"
+      - "tests/test_qikvrt_firefox_universal_pr_terminal.py"
       - ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
   workflow_dispatch:
 
@@ -80,7 +83,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONNOUSERSITE: "1"
-        run: python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+        run: python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal tests.test_qikvrt_atari_terminal tests.test_qikvrt_firefox_universal_pr_terminal
 
       - name: Package verified Firefox reference client
         shell: bash
@@ -90,12 +93,14 @@ jobs:
           (
             cd browser/firefox/qikvrt-terminal
             zip -X -9 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
-              manifest.json background.js content.js terminal.css options.html options.js README.md
+              manifest.json background.js content.js review_effect.js terminal.css options.html options.js README.md
           )
           sha256sum /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi \
             > /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi
           test -s /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi.sha256
+          unzip -Z1 /tmp/qikvrt-firefox-package/qikvrt-ai-terminal.xpi | \
+            grep -Fx 'review_effect.js'
 
       - name: Preserve verified Firefox package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

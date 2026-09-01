@@ -18,3 +18,14 @@ class FirefoxUniversalPrTerminalTests(unittest.TestCase):
             self.assertIn(token, BACKGROUND)
         self.assertIn("reobserving PR #${pr[1]} head/tree", CONTENT)
         self.assertIn('send(pr ? "OBSERVE_PR" : "OBSERVE_AUTHORITY"', CONTENT)
+
+    def test_atari_page_uses_extension_loopback_bridge(self) -> None:
+        for token in ("ATARI_BOOT", "ATARI_STATUS", "atariBoot", "atariStatus", "qikvrt.atari-terminal-boot-receipt.v1", "qikvrt.atari-terminal-status-receipt.v1", "event.source !== window", "isAtariTerminalSender", "Atari boot sender outside terminal page", "Atari status sender outside terminal page", "/qik-vrt/atari-terminal/"):
+            self.assertIn(token, BACKGROUND + CONTENT)
+
+    def test_atari_bridge_remains_exactly_local_and_sender_bound(self) -> None:
+        self.assertIn("http://127.0.0.1/*", MANIFEST["host_permissions"])
+        self.assertIn("http://127.0.0.1:8771", MANIFEST["content_security_policy"]["extension_pages"])
+        self.assertNotIn("<all_urls>", MANIFEST["host_permissions"])
+        self.assertIn("/^[0-9a-f]{32}$/.test(payload.boot_id", BACKGROUND)
+        self.assertIn("request.request_id.length > 160", CONTENT)

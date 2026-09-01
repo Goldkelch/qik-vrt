@@ -69,6 +69,18 @@
     return browser.runtime.sendMessage({kind, payload});
   }
 
+  window.addEventListener("message", async event => {
+    const request = event.data;
+    if (location.origin !== "https://goldkelch.github.io" || location.pathname !== "/qik-vrt/atari-terminal/" || event.source !== window || event.origin !== location.origin || !request || typeof request.request_id !== "string" || request.request_id.length < 1 || request.request_id.length > 160) return;
+    const relay = {
+      "qikvrt.atari-terminal-boot.v1": ["ATARI_BOOT", "qikvrt.atari-terminal-boot-receipt.v1"],
+      "qikvrt.atari-terminal-status.v1": ["ATARI_STATUS", "qikvrt.atari-terminal-status-receipt.v1"]
+    }[request.schema];
+    if (!relay) return;
+    const result = await send(relay[0], request);
+    window.postMessage({schema: relay[1], request_id: request.request_id, result}, location.origin);
+  });
+
   async function observe() {
     const pr = location.pathname.match(/^\/Goldkelch\/qik-vrt\/pull\/(\d+)(?:\/|$)/);
     setState("OBSERVE", pr ? `reobserving PR #${pr[1]} head/tree` : "reobserving main/head/tree");

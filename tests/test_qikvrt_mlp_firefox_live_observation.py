@@ -24,6 +24,7 @@ class LiveFirefoxObservationTests(unittest.TestCase):
         self.assertIn("EFFECT_ACK_DONE = false", html)
         self.assertIn(self.mod.MLP_SHA256, html)
         self.assertIn(self.mod.TCPIP_SOURCE_HEAD, html)
+        self.assertIn(self.mod.TCPIP_SOURCE_TREE, html)
         self.assertIn("fetch('/observed?nonce=", html)
 
     def test_policy_requires_real_observation_without_effect_claim(self):
@@ -34,6 +35,7 @@ class LiveFirefoxObservationTests(unittest.TestCase):
         self.assertFalse(p["state_separation"]["effect_ack_done"])
         self.assertFalse(p["state_separation"]["protected_external_effect"])
         self.assertFalse(p["state_separation"]["physical_megast_execution"])
+        self.assertEqual(p["stack"]["guest_tcpip_proof_tree"], self.mod.TCPIP_SOURCE_TREE)
 
     def test_workflow_binds_exact_head_and_proven_predecessor(self):
         text = WORKFLOW.read_text()
@@ -43,6 +45,9 @@ class LiveFirefoxObservationTests(unittest.TestCase):
         self.assertIn("firefox --headless", text)
         self.assertIn("browser-observation.json", text)
         self.assertIn("firefox-live.png", text)
+        self.assertIn("refs/pull/745/head", text)
+        self.assertIn("git diff --quiet", text)
+        self.assertNotIn("git merge-base --is-ancestor", text)
 
 
 if __name__ == "__main__":

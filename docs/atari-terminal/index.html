@@ -1,13 +1,146 @@
 <!doctype html>
-<html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QIK-VRT · Atari / Firefox Universal Terminal</title>
-<style>:root{color-scheme:dark;--g:#77f59b}body{margin:0;min-height:100vh;background:#05080b;color:#e8f3ec;font:16px ui-monospace,monospace}main{max-width:1000px;margin:auto;padding:2rem 1rem}header{display:flex;justify-content:space-between;border-bottom:1px solid #294151}h1{font-size:1.2rem}.badge{color:var(--g);font-size:.8rem}.terminal{margin-top:1.25rem;border:1px solid #2e9561;background:#0d171e}.bar{padding:.65rem .9rem;background:#12222c;color:var(--g);font-size:.82rem}pre{margin:0;min-height:26rem;padding:1rem;white-space:pre-wrap;overflow:auto;line-height:1.48}.controls{display:flex;gap:.7rem;padding:1rem;border-top:1px solid #294151}button{border:1px solid #4dbb75;background:#143827;color:#e8f3ec;padding:.7rem 1rem;font:inherit;cursor:pointer}.hint{color:#9cb0bf;font-size:.85rem}</style>
-<main><header><h1>QIK-VRT · ATARI / FIREFOX UNIVERSAL TERMINAL</h1><span id="state" class="badge">LOCAL_READY</span></header><section class="terminal" aria-label="Atari boot terminal"><div class="bar">SOURCE_BOUND · LOOPBACK_ONLY · REOBSERVABLE</div><pre id="screen" aria-live="polite">$ terminal.open
+<style>
+  :root{color-scheme:dark;--g:#77f59b}
+  body{margin:0;min-height:100vh;background:#05080b;color:#e8f3ec;font:16px ui-monospace,monospace}
+  main{max-width:1000px;margin:auto;padding:2rem 1rem}
+  header{display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid #294151}
+  h1{font-size:1.2rem}.badge{color:var(--g);font-size:.8rem}.terminal{margin-top:1.25rem;border:1px solid #2e9561;background:#0d171e}
+  .bar{padding:.65rem .9rem;background:#12222c;color:var(--g);font-size:.82rem}
+  pre{margin:0;min-height:26rem;padding:1rem;white-space:pre-wrap;overflow:auto;line-height:1.48}
+  .controls{display:flex;gap:.7rem;padding:1rem;border-top:1px solid #294151}
+  button{border:1px solid #4dbb75;background:#143827;color:#e8f3ec;padding:.7rem 1rem;font:inherit;cursor:pointer}
+  button:disabled{opacity:.6;cursor:wait}.hint{color:#9cb0bf;font-size:.85rem}
+</style>
+<main>
+  <header>
+    <h1>QIK-VRT · ATARI / FIREFOX UNIVERSAL TERMINAL</h1>
+    <span id="state" class="badge">LOCAL_READY</span>
+  </header>
+  <section class="terminal" aria-label="Atari boot terminal">
+    <div class="bar">SOURCE_BOUND · FIREFOX_EXTENSION · APPEND_ONLY_REOBSERVATION</div>
+    <pre id="screen" aria-live="polite">$ terminal.open
 SOURCE  MLP.TOS/MLP.TOS
 SHA256  5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e
 STATE   LOCAL_READY
 
 Warte auf explizites Einschalten.
-</pre><div class="controls"><button id="boot" type="button">Atari einschalten</button><button id="clear" type="button">Ausgabe leeren</button></div></section><p class="hint">Die Seite adressiert ausschließlich die lokale QIK-VRT-Bridge auf <code>127.0.0.1:8771</code>, bindet das feste MLP.TOS-Digest und zeigt deren Antwort an.</p></main>
-<script>(()=>{const digest='5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e',screen=document.querySelector('#screen'),state=document.querySelector('#state'),write=line=>{screen.textContent+=line+'\n';screen.scrollTop=screen.scrollHeight};document.querySelector('#clear').addEventListener('click',()=>{screen.textContent='$ terminal.clear\nSTATE   LOCAL_READY\n'});document.querySelector('#boot').addEventListener('click',async event=>{event.currentTarget.disabled=true;state.textContent='BOOT_REQUESTED';write('$ atari.boot --source-bound');write('BINDING MLP.TOS sha256:'+digest);try{const response=await fetch('http://127.0.0.1:8771/qikvrt/atari/boot',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({schema:'qikvrt.atari-terminal-boot.v1',mlp_sha256:digest})}),receipt=await response.json();state.textContent=receipt.state||'HOLD';write('BRIDGE_HTTP '+response.status);write('RECEIPT '+JSON.stringify(receipt));write(receipt.state==='READY'?'REOBSERVE bridge state before any further action.':'HOLD: bridge did not assert a booted Atari.')}catch(error){state.textContent='HOLD';write('HOLD: LOCAL_BRIDGE_UNAVAILABLE');write(String(error))}finally{event.currentTarget.disabled=false}})})();</script>
+</pre>
+    <div class="controls">
+      <button id="boot" type="button">Atari einschalten</button>
+      <button id="clear" type="button">Ausgabe leeren</button>
+    </div>
+  </section>
+  <p class="hint">Die Seite kommuniziert nicht direkt mit Loopback. Eine installierte QIK-VRT-Firefox-Erweiterung vermittelt genau diese Seite mit <code>127.0.0.1:8771</code>. Prozessstart, spätere Reobservation und Effect Acknowledgement bleiben getrennt.</p>
+</main>
+<script>
+(() => {
+  const digest = "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e";
+  const screen = document.querySelector("#screen");
+  const state = document.querySelector("#state");
+  const bootButton = document.querySelector("#boot");
+  let logCursor = 0;
+
+  const write = line => {
+    screen.textContent += `${line}\n`;
+    screen.scrollTop = screen.scrollHeight;
+  };
+  const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+  function bridge(requestSchema, receiptSchema, payload) {
+    return new Promise((resolve, reject) => {
+      const requestId = `${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0]}`;
+      const timeout = setTimeout(() => reject(new Error("FIREFOX_EXTENSION_BRIDGE_UNAVAILABLE")), 3000);
+      const receive = event => {
+        const value = event.data;
+        if (event.source !== window || event.origin !== location.origin || !value || value.schema !== receiptSchema || value.request_id !== requestId) return;
+        clearTimeout(timeout);
+        window.removeEventListener("message", receive);
+        resolve(value.result);
+      };
+      window.addEventListener("message", receive);
+      window.postMessage({...payload, schema: requestSchema, request_id: requestId}, location.origin);
+    });
+  }
+
+  async function boot(payload) {
+    return bridge("qikvrt.atari-terminal-boot.v1", "qikvrt.atari-terminal-boot-receipt.v1", payload);
+  }
+
+  async function statusFor(bootId) {
+    return bridge("qikvrt.atari-terminal-status.v1", "qikvrt.atari-terminal-status-receipt.v1", {boot_id: bootId});
+  }
+
+  function appendStatus(body) {
+    state.textContent = body.state || "HOLD";
+    if (!body || body.schema !== "qikvrt_atari_terminal_boot_status_v1") {
+      write("HOLD: malformed Atari status receipt");
+      return false;
+    }
+    const start = Number.isInteger(body.log_start) ? body.log_start : 0;
+    const lines = Array.isArray(body.log_tail) ? body.log_tail : [];
+    if (logCursor < start) logCursor = start;
+    const index = Math.max(0, logCursor - start);
+    for (const line of lines.slice(index)) write(`HATARI ${line}`);
+    logCursor = start + lines.length;
+    if (body.state !== "BOOTING") {
+      write(`STATE ${body.state}`);
+      write(`REASON ${body.reason || "UNSPECIFIED"}`);
+      if (body.request_frame_sha256) write(`MLP.OPEN sha256:${body.request_frame_sha256}`);
+      if (body.trace_sha256) write(`HATARI.LOG sha256:${body.trace_sha256}`);
+      write("EFFECT_ACK_DONE=false");
+      return false;
+    }
+    return true;
+  }
+
+  async function monitor(bootId) {
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const receipt = await statusFor(bootId);
+      const body = receipt.body || receipt;
+      write(`BRIDGE_HTTP ${receipt.http_status || "HOLD"}`);
+      if (!appendStatus(body)) return;
+      await pause(400);
+    }
+    state.textContent = "HOLD";
+    write("HOLD: bounded Atari reobservation timed out");
+  }
+
+  document.querySelector("#clear").addEventListener("click", () => {
+    logCursor = 0;
+    state.textContent = "LOCAL_READY";
+    screen.textContent = "$ terminal.clear\nSTATE   LOCAL_READY\n";
+  });
+
+  bootButton.addEventListener("click", async event => {
+    event.currentTarget.disabled = true;
+    logCursor = 0;
+    state.textContent = "BOOT_REQUESTED";
+    write("$ atari.boot --firefox-extension");
+    write(`BINDING MLP.TOS sha256:${digest}`);
+    try {
+      const receipt = await boot({mlp_sha256: digest});
+      const body = receipt.body || receipt;
+      write(`BRIDGE_HTTP ${receipt.http_status || "HOLD"}`);
+      if (!body || body.state !== "BOOTING" || typeof body.boot_id !== "string") {
+        state.textContent = (body && body.state) || "HOLD";
+        write(`HOLD: ${JSON.stringify(body)}`);
+        return;
+      }
+      write(`ATARI_BOOT_ID ${body.boot_id}`);
+      appendStatus(body);
+      await monitor(body.boot_id);
+    } catch (error) {
+      state.textContent = "HOLD";
+      write("HOLD: FIREFOX_EXTENSION_BRIDGE_UNAVAILABLE");
+      write(String(error));
+    } finally {
+      event.currentTarget.disabled = false;
+    }
+  });
+})();
+</script>
 </html>
