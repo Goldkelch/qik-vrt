@@ -23,7 +23,7 @@ usage() {
     cat <<'EOF'
 Usage: tools/bootstrap-runtime.sh [--check-only] [--install]
        [--accept-third-party]
-       [--profile core|ietf|formal|audio|publication|all]
+       [--profile core|ietf|formal|audio|browser|publication|all]
        [--cache-dir PATH]
 
 Every profile checks GitHub CLI first. Only the verified GitHub CLI and
@@ -91,7 +91,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-    core|ietf|formal|audio|publication|all) ;;
+    core|ietf|formal|audio|browser|publication|all) ;;
     *) usage >&2; exit 2 ;;
 esac
 if [ "$MODE" = install ] && [ "$ACCEPT_THIRD_PARTY" -ne 1 ]; then
@@ -389,6 +389,39 @@ check_audio_profile() {
     fi
 }
 
+check_browser_profile() {
+    missing=
+    for tool in firefox openssl xvfb-run; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            missing="$missing $tool"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        mark_continue "browser: missing operator-managed tools:$missing"
+    else
+        firefox --version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: Firefox did not report a version"
+        openssl version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: OpenSSL did not report a version"
+        xvfb-run --help >/dev/null 2>&1 || fail "browser: xvfb-run did not execute"
+        printf '%s\n' "PASS: browser Firefox + OpenSSL + Xvfb command contract"
+    fi
+
+    if ! command -v hatari >/dev/null 2>&1; then
+        mark_continue "browser: Hatari 2.4.1 is absent; automatic installation is not supported"
+    elif ! hatari --version 2>&1 | grep -F 'Hatari v2.4.1' >/dev/null; then
+        mark_continue "browser: Hatari is present but not version 2.4.1"
+    else
+        printf '%s\n' "PASS: browser Hatari 2.4.1"
+    fi
+
+    if ! command -v geckodriver >/dev/null 2>&1; then
+        mark_continue "browser: geckodriver 0.37.1 is absent; use the reviewed Mozilla release asset provisioner"
+    elif ! geckodriver --version 2>&1 | sed -n '1p' | grep -F '0.37.1' >/dev/null; then
+        mark_continue "browser: geckodriver is present but not version 0.37.1"
+    else
+        printf '%s\n' "PASS: browser geckodriver 0.37.1"
+    fi
+}
+
 check_publication_profile() {
     missing=
     for tool in xelatex pdftotext pdftoppm; do
@@ -411,12 +444,14 @@ case "$PROFILE" in
     ietf) check_ietf_profile ;;
     formal) check_formal_profile ;;
     audio) check_audio_profile ;;
+    browser) check_browser_profile ;;
     publication) check_publication_profile ;;
     all)
         check_core_profile
         check_ietf_profile
         check_formal_profile
         check_audio_profile
+        check_browser_profile
         check_publication_profile
         ;;
 esac

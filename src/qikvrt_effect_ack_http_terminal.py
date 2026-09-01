@@ -370,9 +370,12 @@ def start_atari_boot() -> tuple[int, dict[str, Any]]:
     with STATE.lock:
         boot.process = process
         boot.append_log("HATARI_PROCESS_STARTED")
+        # The acceptance receipt is the atomic observation of process creation.
+        # A very short-lived adapter must not race this response into a completed
+        # state before the caller receives the boot identifier to reobserve.
+        accepted = boot.projection()
     threading.Thread(target=finish_atari_boot, args=(boot,), daemon=True, name=f"qikvrt-atari-{boot.boot_id}").start()
-    with STATE.lock:
-        return 202, boot.projection()
+    return 202, accepted
 
 
 class Handler(BaseHTTPRequestHandler):

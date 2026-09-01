@@ -1,10 +1,15 @@
 import json
+import struct
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
 class MegaSTTcpIpProofContract(unittest.TestCase):
     def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
         self.p = json.loads(Path('policy/MLP_TOS_MEGAST_TCPIP_ROUNDTRIP_V1.json').read_text())
 
     def test_source_is_exactly_bound(self):
@@ -30,6 +35,34 @@ class MegaSTTcpIpProofContract(unittest.TestCase):
         self.assertFalse(self.p['boundaries']['effect_ack_done'])
         self.assertFalse(self.p['boundaries']['physical_megast_execution'])
         self.assertTrue(self.p['boundaries']['controlled_local_tcp_endpoint_is_sufficient'])
+
+    def test_qiknet_prg_builder_wraps_position_independent_text(self):
+        text = bytes.fromhex('4e714e75')
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            text_path = tmp_path / 'qiknet.text'
+            output_path = tmp_path / 'QIKNET.PRG'
+            text_path.write_bytes(text)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(self.root / 'tools' / 'build_qiknet_prg.py'),
+                    '--text',
+                    str(text_path),
+                    '--output',
+                    str(output_path),
+                ],
+                check=True,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+            )
+            image = output_path.read_bytes()
+        self.assertEqual(completed.stdout, 'QIKNET.PRG bytes=32 text=4\n')
+        self.assertEqual(len(image), 28 + len(text))
+        header = struct.unpack('>HIIIIIIH', image[:28])
+        self.assertEqual(header, (0x601A, len(text), 0, 0, 0, 0, 0, 1))
+        self.assertEqual(image[28:], text)
 
 
 if __name__ == '__main__':

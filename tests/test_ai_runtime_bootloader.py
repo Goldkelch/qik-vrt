@@ -67,6 +67,7 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--profile", completed.stdout)
+        self.assertIn("browser", completed.stdout)
         self.assertIn("--json", completed.stdout)
         self.assertIn("--task", completed.stdout)
 
@@ -98,6 +99,13 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertIn("tools/bootstrap-runtime.sh", source)
         self.assertIn('report["state"] = "BLOCK"', source)
         self.assertNotIn("shell=True", source)
+
+    def test_browser_profile_is_a_fail_closed_declared_runtime(self) -> None:
+        bootstrap = (ROOT / "tools/bootstrap-runtime.sh").read_text(encoding="utf-8")
+        self.assertIn("core|ietf|formal|audio|browser|publication|all", bootstrap)
+        self.assertIn("check_browser_profile", bootstrap)
+        for token in ("firefox", "geckodriver", "hatari", "xvfb-run", "openssl"):
+            self.assertIn(token, bootstrap)
 
     def test_ci_retains_full_history_as_authority_side_cross_check(self) -> None:
         workflow = (
