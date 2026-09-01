@@ -1,8 +1,8 @@
 # Die wissenschaftliche Realität zeitübergreifender Quantenkorrelationen und ihre informatische Skalierung
 
 Autor: Ingolf Lohmann  
-Fassung: Vorveröffentlichung 1.0  
-Datum: 31. August 2026
+Fassung: Vorveröffentlichung 1.1
+Datum: 2. September 2026
 
 ## Gegenstand
 
@@ -32,7 +32,14 @@ Die ersten drei Ebenen werden experimentell, quellengebunden, formal beziehungsw
 ## Repository-Artefakte
 
 - `SCIENTIFIC_MANUSCRIPT.md`: wissenschaftlicher Haupttext;
-- `PROSA_ARTIKEL.md`: vorlesbare allgemeinverständliche Fassung;
+- `PROSA_ARTIKEL.md`: wissenschaftlich präzisierte, vorlesbare
+  allgemeinverständliche Fassung;
+- `Eine_Nachricht_aus_der_Zukunft_Ingolf_Lohmann_v1.1.pdf`: gesetzte,
+  vollständig visuell geprüfte A4-Lesefassung des Prosaartikels;
+- `PROSA_ARTIKEL_MANIFEST.json`: Provenienz-, Byte- und Geltungsbindung der
+  Prosa-/PDF-Fassung 1.1;
+- `PROSA_ARTIKEL_SHA256SUMS.txt`: Prüfsummen der Prosa-/PDF-Fassung und ihres
+  Manifests;
 - `CLAIM_MATRIX.json`: maschinenlesbare Claim-/Evidenzgrenzen;
 - `ZENODO_METADATA.json`: Zenodo-Metadatenkandidat;
 - `ARXIV_METADATA.txt`: arXiv-Metadatenkandidat;

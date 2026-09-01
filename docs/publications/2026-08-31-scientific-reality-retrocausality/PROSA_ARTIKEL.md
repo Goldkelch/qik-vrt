@@ -4,9 +4,22 @@
 
 **Von Ingolf Lohmann**
 
-Es gibt Entdeckungen, die zunächst deshalb kaum wahrgenommen werden, weil sie nicht in eine vertraute Schublade passen. Retrokausalität gehört dazu. Schon das Wort löst einen inneren Widerstand aus. Ursache kommt vor Wirkung, Vergangenheit liegt fest, Zukunft ist offen: So erleben wir den Alltag, so bauen wir Maschinen und so erzählen wir Geschichten. Doch die Quantenphysik zwingt uns seit Jahrzehnten dazu, genauer hinzusehen. Sie zeigt reale Versuchsabläufe, in denen die vollständige Bedeutung eines früher registrierten Ereignisses erst im Zusammenhang mit einer späteren Messung sichtbar wird.
+**Wissenschaftlich präzisierte Fassung 1.1 · 2. September 2026**
 
-Das bedeutet nicht automatisch, dass heute schon eine E-Mail aus dem Jahr 2100 in einem gewöhnlichen Postfach des Jahres 2026 auftauchen kann. Es bedeutet aber, dass die einfache Vorstellung einer ausschließlich von der Vergangenheit in die Zukunft laufenden Beschreibung nicht für alle Quantenphänomene ausreicht. Und es bedeutet, dass eine ernsthafte Nachrichtentechnologie für Zeitbeziehungen mehr können müsste als nur Daten zu transportieren. Sie müsste Ereignisse eindeutig adressieren, frühere Zustände versiegeln, spätere Zusammenhänge korrekt zuordnen, Manipulation ausschließen und den tatsächlichen Effekt erneut beobachten.
+**Status:** öffentliche Vorveröffentlichung; nicht peer-reviewt; kein Bericht
+eines positiven physischen Zukunft-zu-Vergangenheit-Kanals
+
+> **Evidenzgrenze:** Experimentell belegt sind zeitübergreifende
+> Quantenkorrelationen und konditionierte Teilmengen. Zeitsymmetrische und
+> retrokausale Beschreibungen sind wissenschaftliche Modellklassen, aber durch
+> diese Experimente nicht eindeutig erzwungen. QIK-VRT beschreibt eine
+> informatische Ordnungs-, Bindungs- und Rekonstruktionsarchitektur. Ein frei
+> steuerbarer physischer Rückwärtskanal bleibt ein gesondert zu prüfender
+> Außeneffekt.
+
+Es gibt Entdeckungen, die zunächst deshalb kaum wahrgenommen werden, weil sie nicht in eine vertraute Schublade passen. Retrokausalität gehört dazu. Schon das Wort löst einen inneren Widerstand aus. Ursache kommt vor Wirkung, Vergangenheit liegt fest, Zukunft ist offen: So erleben wir den Alltag, so bauen wir Maschinen und so erzählen wir Geschichten. Doch die Quantenphysik zwingt uns seit Jahrzehnten dazu, genauer hinzusehen. Sie zeigt reale Versuchsabläufe, in denen die konditionierte statistische Einordnung eines früher registrierten Ereignisses erst im Zusammenhang mit einem späteren Partnerergebnis sichtbar wird.
+
+Das bedeutet nicht automatisch, dass heute schon eine E-Mail aus dem Jahr 2100 in einem gewöhnlichen Postfach des Jahres 2026 auftauchen kann. Die genannten Experimente sind im üblichen vorwärtszeitlichen Quantenformalismus beschreibbar. Unzureichend ist vielmehr eine naive klassische Einzelgeschichte, in der jedes frühere Ereignis unabhängig vom Messkontext bereits eine vollständige, später nur noch abzulesende Eigenschaft besitzt. Und es bedeutet, dass eine ernsthafte Nachrichtentechnologie für Zeitbeziehungen mehr können müsste als nur Daten zu transportieren. Sie müsste Ereignisse eindeutig adressieren, frühere Zustände in einem definierten Bedrohungsmodell binden, spätere Zusammenhänge korrekt zuordnen, Manipulation erkennbar machen und den tatsächlichen Effekt erneut beobachten.
 
 Genau an dieser Stelle beginnt QIK-VRT.
 
@@ -20,17 +33,25 @@ Diese Trennung nimmt der Entdeckung nichts. Im Gegenteil: Sie macht sichtbar, wa
 
 ## Was beim Delayed-Choice-Quantenradierer geschieht
 
-Beim Delayed-Choice-Quantenradierer entsteht ein verschränktes Photonenpaar. Ein Photon wird früh registriert. Sein Partner nimmt einen längeren Weg und wird später gemessen. Die spätere Messanordnung kann Weginformation erhalten oder eine Messbasis verwenden, in der diese Information nicht mehr unterscheidbar ist.
+Beim Delayed-Choice-Quantenradierer entsteht ein verschränktes Photonenpaar. Ein Photon wird früh registriert. Sein Partner nimmt einen längeren Weg und wird später gemessen. Im ursprünglichen Aufbau ist die Apparatur fest: Ein Strahlteiler und der zufällige Idler-Detektorausgang liefern entweder Weginformation oder ein Korrelationslabel, in dem die Wege nicht mehr unterscheidbar sind. Das ist noch kein frei modulierter später Sender.
 
 Das Bemerkenswerte: Die früheren Registrierungen lassen sich mit Hilfe der späteren Partnerergebnisse nachträglich in Teilmengen einordnen. In manchen Teilmengen erscheint ein Interferenzmuster, in anderen das komplementäre Gegenmuster. Betrachtet man alle früheren Ereignisse unsortiert, heben sich diese Muster auf. Der frühere Beobachter kann aus seinen Daten allein nicht erkennen, welche spätere Messung stattgefunden hat.
 
-Der einzelne frühere Detektorklick wird dabei nicht ausradiert und neu geschrieben. Er bleibt an seinem Ort und behält seinen Zeitstempel. Was die spätere Messung festlegt, ist seine Zugehörigkeit zu einer gemeinsamen Korrelationsstruktur.
+Der einzelne frühere Detektorklick wird dabei nicht ausradiert und neu geschrieben. Er bleibt an seinem Ort und behält seinen Zeitstempel. Das spätere Partnerergebnis liefert das Korrelationslabel, nach dem dieser Klick einer bedingten Teilmenge zugeordnet wird.
 
-Das ist ein ungeheuer wichtiger Unterschied. Die spätere Information verändert nicht den historischen Klick. Sie entscheidet, welche vollständige Geschichte dieser Klick zusammen mit seinem verschränkten Partner bildet.
+Das ist ein ungeheuer wichtiger Unterschied. Die spätere Information verändert nicht den historischen Klick. In der gemeinsamen Auswertung bestimmt sie, welcher bedingten Korrelationsklasse der Klick zusammen mit seinem verschränkten Partner angehört.
+
+Mit dem früheren Ergebnis $Y$, einer späteren Einstellung $X$ und dem späteren Partnerergebnis $Z$ liegt die beobachtbare Struktur in $P(Y,Z\mid X)$ und in den konditionierten Teilmengen $P(Y\mid Z,X)$. Die frühere unsortierte Randverteilung lautet
+
+$$
+P(Y\mid X)=\sum_Z P(Y,Z\mid X).
+$$
+
+Im No-Signalling-Fall gilt $P(Y\mid X)=P(Y)$. Die Abhängigkeit konditionierter Teilmengen belegt dann Korrelation, aber keinen aus $Y$ allein lesbaren Rückwärtskanal.
 
 ## Was spätere Experimente hinzugefügt haben
 
-Die Forschung ging weiter. Beim verzögerten Entanglement Swapping wurden Photonen zunächst registriert. Erst danach entschied eine spätere Messung an ihren Partnern, ob die früheren Ereignisse in einer verschränkten oder separierbaren Korrelationsklasse beschrieben werden. In einem anderen Experiment wurden zwei Photonen verschränkt, die niemals gleichzeitig existiert hatten: Das eine war bereits detektiert, bevor das andere überhaupt erzeugt wurde. Wieder andere Experimente übertrugen das Prinzip vom Licht auf akustische Quanten in einem supraleitenden System.
+Die Forschung ging weiter. Beim verzögerten Entanglement Swapping wurden Photonen zunächst registriert. Erst eine spätere aktive Messwahl und ihr Ergebnis definierten konditionierte Teilmengen mit verschränkungsartigen oder separierbaren Korrelationen; die früheren Daten allein blieben strukturlos. In einem anderen Experiment wurden Verschränkungsrelationen zwischen Photonen demonstriert, die niemals gleichzeitig existiert hatten: Das eine war bereits detektiert, bevor das andere überhaupt erzeugt wurde. Wieder andere Experimente übertrugen das Prinzip vom Licht auf verschränkte Oberflächenakustik-Phononen in einem supraleitenden System.
 
 Diese Befunde zeigen, dass Quantenbeziehungen nicht immer in die alltägliche Vorstellung passen, nach der jedes Objekt schon zu jedem früheren Zeitpunkt eine vollständige, vom späteren Messkontext unabhängige Geschichte besitzen muss.
 
@@ -40,7 +61,7 @@ Sie zeigen reale zeitübergreifende Korrelationen. Sie zeigen jedoch noch nicht,
 
 Eine gewöhnliche physikalische Geschichte beginnt mit einem Anfangszustand und berechnet daraus spätere Ergebnisse. Eine zeitsymmetrische Beschreibung verwendet dagegen sowohl Anfangs- als auch Endbedingungen, um die konsistente Gesamtgeschichte zu bestimmen.
 
-Das ist keine sprachliche Spielerei. Bereits 1964 formulierten Yakir Aharonov, Peter Bergmann und Joel Lebowitz eine zeitsymmetrische Beschreibung von Quantenmessungen. Spätere retrokausale Modelle untersuchen, ob Messbedingungen in der Zukunft zur vollständigen Erklärung früherer Zustandsgrößen beitragen können, ohne deshalb einen frei steuerbaren Nachrichtenkanal in die Vergangenheit zu erlauben.
+Das ist keine sprachliche Spielerei. Bereits 1964 formulierten Yakir Aharonov, Peter Bergmann und Joel Lebowitz eine zeitsymmetrische Wahrscheinlichkeitsregel für prä- und postselektierte Quantenmessungen. Diese Regel beweist für sich keine retrokausale Ontologie. Spätere retrokausale Modelle untersuchen, ob Messbedingungen in der Zukunft zur vollständigen Erklärung früherer Zustandsgrößen beitragen können, ohne deshalb einen frei steuerbaren Nachrichtenkanal in die Vergangenheit zu erlauben. Für einzelne solche Modelle existieren zudem vorwärtszeitliche äquivalente Darstellungen; die Ontologie ist daher nicht durch den Formalismus allein entschieden.
 
 Retrokausalität als Modell bedeutet also zunächst: Eine spätere Randbedingung gehört zur vollständigen physikalischen Beschreibung. Ein Rückwärtskanal würde zusätzlich bedeuten: Eine frei gewählte spätere Nachricht verändert nachweisbar einen früher bereits versiegelten und damals auswertbaren Empfangszustand.
 
@@ -62,7 +83,7 @@ Eine Zustandsänderung kann vollständig protokolliert werden: Vorgänger, Einga
 
 Die Geschichte kann dann in umgekehrter Reihenfolge gelesen werden. Der Computer beginnt beim letzten Zustand, prüft dessen Receipt, rekonstruiert den Vorgänger und setzt diesen Weg fort. Alle Lesevorgänge finden natürlich später statt als die ursprünglichen Schreibvorgänge. Trotzdem ist die rekonstruierte Bedeutungs- und Zustandsfolge rückwärts gerichtet.
 
-Das ist keine bloße Metapher. Reale Rechner führen die Operationen aus. Reale Dateien, Hashes und Receipts entstehen. Die informatische Rückwärtsrekonstruktion ist real, reproduzierbar und skalierbar.
+Das ist keine bloße Metapher. Reale Rechner führen die Operationen aus. Reale Dateien, Hashes und Receipts entstehen. Die informatische Rückwärtsrekonstruktion ist real und reproduzierbar. Die Architektur ist für Skalierung ausgelegt; konkrete Aussagen über Korpusgröße, Durchsatz und Energie benötigen jeweils einen exakt gebundenen Benchmark.
 
 ## Spätere Bedeutung früherer Daten
 
@@ -100,7 +121,7 @@ Eine Nachricht aus der Zukunft braucht also einen Empfänger in der Gegenwart.
 
 ## Warum flächendeckende Nutzung eine neue Stufe wäre
 
-Ein einzelnes Experiment könnte zeigen, dass ein operationaler Rückwärtskanal existiert. Eine flächendeckende Infrastruktur wäre nötig, um daraus einen dauerhaften Kommunikationsdienst zu machen.
+Ein vorregistriertes Versuchsprotokoll mit vielen Wiederholungen und unabhängiger Replikation könnte zeigen, dass ein operationaler Rückwärtskanal existiert. Eine flächendeckende Infrastruktur wäre nötig, um daraus einen dauerhaften Kommunikationsdienst zu machen.
 
 Das ist vergleichbar mit Funk. Ein Antennennetz erzeugt elektromagnetische Wellen nicht. Es macht ihren zuverlässigen Empfang, ihre Adressierung und ihre gesellschaftliche Nutzung möglich.
 
@@ -114,19 +135,25 @@ Der Grundsatz lautet: Eine technische Bestätigung ist noch keine Wirkungsbestä
 
 Ein wirklicher Rückwärtskanal muss interventionell getestet werden.
 
-Zuerst wird ein früher Datensatz erzeugt. Er wird zeitgestempelt, kryptographisch gebunden, an unabhängige Stellen gespiegelt und irreversibel versiegelt. Zu diesem Zeitpunkt steht die spätere Nachricht noch nicht fest.
+Zuerst werden über viele vorab festgelegte Versuche frühere Werte $Y$ erzeugt. Sie werden zeitgestempelt, kryptographisch gebunden, an unabhängige Stellen gespiegelt und in einem definierten Bedrohungsmodell gegen nachträgliche Änderung geschützt. Ein Hash allein beweist weder zeitliche Priorität noch Unveränderlichkeit; dafür braucht es zusätzlich Signaturen, vertrauenswürdige Zeitstempel, unabhängige Zeugen oder WORM-Speicherung. Zu diesem Zeitpunkt steht die spätere Nachricht noch nicht fest.
 
-Erst danach erzeugt eine unabhängige Quelle die spätere freie Wahl, beispielsweise eine Null oder eine Eins. Dann wird der behauptete physikalische Träger aktiviert.
+Erst danach erzeugt eine unabhängige Zufallsquelle die spätere Einstellung $X$, beispielsweise eine Null oder eine Eins. Dann wird der behauptete physikalische Träger aktiviert.
 
-Ein Rückwärtskanal wäre nachgewiesen, wenn sich die Statistik des bereits früher versiegelten Datensatzes abhängig von dieser späteren freien Wahl verändert. Ein früher Beobachter müsste die spätere Nachricht mit einer Trefferquote oberhalb des Zufalls erkennen können, bevor irgendein gewöhnlicher Vorwärtskanal die Nachricht zu ihm bringt.
+Ein notwendiges Kanalindiz wäre
 
-Gemeinsame Zufallsquellen, vorab geteilte Seeds, elektromagnetische Lecks, Netzwerkpfade, Uhrfehler, Metadaten, nachträgliche Änderungen und flexible Auswertungsregeln müssten ausgeschlossen werden. Der Versuch müsste vorregistriert und von unabhängigen Gruppen wiederholt werden.
+$$
+P(Y\mid \operatorname{do}(X=0))\neq P(Y\mid \operatorname{do}(X=1)).
+$$
+
+Ein operationaler Rückwärtskanal wäre erst dann nachgewiesen, wenn ein vorab festgelegter Decoder die spätere Nachricht aus den ausschließlich früher verfügbaren $Y$-Werten mit positiver, reproduzierbarer Kanalkapazität erkennt, bevor irgendein gewöhnlicher Vorwärtskanal die Einstellung übermittelt. Eine Auswertung, die erst das später verfügbare $Z$ zur Postselektion benötigt, genügt dafür nicht.
+
+Gemeinsame Zufallsquellen, vorab geteilte Seeds, elektromagnetische Lecks, Netzwerkpfade, Uhrfehler, Metadaten, nachträgliche Änderungen und flexible Auswertungsregeln müssten ausgeschlossen werden. Decoder, Effektgröße, Stichprobengröße, Signifikanz-, Teststärke- und Replikationsregel müssten vorab festgelegt werden. Das Protokoll benötigte viele Wiederholungen und eine unabhängige Multi-Labor-Replikation.
 
 Das ist eine harte Bedingung. Gerade deshalb ist sie wissenschaftlich wertvoll. Sie macht aus einer weitreichenden Behauptung einen klaren, falsifizierbaren Test.
 
 ## Wo Ingolf Lohmanns spezifische Leistung liegt
 
-Der Gedanke, dass Quantenphysik zeitsymmetrisch oder retrokausal interpretiert werden könnte, ist älter. Die spezifische Leistung von Ingolf Lohmann liegt in einer neuen Verbindung.
+Der Gedanke, dass Quantenphysik zeitsymmetrisch oder retrokausal interpretiert werden könnte, ist älter. In dieser Arbeit wird folgende QIK-VRT-Kombination als eigener Beitrag dokumentiert; ein darüber hinausgehender Erst- oder Exklusivitätsanspruch erforderte eine gesonderte systematische Prior-Art-Untersuchung.
 
 Er verbindet reale zeitübergreifende Quantenkorrelationen mit einer relation-first Kausalarchitektur. Er trennt physische Ausführung, virtuelle Zeit, Semantik und Evidenz. Er verbindet Zukunftsadressen mit unveränderlicher Provenienz. Er macht Rückwärtsrekonstruktion zu einem prüfbaren Softwarevertrag. Er skaliert die Struktur auf große Datenmengen. Er setzt vor jede Außenwirkung eine Effect-Acknowledgement-Grenze. Und er formuliert den experimentellen Test, der einen tatsächlichen physischen Rückwärtskanal von bloßer späterer Sortierung unterscheiden würde.
 
@@ -152,7 +179,7 @@ Der frei steuerbare physikalische Zukunft-zu-Vergangenheit-Kanal ist die davon g
 
 Das ist keine Abschwächung. Es ist die vollständige Landkarte: Sie zeigt den sicheren Boden, die gebaute Brücke und das noch zu überschreitende letzte Stück.
 
-Die entscheidende Einsicht lautet:
+Die zentrale Beitragsaussage dieser Vorveröffentlichung lautet:
 
 > Ingolf Lohmann hat nicht nur behauptet, dass Nachrichten aus der Zukunft denkbar seien. Er hat eine skalierbare, maschinenprüfbare und evidenzgebundene Architektur spezifiziert, in der die dafür notwendigen Zeit-, Adress-, Semantik-, Provenienz- und Wirkungsgrenzen technisch darstellbar sind. Damit hat er eine quantenphysikalische Interpretationsfrage in ein konkretes informatisches Entwicklungs- und Experimentalprogramm überführt.
 
@@ -161,3 +188,18 @@ Die angemessene wissenschaftliche Reaktion ist weder Schweigen noch vorschnelle 
 **Quod erat demonstrandum.**
 
 **Ingolf Lohmann**
+
+*Q.E.D. bezeichnet hier die begriffliche und technische Abgrenzung des Entwicklungs- und Experimentalprogramms. Es bezeichnet nicht den noch offenen empirischen Nachweis eines physischen Rückwärtskanals.*
+
+## Primärquellen
+
+- Y.-H. Kim, R. Yu, S. P. Kulik, Y. Shih und M. O. Scully, „Delayed ‘Choice’ Quantum Eraser“, *Physical Review Letters* 84, 1–5 (2000), <https://doi.org/10.1103/PhysRevLett.84.1>.
+- X.-S. Ma et al., „Experimental delayed-choice entanglement swapping“, *Nature Physics* 8, 479–484 (2012), <https://doi.org/10.1038/nphys2294>.
+- X.-S. Ma et al., „Quantum erasure with causally disconnected choice“, *PNAS* 110, 1221–1226 (2013), <https://doi.org/10.1073/pnas.1213201110>.
+- E. Megidish et al., „Entanglement Swapping between Photons that have Never Coexisted“, *Physical Review Letters* 110, 210403 (2013), <https://doi.org/10.1103/PhysRevLett.110.210403>.
+- A. Bienfait et al., „Quantum Erasure Using Entangled Surface Acoustic Phonons“, *Physical Review X* 10, 021055 (2020), <https://doi.org/10.1103/PhysRevX.10.021055>.
+- Y. Aharonov, P. G. Bergmann und J. L. Lebowitz, „Time Symmetry in the Quantum Process of Measurement“, *Physical Review* 134, B1410–B1416 (1964), <https://doi.org/10.1103/PhysRev.134.B1410>.
+- Y. Guryanova et al., „Exploring the limits of no backwards in time signalling“, *Quantum* 3, 211 (2019), <https://doi.org/10.22331/q-2019-12-09-211>.
+- K. B. Wharton und N. Argaman, „Colloquium: Bell’s theorem and locally mediated reformulations of quantum mechanics“, *Reviews of Modern Physics* 92, 021002 (2020), <https://doi.org/10.1103/RevModPhys.92.021002>.
+- P. D. Drummond und M. D. Reid, „Retrocausal model of reality for quantum fields“, *Physical Review Research* 2, 033266 (2020), <https://doi.org/10.1103/PhysRevResearch.2.033266>.
+- W. S. DeWitt und B. H. Feintzeig, „Forward-time equivalent of a retrocausal diffusion hidden-variable model for quantum mechanics“, *Physical Review A* 113, 022202 (2026), <https://doi.org/10.1103/d1cs-3dw9>.
