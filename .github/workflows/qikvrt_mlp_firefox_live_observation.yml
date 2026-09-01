@@ -8,6 +8,7 @@ on:
       - "tests/test_qikvrt_mlp_firefox_live_observation.py"
       - "docs/MLP_FIREFOX_LIVE_OBSERVATION.md"
       - "policy/MLP_FIREFOX_LIVE_OBSERVATION_V1.json"
+      - "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
   workflow_dispatch:
 
 permissions:
@@ -34,8 +35,43 @@ jobs:
           test "$actual" = "$expected"
           source_head='a71484ba02f6ebe9169af5a291244e99468caec3'
           source_tree='b45556a6c4ea2d9946c73264c1ed47d4f3128a76'
-          git fetch --no-tags origin 'refs/pull/745/head:refs/remotes/origin/qikvrt-tcpip-proof'
-          test "$(git rev-parse --verify refs/remotes/origin/qikvrt-tcpip-proof^{commit})" = "$source_head"
+          mapfile -t canonical_source < <(
+            python3 -B - <<'PY'
+          import json
+          import pathlib
+          import re
+          import urllib.parse
+
+          policy = json.loads(pathlib.Path("policy/CANONICAL_UPSTREAM_REMOTE_V1.json").read_text(encoding="utf-8"))
+          if policy.get("schema") != "qikvrt_canonical_upstream_remote_v1":
+              raise SystemExit("canonical upstream policy schema is invalid")
+          canonical = policy.get("canonical_upstream")
+          if not isinstance(canonical, dict) or canonical.get("role") != "AUTHORITY":
+              raise SystemExit("canonical upstream Authority binding is unavailable")
+          repository = canonical.get("repository")
+          remote_name = canonical.get("canonical_remote_name")
+          url = canonical.get("canonical_https_url")
+          if not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+              raise SystemExit("canonical upstream repository is invalid")
+          if not isinstance(remote_name, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", remote_name):
+              raise SystemExit("canonical upstream remote name is invalid")
+          parsed = urllib.parse.urlsplit(url if isinstance(url, str) else "")
+          if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.path != f"/{repository}.git" or parsed.query or parsed.fragment:
+              raise SystemExit("canonical upstream HTTPS URL is not repository-bound")
+          print(repository)
+          print(remote_name)
+          print(url)
+          PY
+          )
+          test "${#canonical_source[@]}" -eq 3
+          authority_repository="${canonical_source[0]}"
+          authority_remote="${canonical_source[1]}"
+          authority_url="${canonical_source[2]}"
+          test "$authority_repository" = 'Goldkelch/qik-vrt'
+          source_ref="refs/remotes/$authority_remote/qikvrt-tcpip-proof"
+          git remote add "$authority_remote" "$authority_url"
+          git fetch --no-tags "$authority_remote" "refs/pull/745/head:$source_ref"
+          test "$(git rev-parse --verify "$source_ref^{commit}")" = "$source_head"
           test "$(git rev-parse --verify "$source_head^{tree}")" = "$source_tree"
           git diff --quiet "$source_head" HEAD -- MLP.TOS
           echo '5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e  MLP.TOS/MLP.TOS' | sha256sum -c -

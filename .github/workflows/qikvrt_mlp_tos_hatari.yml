@@ -130,6 +130,7 @@ jobs:
         shell: bash
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -146,7 +147,7 @@ jobs:
 
           receipt = {
               "schema": "qikvrt_mlp_tos_hatari_execution_receipt_v1",
-              "repository": "Goldkelch/qik-vrt",
+              "repository": os.environ["REPOSITORY"],
               "source_head": os.environ["HEAD_SHA"],
               "source_tree": os.environ["TREE_SHA"],
               "event": os.environ["EVENT_NAME"],

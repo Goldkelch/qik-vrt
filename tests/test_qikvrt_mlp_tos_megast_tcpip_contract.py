@@ -36,6 +36,14 @@ class MegaSTTcpIpProofContract(unittest.TestCase):
         self.assertFalse(self.p['boundaries']['physical_megast_execution'])
         self.assertTrue(self.p['boundaries']['controlled_local_tcp_endpoint_is_sufficient'])
 
+    def test_generated_receipt_binds_the_role_local_repository(self):
+        workflow = (
+            self.root / '.github' / 'workflows' / 'qikvrt_mlp_tos_megast_tcpip.yml'
+        ).read_text(encoding='utf-8')
+        self.assertIn('REPOSITORY: ${{ github.repository }}', workflow)
+        self.assertIn("'repository':os.environ['REPOSITORY']", workflow)
+        self.assertNotIn("'repository':'Goldkelch/qik-vrt'", workflow)
+
     def test_qiknet_prg_builder_wraps_position_independent_text(self):
         text = bytes.fromhex('4e714e75')
         with tempfile.TemporaryDirectory() as tmp:

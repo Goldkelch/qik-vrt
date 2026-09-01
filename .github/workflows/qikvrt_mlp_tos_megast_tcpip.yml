@@ -119,6 +119,7 @@ jobs:
       - name: Bind exact-head guest TCP/IP receipt
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
@@ -137,7 +138,7 @@ jobs:
           assert endpoint['guest_post_response_confirmation_observed'] is True
           receipt={
             'schema':'qikvrt_mlp_tos_megast_tcpip_receipt_v1',
-            'repository':'Goldkelch/qik-vrt','source_head':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],
+            'repository':os.environ['REPOSITORY'],'source_head':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],
             'run_id':int(os.environ['RUN_ID']),'run_attempt':int(os.environ['RUN_ATTEMPT']),
             'transport':'SLIP over emulated Atari Mega ST BIOS AUX/RS232','guest_ip':'10.0.0.2','peer_ip':'10.0.0.1',
             'guest_tcp_connect_observed':True,'endpoint_nonce_payload_observed':True,'guest_response_observed':True,

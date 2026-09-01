@@ -131,6 +131,8 @@ class MlpTosHatariTests(unittest.TestCase):
             "cmp MLP.TOS/MLP.TOS /tmp/qikvrt-mlp-tos/MLP.TOS",
             "MLP.TOS/Hatari",
             "qikvrt_mlp_tos_hatari_execution_receipt_v1",
+            "REPOSITORY: ${{ github.repository }}",
+            '"repository": os.environ["REPOSITORY"]',
             "actions/upload-artifact@",
             "retention-days: 30",
         ):

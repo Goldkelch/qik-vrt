@@ -65,6 +65,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if test -d qikvrt/runtime/onboarding; then
+            fixture_root="$(mktemp -d)"
+            mv qikvrt/runtime/onboarding "$fixture_root/onboarding"
+            restore_liveness() {
+              mv "$fixture_root/onboarding" qikvrt/runtime/onboarding
+              rmdir "$fixture_root"
+            }
+            trap restore_liveness EXIT
+          fi
           PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v \
             tests.test_qikvrt_workflow_executor_mesh_contract \
             tests.test_qikvrt_reflexive_repository_watchdog \

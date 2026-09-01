@@ -80,8 +80,11 @@ def request_document() -> dict[str, object]:
     }
 
 
-def remote_documents() -> dict[str, dict[str, object]]:
-    prefix = f"https://raw.githubusercontent.com/{SOURCE}/main/qikvrt/runtime/onboarding/"
+def remote_documents(node_state_ref: str = "main") -> dict[str, dict[str, object]]:
+    prefix = (
+        f"https://raw.githubusercontent.com/{SOURCE}/{node_state_ref}/"
+        "qikvrt/runtime/onboarding/"
+    )
     boundaries = {
         "no_global_scanning": True,
         "no_self_propagation": True,
@@ -95,6 +98,7 @@ def remote_documents() -> dict[str, dict[str, object]]:
             "repository": SOURCE,
             "seed_repository": SEED,
             "node_branch": "main",
+            "node_state_ref": node_state_ref,
             "status": "ACTIVE",
             "heartbeat_utc": "2026-07-20T11:50:00Z",
             "expires_utc": "2026-07-21T12:00:00Z",
@@ -105,6 +109,8 @@ def remote_documents() -> dict[str, dict[str, object]]:
             "guid": GUID,
             "repository": SOURCE,
             "seed_repository": SEED,
+            "node_branch": "main",
+            "node_state_ref": node_state_ref,
             "status": "ACCEPTED_BY_SEED",
         },
         prefix + "NODE_REGISTRATION_RENEWAL.json": {
@@ -112,6 +118,8 @@ def remote_documents() -> dict[str, dict[str, object]]:
             "guid": GUID,
             "repository": SOURCE,
             "seed_repository": SEED,
+            "node_branch": "main",
+            "node_state_ref": node_state_ref,
         },
         workflow_executor.expected_node_receipt_url(SOURCE, "main"): workflow_executor.build_node_receipt(
             SOURCE,
@@ -126,8 +134,8 @@ class SeedWorkflowTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / "registry/node_request_queue").mkdir(parents=True)
         (self.root / "registry/KNOWN_NODE_REQUESTS.tsv").write_text(
-            "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n"
-            f"{GUID}\t{SOURCE}\t{SEED}\t{REQUEST_URL}\tmain\t1500\tACTIVE\n",
+            "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\tnode_state_ref\theartbeat_ttl_minutes\tlifecycle_policy\n"
+            f"{GUID}\t{SOURCE}\t{SEED}\t{REQUEST_URL}\tmain\tmain\t1500\tACTIVE\n",
             encoding="utf-8",
         )
         (self.root / "registry/NODE_POLICY.tsv").write_text(
@@ -154,9 +162,9 @@ class SeedWorkflowTests(unittest.TestCase):
         known = self.root / "registry/KNOWN_NODE_REQUESTS.tsv"
         queue = self.root / "registry/node_request_queue/OPEN_NODE_REQUESTS.tsv"
         row = next(line for line in known.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#"))
-        known.write_text("# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n", encoding="utf-8")
+        known.write_text("# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\tnode_state_ref\theartbeat_ttl_minutes\tlifecycle_policy\n", encoding="utf-8")
         queue.write_text(
-            "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\theartbeat_ttl_minutes\tlifecycle_policy\n"
+            "# guid\tsource_repo\tseed_repo\trequest_url\tnode_branch\tnode_state_ref\theartbeat_ttl_minutes\tlifecycle_policy\n"
             + row
             + "\n",
             encoding="utf-8",
@@ -183,14 +191,14 @@ class SeedWorkflowTests(unittest.TestCase):
     def test_tsv_requires_exact_columns_explicit_policy_and_unique_guid(self) -> None:
         queue = self.root / "registry/node_request_queue/OPEN_NODE_REQUESTS.tsv"
         queue.write_text(
-            f"{GUID}\t{SOURCE}\t{SEED}\t{REQUEST_URL}\tmain\t1500\tACTIVE\n",
+            f"{GUID}\t{SOURCE}\t{SEED}\t{REQUEST_URL}\tmain\tmain\t1500\tACTIVE\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(SeedError, "duplicate node GUID"):
             load_nodes(self.root, SEED)
 
         queue.write_text("not\tenough\tfields\n", encoding="utf-8")
-        with self.assertRaisesRegex(SeedError, "expected exactly 7"):
+        with self.assertRaisesRegex(SeedError, "expected exactly 8"):
             load_nodes(self.root, SEED)
 
     def test_request_url_is_bound_to_declared_repository(self) -> None:
@@ -206,6 +214,96 @@ class SeedWorkflowTests(unittest.TestCase):
                 "https://raw.githubusercontent.com:not-a-port/example/node/main/qikvrt/runtime/onboarding/SEED_REGISTRATION_REQUEST.json",
                 SOURCE,
             )
+
+    def test_committed_mirror_liveness_uses_a_role_local_state_ref(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        state_branch = "state/mirror-node-a84f157a-v1"
+        known = (repository / "registry/KNOWN_NODE_REQUESTS.tsv").read_text(encoding="utf-8")
+        self.assertIn(f"\tmain\t{state_branch}\t1500\tACTIVE\n", known)
+
+        entry = read_json(repository / f"registry/nodes/{GUID}.json")
+        self.assertEqual("main", entry["node_branch"])
+        self.assertEqual(state_branch, entry["node_state_ref"])
+
+        index = read_json(repository / "registry/NODEMESH_INDEX.json")
+        node = next(item for item in index["nodes"] if item["guid"] == GUID)
+        self.assertEqual("main", node["node_branch"])
+        self.assertEqual(state_branch, node["node_state_ref"])
+        url_prefix = f"https://raw.githubusercontent.com/ingolf-lohmann/qik-vrt/{state_branch}/"
+        self.assertEqual(
+            {url_prefix + "qikvrt/runtime/onboarding/" + filename for filename in (
+                "NODE_HEALTH.json",
+                "SEED_ACCEPTANCE_STATUS.json",
+                "NODE_REGISTRATION_RENEWAL.json",
+            )},
+            {node["node_health_url"], node["node_ack_url"], node["node_renewal_url"]},
+        )
+        self.assertNotIn("/main/qikvrt/runtime/onboarding/", json.dumps(node, sort_keys=True))
+
+    def test_state_ref_separation_preserves_main_bound_continuity(self) -> None:
+        state_ref = "state/example-node-liveness-v1"
+        known = self.root / "registry/KNOWN_NODE_REQUESTS.tsv"
+        known.write_text(
+            known.read_text(encoding="utf-8").replace(
+                "\tmain\tmain\t1500\tACTIVE\n",
+                f"\tmain\t{state_ref}\t1500\tACTIVE\n",
+            ),
+            encoding="utf-8",
+        )
+        self.move_node_to_future_queue()
+        documents = remote_documents(state_ref)
+        continuity_url = workflow_executor.expected_node_receipt_url(SOURCE, "main")
+        self.assertIn(continuity_url, documents)
+
+        acceptance = run_acceptance(
+            self.root,
+            "state-ref-acceptance",
+            FakeFetcher(documents),
+            now=NOW,
+        )
+        self.assertEqual("PASS", acceptance["status"])
+        entry = read_json(self.root / f"registry/nodes/{GUID}.json")
+        self.assertEqual("main", entry["node_branch"])
+        self.assertEqual(state_ref, entry["node_state_ref"])
+        self.assertEqual(
+            continuity_url,
+            entry["workflow_executor_continuity"]["receipt_url"],
+        )
+
+        maintenance = run_maintenance(
+            self.root,
+            "state-ref-maintenance",
+            FakeFetcher(documents),
+            now=NOW,
+        )
+        self.assertEqual("PASS", maintenance["status"])
+        node = maintenance["nodes"][0]
+        self.assertEqual("main", node["node_branch"])
+        self.assertEqual(state_ref, node["node_state_ref"])
+        index = read_json(self.root / "registry/NODEMESH_INDEX.json")
+        index_node = index["nodes"][0]
+        for key in ("node_health_url", "node_ack_url", "node_renewal_url"):
+            self.assertIn(f"/{state_ref}/qikvrt/runtime/onboarding/", index_node[key])
+
+    def test_each_liveness_record_rejects_state_ref_drift(self) -> None:
+        self.accept()
+        for index, (filename, source) in enumerate((
+            ("NODE_HEALTH.json", "health"),
+            ("SEED_ACCEPTANCE_STATUS.json", "ack"),
+            ("NODE_REGISTRATION_RENEWAL.json", "renewal"),
+        )):
+            with self.subTest(filename=filename):
+                documents = remote_documents()
+                url = next(url for url in documents if url.endswith(filename))
+                documents[url]["node_state_ref"] = "state/unbound-other-node"
+                result = run_maintenance(
+                    self.root,
+                    f"state-ref-drift-{index}",
+                    FakeFetcher(documents),
+                    now=NOW,
+                )
+                self.assertEqual("CONTINUE", result["status"])
+                self.assertIn(source, {error["source"] for error in result["nodes"][0]["errors"]})
 
     def test_acceptance_is_transactional_and_counts_validation_failure(self) -> None:
         documents = remote_documents()
@@ -226,6 +324,7 @@ class SeedWorkflowTests(unittest.TestCase):
         self.accept()
         entry = read_json(self.root / f"registry/nodes/{GUID}.json")
         self.assertEqual("qikvrt_seed_registry_entry_v2", entry["schema"])
+        self.assertEqual("main", entry["node_state_ref"])
         self.assertEqual(1500, entry["heartbeat_ttl_minutes"])
         self.assertRegex(entry["node_request_sha256"], r"^[0-9a-f]{64}$")
         lines = (self.root / "ledger/NODE_REGISTRATION_LEDGER.jsonl").read_bytes().splitlines()

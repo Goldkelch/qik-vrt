@@ -1,4 +1,6 @@
 const AUTHORITY = "Goldkelch/qik-vrt";
+const MIRROR = "ingolf-lohmann/qik-vrt";
+const OBSERVABLE_REPOSITORIES = new Set([AUTHORITY, MIRROR]);
 const DEFAULT_BACKEND = "http://127.0.0.1:8771";
 const MLP_TOS_SHA256 = "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e";
 const ALLOWED_BACKENDS = new Set(["http://127.0.0.1:8771", "http://localhost:8771"]);
@@ -16,8 +18,14 @@ function fail(reason) {
   return {ok: false, state: "HOLD", ordinary_release: false, reason};
 }
 
-async function github(path) {
-  const response = await fetch(`https://api.github.com/repos/${AUTHORITY}${path}`, {
+function observableRepository(repository) {
+  if (!OBSERVABLE_REPOSITORIES.has(repository)) throw new Error("repository outside Authority/Mirror allowlist");
+  return repository;
+}
+
+async function github(repository, path) {
+  const selected = observableRepository(repository);
+  const response = await fetch(`https://api.github.com/repos/${selected}${path}`, {
     method: "GET",
     credentials: "omit",
     headers: {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"},
@@ -27,14 +35,15 @@ async function github(path) {
   return response.json();
 }
 
-async function observeAuthority() {
-  const ref = await github("/git/ref/heads/main");
+async function observeRepository(repository) {
+  const selected = observableRepository(repository);
+  const ref = await github(selected, "/git/ref/heads/main");
   const head = ref && ref.object && ref.object.sha;
   if (!/^[0-9a-f]{40}$/.test(head || "")) return fail("main head unavailable");
-  const commit = await github(`/git/commits/${head}`);
+  const commit = await github(selected, `/git/commits/${head}`);
   const tree = commit && commit.tree && commit.tree.sha;
   if (!/^[0-9a-f]{40}$/.test(tree || "")) return fail("main tree unavailable");
-  const runs = await github("/actions/runs?branch=main&per_page=30");
+  const runs = await github(selected, "/actions/runs?branch=main&per_page=30");
   const wanted = [
     "QIK-VRT autonomous bounded self-heal",
     "QIKVRT reflexive repository watchdog",
@@ -55,7 +64,7 @@ async function observeAuthority() {
     ok: true,
     schema: "qikvrt_terminal_frame_v1",
     observed_at: new Date().toISOString(),
-    source: {repository: AUTHORITY, ref: "refs/heads/main", head, tree},
+    source: {repository: selected, ref: "refs/heads/main", head, tree},
     workflows: latest,
     terminal_semantics: {
       rendering_is_authorization: false,
@@ -64,19 +73,25 @@ async function observeAuthority() {
   };
 }
 
-async function observePullRequest(number) {
+async function observeAuthority() {
+  return observeRepository(AUTHORITY);
+}
+
+async function observePullRequest(payload) {
+  const repository = observableRepository(payload && payload.repository);
+  const number = payload && payload.number;
   if (!/^\d+$/.test(String(number || ""))) return fail("invalid pull-request number");
-  const pull = await github(`/pulls/${number}`);
+  const pull = await github(repository, `/pulls/${number}`);
   const head = pull && pull.head && pull.head.sha;
   if (!/^[0-9a-f]{40}$/.test(head || "")) return fail("pull-request head unavailable");
-  const commit = await github(`/git/commits/${head}`);
+  const commit = await github(repository, `/git/commits/${head}`);
   const tree = commit && commit.tree && commit.tree.sha;
   if (!/^[0-9a-f]{40}$/.test(tree || "")) return fail("pull-request tree unavailable");
   return {
     ok: true,
     schema: "qikvrt_terminal_pr_frame_v1",
     observed_at: new Date().toISOString(),
-    source: {repository: AUTHORITY, pull_request: Number(number), head, tree, base: pull.base && pull.base.ref},
+    source: {repository, pull_request: Number(number), head, tree, base: pull.base && pull.base.ref},
     review: {state: pull.state, draft: Boolean(pull.draft), mergeable: pull.mergeable},
     terminal_semantics: {rendering_is_authorization: false, ordinary_release_requires: "VALID_EFFECT_ACK_DONE"}
   };
@@ -272,6 +287,7 @@ ensureWatchdog().catch(() => undefined);
 browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
   if (message.kind === "OBSERVE_AUTHORITY") return persistWatchdogFrame().catch(error => fail(error.message));
+  if (message.kind === "OBSERVE_REPOSITORY") return observeRepository(message.payload).catch(error => fail(error.message));
   if (message.kind === "OBSERVE_PR") return observePullRequest(message.payload).catch(error => fail(error.message));
   if (message.kind === "ATARI_BOOT") return isAtariTerminalSender(sender) ? atariBoot(message.payload).catch(error => fail(error.message)) : Promise.resolve(fail("Atari boot sender outside terminal page"));
   if (message.kind === "ATARI_STATUS") return isAtariTerminalSender(sender) ? atariStatus(message.payload).catch(error => fail(error.message)) : Promise.resolve(fail("Atari status sender outside terminal page"));

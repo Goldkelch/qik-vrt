@@ -441,6 +441,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertNotIn("ietf", executor.casefold())
         self.assertIn("contents: read", watchdog)
         self.assertIn("tests.test_qikvrt_workflow_executor_mesh_contract", watchdog)
+        self.assertIn("if test -d qikvrt/runtime/onboarding; then", watchdog)
+        self.assertIn('mv qikvrt/runtime/onboarding "$fixture_root/onboarding"', watchdog)
         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)

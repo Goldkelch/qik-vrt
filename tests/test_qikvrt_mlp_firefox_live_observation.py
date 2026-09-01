@@ -7,6 +7,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools/qikvrt_mlp_firefox_live_observation.py"
 POLICY = ROOT / "policy/MLP_FIREFOX_LIVE_OBSERVATION_V1.json"
+CANONICAL_POLICY = ROOT / "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
 WORKFLOW = ROOT / ".github/workflows/qikvrt_mlp_firefox_live_observation.yml"
 
 
@@ -36,9 +37,17 @@ class LiveFirefoxObservationTests(unittest.TestCase):
         self.assertFalse(p["state_separation"]["protected_external_effect"])
         self.assertFalse(p["state_separation"]["physical_megast_execution"])
         self.assertEqual(p["stack"]["guest_tcpip_proof_tree"], self.mod.TCPIP_SOURCE_TREE)
+        self.assertEqual(p["canonical_source"]["repository_role"], "AUTHORITY")
+        self.assertEqual(p["canonical_source"]["repository"], "Goldkelch/qik-vrt")
+        self.assertEqual(
+            p["canonical_source"]["candidate_repositories"],
+            ["Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt"],
+        )
+        self.assertFalse(p["canonical_source"]["local_origin_is_source_authority"])
 
     def test_workflow_binds_exact_head_and_proven_predecessor(self):
         text = WORKFLOW.read_text()
+        canonical = json.loads(CANONICAL_POLICY.read_text())
         self.assertIn("github.event.pull_request.head.sha || github.sha", text)
         self.assertIn(self.mod.TCPIP_SOURCE_HEAD, text)
         self.assertIn(self.mod.MLP_SHA256, text)
@@ -47,6 +56,12 @@ class LiveFirefoxObservationTests(unittest.TestCase):
         self.assertIn("firefox-live.png", text)
         self.assertIn("refs/pull/745/head", text)
         self.assertIn("git diff --quiet", text)
+        self.assertIn("policy/CANONICAL_UPSTREAM_REMOTE_V1.json", text)
+        self.assertIn('git remote add "$authority_remote" "$authority_url"', text)
+        self.assertIn('git fetch --no-tags "$authority_remote" "refs/pull/745/head:$source_ref"', text)
+        self.assertNotIn("git fetch --no-tags origin 'refs/pull/745/head", text)
+        self.assertEqual(canonical["canonical_upstream"]["repository"], "Goldkelch/qik-vrt")
+        self.assertEqual(canonical["canonical_upstream"]["role"], "AUTHORITY")
         self.assertNotIn("git merge-base --is-ancestor", text)
 
 

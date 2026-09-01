@@ -441,6 +441,8 @@ class ReflexiveRepositoryWatchdogTests(unittest.TestCase):
         self.assertIn("gatewatch-receipt.json", workflow)
         self.assertIn("jq -r '.workflow_runs[].id'", workflow)
         self.assertIn("select(.id != $current and .conclusion == \"success\")", workflow)
+        self.assertIn("if test -d qikvrt/runtime/onboarding; then", workflow)
+        self.assertIn('mv qikvrt/runtime/onboarding "$fixture_root/onboarding"', workflow)
         self.assertNotIn("select(.id != $current)][0]", workflow)
         self.assertNotIn(".workflow_runs[0:20]", workflow)
         self.assertNotIn("/dispatches", workflow)

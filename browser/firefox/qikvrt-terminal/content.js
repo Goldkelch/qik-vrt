@@ -1,6 +1,9 @@
 (() => {
   if (document.getElementById("qikvrt-ai-terminal-host")) return;
 
+  const repositoryMatch = location.pathname.match(/^\/(Goldkelch|ingolf-lohmann)\/qik-vrt(?:\/|$)/);
+  const repository = repositoryMatch ? `${repositoryMatch[1]}/qik-vrt` : "Goldkelch/qik-vrt";
+
   const host = document.createElement("section");
   host.id = "qikvrt-ai-terminal-host";
   host.setAttribute("aria-label", "QIKVRT AI Terminal");
@@ -82,11 +85,11 @@
   });
 
   async function observe() {
-    const pr = location.pathname.match(/^\/Goldkelch\/qik-vrt\/pull\/(\d+)(?:\/|$)/);
-    setState("OBSERVE", pr ? `reobserving PR #${pr[1]} head/tree` : "reobserving main/head/tree");
-    const result = await send(pr ? "OBSERVE_PR" : "OBSERVE_AUTHORITY", pr ? pr[1] : null);
+    const pr = location.pathname.match(/^\/(?:Goldkelch|ingolf-lohmann)\/qik-vrt\/pull\/(\d+)(?:\/|$)/);
+    setState("OBSERVE", pr ? `reobserving ${repository} PR #${pr[1]} head/tree` : `reobserving ${repository} main/head/tree`);
+    const result = await send(pr ? "OBSERVE_PR" : "OBSERVE_REPOSITORY", pr ? {repository, number: pr[1]} : repository);
     render(result);
-    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? (pr ? `fresh PR #${pr[1]} frame` : "fresh repository frame") : result.reason);
+    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? (pr ? `fresh ${repository} PR #${pr[1]} frame` : `fresh ${repository} repository frame`) : result.reason);
   }
 
   async function blobPayload(blob, mediaType) {

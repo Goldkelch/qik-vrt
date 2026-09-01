@@ -9,15 +9,24 @@ BACKGROUND = (ROOT / "browser/firefox/qikvrt-terminal/background.js").read_text(
 CONTENT = (ROOT / "browser/firefox/qikvrt-terminal/content.js").read_text(encoding="utf-8")
 
 class FirefoxUniversalPrTerminalTests(unittest.TestCase):
-    def test_firefox_terminal_injects_on_all_authority_pr_pages(self) -> None:
+    def test_firefox_terminal_injects_on_authority_and_mirror_pr_pages(self) -> None:
         matches = MANIFEST["content_scripts"][0]["matches"]
         self.assertIn("https://github.com/Goldkelch/qik-vrt/pull/*", matches)
+        self.assertIn("https://github.com/ingolf-lohmann/qik-vrt/pull/*", matches)
+        self.assertIn("https://github.com/ingolf-lohmann/qik-vrt/*", MANIFEST["host_permissions"])
+        self.assertNotIn(
+            "https://github.com/ingolf-lohmann/qik-vrt/pull/*/files*",
+            MANIFEST["content_scripts"][1]["matches"],
+        )
 
     def test_pr_observation_binds_number_head_tree_and_never_releases_effect(self) -> None:
-        for token in ("observePullRequest", "qikvrt_terminal_pr_frame_v1", "pull_request: Number(number)", "ordinary_release_requires", "OBSERVE_PR"):
+        for token in ("observePullRequest", "observeRepository", "OBSERVABLE_REPOSITORIES", "qikvrt_terminal_pr_frame_v1", "pull_request: Number(number)", "ordinary_release_requires", "OBSERVE_PR", "OBSERVE_REPOSITORY"):
             self.assertIn(token, BACKGROUND)
-        self.assertIn("reobserving PR #${pr[1]} head/tree", CONTENT)
-        self.assertIn('send(pr ? "OBSERVE_PR" : "OBSERVE_AUTHORITY"', CONTENT)
+        self.assertIn("reobserving ${repository} PR #${pr[1]} head/tree", CONTENT)
+        self.assertIn('send(pr ? "OBSERVE_PR" : "OBSERVE_REPOSITORY"', CONTENT)
+        self.assertIn("{repository, number: pr[1]}", CONTENT)
+        self.assertIn('const MIRROR = "ingolf-lohmann/qik-vrt"', BACKGROUND)
+        self.assertIn("source: {repository, pull_request: Number(number)", BACKGROUND)
 
     def test_atari_page_uses_extension_loopback_bridge(self) -> None:
         for token in ("ATARI_BOOT", "ATARI_STATUS", "atariBoot", "atariStatus", "qikvrt.atari-terminal-boot-receipt.v1", "qikvrt.atari-terminal-status-receipt.v1", "event.source !== window", "isAtariTerminalSender", "Atari boot sender outside terminal page", "Atari status sender outside terminal page", "/qik-vrt/atari-terminal/"):
