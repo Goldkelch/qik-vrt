@@ -63,6 +63,24 @@ async function observeAuthority() {
   };
 }
 
+async function observePullRequest(number) {
+  if (!/^\d+$/.test(String(number || ""))) return fail("invalid pull-request number");
+  const pull = await github(`/pulls/${number}`);
+  const head = pull && pull.head && pull.head.sha;
+  if (!/^[0-9a-f]{40}$/.test(head || "")) return fail("pull-request head unavailable");
+  const commit = await github(`/git/commits/${head}`);
+  const tree = commit && commit.tree && commit.tree.sha;
+  if (!/^[0-9a-f]{40}$/.test(tree || "")) return fail("pull-request tree unavailable");
+  return {
+    ok: true,
+    schema: "qikvrt_terminal_pr_frame_v1",
+    observed_at: new Date().toISOString(),
+    source: {repository: AUTHORITY, pull_request: Number(number), head, tree, base: pull.base && pull.base.ref},
+    review: {state: pull.state, draft: Boolean(pull.draft), mergeable: pull.mergeable},
+    terminal_semantics: {rendering_is_authorization: false, ordinary_release_requires: "VALID_EFFECT_ACK_DONE"}
+  };
+}
+
 async function persistWatchdogFrame() {
   let frame;
   try {
@@ -226,6 +244,7 @@ ensureWatchdog().catch(() => undefined);
 browser.runtime.onMessage.addListener(message => {
   if (!message || typeof message.kind !== "string") return Promise.resolve(fail("invalid message"));
   if (message.kind === "OBSERVE_AUTHORITY") return persistWatchdogFrame().catch(error => fail(error.message));
+  if (message.kind === "OBSERVE_PR") return observePullRequest(message.payload).catch(error => fail(error.message));
   if (message.kind === "DISCOVER_EFFECT_ACK") return discover().catch(error => fail(error.message));
   if (message.kind === "PREPARE_EFFECT") return prepareEffect(message.payload).catch(error => fail(error.message));
   if (message.kind === "COMMIT_EFFECT") return commitEffect(message.payload).catch(error => fail(error.message));

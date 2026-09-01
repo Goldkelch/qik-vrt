@@ -70,10 +70,11 @@
   }
 
   async function observe() {
-    setState("OBSERVE", "reobserving main/head/tree");
-    const result = await send("OBSERVE_AUTHORITY");
+    const pr = location.pathname.match(/^\/Goldkelch\/qik-vrt\/pull\/(\d+)(?:\/|$)/);
+    setState("OBSERVE", pr ? `reobserving PR #${pr[1]} head/tree` : "reobserving main/head/tree");
+    const result = await send(pr ? "OBSERVE_PR" : "OBSERVE_AUTHORITY", pr ? pr[1] : null);
     render(result);
-    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? "fresh repository frame" : result.reason);
+    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? (pr ? `fresh PR #${pr[1]} frame` : "fresh repository frame") : result.reason);
   }
 
   async function blobPayload(blob, mediaType) {
