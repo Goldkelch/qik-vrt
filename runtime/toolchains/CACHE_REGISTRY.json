@@ -445,8 +445,30 @@
       "provider": "Ubuntu 24.04 runner virtual display runtime",
       "trusted_save": false,
       "verification": [
-        "xvfb-run --help",
+        "xvfb-run -a sh -c 'true'",
         "headless Firefox and Hatari process contract"
+      ],
+      "version": "reported-version"
+    },
+    "xauth": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "ubuntu-24.04-archive-package:xauth",
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "Ubuntu 24.04 archive package required by xvfb-run authentication",
+      "trusted_save": false,
+      "verification": [
+        "xauth -V",
+        "xvfb-run -a sh -c 'true'"
       ],
       "version": "reported-version"
     },

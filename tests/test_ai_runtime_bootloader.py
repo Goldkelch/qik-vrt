@@ -104,8 +104,9 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         bootstrap = (ROOT / "tools/bootstrap-runtime.sh").read_text(encoding="utf-8")
         self.assertIn("core|ietf|formal|audio|browser|publication|all", bootstrap)
         self.assertIn("check_browser_profile", bootstrap)
-        for token in ("firefox", "geckodriver", "hatari", "xvfb-run", "openssl"):
+        for token in ("firefox", "geckodriver", "hatari", "xauth", "xvfb-run", "openssl"):
             self.assertIn(token, bootstrap)
+        self.assertIn("xauth -V", bootstrap)
         self.assertIn("xvfb-run -a sh -c 'true'", bootstrap)
         self.assertNotIn("xvfb-run --help", bootstrap)
 

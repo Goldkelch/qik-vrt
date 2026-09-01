@@ -171,9 +171,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends hatari xvfb
+          sudo apt-get install -y --no-install-recommends hatari xauth xvfb
           command -v firefox
+          command -v xauth
           firefox --version | tee "$QIKVRT_ATARI_EVIDENCE/firefox-version.txt"
+          xauth -V | tee "$QIKVRT_ATARI_EVIDENCE/xauth-version.txt"
           hatari --version | tee "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt"
           grep -F 'Hatari v2.4.1' "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt"
           xvfb-run -a sh -c 'true'
@@ -484,6 +486,7 @@ jobs:
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/terminal-backend.log
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/emutos/binding.json
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/firefox-version.txt
+            ${{ runner.temp }}/qikvrt-atari-firefox-e2e/xauth-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/hatari-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/openssl-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/tmp/qikvrt-atari-boot-*/receipt.env

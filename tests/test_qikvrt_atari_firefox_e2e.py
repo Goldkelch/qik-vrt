@@ -184,6 +184,8 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "--port 443",
             "qikvrt-atari-firefox-e2e",
             "qikvrt-geckodriver-v0.37.1-linux64",
+            "hatari xauth xvfb",
+            "xauth -V",
             "Firefox-visible MLP.OPEN digest mismatch",
             "Firefox-visible HATARI.LOG digest mismatch",
             "candidate-local TLS boundary drift",

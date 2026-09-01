@@ -391,7 +391,7 @@ check_audio_profile() {
 
 check_browser_profile() {
     missing=
-    for tool in firefox openssl xvfb-run; do
+    for tool in firefox openssl xauth xvfb-run; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing="$missing $tool"
         fi
@@ -401,8 +401,9 @@ check_browser_profile() {
     else
         firefox --version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: Firefox did not report a version"
         openssl version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: OpenSSL did not report a version"
+        xauth -V >/dev/null 2>&1 || fail "browser: xauth did not report a version"
         xvfb-run -a sh -c 'true' >/dev/null 2>&1 || fail "browser: Xvfb null process did not execute"
-        printf '%s\n' "PASS: browser Firefox + OpenSSL + Xvfb command contract"
+        printf '%s\n' "PASS: browser Firefox + OpenSSL + Xauth + Xvfb command contract"
     fi
 
     if ! command -v hatari >/dev/null 2>&1; then
