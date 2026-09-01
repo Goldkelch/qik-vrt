@@ -391,7 +391,7 @@ check_audio_profile() {
 
 check_browser_profile() {
     missing=
-    for tool in firefox openssl xauth xvfb-run; do
+    for tool in firefox openssl xauth Xvfb; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing="$missing $tool"
         fi
@@ -402,16 +402,23 @@ check_browser_profile() {
         firefox --version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: Firefox did not report a version"
         openssl version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: OpenSSL did not report a version"
         xauth -V >/dev/null 2>&1 || fail "browser: xauth did not report a version"
-        xvfb-run -a sh -c 'true' >/dev/null 2>&1 || fail "browser: Xvfb null process did not execute"
-        printf '%s\n' "PASS: browser Firefox + OpenSSL + Xauth + Xvfb command contract"
+        printf '%s\n' "OBSERVED: browser Firefox + OpenSSL + Xauth + Xvfb binary contract"
     fi
 
     if ! command -v hatari >/dev/null 2>&1; then
         mark_continue "browser: Hatari 2.4.1 is absent; automatic installation is not supported"
-    elif ! hatari --version 2>&1 | grep -F 'Hatari v2.4.1' >/dev/null; then
-        mark_continue "browser: Hatari is present but not version 2.4.1"
     else
-        printf '%s\n' "PASS: browser Hatari 2.4.1"
+        set +e
+        hatari_version="$(hatari --version 2>&1)"
+        hatari_status=$?
+        set -e
+        if [ "$hatari_status" -ne 0 ] && [ "$hatari_status" -ne 1 ]; then
+            mark_continue "browser: Hatari version command returned unexpected status $hatari_status"
+        elif ! printf '%s\n' "$hatari_version" | grep -F 'Hatari v2.4.1' >/dev/null; then
+            mark_continue "browser: Hatari is present but not version 2.4.1"
+        else
+            printf '%s\n' "OBSERVED: browser Hatari 2.4.1"
+        fi
     fi
 
     if ! command -v geckodriver >/dev/null 2>&1; then

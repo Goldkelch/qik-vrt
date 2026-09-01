@@ -166,7 +166,7 @@ jobs:
           node --check browser/firefox/qikvrt-terminal/background.js
           node --check browser/firefox/qikvrt-terminal/content.js
 
-      - name: Provision and verify declared Firefox, Hatari and Xvfb runtime
+      - name: Provision and bind authenticated Firefox X11, Hatari and Xvfb runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -174,11 +174,72 @@ jobs:
           sudo apt-get install -y --no-install-recommends hatari xauth xvfb
           command -v firefox
           command -v xauth
+          command -v Xvfb
           firefox --version | tee "$QIKVRT_ATARI_EVIDENCE/firefox-version.txt"
           xauth -V | tee "$QIKVRT_ATARI_EVIDENCE/xauth-version.txt"
-          hatari --version | tee "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt"
+          set +e
+          hatari --version > "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt" 2>&1
+          hatari_status=$?
+          set -e
+          cat "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt"
           grep -F 'Hatari v2.4.1' "$QIKVRT_ATARI_EVIDENCE/hatari-version.txt"
-          xvfb-run -a sh -c 'true'
+          # Hatari 2.4.1 may report the version then exit 1; the exact output
+          # above remains mandatory, while other exit states stay fail closed.
+          if test "$hatari_status" -ne 0 && test "$hatari_status" -ne 1; then
+            printf 'unexpected Hatari version status: %s\n' "$hatari_status" >&2
+            exit 1
+          fi
+          display=91
+          while test -e "/tmp/.X${display}-lock" || test -S "/tmp/.X11-unix/X${display}"; do
+            display=$((display + 1))
+          done
+          xauthority="$QIKVRT_ATARI_EVIDENCE/xvfb.Xauthority"
+          cookie="$(openssl rand -hex 16)"
+          umask 077
+          : > "$xauthority"
+          xauth -f "$xauthority" add ":$display" . "$cookie"
+          Xvfb ":$display" -screen 0 1280x800x24 -nolisten tcp -auth "$xauthority" \
+            > "$QIKVRT_ATARI_EVIDENCE/xvfb.log" 2>&1 &
+          echo $! > "$QIKVRT_ATARI_EVIDENCE/xvfb.pid"
+          ready=0
+          for _ in $(seq 1 100); do
+            if kill -0 "$(cat "$QIKVRT_ATARI_EVIDENCE/xvfb.pid")" 2>/dev/null \
+              && test -S "/tmp/.X11-unix/X${display}"; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if test "$ready" != 1; then
+            cat "$QIKVRT_ATARI_EVIDENCE/xvfb.log" || true
+            exit 1
+          fi
+          QIKVRT_XVFB_DISPLAY=":$display" \
+          QIKVRT_XVFB_AUTHORITY="$xauthority" \
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ['QIKVRT_ATARI_EVIDENCE'])
+          authority = Path(os.environ['QIKVRT_XVFB_AUTHORITY'])
+          (evidence / 'xvfb-runtime.json').write_text(json.dumps({
+              'schema': 'qikvrt_xvfb_runtime_v1',
+              'display': os.environ['QIKVRT_XVFB_DISPLAY'],
+              'xauthority_sha256': hashlib.sha256(authority.read_bytes()).hexdigest(),
+              'authenticated_x11_display_observed': True,
+              'effect_ack_done': False,
+              'general_effect_ack_done': False,
+              'external_effect': 'NONE',
+              'deployment': False,
+              'pass': False,
+              'final_pass': False,
+          }, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          PY
+          printf 'DISPLAY=:%s\n' "$display" >> "$GITHUB_ENV"
+          printf 'XAUTHORITY=%s\n' "$xauthority" >> "$GITHUB_ENV"
+          printf 'QIKVRT_XVFB_DISPLAY=:%s\n' "$display" >> "$GITHUB_ENV"
           openssl version | tee "$QIKVRT_ATARI_EVIDENCE/openssl-version.txt"
 
       - name: Package exact Firefox terminal extension
@@ -389,6 +450,7 @@ jobs:
           python3 -B tools/qikvrt_atari_firefox_e2e.py \
             --geckodriver "$QIKVRT_ATARI_EVIDENCE/geckodriver/geckodriver" \
             --xpi "$QIKVRT_ATARI_EVIDENCE/qikvrt-ai-terminal.xpi" \
+            --firefox-x11 \
             --candidate-url https://goldkelch.github.io/qik-vrt/atari-terminal/ \
             --receipt "$QIKVRT_ATARI_EVIDENCE/atari-firefox-receipt.json" \
             --screenshot "$QIKVRT_ATARI_EVIDENCE/atari-firefox.png" \
@@ -407,6 +469,21 @@ jobs:
 
           evidence = Path(os.environ['QIKVRT_ATARI_EVIDENCE'])
           receipt = json.loads((evidence / 'atari-firefox-receipt.json').read_text(encoding='utf-8'))
+          xvfb = json.loads((evidence / 'xvfb-runtime.json').read_text(encoding='utf-8'))
+          if receipt.get('browser', {}).get('display_mode') != 'X11':
+              raise SystemExit('HOLD: Firefox did not retain the authenticated X11 display contract')
+          if xvfb.get('authenticated_x11_display_observed') is not True:
+              raise SystemExit('HOLD: Xvfb runtime receipt is incomplete')
+          for key, value in {
+              'effect_ack_done': False,
+              'general_effect_ack_done': False,
+              'external_effect': 'NONE',
+              'deployment': False,
+              'pass': False,
+              'final_pass': False,
+          }.items():
+              if xvfb.get(key) is not value:
+                  raise SystemExit(f'HOLD: Xvfb runtime boundary drift: {key}')
           boot_dirs = sorted((evidence / 'tmp').glob('qikvrt-atari-boot-*'))
           if len(boot_dirs) != 1:
               raise SystemExit(f'HOLD: expected one local Hatari boot directory, found {len(boot_dirs)}')
@@ -467,6 +544,9 @@ jobs:
           if test -f "$QIKVRT_ATARI_EVIDENCE/candidate-tls.pid"; then
             sudo kill "$(cat "$QIKVRT_ATARI_EVIDENCE/candidate-tls.pid")"
           fi
+          if test -f "$QIKVRT_ATARI_EVIDENCE/xvfb.pid"; then
+            kill "$(cat "$QIKVRT_ATARI_EVIDENCE/xvfb.pid")"
+          fi
           true
 
       - name: Preserve Firefox terminal and local Hatari evidence
@@ -487,6 +567,8 @@ jobs:
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/emutos/binding.json
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/firefox-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/xauth-version.txt
+            ${{ runner.temp }}/qikvrt-atari-firefox-e2e/xvfb-runtime.json
+            ${{ runner.temp }}/qikvrt-atari-firefox-e2e/xvfb.log
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/hatari-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/openssl-version.txt
             ${{ runner.temp }}/qikvrt-atari-firefox-e2e/tmp/qikvrt-atari-boot-*/receipt.env

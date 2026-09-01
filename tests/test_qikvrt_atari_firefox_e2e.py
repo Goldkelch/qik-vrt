@@ -78,6 +78,9 @@ class AtariFirefoxE2ETests(unittest.TestCase):
         self.assertEqual(prefs["network.trr.mode"], 5)
         self.assertEqual(prefs["network.proxy.type"], 0)
         self.assertIn(self.mod.EXTENSION_ID, prefs["extensions.webextensions.uuids"])
+        self.assertIn("-headless", capability["moz:firefoxOptions"]["args"])
+        x11 = self.mod.firefox_session_payload(headless=False)
+        self.assertNotIn("-headless", x11["capabilities"]["alwaysMatch"]["moz:firefoxOptions"]["args"])
 
     def test_grant_uses_actual_installed_extension_principal_and_restores_content(self) -> None:
         calls: list[tuple[str, str, object]] = []
@@ -133,12 +136,14 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             lna_permission={"scope": "FIREFOX_SESSION_ONLY"},
             terminal=self.successful_terminal(),
             screenshot_sha256="b" * 64,
+            firefox_x11=True,
         )
         self.assertTrue(receipt["browser_rendering_observed"])
         self.assertTrue(receipt["universal_terminal_pattern_observed"])
         self.assertTrue(receipt["virtual_megast_execution_observed"])
         self.assertEqual(receipt["mlp_open_sha256"], "a" * 64)
         self.assertEqual(receipt["hatari_trace_sha256"], "b" * 64)
+        self.assertEqual(receipt["browser"]["display_mode"], "X11")
         self.assertFalse(receipt["effect_ack_done"])
         self.assertFalse(receipt["general_effect_ack_done"])
         self.assertEqual(receipt["external_effect"], "NONE")
@@ -186,6 +191,12 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "qikvrt-geckodriver-v0.37.1-linux64",
             "hatari xauth xvfb",
             "xauth -V",
+            "hatari_status=$?",
+            "unexpected Hatari version status",
+            "Xvfb \":$display\"",
+            "xvfb-runtime.json",
+            "--firefox-x11",
+            "Firefox did not retain the authenticated X11 display contract",
             "Firefox-visible MLP.OPEN digest mismatch",
             "Firefox-visible HATARI.LOG digest mismatch",
             "candidate-local TLS boundary drift",
@@ -200,7 +211,6 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             self.assertIn(token, workflow)
         self.assertIn("actions/cache@caa296126883cff596d87d8935842f9db880ef25", workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
-        self.assertIn("xvfb-run -a sh -c 'true'", workflow)
         self.assertNotIn("xvfb-run --help", workflow)
 
 

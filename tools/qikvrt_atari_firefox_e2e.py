@@ -136,11 +136,14 @@ def set_context(base: str, session_id: str, context: str) -> None:
     )
 
 
-def firefox_session_payload() -> dict[str, Any]:
+def firefox_session_payload(*, headless: bool = True) -> dict[str, Any]:
     """Return the isolated, fail-closed Firefox capability contract."""
     uuid_pref = json.dumps(
         {EXTENSION_ID: PREFERRED_EXTENSION_UUID}, separators=(",", ":")
     )
+    arguments = ["--width=1280", "--height=800"]
+    if headless:
+        arguments.insert(0, "-headless")
     return {
         "capabilities": {
             "alwaysMatch": {
@@ -150,7 +153,7 @@ def firefox_session_payload() -> dict[str, Any]:
                 # WebDriver session; this is not a production Pages deployment.
                 "acceptInsecureCerts": True,
                 "moz:firefoxOptions": {
-                    "args": ["-headless", "--width=1280", "--height=800"],
+                    "args": arguments,
                     "prefs": {
                         "extensions.webextensions.uuids": uuid_pref,
                         "browser.shell.checkDefaultBrowser": False,
@@ -173,8 +176,10 @@ def firefox_session_payload() -> dict[str, Any]:
     }
 
 
-def create_session(base: str) -> tuple[str, dict[str, Any]]:
-    response = request_json("POST", base + "/session", firefox_session_payload(), timeout=90.0)
+def create_session(base: str, *, headless: bool = True) -> tuple[str, dict[str, Any]]:
+    response = request_json(
+        "POST", base + "/session", firefox_session_payload(headless=headless), timeout=90.0
+    )
     value = response.get("value") or {}
     session_id = value.get("sessionId") or response.get("sessionId")
     if not isinstance(session_id, str) or not session_id:
@@ -430,6 +435,7 @@ def build_receipt(
     lna_permission: dict[str, Any],
     terminal: dict[str, Any],
     screenshot_sha256: str,
+    firefox_x11: bool,
 ) -> dict[str, Any]:
     """Bind only observed browser/virtual-Mega-ST facts, retaining effect boundaries."""
     screen = terminal.get("screen")
@@ -450,6 +456,7 @@ def build_receipt(
             "name": capabilities.get("browserName"),
             "version": capabilities.get("browserVersion"),
             "platform": capabilities.get("platformName"),
+            "display_mode": "X11" if firefox_x11 else "HEADLESS",
         },
         "extension": {
             "id": extension_id,
@@ -484,6 +491,10 @@ def build_receipt(
 
 def observe(args: argparse.Namespace) -> dict[str, Any]:
     candidate_url = validate_candidate_url(args.candidate_url)
+    if args.firefox_x11 and (
+        not os.environ.get("DISPLAY") or not os.environ.get("XAUTHORITY")
+    ):
+        raise RuntimeError("Firefox X11 mode requires caller-bound DISPLAY and XAUTHORITY")
     args.profile_root.mkdir(parents=True, exist_ok=True)
     args.geckodriver_log.parent.mkdir(parents=True, exist_ok=True)
     base = f"http://127.0.0.1:{args.port}"
@@ -506,7 +517,7 @@ def observe(args: argparse.Namespace) -> dict[str, Any]:
         )
         try:
             wait_ready(base, time.monotonic() + args.driver_timeout)
-            session_id, capabilities = create_session(base)
+            session_id, capabilities = create_session(base, headless=not args.firefox_x11)
             extension_id, xpi_sha256 = install_temporary_xpi(base, session_id, args.xpi)
             extension_uuid = installed_extension_uuid(base, session_id)
             lna_permission = grant_exact_extension_loopback_permission(
@@ -536,6 +547,7 @@ def observe(args: argparse.Namespace) -> dict[str, Any]:
                 lna_permission=lna_permission,
                 terminal=terminal,
                 screenshot_sha256=screenshot_sha256,
+                firefox_x11=args.firefox_x11,
             )
             args.receipt.parent.mkdir(parents=True, exist_ok=True)
             args.receipt.write_text(
@@ -568,6 +580,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--screenshot", type=Path, required=True)
     parser.add_argument("--geckodriver-log", type=Path, required=True)
     parser.add_argument("--profile-root", type=Path, required=True)
+    parser.add_argument(
+        "--firefox-x11",
+        action="store_true",
+        help="require a caller-provided authenticated X11 display instead of Firefox headless mode",
+    )
     parser.add_argument("--port", type=int, default=4444)
     parser.add_argument("--driver-timeout", type=float, default=30.0)
     parser.add_argument("--page-timeout", type=float, default=30.0)

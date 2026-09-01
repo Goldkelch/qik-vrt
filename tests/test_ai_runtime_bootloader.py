@@ -104,11 +104,12 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         bootstrap = (ROOT / "tools/bootstrap-runtime.sh").read_text(encoding="utf-8")
         self.assertIn("core|ietf|formal|audio|browser|publication|all", bootstrap)
         self.assertIn("check_browser_profile", bootstrap)
-        for token in ("firefox", "geckodriver", "hatari", "xauth", "xvfb-run", "openssl"):
+        for token in ("firefox", "geckodriver", "hatari", "xauth", "Xvfb", "openssl"):
             self.assertIn(token, bootstrap)
         self.assertIn("xauth -V", bootstrap)
-        self.assertIn("xvfb-run -a sh -c 'true'", bootstrap)
-        self.assertNotIn("xvfb-run --help", bootstrap)
+        self.assertNotIn("xvfb-run", bootstrap)
+        self.assertIn('hatari_status=$?', bootstrap)
+        self.assertIn('"$hatari_status" -ne 1', bootstrap)
 
     def test_ci_retains_full_history_as_authority_side_cross_check(self) -> None:
         workflow = (
