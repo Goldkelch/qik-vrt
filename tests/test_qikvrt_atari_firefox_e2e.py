@@ -189,6 +189,8 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "--port 443",
             "qikvrt-atari-firefox-e2e",
             "qikvrt-geckodriver-v0.37.1-linux64",
+            "version_tokens[:2]",
+            "'geckodriver', '0.37.1'",
             "hatari xauth xvfb",
             "xauth -V",
             "hatari_status=$?",

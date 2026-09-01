@@ -321,16 +321,18 @@ jobs:
                   raise SystemExit('HOLD: pinned geckodriver payload is unavailable')
               target.write_bytes(source.read())
           target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-          version = __import__('subprocess').check_output([str(target), '--version'], text=True).splitlines()[0]
-          if version != 'geckodriver 0.37.1':
-              raise SystemExit(f'HOLD: unexpected geckodriver version: {version}')
+          version_line = __import__('subprocess').check_output([str(target), '--version'], text=True).splitlines()[0]
+          version_tokens = version_line.split()
+          if version_tokens[:2] != ['geckodriver', '0.37.1']:
+              raise SystemExit(f'HOLD: unexpected geckodriver version: {version_line}')
           (directory / 'provision.json').write_text(json.dumps({
               'schema': 'qikvrt_geckodriver_provision_v1',
               'release_url': release_url,
               'asset_url': url,
               'archive_sha256': actual,
               'expected_archive_sha256': expected,
-              'version': version,
+              'version': '0.37.1',
+              'version_line': version_line,
               'effect_ack_done': False,
               'deployment': False,
               'external_effect': 'NONE',
