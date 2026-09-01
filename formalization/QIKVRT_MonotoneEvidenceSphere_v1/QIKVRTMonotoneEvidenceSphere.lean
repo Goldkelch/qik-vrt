@@ -208,5 +208,100 @@ theorem MES_T12_control_code_injective (left right : ControlNibble)
     (sameCode : left.code = right.code) : left = right := by
   cases left <;> cases right <;> simp [ControlNibble.code] at sameCode ⊢
 
+/-- The bounded admission payload for one model transition. -/
+inductive AdmissionInput where
+  | noCandidate
+  | candidate (relation : RelationId) (degree : Degree)
+  deriving DecidableEq, Repr
+
+/--
+Classifies the supplied input as adding no relation to this model state.
+
+This means either that no candidate was supplied, or that its relation is
+already in the accepted core. It does not claim that no relation exists outside
+the finite model.
+-/
+def NoNewRelation (sphere : EvidenceSphere) : AdmissionInput → Prop
+  | .noCandidate => True
+  | .candidate relation _ => relation ∈ sphere.core
+
+/-- A supplied candidate is genuinely new relative to the accepted core. -/
+def GenuinelyNewRelation (sphere : EvidenceSphere) : AdmissionInput → Prop
+  | .noCandidate => False
+  | .candidate relation _ => relation ∉ sphere.core
+
+/--
+Deterministic model-local admission policy.
+
+It is intentionally separate from the raw `appendRelation` transition: direct
+raw transitions remain model primitives, while admission prevents duplicate
+core additions.
+-/
+def admissionTransition (sphere : EvidenceSphere) : AdmissionInput → EvidenceTransition
+  | .noCandidate => .hold
+  | .candidate relation degree =>
+      if relation ∈ sphere.core then .hold else .appendRelation relation degree
+
+/-- Interpret one bounded admission input. -/
+def applyAdmission (sphere : EvidenceSphere) (input : AdmissionInput) : EvidenceSphere :=
+  step sphere (admissionTransition sphere input)
+
+/-- [MES-T13] A no-new-relation input deterministically selects `hold`. -/
+theorem MES_T13_no_new_relation_selects_hold (sphere : EvidenceSphere)
+    (input : AdmissionInput) (noNew : NoNewRelation sphere input) :
+    admissionTransition sphere input = .hold := by
+  cases input with
+  | noCandidate => rfl
+  | candidate relation degree =>
+      simp [NoNewRelation, admissionTransition] at noNew
+      simp [admissionTransition, noNew]
+
+/--
+[MES-T14] `hold` is a local fixed point for this supplied admission input.
+
+It does not establish repository-level completion or a fixed point for future,
+different inputs.
+-/
+theorem MES_T14_no_new_relation_is_local_fixed_point (sphere : EvidenceSphere)
+    (input : AdmissionInput) (noNew : NoNewRelation sphere input) :
+    applyAdmission sphere input = sphere := by
+  unfold applyAdmission
+  rw [MES_T13_no_new_relation_selects_hold sphere input noNew]
+  rfl
+
+/--
+[MES-T15] A genuinely new candidate deterministically selects `append`.
+
+The existential merely exposes the relation and degree necessarily carried by
+a fresh input.
+-/
+theorem MES_T15_genuinely_new_relation_selects_append (sphere : EvidenceSphere)
+    (input : AdmissionInput) (fresh : GenuinelyNewRelation sphere input) :
+    ∃ relation degree, input = .candidate relation degree ∧
+      admissionTransition sphere input = .appendRelation relation degree := by
+  cases input with
+  | noCandidate => simp [GenuinelyNewRelation] at fresh
+  | candidate relation degree =>
+      refine ⟨relation, degree, rfl, ?_⟩
+      simp [GenuinelyNewRelation, admissionTransition] at fresh
+      simp [admissionTransition, fresh]
+
+/-- [MES-T16] An identity-fresh candidate is interpreted by `append`. -/
+theorem MES_T16_genuinely_new_relation_is_appended (sphere : EvidenceSphere)
+    (relation : RelationId) (degree : Degree) (fresh : relation ∉ sphere.core) :
+    applyAdmission sphere (.candidate relation degree) = append sphere relation degree := by
+  simp [applyAdmission, admissionTransition, fresh, step]
+
+/--
+[MES-T17] The admitted new relation changes the model radius exactly as the
+existing append theorem specifies.
+-/
+theorem MES_T17_genuinely_new_relation_strictly_grows_radius
+    (sphere : EvidenceSphere) (relation : RelationId) (degree : Degree)
+    (fresh : relation ∉ sphere.core) :
+    sphere.radius < (applyAdmission sphere (.candidate relation degree)).radius := by
+  rw [MES_T16_genuinely_new_relation_is_appended sphere relation degree fresh]
+  exact MES_T07_append_radius_strict_growth sphere relation degree
+
 end MonotoneEvidenceSphere
 end QIKVRT

@@ -15,6 +15,11 @@ namespace MonotoneEvidenceSphere
 #print axioms MES_T10_step_preserves_sealed_history
 #print axioms MES_T11_control_code_fits_nibble
 #print axioms MES_T12_control_code_injective
+#print axioms MES_T13_no_new_relation_selects_hold
+#print axioms MES_T14_no_new_relation_is_local_fixed_point
+#print axioms MES_T15_genuinely_new_relation_selects_append
+#print axioms MES_T16_genuinely_new_relation_is_appended
+#print axioms MES_T17_genuinely_new_relation_strictly_grows_radius
 
 end MonotoneEvidenceSphere
 end QIKVRT

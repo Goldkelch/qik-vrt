@@ -34,6 +34,11 @@ THEOREMS = [
     "MES_T10_step_preserves_sealed_history",
     "MES_T11_control_code_fits_nibble",
     "MES_T12_control_code_injective",
+    "MES_T13_no_new_relation_selects_hold",
+    "MES_T14_no_new_relation_is_local_fixed_point",
+    "MES_T15_genuinely_new_relation_selects_append",
+    "MES_T16_genuinely_new_relation_is_appended",
+    "MES_T17_genuinely_new_relation_strictly_grows_radius",
 ]
 ALLOWED_FOUNDATIONAL_AXIOMS = {"propext", "Quot.sound", "Classical.choice"}
 
@@ -106,7 +111,19 @@ def parse_axiom_output(path: pathlib.Path) -> dict[str, list[str]]:
     reports: dict[str, list[str]] = {}
     no_axioms = re.compile(r"^'([^']+)' does not depend on any axioms$")
     with_axioms = re.compile(r"^'([^']+)' depends on axioms: \[(.*)\]$")
+    logical_lines: list[str] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
+        if raw[:1].isspace():
+            require(
+                bool(logical_lines)
+                and " depends on axioms: [" in logical_lines[-1]
+                and not logical_lines[-1].rstrip().endswith("]"),
+                f"unexpected wrapped axiom-audit output: {raw!r}",
+            )
+            logical_lines[-1] += raw.strip()
+        else:
+            logical_lines.append(raw)
+    for raw in logical_lines:
         line = raw.strip()
         if not line:
             continue
@@ -176,6 +193,8 @@ def receipt(
             "sealed-history preservation",
             "natural membership, mass and radius monotonicity",
             "four-control four-bit model code",
+            "model-local admission fixed point for a supplied no-new-relation input",
+            "fresh-relation admission to the declared append path",
         ],
         "not_established": [
             "physical-sphere correspondence",

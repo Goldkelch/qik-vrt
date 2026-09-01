@@ -16,7 +16,7 @@ aktualisiert, nie durch einen kleineren Ersatzwert. Die deklarierte
 Übergangsrelation hat nur vier Klassen: Relation anhängen, halten,
 reobservieren und Autorität anfordern.
 
-`QIKVRTMonotoneEvidenceSphere.lean` beweist zwölf Sätze:
+`QIKVRTMonotoneEvidenceSphere.lean` beweist siebzehn Sätze:
 
 1. Ein Anhängen entfernt keinen akzeptierten Eintrag.
 2. Ein Anhängen erweitert die versiegelte Historie nur um einen Suffix.
@@ -31,12 +31,24 @@ reobservieren und Autorität anfordern.
 10. Jede deklarierte Transition erhält die Versiegelungsinvariante.
 11. Vier Kontrollergebnisse passen in ein Vier-Bit-Feld.
 12. Diese vier Kontrollergebnisse haben unterscheidbare Codes.
+13. Eine gebundene Eingabe ohne neue Relation wählt deterministisch `hold`.
+14. Für genau diese Eingabe ist `hold` ein lokaler Fixpunkt.
+15. Eine gegenüber dem Kern neue Kandidatenrelation wählt deterministisch den
+    Append-Pfad.
+16. Eine identitätsfrische Kandidatenrelation wird als `append` interpretiert.
+17. Eine so zugelassene frische Relation vergrößert den modellierten Radius
+    strikt.
 
 Die `4 Bit` sind damit präzise als **Kontrollfeld-Modell** nachgewiesen. Der
 Kern behauptet ausdrücklich nicht, dass ein vollständiges System, ein
 Relationsspeicher von etwa 65 KiB oder ein Prozessor damit schon als
 Vier-Bit-Maschinencode implementiert sei. Das sind konkrete, später mess- und
 synthesebindbare Konstruktionsschritte.
+
+Der lokale Fixpunkt in Satz 14 bedeutet ebenso präzise nur: Für die **gebundene
+Eingabe** liegt kein neuer Kandidat vor oder der Kandidat ist bereits im
+endlichen Modellkern. Er beweist keine globale Completion, keine Vollständigkeit
+aller künftigen Beobachtungen und keine Wirkung außerhalb des Modells.
 
 ## Was damit nicht behauptet wird
 
