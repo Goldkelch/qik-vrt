@@ -1,232 +1,79 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: Publish survival connectability paper to Zenodo
+name: Publish survival connectability paper to Zenodo (Authority HOLD)
 
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
 on:
-  push:
-    branches:
-      - publication/survival-anschlussfaehig-v1
-    paths:
-      - .github/workflows/qikvrt_survival_connectability_zenodo_publish.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: qikvrt-survival-connectability-zenodo-v1
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  publish:
-    if: github.repository == 'Goldkelch/qik-vrt'
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      EXPECTED_BRANCH: publication/survival-anschlussfaehig-v1
-      EXPECTED_PARENT: 2bc0d73614c1bff47ffb6e4f43b75c0b7d42e9c8
-      MANIFEST_PATH: release/survival-anschlussfaehigsten-2026-07-31/publish-request.json
-      EVIDENCE_PATH: release/survival-anschlussfaehigsten-2026-07-31/zenodo-publication.json
-      ZENODO_API_BASE: https://zenodo.org/api
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Check out exact execution head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Verify exact one-shot execution boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
-          test "$(git show -s --format=%P HEAD)" = "$EXPECTED_PARENT"
-          test ! -e "$EVIDENCE_PATH"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          expected_delta="$(
-            printf '%s\n' \
-              'A	.github/workflows/qikvrt_survival_connectability_zenodo_publish.yml' \
-              'M	REPOSITORY_FILE_MANIFEST.json' \
-              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
-              'M	SHA256SUMS.txt'
-          )"
-          observed_delta="$(
-            git diff \
-              --name-status \
-              --no-renames \
-              "$EXPECTED_PARENT" \
-              "$GITHUB_SHA" \
-              --
-          )"
-          test "$observed_delta" = "$expected_delta"
-          remote_head="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_head" = "$GITHUB_SHA"
-          GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-          GITHUB_SHA="$GITHUB_SHA" \
-          python3 -B - <<'PY'
-          import os
-          from pathlib import Path
-          from tools import qikvrt_zenodo_publish as publish
-
-          root = Path.cwd().resolve()
-          manifest_path = root / (
-              "release/survival-anschlussfaehigsten-2026-07-31/"
-              "publish-request.json"
-          )
-          manifest = publish.load_manifest(manifest_path, root)
-          execution_head = publish._validate_repository_source_head(
-              root,
-              manifest_path,
-              manifest,
-          )
-          publish._validate_origin_repository(root, manifest["repository"])
-          if execution_head != os.environ["GITHUB_SHA"]:
-              raise SystemExit("BLOCK: normalized execution head differs")
-          if len(manifest["files"]) != 31:
-              raise SystemExit("BLOCK: exact Zenodo upload count differs")
-          print("ZENODO_EXECUTION_PREFLIGHT=VALID")
-          PY
-          python3 -B tools/qikvrt_integrity.py verify
-
-      - name: Run complete repository gates before effect
-        shell: bash
-        run: |
-          set -euo pipefail
-          make test
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Recheck remote exact head immediately before effect
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
-          remote_head="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_head" = "$GITHUB_SHA"
-
-      - name: Consume authorization and publish exact files
-        id: publish
-        continue-on-error: true
-        timeout-minutes: 20
+      - name: Materialize protected release Authority HOLD
         shell: bash
         env:
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set +e
-          python3 -B tools/qikvrt_zenodo_publish.py \
-            --manifest "$MANIFEST_PATH"
-          status=$?
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Persist published or recovery receipt
-        id: persist
-        if: always()
-        shell: bash
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
-          if test ! -f "$EVIDENCE_PATH"; then
-            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          state="$(
-            python3 -B - <<'PY'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
           import json
+          import os
           from pathlib import Path
 
-          path = Path(
-              "release/survival-anschlussfaehigsten-2026-07-31/"
-              "zenodo-publication.json"
-          )
-          value = json.loads(path.read_text(encoding="utf-8"))
-          state = value.get("state")
-          if state not in {
-              "published",
-              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
-          }:
-              raise SystemExit("BLOCK: publication evidence state differs")
-          print(state)
-          PY
-          )"
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B - <<'PY'
-          import subprocess
-
-          expected = {
-              "REPOSITORY_FILE_MANIFEST.json",
-              "REPOSITORY_FILE_MANIFEST.json.sha256",
-              "SHA256SUMS.txt",
-              (
-                  "release/survival-anschlussfaehigsten-2026-07-31/"
-                  "zenodo-publication.json"
-              ),
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
+              },
           }
-          raw = subprocess.check_output(
-              [
-                  "git",
-                  "status",
-                  "--porcelain=v1",
-                  "-z",
-                  "--untracked-files=all",
-              ]
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
           )
-          observed = set()
-          for item in raw.split(b"\0"):
-              if not item:
-                  continue
-              observed.add(item[3:].decode("utf-8"))
-          if observed != expected:
-              raise SystemExit(
-                  "BLOCK: post-publication repository delta differs: "
-                  + ",".join(sorted(observed))
-              )
           PY
-          git config user.name 'qik-vrt-zenodo-publication[bot]'
-          git config user.email \
-            'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
-          git add -- \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt \
-            "$EVIDENCE_PATH"
-          git diff --cached --check
-          test -n "$(git diff --cached --name-only)"
-          if test "$state" = "published"; then
-            message='zenodo: persist survival connectability publication'
-          else
-            message='zenodo: persist survival connectability recovery receipt'
-          fi
-          git commit -m "$message"
-          remote_head="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_head" = "$GITHUB_SHA"
-          git push origin "HEAD:refs/heads/$EXPECTED_BRANCH"
-          printf '%s\n' 'persisted=true' >> "$GITHUB_OUTPUT"
-          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
 
-      - name: Upload publication recovery evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: survival-connectability-zenodo-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
+          if-no-files-found: error
           retention-days: 90
-          if-no-files-found: ignore
-          path: |
-            release/survival-anschlussfaehigsten-2026-07-31/zenodo-publication.json
-
-      - name: Enforce publication and persistence result
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${{ steps.publish.outputs.status }}" = "0"
-          test "${{ steps.persist.outputs.persisted }}" = "true"
-          test "${{ steps.persist.outputs.state }}" = "published"

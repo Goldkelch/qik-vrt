@@ -107,6 +107,18 @@ class MaterializationScopeTests(unittest.TestCase):
             )
             self.assertIn(token, workflow)
 
+    def test_formalization_release_step_provisions_pinned_yaml_before_yaml_dependent_test(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        start = workflow.index("- name: Rebuild deterministic formalization release bundle when present")
+        end = workflow.index("- name: Refresh most advanced content-disposition status when present", start)
+        release_step = workflow[start:end]
+        pin = '"PyYAML==6.0.3"'
+        test = "python3 -B tests/test_formalization_v2_release_workflow.py"
+        self.assertIn(pin, release_step)
+        self.assertIn("import yaml", release_step)
+        self.assertIn(test, release_step)
+        self.assertLess(release_step.index(pin), release_step.index(test))
+
     def test_batch003_writer_is_not_triggered_or_persisted_by_unrelated_prs(self) -> None:
         workflow = BATCH003_WORKFLOW.read_text(encoding="utf-8")
         pull_request = workflow.index("  pull_request:")

@@ -1,0 +1,169 @@
+name: QIKVRT MLP.TOS Mega ST TCP/IP proof
+
+on:
+  pull_request:
+    paths:
+      - 'policy/MLP_TOS_MEGAST_TCPIP_ROUNDTRIP_V1.json'
+      - 'tests/test_qikvrt_mlp_tos_megast_tcpip_contract.py'
+      - '.github/workflows/qikvrt_mlp_tos_megast_tcpip.yml'
+      - 'MLP.TOS/**'
+      - 'tools/build_qiknet_prg.py'
+      - 'tools/qikvrt_slip_tcp_peer.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest-tcpip-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout and proof contract
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_mlp_tos_megast_tcpip_contract
+          printf '%s  %s\n' '5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e' 'MLP.TOS/MLP.TOS' | sha256sum -c -
+
+      - name: Install exact execution dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends hatari xvfb curl unzip binutils-m68k-linux-gnu
+          hatari --version | tee /tmp/hatari-version.txt || true
+          grep -F 'Hatari v2.4.1' /tmp/hatari-version.txt
+
+      - name: Build position-independent guest QIKNET.PRG
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qiknet/build /tmp/qiknet/drive/C
+          m68k-linux-gnu-as -m68000 --register-prefix-optional -o /tmp/qiknet/build/qiknet.o MLP.TOS/QIKNET.S
+          cat > /tmp/qiknet/build/link.ld <<'EOF'
+          SECTIONS { . = 0; .text : { *(.text*) } }
+          EOF
+          m68k-linux-gnu-ld -T /tmp/qiknet/build/link.ld -e _start -o /tmp/qiknet/build/qiknet.elf /tmp/qiknet/build/qiknet.o
+          m68k-linux-gnu-objcopy -O binary -j .text /tmp/qiknet/build/qiknet.elf /tmp/qiknet/build/qiknet.text
+          python3 tools/build_qiknet_prg.py --text /tmp/qiknet/build/qiknet.text --output /tmp/qiknet/drive/C/QIKNET.PRG
+          file /tmp/qiknet/drive/C/QIKNET.PRG || true
+          sha256sum /tmp/qiknet/drive/C/QIKNET.PRG | tee /tmp/qiknet/QIKNET.PRG.sha256
+
+      - name: Acquire and verify exact EmuTOS 1.4 ROM
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qiknet/emutos
+          curl --fail --location --retry 3 'https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip' -o /tmp/qiknet/emutos/emutos.zip
+          printf '%s  %s\n' '1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663' /tmp/qiknet/emutos/emutos.zip | sha256sum -c -
+          unzip -q /tmp/qiknet/emutos/emutos.zip -d /tmp/qiknet/emutos/unpacked
+          rom='/tmp/qiknet/emutos/unpacked/emutos-512k-1.4/etos512ca.img'
+          printf '%s  %s\n' 'f810041373d8efe15d55ec049fd4dd9be9b0fc521bbe6416b99d833f7fd6805d' "$rom" | sha256sum -c -
+          echo "$rom" > /tmp/qiknet/emutos/rom.path
+
+      - name: Execute guest-originated TCP/IP roundtrip over emulated Mega ST RS232/SLIP
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkfifo /tmp/qiknet/guest.in /tmp/qiknet/guest.out
+          python3 tools/qikvrt_slip_tcp_peer.py \
+            --guest-out /tmp/qiknet/guest.out \
+            --guest-in /tmp/qiknet/guest.in \
+            --receipt /tmp/qiknet/endpoint-receipt.json \
+            --timeout 25 > /tmp/qiknet/peer.log 2>&1 &
+          peer_pid=$!
+          rom="$(cat /tmp/qiknet/emutos/rom.path)"
+          xvfb-run -a hatari \
+            --machine megast --cpulevel 0 --cpuclock 8 \
+            --compatible on --cpu-exact on --addr24 on --memsize 1 \
+            --tos "$rom" --harddrive /tmp/qiknet/drive \
+            --rs232-in /tmp/qiknet/guest.in --rs232-out /tmp/qiknet/guest.out \
+            --auto 'C:\QIKNET.PRG' --confirm-quit false \
+            --fast-forward on --sound off --disable-video on --benchmark \
+            --trace os_base \
+            > /tmp/qiknet/hatari.log 2>&1 &
+          hatari_pid=$!
+          observed=0
+          for i in $(seq 1 250); do
+            if test -s /tmp/qiknet/endpoint-receipt.json; then observed=1; break; fi
+            if ! kill -0 "$hatari_pid" 2>/dev/null; then break; fi
+            sleep 0.1
+          done
+          kill "$hatari_pid" 2>/dev/null || true
+          wait "$hatari_pid" 2>/dev/null || true
+          if ! wait "$peer_pid"; then
+            cat /tmp/qiknet/peer.log
+            cat /tmp/qiknet/hatari.log
+            exit 1
+          fi
+          test "$observed" -eq 1
+          grep -F 'Pexec(0, "C:\QIKNET.PRG"' /tmp/qiknet/hatari.log
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/qiknet/endpoint-receipt.json'))
+          assert p['success'] is True
+          assert p['response_sent'] is True
+          assert p['guest_post_response_confirmation_observed'] is True
+          assert p['nonce']=='QIKVRT-NONCE-0001'
+          print('GUEST_TCP_IP_ROUNDTRIP_OBSERVED')
+          PY
+          cat /tmp/qiknet/peer.log
+          cat /tmp/qiknet/endpoint-receipt.json
+
+      - name: Bind exact-head guest TCP/IP receipt
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          export TREE_SHA="$(git rev-parse HEAD^{tree})"
+          export PRG_SHA="$(sha256sum /tmp/qiknet/drive/C/QIKNET.PRG | awk '{print $1}')"
+          export ENDPOINT_SHA="$(sha256sum /tmp/qiknet/endpoint-receipt.json | awk '{print $1}')"
+          export HATARI_SHA="$(sha256sum /tmp/qiknet/hatari.log | awk '{print $1}')"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          endpoint=json.loads(Path('/tmp/qiknet/endpoint-receipt.json').read_text())
+          assert endpoint['success'] is True
+          assert endpoint['nonce']=='QIKVRT-NONCE-0001'
+          assert endpoint['response_sent'] is True
+          assert endpoint['guest_post_response_confirmation_observed'] is True
+          receipt={
+            'schema':'qikvrt_mlp_tos_megast_tcpip_receipt_v1',
+            'repository':os.environ['REPOSITORY'],'source_head':os.environ['HEAD_SHA'],'source_tree':os.environ['TREE_SHA'],
+            'run_id':int(os.environ['RUN_ID']),'run_attempt':int(os.environ['RUN_ATTEMPT']),
+            'transport':'SLIP over emulated Atari Mega ST BIOS AUX/RS232','guest_ip':'10.0.0.2','peer_ip':'10.0.0.1',
+            'guest_tcp_connect_observed':True,'endpoint_nonce_payload_observed':True,'guest_response_observed':True,
+            'guest_post_response_confirmation_observed':True,
+            'nonce':'QIKVRT-NONCE-0001','response':'QIK-ACK:QIKVRT-NONCE-0001',
+            'qiknet_prg_sha256':os.environ['PRG_SHA'],
+            'endpoint_receipt_sha256':os.environ['ENDPOINT_SHA'],'hatari_trace_sha256':os.environ['HATARI_SHA'],
+            'machine':'Atari Mega ST','cpu':'Motorola 68000','hatari_version':'2.4.1','emutos_version':'1.4',
+            'guest_tcp_ip_roundtrip_observed':True,'internet_reachability_claimed':False,'physical_megast_execution':False,'effect_ack_done':False
+          }
+          Path('/tmp/qiknet/MLP_TOS_MEGAST_TCPIP_RECEIPT_V1.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(receipt,sort_keys=True,indent=2))
+          PY
+
+      - name: Preserve guest TCP/IP proof artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qikvrt-megast-guest-tcpip-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            /tmp/qiknet/QIKNET.PRG.sha256
+            /tmp/qiknet/drive/C/QIKNET.PRG
+            /tmp/qiknet/endpoint-receipt.json
+            /tmp/qiknet/MLP_TOS_MEGAST_TCPIP_RECEIPT_V1.json
+            /tmp/qiknet/peer.log
+            /tmp/qiknet/hatari.log
+          if-no-files-found: warn
+          retention-days: 30

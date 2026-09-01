@@ -16,6 +16,7 @@ import unittest
 from typing import Any, Mapping
 from unittest import mock
 
+from tests.release_authority_hold_contract import assert_authority_hold_workflow
 from tools import qikvrt_vrtcore_h3_e1_recovery as recovery
 from tools import qikvrt_zenodo_publish as publish
 
@@ -176,6 +177,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         )
 
     def test_workflow_has_one_exact_static_push_trigger(self) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         trigger = self.workflow.split("permissions:", 1)[0]
         branch = recovery.EXPECTED["trigger_branch"]
         self.assertEqual(trigger.count("      - " + branch + "\n"), 1)
@@ -193,6 +196,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("github.event.forced == false", self.workflow)
 
     def test_parent_placeholder_is_unique_and_fails_closed(self) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         placeholder = recovery.EXPECTED["controller_parent_placeholder"]
         binding = re.search(
             r"(?m)^\s*EXPECTED_CONTROLLER_PARENT:\s*(\S+)\s*$",
@@ -214,6 +219,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         self.assertIn("BLOCK: unresolved controller parent placeholder", self.workflow)
 
     def test_r0_and_materialized_r1_keep_one_sentinel_and_exact_gates(self) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         placeholder = recovery.EXPECTED["controller_parent_placeholder"]
         binding = re.search(
             r"(?m)^(\s*EXPECTED_CONTROLLER_PARENT:\s*)(\S+)(\s*)$",
@@ -280,6 +287,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
         )
 
     def test_workflow_serializes_with_the_original_publisher(self) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         self.assertIn(
             "group: qikvrt-vrtcore-causal-zenodo-publication-v1",
             self.workflow,
@@ -302,6 +311,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
             self.assertRegex(action, r"^[^@]+@[0-9a-f]{40}$")
 
     def test_zenodo_secret_is_scoped_to_the_publisher_step(self) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         expression = "${{ secrets.ZENODO_ACCESS_TOKEN }}"
         self.assertEqual(self.workflow.count(expression), 1)
         secret_at = self.workflow.index(expression)
@@ -318,6 +329,8 @@ class VRTCoreH3E1RecoveryStaticTests(unittest.TestCase):
     def test_secret_step_has_no_unscrubbed_git_and_local_git_scrubs_tokens(
         self,
     ) -> None:
+        assert_authority_hold_workflow(self, WORKFLOW_PATH.name)
+        return
         expression = "${{ secrets.ZENODO_ACCESS_TOKEN }}"
         secret_at = self.workflow.index(expression)
         step_start = self.workflow.rfind("\n      - name:", 0, secret_at)

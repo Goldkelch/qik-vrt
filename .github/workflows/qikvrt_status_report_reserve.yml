@@ -1,650 +1,79 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: QIKVRT status report reserve
+name: QIKVRT status report reserve (Authority HOLD)
 
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
 on:
-  push:
-    branches:
-      - automation/status-clarification-reserve-20260722
-    paths:
-      - release/status-clarification-request.json
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: qikvrt-status-report-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
-  validate:
-    name: Validate inert or reserve marker
-    if: github.repository == 'Goldkelch/qik-vrt'
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    outputs:
-      authorized: ${{ steps.marker.outputs.authorized }}
-      marker_sha256: ${{ steps.marker.outputs.marker_sha256 }}
-      source_commit: ${{ steps.marker.outputs.source_commit }}
-      source_tree: ${{ steps.marker.outputs.source_tree }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Check out marker commit without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 2
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
           persist-credentials: false
 
-      - name: Bind validator to CPython 3.12.13 x64
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12.13"
-          architecture: x64
-
-      - name: Validate exact marker, source parents and manifest
-        id: marker
+      - name: Materialize protected release Authority HOLD
         shell: bash
         env:
-          GH_API_TOKEN: ${{ github.token }}
-          EVENT_AFTER: ${{ github.event.after }}
-          EVENT_BEFORE: ${{ github.event.before }}
-          EVENT_FORCED: ${{ github.event.forced }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
-          python -B - <<'PY'
-          import copy
-          import hashlib
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
           import json
           import os
-          import re
-          import stat
-          import subprocess
-          import urllib.request
           from pathlib import Path
 
-          MARKER = Path("release/status-clarification-request.json")
-          SCHEMA = Path("policy/qikvrt-status-report-release-request.schema.json")
-          ZERO40 = "0" * 40
-          ZERO64 = "0" * 64
-          SHA1 = re.compile(r"[0-9a-f]{40}\Z")
-          SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-          REPOSITORIES = ("Goldkelch/qik-vrt", "ingolf-lohmann/qik-vrt")
-          PROTECTED = {21498772, 21498773, 21498774, 21488115}
-
-          def fail(message):
-              raise SystemExit("BLOCK: " + message)
-
-          def regular(path):
-              try:
-                  mode = path.lstat().st_mode
-              except FileNotFoundError:
-                  fail(f"required file is absent: {path}")
-              if path.is_symlink() or not stat.S_ISREG(mode):
-                  fail(f"unsafe required path: {path}")
-
-          def digest(path):
-              regular(path)
-              return hashlib.sha256(path.read_bytes()).hexdigest()
-
-          def exact(value, keys, label):
-              if not isinstance(value, dict) or set(value) != set(keys):
-                  fail(f"{label} keys differ from the closed contract")
-
-          def require(value, expected, label):
-              if value != expected:
-                  fail(f"{label} differs from the fixed contract")
-
-          def api(repository, path):
-              headers = {
-                  "Accept": "application/vnd.github+json",
-                  "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "qikvrt-status-reserve-validator",
-              }
-              if repository == os.environ["GITHUB_REPOSITORY"]:
-                  headers["Authorization"] = f"Bearer {os.environ['GH_API_TOKEN']}"
-              request = urllib.request.Request(
-                  f"https://api.github.com/repos/{repository}/{path}", headers=headers
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
-
-          regular(MARKER)
-          regular(SCHEMA)
-          marker = json.loads(MARKER.read_text(encoding="utf-8"))
-          schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-          if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
-              fail("unexpected JSON Schema dialect")
-          exact(marker, {
-              "_license", "$schema_ref", "schema", "schema_sha256", "request_id",
-              "action", "confirm", "authorization_payload_sha256",
-              "repository_policy", "release", "zenodo",
-          }, "marker")
-          exact(marker["_license"], {
-              "copyright", "rights_holder", "license", "license_text_ref", "classification",
-          }, "_license")
-          require(marker["_license"], {
-              "copyright": "Copyright 2026 Ingolf Lohmann",
-              "rights_holder": "Ingolf Lohmann",
-              "license": "CC-BY-NC-ND-4.0",
-              "license_text_ref": "LICENSES/CC-BY-NC-ND-4.0.txt",
-              "classification": "release_authorization_json",
-          }, "_license")
-          exact(marker["repository_policy"], {
-              "authority_repository", "mirror_repository", "release_ref",
-              "reserve_ref", "finalize_ref", "state_branch",
-          }, "repository_policy")
-          exact(marker["release"], {
-              "version", "tag", "expected_source_commits", "expected_source_tree",
-              "tagger_name", "tagger_email", "tagger_timestamp", "tag_message",
-          }, "release")
-          exact(marker["release"]["expected_source_commits"], REPOSITORIES, "source commits")
-          exact(marker["zenodo"], {
-              "client_path", "client_sha256",
-              "reservation_manifest_path", "reservation_manifest_sha256",
-              "final_template_manifest_path", "final_template_manifest_sha256",
-              "final_manifest_path", "final_manifest_sha256",
-              "reservation_state_path", "reservation_evidence_sha256", "report_doi",
-          }, "zenodo")
-          require(marker["$schema_ref"], "../policy/qikvrt-status-report-release-request.schema.json", "$schema_ref")
-          require(marker["schema"], "qikvrt_status_report_release_request_v1", "schema")
-          require(marker["request_id"], "status-clarification-2026-07-22", "request_id")
-          require(marker["repository_policy"], {
-              "authority_repository": "Goldkelch/qik-vrt",
-              "mirror_repository": "ingolf-lohmann/qik-vrt",
-              "release_ref": "refs/heads/main",
-              "reserve_ref": "refs/heads/automation/status-clarification-reserve-20260722",
-              "finalize_ref": "refs/heads/automation/status-clarification-finalize-20260722",
-              "state_branch": "qikvrt/status-report-state",
-          }, "repository_policy")
-          fixed_release = {
-              "version": "2026.07.22-status-clarification-1.0.0",
-              "tag": "v2026.07.22-status-clarification-1.0.0",
-              "tagger_name": "Ingolf Lohmann",
-              "tagger_email": "ingolf.lohmann@live.com",
-              "tagger_timestamp": "2026-07-22T00:00:00Z",
-              "tag_message": "QIK-VRT official status clarification 1.0.0\n\nStandalone bounded status report. Tags identify the reviewed source-parent trees; authorization-marker commits are not release targets. No GitHub Release object and no mutation or new version of an existing Zenodo record.",
-          }
-          for key, value in fixed_release.items():
-              require(marker["release"][key], value, f"release.{key}")
-          require(marker["zenodo"]["client_path"], "tools/qikvrt_status_zenodo.py", "client path")
-          require(marker["zenodo"]["reservation_manifest_path"], "release/status-clarification-zenodo-reservation-manifest.json", "reservation manifest path")
-          require(marker["zenodo"]["final_template_manifest_path"], "release/status-clarification-zenodo-template.json", "final template manifest path")
-          require(marker["zenodo"]["final_manifest_path"], "release/status-clarification-zenodo.json", "final manifest path")
-          require(marker["zenodo"]["reservation_state_path"], "release-state/status-clarification/zenodo-reservation.json", "state path")
-          require(marker["schema_sha256"], digest(SCHEMA), "schema hash")
-
-          supplied = marker["authorization_payload_sha256"]
-          if not isinstance(supplied, str) or not SHA256.fullmatch(supplied):
-              fail("invalid authorization payload hash")
-          projection = copy.deepcopy(marker)
-          projection.pop("authorization_payload_sha256")
-          calculated = hashlib.sha256(json.dumps(
-              projection, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-          ).encode("utf-8")).hexdigest()
-          require(supplied, calculated, "authorization payload hash")
-
-          action = marker["action"]
-          confirms = {
-              "inactive": "NOT_AUTHORIZED",
-              "reserve": "RESERVE_ONE_NEW_STATUS_REPORT_DRAFT_NO_PUBLISH",
-              "finalize": "TAG_SOURCE_PARENTS_AND_PUBLISH_RESERVED_STATUS_REPORT",
-          }
-          if action not in confirms:
-              fail("unknown marker action")
-          require(marker["confirm"], confirms[action], "confirmation")
-          commits = marker["release"]["expected_source_commits"]
-          tree = marker["release"]["expected_source_tree"]
-          for repository in REPOSITORIES:
-              if not SHA1.fullmatch(commits[repository]):
-                  fail(f"invalid source commit for {repository}")
-          if not SHA1.fullmatch(tree):
-              fail("invalid source tree")
-          for key in ("client_sha256", "reservation_manifest_sha256", "final_template_manifest_sha256", "final_manifest_sha256", "reservation_evidence_sha256"):
-              if not SHA256.fullmatch(marker["zenodo"][key]):
-                  fail(f"invalid zenodo.{key}")
-
-          if action == "inactive":
-              if any(commits[repository] != ZERO40 for repository in REPOSITORIES) or tree != ZERO40:
-                  fail("inactive marker must zero source identities")
-              for key in ("client_sha256", "reservation_manifest_sha256", "final_template_manifest_sha256", "final_manifest_sha256", "reservation_evidence_sha256"):
-                  require(marker["zenodo"][key], ZERO64, f"inactive zenodo.{key}")
-              require(marker["zenodo"]["report_doi"], None, "inactive report DOI")
-              with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
-                  handle.write("authorized=false\n")
-                  handle.write(f"marker_sha256={digest(MARKER)}\n")
-              raise SystemExit(0)
-          if action != "reserve":
-              fail("reserve ref carries a non-reserve active marker")
-          if any(commits[repository] == ZERO40 for repository in REPOSITORIES) or tree == ZERO40:
-              fail("reserve marker does not bind both source commits and shared tree")
-          if marker["zenodo"]["client_sha256"] == ZERO64 or marker["zenodo"]["reservation_manifest_sha256"] == ZERO64 or marker["zenodo"]["final_template_manifest_sha256"] == ZERO64:
-              fail("reserve marker does not bind client, reservation manifest and final template")
-          require(marker["zenodo"]["final_manifest_sha256"], ZERO64, "future final manifest hash")
-          require(marker["zenodo"]["reservation_evidence_sha256"], ZERO64, "future reservation hash")
-          require(marker["zenodo"]["report_doi"], None, "future report DOI")
-          client = Path(marker["zenodo"]["client_path"])
-          reservation_manifest = Path(marker["zenodo"]["reservation_manifest_path"])
-          template_manifest = Path(marker["zenodo"]["final_template_manifest_path"])
-          require(digest(client), marker["zenodo"]["client_sha256"], "client hash")
-          require(digest(reservation_manifest), marker["zenodo"]["reservation_manifest_sha256"], "reservation manifest hash")
-          require(digest(template_manifest), marker["zenodo"]["final_template_manifest_sha256"], "final template manifest hash")
-          reservation_value = json.loads(reservation_manifest.read_text(encoding="utf-8"))
-          template_value = json.loads(template_manifest.read_text(encoding="utf-8"))
-          from tools.qikvrt_status_zenodo import validate_manifest, validate_reservation_manifest, validate_template_binding
-          validated_reservation = validate_reservation_manifest(reservation_value, Path.cwd())
-          validated_template = validate_manifest(template_value, Path.cwd())
-          offline_token = "offline-validator-" + supplied
-          validate_template_binding(validated_reservation, validated_template, digest(template_manifest), Path.cwd(), offline_token)
-          if "newversion" in (reservation_manifest.read_text(encoding="utf-8") + template_manifest.read_text(encoding="utf-8")).lower():
-              fail("reservation inputs request forbidden newversion behavior")
-          for record_id in PROTECTED:
-              if reservation_value.get("report_id") == str(record_id):
-                  fail("manifest report ID aliases a protected record")
-
-          repository = os.environ["GITHUB_REPOSITORY"]
-          require(repository, "Goldkelch/qik-vrt", "repository")
-          require(os.environ["EVENT_NAME"], "push", "event name")
-          require(os.environ["EVENT_REF"], "refs/heads/automation/status-clarification-reserve-20260722", "event ref")
-          require(os.environ["EVENT_FORCED"], "false", "forced-push flag")
-          after = os.environ["EVENT_AFTER"]
-          if not SHA1.fullmatch(after):
-              fail("event after is not a Git SHA-1")
-          require(after, os.environ["GITHUB_SHA"], "event after")
-          require(api(repository, "git/ref/heads/automation/status-clarification-reserve-20260722")["object"]["sha"], after, "remote reserve ref")
-          for target in REPOSITORIES:
-              source_commit = commits[target]
-              require(api(target, "git/ref/heads/main")["object"]["sha"], source_commit, f"{target} main")
-              require(api(target, f"git/commits/{source_commit}")["tree"]["sha"], tree, f"{target} source tree")
-
-          parents = subprocess.run(
-              ["git", "rev-list", "--parents", "-n", "1", "HEAD"], check=True,
-              text=True, stdout=subprocess.PIPE,
-          ).stdout.strip().split()
-          if len(parents) != 2:
-              fail("marker commit must have exactly one parent")
-          source_commit = commits[repository]
-          require(parents[1], source_commit, "marker parent source commit")
-          require(os.environ["EVENT_BEFORE"], source_commit, "push before source commit")
-          require(subprocess.run(
-              ["git", "show", "-s", "--format=%T", "HEAD^"], check=True,
-              text=True, stdout=subprocess.PIPE,
-          ).stdout.strip(), tree, "marker parent tree")
-          if subprocess.run(
-              ["git", "show", "-s", "--format=%T", "HEAD"], check=True,
-              text=True, stdout=subprocess.PIPE,
-          ).stdout.strip() == tree:
-              fail("active marker commit did not produce a distinct tree")
-          changed = subprocess.run(
-              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^", "HEAD"],
-              check=True, text=True, stdout=subprocess.PIPE,
-          ).stdout.splitlines()
-          require(changed, [str(MARKER)], "marker-only authorization commit")
-
-          parent_marker = json.loads(subprocess.run(
-              ["git", "show", f"HEAD^:{MARKER}"], check=True, stdout=subprocess.PIPE,
-          ).stdout.decode("utf-8"))
-          inert = copy.deepcopy(marker)
-          inert["action"] = "inactive"
-          inert["confirm"] = "NOT_AUTHORIZED"
-          inert["release"]["expected_source_commits"] = {repository: ZERO40 for repository in REPOSITORIES}
-          inert["release"]["expected_source_tree"] = ZERO40
-          inert["zenodo"]["client_sha256"] = ZERO64
-          inert["zenodo"]["reservation_manifest_sha256"] = ZERO64
-          inert["zenodo"]["final_template_manifest_sha256"] = ZERO64
-          inert["zenodo"]["final_manifest_sha256"] = ZERO64
-          inert["zenodo"]["reservation_evidence_sha256"] = ZERO64
-          inert["zenodo"]["report_doi"] = None
-          inert_projection = copy.deepcopy(inert)
-          inert_projection.pop("authorization_payload_sha256")
-          inert["authorization_payload_sha256"] = hashlib.sha256(json.dumps(
-              inert_projection, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-          ).encode("utf-8")).hexdigest()
-          require(parent_marker, inert, "exact inert marker in source parent")
-          for path, expected in (
-              (client, marker["zenodo"]["client_sha256"]),
-              (reservation_manifest, marker["zenodo"]["reservation_manifest_sha256"]),
-              (template_manifest, marker["zenodo"]["final_template_manifest_sha256"]),
-          ):
-              parent_bytes = subprocess.run(
-                  ["git", "show", f"HEAD^:{path}"], check=True, stdout=subprocess.PIPE,
-              ).stdout
-              require(hashlib.sha256(parent_bytes).hexdigest(), expected, f"source-parent hash for {path}")
-
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
-              handle.write("authorized=true\n")
-              handle.write(f"marker_sha256={digest(MARKER)}\n")
-              handle.write(f"source_commit={source_commit}\n")
-              handle.write(f"source_tree={tree}\n")
-          PY
-
-      - name: Test the exact source parent
-        if: steps.marker.outputs.authorized == 'true'
-        shell: bash
-        env:
-          SOURCE_COMMIT: ${{ steps.marker.outputs.source_commit }}
-        run: |
-          set -euo pipefail
-          source_root="$RUNNER_TEMP/qikvrt-status-source"
-          git worktree add --detach "$source_root" "$SOURCE_COMMIT"
-          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 make -C "$source_root" test
-
-  reserve:
-    name: Reserve one fresh report draft
-    needs: validate
-    if: needs.validate.outputs.authorized == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    steps:
-      - name: Check out exact marker commit without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 2
-          persist-credentials: false
-
-      - name: Bind client to CPython 3.12.13 x64
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12.13"
-          architecture: x64
-
-      - name: Revalidate immediately before reservation
-        shell: bash
-        env:
-          EXPECTED_MARKER_SHA256: ${{ needs.validate.outputs.marker_sha256 }}
-          EXPECTED_SOURCE_COMMIT: ${{ needs.validate.outputs.source_commit }}
-          EXPECTED_SOURCE_TREE: ${{ needs.validate.outputs.source_tree }}
-          GH_API_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python -B - <<'PY'
-          import base64, hashlib, json, os, subprocess, urllib.error, urllib.parse, urllib.request
-          from pathlib import Path
-          marker_path = Path("release/status-clarification-request.json")
-          raw = marker_path.read_bytes()
-          if hashlib.sha256(raw).hexdigest() != os.environ["EXPECTED_MARKER_SHA256"]:
-              raise SystemExit("BLOCK: marker changed after validation")
-          marker = json.loads(raw)
-          if marker["action"] != "reserve" or marker["confirm"] != "RESERVE_ONE_NEW_STATUS_REPORT_DRAFT_NO_PUBLISH":
-              raise SystemExit("BLOCK: reserve action is absent")
-          source = marker["release"]["expected_source_commits"]["Goldkelch/qik-vrt"]
-          if source != os.environ["EXPECTED_SOURCE_COMMIT"] or marker["release"]["expected_source_tree"] != os.environ["EXPECTED_SOURCE_TREE"]:
-              raise SystemExit("BLOCK: source identity changed")
-          if subprocess.run(["git", "rev-parse", "HEAD^"], check=True, text=True, stdout=subprocess.PIPE).stdout.strip() != source:
-              raise SystemExit("BLOCK: marker parent changed")
-          for path_key, hash_key in (
-              ("client_path", "client_sha256"),
-              ("reservation_manifest_path", "reservation_manifest_sha256"),
-              ("final_template_manifest_path", "final_template_manifest_sha256"),
-          ):
-              path = Path(marker["zenodo"][path_key])
-              if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != marker["zenodo"][hash_key]:
-                  raise SystemExit(f"BLOCK: authorized bytes changed: {path}")
-          common_headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "qikvrt-status-reserve-effect"}
-          def ref(repository, name):
-              headers = dict(common_headers)
-              if repository == os.environ["GITHUB_REPOSITORY"]:
-                  headers["Authorization"] = f"Bearer {os.environ['GH_API_TOKEN']}"
-              request = urllib.request.Request(f"https://api.github.com/repos/{repository}/git/ref/heads/{name}", headers=headers)
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)["object"]["sha"]
-          if ref(os.environ["GITHUB_REPOSITORY"], "automation/status-clarification-reserve-20260722") != os.environ["GITHUB_SHA"]:
-              raise SystemExit("BLOCK: reserve authorization ref advanced")
-          for repository, expected in marker["release"]["expected_source_commits"].items():
-              if ref(repository, "main") != expected:
-                  raise SystemExit(f"BLOCK: {repository} main advanced after authorization")
-          state_path = urllib.parse.quote(marker["zenodo"]["reservation_state_path"], safe="/")
-          state_ref = urllib.parse.quote(marker["repository_policy"]["state_branch"], safe="")
-          state_headers = dict(common_headers)
-          state_headers["Authorization"] = f"Bearer {os.environ['GH_API_TOKEN']}"
-          request = urllib.request.Request(
-              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/contents/{state_path}?ref={state_ref}",
-              headers=state_headers,
-          )
-          try:
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  existing = json.load(response)
-          except urllib.error.HTTPError as error:
-              if error.code != 404:
-                  raise
-          else:
-              if existing.get("encoding") != "base64" or not isinstance(existing.get("content"), str):
-                  raise SystemExit("BLOCK: existing reservation state is not safe file content")
-              output = Path(".qikvrt/release/status-clarification/zenodo-reservation.json")
-              output.parent.mkdir(parents=True, exist_ok=True)
-              encoded = "".join(existing["content"].split())
-              output.write_bytes(base64.b64decode(encoded, validate=True))
-              output.chmod(0o600)
-          PY
-
-      - name: Persist one-shot reservation intent before any Zenodo POST
-        shell: bash
-        env:
-          GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/status-report-state
-          ATTEMPT_PATH: release-state/status-clarification/zenodo-reservation-attempt.json
-          RESERVATION_LOCAL: .qikvrt/release/status-clarification/zenodo-reservation.json
-          ATTEMPT_LOCAL: .qikvrt/release/status-clarification/reservation-attempt-created
-        run: |
-          set -euo pipefail
-          umask 077
-          python -B - <<'PY'
-          import base64, hashlib, json, os, urllib.error, urllib.parse, urllib.request
-          from pathlib import Path
-
-          marker_path = Path("release/status-clarification-request.json")
-          marker_raw = marker_path.read_bytes()
-          marker = json.loads(marker_raw)
-          if marker.get("action") != "reserve":
-              raise SystemExit("BLOCK: one-shot intent requires the reserve action")
-          intent = {
-              "schema_version": 1,
-              "kind": "qikvrt-status-report-reservation-attempt",
-              "request_id": marker["request_id"],
-              "marker_sha256": hashlib.sha256(marker_raw).hexdigest(),
-              "source_commits": marker["release"]["expected_source_commits"],
-              "source_tree": marker["release"]["expected_source_tree"],
-              "reservation_manifest_sha256": marker["zenodo"]["reservation_manifest_sha256"],
-              "template_manifest_sha256": marker["zenodo"]["final_template_manifest_sha256"],
-          }
-          intent_raw = (
-              json.dumps(intent, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-              + "\n"
-          ).encode("utf-8")
-          repository = os.environ["GITHUB_REPOSITORY"]
-          base = f"https://api.github.com/repos/{repository}"
-          headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}",
-              "Content-Type": "application/json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "qikvrt-status-attempt-writer",
-          }
-
-          def api(method, path, body=None, missing=False):
-              data = None if body is None else json.dumps(
-                  body, separators=(",", ":")
-              ).encode("utf-8")
-              request = urllib.request.Request(
-                  base + path, data=data, method=method, headers=headers
-              )
-              try:
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      return json.load(response)
-              except urllib.error.HTTPError as error:
-                  if missing and error.code == 404:
-                      return None
-                  raise
-
-          branch = os.environ["STATE_BRANCH"]
-          encoded_ref = urllib.parse.quote("heads/" + branch, safe="/")
-          get_ref_path = "/git/ref/" + encoded_ref
-          update_ref_path = "/git/refs/" + encoded_ref
-          ref = api("GET", get_ref_path, missing=True)
-          parent = None if ref is None else ref["object"]["sha"]
-          base_tree = (
-              None
-              if parent is None
-              else api("GET", f"/git/commits/{parent}")["tree"]["sha"]
-          )
-          query = urllib.parse.urlencode({"ref": branch})
-          encoded_path = urllib.parse.quote(os.environ["ATTEMPT_PATH"], safe="/")
-          existing = api("GET", f"/contents/{encoded_path}?{query}", missing=True)
-          reservation_local = Path(os.environ["RESERVATION_LOCAL"])
-          if existing is not None:
-              if existing.get("encoding") != "base64" or not isinstance(
-                  existing.get("content"), str
-              ):
-                  raise SystemExit("BLOCK: existing reservation intent is unsafe")
-              encoded = "".join(existing["content"].split())
-              if base64.b64decode(encoded, validate=True) != intent_raw:
-                  raise SystemExit("BLOCK: existing reservation intent differs")
-              if not reservation_local.is_file():
-                  raise SystemExit(
-                      "BLOCK: a prior one-shot intent has no persisted reservation; "
-                      "inspect Zenodo drafts and reconcile explicitly before retry"
-                  )
-              raise SystemExit(0)
-          if reservation_local.exists():
-              raise SystemExit("BLOCK: reservation evidence exists without its one-shot intent")
-
-          blob = api("POST", "/git/blobs", {
-              "content": base64.b64encode(intent_raw).decode("ascii"),
-              "encoding": "base64",
-          })["sha"]
-          tree_body = {"tree": [{
-              "path": os.environ["ATTEMPT_PATH"],
-              "mode": "100644",
-              "type": "blob",
-              "sha": blob,
-          }]}
-          if base_tree is not None:
-              tree_body["base_tree"] = base_tree
-          tree = api("POST", "/git/trees", tree_body)["sha"]
-          commit = api("POST", "/git/commits", {
-              "message": "Authorize one status-report reservation attempt",
-              "tree": tree,
-              "parents": [] if parent is None else [parent],
-              "author": {
-                  "name": "QIK-VRT Release Automation",
-                  "email": "actions@github.com",
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
               },
-              "committer": {
-                  "name": "QIK-VRT Release Automation",
-                  "email": "actions@github.com",
-              },
-          })["sha"]
-          if parent is None:
-              api("POST", "/git/refs", {"ref": "refs/heads/" + branch, "sha": commit})
-          else:
-              api("PATCH", update_ref_path, {"sha": commit, "force": False})
-          local = Path(os.environ["ATTEMPT_LOCAL"])
-          local.parent.mkdir(parents=True, exist_ok=True)
-          local.write_text(hashlib.sha256(intent_raw).hexdigest() + "\n", encoding="ascii")
-          local.chmod(0o600)
+          }
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
           PY
 
-      - name: Reserve exactly one new Zenodo report without publishing
-        shell: bash
-        env:
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          umask 077
-          mkdir -p .qikvrt/release/status-clarification
-          if [ ! -f .qikvrt/release/status-clarification/reservation-attempt-created ] && [ ! -f .qikvrt/release/status-clarification/zenodo-reservation.json ]; then
-            echo "BLOCK: no persisted one-shot intent or resumable reservation" >&2
-            exit 2
-          fi
-          python -B tools/qikvrt_status_zenodo.py reserve \
-            --reservation-manifest release/status-clarification-zenodo-reservation-manifest.json \
-            --final-template-manifest release/status-clarification-zenodo-template.json \
-            --reservation .qikvrt/release/status-clarification/zenodo-reservation.json \
-            --repository-root .
-
-      - name: Validate reservation evidence
-        shell: bash
-        env:
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          python -B - <<'PY'
-          import json, os, re
-          from pathlib import Path
-          path = Path(".qikvrt/release/status-clarification/zenodo-reservation.json")
-          raw = path.read_bytes()
-          if os.environ["ZENODO_ACCESS_TOKEN"].encode() in raw:
-              raise SystemExit("BLOCK: reservation evidence contains the token")
-          value = json.loads(raw)
-          if value.get("kind") != "qikvrt-single-status-report" or value.get("phase") != "reserved":
-              raise SystemExit("BLOCK: client did not produce reserved evidence")
-          marker = json.loads(Path("release/status-clarification-request.json").read_text(encoding="utf-8"))
-          if value.get("schema_version") != 2 or value.get("reservation_manifest_sha256") != marker["zenodo"]["reservation_manifest_sha256"] or value.get("template_manifest_sha256") != marker["zenodo"]["final_template_manifest_sha256"]:
-              raise SystemExit("BLOCK: reservation is not bound to both authorized manifests")
-          report = value.get("report", {})
-          record_id = report.get("deposition_id")
-          doi = report.get("doi")
-          if not isinstance(record_id, int) or record_id in {21498772, 21498773, 21498774, 21488115}:
-              raise SystemExit("BLOCK: unsafe reserved record identity")
-          if not isinstance(doi, str) or not re.fullmatch(r"10\.5281/zenodo\.[1-9][0-9]*", doi) or int(doi.rsplit(".", 1)[1]) != record_id:
-              raise SystemExit("BLOCK: reserved DOI and record identity disagree")
-          PY
-
-      - name: Persist reservation evidence on the dedicated state branch
-        shell: bash
-        env:
-          GH_API_TOKEN: ${{ github.token }}
-          STATE_BRANCH: qikvrt/status-report-state
-          STATE_PATH: release-state/status-clarification/zenodo-reservation.json
-        run: |
-          set -euo pipefail
-          python -B - <<'PY'
-          import base64, json, os, urllib.error, urllib.parse, urllib.request
-          from pathlib import Path
-          repository = os.environ["GITHUB_REPOSITORY"]
-          base = f"https://api.github.com/repos/{repository}"
-          headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {os.environ['GH_API_TOKEN']}", "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "qikvrt-status-state-writer"}
-          def api(method, path, body=None, missing=False):
-              data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
-              request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
-              try:
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      return json.load(response)
-              except urllib.error.HTTPError as error:
-                  if missing and error.code == 404:
-                      return None
-                  raise
-          encoded_ref = urllib.parse.quote("heads/" + os.environ["STATE_BRANCH"], safe="/")
-          get_ref_path = "/git/ref/" + encoded_ref
-          update_ref_path = "/git/refs/" + encoded_ref
-          ref = api("GET", get_ref_path, missing=True)
-          parent = None if ref is None else ref["object"]["sha"]
-          base_tree = None if parent is None else api("GET", f"/git/commits/{parent}")["tree"]["sha"]
-          content = Path(".qikvrt/release/status-clarification/zenodo-reservation.json").read_bytes()
-          blob = api("POST", "/git/blobs", {"content": base64.b64encode(content).decode(), "encoding": "base64"})["sha"]
-          tree_body = {"tree": [{"path": os.environ["STATE_PATH"], "mode": "100644", "type": "blob", "sha": blob}]}
-          if base_tree is not None:
-              tree_body["base_tree"] = base_tree
-          tree = api("POST", "/git/trees", tree_body)["sha"]
-          if tree == base_tree:
-              raise SystemExit(0)
-          commit = api("POST", "/git/commits", {"message": "Record status-report Zenodo reservation", "tree": tree, "parents": [] if parent is None else [parent], "author": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"}, "committer": {"name": "QIK-VRT Release Automation", "email": "actions@github.com"}})["sha"]
-          if parent is None:
-              api("POST", "/git/refs", {"ref": "refs/heads/" + os.environ["STATE_BRANCH"], "sha": commit})
-          else:
-              api("PATCH", update_ref_path, {"sha": commit, "force": False})
-          PY
-
-      - name: Upload reservation evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: status-report-zenodo-reservation-${{ github.sha }}
-          path: .qikvrt/release/status-clarification/zenodo-reservation.json
-          include-hidden-files: true
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

@@ -1,0 +1,1152 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT mesh review successor completion
+run-name: QIKVRT mesh review completion-v1 evaluator-${{ github.workflow_sha }} source=${{ github.event.workflow_run.id || 'scheduled' }}
+
+on:
+  workflow_run:
+    workflows: ["QIKVRT requested review executor"]
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: qikvrt-mesh-review-successor-completion-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  read-mesh-frontier:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: qikvrt-outbox-ledger-authority
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.target.outputs.artifact_name }}
+      needed: ${{ steps.target.outputs.needed }}
+      state: ${{ steps.target.outputs.state }}
+    env:
+      REPOSITORY: ${{ github.repository }}
+      SEALED_EVALUATOR: ${{ github.workflow_sha }}
+    steps:
+      - name: Check out the exact trusted Mesh completion reader
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$SEALED_EVALUATOR"
+
+      - name: Read only the current Mesh FIFO item
+        env:
+          LEDGER_AUDITOR_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auditor_token="${LEDGER_AUDITOR_TOKEN-}"
+          writer_actor_id="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_AUDITOR_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$auditor_token"
+          [[ "$writer_actor_id" =~ ^[1-9][0-9]*$ ]]
+          root=/tmp/qikvrt-mesh-review-completion
+          mkdir -p "$root"
+          QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN="$auditor_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor_id" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+              --repository "$REPOSITORY" \
+              --receipt "$root/item.json" \
+              next --lane mesh-review-successor-dispatch >/dev/null
+          unset auditor_token writer_actor_id
+
+      - name: Select the exact accepted child or orphan transport
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json,os,pathlib
+          from tools.qikvrt_mesh_review_outbox import select_mesh_completion_target
+          root=pathlib.Path('/tmp/qikvrt-mesh-review-completion')
+          item=json.loads((root/'item.json').read_text())
+          target=select_mesh_completion_target(item)
+          (root/'target.json').write_text(
+              json.dumps(target,sort_keys=True,indent=2)+'\n'
+          )
+          name=(
+              f"qikvrt-mesh-review-completion-frontier-"
+              f"{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          )
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output:
+              print(f'artifact_name={name}',file=output)
+              print(f"needed={'true' if target['needed'] else 'false'}",file=output)
+              print(f"state={target['state']}",file=output)
+          PY
+
+      - name: Preserve exact Mesh FIFO read envelope
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.target.outputs.artifact_name }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: /tmp/qikvrt-mesh-review-completion
+
+  observe-mesh-child:
+    needs: read-mesh-frontier
+    if: needs.read-mesh-frontier.outputs.needed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      artifact_name: ${{ steps.observe.outputs.artifact_name }}
+      action: ${{ steps.observe.outputs.action }}
+      completion_ready: ${{ steps.observe.outputs.completion_ready }}
+      cursor_ready: ${{ steps.observe.outputs.cursor_ready }}
+      cursor_ordinal: ${{ steps.observe.outputs.cursor_ordinal }}
+      sequence: ${{ steps.observe.outputs.sequence }}
+      attempt: ${{ steps.observe.outputs.attempt }}
+      blocker: ${{ steps.observe.outputs.blocker }}
+      cursor_artifact_id: ${{ steps.cursor_evidence.outputs.artifact-id }}
+      cursor_artifact_digest: ${{ steps.cursor_evidence.outputs.artifact-digest }}
+      authority_artifact_id: ${{ steps.authority_evidence.outputs.artifact-id }}
+      authority_artifact_digest: ${{ steps.authority_evidence.outputs.artifact-digest }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      SEALED_EVALUATOR: ${{ github.workflow_sha }}
+      FRONTIER_ARTIFACT: ${{ needs.read-mesh-frontier.outputs.artifact_name }}
+    steps:
+      - name: Check out the exact trusted Mesh completion observer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$SEALED_EVALUATOR"
+
+      - name: Download exact Mesh FIFO read envelope
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.FRONTIER_ARTIFACT }}
+          path: /tmp/qikvrt-mesh-review-completion
+
+      - name: Reobserve exact child and materialize non-authorizing evidence
+        id: observe
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/qikvrt-mesh-review-completion
+          python3 -B - <<'PY'
+          import datetime,hashlib,json,os,pathlib,re,subprocess,urllib.parse
+          from tools.qikvrt_mesh_review_outbox import (
+              MeshReviewOutboxError,
+              materialize_mesh_completion,
+              materialize_mesh_completion_query_bound_observation,
+              materialize_mesh_missing_evidence_observation,
+              materialize_mesh_orphan_authority_observation,
+              materialize_mesh_retry_scan_cursor,
+              materialize_mesh_subject_supersession,
+              materialize_mesh_target_workflow_supersession,
+          )
+          from tools.qikvrt_ruleset_outbox import normalize_child_for_intent
+
+          root=pathlib.Path('/tmp/qikvrt-mesh-review-completion')
+          item=json.loads((root/'item.json').read_text())
+          target=json.loads((root/'target.json').read_text())
+          intent=item['intent']
+          payload=intent['payload']
+          queue=payload['subject']['queue_intent']
+          repository=os.environ['REPOSITORY']
+
+          def api(path):
+              return json.loads(subprocess.check_output(
+                  ['gh','api','-H','X-GitHub-Api-Version: 2026-03-10',path],
+                  text=True,
+              ))
+
+          def pages(path,key):
+              values=[]
+              page=1
+              declared=None
+              while True:
+                  sep='&' if '?' in path else '?'
+                  value=api(f'{path}{sep}per_page=100&page={page}')
+                  current=value.get(key)
+                  total=value.get('total_count')
+                  if (
+                      not isinstance(current,list)
+                      or isinstance(total,bool) or not isinstance(total,int)
+                      or (declared is not None and total != declared)
+                  ):
+                      raise SystemExit('MESH_COMPLETION_PAGINATION_INVALID')
+                  declared=total
+                  values.extend(current)
+                  if len(current) < 100: break
+                  page += 1
+                  if page > 100:
+                      raise SystemExit('MESH_COMPLETION_PAGINATION_BOUND_EXCEEDED')
+              if declared != len(values):
+                  raise SystemExit('MESH_COMPLETION_PAGINATION_INCOMPLETE')
+              return values
+
+          def bounded_pages(path,key,page_cap=100):
+              values=[]
+              declared=None
+              page=1
+              while page <= page_cap:
+                  sep='&' if '?' in path else '?'
+                  value=api(f'{path}{sep}per_page=100&page={page}')
+                  current=value.get(key)
+                  total=value.get('total_count')
+                  if (
+                      not isinstance(current,list) or len(current) > 100
+                      or isinstance(total,bool) or not isinstance(total,int)
+                      or total < 0
+                      or (declared is not None and total != declared)
+                  ):
+                      raise SystemExit('MESH_REVIEW_COMPLETION_BOUNDED_PAGE_INVALID')
+                  declared=total
+                  values.extend(current)
+                  if len(values) > declared:
+                      raise SystemExit('MESH_COMPLETION_BOUNDED_TOTAL_DRIFT')
+                  if len(values) == declared:
+                      return values,{
+                          'declared_total_count':declared,
+                          'observed_count':len(values),
+                          'pages_scanned':page,'page_cap':page_cap,
+                          'scan_complete':True,
+                      }
+                  if len(current) < 100:
+                      raise SystemExit('MESH_COMPLETION_BOUNDED_PAGE_INCOMPLETE')
+                  page += 1
+              return values,{
+                  'declared_total_count':declared,
+                  'observed_count':len(values),
+                  'pages_scanned':page_cap,'page_cap':page_cap,
+                  'scan_complete':False,
+              }
+
+          def observer_producer():
+              observer=api(
+                  f"repos/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              )
+              if (
+                  observer.get('id') != int(os.environ['GITHUB_RUN_ID'])
+                  or observer.get('run_attempt')
+                      != int(os.environ['GITHUB_RUN_ATTEMPT'])
+                  or str(observer.get('path') or '').split('@',1)[0]
+                      != '.github/workflows/qikvrt_mesh_review_successor_completion.yml'
+                  or observer.get('repository',{}).get('full_name') != repository
+                  or observer.get('event') != os.environ['GITHUB_EVENT_NAME']
+                  or observer.get('head_sha') != os.environ['SEALED_EVALUATOR']
+              ):
+                  raise SystemExit('MESH_COMPLETION_OBSERVER_PROVENANCE_DRIFT')
+              producer={
+                  'workflow_path':(
+                      '.github/workflows/'
+                      'qikvrt_mesh_review_successor_completion.yml'
+                  ),
+                  'workflow_sha':os.environ['SEALED_EVALUATOR'],
+                  'workflow_id':observer.get('workflow_id'),
+                  'run_id':observer.get('id'),
+                  'run_attempt':observer.get('run_attempt'),
+                  'event':observer.get('event'),
+              }
+              (root/'producer.json').write_text(
+                  json.dumps(producer,sort_keys=True,indent=2)+'\n'
+              )
+              return observer
+
+          main=api(f'repos/{repository}/commits/main')
+          pr=api(f"repos/{repository}/pulls/{queue['pr_number']}")
+          commit=api(f"repos/{repository}/git/commits/{queue['head_sha']}")
+          workflow=api(
+              f'repos/{repository}/actions/workflows/'
+              'qikvrt_requested_review_executor.yml'
+          )
+          cursor_ready=False
+          authority_ready=False
+          cursor_ordinal=None
+          blocker=None
+          if main.get('sha') != os.environ['SEALED_EVALUATOR']:
+              action='OBSERVER_EVALUATOR_SUPERSEDED'
+              completion_ready=False
+              child=None
+          elif main.get('sha') != payload['main_head_sha']:
+              observer_producer()
+              authority={
+                  'schema':'qikvrt_ruleset_outbox_authority_observation_v1',
+                  'blocker':'OUTBOX_EVALUATOR_SUPERSEDED',
+                  'lane':'mesh-review-successor-dispatch',
+                  'sequence':item['sequence'],'fingerprint':item['fingerprint'],
+                  'sealed_main_head_sha':payload['main_head_sha'],
+                  'observed_main_head_sha':main['sha'],
+                  'verified':True,'productive_effect':False,
+              }
+              (root/'authority-observation.json').write_text(
+                  json.dumps(authority,sort_keys=True,indent=2)+'\n'
+              )
+              blocker=authority['blocker']
+              authority_ready=True
+              action='TERMINALIZE_ORPHAN'
+              completion_ready=False
+              child=None
+          elif (
+              pr.get('number') != queue['pr_number']
+              or pr.get('state') != 'open'
+              or pr.get('head',{}).get('sha') != queue['head_sha']
+              or pr.get('base',{}).get('sha') != queue['base_sha']
+              or commit.get('sha') != queue['head_sha']
+              or commit.get('tree',{}).get('sha') != queue['tree_sha']
+          ):
+              observer_producer()
+              live_head=pr.get('head',{}).get('sha')
+              live_tree=(
+                  api(f'repos/{repository}/git/commits/{live_head}')
+                  .get('tree',{}).get('sha')
+                  if isinstance(live_head,str) and live_head else queue['tree_sha']
+              )
+              authority=materialize_mesh_subject_supersession(
+                  item=item,observed_pr=pr,observed_tree_sha=live_tree,
+              )
+              (root/'authority-observation.json').write_text(
+                  json.dumps(authority,sort_keys=True,indent=2)+'\n'
+              )
+              blocker=authority['blocker']
+              authority_ready=True
+              action='TERMINALIZE_ORPHAN'
+              completion_ready=False
+              child=None
+          elif (
+              workflow.get('id') != payload['target']['workflow_id']
+              or str(workflow.get('path') or '').split('@',1)[0]
+                  != '.github/workflows/qikvrt_requested_review_executor.yml'
+          ):
+              observer_producer()
+              authority=materialize_mesh_target_workflow_supersession(
+                  item=item,observed_workflow=workflow,
+                  observed_main_head_sha=main['sha'],
+              )
+              (root/'authority-observation.json').write_text(
+                  json.dumps(authority,sort_keys=True,indent=2)+'\n'
+              )
+              blocker=authority['blocker']
+              authority_ready=True
+              action='TERMINALIZE_ORPHAN'
+              completion_ready=False
+              child=None
+          elif target['state'] in {
+              'SCAN_ORPHAN','ADOPT_CURSOR_CHILD','TERMINALIZE_ORPHAN'
+          }:
+              attempt=target['transport_attempt']
+              transport=item['transport'][str(attempt)]
+              actor=api(
+                  f"repos/{repository}/actions/runs/{transport['actor_run_id']}"
+                  f"/attempts/{transport['actor_run_attempt']}"
+              )
+              completion_ready=False
+              child=None
+              observer=observer_producer()
+              if target['state'] == 'SCAN_ORPHAN':
+                  if actor.get('status') != 'completed' or not actor.get('conclusion'):
+                      action='WAIT_ACTOR'
+                  else:
+                      record=item.get('retry_scan_cursor',{}).get(str(attempt))
+                      prior=record.get('cursor') if isinstance(record,dict) else None
+                      page=(prior.get('next_page') if isinstance(prior,dict) else 1) or 1
+                      page_cap=(prior.get('page_cap') if isinstance(prior,dict) else 10)
+                      started=datetime.datetime.now(
+                          datetime.timezone.utc
+                      ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                      boundary_complete=started > str(actor.get('updated_at') or '')
+                      prior_boundary=(
+                          prior.get('same_second_boundary_complete') is True
+                          if isinstance(prior,dict) else False
+                      )
+                      window_start=(
+                          prior.get('query_window_start')
+                          if isinstance(prior,dict) else actor.get('created_at')
+                      )
+                      window_end=(
+                          prior.get('query_window_end')
+                          if prior_boundary
+                          else (
+                              started if boundary_complete
+                              else actor.get('updated_at')
+                          )
+                      )
+                      created=urllib.parse.quote(
+                          f'{window_start}..{window_end}',safe=''
+                      )
+                      page_value=api(
+                          f"repos/{repository}/actions/workflows/"
+                          f"{payload['target']['workflow_id']}/runs?"
+                          f"event=workflow_dispatch&branch=main&created={created}"
+                          f"&per_page=100&page={page}"
+                      )
+                      page_runs=page_value.get('workflow_runs')
+                      declared_total_count=page_value.get('total_count')
+                      if (
+                          not isinstance(page_runs,list) or len(page_runs) > 100
+                          or isinstance(declared_total_count,bool)
+                          or not isinstance(declared_total_count,int)
+                          or declared_total_count < 0
+                      ):
+                          raise SystemExit('MESH_COMPLETION_CURSOR_PAGE_INVALID')
+                      completed=datetime.datetime.now(
+                          datetime.timezone.utc
+                      ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                      cursor=materialize_mesh_retry_scan_cursor(
+                          item=item,transport_attempt=attempt,
+                          actor_run=actor,observer_run=observer,
+                          page_runs=page_runs,
+                          declared_total_count=declared_total_count,
+                          queried_window_start=window_start,
+                          queried_window_end=window_end,
+                          observation_started_at=started,
+                          observation_completed_at=completed,
+                          same_second_boundary_complete=boundary_complete,
+                          page_cap=int(page_cap),
+                      )
+                      (root/'retry-scan-cursor.json').write_text(
+                          json.dumps(cursor,sort_keys=True,separators=(',',':'))
+                      )
+                      cursor_ready=True
+                      cursor_ordinal=cursor['ordinal']
+                      action='CURSOR'
+              elif target['state'] == 'ADOPT_CURSOR_CHILD':
+                  child=target['child']
+                  adoption={
+                      'schema':'qikvrt_mesh_review_orphan_adoption_v1',
+                      'state':'ADOPT','adopted':True,'first_blocker':None,
+                      'sequence':item['sequence'],'fingerprint':item['fingerprint'],
+                      'transport_attempt':attempt,
+                      'actor_run_id':actor.get('id'),
+                      'actor_run_attempt':actor.get('run_attempt'),
+                      'matching_child_count':1,'child':child,
+                      'verified':True,'productive_effect':False,
+                  }
+                  (root/'adoption.json').write_text(
+                      json.dumps(adoption,sort_keys=True,indent=2)+'\n'
+                  )
+                  action='ADOPT'
+              else:
+                  authority=materialize_mesh_orphan_authority_observation(
+                      item=item,transport_attempt=attempt,
+                      observed_main_head_sha=main['sha'],
+                  )
+                  if authority['blocker'] != target['first_blocker']:
+                      raise SystemExit('MESH_COMPLETION_AUTHORITY_BLOCKER_DRIFT')
+                  (root/'authority-observation.json').write_text(
+                      json.dumps(authority,sort_keys=True,indent=2)+'\n'
+                  )
+                  blocker=authority['blocker']
+                  authority_ready=True
+                  action='TERMINALIZE_ORPHAN'
+          elif target['state'] == 'OBSERVE_CHILD':
+              attempt=target['transport_attempt']
+              child_recovery=target['child_recovery']
+              locator=target['child']
+              raw=api(
+                  f"repos/{repository}/actions/runs/{locator['run_id']}"
+                  f"/attempts/{locator['run_attempt']}"
+              )
+              raw_repo=raw.get('repository')
+              child={
+                  'run_id':raw.get('id'),
+                  'run_attempt':raw.get('run_attempt'),
+                  'workflow_id':raw.get('workflow_id'),
+                  'workflow_path':str(raw.get('path') or '').split('@',1)[0],
+                  'event':raw.get('event'),
+                  'repository':(
+                      raw_repo.get('full_name') if isinstance(raw_repo,dict) else None
+                  ),
+                  'head_sha':raw.get('head_sha'),
+                  'status':raw.get('status'),
+                  'conclusion':raw.get('conclusion'),
+                  'display_title':raw.get('display_title'),
+              }
+              child=normalize_child_for_intent(
+                  child,intent=intent,attempt=attempt,
+                  same_run_recovery=child_recovery,
+              )
+              immutable=(
+                  'run_id','run_attempt','workflow_id','workflow_path','event',
+                  'repository','head_sha','display_title',
+              )
+              if any(child.get(key) != locator.get(key) for key in immutable):
+                  raise SystemExit('MESH_COMPLETION_CHILD_LOCATOR_DRIFT')
+              if child['status'] != 'completed':
+                  action='WAIT_CHILD'
+                  completion_ready=False
+              else:
+                  started=datetime.datetime.now(
+                      datetime.timezone.utc
+                  ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                  jobs,jobs_query=bounded_pages(
+                      f"repos/{repository}/actions/runs/{child['run_id']}/"
+                      f"attempts/{child['run_attempt']}/jobs?filter=all",
+                      'jobs',
+                  )
+                  if jobs_query['scan_complete'] is not True:
+                      observer_producer()
+                      completed=datetime.datetime.now(
+                          datetime.timezone.utc
+                      ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                      authority=materialize_mesh_completion_query_bound_observation(
+                          item=item,child=child,child_recovery=child_recovery,
+                          query_kind='JOBS',jobs=jobs,artifacts=[],
+                          jobs_declared_total_count=(
+                              jobs_query['declared_total_count']
+                          ),
+                          jobs_pages_scanned=jobs_query['pages_scanned'],
+                          jobs_page_cap=jobs_query['page_cap'],
+                          jobs_scan_complete=False,
+                          artifacts_declared_total_count=0,
+                          artifacts_pages_scanned=0,artifacts_page_cap=100,
+                          artifacts_scan_complete=False,
+                          observation_started_at=started,
+                          observation_completed_at=completed,
+                      )
+                      (root/'authority-observation.json').write_text(
+                          json.dumps(authority,sort_keys=True,indent=2)+'\n'
+                      )
+                      blocker=authority['blocker']
+                      authority_ready=True
+                      action='TERMINALIZE_ORPHAN'
+                      completion_ready=False
+                  elif not jobs:
+                      action='ADMISSION_ZERO_JOB_RECOVERY'
+                      completion_ready=False
+                  else:
+                      artifacts,artifacts_query=bounded_pages(
+                          f"repos/{repository}/actions/runs/{child['run_id']}/artifacts",
+                          'artifacts',
+                      )
+                      if artifacts_query['scan_complete'] is not True:
+                          observer_producer()
+                          completed=datetime.datetime.now(
+                              datetime.timezone.utc
+                          ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                          authority=materialize_mesh_completion_query_bound_observation(
+                              item=item,child=child,
+                              child_recovery=child_recovery,
+                              query_kind='ARTIFACTS',jobs=jobs,
+                              artifacts=artifacts,
+                              jobs_declared_total_count=(
+                                  jobs_query['declared_total_count']
+                              ),
+                              jobs_pages_scanned=jobs_query['pages_scanned'],
+                              jobs_page_cap=jobs_query['page_cap'],
+                              jobs_scan_complete=True,
+                              artifacts_declared_total_count=(
+                                  artifacts_query['declared_total_count']
+                              ),
+                              artifacts_pages_scanned=(
+                                  artifacts_query['pages_scanned']
+                              ),
+                              artifacts_page_cap=artifacts_query['page_cap'],
+                              artifacts_scan_complete=False,
+                              observation_started_at=started,
+                              observation_completed_at=completed,
+                          )
+                          (root/'authority-observation.json').write_text(
+                              json.dumps(authority,sort_keys=True,indent=2)+'\n'
+                          )
+                          blocker=authority['blocker']
+                          authority_ready=True
+                          action='TERMINALIZE_ORPHAN'
+                          completion_ready=False
+                      else:
+                          completion_name=(
+                              f"qikvrt-requested-review-completion-"
+                              f"{child['run_id']}-attempt-{child['run_attempt']}"
+                          )
+                          completion_matches=[value for value in artifacts
+                              if isinstance(value,dict)
+                              and value.get('name') == completion_name
+                              and value.get('expired') is False]
+                          business_pattern=re.compile(
+                              rf"qikvrt-mesh-review-pr-{queue['pr_number']}-"
+                              rf"{queue['head_sha']}-[0-9a-f]{{64}}-"
+                              rf"run-{child['run_id']}-"
+                              rf"attempt-{child['run_attempt']}"
+                          )
+                          business_matches=[value for value in artifacts
+                              if isinstance(value,dict)
+                              and isinstance(value.get('name'),str)
+                              and business_pattern.fullmatch(value['name'])
+                              and value.get('expired') is False]
+                          archives={}
+                          exact_downloads=[]
+                          if len(completion_matches) == 1:
+                              exact_downloads.extend(completion_matches)
+                          if len(business_matches) == 1:
+                              exact_downloads.extend(business_matches)
+                          for artifact in exact_downloads:
+                              if artifact.get('id') in archives: continue
+                              try:
+                                  archive=subprocess.check_output([
+                                      'gh','api','-H',
+                                      'X-GitHub-Api-Version: 2026-03-10',
+                                      artifact['archive_download_url'],
+                                  ])
+                              except (KeyError,subprocess.CalledProcessError):
+                                  archive=None
+                              if (
+                                  isinstance(archive,bytes)
+                                  and artifact.get('digest')
+                                  != f"sha256:{hashlib.sha256(archive).hexdigest()}"
+                              ):
+                                  archive=None
+                              archives[artifact.get('id')]=archive
+                          normal_matches=(
+                              business_matches
+                              if child['conclusion'] == 'success'
+                              else completion_matches
+                          )
+                          result=None
+                          if len(normal_matches) == 1:
+                              artifact=normal_matches[0]
+                              archive=archives.get(artifact.get('id'))
+                              if isinstance(archive,bytes):
+                                  try:
+                                      result=materialize_mesh_completion(
+                                          item=item,child=child,jobs=jobs,
+                                          artifact_api=artifact,
+                                          artifact_zip=archive,
+                                          transport_attempt=attempt,
+                                          child_recovery=child_recovery,
+                                      )
+                                  except MeshReviewOutboxError:
+                                      result=None
+                          if result is not None:
+                              (root/'child.json').write_text(
+                                  json.dumps(child,sort_keys=True,indent=2)+'\n'
+                              )
+                              (root/'jobs.json').write_text(
+                                  json.dumps(jobs,sort_keys=True,indent=2)+'\n'
+                              )
+                              (root/'artifact.json').write_text(
+                                  json.dumps(artifact,sort_keys=True,indent=2)+'\n'
+                              )
+                              (root/'artifact.zip').write_bytes(archive)
+                              for name,value in result.items():
+                                  (root/f"{name.replace('_','-')}.json").write_text(
+                                      json.dumps(value,sort_keys=True,indent=2)+'\n'
+                                  )
+                              action='COMPLETE_AND_TERMINALIZE'
+                              completion_ready=True
+                          else:
+                              observer_producer()
+                              completed=datetime.datetime.now(
+                                  datetime.timezone.utc
+                              ).strftime('%Y-%m-%dT%H:%M:%SZ')
+                              authority=materialize_mesh_missing_evidence_observation(
+                                  item=item,child=child,
+                                  child_recovery=child_recovery,jobs=jobs,
+                                  artifacts=artifacts,
+                                  artifact_archives=archives,
+                                  jobs_pages_scanned=(
+                                      jobs_query['pages_scanned']
+                                  ),jobs_page_cap=jobs_query['page_cap'],
+                                  artifacts_pages_scanned=(
+                                      artifacts_query['pages_scanned']
+                                  ),
+                                  artifacts_page_cap=(
+                                      artifacts_query['page_cap']
+                                  ),observation_started_at=started,
+                                  observation_completed_at=completed,
+                              )
+                              (root/'authority-observation.json').write_text(
+                                  json.dumps(authority,sort_keys=True,indent=2)+'\n'
+                              )
+                              blocker=authority['blocker']
+                              authority_ready=True
+                              action='TERMINALIZE_ORPHAN'
+                              completion_ready=False
+          else:
+              raise SystemExit('MESH_COMPLETION_TARGET_STATE_INVALID')
+          observation={
+              'schema':'qikvrt_mesh_review_completion_observation_v1',
+              'repository':repository,
+              'sequence':item.get('sequence'),
+              'fingerprint':item.get('fingerprint'),
+              'action':action,
+              'completion_ready':completion_ready,
+              'cursor_ready':cursor_ready,
+              'authority_ready':authority_ready,
+              'blocker':blocker,
+              'child_run_id':child.get('run_id') if isinstance(child,dict) else None,
+              'verified':True,'productive_effect':False,
+          }
+          (root/'observation.json').write_text(
+              json.dumps(observation,sort_keys=True,indent=2)+'\n'
+          )
+          name=(
+              f"qikvrt-mesh-review-completion-observation-"
+              f"{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          )
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output:
+              print(f'artifact_name={name}',file=output)
+              print(f'action={action}',file=output)
+              print(f"completion_ready={'true' if completion_ready else 'false'}",file=output)
+              print(f"cursor_ready={'true' if cursor_ready else 'false'}",file=output)
+              print(f'cursor_ordinal={cursor_ordinal or 0}',file=output)
+              print(f"sequence={item.get('sequence') or 0}",file=output)
+              print(f"attempt={target.get('transport_attempt') or 0}",file=output)
+              print(f'blocker={blocker or ""}',file=output)
+          PY
+
+      - name: Preserve immutable Mesh retry scan cursor
+        id: cursor_evidence
+        if: steps.observe.outputs.cursor_ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-outbox-retry-scan-cursor-mesh-review-successor-dispatch-${{ steps.observe.outputs.sequence }}-attempt-${{ steps.observe.outputs.attempt }}-ordinal-${{ steps.observe.outputs.cursor_ordinal }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: /tmp/qikvrt-mesh-review-completion/retry-scan-cursor.json
+
+      - name: Preserve immutable Mesh Authority observation
+        id: authority_evidence
+        if: steps.observe.outputs.action == 'TERMINALIZE_ORPHAN'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-outbox-authority-observation-mesh-review-successor-dispatch-${{ steps.observe.outputs.sequence }}-${{ steps.observe.outputs.blocker }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: /tmp/qikvrt-mesh-review-completion/authority-observation.json
+
+      - name: Preserve exact Mesh child observation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.observe.outputs.artifact_name }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: /tmp/qikvrt-mesh-review-completion
+
+  persist-cursor-or-accept-orphan:
+    needs: [read-mesh-frontier, observe-mesh-child]
+    if: >-
+      needs.observe-mesh-child.outputs.action == 'ADOPT' ||
+      needs.observe-mesh-child.outputs.action == 'CURSOR'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      SEALED_EVALUATOR: ${{ github.workflow_sha }}
+      OBSERVATION_ARTIFACT: ${{ needs.observe-mesh-child.outputs.artifact_name }}
+      EFFECTIVE_ACTION: ${{ needs.observe-mesh-child.outputs.action }}
+      EFFECTIVE_BLOCKER: ${{ needs.observe-mesh-child.outputs.blocker }}
+      CURSOR_ARTIFACT_ID: ${{ needs.observe-mesh-child.outputs.cursor_artifact_id }}
+      CURSOR_ARTIFACT_DIGEST: ${{ needs.observe-mesh-child.outputs.cursor_artifact_digest }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+    steps:
+      - name: Check out the exact trusted Mesh acceptance writer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact orphan adoption observation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.OBSERVATION_ARTIFACT }}
+          path: /tmp/qikvrt-mesh-review-completion
+
+      - name: Persist one cursor ordinal or the unique adopted child
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${LEDGER_WRITER_TOKEN-}"
+          actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$token"
+          [[ "$actor" =~ ^[1-9][0-9]*$ ]]
+          root=/tmp/qikvrt-mesh-review-completion
+          test "$(git rev-parse HEAD)" = "$SEALED_EVALUATOR"
+          test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/commits/main" --jq .sha)" = "$SEALED_EVALUATOR"
+          jq -e --arg evaluator "$SEALED_EVALUATOR" \
+            '.intent.payload.main_head_sha == $evaluator' "$root/item.json" >/dev/null
+          pr="$(jq -er .intent.payload.subject.queue_intent.pr_number "$root/item.json")"
+          head="$(jq -er .intent.payload.subject.queue_intent.head_sha "$root/item.json")"
+          tree="$(jq -er .intent.payload.subject.queue_intent.tree_sha "$root/item.json")"
+          base="$(jq -er .intent.payload.subject.queue_intent.base_sha "$root/item.json")"
+          gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/pulls/$pr" > "$root/live-pr.json"
+          if test "$EFFECTIVE_BLOCKER" = OUTBOX_SUBJECT_SUPERSEDED; then
+            observed_head="$(jq -er '.observed_subject.queue_intent.head_sha' \
+              "$root/authority-observation.json")"
+            observed_tree="$(jq -er '.observed_subject.queue_intent.tree_sha' \
+              "$root/authority-observation.json")"
+            observed_base="$(jq -er '.observed_subject.queue_intent.base_sha' \
+              "$root/authority-observation.json")"
+            observed_state="$(jq -er '.observed_subject.queue_intent.state' \
+              "$root/authority-observation.json")"
+            test "$(jq -r .head.sha "$root/live-pr.json")" = "$observed_head"
+            test "$(jq -r .base.sha "$root/live-pr.json")" = "$observed_base"
+            test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/commits/$observed_head" --jq .tree.sha)" \
+              = "$observed_tree"
+            if [[ "$observed_state" == LIVE_PR_* ]]; then
+              test "LIVE_PR_$(jq -r .state "$root/live-pr.json" | tr '[:lower:]' '[:upper:]')" \
+                = "$observed_state"
+            fi
+          else
+            test "$(jq -r .head.sha "$root/live-pr.json")" = "$head"
+            test "$(jq -r .base.sha "$root/live-pr.json")" = "$base"
+            test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/commits/$head" --jq .tree.sha)" = "$tree"
+          fi
+          sequence="$(jq -er .sequence "$root/item.json")"
+          attempt="$(jq -er .transport_attempt "$root/target.json")"
+          if test "$EFFECTIVE_ACTION" = CURSOR; then
+            test -f "$root/retry-scan-cursor.json"
+            [[ "$CURSOR_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+            [[ "$CURSOR_ARTIFACT_DIGEST" =~ ^(sha256:)?[0-9a-f]{64}$ ]]
+            ordinal="$(jq -er .ordinal "$root/retry-scan-cursor.json")"
+            cursor_name="qikvrt-outbox-retry-scan-cursor-mesh-review-successor-dispatch-${sequence}-attempt-${attempt}-ordinal-${ordinal}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+            artifact="$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/actions/artifacts/$CURSOR_ARTIFACT_ID")"
+            jq -e --argjson id "$CURSOR_ARTIFACT_ID" --arg name "$cursor_name" \
+              --arg digest "sha256:${CURSOR_ARTIFACT_DIGEST#sha256:}" \
+              --argjson run_id "$GITHUB_RUN_ID" --arg evaluator "$SEALED_EVALUATOR" '
+              .id == $id and .name == $name and .digest == $digest and
+              .expired == false and .workflow_run.id == $run_id and
+              .workflow_run.head_sha == $evaluator
+            ' <<<"$artifact" >/dev/null
+            unset GH_TOKEN
+            QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$token" \
+            QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$actor" \
+            QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+              python3 -B tools/qikvrt_ruleset_outbox.py \
+                --repository "$REPOSITORY" \
+                --receipt "$root/retry-scan-cursor-receipt.json" \
+                record-retry-scan-cursor \
+                --lane mesh-review-successor-dispatch \
+                --sequence "$sequence" --cursor "$root/retry-scan-cursor.json" \
+                --artifact-id "$CURSOR_ARTIFACT_ID" \
+                --artifact-name "$cursor_name" \
+                --artifact-digest "${CURSOR_ARTIFACT_DIGEST#sha256:}" >/dev/null
+          else
+            jq -e '.state == "ADOPT" and .adopted == true and .verified == true' \
+              "$root/adoption.json" >/dev/null
+            jq '.child' "$root/adoption.json" > "$root/adopted-child.json"
+            unset GH_TOKEN
+            QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$token" \
+            QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$actor" \
+            QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+              python3 -B tools/qikvrt_ruleset_outbox.py \
+                --repository "$REPOSITORY" \
+                --receipt "$root/acceptance.json" \
+                accept --lane mesh-review-successor-dispatch \
+                --sequence "$sequence" --attempt "$attempt" \
+                --child "$root/adopted-child.json" >/dev/null
+          fi
+          unset token actor
+
+      - name: Preserve durable orphan acceptance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-review-cursor-or-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-mesh-review-completion
+
+  terminalize-mesh-orphan:
+    needs: [read-mesh-frontier, observe-mesh-child]
+    if: needs.observe-mesh-child.outputs.action == 'TERMINALIZE_ORPHAN'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      SEALED_EVALUATOR: ${{ github.workflow_sha }}
+      OBSERVATION_ARTIFACT: ${{ needs.observe-mesh-child.outputs.artifact_name }}
+      AUTHORITY_ARTIFACT_ID: ${{ needs.observe-mesh-child.outputs.authority_artifact_id }}
+      AUTHORITY_ARTIFACT_DIGEST: ${{ needs.observe-mesh-child.outputs.authority_artifact_digest }}
+      EFFECTIVE_BLOCKER: ${{ needs.observe-mesh-child.outputs.blocker }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+    steps:
+      - name: Check out the exact trusted Mesh Authority writer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact Mesh Authority observation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.OBSERVATION_ARTIFACT }}
+          path: /tmp/qikvrt-mesh-review-completion
+
+      - name: Persist Authority observation and terminalize one Mesh FIFO item
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${LEDGER_WRITER_TOKEN-}"
+          actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$token"
+          [[ "$actor" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUTHORITY_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUTHORITY_ARTIFACT_DIGEST" =~ ^(sha256:)?[0-9a-f]{64}$ ]]
+          root=/tmp/qikvrt-mesh-review-completion
+          test "$(git rev-parse HEAD)" = "$SEALED_EVALUATOR"
+          test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/commits/main" --jq .sha)" = "$SEALED_EVALUATOR"
+          jq -e --arg blocker "$EFFECTIVE_BLOCKER" \
+            '.action == "TERMINALIZE_ORPHAN" and .authority_ready == true and
+             .blocker == $blocker and .verified == true' \
+            "$root/observation.json" >/dev/null
+          jq -e --arg blocker "$EFFECTIVE_BLOCKER" \
+            '.blocker == $blocker and .verified == true and
+             .productive_effect == false' \
+            "$root/authority-observation.json" >/dev/null
+          sequence="$(jq -er .sequence "$root/item.json")"
+          authority_name="qikvrt-outbox-authority-observation-mesh-review-successor-dispatch-${sequence}-${EFFECTIVE_BLOCKER}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          artifact="$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/actions/artifacts/$AUTHORITY_ARTIFACT_ID")"
+          jq -e --argjson id "$AUTHORITY_ARTIFACT_ID" --arg name "$authority_name" \
+            --arg digest "sha256:${AUTHORITY_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" --arg evaluator "$SEALED_EVALUATOR" '
+            .id == $id and .name == $name and .digest == $digest and
+            .expired == false and .workflow_run.id == $run_id and
+            .workflow_run.head_sha == $evaluator
+          ' <<<"$artifact" >/dev/null
+          pr="$(jq -er .intent.payload.subject.queue_intent.pr_number "$root/item.json")"
+          head="$(jq -er .intent.payload.subject.queue_intent.head_sha "$root/item.json")"
+          tree="$(jq -er .intent.payload.subject.queue_intent.tree_sha "$root/item.json")"
+          base="$(jq -er .intent.payload.subject.queue_intent.base_sha "$root/item.json")"
+          gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/pulls/$pr" > "$root/live-pr.json"
+          if test "$EFFECTIVE_BLOCKER" = OUTBOX_SUBJECT_SUPERSEDED; then
+            jq -e --slurpfile item "$root/item.json" \
+              '.observed_subject != $item[0].intent.payload.subject' \
+              "$root/authority-observation.json" >/dev/null
+            observed_head="$(jq -er '.observed_subject.queue_intent.head_sha' \
+              "$root/authority-observation.json")"
+            observed_tree="$(jq -er '.observed_subject.queue_intent.tree_sha' \
+              "$root/authority-observation.json")"
+            observed_base="$(jq -er '.observed_subject.queue_intent.base_sha' \
+              "$root/authority-observation.json")"
+            observed_state="$(jq -er '.observed_subject.queue_intent.state' \
+              "$root/authority-observation.json")"
+            test "$(jq -r .head.sha "$root/live-pr.json")" = "$observed_head"
+            test "$(jq -r .base.sha "$root/live-pr.json")" = "$observed_base"
+            test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/commits/$observed_head" --jq .tree.sha)" \
+              = "$observed_tree"
+            if [[ "$observed_state" == LIVE_PR_* ]]; then
+              test "LIVE_PR_$(jq -r .state "$root/live-pr.json" | \
+                tr '[:lower:]' '[:upper:]')" = "$observed_state"
+            fi
+          else
+            test "$(jq -r .head.sha "$root/live-pr.json")" = "$head"
+            test "$(jq -r .base.sha "$root/live-pr.json")" = "$base"
+            test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/git/commits/$head" --jq .tree.sha)" = "$tree"
+          fi
+          if test "$EFFECTIVE_BLOCKER" = OUTBOX_TARGET_WORKFLOW_SUPERSEDED; then
+            gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$REPOSITORY/actions/workflows/qikvrt_requested_review_executor.yml" \
+              > "$root/live-target-workflow.json"
+            jq -e --slurpfile observed "$root/authority-observation.json" '
+              .id == $observed[0].observed_target.workflow_id and
+              ((.path // "") | split("@")[0]) ==
+                $observed[0].observed_target.workflow_path
+            ' "$root/live-target-workflow.json" >/dev/null
+          fi
+          unset GH_TOKEN
+          ledger_write() {
+            QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$token" \
+            QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$actor" \
+            QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+              python3 -B tools/qikvrt_ruleset_outbox.py "$@"
+          }
+          ledger_write --repository "$REPOSITORY" \
+            --receipt "$root/authority-record.json" \
+            record-observation --lane mesh-review-successor-dispatch \
+            --sequence "$sequence" \
+            --observation "$root/authority-observation.json" \
+            --producer "$root/producer.json" \
+            --artifact-id "$AUTHORITY_ARTIFACT_ID" \
+            --artifact-name "$authority_name" \
+            --artifact-digest "${AUTHORITY_ARTIFACT_DIGEST#sha256:}" >/dev/null
+          python3 -B - "$root/item.json" "$root/authority-record.json" \
+            "$root/terminal.json" <<'PY'
+          import json,pathlib,sys
+          from tools.qikvrt_mesh_review_outbox import materialize_mesh_authority_terminal
+          item=json.loads(pathlib.Path(sys.argv[1]).read_text())
+          record=json.loads(pathlib.Path(sys.argv[2]).read_text())
+          terminal=materialize_mesh_authority_terminal(
+              item=item,authority_record=record
+          )
+          pathlib.Path(sys.argv[3]).write_text(
+              json.dumps(terminal,sort_keys=True,indent=2)+'\n'
+          )
+          PY
+          ledger_write --repository "$REPOSITORY" \
+            --receipt "$root/terminal-receipt.json" \
+            terminalize --lane mesh-review-successor-dispatch \
+            --sequence "$sequence" --evidence "$root/terminal.json" >/dev/null
+          unset token actor
+
+      - name: Preserve exact Mesh Authority terminal receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-review-authority-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            /tmp/qikvrt-mesh-review-completion/authority-record.json
+            /tmp/qikvrt-mesh-review-completion/terminal.json
+            /tmp/qikvrt-mesh-review-completion/terminal-receipt.json
+
+  persist-mesh-completion:
+    needs: [read-mesh-frontier, observe-mesh-child]
+    if: needs.observe-mesh-child.outputs.completion_ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      SEALED_EVALUATOR: ${{ github.workflow_sha }}
+      OBSERVATION_ARTIFACT: ${{ needs.observe-mesh-child.outputs.artifact_name }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch
+    steps:
+      - name: Check out the exact trusted Mesh completion writer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact materialized completion evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.OBSERVATION_ARTIFACT }}
+          path: /tmp/qikvrt-mesh-review-completion
+
+      - name: Persist completion then advance the exact FIFO cursor
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${LEDGER_WRITER_TOKEN-}"
+          actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$token"
+          [[ "$actor" =~ ^[1-9][0-9]*$ ]]
+          root=/tmp/qikvrt-mesh-review-completion
+          test "$(git rev-parse HEAD)" = "$SEALED_EVALUATOR"
+          test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/commits/main" --jq .sha)" = "$SEALED_EVALUATOR"
+          jq -e '.action == "COMPLETE_AND_TERMINALIZE" and .completion_ready == true' \
+            "$root/observation.json" >/dev/null
+          jq -e --arg evaluator "$SEALED_EVALUATOR" \
+            '.intent.payload.main_head_sha == $evaluator' "$root/item.json" >/dev/null
+          pr="$(jq -er .intent.payload.subject.queue_intent.pr_number "$root/item.json")"
+          head="$(jq -er .intent.payload.subject.queue_intent.head_sha "$root/item.json")"
+          tree="$(jq -er .intent.payload.subject.queue_intent.tree_sha "$root/item.json")"
+          base="$(jq -er .intent.payload.subject.queue_intent.base_sha "$root/item.json")"
+          gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/pulls/$pr" > "$root/live-pr.json"
+          test "$(jq -r .head.sha "$root/live-pr.json")" = "$head"
+          test "$(jq -r .base.sha "$root/live-pr.json")" = "$base"
+          test "$(gh api -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$REPOSITORY/git/commits/$head" --jq .tree.sha)" = "$tree"
+          sequence="$(jq -er .sequence "$root/item.json")"
+          attempt="$(jq -er .transport_attempt "$root/target.json")"
+          recovery="$(jq -r .child_recovery "$root/target.json")"
+          unset GH_TOKEN
+          recovery_flag=()
+          if test "$recovery" = true; then recovery_flag=(--child-recovery); fi
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+              --repository "$REPOSITORY" \
+              --receipt "$root/completion.json" \
+              complete --lane mesh-review-successor-dispatch \
+              --sequence "$sequence" --attempt "$attempt" \
+              --child "$root/child.json" \
+              --evidence "$root/completion-evidence.json" \
+              "${recovery_flag[@]}" >/dev/null
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+              --repository "$REPOSITORY" \
+              --receipt "$root/terminal-receipt.json" \
+              terminalize --lane mesh-review-successor-dispatch \
+              --sequence "$sequence" \
+              --evidence "$root/terminal.json" >/dev/null
+          unset token actor
+
+      - name: Preserve exact Mesh completion and terminal receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mesh-review-completion-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            /tmp/qikvrt-mesh-review-completion/completion.json
+            /tmp/qikvrt-mesh-review-completion/terminal-receipt.json

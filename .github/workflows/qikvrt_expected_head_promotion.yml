@@ -53,15 +53,23 @@ jobs:
       MESH_REVIEW_WRITER_WORKFLOWS_JSON: >-
         ["QIK-VRT autonomous bounded self-heal","QIK-VRT autonomous draft-PR continuation","QIK-VRT expected-head promotion executor","QIKVRT repository evidence materialization","QIKVRT requested review executor"]
       CURRENT_RUN_ID: ${{ github.run_id }}
+      TRUSTED_EVALUATOR_SHA: ${{ github.workflow_sha }}
       REQUIRED_GATES_JSON: >-
         ["QIKVRT CI","QIKVRT repository evidence materialization","QIKVRT Collective Proposal Review","QIK-VRT global claim completion","QIKVRT requested review execution"]
     steps:
       - name: Check out current main promotion code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Bind exact trusted evaluator and current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$TRUSTED_EVALUATOR_SHA"
+          test "$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$TRUSTED_EVALUATOR_SHA"
 
       - name: Regression-test promotion and review authority decision cores
         shell: bash
@@ -405,8 +413,8 @@ jobs:
           fresh=json.loads((evidence/'reobserved'/'review.json').read_text(encoding='utf-8'))
           if receipt.get('evidence_fingerprint') != fingerprint:
               raise SystemExit('BLOCK: status and ledger fingerprints differ')
-          if fresh.get('mesh_disposition') != 'APPROVE':
-              raise SystemExit('BLOCK: fresh Mesh receipt is not technically favorable')
+          if fresh.get('mesh_disposition') != 'TECHNICAL_CONTINUE':
+              raise SystemExit('BLOCK: fresh Mesh receipt is not TECHNICAL_CONTINUE')
           if fresh.get('verification_state') != 'HOLD_UNVERIFIED':
               raise SystemExit('BLOCK: Mesh receipt crossed its verification boundary')
           (evidence/'promotion-fence.json').write_text(json.dumps({
@@ -477,8 +485,8 @@ jobs:
           ]
           subprocess.check_call(command)
           fresh=json.loads((evidence/'reobserved-final'/'review.json').read_text(encoding='utf-8'))
-          if fresh.get('mesh_disposition') != 'APPROVE':
-              raise SystemExit('BLOCK: final Mesh receipt is not technically favorable')
+          if fresh.get('mesh_disposition') != 'TECHNICAL_CONTINUE':
+              raise SystemExit('BLOCK: final Mesh receipt is not TECHNICAL_CONTINUE')
           if fresh.get('verification_state') != 'HOLD_UNVERIFIED':
               raise SystemExit('BLOCK: final Mesh receipt crossed its verification boundary')
           final_marker_pr=gh_json(f'repos/{repo}/pulls/{pr_number}')

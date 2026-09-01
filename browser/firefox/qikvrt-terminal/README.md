@@ -8,6 +8,8 @@ The client is a Manifest V3 WebExtension rather than a forked Firefox binary. Th
 
 When installed, the content script is injected on the configured QIKVRT AI surfaces and presents a source-bound terminal with repository observation, text input, explicit microphone recording, explicit camera preview/snapshot, Prepare/Commit gating and local personalization.
 
+Read-only GitHub observation is explicitly allowlisted for both repository roles: `Goldkelch/qik-vrt` (Authority) and `ingolf-lohmann/qik-vrt` (Mirror). The periodic background frame remains anchored to the Authority, while a terminal opened on either repository observes that page's repository and pull request. The owner-authenticated review-effect helper remains separately Authority-bound and is not generalized by the read-only observer allowlist.
+
 ## Security boundary
 
 - Public GitHub observation is read-only.

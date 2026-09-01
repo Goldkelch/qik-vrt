@@ -1,196 +1,79 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: Recover the exact consumed VRTCore H3 E1 publication
+name: Recover the exact consumed VRTCore H3 E1 publication (Authority HOLD)
 
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
 on:
-  push:
-    branches:
-      - recovery-execution/vrtcore-relational-h3-e1-v1
-    paths:
-      - .github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: read
-
-concurrency:
-  group: qikvrt-vrtcore-causal-zenodo-publication-v1
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  recover:
-    if: >-
-      github.repository == 'Goldkelch/qik-vrt' &&
-      github.event_name == 'push' &&
-      github.event.forced == false
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      EXPECTED_CONTROLLER_PARENT: __H3_E1_RECOVERY_EXPECTED_PARENT__
-      E1: 53e757ebce929b40250f90a02ed2a9ec62de6217
-      E1_PARENT: cdb0e9fe8444565df665affa64463295648b1368
-      E1_TREE: 99ee39034abbdf8abd4fd9891915cf3d647365db
-      CONTROLLER_BRANCH: recovery-execution/vrtcore-relational-h3-e1-v1
-      ZENODO_API_BASE: https://zenodo.org/api
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Check out the exact recovery controller head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
           persist-credentials: false
-          path: controller
 
-      - name: Verify the static controller trigger and exact main boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          if test "$EXPECTED_CONTROLLER_PARENT" = \
-            "__H3_E1_RECOVERY_EXPECTED_PARENT__"; then
-            printf '%s\n' \
-              'BLOCK: unresolved controller parent placeholder' >&2
-            exit 2
-          fi
-          if ! [[ "$EXPECTED_CONTROLLER_PARENT" =~ ^[0-9a-f]{40}$ ]]; then
-            printf '%s\n' 'BLOCK: controller parent is not an exact commit' >&2
-            exit 2
-          fi
-          test "$GITHUB_REF" = "refs/heads/$CONTROLLER_BRANCH"
-          test "$GITHUB_REF_NAME" = "$CONTROLLER_BRANCH"
-          test "$GITHUB_SHA" = "$(git -C controller rev-parse --verify HEAD^{commit})"
-          test "$(git -C controller show -s --format=%P HEAD)" = \
-            "$EXPECTED_CONTROLLER_PARENT"
-          test "$(git -C controller rev-parse --verify HEAD^{tree})" != \
-            "$(git -C controller rev-parse --verify "$EXPECTED_CONTROLLER_PARENT^{tree}")"
-          expected_delta="$(
-            printf '%s\n' \
-              'M	.github/workflows/qikvrt_vrtcore_h3_e1_recovery.yml' \
-              'M	REPOSITORY_FILE_MANIFEST.json' \
-              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
-              'M	SHA256SUMS.txt'
-          )"
-          observed_delta="$(
-            git -C controller diff \
-              --name-status \
-              --no-renames \
-              "$EXPECTED_CONTROLLER_PARENT" \
-              "$GITHUB_SHA" \
-              --
-          )"
-          test "$observed_delta" = "$expected_delta"
-          main_head="$(
-            git -C controller ls-remote --heads origin refs/heads/main |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$main_head" = "$EXPECTED_CONTROLLER_PARENT"
-          trigger_head="$(
-            git -C controller ls-remote \
-              --heads \
-              origin \
-              "refs/heads/$CONTROLLER_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$trigger_head" = "$GITHUB_SHA"
-          python3 -B controller/tools/qikvrt_integrity.py verify
-
-      - name: Run all controller repository gates before credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B -m unittest -v \
-            controller/tests/test_vrtcore_h3_e1_recovery.py
-          make -C controller test
-          test -z "$(git -C controller status --porcelain=v1 --untracked-files=all)"
-
-      - name: Check out immutable E1 publication execution
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: 53e757ebce929b40250f90a02ed2a9ec62de6217
-          path: execution
-
-      - name: Verify E1 objects publisher bytes and complete gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C execution rev-parse --verify HEAD^{commit})" = "$E1"
-          test "$(git -C execution show -s --format=%P HEAD)" = "$E1_PARENT"
-          test "$(git -C execution rev-parse --verify HEAD^{tree})" = "$E1_TREE"
-          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
-            --verify-basis \
-            --execution-root execution
-          make -C execution test
-          test -z "$(git -C execution status --porcelain=v1 --untracked-files=all)"
-
-      - name: Persist and read back authorization_consumed before Zenodo
-        id: prepare
+      - name: Materialize protected release Authority HOLD
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
-          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
-            --prepare \
-            --execution-root execution \
-            --controller-parent "$EXPECTED_CONTROLLER_PARENT" \
-            --github-output "$GITHUB_OUTPUT"
-          test "${{ steps.prepare.outputs.prepared }}" = "true"
-          [[ "${{ steps.prepare.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Recheck out clean immutable E1 after bootstrap receipt
-        if: steps.prepare.outputs.finalized != 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
+              },
+          }
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          clean: true
-          fetch-depth: 0
-          persist-credentials: false
-          ref: 53e757ebce929b40250f90a02ed2a9ec62de6217
-          path: execution
-
-      - name: Run E1 run_publisher_with_checkpoints after durable bootstrap
-        id: publish
-        if: steps.prepare.outputs.finalized != 'true'
-        continue-on-error: true
-        timeout-minutes: 30
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          test "$(
-            env -u GITHUB_TOKEN -u GH_TOKEN -u ZENODO_ACCESS_TOKEN \
-              git -C execution rev-parse --verify HEAD^{commit}
-          )" = "$E1"
-          python3 -B controller/tools/qikvrt_vrtcore_h3_e1_recovery.py \
-            --publish \
-            --execution-root execution \
-            --controller-parent "$EXPECTED_CONTROLLER_PARENT" \
-            --github-output "$GITHUB_OUTPUT"
-
-      - name: Upload bounded local recovery evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: vrtcore-h3-e1-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
+          if-no-files-found: error
           retention-days: 90
-          if-no-files-found: ignore
-          path: execution/release/vrtcore-relational-h3-publication-2026-08-02/zenodo-publication.json
-
-      - name: Enforce exact checkpointed publication result
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${{ steps.prepare.outputs.prepared }}" = "true"
-          [[ "${{ steps.prepare.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
-          if test "${{ steps.prepare.outputs.finalized }}" = "true"; then
-            test -z "${{ steps.publish.outputs.status }}"
-          else
-            test "${{ steps.publish.outputs.status }}" = "0"
-            test "${{ steps.publish.outputs.finalized }}" = "false"
-            test "${{ steps.publish.outputs.phase }}" = "public_verified"
-            test "${{ steps.publish.outputs.state }}" = "published"
-            [[ "${{ steps.publish.outputs.receipt_commit }}" =~ ^[0-9a-f]{40}$ ]]
-          fi

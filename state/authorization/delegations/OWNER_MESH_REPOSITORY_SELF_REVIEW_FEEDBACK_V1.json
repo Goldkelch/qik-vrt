@@ -36,6 +36,41 @@
     "cross_role_receipt_transfer": false,
     "identical_fingerprint_is_idempotent_noop": true
   },
+  "ledger_authority_boundary": {
+    "environment": "qikvrt-outbox-ledger-authority",
+    "credential": "QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN",
+    "credential_scope": "ENVIRONMENT_ONLY",
+    "writer_actor_id_variable": "QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID",
+    "external_configuration_verified": false,
+    "external_configuration_hold": "MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED",
+    "external_readback_receipts": [],
+    "required_external_readback": {
+      "explicit_external_genesis": true,
+      "ref_initialized": true,
+      "exact_ref": "refs/heads/qikvrt/mesh-review-ledger-v1",
+      "active_repository_ruleset": true,
+      "required_rule_types": [
+        "deletion",
+        "non_fast_forward",
+        "update"
+      ],
+      "sole_bypass_actor_type": "Integration",
+      "sole_bypass_mode": "always",
+      "dedicated_writer_app_identity": true,
+      "writer_workflow_path": ".github/workflows/qikvrt_requested_review_executor.yml",
+      "repository_scope_secret_names_absent": [
+        "QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN",
+        "QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN",
+        "QIKVRT_OUTBOX_LEDGER_WRITER_TOKEN",
+        "QIKVRT_OUTBOX_LEDGER_AUDITOR_TOKEN"
+      ],
+      "repository_owner_identity_readback": true,
+      "organization_scope_readback": "CONDITIONAL_ON_REPOSITORY_OWNER_TYPE",
+      "user_owner_result": "NOT_APPLICABLE_USER_OWNER",
+      "organization_owner_result": "COMPLETE_SECRET_NAME_INVENTORY_WITH_ALL_FOUR_NAMES_ABSENT",
+      "settings_readback_complete": true
+    }
+  },
   "mandatory_preconditions": [
     "TRUSTED_MAIN_REVIEW_CODE",
     "CURRENT_BASE_AND_TREE_REOBSERVED",
@@ -48,6 +83,8 @@
     "STORED_RECEIPT_AND_DIFF_RAW_BYTES_MATCH_REGENERATION",
     "GATE_WORKFLOW_ID_PATH_EVENT_HEAD_AND_JOB_EVIDENCE_BOUND",
     "LEDGER_PREDECESSOR_REOBSERVED_BEFORE_NON_FORCE_CAS",
+    "EXTERNAL_LEDGER_GENESIS_AND_EXACT_REF_PROTECTION_READ_BACK",
+    "SOLE_DEDICATED_GITHUB_APP_WRITER_IDENTITY_REOBSERVED",
     "SUBJECT_REOBSERVED_AFTER_EVERY_REPOSITORY_MUTATION",
     "DOWNSTREAM_EFFECT_REOBSERVES_LEDGER_RECEIPT_NOT_STATUS_ALONE"
   ],

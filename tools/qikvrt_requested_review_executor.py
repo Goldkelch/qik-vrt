@@ -32,11 +32,48 @@ REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
+MESH_LEDGER_DELEGATION_SCHEMA = (
+    "qikvrt_owner_mesh_repository_self_review_feedback_v1"
+)
+MESH_LEDGER_DELEGATION_ID = "OWNER-MESH-REPOSITORY-SELF-REVIEW-FEEDBACK-V1"
+MESH_LEDGER_PROTECTION_SCHEMA = (
+    "qikvrt_mesh_review_ledger_protection_readback_v1"
+)
+MESH_LEDGER_AUTHORITY_ENVIRONMENT = "qikvrt-outbox-ledger-authority"
+MESH_LEDGER_WRITER_SECRET = "QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN"
+MESH_LEDGER_AUDITOR_SECRET = "QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN"
+MESH_LEDGER_FORBIDDEN_BROAD_SECRET_NAMES = (
+    MESH_LEDGER_WRITER_SECRET,
+    MESH_LEDGER_AUDITOR_SECRET,
+    "QIKVRT_OUTBOX_LEDGER_WRITER_TOKEN",
+    "QIKVRT_OUTBOX_LEDGER_AUDITOR_TOKEN",
+)
 LEDGER_ROOT = "state/mesh/reviews"
 REVIEW_QUEUE_ROOT = "state/mesh/review-queue"
 REVIEW_QUEUE_ACK_ROOT = "state/mesh/review-queue-acks"
+REVIEW_QUEUE_TRANSPORT_ROOT = "state/mesh/review-queue-transport"
 TRUSTED_EVALUATOR_PATH = "tools/qikvrt_requested_review_executor.py"
 TRUSTED_WORKFLOW_PATH = ".github/workflows/qikvrt_requested_review_executor.yml"
+TRUSTED_WORKFLOW_NAME = "QIKVRT requested review executor"
+TRUSTED_WORKFLOW_RUN_NAME_PREFIX = "qikvrt-rr-v3"
+REQUESTED_REVIEW_COMPLETION_ENVELOPE_SCHEMA = (
+    "qikvrt_requested_review_terminal_envelope_v1"
+)
+REQUESTED_REVIEW_COMPLETION_JOB_RESULTS = (
+    "plan-review",
+    "ledger-write",
+    "project-comment",
+    "project-status",
+    "plan-successor-outbox",
+    "enqueue-successor-outbox",
+    "select-successor",
+    "prepare-successor-transport",
+    "dispatch-successor",
+    "record-successor-acceptance",
+)
+NO_PREDECESSOR_FINGERPRINT = "0" * 64
+TECHNICAL_CONTINUE = "TECHNICAL_CONTINUE"
+LEGACY_TECHNICAL_APPROVE = "APPROVE"
 REVIEW_MARKER = "qikvrt-mesh-review:v1"
 LIVE_STATUS_MARKER = "qikvrt-live-status-watch"
 TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
@@ -44,6 +81,12 @@ TRUSTED_AUTOMATION_DISCUSSION_PREFIXES = (
     f"<!-- {LIVE_STATUS_MARKER} -->",
 )
 ACTIVE_WRITER_STATES = ("queued", "in_progress", "waiting", "requested", "pending")
+SERIALIZED_REQUESTED_WRITER_ADMISSION_STATES = {
+    "queued",
+    "waiting",
+    "requested",
+    "pending",
+}
 REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
 REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
@@ -145,11 +188,54 @@ def _historical_receipt_binding(receipt: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def mesh_receipt_semantics(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Classify current receipts without upgrading legacy favorable evidence.
+
+    ``APPROVE`` was formerly a technical Mesh disposition even though it is
+    also GitHub's native approval event. Historical receipts remain valid
+    append-only predecessor evidence, but they are never current continuation
+    authority. Treat either legacy field as an explicit hold so a mixed ledger
+    scan can skip it and continue to a current receipt.
+    """
+    if not isinstance(receipt, Mapping):
+        raise ReviewSnapshotError("Mesh receipt must be an object")
+    state = receipt.get("state")
+    disposition = receipt.get("mesh_disposition")
+    if (
+        state == LEGACY_TECHNICAL_APPROVE
+        or disposition == LEGACY_TECHNICAL_APPROVE
+    ):
+        return {
+            "state": "LEGACY_HOLD",
+            "current": False,
+            "first_blocker": "LEGACY_TECHNICAL_APPROVE_RECEIPT",
+            "technical_disposition": LEGACY_TECHNICAL_APPROVE,
+        }
+    if state != disposition:
+        raise ReviewSnapshotError("Mesh receipt disposition fields disagree")
+    if not isinstance(state, str) or state not in {
+        TECHNICAL_CONTINUE,
+        "REQUEST_CHANGES",
+        "COMMENT_WITH_BLOCKER",
+        "WAIT",
+    }:
+        raise ReviewSnapshotError("Mesh receipt disposition is invalid")
+    return {
+        "state": "CURRENT",
+        "current": True,
+        "first_blocker": None,
+        "technical_disposition": state,
+    }
+
+
 def review_queue_intent(
     receipt: Mapping[str, Any],
     predecessor_fingerprint: str,
 ) -> tuple[str, dict[str, Any]]:
     """Create one immutable, content-addressed recursive review work unit."""
+    semantics = mesh_receipt_semantics(receipt)
+    if semantics["current"] is not True:
+        raise ReviewSnapshotError(str(semantics["first_blocker"]))
     predecessor = _sha256(predecessor_fingerprint, "predecessor fingerprint")
     repository = receipt.get("repository")
     pr_number = receipt.get("pr_number")
@@ -164,7 +250,12 @@ def review_queue_intent(
     diff_path = receipt.get("ledger_diff_path")
     if not isinstance(repository, str) or repository.count("/") != 1:
         raise ReviewSnapshotError("queue repository is invalid")
-    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number < 1:
+    if (
+        isinstance(pr_number, bool)
+        or not isinstance(pr_number, int)
+        or pr_number < 1
+        or pr_number > 9_999_999_999
+    ):
         raise ReviewSnapshotError("queue pull request number is invalid")
     if not isinstance(receipt_path, str) or not isinstance(diff_path, str):
         raise ReviewSnapshotError("queue evidence paths are invalid")
@@ -222,6 +313,778 @@ def review_queue_ack(
             "EFFECT_ACK_DONE": False,
             "MERGE": False,
         },
+    }
+
+
+def requested_review_run_title(
+    *,
+    evaluator_sha: str,
+    pr_number: int,
+    head_sha: str,
+    fingerprint: str,
+    transport_intent_sha256: str,
+    transport_attempt: int,
+) -> str:
+    """Return the compact, exact child locator used by every dispatcher.
+
+    The full transport-intent digest identifies the sole authorized
+    workflow-dispatch child. A crash replay observes or adopts that child; it
+    never creates another new-run transport attempt.
+    """
+    evaluator = _sha(evaluator_sha, "requested-review title evaluator")
+    head = _sha(head_sha, "requested-review title head")
+    evidence_fingerprint = _sha256(
+        fingerprint, "requested-review title fingerprint"
+    )
+    intent_sha = _sha256(
+        transport_intent_sha256, "requested-review title transport intent"
+    )
+    if (
+        isinstance(pr_number, bool)
+        or not isinstance(pr_number, int)
+        or pr_number < 1
+        or pr_number > 9_999_999_999
+    ):
+        raise ReviewSnapshotError("requested-review title PR number is invalid")
+    if transport_attempt != 1:
+        raise ReviewSnapshotError(
+            "requested-review title transport must be one-shot attempt one"
+        )
+    return (
+        f"{TRUSTED_WORKFLOW_RUN_NAME_PREFIX} e={evaluator} p={pr_number} "
+        f"h={head} f={evidence_fingerprint} i={intent_sha} a={transport_attempt}"
+    )
+
+
+def parse_requested_review_run_title(value: Any) -> dict[str, Any] | None:
+    """Parse only the canonical v3 workflow-dispatch locator.
+
+    Event-triggered titles contain literal ``event`` tokens and intentionally
+    do not pass this parser.  The returned fields remain locators; consumers
+    must re-fetch all authoritative repository and workflow evidence.
+    """
+    if not isinstance(value, str) or len(value) > 255:
+        return None
+    match = re.fullmatch(
+        r"qikvrt-rr-v3 e=([0-9a-f]{40}) p=([1-9][0-9]{0,9}) "
+        r"h=([0-9a-f]{40}) f=([0-9a-f]{64}) i=([0-9a-f]{64}) a=(1)",
+        value,
+    )
+    if match is None:
+        return None
+    evaluator, number_text, head, fingerprint, intent_sha, attempt_text = (
+        match.groups()
+    )
+    number = int(number_text)
+    attempt = int(attempt_text)
+    if value != requested_review_run_title(
+        evaluator_sha=evaluator,
+        pr_number=number,
+        head_sha=head,
+        fingerprint=fingerprint,
+        transport_intent_sha256=intent_sha,
+        transport_attempt=attempt,
+    ):
+        return None
+    return {
+        "schema": "qikvrt_requested_review_run_locator_v3",
+        "evaluator_sha": evaluator,
+        "pr_number": number,
+        "head_sha": head,
+        "fingerprint": fingerprint,
+        "transport_intent_sha256": intent_sha,
+        "transport_attempt": attempt,
+    }
+
+
+def requested_review_dispatch_child(
+    raw: Mapping[str, Any],
+    *,
+    repository: str,
+    workflow_id: int,
+    evaluator_sha: str,
+    display_title: str,
+) -> dict[str, Any]:
+    """Normalize an exact returned dispatch child, including fast terminals."""
+    evaluator = _sha(evaluator_sha, "dispatch child evaluator")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("dispatch child repository is invalid")
+    if (
+        not isinstance(raw, Mapping)
+        or isinstance(workflow_id, bool)
+        or not isinstance(workflow_id, int)
+        or workflow_id < 1
+    ):
+        raise ReviewSnapshotError("dispatch child observation is malformed")
+    run_id = raw.get("id")
+    run_attempt = raw.get("run_attempt")
+    status = raw.get("status")
+    conclusion = raw.get("conclusion")
+    raw_path = raw.get("path")
+    path = raw_path.split("@", 1)[0] if isinstance(raw_path, str) else None
+    active = {"queued", "in_progress", "waiting", "pending"}
+    if (
+        isinstance(run_id, bool)
+        or not isinstance(run_id, int)
+        or run_id < 1
+        or run_attempt != 1
+        or raw.get("workflow_id") != workflow_id
+        or path != TRUSTED_WORKFLOW_PATH
+        or raw.get("event") != "workflow_dispatch"
+        or not isinstance(raw.get("repository"), Mapping)
+        or raw["repository"].get("full_name") != repository
+        or raw.get("head_branch") != "main"
+        or raw.get("head_sha") != evaluator
+        or raw.get("display_title") != display_title
+        or status not in active | {"completed"}
+        or (
+            status == "completed"
+            and (not isinstance(conclusion, str) or not conclusion)
+        )
+        or (status in active and conclusion is not None)
+    ):
+        raise ReviewSnapshotError("returned dispatch child differs")
+    return {
+        "run_id": run_id,
+        "run_attempt": run_attempt,
+        "workflow_id": workflow_id,
+        "workflow_path": TRUSTED_WORKFLOW_PATH,
+        "event": "workflow_dispatch",
+        "repository": repository,
+        "head_sha": evaluator,
+        "status": status,
+        "conclusion": conclusion,
+        "display_title": display_title,
+    }
+
+
+def resolve_requested_review_completion_binding(
+    *,
+    event: str,
+    workflow_sha: str,
+    display_title: str,
+    plan_subject: Mapping[str, Any],
+    dispatch_inputs: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Recover an accepted dispatch subject even when planning failed early.
+
+    The immutable workflow-dispatch inputs and canonical run title exist
+    before ``plan-review`` runs.  They are therefore the only available exact
+    subject locator for an adverse run whose planner emitted no outputs.  Plan
+    outputs, when present, must agree and can add tree/base/disposition facts.
+    """
+    evaluator = _sha(workflow_sha, "completion subject workflow SHA")
+    if not isinstance(plan_subject, Mapping):
+        raise ReviewSnapshotError("completion plan subject is malformed")
+    required_fields = {
+        "pr_number",
+        "head_sha",
+        "tree_sha",
+        "base_sha",
+        "semantic_fingerprint",
+        "technical_disposition",
+    }
+    if set(plan_subject) != required_fields:
+        raise ReviewSnapshotError("completion plan subject fields differ")
+    result = dict(plan_subject)
+    if event != "workflow_dispatch":
+        if dispatch_inputs not in (None, {}):
+            raise ReviewSnapshotError(
+                "non-dispatch completion must not carry dispatch inputs"
+            )
+        return {"subject": result, "dispatch_locator": None}
+
+    locator = parse_requested_review_run_title(display_title)
+    if locator is None or locator["evaluator_sha"] != evaluator:
+        raise ReviewSnapshotError("completion dispatch locator is invalid")
+    if not isinstance(dispatch_inputs, Mapping):
+        raise ReviewSnapshotError("completion dispatch inputs are missing")
+    expected_inputs = {
+        "pr": str(locator["pr_number"]),
+        "head": locator["head_sha"],
+        "fingerprint": locator["fingerprint"],
+        "evaluator_sha": locator["evaluator_sha"],
+        "transport_intent_sha256": locator["transport_intent_sha256"],
+        "transport_attempt": str(locator["transport_attempt"]),
+    }
+    normalized_inputs = {
+        key: str(dispatch_inputs.get(key) or "") for key in expected_inputs
+    }
+    if normalized_inputs != expected_inputs:
+        raise ReviewSnapshotError("completion dispatch inputs differ from locator")
+    immutable_subject = {
+        "pr_number": locator["pr_number"],
+        "head_sha": locator["head_sha"],
+    }
+    for field, expected in immutable_subject.items():
+        observed = result.get(field)
+        if observed is not None and observed != expected:
+            raise ReviewSnapshotError(
+                f"completion plan {field} differs from immutable dispatch input"
+            )
+        result[field] = expected
+    return {
+        "subject": result,
+        "dispatch_locator": {
+            "schema": locator["schema"],
+            "evaluator_sha": locator["evaluator_sha"],
+            "pr_number": locator["pr_number"],
+            "head_sha": locator["head_sha"],
+            "request_fingerprint": locator["fingerprint"],
+            "transport_intent_sha256": locator["transport_intent_sha256"],
+            "transport_attempt": locator["transport_attempt"],
+        },
+    }
+
+
+def build_requested_review_completion_envelope(
+    *,
+    repository: str,
+    workflow_sha: str,
+    workflow_ref: str,
+    run_id: int,
+    run_attempt: int,
+    event: str,
+    display_title: str,
+    subject: Mapping[str, Any],
+    job_results: Mapping[str, Any],
+    dispatch_locator: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Seal the always-produced, non-authorizing run completion locator.
+
+    The job runs before GitHub has assigned the workflow conclusion.  It does
+    not self-assert a workflow ID, conclusion, terminal job, or artifact ID;
+    an independent trusted consumer binds those fields from REST after the run
+    completes and uses this envelope only as an immutable exact-attempt
+    artifact locator.
+    """
+    if (
+        not isinstance(repository, str)
+        or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None
+    ):
+        raise ReviewSnapshotError("completion envelope repository is invalid")
+    evaluator = _sha(workflow_sha, "completion envelope workflow SHA")
+    expected_ref_prefix = f"{repository}/{TRUSTED_WORKFLOW_PATH}@"
+    if (
+        not isinstance(workflow_ref, str)
+        or not workflow_ref.startswith(expected_ref_prefix)
+        or len(workflow_ref) <= len(expected_ref_prefix)
+    ):
+        raise ReviewSnapshotError("completion envelope workflow ref is invalid")
+    if (
+        isinstance(run_id, bool)
+        or not isinstance(run_id, int)
+        or run_id < 1
+        or isinstance(run_attempt, bool)
+        or not isinstance(run_attempt, int)
+        or run_attempt < 1
+    ):
+        raise ReviewSnapshotError("completion envelope run identity is invalid")
+    if event not in {
+        "pull_request_target",
+        "issue_comment",
+        "workflow_run",
+        "workflow_dispatch",
+    }:
+        raise ReviewSnapshotError("completion envelope event is invalid")
+    if (
+        not isinstance(display_title, str)
+        or not display_title
+        or len(display_title) > 255
+    ):
+        raise ReviewSnapshotError("completion envelope title is invalid")
+    if not isinstance(subject, Mapping) or set(subject) != {
+        "pr_number",
+        "head_sha",
+        "tree_sha",
+        "base_sha",
+        "semantic_fingerprint",
+        "technical_disposition",
+    }:
+        raise ReviewSnapshotError("completion envelope subject is malformed")
+    normalized_subject = dict(subject)
+    number = normalized_subject["pr_number"]
+    if number is not None and (
+        isinstance(number, bool) or not isinstance(number, int) or number < 1
+    ):
+        raise ReviewSnapshotError("completion envelope PR number is invalid")
+    for key in ("head_sha", "tree_sha", "base_sha"):
+        if normalized_subject[key] is not None:
+            normalized_subject[key] = _sha(
+                normalized_subject[key], f"completion envelope {key}"
+            )
+    if normalized_subject["semantic_fingerprint"] is not None:
+        normalized_subject["semantic_fingerprint"] = _sha256(
+            normalized_subject["semantic_fingerprint"],
+            "completion envelope semantic fingerprint",
+        )
+    if normalized_subject["technical_disposition"] not in {
+        None,
+        TECHNICAL_CONTINUE,
+        "REQUEST_CHANGES",
+        "WAIT",
+    }:
+        raise ReviewSnapshotError(
+            "completion envelope technical disposition is invalid"
+        )
+    if event == "workflow_dispatch":
+        parsed_locator = parse_requested_review_run_title(display_title)
+        if parsed_locator is None:
+            raise ReviewSnapshotError("completion dispatch locator is missing")
+        normalized_locator = {
+            "schema": parsed_locator["schema"],
+            "evaluator_sha": parsed_locator["evaluator_sha"],
+            "pr_number": parsed_locator["pr_number"],
+            "head_sha": parsed_locator["head_sha"],
+            "request_fingerprint": parsed_locator["fingerprint"],
+            "transport_intent_sha256": parsed_locator[
+                "transport_intent_sha256"
+            ],
+            "transport_attempt": parsed_locator["transport_attempt"],
+        }
+        if dispatch_locator is None:
+            dispatch_locator = normalized_locator
+        if (
+            not isinstance(dispatch_locator, Mapping)
+            or dict(dispatch_locator) != normalized_locator
+            or normalized_locator["evaluator_sha"] != evaluator
+            or normalized_subject["pr_number"] != normalized_locator["pr_number"]
+            or normalized_subject["head_sha"] != normalized_locator["head_sha"]
+        ):
+            raise ReviewSnapshotError("completion dispatch locator differs")
+    else:
+        if dispatch_locator is not None:
+            raise ReviewSnapshotError(
+                "non-dispatch completion must not carry a dispatch locator"
+            )
+        normalized_locator = None
+    if not isinstance(job_results, Mapping) or set(job_results) != set(
+        REQUESTED_REVIEW_COMPLETION_JOB_RESULTS
+    ):
+        raise ReviewSnapshotError("completion envelope job results are malformed")
+    normalized_results = dict(job_results)
+    if any(
+        value not in {"success", "failure", "cancelled", "skipped"}
+        for value in normalized_results.values()
+    ):
+        raise ReviewSnapshotError("completion envelope job result is invalid")
+    value = {
+        "schema": REQUESTED_REVIEW_COMPLETION_ENVELOPE_SCHEMA,
+        "repository": repository,
+        "workflow": {
+            "path": TRUSTED_WORKFLOW_PATH,
+            "workflow_sha": evaluator,
+            "workflow_ref": workflow_ref,
+        },
+        "run": {
+            "id": run_id,
+            "attempt": run_attempt,
+            "event": event,
+            "display_title": display_title,
+        },
+        "subject": normalized_subject,
+        "dispatch_locator": normalized_locator,
+        "job_results": normalized_results,
+        "state": "RUN_ATTEMPT_ENVELOPE_SEALED",
+        "productive_effect": False,
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+    value["envelope_sha256"] = _canonical_sha256(value)
+    return value
+
+
+def validate_requested_review_completion_envelope(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("completion envelope must be an object")
+    observed = dict(value)
+    digest_value = observed.pop("envelope_sha256", None)
+    workflow = observed.get("workflow")
+    run = observed.get("run")
+    rebuilt = build_requested_review_completion_envelope(
+        repository=observed.get("repository"),
+        workflow_sha=(workflow.get("workflow_sha") if isinstance(workflow, Mapping) else None),
+        workflow_ref=(workflow.get("workflow_ref") if isinstance(workflow, Mapping) else None),
+        run_id=(run.get("id") if isinstance(run, Mapping) else None),
+        run_attempt=(run.get("attempt") if isinstance(run, Mapping) else None),
+        event=(run.get("event") if isinstance(run, Mapping) else None),
+        display_title=(run.get("display_title") if isinstance(run, Mapping) else None),
+        subject=observed.get("subject"),
+        dispatch_locator=observed.get("dispatch_locator"),
+        job_results=observed.get("job_results"),
+    )
+    if value != rebuilt or digest_value != rebuilt["envelope_sha256"]:
+        raise ReviewSnapshotError("completion envelope bytes differ")
+    return rebuilt
+
+
+def review_queue_dispatch_intent(
+    intent: Mapping[str, Any],
+    *,
+    queue_path: str,
+    evaluator_sha: str,
+    workflow_id: int,
+    dispatch_attempt: int,
+) -> tuple[str, dict[str, Any]]:
+    """Seal one sharded transport attempt before the Actions dispatch POST."""
+    if not isinstance(intent, Mapping):
+        raise ReviewSnapshotError("queue transport intent must be an object")
+    repository = intent.get("repository")
+    number = intent.get("pr_number")
+    head = _sha(intent.get("head_sha"), "queue transport head")
+    fingerprint = _sha256(
+        intent.get("successor_fingerprint"), "queue transport fingerprint"
+    )
+    evaluator = _sha(evaluator_sha, "queue transport evaluator")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("queue transport repository is invalid")
+    if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        raise ReviewSnapshotError("queue transport PR number is invalid")
+    if (
+        isinstance(workflow_id, bool)
+        or not isinstance(workflow_id, int)
+        or workflow_id < 1
+    ):
+        raise ReviewSnapshotError("queue transport workflow id is invalid")
+    if dispatch_attempt != 1:
+        raise ReviewSnapshotError("queue transport is one-shot attempt one")
+    expected_queue_path = (
+        f"{REVIEW_QUEUE_ROOT}/pr-{number}/{head}/{fingerprint}.json"
+    )
+    if queue_path != expected_queue_path:
+        raise ReviewSnapshotError("queue transport source path differs")
+    value = {
+        "schema": "qikvrt_mesh_review_queue_transport_intent_v1",
+        "work_unit_id": f"{repository}/pr-{number}/{head}/{fingerprint}",
+        "repository": repository,
+        "pr_number": number,
+        "head_sha": head,
+        "tree_sha": _sha(intent.get("tree_sha"), "queue transport tree"),
+        "base_sha": _sha(intent.get("base_sha"), "queue transport base"),
+        "successor_fingerprint": fingerprint,
+        "queue_path": queue_path,
+        "evaluator_sha": evaluator,
+        "workflow_id": workflow_id,
+        "workflow_path": TRUSTED_WORKFLOW_PATH,
+        "dispatch_attempt": dispatch_attempt,
+        "state": "DURABLE_BEFORE_DISPATCH",
+        "admission_recovery_is_zero_job_owner": True,
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+    value["intent_sha256"] = _canonical_sha256(value)
+    value["expected_title"] = requested_review_run_title(
+        evaluator_sha=evaluator,
+        pr_number=number,
+        head_sha=head,
+        fingerprint=fingerprint,
+        transport_intent_sha256=value["intent_sha256"],
+        transport_attempt=dispatch_attempt,
+    )
+    path = (
+        f"{REVIEW_QUEUE_TRANSPORT_ROOT}/pr-{number}/{head}/{fingerprint}/"
+        f"attempt-{dispatch_attempt}-intent-{value['intent_sha256']}.json"
+    )
+    return path, value
+
+
+def validate_review_queue_dispatch_intent(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("queue dispatch intent must be an object")
+    observed = dict(value)
+    claimed = observed.pop("intent_sha256", None)
+    expected_title = observed.pop("expected_title", None)
+    if claimed != _canonical_sha256(observed):
+        raise ReviewSnapshotError("queue dispatch intent digest differs")
+    if (
+        observed.get("schema")
+        != "qikvrt_mesh_review_queue_transport_intent_v1"
+        or observed.get("state") != "DURABLE_BEFORE_DISPATCH"
+        or observed.get("admission_recovery_is_zero_job_owner") is not True
+        or observed.get("completion_claims")
+        != {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        }
+    ):
+        raise ReviewSnapshotError("queue dispatch intent boundary differs")
+    if expected_title != requested_review_run_title(
+        evaluator_sha=observed.get("evaluator_sha"),
+        pr_number=observed.get("pr_number"),
+        head_sha=observed.get("head_sha"),
+        fingerprint=observed.get("successor_fingerprint"),
+        transport_intent_sha256=claimed,
+        transport_attempt=observed.get("dispatch_attempt"),
+    ):
+        raise ReviewSnapshotError("queue dispatch intent title differs")
+    return dict(value)
+
+
+def review_queue_child_ack(
+    dispatch_intent: Mapping[str, Any],
+    child_run: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Bind the exact accepted child; its terminal result remains separate."""
+    intent = validate_review_queue_dispatch_intent(dispatch_intent)
+    if not isinstance(child_run, Mapping):
+        raise ReviewSnapshotError("queue child run must be an object")
+    run_id = child_run.get("id")
+    run_attempt = child_run.get("run_attempt", 1)
+    repository = intent["repository"]
+    if (
+        isinstance(run_id, bool)
+        or not isinstance(run_id, int)
+        or run_id < 1
+        or isinstance(run_attempt, bool)
+        or not isinstance(run_attempt, int)
+        or run_attempt < 1
+    ):
+        raise ReviewSnapshotError("queue child run identity is invalid")
+    checks = {
+        "workflow_id": child_run.get("workflow_id") == intent["workflow_id"],
+        "workflow_path": str(child_run.get("path") or "").split("@", 1)[0]
+        == intent["workflow_path"],
+        "event": child_run.get("event") == "workflow_dispatch",
+        "repository": isinstance(child_run.get("repository"), Mapping)
+        and child_run["repository"].get("full_name") == repository,
+        "head_branch": child_run.get("head_branch") == "main",
+        "head_sha": child_run.get("head_sha") == intent["evaluator_sha"],
+        "display_title": child_run.get("display_title")
+        == intent["expected_title"],
+    }
+    if not all(checks.values()):
+        raise ReviewSnapshotError("queue child run provenance differs")
+    value = {
+        "schema": "qikvrt_mesh_review_queue_child_ack_v1",
+        "work_unit_id": intent["work_unit_id"],
+        "intent_sha256": intent["intent_sha256"],
+        "dispatch_attempt": intent["dispatch_attempt"],
+        "child_run_id": run_id,
+        "child_run_attempt": run_attempt,
+        "child_status": child_run.get("status"),
+        "child_conclusion": child_run.get("conclusion"),
+        "checks": checks,
+        "state": "EXACT_CHILD_ACCEPTED",
+        "effect_ack": "PENDING_CHILD_TERMINAL_EVIDENCE",
+        "completion_claims": intent["completion_claims"],
+    }
+    value["ack_sha256"] = _canonical_sha256(value)
+    path = (
+        f"{REVIEW_QUEUE_TRANSPORT_ROOT}/pr-{intent['pr_number']}/"
+        f"{intent['head_sha']}/{intent['successor_fingerprint']}/"
+        f"attempt-{intent['dispatch_attempt']}-child-run-{run_id}.json"
+    )
+    return path, value
+
+
+def plan_review_queue_drain(
+    intent: Mapping[str, Any],
+    *,
+    pr: Mapping[str, Any],
+    commit: Mapping[str, Any],
+    child_runs: Sequence[Mapping[str, Any]],
+    trusted_workflow_id: int,
+    trusted_evaluator_sha: str,
+) -> dict[str, Any]:
+    """Plan at most the second exact recursive child execution.
+
+    The append-only queue intent is the subject. GitHub workflow runs are only
+    transport observations: every matching run must have the stable trusted
+    workflow identity and exact dynamic title. Two observed execution attempts
+    exhaust the repository-owned retry budget and deterministically move the
+    lane to a D0=3 Authority hold without another dispatch.
+    """
+    if not isinstance(intent, Mapping):
+        raise ReviewSnapshotError("queue drain intent must be an object")
+    repository = intent.get("repository")
+    pr_number = intent.get("pr_number")
+    head = _sha(intent.get("head_sha"), "queue drain head_sha")
+    tree = _sha(intent.get("tree_sha"), "queue drain tree_sha")
+    base = _sha(intent.get("base_sha"), "queue drain base_sha")
+    fingerprint = _sha256(
+        intent.get("successor_fingerprint"),
+        "queue drain successor fingerprint",
+    )
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ReviewSnapshotError("queue drain repository is invalid")
+    if (
+        isinstance(pr_number, bool)
+        or not isinstance(pr_number, int)
+        or pr_number < 1
+    ):
+        raise ReviewSnapshotError("queue drain pull request number is invalid")
+    if (
+        isinstance(trusted_workflow_id, bool)
+        or not isinstance(trusted_workflow_id, int)
+        or trusted_workflow_id < 1
+    ):
+        raise ReviewSnapshotError("queue drain trusted workflow id is invalid")
+    evaluator_sha = _sha(
+        trusted_evaluator_sha, "queue drain trusted evaluator SHA"
+    )
+    if not isinstance(pr, Mapping) or not isinstance(commit, Mapping):
+        raise ReviewSnapshotError("queue drain live subject is malformed")
+
+    live_checks = {
+        "pr_number": pr.get("number") == pr_number,
+        "pr_open": pr.get("state") == "open",
+        "head_sha": (
+            isinstance(pr.get("head"), Mapping)
+            and pr["head"].get("sha") == head
+        ),
+        "base_sha": (
+            isinstance(pr.get("base"), Mapping)
+            and pr["base"].get("sha") == base
+        ),
+        "commit_sha": commit.get("sha") == head,
+        "tree_sha": (
+            isinstance(commit.get("tree"), Mapping)
+            and commit["tree"].get("sha") == tree
+        ),
+    }
+    common = {
+        "schema": "qikvrt_mesh_review_queue_drain_plan_v1",
+        "work_unit_id": intent.get("work_unit_id"),
+        "repository": repository,
+        "pr_number": pr_number,
+        "head_sha": head,
+        "tree_sha": tree,
+        "base_sha": base,
+        "successor_fingerprint": fingerprint,
+        "live_checks": live_checks,
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+    if not all(live_checks.values()):
+        return {
+            **common,
+            "state": "STALE_SUBJECT_D0_3",
+            "first_blocker": "RECURSIVE_QUEUE_LIVE_SUBJECT_DRIFT",
+            "d0": 3,
+            "dispatch_required": False,
+            "next_attempt": None,
+            "execution_attempts_observed": 0,
+            "children": [],
+        }
+
+    queue_path = f"{REVIEW_QUEUE_ROOT}/pr-{pr_number}/{head}/{fingerprint}.json"
+    expected_title = review_queue_dispatch_intent(
+        intent,
+        queue_path=queue_path,
+        evaluator_sha=evaluator_sha,
+        workflow_id=trusted_workflow_id,
+        dispatch_attempt=1,
+    )[1]["expected_title"]
+    by_id: dict[int, Mapping[str, Any]] = {}
+    for raw in child_runs:
+        if not isinstance(raw, Mapping):
+            raise ReviewSnapshotError("queue drain child run must be an object")
+        if raw.get("display_title") != expected_title:
+            continue
+        run_id = raw.get("id")
+        run_attempt = raw.get("run_attempt", 1)
+        status = raw.get("status")
+        path = str(raw.get("path") or "").split("@", 1)[0]
+        run_repository = raw.get("repository")
+        exact_identity = (
+            raw.get("workflow_id") == trusted_workflow_id
+            and path == TRUSTED_WORKFLOW_PATH
+            and raw.get("event") == "workflow_dispatch"
+            and raw.get("head_branch") == "main"
+            and isinstance(run_repository, Mapping)
+            and run_repository.get("full_name") == repository
+        )
+        if not exact_identity:
+            raise ReviewSnapshotError(
+                "queue drain child run trusted provenance drifted"
+            )
+        if (
+            isinstance(run_id, bool)
+            or not isinstance(run_id, int)
+            or run_id < 1
+            or isinstance(run_attempt, bool)
+            or not isinstance(run_attempt, int)
+            or run_attempt < 1
+            or not isinstance(status, str)
+            or status not in {*ACTIVE_WRITER_STATES, "completed"}
+        ):
+            raise ReviewSnapshotError("queue drain child run is malformed")
+        if status == "completed" and not isinstance(raw.get("conclusion"), str):
+            raise ReviewSnapshotError(
+                "queue drain completed child lacks a terminal conclusion"
+            )
+        previous = by_id.get(run_id)
+        if previous is None or run_attempt > int(previous.get("run_attempt", 1)):
+            by_id[run_id] = raw
+        elif run_attempt == int(previous.get("run_attempt", 1)) and dict(raw) != dict(previous):
+            raise ReviewSnapshotError("queue drain child attempt is ambiguous")
+
+    children = [
+        {
+            "id": run_id,
+            "run_attempt": int(run.get("run_attempt", 1)),
+            "status": run.get("status"),
+            "conclusion": run.get("conclusion"),
+        }
+        for run_id, run in sorted(by_id.items())
+    ]
+    if len(children) > 1:
+        raise ReviewSnapshotError("queue drain child locator is ambiguous")
+    execution_attempts = max(
+        (item["run_attempt"] for item in children), default=0
+    )
+    active = [
+        item for item in children if item["status"] in ACTIVE_WRITER_STATES
+    ]
+    if active:
+        return {
+            **common,
+            "state": "ADMISSION_RECOVERY_PENDING",
+            "first_blocker": "RECURSIVE_QUEUE_CHILD_ACTIVE",
+            "d0": 1,
+            "dispatch_required": False,
+            "next_attempt": None,
+            "execution_attempts_observed": execution_attempts,
+            "children": children,
+        }
+    if children:
+        return {
+            **common,
+            "state": "ADMISSION_RECOVERY_PENDING",
+            "first_blocker": "ADMISSION_RECOVERY_OWNS_ACCEPTED_CHILD",
+            "d0": 2,
+            "dispatch_required": False,
+            "next_attempt": None,
+            "execution_attempts_observed": execution_attempts,
+            "children": children,
+        }
+    return {
+        **common,
+        "state": "WORK_UNIT",
+        "first_blocker": None,
+        "d0": 2,
+        "dispatch_required": True,
+        "next_attempt": 1,
+        "execution_attempts_observed": execution_attempts,
+        "children": children,
     }
 
 
@@ -446,8 +1309,8 @@ def plan_ledger_update(
     if ledger_head is None:
         if existing_receipt is not None or existing_diff is not None:
             raise ReviewSnapshotError("root ledger plan has unexpected existing bytes")
-        action = "INITIALIZE_ORPHAN_ROOT"
-        blocker = None
+        action = "HOLD"
+        blocker = "MESH_REVIEW_LEDGER_EXTERNAL_GENESIS_REQUIRED"
     else:
         _sha(ledger_head, "ledger_head")
         if existing_receipt is None and existing_diff is None:
@@ -473,6 +1336,346 @@ def plan_ledger_update(
             "MERGE": False,
         },
     }
+
+
+def validate_mesh_ledger_protection(
+    delegation: Mapping[str, Any], repository: str
+) -> dict[str, Any]:
+    """Bind the external genesis and sole-App ref-protection readback.
+
+    Repository bytes cannot configure or prove GitHub ref rules, protected
+    environments, secret scope, or App installation identity.  They can only
+    carry an Authority-produced readback.  The workflow must additionally
+    compare this sealed contract with live GitHub rule and App observations
+    immediately before every ref effect.
+    """
+    if not isinstance(repository, str) or not repository:
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_REPOSITORY_INVALID")
+    value = delegation
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_DELEGATION_INVALID")
+    if (
+        value.get("schema") != MESH_LEDGER_DELEGATION_SCHEMA
+        or value.get("delegation_id") != MESH_LEDGER_DELEGATION_ID
+        or value.get("state") != "ACTIVE"
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_DELEGATION_INVALID")
+    repositories = value.get("repositories")
+    if (
+        not isinstance(repositories, list)
+        or not all(isinstance(item, str) and item for item in repositories)
+        or repository not in repositories
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_REPOSITORY_INVALID")
+    boundary = value.get("ledger_authority_boundary")
+    if not isinstance(boundary, Mapping):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED")
+    receipts = boundary.get("external_readback_receipts")
+    if (
+        boundary.get("external_configuration_verified") is not True
+        or boundary.get("environment") != MESH_LEDGER_AUTHORITY_ENVIRONMENT
+        or boundary.get("credential") != MESH_LEDGER_WRITER_SECRET
+        or boundary.get("credential_scope") != "ENVIRONMENT_ONLY"
+        or not isinstance(receipts, list)
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED")
+    matches = [
+        item
+        for item in receipts
+        if isinstance(item, Mapping) and item.get("repository") == repository
+    ]
+    if len(matches) != 1:
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED")
+    receipt = matches[0]
+    writer_id = receipt.get("writer_integration_id")
+    ruleset_id = receipt.get("ruleset_id")
+    required_rules = ["deletion", "non_fast_forward", "update"]
+    expected_bypass = [
+        {
+            "actor_id": writer_id,
+            "actor_type": "Integration",
+            "bypass_mode": "always",
+        }
+    ]
+    broad_names = sorted(MESH_LEDGER_FORBIDDEN_BROAD_SECRET_NAMES)
+    owner = receipt.get("repository_owner")
+    owner_type = owner.get("type") if isinstance(owner, Mapping) else None
+    owner_valid = (
+        isinstance(owner, Mapping)
+        and owner.get("login") == repository.split("/", 1)[0]
+        and isinstance(owner.get("id"), int)
+        and not isinstance(owner.get("id"), bool)
+        and owner.get("id") > 0
+        and owner_type in {"User", "Organization"}
+    )
+    organization_absent = receipt.get("organization_scope_secret_names_absent")
+    organization_scope = receipt.get("organization_scope_readback")
+    organization_valid = (
+        owner_type == "User"
+        and organization_scope == "NOT_APPLICABLE_USER_OWNER"
+        and organization_absent == []
+    ) or (
+        owner_type == "Organization"
+        and organization_scope == "VERIFIED_ORGANIZATION_SECRET_INVENTORY"
+        and sorted(organization_absent or []) == broad_names
+    )
+    if (
+        receipt.get("schema") != MESH_LEDGER_PROTECTION_SCHEMA
+        or receipt.get("ledger_ref") != LEDGER_REF
+        or receipt.get("ref_initialized") is not True
+        or not isinstance(ruleset_id, int)
+        or isinstance(ruleset_id, bool)
+        or ruleset_id < 1
+        or not isinstance(receipt.get("ruleset_name"), str)
+        or not receipt.get("ruleset_name")
+        or receipt.get("ruleset_enforcement") != "active"
+        or receipt.get("ruleset_source_type") != "Repository"
+        or receipt.get("ruleset_source") != repository
+        or receipt.get("ruleset_target") != "branch"
+        or receipt.get("ref_name_include") != [LEDGER_REF]
+        or receipt.get("ref_name_exclude") != []
+        or receipt.get("required_rule_types") != required_rules
+        or not isinstance(writer_id, int)
+        or isinstance(writer_id, bool)
+        or writer_id < 1
+        or not isinstance(receipt.get("writer_app_slug"), str)
+        or not receipt.get("writer_app_slug")
+        or receipt.get("sole_bypass_actors") != expected_bypass
+        or receipt.get("writer_workflow_path") != TRUSTED_WORKFLOW_PATH
+        or receipt.get("writer_environment")
+        != MESH_LEDGER_AUTHORITY_ENVIRONMENT
+        or receipt.get("writer_secret_name") != MESH_LEDGER_WRITER_SECRET
+        or sorted(receipt.get("repository_scope_secret_names_absent") or [])
+        != broad_names
+        or not owner_valid
+        or not organization_valid
+        or receipt.get("settings_readback_complete") is not True
+        or not isinstance(receipt.get("verified_at"), str)
+        or not receipt.get("verified_at")
+        or not isinstance(receipt.get("verifier_login"), str)
+        or not receipt.get("verifier_login")
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED")
+    genesis = _sha(receipt.get("genesis_commit_sha"), "ledger genesis commit")
+    return {
+        "schema": MESH_LEDGER_PROTECTION_SCHEMA,
+        "repository": repository,
+        "ledger_ref": LEDGER_REF,
+        "genesis_commit_sha": genesis,
+        "ruleset_id": ruleset_id,
+        "ruleset_name": receipt["ruleset_name"],
+        "required_rule_types": required_rules,
+        "sole_bypass_actors": expected_bypass,
+        "writer_integration_id": writer_id,
+        "writer_app_slug": receipt["writer_app_slug"],
+        "writer_environment": MESH_LEDGER_AUTHORITY_ENVIRONMENT,
+        "writer_secret_name": MESH_LEDGER_WRITER_SECRET,
+        "repository_owner": dict(owner),
+        "organization_scope_readback": organization_scope,
+    }
+
+
+def verify_live_mesh_ledger_authority(
+    sealed_authority: Mapping[str, Any],
+    *,
+    repository: str,
+    installation: Mapping[str, Any],
+    branch_rules: Sequence[Mapping[str, Any]],
+    ruleset: Mapping[str, Any],
+    ref: Mapping[str, Any],
+    environment: Mapping[str, Any],
+    repository_owner: Mapping[str, Any],
+    branch_policies: Sequence[Mapping[str, Any]],
+    environment_secret_names: Sequence[str],
+    repository_secret_names: Sequence[str],
+    organization_secret_names: Sequence[str],
+    organization_scope_readback: str,
+) -> dict[str, Any]:
+    """Bind the effect-local protected environment/App/ref readback.
+
+    A committed delegation is historical evidence only.  This check must be
+    repeated in the isolated writer process immediately before every custom
+    Mesh-ledger mutation so a removed environment secret, repository/org
+    fallback, changed Integration, or weakened ruleset cannot inherit stale
+    authority.
+    """
+    authority = dict(sealed_authority)
+    if authority.get("repository") != repository:
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    actor_id = authority.get("writer_integration_id")
+    expected_owner = authority.get("repository_owner")
+    if (
+        not isinstance(installation, Mapping)
+        or installation.get("app_id") != actor_id
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    if (
+        not isinstance(repository_owner, Mapping)
+        or dict(repository_owner) != expected_owner
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    required = set(authority.get("required_rule_types") or [])
+    if (
+        not isinstance(branch_rules, Sequence)
+        or isinstance(branch_rules, (str, bytes))
+        or any(not isinstance(item, Mapping) for item in branch_rules)
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    authoritative = [
+        item for item in branch_rules if item.get("type") in required
+    ]
+    ruleset_ids = {
+        item.get("ruleset_id")
+        for item in authoritative
+        if isinstance(item.get("ruleset_id"), int)
+        and not isinstance(item.get("ruleset_id"), bool)
+    }
+    conditions = ruleset.get("conditions") if isinstance(ruleset, Mapping) else None
+    ref_name = conditions.get("ref_name") if isinstance(conditions, Mapping) else None
+    rule_types = {
+        item.get("type")
+        for item in ruleset.get("rules", [])
+        if isinstance(item, Mapping)
+    } if isinstance(ruleset, Mapping) else set()
+    ref_object = ref.get("object") if isinstance(ref, Mapping) else None
+    if (
+        {item.get("type") for item in authoritative} != required
+        or ruleset_ids != {authority.get("ruleset_id")}
+        or ruleset.get("id") != authority.get("ruleset_id")
+        or ruleset.get("name") != authority.get("ruleset_name")
+        or ruleset.get("target") != "branch"
+        or ruleset.get("source_type") != "Repository"
+        or ruleset.get("source") != repository
+        or ruleset.get("enforcement") != "active"
+        or ruleset.get("bypass_actors") != authority.get("sole_bypass_actors")
+        or not isinstance(ref_name, Mapping)
+        or ref_name.get("include") != [LEDGER_REF]
+        or ref_name.get("exclude") != []
+        or not required.issubset(rule_types)
+        or not isinstance(ref_object, Mapping)
+        or _sha(ref_object.get("sha"), "live Mesh ledger ref") is None
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    deployment = (
+        environment.get("deployment_branch_policy")
+        if isinstance(environment, Mapping) else None
+    )
+    protection_rules = environment.get("protection_rules") if isinstance(environment, Mapping) else None
+    exact_policies = [
+        {"name": item.get("name"), "type": item.get("type")}
+        for item in branch_policies
+        if isinstance(item, Mapping)
+    ] if isinstance(branch_policies, Sequence) and not isinstance(
+        branch_policies, (str, bytes)
+    ) else []
+    expected_secrets = {MESH_LEDGER_WRITER_SECRET, MESH_LEDGER_AUDITOR_SECRET}
+    broad_names = set(MESH_LEDGER_FORBIDDEN_BROAD_SECRET_NAMES)
+    owner_type = expected_owner.get("type") if isinstance(expected_owner, Mapping) else None
+    organization_scope_valid = (
+        owner_type == "User"
+        and organization_scope_readback == "NOT_APPLICABLE_USER_OWNER"
+        and list(organization_secret_names) == []
+    ) or (
+        owner_type == "Organization"
+        and organization_scope_readback
+            == "VERIFIED_ORGANIZATION_SECRET_INVENTORY"
+        and not (broad_names & set(organization_secret_names))
+    )
+    if (
+        environment.get("name") != MESH_LEDGER_AUTHORITY_ENVIRONMENT
+        or not isinstance(deployment, Mapping)
+        or deployment.get("protected_branches") is not False
+        or deployment.get("custom_branch_policies") is not True
+        or not isinstance(protection_rules, list)
+        or not protection_rules
+        or exact_policies != [{"name": "main", "type": "branch"}]
+        or not expected_secrets.issubset(set(environment_secret_names))
+        or broad_names & set(repository_secret_names)
+        or not organization_scope_valid
+    ):
+        raise ReviewSnapshotError("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED")
+    return {
+        "schema": "qikvrt_mesh_review_ledger_effect_authority_v1",
+        "repository": repository,
+        "ledger_ref": LEDGER_REF,
+        "ledger_head": ref_object["sha"],
+        "ruleset_id": authority["ruleset_id"],
+        "writer_integration_id": actor_id,
+        "environment": MESH_LEDGER_AUTHORITY_ENVIRONMENT,
+        "deployment_branch": "main",
+        "environment_secret_names_present": sorted(expected_secrets),
+        "repository_scope_fallback_names_absent": True,
+        "organization_scope_fallback_names_absent": True,
+        "organization_scope_readback": organization_scope_readback,
+        "external_configuration_verified": True,
+        "secret_values_observed": False,
+    }
+
+
+def bounded_append_only_cas(
+    *,
+    read_head: Callable[[], str],
+    plan_at: Callable[[str], bool],
+    build_commit: Callable[[str], str],
+    update_ref: Callable[[str], None],
+    verify_at: Callable[[str], bool],
+    max_attempts: int = 8,
+) -> dict[str, Any]:
+    """Append immutable additions with bounded ref-drift replan/retry.
+
+    ``plan_at`` must inspect the current parent and return ``True`` only when
+    immutable additions are absent and need appending.  It must raise on any
+    path collision.  A non-fast-forward update is retried only when the ref
+    actually advanced; an unchanged-head error propagates fail-closed.
+    """
+    if (
+        isinstance(max_attempts, bool)
+        or not isinstance(max_attempts, int)
+        or max_attempts < 1
+        or max_attempts > 32
+    ):
+        raise ReviewSnapshotError("ledger CAS retry bound is invalid")
+    last_parent: str | None = None
+    for attempt in range(1, max_attempts + 1):
+        parent = _sha(read_head(), "ledger CAS parent")
+        last_parent = parent
+        append = plan_at(parent)
+        if not isinstance(append, bool):
+            raise ReviewSnapshotError("ledger CAS plan must return boolean")
+        if not append:
+            if not verify_at(parent):
+                raise ReviewSnapshotError("ledger CAS no-op readback mismatch")
+            return {
+                "schema": "qikvrt_bounded_append_only_cas_v1",
+                "persisted": True,
+                "appended": False,
+                "head": parent,
+                "attempts": attempt,
+            }
+        commit = _sha(build_commit(parent), "ledger CAS commit")
+        try:
+            update_ref(commit)
+        except Exception:
+            observed_after_error = _sha(
+                read_head(), "ledger CAS head after update error"
+            )
+            if observed_after_error == parent:
+                raise
+            continue
+        observed = _sha(read_head(), "ledger CAS readback head")
+        if verify_at(observed):
+            return {
+                "schema": "qikvrt_bounded_append_only_cas_v1",
+                "persisted": True,
+                "appended": True,
+                "head": observed,
+                "attempts": attempt,
+            }
+        if observed == parent:
+            raise ReviewSnapshotError("ledger CAS update was not observable")
+    raise ReviewSnapshotError(
+        f"ledger CAS retry exhausted after {max_attempts} attempts at {last_parent}"
+    )
 
 
 def _run_key(run: Mapping[str, Any]) -> tuple[int, int, int]:
@@ -841,6 +2044,17 @@ def _review_intake(
         event_context.get("predecessor_successor_fingerprint"),
         "predecessor successor fingerprint",
     )
+    if predecessor_successor_fingerprint == NO_PREDECESSOR_FINGERPRINT:
+        predecessor_successor_fingerprint = None
+    transport_intent_sha256 = _optional_sha256(
+        event_context.get("transport_intent_sha256"),
+        "review transport intent sha256",
+    )
+    transport_attempt = event_context.get("transport_attempt")
+    if transport_attempt is not None and transport_attempt != 1:
+        raise ReviewSnapshotError("review transport attempt is invalid")
+    if (transport_intent_sha256 is None) != (transport_attempt is None):
+        raise ReviewSnapshotError("review transport locator is incomplete")
     source = _optional_text(event_context.get("source"), "review event source") or "UNSPECIFIED"
     native_delivery_identity = (
         _optional_text(event_context.get("native_delivery_identity"), "native delivery identity")
@@ -924,6 +2138,8 @@ def _review_intake(
         "requested_reviewer": requested_reviewer,
         "requested_team": requested_team,
         "predecessor_successor_fingerprint": predecessor_successor_fingerprint,
+        "transport_intent_sha256": transport_intent_sha256,
+        "transport_attempt": transport_attempt,
         "requester_role": requester_role,
         "requested_reviewer_role": requested_reviewer_role,
         "requested_target_observed": requested_target_observed,
@@ -957,6 +2173,8 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
         "requested_reviewer",
         "requested_team",
         "predecessor_successor_fingerprint",
+        "transport_intent_sha256",
+        "transport_attempt",
         "requester_role",
         "requested_reviewer_role",
         "requested_target_observed",
@@ -999,6 +2217,18 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
         value.get("predecessor_successor_fingerprint"),
         "review_intake predecessor_successor_fingerprint",
     )
+    normalized["transport_intent_sha256"] = _optional_sha256(
+        value.get("transport_intent_sha256"),
+        "review_intake transport_intent_sha256",
+    )
+    transport_attempt = value.get("transport_attempt")
+    if transport_attempt is not None and transport_attempt != 1:
+        raise ReviewSnapshotError("review_intake transport_attempt is invalid")
+    normalized["transport_attempt"] = transport_attempt
+    if (normalized["transport_intent_sha256"] is None) != (
+        transport_attempt is None
+    ):
+        raise ReviewSnapshotError("review_intake transport locator is incomplete")
     raw_reason_labels = value.get("reason_labels")
     if (
         not isinstance(raw_reason_labels, list)
@@ -1050,6 +2280,8 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
                 "requested_reviewer",
                 "requested_team",
                 "predecessor_successor_fingerprint",
+                "transport_intent_sha256",
+                "transport_attempt",
                 "native_delivery_identity",
             )
         },
@@ -1060,6 +2292,52 @@ def _canonical_review_intake(value: Any) -> dict[str, Any]:
     if dict(value) != expected:
         raise ReviewSnapshotError("review_intake does not match deterministic priority policy")
     return expected
+
+
+TRANSPORT_ONLY_REVIEW_INTAKE_FIELDS = (
+    "event_payload_sha256",
+    "predecessor_successor_fingerprint",
+    "transport_intent_sha256",
+    "transport_attempt",
+)
+
+
+def _semantic_review_intake(value: Any) -> dict[str, Any]:
+    """Remove causal delivery locators from repository-fact semantics."""
+    semantic = _canonical_review_intake(value)
+    for field in TRANSPORT_ONLY_REVIEW_INTAKE_FIELDS:
+        semantic[field] = None
+    return _canonical_review_intake(semantic)
+
+
+def build_review_transport_provenance(
+    value: Any,
+    *,
+    workflow_runs: Sequence[Mapping[str, Any]] = (),
+    active_writers: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    """Seal delivery and run locators outside the idempotent Mesh receipt."""
+    intake = _canonical_review_intake(value)
+    latest = collapse_latest(workflow_runs)
+    writers = _active_writers({"active_writers": list(active_writers)})
+    result = {
+        "schema": "qikvrt_mesh_review_transport_provenance_v1",
+        "review_intake": intake,
+        "latest_workflows": _gate_projection(latest),
+        "active_writers": writers,
+        "semantic_review_intake_sha256": _canonical_sha256(
+            _semantic_review_intake(intake)
+        ),
+        "semantic_latest_workflows_sha256": _canonical_sha256(
+            _semantic_gate_projection(latest)
+        ),
+        "semantic_active_writers_sha256": _canonical_sha256(
+            _semantic_active_writers(writers)
+        ),
+        "productive_effect": False,
+    }
+    result["provenance_payload_sha256"] = _canonical_sha256(result)
+    return result
 
 
 def _event_context_from_review_intake(receipt: Mapping[str, Any]) -> dict[str, Any]:
@@ -1078,6 +2356,8 @@ def _event_context_from_review_intake(receipt: Mapping[str, Any]) -> dict[str, A
             "requested_reviewer",
             "requested_team",
             "predecessor_successor_fingerprint",
+            "transport_intent_sha256",
+            "transport_attempt",
             "native_delivery_identity",
         )
     }
@@ -1145,6 +2425,60 @@ def _gate_projection(
     return projected
 
 
+def _semantic_gate_projection(
+    latest: Mapping[tuple[int, str, str, str], Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project terminal/active gate facts without retry-local identities."""
+    result: list[dict[str, Any]] = []
+    for identity, run in sorted(latest.items(), key=lambda item: item[0]):
+        workflow_id, path, event, name = identity
+        jobs = [
+            {"status": item["status"], "conclusion": item["conclusion"]}
+            for item in _canonical_jobs(run)
+        ]
+        jobs.sort(key=lambda item: (item["status"], str(item["conclusion"])))
+        result.append(
+            {
+                "name": name,
+                "workflow_id": workflow_id,
+                "path": path,
+                "event": event,
+                "jobs_total": run.get("jobs_total"),
+                "jobs": jobs,
+                "head_sha": run.get("head_sha"),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+            }
+        )
+    return result
+
+
+def _semantic_active_writers(
+    writers: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Retain writer lease facts while excluding one run's locator IDs."""
+    result = [
+        {
+            "name": item.get("name"),
+            "status": item.get("status"),
+            "head_sha": item.get("head_sha"),
+            "workflow_id": item.get("workflow_id"),
+            "path": item.get("path"),
+            "event": item.get("event"),
+        }
+        for item in writers
+    ]
+    return sorted(
+        result,
+        key=lambda item: (
+            str(item["name"]),
+            str(item["path"]),
+            str(item["event"]),
+            str(item["status"]),
+        ),
+    )
+
+
 def _required_gate_binding(
     snapshot: Mapping[str, Any],
 ) -> tuple[list[str], dict[str, str], dict[str, int], dict[str, str]]:
@@ -1203,7 +2537,8 @@ def _evidence_fingerprint(
     required_gate_paths: Mapping[str, str],
 ) -> str:
     payload = {
-        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v4",
+        "fingerprint_schema": "qikvrt_mesh_review_evidence_fingerprint_v5",
+        "technical_disposition_semantics": TECHNICAL_CONTINUE,
         "trusted_evaluator_blob_sha": snapshot.get("trusted_evaluator_blob_sha"),
         "trusted_workflow_blob_sha": snapshot.get("trusted_workflow_blob_sha"),
         "repository": snapshot.get("repository"),
@@ -1233,15 +2568,15 @@ def _evidence_fingerprint(
         "diff_complete": snapshot.get("diff_complete"),
         "requested_reviewers": sorted(snapshot.get("requested_reviewers", [])),
         "requested_team_reviewers": sorted(snapshot.get("requested_team_reviewers", [])),
-        "review_intake": snapshot.get("review_intake"),
+        "review_intake": _semantic_review_intake(snapshot.get("review_intake")),
         "discussion": list(threads),
         "discussion_items": snapshot.get("discussion_items", []),
         "required_gates": snapshot.get("required_gates"),
         "required_gate_paths": dict(sorted(required_gate_paths.items())),
         "required_gate_workflow_ids": snapshot.get("required_gate_workflow_ids"),
         "required_gate_events": snapshot.get("required_gate_events"),
-        "latest_workflows": _gate_projection(latest),
-        "active_writers": list(writers),
+        "latest_workflows": _semantic_gate_projection(latest),
+        "active_writers": _semantic_active_writers(writers),
     }
     return _canonical_sha256(payload)
 
@@ -1369,7 +2704,7 @@ def _scan_added_lines(diff_bytes: bytes) -> list[dict[str, Any]]:
 
 
 def _derived_action(state: str, blocker: str | None) -> dict[str, Any]:
-    if state == "APPROVE":
+    if state == TECHNICAL_CONTINUE:
         return {
             "d0": 3,
             "state": "REQUEST_AUTHORITY",
@@ -1499,7 +2834,11 @@ def _result(
         }),
         "requested_reviewers_observed": list(snapshot.get("requested_reviewers", [])) if isinstance(snapshot.get("requested_reviewers"), list) else [],
         "requested_team_reviewers_observed": list(snapshot.get("requested_team_reviewers", [])) if isinstance(snapshot.get("requested_team_reviewers"), list) else [],
-        "active_writers_observed": list(snapshot.get("active_writers", [])) if isinstance(snapshot.get("active_writers"), list) else [],
+        "active_writers_observed": _semantic_active_writers(
+            snapshot.get("active_writers", [])
+            if isinstance(snapshot.get("active_writers"), list)
+            else []
+        ),
         "review_intake": dict(snapshot.get("review_intake", {})) if isinstance(snapshot.get("review_intake"), Mapping) else {},
         "required_gate_paths": dict(snapshot.get("required_gate_paths", {})) if isinstance(snapshot.get("required_gate_paths"), Mapping) else {},
         "required_gate_workflow_ids": dict(snapshot.get("required_gate_workflow_ids", {})) if isinstance(snapshot.get("required_gate_workflow_ids"), Mapping) else {},
@@ -1542,7 +2881,7 @@ def _result(
         },
     }
     if latest is not None:
-        result["latest_workflows"] = _gate_projection(latest)
+        result["latest_workflows"] = _semantic_gate_projection(latest)
     return _seal(result)
 
 
@@ -1584,7 +2923,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         discussion = _discussion_items(snapshot)
         reviewers = _string_list(snapshot, "requested_reviewers")
         teams = _string_list(snapshot, "requested_team_reviewers")
-        intake = _canonical_review_intake(snapshot.get("review_intake"))
+        intake = _semantic_review_intake(snapshot.get("review_intake"))
         writers = _active_writers(snapshot)
         required, required_gate_paths, required_gate_workflow_ids, required_gate_events = (
             _required_gate_binding(snapshot)
@@ -1906,7 +3245,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
     )
     return _result(
         snapshot,
-        "APPROVE",
+        TECHNICAL_CONTINUE,
         None,
         "exact diff and scope inspected; deterministic findings are non-adverse; independent Code-Owner authority remains separate",
         findings=findings,
@@ -2318,16 +3657,44 @@ def select_review_subject(
 
 def _gh_runs(path: str) -> list[Mapping[str, Any]]:
     pages = _run_json(("gh", "api", "--paginate", "--slurp", path))
-    if not isinstance(pages, list):
-        raise ReviewObservationError("workflow-run response is not a list")
+    if not isinstance(pages, list) or not pages:
+        raise ReviewObservationError(
+            "workflow-run response is not a non-empty page list"
+        )
     result: list[Mapping[str, Any]] = []
+    declared_total: int | None = None
+    seen: set[int] = set()
     for page in pages:
         if not isinstance(page, Mapping) or not isinstance(page.get("workflow_runs"), list):
             raise ReviewObservationError("workflow-run page is malformed")
+        total = page.get("total_count")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise ReviewObservationError("workflow-run total_count is invalid")
+        if declared_total is None:
+            declared_total = total
+        elif declared_total != total:
+            raise ReviewObservationError(
+                "workflow-run total_count changed across pages"
+            )
         for item in page["workflow_runs"]:
             if not isinstance(item, Mapping):
                 raise ReviewObservationError("workflow run is not an object")
+            identifier = item.get("id")
+            if (
+                isinstance(identifier, bool)
+                or not isinstance(identifier, int)
+                or identifier < 1
+                or identifier in seen
+            ):
+                raise ReviewObservationError(
+                    "workflow-run pagination contains an invalid or duplicate id"
+                )
+            seen.add(identifier)
             result.append(item)
+    if declared_total != len(result):
+        raise ReviewObservationError(
+            f"workflow-run projection is incomplete: {len(result)} != {declared_total}"
+        )
     return result
 
 
@@ -2338,6 +3705,7 @@ def _gh_jobs(path: str) -> list[Mapping[str, Any]]:
         raise ReviewObservationError("workflow-job response is not a non-empty list")
     result: list[Mapping[str, Any]] = []
     declared_total: int | None = None
+    seen: set[int] = set()
     for page in pages:
         if not isinstance(page, Mapping) or not isinstance(page.get("jobs"), list):
             raise ReviewObservationError("workflow-job page is malformed")
@@ -2351,6 +3719,17 @@ def _gh_jobs(path: str) -> list[Mapping[str, Any]]:
         for item in page["jobs"]:
             if not isinstance(item, Mapping):
                 raise ReviewObservationError("workflow job is not an object")
+            identifier = item.get("id")
+            if (
+                isinstance(identifier, bool)
+                or not isinstance(identifier, int)
+                or identifier < 1
+                or identifier in seen
+            ):
+                raise ReviewObservationError(
+                    "workflow-job pagination contains an invalid or duplicate id"
+                )
+            seen.add(identifier)
             result.append(item)
     if declared_total != len(result):
         raise ReviewObservationError(
@@ -2611,6 +3990,7 @@ def _active_writer_observation(
     current_run_id: int,
     writer_names: set[str],
     relevant_heads: set[str],
+    trusted_requested_workflow_id: int,
 ) -> list[dict[str, Any]]:
     """Observe only writers that can still mutate this exact subject.
 
@@ -2628,17 +4008,56 @@ def _active_writer_observation(
         raise ReviewObservationError(
             "active writer relevant-head binding is invalid"
         )
+    if (
+        isinstance(trusted_requested_workflow_id, bool)
+        or not isinstance(trusted_requested_workflow_id, int)
+        or trusted_requested_workflow_id < 1
+    ):
+        raise ReviewObservationError(
+            "trusted requested-review workflow id is invalid"
+        )
     observed: dict[int, dict[str, Any]] = {}
     for status in ACTIVE_WRITER_STATES:
         for run in _gh_runs(
             f"repos/{repository}/actions/runs?status={status}&per_page=100"
         ):
             run_id = run.get("id")
-            if (
+            relevant_run = (
                 isinstance(run_id, int)
                 and run_id != current_run_id
-                and run.get("name") in writer_names
                 and run.get("head_sha") in relevant_heads
+            )
+            requested_review_executor = (
+                TRUSTED_WORKFLOW_NAME in writer_names
+                and run.get("path") == TRUSTED_WORKFLOW_PATH
+            )
+            if relevant_run and requested_review_executor:
+                workflow_id = run.get("workflow_id")
+                if (
+                    isinstance(workflow_id, bool)
+                    or not isinstance(workflow_id, int)
+                    or workflow_id < 1
+                ):
+                    raise ReviewObservationError(
+                        "requested-review executor active writer workflow id is invalid"
+                    )
+                if workflow_id != trusted_requested_workflow_id:
+                    raise ReviewObservationError(
+                        "requested-review executor active writer workflow id drifted"
+                    )
+                # The trusted workflow has one repository-wide `queue: max`
+                # concurrency group. Admission-state successors therefore
+                # cannot execute concurrently with this run and must not make
+                # the current, non-subsumed intake materialize WAIT. An
+                # unexpected second in-progress run remains a causal blocker.
+                if run.get("status") in SERIALIZED_REQUESTED_WRITER_ADMISSION_STATES:
+                    continue
+            if (
+                relevant_run
+                and (
+                    requested_review_executor
+                    or run.get("name") in writer_names
+                )
             ):
                 observed[run_id] = {
                     "id": run_id,
@@ -2723,6 +4142,21 @@ def observe_repository(
             raise ReviewObservationError(f"trusted workflow path mismatch: {gate}")
         gate_ids[gate] = int(workflow["id"])
 
+    requested_workflow = _gh_one(
+        f"repos/{repository}/actions/workflows/"
+        f"{urllib.parse.quote(pathlib.PurePosixPath(TRUSTED_WORKFLOW_PATH).name, safe='')}"
+    )
+    requested_workflow_id = requested_workflow.get("id")
+    if (
+        requested_workflow.get("path") != TRUSTED_WORKFLOW_PATH
+        or isinstance(requested_workflow_id, bool)
+        or not isinstance(requested_workflow_id, int)
+        or requested_workflow_id < 1
+    ):
+        raise ReviewObservationError(
+            "trusted requested-review workflow identity is invalid"
+        )
+
     threads = _thread_observation(repository, pr_number)
     discussion = _discussion_observation(repository, pr_number)
     runs = _workflow_observation(repository, head)
@@ -2731,6 +4165,7 @@ def observe_repository(
         current_run_id,
         set(writer_workflows),
         {main_sha, head},
+        requested_workflow_id,
     )
     final_main = _gh_one(f"repos/{repository}/commits/main")
     final_pr = _gh_one(f"repos/{repository}/pulls/{pr_number}")
@@ -2962,6 +4397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     observe_parser.add_argument("--snapshot-out", required=True)
     observe_parser.add_argument("--diff-out", required=True)
     observe_parser.add_argument("--receipt-out", required=True)
+    observe_parser.add_argument("--transport-provenance-out", required=True)
     verify_parser = commands.add_parser("verify")
     _add_observation_arguments(verify_parser)
     verify_parser.add_argument("--receipt", required=True)
@@ -2979,7 +4415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             diff = pathlib.Path(args.diff_file).read_bytes() if args.diff_file else None
             result = evaluate(_load(args.input), diff)
             print(json.dumps(result, sort_keys=True, indent=2))
-            return 0 if result.get("state") in {"WAIT", "APPROVE"} else 2
+            return 0 if result.get("state") in {"WAIT", TECHNICAL_CONTINUE} else 2
 
         required_gates = _json_argument(
             args.required_gates_json,
@@ -3008,12 +4444,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.expected_head or None,
                 event_context,
             )
+            transport_provenance = build_review_transport_provenance(
+                snapshot.get("review_intake"),
+                workflow_runs=snapshot.get("workflow_runs", []),
+                active_writers=snapshot.get("active_writers", []),
+            )
             result = evaluate(snapshot, diff)
             _write_json(pathlib.Path(args.snapshot_out), snapshot)
             diff_path = pathlib.Path(args.diff_out)
             diff_path.parent.mkdir(parents=True, exist_ok=True)
             diff_path.write_bytes(diff)
             _write_json(pathlib.Path(args.receipt_out), result)
+            _write_json(
+                pathlib.Path(args.transport_provenance_out),
+                transport_provenance,
+            )
             print(json.dumps(result, sort_keys=True, indent=2))
             return 0
 

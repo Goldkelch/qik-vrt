@@ -1,0 +1,42 @@
+{
+  "schema": "qikvrt_mlp_firefox_live_observation_v1",
+  "version": "1.0",
+  "status": "NORMATIVE",
+  "stack": {
+    "firefox_terminal_predecessor": "e48f50a0419bea9bbdcca47a7673356d372f7400",
+    "guest_tcpip_proof_head": "a71484ba02f6ebe9169af5a291244e99468caec3",
+    "guest_tcpip_proof_tree": "b45556a6c4ea2d9946c73264c1ed47d4f3128a76",
+    "mlp_tos_sha256": "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e"
+  },
+  "canonical_source": {
+    "binding_policy": "policy/CANONICAL_UPSTREAM_REMOTE_V1.json",
+    "repository_role": "AUTHORITY",
+    "repository": "Goldkelch/qik-vrt",
+    "pull_request_ref": "refs/pull/745/head",
+    "candidate_repositories": [
+      "Goldkelch/qik-vrt",
+      "ingolf-lohmann/qik-vrt"
+    ],
+    "local_origin_is_source_authority": false
+  },
+  "required_observation": {
+    "real_firefox_process": true,
+    "loopback_only": true,
+    "javascript_witness": true,
+    "color_screenshot": true,
+    "exact_head_receipt": true
+  },
+  "state_separation": {
+    "browser_rendering_observed": true,
+    "effect_ack_done": false,
+    "protected_external_effect": false,
+    "physical_megast_execution": false
+  },
+  "fail_closed": {
+    "head_drift": "HOLD",
+    "mlp_digest_mismatch": "HOLD",
+    "missing_firefox": "HOLD",
+    "missing_javascript_witness": "HOLD",
+    "missing_or_invalid_screenshot": "HOLD"
+  }
+}

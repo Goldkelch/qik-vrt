@@ -1,44 +1,122 @@
 name: QIKVRT main ruleset reconciler
+# This administrative workflow is deliberately manual-only. Repository
+# automation may preserve a D0=3 Authority HOLD, but it has no delegation to
+# dispatch this workflow or mutate branch-protection state.
+run-name: QIKVRT ruleset manual run=${{ github.run_id }} attempt=${{ github.run_attempt }}
 
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types:
-      - qikvrt_ruleset_reconcile
 
 permissions:
   contents: read
 
 concurrency:
-  group: qikvrt-main-ruleset-reconciler
+  group: qikvrt-main-ruleset-manual-authority
+  queue: max
   cancel-in-progress: false
 
 jobs:
   reconcile:
-    if: github.ref_name == 'main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.workflow_sha == github.sha
+    environment: qikvrt-ruleset-authority
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Check out trusted main
+      - name: Check out the exact trusted manual reconciler
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Reconcile exact ruleset and require post-effect readback
+
+      - name: Bind the sealed evaluator to live main without admin authority
         env:
-          QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SEALED_EVALUATOR: ${{ github.workflow_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B tools/qikvrt_ruleset_reconcile.py \
-            --apply \
-            --receipt "$RUNNER_TEMP/qikvrt-main-ruleset-receipt.json"
-      - name: Preserve exact reconciliation receipt
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SEALED_EVALUATOR"
+          live_main="$(python3 -B - <<'PY'
+          import os
+          from tools.qikvrt_ruleset_reconcile import github_get
+          value=github_get(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/ref/heads/main",
+              os.environ.get("GH_TOKEN",""),
+          )
+          print(value["object"]["sha"])
+          PY
+          )"
+          test "$live_main" = "$SEALED_EVALUATOR"
+
+      - name: Reconcile through the protected manual Authority boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SEALED_EVALUATOR: ${{ github.workflow_sha }}
+          QIKVRT_ENV_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_ENV_RULESET_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          admin_token="${QIKVRT_ENV_RULESET_ADMIN_TOKEN-}"
+          unset QIKVRT_ENV_RULESET_ADMIN_TOKEN
+          test -n "$admin_token"
+          root="$RUNNER_TEMP/qikvrt-main-ruleset-reconcile"
+          mkdir -p "$root"
+
+          # The secret is now a non-exported shell value. The evaluator/main
+          # fence executes without it; only the fixed reconcile process receives
+          # the credential.
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SEALED_EVALUATOR"
+          live_main="$(python3 -B - <<'PY'
+          import os
+          from tools.qikvrt_ruleset_reconcile import github_get
+          value=github_get(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/ref/heads/main",
+              os.environ.get("GH_TOKEN",""),
+          )
+          print(value["object"]["sha"])
+          PY
+          )"
+          test "$live_main" = "$SEALED_EVALUATOR"
+
+          set +e
+          QIKVRT_ENV_RULESET_ADMIN_TOKEN="$admin_token" \
+            python3 -B tools/qikvrt_ruleset_reconcile.py \
+              --apply --receipt "$root/reconcile-receipt.json"
+          reconcile_rc=$?
+          set -e
+          unset admin_token
+          case "$reconcile_rc" in
+            0) jq -e '.state == "CURRENT"' "$root/reconcile-receipt.json" >/dev/null ;;
+            *) cat "$root/reconcile-receipt.json" >&2; exit "$reconcile_rc" ;;
+          esac
+
+          # The tool performs the immediate GET-before-PUT and exact post-effect
+          # ruleset readback. This ordinary-token check additionally ensures
+          # that main did not move across the protected effect.
+          live_main_after="$(python3 -B - <<'PY'
+          import os
+          from tools.qikvrt_ruleset_reconcile import github_get
+          value=github_get(
+              f"https://api.github.com/repos/{os.environ['REPOSITORY']}/git/ref/heads/main",
+              os.environ.get("GH_TOKEN",""),
+          )
+          print(value["object"]["sha"])
+          PY
+          )"
+          test "$live_main_after" = "$SEALED_EVALUATOR"
+
+      - name: Preserve the exact manual reconciliation receipt
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: qikvrt-main-ruleset-receipt-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qikvrt-main-ruleset-receipt.json
+          path: ${{ runner.temp }}/qikvrt-main-ruleset-reconcile
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 90

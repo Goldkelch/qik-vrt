@@ -72,6 +72,56 @@
       ],
       "version": "same-as-ffmpeg"
     },
+    "firefox": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml",
+        "tools/qikvrt_atari_firefox_e2e.py",
+        "tests/test_qikvrt_atari_firefox_e2e.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "GitHub-hosted Ubuntu runner Firefox runtime",
+      "trusted_save": false,
+      "verification": [
+        "firefox --version",
+        "isolated WebDriver session",
+        "candidate terminal DOM and screenshot observation"
+      ],
+      "version": "reported-version"
+    },
+    "geckodriver": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml",
+        "tools/qikvrt_atari_firefox_e2e.py",
+        "tests/test_qikvrt_atari_firefox_e2e.py"
+      ],
+      "cache_class": "ecosystem-cache",
+      "cache_locations": [
+        "github-actions-cache:geckodriver-v0.37.1-linux64",
+        "mozilla-github-release:geckodriver-v0.37.1-linux64"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "Mozilla GitHub release asset verified against release SHA-256 metadata",
+      "trusted_save": true,
+      "verification": [
+        "release asset SHA-256 metadata",
+        "archive SHA-256 verification before extraction",
+        "geckodriver --version exact v0.37.1",
+        "isolated WebDriver status endpoint"
+      ],
+      "version": "0.37.1"
+    },
     "gh": {
       "authority_files": [
         "runtime/toolchains/TOOLCHAIN.lock.tsv",
@@ -100,6 +150,30 @@
         "execution self-test"
       ],
       "version": "2.96.0"
+    },
+    "hatari": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml",
+        "MLP.TOS/Hatari"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "ubuntu-24.04-archive-package:hatari",
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "Ubuntu 24.04 archive package with exact runtime version check",
+      "trusted_save": false,
+      "verification": [
+        "hatari --version contains Hatari v2.4.1",
+        "bound EmuTOS ROM digest",
+        "MLP.TOS virtual Mega ST receipt"
+      ],
+      "version": "2.4.1"
     },
     "lean": {
       "authority_files": [
@@ -153,6 +227,29 @@
         "test execution"
       ],
       "version": "24.x"
+    },
+    "openssl": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml",
+        "tools/qikvrt_candidate_tls_server.py",
+        "tests/test_qikvrt_candidate_tls_server.py"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "GitHub-hosted Ubuntu runner OpenSSL runtime",
+      "trusted_save": false,
+      "verification": [
+        "openssl version",
+        "ephemeral localhost-only candidate TLS certificate"
+      ],
+      "version": "reported-version"
     },
     "poppler": {
       "authority_files": [
@@ -329,6 +426,51 @@
         "renderer self-test"
       ],
       "version": "3.34.0"
+    },
+    "xvfb": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml",
+        "MLP.TOS/Hatari"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "ubuntu-24.04-archive-package:xvfb",
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "Ubuntu 24.04 runner virtual display runtime",
+      "trusted_save": false,
+      "verification": [
+        "authenticated Xvfb process startup",
+        "Firefox X11 terminal screenshot and Hatari trace contract"
+      ],
+      "version": "reported-version"
+    },
+    "xauth": {
+      "authority_files": [
+        "runtime/toolchains/TOOLCHAIN.lock.tsv",
+        "tools/bootstrap-runtime.sh",
+        ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
+      ],
+      "cache_class": "runner-image-layer",
+      "cache_locations": [
+        "ubuntu-24.04-archive-package:xauth",
+        "github-hosted-runner-image:ubuntu-24.04"
+      ],
+      "profiles": [
+        "browser"
+      ],
+      "provider": "Ubuntu 24.04 archive package required by xvfb-run authentication",
+      "trusted_save": false,
+      "verification": [
+        "xauth -V",
+        "authenticated Xvfb process startup"
+      ],
+      "version": "reported-version"
     },
     "zod": {
       "authority_files": [

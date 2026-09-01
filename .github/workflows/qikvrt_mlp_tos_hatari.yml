@@ -1,0 +1,203 @@
+name: QIKVRT MLP.TOS Hatari continuous delivery
+
+on:
+  pull_request:
+    paths:
+      - 'MLP.TOS/**'
+      - 'tools/qikvrt_mlp_tos_hatari.py'
+      - 'tests/test_qikvrt_mlp_tos_hatari.py'
+      - 'docs/MLP_TOS_HATARI_CONTINUOUS_DELIVERY.md'
+      - '.github/workflows/qikvrt_mlp_tos_hatari.yml'
+      - 'runtime/megast/mlp_kernel_68000.s'
+      - 'runtime/megast/mlp_main_ansic.c'
+      - 'runtime/host/mlp_host_ansic.c'
+  push:
+    branches:
+      - main
+    paths:
+      - 'MLP.TOS/**'
+      - 'tools/qikvrt_mlp_tos_hatari.py'
+      - 'tests/test_qikvrt_mlp_tos_hatari.py'
+      - 'docs/MLP_TOS_HATARI_CONTINUOUS_DELIVERY.md'
+      - '.github/workflows/qikvrt_mlp_tos_hatari.yml'
+      - 'runtime/megast/mlp_kernel_68000.s'
+      - 'runtime/megast/mlp_main_ansic.c'
+      - 'runtime/host/mlp_host_ansic.c'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qikvrt-mlp-tos-hatari-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize-and-observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact source checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'expected_head=%s\nactual_head=%s\n' "$EXPECTED_HEAD" "$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Verify deterministic builder, committed binary and delivery contract
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_mlp_tos_hatari
+
+      - name: Regenerate exact MLP.TOS and bind source head/tree
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-mlp-tos
+          tree="$(git rev-parse HEAD^{tree})"
+          python3 -B tools/qikvrt_mlp_tos_hatari.py \
+            --output /tmp/qikvrt-mlp-tos/MLP.TOS \
+            --receipt /tmp/qikvrt-mlp-tos/MLP_TOS_BUILD_RECEIPT.json \
+            --source-head "$HEAD_SHA" \
+            --source-tree "$tree"
+          cmp MLP.TOS/MLP.TOS /tmp/qikvrt-mlp-tos/MLP.TOS
+          (cd MLP.TOS && sha256sum -c MLP.TOS.sha256)
+          sha256sum /tmp/qikvrt-mlp-tos/MLP.TOS | tee /tmp/qikvrt-mlp-tos/MLP.TOS.sha256
+
+      - name: Install and bind Hatari 2.4.1
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends hatari xvfb curl unzip
+          hatari --version >/tmp/qikvrt-mlp-tos/hatari-version.txt 2>&1 || true
+          cat /tmp/qikvrt-mlp-tos/hatari-version.txt
+          grep -F 'Hatari v2.4.1' /tmp/qikvrt-mlp-tos/hatari-version.txt
+
+      - name: Acquire and verify exact EmuTOS 1.4 ROM
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikvrt-mlp-tos/emutos
+          curl --fail --location --retry 3 \
+            'https://downloads.sourceforge.net/project/emutos/emutos/1.4/emutos-512k-1.4.zip' \
+            -o /tmp/qikvrt-mlp-tos/emutos/emutos-512k-1.4.zip
+          printf '%s  %s\n' \
+            '1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663' \
+            '/tmp/qikvrt-mlp-tos/emutos/emutos-512k-1.4.zip' | sha256sum -c -
+          unzip -q /tmp/qikvrt-mlp-tos/emutos/emutos-512k-1.4.zip \
+            -d /tmp/qikvrt-mlp-tos/emutos/unpacked
+          rom='/tmp/qikvrt-mlp-tos/emutos/unpacked/emutos-512k-1.4/etos512ca.img'
+          test -f "$rom"
+          printf '%s  %s\n' \
+            'f810041373d8efe15d55ec049fd4dd9be9b0fc521bbe6416b99d833f7fd6805d' \
+            "$rom" | sha256sum -c -
+          printf '%s\n' "$rom" > /tmp/qikvrt-mlp-tos/emutos/rom.path
+          sha256sum /tmp/qikvrt-mlp-tos/emutos/emutos-512k-1.4.zip \
+            | tee /tmp/qikvrt-mlp-tos/emutos/archive.sha256
+          sha256sum "$rom" | tee /tmp/qikvrt-mlp-tos/emutos/rom.sha256
+
+      - name: Execute and observe exact MLP.TOS in Hatari Mega ST
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMUTOS_ROM="$(cat /tmp/qikvrt-mlp-tos/emutos/rom.path)" \
+          MLP_TOS=/tmp/qikvrt-mlp-tos/MLP.TOS \
+          MLP_TOS_CHECKSUM=MLP.TOS/MLP.TOS.sha256 \
+          QIKVRT_MLP_WORKDIR=/tmp/qikvrt-mlp-tos/execution \
+            MLP.TOS/Hatari
+
+      - name: Emit exact-head Hatari execution receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          export TREE_SHA="$(git rev-parse HEAD^{tree})"
+          export BINARY_SHA="$(sha256sum /tmp/qikvrt-mlp-tos/MLP.TOS | awk '{print $1}')"
+          export OPEN_SHA="$(sha256sum /tmp/qikvrt-mlp-tos/execution/drive/C/MLP.OPEN | awk '{print $1}')"
+          export TRACE_SHA="$(sha256sum /tmp/qikvrt-mlp-tos/execution/hatari.log | awk '{print $1}')"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "qikvrt_mlp_tos_hatari_execution_receipt_v1",
+              "repository": os.environ["REPOSITORY"],
+              "source_head": os.environ["HEAD_SHA"],
+              "source_tree": os.environ["TREE_SHA"],
+              "event": os.environ["EVENT_NAME"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "binary_path": "MLP.TOS/MLP.TOS",
+              "binary_sha256": os.environ["BINARY_SHA"],
+              "binary_size": 341,
+              "request_path": "C:\\MLP.OPEN",
+              "request_frame_sha256": os.environ["OPEN_SHA"],
+              "trace_sha256": os.environ["TRACE_SHA"],
+              "register_contract": {"D0": 3, "D1": 3, "D2": 1},
+              "machine": "Atari Mega ST",
+              "cpu": "Motorola 68000",
+              "cpu_clock_mhz": 8,
+              "addressing": "24-bit",
+              "ram_mib": 1,
+              "hatari_version": "2.4.1",
+              "emutos_version": "1.4",
+              "emutos_archive_sha256": "1ef7bd25f61bcfc66d19debc2f0ebb0d5e5ba811ccd7f0fddfcb105bb72d1663",
+              "emutos_rom_sha256": "f810041373d8efe15d55ec049fd4dd9be9b0fc521bbe6416b99d833f7fd6805d",
+              "megast_virtual_execution_observed": True,
+              "physical_megast_execution": False,
+              "browser_execution_observed": False,
+              "effect_ack_done": False,
+          }
+          path = Path('/tmp/qikvrt-mlp-tos/MLP_TOS_HATARI_EXECUTION_RECEIPT.json')
+          path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding='utf-8')
+          print(path.read_text(encoding='utf-8'), end='')
+          PY
+
+      - name: Preserve continuously reproducible MLP.TOS and Hatari evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: qikvrt-mlp-tos-hatari-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            MLP.TOS/Hatari
+            MLP.TOS/MLP.TOS
+            MLP.TOS/MLP.TOS.sha256
+            MLP.TOS/MLP_TOS_HATARI_V1.json
+            /tmp/qikvrt-mlp-tos/MLP.TOS
+            /tmp/qikvrt-mlp-tos/MLP.TOS.sha256
+            /tmp/qikvrt-mlp-tos/MLP_TOS_BUILD_RECEIPT.json
+            /tmp/qikvrt-mlp-tos/MLP_TOS_HATARI_EXECUTION_RECEIPT.json
+            /tmp/qikvrt-mlp-tos/hatari-version.txt
+            /tmp/qikvrt-mlp-tos/execution/receipt.env
+            /tmp/qikvrt-mlp-tos/execution/hatari.log
+            /tmp/qikvrt-mlp-tos/execution/drive/C/MLP.OPEN
+            /tmp/qikvrt-mlp-tos/emutos/archive.sha256
+            /tmp/qikvrt-mlp-tos/emutos/rom.sha256
+          if-no-files-found: warn
+          retention-days: 30

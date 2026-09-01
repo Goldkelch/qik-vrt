@@ -165,7 +165,7 @@ def main() -> int:
     parser.add_argument(
         "--profile",
         default="all",
-        choices=("core", "ietf", "formal", "audio", "publication", "all"),
+        choices=("core", "ietf", "formal", "audio", "browser", "publication", "all"),
         help="runtime profile checked without installation",
     )
     parser.add_argument("--task", default="", help="task label recorded in the boot report")

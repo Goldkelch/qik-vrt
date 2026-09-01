@@ -1,48 +1,603 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIK-VRT autonomous exact-head verification
+run-name: qikvrt-exact-head-pr-${{ github.event.client_payload.subject.pull_request }}-sha-${{ github.event.client_payload.subject.head_sha }}-producer-${{ github.event.client_payload.producer.run_id }}-${{ github.event.client_payload.producer.run_attempt }}-attempt-${{ github.event.client_payload.transport.attempt }}-intent=${{ github.event.client_payload.transport.intent_sha256 }}-seq=${{ github.event.client_payload.transport.sequence }}-transport-attempt=${{ github.event.client_payload.transport.attempt }}
 
 on:
   repository_dispatch:
     types: [qikvrt_autonomous_exact_head_verify]
 
-permissions:
-  actions: write
-  contents: read
-  pull-requests: write
-  statuses: write
+# Candidate-owned bytes never share a token with a repository write effect.
+permissions: {}
 
 concurrency:
-  group: qikvrt-autonomous-exact-head-${{ github.event.client_payload.pull_request }}-${{ github.event.client_payload.head_sha }}
+  group: qikvrt-autonomous-exact-head-${{ github.event.client_payload.subject.pull_request }}-${{ github.event.client_payload.subject.head_sha }}
+  queue: max
   cancel-in-progress: false
 
+env:
+  DISPATCH_ACTION: ${{ github.event.action }}
+  DISPATCH_SCHEMA: ${{ github.event.client_payload.schema }}
+  CAUSAL_ATTEMPT: ${{ github.event.client_payload.causal.attempt }}
+  CAUSAL_D0: ${{ github.event.client_payload.causal.d0 }}
+  CAUSAL_STATE: ${{ github.event.client_payload.causal.state }}
+  CAUSAL_PRODUCTIVE_EFFECT: ${{ github.event.client_payload.causal.productive_effect }}
+  TRANSPORT_INTENT_SHA256: ${{ github.event.client_payload.transport.intent_sha256 }}
+  TRANSPORT_SEQUENCE: ${{ github.event.client_payload.transport.sequence }}
+  TRANSPORT_ATTEMPT: ${{ github.event.client_payload.transport.attempt }}
+
 jobs:
-  verify:
+  bind-dispatch:
+    name: Bind exact trusted dispatch subject
+    # This job executes only default-main workflow bytes.  It can read the live
+    # subject and trusted producer evidence and upload one binding receipt; it
+    # has no pull-request, status, or repository-content write permission.
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 10
+    environment: qikvrt-outbox-ledger-authority
+    outputs:
+      artifact_id: ${{ steps.binding_evidence.outputs.artifact-id }}
+      artifact_digest: ${{ steps.binding_evidence.outputs.artifact-digest }}
+      producer_artifact_id: ${{ steps.bind.outputs.producer_artifact_id }}
+      producer_artifact_digest: ${{ steps.bind.outputs.producer_artifact_digest }}
+      verifier_workflow_id: ${{ steps.bind.outputs.verifier_workflow_id }}
+      binding_run_attempt: ${{ steps.bind.outputs.binding_run_attempt }}
+      outbox_sequence: ${{ steps.bind.outputs.outbox_sequence }}
+      outbox_fingerprint: ${{ steps.bind.outputs.outbox_fingerprint }}
+      outbox_transport_attempt: ${{ steps.bind.outputs.outbox_transport_attempt }}
+      outbox_acceptance_exists: ${{ steps.bind.outputs.outbox_acceptance_exists }}
     env:
       TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
-      TARGET_PR: ${{ github.event.client_payload.pull_request }}
-      TARGET_REF: ${{ github.event.client_payload.head_ref }}
-      TARGET_SHA: ${{ github.event.client_payload.head_sha }}
-      TARGET_BASE_SHA: ${{ github.event.client_payload.base_sha }}
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_HEAD_REPOSITORY: ${{ github.event.client_payload.subject.head_repository }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PRODUCER_RUN_ID: ${{ github.event.client_payload.producer.run_id }}
+      PRODUCER_RUN_ATTEMPT: ${{ github.event.client_payload.producer.run_attempt }}
+      PRODUCER_WORKFLOW_ID: ${{ github.event.client_payload.producer.workflow_id }}
+      PRODUCER_WORKFLOW_PATH: ${{ github.event.client_payload.producer.workflow_path }}
+      PRODUCER_WORKFLOW_SHA: ${{ github.event.client_payload.producer.workflow_sha }}
     steps:
-      - name: Validate dispatch envelope
+      - name: Check out exact trusted verifier revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Read exact dispatch slot with Auditor-only authority
+        env:
+          LEDGER_AUDITOR_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auditor_token="${LEDGER_AUDITOR_TOKEN-}"
+          writer_actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_AUDITOR_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$auditor_token"
+          [[ "$writer_actor" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSPORT_INTENT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$TRANSPORT_SEQUENCE" =~ ^[1-9][0-9]*$ ]]
+          QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN="$auditor_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --receipt "$RUNNER_TEMP/binding-outbox-next.json" \
+            lookup --lane exact-head-dispatch --sequence "$TRANSPORT_SEQUENCE" \
+            --fingerprint "$TRANSPORT_INTENT_SHA256" >/dev/null
+          unset auditor_token
+
+      - name: Bind dispatch producer and exact live subject
+        id: bind
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = repository_dispatch
+          test "$DISPATCH_ACTION" = qikvrt_autonomous_exact_head_verify
+          test "$DISPATCH_SCHEMA" = qikvrt_autonomous_exact_head_verify_dispatch_v1
+          test "$CAUSAL_ATTEMPT" = 1
+          test "$CAUSAL_D0" -eq 2
+          test "$CAUSAL_STATE" = REOBSERVE
+          test "$CAUSAL_PRODUCTIVE_EFFECT" = false
+          [[ "$TRANSPORT_INTENT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$TRANSPORT_SEQUENCE" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSPORT_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_REF" = "${GITHUB_REPOSITORY}/.github/workflows/qikvrt_autonomous_exact_head_verify.yml@refs/heads/main"
           test "$TARGET_REPOSITORY" = "$GITHUB_REPOSITORY"
-          test "${#TARGET_SHA}" -eq 40
-          test "${#TARGET_BASE_SHA}" -eq 40
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" --jq '.head.sha')"
-          test "$current" = "$TARGET_SHA"
+          test "$TARGET_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$TARGET_BASE_REF" = main
+
+          jq -e '
+            (.client_payload | keys) == ["causal","producer","repository","schema","subject","transport"] and
+            (.client_payload.subject | keys) == ["base_ref","base_sha","head_ref","head_repository","head_sha","head_tree_sha","pull_request"] and
+            (.client_payload.producer | keys) == ["run_attempt","run_id","workflow_id","workflow_path","workflow_sha"] and
+            (.client_payload.causal | keys) == ["attempt","d0","productive_effect","state"] and
+            (.client_payload.transport | keys) == ["attempt","intent_sha256","sequence"] and
+            (.client_payload.transport.intent_sha256 | test("^[0-9a-f]{64}$")) and
+            (.client_payload.transport.sequence | type) == "number" and
+            .client_payload.transport.sequence > 0 and
+            .client_payload.transport.attempt == 1 and
+            .client_payload.causal.attempt == 1 and
+            .client_payload.causal.d0 == 2 and
+            .client_payload.causal.state == "REOBSERVE" and
+            .client_payload.causal.productive_effect == false
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          for value in "$TARGET_SHA" "$TARGET_TREE_SHA" "$TARGET_BASE_SHA" "$PRODUCER_WORKFLOW_SHA" "$GITHUB_WORKFLOW_SHA"; do
+            [[ "$value" =~ ^[0-9a-f]{40}$ ]]
+          done
+          for value in "$TARGET_PR" "$PRODUCER_RUN_ID" "$PRODUCER_RUN_ATTEMPT" "$PRODUCER_WORKFLOW_ID" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"; do
+            [[ "$value" =~ ^[1-9][0-9]*$ ]]
+          done
+          [[ "$TARGET_REF" =~ ^[^[:space:]]+$ ]]
+          test "$PRODUCER_WORKFLOW_PATH" = '.github/workflows/qikvrt_autonomous_pr_head_continuation.yml'
+
+          verifier_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_exact_head_verify.yml")"
+          verifier_workflow_id="$(jq -r '.id' <<<"$verifier_workflow")"
+          [[ "$verifier_workflow_id" =~ ^[1-9][0-9]*$ ]]
+          jq -e '
+            .path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" and
+            .state == "active"
+          ' <<<"$verifier_workflow" >/dev/null
+          verifier_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          jq -e \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson workflow_id "$verifier_workflow_id" \
+            --arg path '.github/workflows/qikvrt_autonomous_exact_head_verify.yml' \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $run_attempt and
+            .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+            .event == "repository_dispatch" and .head_branch == "main" and
+            .head_sha == $workflow_sha and .repository.full_name == $repository
+          ' <<<"$verifier_run" >/dev/null
+
+          producer_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_pr_head_continuation.yml")"
+          jq -e \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" '
+            .id == $workflow_id and .path == $path and .state == "active"
+          ' <<<"$producer_workflow" >/dev/null
+          # Bind the immutable producer attempt, not the mutable latest-attempt
+          # view.  Once this exact repository_dispatch exists, its payload plus
+          # the pre-dispatch intent proves server acceptance even if the runner
+          # was cancelled before the POST command returned.
+          producer="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}")"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson attempt "$PRODUCER_RUN_ATTEMPT" \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" \
+            --arg workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $attempt and
+            .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+            .repository.full_name == $repository and
+            ((.event == "pull_request_target" and $workflow_sha == $base and
+              .head_sha == $base and .head_branch == $base_ref and
+              ([.pull_requests[]? | select(
+                .number == ($pr|tonumber) and
+                .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and
+                .base.ref == $base_ref and .base.sha == $base
+              )] | length) == 1) or
+             ((.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch") and
+              .head_branch == "main" and .head_sha == $workflow_sha))
+          ' <<<"$producer" >/dev/null
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}/jobs?filter=all&per_page=100" \
+            > "$RUNNER_TEMP/binding-producer-job-pages.json"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson run_attempt "$PRODUCER_RUN_ATTEMPT" '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .jobs[]] | length) == .[0].total_count and
+            ([.[] | .jobs[] | select(
+              .name == "Preserve exact-head transport intent before dispatch" and
+              .run_id == $run_id and .run_attempt == $run_attempt and
+              .status == "completed" and .conclusion == "success"
+            )] | length) == 1
+          ' "$RUNNER_TEMP/binding-producer-job-pages.json" >/dev/null
+
+          # The non-main FIFO is the durable pre-effect authority.  It seals the
+          # request bytes, original artifact identity, and ordinal independently
+          # of Actions artifact retention.  The event itself carries the exact
+          # immutable FIFO locator; never infer its attempt from a newer ledger
+          # state because attempt-one delivery may be delayed past attempt two.
+          test -f "$RUNNER_TEMP/binding-outbox-next.json"
+          python3 - "$RUNNER_TEMP/binding-outbox-next.json" \
+            "$RUNNER_TEMP/binding-dispatch-request.json" "$TRANSPORT_ATTEMPT" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          from tools.qikvrt_ruleset_outbox import request_for_transport_attempt
+
+          source, target, raw_attempt = sys.argv[1:]
+          item = json.loads(pathlib.Path(source).read_text(encoding="utf-8"))
+          request = request_for_transport_attempt(item["intent"], int(raw_attempt))
+          pathlib.Path(target).write_text(
+              json.dumps(request, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          jq -e --slurpfile event "$GITHUB_EVENT_PATH" \
+            --slurpfile request "$RUNNER_TEMP/binding-dispatch-request.json" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg intent "$TRANSPORT_INTENT_SHA256" --arg sequence "$TRANSPORT_SEQUENCE" \
+            --arg attempt "$TRANSPORT_ATTEMPT" '
+            (.lookup_state == "PENDING" or .lookup_state == "TERMINAL") and
+            .lane == "exact-head-dispatch" and
+            .sequence == ($sequence|tonumber) and .fingerprint == $intent and
+            .intent.payload.request.event_type == "qikvrt_autonomous_exact_head_verify" and
+            $request[0].client_payload == $event[0].client_payload and
+            .intent.payload.producer.run_id == ($producer_run_id|tonumber) and
+            .intent.payload.producer.run_attempt == ($producer_run_attempt|tonumber) and
+            .intent.payload.producer.workflow_id == ($producer_workflow_id|tonumber) and
+            .intent.payload.producer.workflow_sha == $producer_workflow_sha and
+            .intent.artifact.producer_run_id == ($producer_run_id|tonumber) and
+            .intent.artifact.producer_run_attempt == ($producer_run_attempt|tonumber) and
+            .intent.artifact.producer_workflow_id == ($producer_workflow_id|tonumber) and
+            .transport[$attempt].state == "PRE_EFFECT_REOBSERVED" and
+            (((.lookup_state == "PENDING") and
+              (($attempt == "1" and (.acceptance | length) == 0) or
+               ($attempt == "2" and
+                (.acceptance | length) == 0))) or
+             (.acceptance[$attempt].child.run_id == ($ENV.GITHUB_RUN_ID|tonumber) and
+              .acceptance[$attempt].child.run_attempt == 1 and
+              ($ENV.GITHUB_RUN_ATTEMPT|tonumber) == 2))
+          ' "$RUNNER_TEMP/binding-outbox-next.json" >/dev/null
+          producer_artifact_id="$(jq -r '.intent.artifact.id' "$RUNNER_TEMP/binding-outbox-next.json")"
+          producer_artifact_digest="sha256:$(jq -r '.intent.artifact.archive_sha256' "$RUNNER_TEMP/binding-outbox-next.json")"
+          outbox_acceptance_exists="$(jq -r --arg attempt "$TRANSPORT_ATTEMPT" \
+            'if .acceptance[$attempt] == null then "false" else "true" end' \
+            "$RUNNER_TEMP/binding-outbox-next.json")"
+          [[ "$producer_artifact_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$producer_artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$outbox_acceptance_exists" =~ ^(true|false)$ ]]
+          jq -n --slurpfile request "$RUNNER_TEMP/binding-dispatch-request.json" \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" --arg causal_attempt "$CAUSAL_ATTEMPT" \
+            --arg request_sha256 "$(sha256sum "$RUNNER_TEMP/binding-dispatch-request.json" | cut -d' ' -f1)" '
+            {schema:"qikvrt.autonomous-exact-head-transport-intent.v1",repository:$repository,pull_request:($pr|tonumber),head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base,producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha},attempt:($causal_attempt|tonumber),request_sha256:$request_sha256,productive_effect:false,effect_ack:"NOT_REQUIRED"}
+          ' > "$RUNNER_TEMP/binding-dispatch-intent.json"
+          outbox_sequence="$TRANSPORT_SEQUENCE"
+          outbox_fingerprint="$TRANSPORT_INTENT_SHA256"
+          outbox_transport_attempt="$TRANSPORT_ATTEMPT"
+          [[ "$outbox_sequence" =~ ^[1-9][0-9]*$ ]]
+          [[ "$outbox_fingerprint" =~ ^[0-9a-f]{64}$ ]]
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" > "$RUNNER_TEMP/binding-pr.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' "$RUNNER_TEMP/binding-pr.json" >/dev/null
+          observed_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')"
+          test "$observed_tree" = "$TARGET_TREE_SHA"
+
+          binding_root="$RUNNER_TEMP/qikvrt-exact-head-binding"
+          mkdir -p "$binding_root"
+          # Seal the accepted event's exact producer request and intent into the
+          # verifier-owned binding artifact.  Downstream observers can therefore
+          # validate the immutable accepted transport after the producer artifact
+          # expires or the transport-only source run is rerun.
+          cp "$RUNNER_TEMP/binding-dispatch-request.json" "$binding_root/producer-request.json"
+          cp "$RUNNER_TEMP/binding-dispatch-intent.json" "$binding_root/producer-intent.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" \
+            --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg producer_artifact_id "$producer_artifact_id" \
+            --arg producer_artifact_digest "$producer_artifact_digest" \
+            --arg sealed_request_sha256 "$(sha256sum "$binding_root/producer-request.json" | cut -d' ' -f1)" \
+            --arg sealed_intent_sha256 "$(sha256sum "$binding_root/producer-intent.json" | cut -d' ' -f1)" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" --arg outbox_fingerprint "$outbox_fingerprint" \
+            --arg outbox_sequence "$outbox_sequence" --arg outbox_attempt "$outbox_transport_attempt" '
+            {
+              schema:"qikvrt.autonomous-exact-head-dispatch-binding.v1",
+              repository:$repository,
+              pull_request:($pr|tonumber),
+              head_repository:$head_repository,
+              head_ref:$head_ref,
+              head_sha:$head,
+              head_tree_sha:$tree,
+              base_ref:$base_ref,
+              base_sha:$base,
+              run_id:($run_id|tonumber),
+              run_attempt:($run_attempt|tonumber),
+              workflow_ref:$workflow_ref,
+              workflow_sha:$workflow_sha,
+              producer:{
+                run_id:($producer_run_id|tonumber),
+                run_attempt:($producer_run_attempt|tonumber),
+                workflow_id:($producer_workflow_id|tonumber),
+                workflow_path:$producer_workflow_path,
+                workflow_sha:$producer_workflow_sha,
+                continuation_artifact:{
+                  id:($producer_artifact_id|tonumber),
+                  digest:$producer_artifact_digest
+                },
+                sealed_transport:{
+                  request_file:"producer-request.json",
+                  request_sha256:$sealed_request_sha256,
+                  intent_file:"producer-intent.json",
+                  intent_sha256:$sealed_intent_sha256
+                }
+              },
+              causal:{attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false},
+              transport:{intent_sha256:$outbox_fingerprint,sequence:($outbox_sequence|tonumber),attempt:($outbox_attempt|tonumber)},
+              classification:"TRUSTED_DISPATCH_BINDING_ONLY",
+              trusted_terminal_verification:false,
+              productive_effect:false
+            }
+          ' > "$binding_root/binding.json"
+          echo "producer_artifact_id=$producer_artifact_id" >> "$GITHUB_OUTPUT"
+          echo "producer_artifact_digest=$producer_artifact_digest" >> "$GITHUB_OUTPUT"
+          echo "verifier_workflow_id=$verifier_workflow_id" >> "$GITHUB_OUTPUT"
+          echo "binding_run_attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "outbox_sequence=$outbox_sequence" >> "$GITHUB_OUTPUT"
+          echo "outbox_fingerprint=$outbox_fingerprint" >> "$GITHUB_OUTPUT"
+          echo "outbox_transport_attempt=$outbox_transport_attempt" >> "$GITHUB_OUTPUT"
+          echo "outbox_acceptance_exists=$outbox_acceptance_exists" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve exact trusted dispatch binding
+        id: binding_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-head-binding-${{ github.event.client_payload.subject.pull_request }}-${{ github.event.client_payload.subject.head_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: ${{ runner.temp }}/qikvrt-exact-head-binding
+
+  accept-exact-head-outbox-transport:
+    name: Persist exact verifier transport acceptance locator
+    needs: bind-dispatch
+    if: needs.bind-dispatch.result == 'success'
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-exact-head-dispatch
+      cancel-in-progress: false
+      queue: max
+    env:
+      OUTBOX_SEQUENCE: ${{ needs.bind-dispatch.outputs.outbox_sequence }}
+      OUTBOX_FINGERPRINT: ${{ needs.bind-dispatch.outputs.outbox_fingerprint }}
+      OUTBOX_TRANSPORT_ATTEMPT: ${{ needs.bind-dispatch.outputs.outbox_transport_attempt }}
+      OUTBOX_ACCEPTANCE_EXISTS: ${{ needs.bind-dispatch.outputs.outbox_acceptance_exists }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-exact-head-dispatch
+    steps:
+      - name: Check out exact trusted verifier revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Rebind exact source run without ledger credentials
+        id: acceptance_input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-head-outbox-acceptance"
+          mkdir -p "$root"
+          [[ "$OUTBOX_SEQUENCE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$OUTBOX_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
+          test "$OUTBOX_TRANSPORT_ATTEMPT" = 1
+          [[ "$OUTBOX_ACCEPTANCE_EXISTS" =~ ^(true|false)$ ]]
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          verifier_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_exact_head_verify.yml")"
+          verifier_workflow_id="$(jq -r '.id' <<<"$verifier_workflow")"
+          verifier_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          jq -e --argjson run_id "$GITHUB_RUN_ID" --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson workflow_id "$verifier_workflow_id" --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $run_id and .run_attempt == $attempt and .workflow_id == $workflow_id and
+            (.path | split("@")[0]) == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" and
+            .event == "repository_dispatch" and .repository.full_name == $repository and
+            .head_branch == "main" and .head_sha == $workflow_sha and
+            (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")
+          ' <<<"$verifier_run" >/dev/null
+          # The read-only Binder already proved any immutable acceptance for
+          # this exact run/transport.  A same-run rerun must not rewrite it.
+          if test "$OUTBOX_ACCEPTANCE_EXISTS" = true; then
+            echo "write_required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -n --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_id "$verifier_workflow_id" --arg repository "$GITHUB_REPOSITORY" \
+            --arg head_sha "$GITHUB_WORKFLOW_SHA" --arg status "$(jq -r '.status' <<<"$verifier_run")" \
+            --arg title "$(jq -r '.display_title' <<<"$verifier_run")" '
+            {run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),workflow_id:($workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_exact_head_verify.yml",event:"repository_dispatch",repository:$repository,head_sha:$head_sha,status:$status,display_title:$title}
+          ' > "$root/child.json"
+          echo "write_required=true" >> "$GITHUB_OUTPUT"
+
+      - name: Append exact source-run acceptance CAS only
+        if: steps.acceptance_input.outputs.write_required == 'true'
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          writer_token="${LEDGER_WRITER_TOKEN-}"
+          writer_actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$writer_token"
+          [[ "$writer_actor" =~ ^[1-9][0-9]*$ ]]
+          root="$RUNNER_TEMP/qikvrt-exact-head-outbox-acceptance"
+          test -f "$root/child.json"
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$writer_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+            --repository "$GITHUB_REPOSITORY" --receipt "$root/acceptance.json" \
+            accept --lane exact-head-dispatch --sequence "$OUTBOX_SEQUENCE" \
+            --attempt "$OUTBOX_TRANSPORT_ATTEMPT" --child "$root/child.json" >/dev/null
+          unset writer_token
+
+  verify-candidate:
+    name: Candidate self-check (read-only)
+    needs: bind-dispatch
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+      artifact_digest: ${{ steps.evidence.outputs.artifact-digest }}
+    env:
+      TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_HEAD_REPOSITORY: ${{ github.event.client_payload.subject.head_repository }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PRODUCER_RUN_ID: ${{ github.event.client_payload.producer.run_id }}
+      PRODUCER_RUN_ATTEMPT: ${{ github.event.client_payload.producer.run_attempt }}
+      PRODUCER_WORKFLOW_ID: ${{ github.event.client_payload.producer.workflow_id }}
+      PRODUCER_WORKFLOW_PATH: ${{ github.event.client_payload.producer.workflow_path }}
+      PRODUCER_WORKFLOW_SHA: ${{ github.event.client_payload.producer.workflow_sha }}
+      BINDING_ARTIFACT_ID: ${{ needs.bind-dispatch.outputs.artifact_id }}
+      BINDING_ARTIFACT_DIGEST: ${{ needs.bind-dispatch.outputs.artifact_digest }}
+      BINDING_RUN_ATTEMPT: ${{ needs.bind-dispatch.outputs.binding_run_attempt }}
+    steps:
+      - name: Validate exact dispatch subject without write authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = repository_dispatch
+          test "$DISPATCH_ACTION" = qikvrt_autonomous_exact_head_verify
+          test "$DISPATCH_SCHEMA" = qikvrt_autonomous_exact_head_verify_dispatch_v1
+          test "$CAUSAL_ATTEMPT" = 1
+          test "$CAUSAL_D0" -eq 2
+          test "$CAUSAL_STATE" = REOBSERVE
+          test "$CAUSAL_PRODUCTIVE_EFFECT" = false
+          test "$TARGET_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$TARGET_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$TARGET_BASE_REF" = main
+          [[ "$BINDING_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$BINDING_ARTIFACT_DIGEST" =~ ^(sha256:)?[0-9a-f]{64}$ ]]
+          for value in "$TARGET_SHA" "$TARGET_TREE_SHA" "$TARGET_BASE_SHA" "$PRODUCER_WORKFLOW_SHA"; do
+            test "${#value}" -eq 40
+            case "$value" in *[!0-9a-f]*) exit 1 ;; esac
+          done
+          for value in "$TARGET_PR" "$PRODUCER_RUN_ID" "$PRODUCER_RUN_ATTEMPT" "$PRODUCER_WORKFLOW_ID"; do
+            test "$value" -gt 0
+          done
+          test "$PRODUCER_WORKFLOW_PATH" = '.github/workflows/qikvrt_autonomous_pr_head_continuation.yml'
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" > "$RUNNER_TEMP/exact-pr.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" \
+            '.state == "open" and .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and .base.ref == $base_ref and .base.sha == $base' \
+            "$RUNNER_TEMP/exact-pr.json" >/dev/null
+          observed_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')"
+          test "$observed_tree" = "$TARGET_TREE_SHA"
+
+          # The repository_dispatch already binds an immutable transport
+          # attempt. A later producer rerun cannot revoke this read-only check.
+          producer="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}")"
+          jq -e \
+            --argjson attempt "$PRODUCER_RUN_ATTEMPT" \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" \
+            --arg workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            '.run_attempt == $attempt and .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+             .repository.full_name == $repository and
+             ((.event == "pull_request_target" and $workflow_sha == $base and
+               .head_sha == $base and .head_branch == $base_ref and
+               ([.pull_requests[]? | select(.number == ($pr|tonumber) and .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and .base.ref == $base_ref and .base.sha == $base)] | length) == 1) or
+              ((.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch") and .head_branch == "main" and .head_sha == $workflow_sha))' \
+            <<<"$producer" >/dev/null
+
+          receipt_root="$RUNNER_TEMP/qikvrt-exact-head-candidate-receipt"
+          mkdir -p "$receipt_root"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg action "$DISPATCH_ACTION" \
+            --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" \
+            --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            '{schema:"qikvrt.autonomous-candidate-self-check-subject.v1",repository:$repository,event:$event,event_action:$action,pull_request:($pr|tonumber),head_repository:$head_repository,head_ref:$head_ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base,run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha},classification:"CANDIDATE_SELF_CHECK_ONLY",trusted_terminal_verification:false,productive_effect:false}' \
+            > "$receipt_root/subject.json"
 
       - name: Check out exact candidate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.client_payload.head_sha }}
+          ref: ${{ github.event.client_payload.subject.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -51,11 +606,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify exact checkout and repository-native contracts
+      - name: Execute candidate-owned self-checks without write authority
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$TARGET_SHA"
+          test "$(git rev-parse --verify HEAD^{tree})" = "$TARGET_TREE_SHA"
           git merge-base --is-ancestor "$TARGET_BASE_SHA" HEAD
           python3 -B tools/qikvrt_publication_overview.py check
           python3 -B tools/qikvrt_integrity.py verify
@@ -94,50 +650,2032 @@ jobs:
           test -s "$qce_tmpdir/qce-autonomous-axiom-output.txt"
           test -s "$qce_tmpdir/qce-autonomous-verification.json"
 
-      - name: Publish exact-head success status
-        if: success()
+      - name: Preserve untrusted candidate self-check subject
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-head-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+          path: ${{ runner.temp }}/qikvrt-exact-head-candidate-receipt/subject.json
+
+  validate-candidate-observation:
+    name: Validate candidate observation without write authority
+    needs: [bind-dispatch, verify-candidate]
+    if: always() && needs.bind-dispatch.result == 'success'
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      state: ${{ steps.result.outputs.state }}
+      artifact_id: ${{ steps.result.outputs.artifact_id }}
+      artifact_digest: ${{ steps.result.outputs.artifact_digest }}
+      identity_outcome: ${{ steps.result.outputs.identity_outcome }}
+      download_outcome: ${{ steps.result.outputs.download_outcome }}
+      receipt_outcome: ${{ steps.result.outputs.receipt_outcome }}
+    env:
+      TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_HEAD_REPOSITORY: ${{ github.event.client_payload.subject.head_repository }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PRODUCER_RUN_ID: ${{ github.event.client_payload.producer.run_id }}
+      PRODUCER_RUN_ATTEMPT: ${{ github.event.client_payload.producer.run_attempt }}
+      PRODUCER_WORKFLOW_ID: ${{ github.event.client_payload.producer.workflow_id }}
+      PRODUCER_WORKFLOW_PATH: ${{ github.event.client_payload.producer.workflow_path }}
+      PRODUCER_WORKFLOW_SHA: ${{ github.event.client_payload.producer.workflow_sha }}
+      ARTIFACT_ID: ${{ needs.verify-candidate.outputs.artifact_id }}
+      ARTIFACT_DIGEST: ${{ needs.verify-candidate.outputs.artifact_digest }}
+      CANDIDATE_RESULT: ${{ needs.verify-candidate.result }}
+    steps:
+      - name: Require exact candidate artifact identity without write token
+        id: artifact_identity
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-            -f state=success \
-            -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Deterministic repair, full suite and candidate-specific gates succeeded' \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          cat > /tmp/qikvrt-autonomous-verified.md <<EOF
-          <!-- qikvrt-autonomous-exact-head-verification -->
-          Exact-head autonomous verification completed successfully for \`${TARGET_SHA}\`.
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$|^[0-9a-f]{64}$ ]]
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
+          jq -e --argjson artifact_id "$ARTIFACT_ID" \
+            --arg name "qikvrt-exact-head-candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --arg digest "sha256:${ARTIFACT_DIGEST#sha256:}" --argjson run_id "$GITHUB_RUN_ID" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $artifact_id and .name == $name and .expired == false and .digest == $digest and
+            .workflow_run.id == $run_id and .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$artifact" >/dev/null
 
-          Repository-internal deterministic gates are green for this verification scope. Any declared independent human review, Mirror promotion, or separately authorized publication remains a distinct downstream gate. No repository-wide PASS, FINAL_PASS, or EFFECT_ACK_DONE is claimed.
-          EOF
-          gh pr comment "$TARGET_PR" --body-file /tmp/qikvrt-autonomous-verified.md
+      - name: Download exact candidate subject without write token
+        id: download
+        if: steps.artifact_identity.outcome == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.verify-candidate.outputs.artifact_id }}
+          path: ${{ runner.temp }}/qikvrt-exact-head-validated-candidate
 
-      - name: Dispatch exact-head requested-review continuation
-        if: success()
+      - name: Parse candidate receipt strictly as untrusted data
+        id: receipt
+        if: steps.download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/qikvrt-exact-head-validated-candidate/subject.json"
+          test -f "$receipt"
+          test ! -L "$receipt"
+          test "$(find "$RUNNER_TEMP/qikvrt-exact-head-validated-candidate" -type f | wc -l)" -eq 1
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" '
+            .schema == "qikvrt.autonomous-candidate-self-check-subject.v1" and
+            .repository == $repository and .event == "repository_dispatch" and
+            .event_action == "qikvrt_autonomous_exact_head_verify" and
+            .pull_request == ($pr|tonumber) and .head_repository == $head_repository and
+            .head_ref == $head_ref and .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($run_id|tonumber) and .run_attempt == ($run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha} and
+            .classification == "CANDIDATE_SELF_CHECK_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$receipt" >/dev/null
+
+      - name: Seal validation result as scalar outputs
+        id: result
+        if: always()
+        env:
+          IDENTITY_OUTCOME: ${{ steps.artifact_identity.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          RECEIPT_OUTCOME: ${{ steps.receipt.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=error
+          if [ "$CANDIDATE_RESULT" = success ] && \
+             [ "$IDENTITY_OUTCOME" = success ] && \
+             [ "$DOWNLOAD_OUTCOME" = success ] && \
+             [ "$RECEIPT_OUTCOME" = success ]; then
+            state=success
+          fi
+          {
+            echo "state=$state"
+            echo "artifact_id=$ARTIFACT_ID"
+            echo "artifact_digest=$ARTIFACT_DIGEST"
+            echo "identity_outcome=${IDENTITY_OUTCOME:-skipped}"
+            echo "download_outcome=${DOWNLOAD_OUTCOME:-skipped}"
+            echo "receipt_outcome=${RECEIPT_OUTCOME:-skipped}"
+          } >> "$GITHUB_OUTPUT"
+
+  validate-publisher-observation:
+    name: Read-only trusted-main publisher validation
+    needs: [bind-dispatch, verify-candidate, validate-candidate-observation]
+    if: always()
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      validation_state: ${{ steps.publisher_validation.outputs.state }}
+      planned_state: ${{ steps.publish.outputs.state }}
+      duplicate: ${{ steps.dedupe.outputs.duplicate }}
+      prior_status_id: ${{ steps.dedupe.outputs.prior_status_id }}
+      prior_publisher_artifact_id: ${{ steps.dedupe.outputs.prior_publisher_artifact_id }}
+      prior_publisher_artifact_digest: ${{ steps.dedupe.outputs.prior_publisher_artifact_digest }}
+      review_intent_artifact_id: ${{ steps.review_intent_evidence.outputs.artifact-id }}
+      review_intent_artifact_digest: ${{ steps.review_intent_evidence.outputs.artifact-digest }}
+    env:
+      TARGET_REPOSITORY: ${{ github.event.client_payload.repository }}
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_HEAD_REPOSITORY: ${{ github.event.client_payload.subject.head_repository }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PRODUCER_RUN_ID: ${{ github.event.client_payload.producer.run_id }}
+      PRODUCER_RUN_ATTEMPT: ${{ github.event.client_payload.producer.run_attempt }}
+      PRODUCER_WORKFLOW_ID: ${{ github.event.client_payload.producer.workflow_id }}
+      PRODUCER_WORKFLOW_PATH: ${{ github.event.client_payload.producer.workflow_path }}
+      PRODUCER_WORKFLOW_SHA: ${{ github.event.client_payload.producer.workflow_sha }}
+      BINDING_RESULT: ${{ needs.bind-dispatch.result }}
+      BINDING_ARTIFACT_ID: ${{ needs.bind-dispatch.outputs.artifact_id }}
+      BINDING_ARTIFACT_DIGEST: ${{ needs.bind-dispatch.outputs.artifact_digest }}
+      BINDING_RUN_ATTEMPT: ${{ needs.bind-dispatch.outputs.binding_run_attempt }}
+      BOUND_PRODUCER_ARTIFACT_ID: ${{ needs.bind-dispatch.outputs.producer_artifact_id }}
+      BOUND_PRODUCER_ARTIFACT_DIGEST: ${{ needs.bind-dispatch.outputs.producer_artifact_digest }}
+      CANDIDATE_RESULT: ${{ needs.verify-candidate.result }}
+      ARTIFACT_ID: ${{ needs.validate-candidate-observation.outputs.artifact_id }}
+      ARTIFACT_DIGEST: ${{ needs.validate-candidate-observation.outputs.artifact_digest }}
+      CANDIDATE_VALIDATION_STATE: ${{ needs.validate-candidate-observation.outputs.state }}
+      ARTIFACT_IDENTITY_OUTCOME: ${{ needs.validate-candidate-observation.outputs.identity_outcome }}
+      DOWNLOAD_OUTCOME: ${{ needs.validate-candidate-observation.outputs.download_outcome }}
+      RECEIPT_OUTCOME: ${{ needs.validate-candidate-observation.outputs.receipt_outcome }}
+    steps:
+      - name: Require exact trusted binding artifact identity
+        id: binding_artifact_identity
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" --jq '.head.sha')"
-          test "$current" = "$TARGET_SHA"
-          gh api --method POST \
+          test "$BINDING_RESULT" = success
+          [[ "$BINDING_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$BINDING_ARTIFACT_DIGEST" =~ ^(sha256:)?[0-9a-f]{64}$ ]]
+          binding_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${BINDING_ARTIFACT_ID}")"
+          jq -e \
+            --argjson artifact_id "$BINDING_ARTIFACT_ID" \
+            --arg name "qikvrt-exact-head-binding-${TARGET_PR}-${TARGET_SHA}-run-${GITHUB_RUN_ID}-attempt-${BINDING_RUN_ATTEMPT}" \
+            --arg digest "sha256:${BINDING_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $artifact_id and .name == $name and .expired == false and
+            .digest == $digest and .workflow_run.id == $run_id and
+            .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$binding_artifact" >/dev/null
+
+      - name: Download exact trusted dispatch binding
+        id: binding_download
+        if: steps.binding_artifact_identity.outcome == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.bind-dispatch.outputs.artifact_id }}
+          path: ${{ runner.temp }}/qikvrt-exact-head-binding-downloaded
+
+      - name: Validate trusted dispatch binding receipt
+        id: binding_receipt
+        if: steps.binding_download.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/binding.json"
+          sealed_request="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-request.json"
+          sealed_intent="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-intent.json"
+          test -f "$receipt"
+          test ! -L "$receipt"
+          test -f "$sealed_request"
+          test -f "$sealed_intent"
+          test ! -L "$sealed_request"
+          test ! -L "$sealed_intent"
+          test "$(find "$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded" -type f | wc -l)" -eq 3
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" \
+            --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg producer_artifact_id "$BOUND_PRODUCER_ARTIFACT_ID" \
+            --arg producer_artifact_digest "$BOUND_PRODUCER_ARTIFACT_DIGEST" \
+            --arg sealed_request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" \
+            --arg sealed_intent_sha256 "$(sha256sum "$sealed_intent" | cut -d' ' -f1)" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" --arg transport_intent "$TRANSPORT_INTENT_SHA256" \
+            --arg transport_sequence "$TRANSPORT_SEQUENCE" --arg transport_attempt "$TRANSPORT_ATTEMPT" '
+            (keys) == ["base_ref","base_sha","causal","classification","head_ref","head_repository","head_sha","head_tree_sha","producer","productive_effect","pull_request","repository","run_attempt","run_id","schema","transport","trusted_terminal_verification","workflow_ref","workflow_sha"] and
+            (.producer | keys) == ["continuation_artifact","run_attempt","run_id","sealed_transport","workflow_id","workflow_path","workflow_sha"] and
+            (.producer.continuation_artifact | keys) == ["digest","id"] and
+            (.producer.sealed_transport | keys) == ["intent_file","intent_sha256","request_file","request_sha256"] and
+            .schema == "qikvrt.autonomous-exact-head-dispatch-binding.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $head_repository and .head_ref == $head_ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($run_id|tonumber) and
+            (.run_attempt | type) == "number" and .run_attempt > 0 and
+            .run_attempt <= ($run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .producer.run_id == ($producer_run_id|tonumber) and
+            .producer.run_attempt == ($producer_run_attempt|tonumber) and
+            .producer.workflow_id == ($producer_workflow_id|tonumber) and
+            .producer.workflow_path == $producer_workflow_path and
+            .producer.workflow_sha == $producer_workflow_sha and
+            .producer.continuation_artifact.id == ($producer_artifact_id|tonumber) and
+            .producer.continuation_artifact.digest == $producer_artifact_digest and
+            .producer.sealed_transport.request_file == "producer-request.json" and
+            .producer.sealed_transport.intent_file == "producer-intent.json" and
+            .producer.sealed_transport.request_sha256 == $sealed_request_sha256 and
+            .producer.sealed_transport.intent_sha256 == $sealed_intent_sha256 and
+            .causal == {attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false} and
+            .transport == {intent_sha256:$transport_intent,sequence:($transport_sequence|tonumber),attempt:($transport_attempt|tonumber)} and
+            .classification == "TRUSTED_DISPATCH_BINDING_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$receipt" >/dev/null
+          jq -e --slurp '
+            (.[0] | keys) == ["client_payload","event_type"] and
+            .[0].event_type == "qikvrt_autonomous_exact_head_verify" and
+            .[0].client_payload == .[1].client_payload
+          ' "$sealed_request" "$GITHUB_EVENT_PATH" >/dev/null
+          jq -e \
+            --arg request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" '
+            .schema == "qikvrt.autonomous-exact-head-transport-intent.v1" and
+            .attempt == ($causal_attempt|tonumber) and
+            .request_sha256 == $request_sha256 and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED"
+          ' "$sealed_intent" >/dev/null
+
+      - name: Reobserve trusted verifier run and exact live PR subject
+        id: subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = repository_dispatch
+          test "$DISPATCH_ACTION" = qikvrt_autonomous_exact_head_verify
+          test "$DISPATCH_SCHEMA" = qikvrt_autonomous_exact_head_verify_dispatch_v1
+          test "$CAUSAL_ATTEMPT" = 1
+          test "$CAUSAL_D0" -eq 2
+          test "$CAUSAL_STATE" = REOBSERVE
+          test "$CAUSAL_PRODUCTIVE_EFFECT" = false
+          test "$GITHUB_WORKFLOW_REF" = "${GITHUB_REPOSITORY}/.github/workflows/qikvrt_autonomous_exact_head_verify.yml@refs/heads/main"
+          test "$TARGET_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$TARGET_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$TARGET_BASE_REF" = main
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_exact_head_verify.yml")"
+          verifier_workflow_id="$(jq -r '.id' <<<"$workflow")"
+          [[ "$verifier_workflow_id" =~ ^[1-9][0-9]*$ ]]
+          jq -e '
+            .path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" and
+            .state == "active"
+          ' <<<"$workflow" >/dev/null
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          jq -e \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson workflow_id "$verifier_workflow_id" \
+            --arg path '.github/workflows/qikvrt_autonomous_exact_head_verify.yml' \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $run_attempt and
+            .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+            .event == "repository_dispatch" and .head_branch == "main" and
+            .head_sha == $workflow_sha and .repository.full_name == $repository
+          ' <<<"$run" >/dev/null
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}" > "$RUNNER_TEMP/exact-pr-publisher.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' "$RUNNER_TEMP/exact-pr-publisher.json" >/dev/null
+          observed_tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')"
+          test "$observed_tree" = "$TARGET_TREE_SHA"
+          echo "verifier_workflow_id=$verifier_workflow_id" >> "$GITHUB_OUTPUT"
+      - name: Detect an already published exact subject
+        id: dedupe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIER_WORKFLOW_ID: ${{ steps.subject.outputs.verifier_workflow_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'duplicate=false' >> "$GITHUB_OUTPUT"
+          not_duplicate() { exit 0; }
+          # Dedupe is an optimization for a newly successful observation only.
+          # A current failure must always publish a newer error status and may
+          # never inherit an earlier success for the same commit.
+          [ "$CANDIDATE_VALIDATION_STATE" = success ] || not_duplicate
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/statuses?per_page=100" \
+            > "$RUNNER_TEMP/dedupe-status-pages.json"
+          jq '[.[] | .[]]' "$RUNNER_TEMP/dedupe-status-pages.json" \
+            > "$RUNNER_TEMP/dedupe-statuses.json"
+          prior_status="$(jq -c \
+            '[.[] | select(.context == "QIKVRT autonomous candidate self-check")] |
+             sort_by(.id,.created_at) | last // empty' \
+            "$RUNNER_TEMP/dedupe-statuses.json")"
+          [ -n "$prior_status" ] || not_duplicate
+          [ "$(jq -r '.state // ""' <<<"$prior_status")" = success ] || not_duplicate
+          prior_target="$(jq -r '.target_url // ""' <<<"$prior_status")"
+          case "$prior_target" in
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/"*) ;;
+            *) not_duplicate ;;
+          esac
+          prior_run_id="${prior_target##*/}"
+          [[ "$prior_run_id" =~ ^[1-9][0-9]*$ ]] || not_duplicate
+          [ "$prior_run_id" != "$GITHUB_RUN_ID" ] || not_duplicate
+
+          prior_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${prior_run_id}")"
+          prior_attempt="$(jq -r '.run_attempt' <<<"$prior_run")"
+          jq -e \
+            --argjson workflow_id "$VERIFIER_WORKFLOW_ID" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .workflow_id == $workflow_id and
+            (.path | split("@")[0]) == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" and
+            .event == "repository_dispatch" and .head_branch == "main" and
+            .repository.full_name == $repository and
+            .status == "completed"
+          ' <<<"$prior_run" >/dev/null || not_duplicate
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${prior_run_id}/jobs?filter=all&per_page=100" \
+            > "$RUNNER_TEMP/dedupe-job-pages.json"
+          jq -e --argjson publisher_attempt "$prior_attempt" '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .jobs[]] | length) == .[0].total_count and
+            ([.[] | .jobs[] | select(
+              .name == "Bind exact trusted dispatch subject" and
+              .status == "completed" and .conclusion == "success"
+            )] | length) >= 1 and
+            ([.[] | .jobs[] | select(
+              .name == "Read-only trusted-main publisher validation" and
+              .run_attempt == $publisher_attempt and
+              .status == "completed" and .conclusion == "success" and
+              ([.steps[]? | select(
+                .name == "Seal read-only publisher validation result" and
+                .status == "completed" and .conclusion == "success"
+              )] | length) == 1
+            )] | length) == 1 and
+            ([.[] | .jobs[] | select(
+              .name == "Publish exact candidate status only" and
+              .run_attempt == $publisher_attempt and
+              .status == "completed" and .conclusion == "success" and
+              ([.steps[]? | select(
+                .name == "Reobserve exact subject and publish only the validated status" and
+                .status == "completed" and .conclusion == "success"
+              )] | length) == 1
+            )] | length) == 1 and
+            ([.[] | .jobs[] | select(
+              .name == "Seal trusted-main publisher receipt" and
+              .run_attempt == $publisher_attempt and
+              .status == "completed" and .conclusion == "success" and
+              ([.steps[]? | select(
+                .name == "Preserve trusted publisher receipt" and
+                .status == "completed" and .conclusion == "success"
+              )] | length) == 1
+            )] | length) == 1
+          ' "$RUNNER_TEMP/dedupe-job-pages.json" >/dev/null || not_duplicate
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${prior_run_id}/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/dedupe-artifact-pages.json"
+          jq -e '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .artifacts[]] | length) == .[0].total_count
+          ' "$RUNNER_TEMP/dedupe-artifact-pages.json" >/dev/null || not_duplicate
+          prior_artifact_name="qikvrt-exact-head-publisher-${prior_run_id}-${prior_attempt}"
+          [ "$(jq --arg name "$prior_artifact_name" '[.[] | .artifacts[] | select(.name == $name and .expired == false)] | length' "$RUNNER_TEMP/dedupe-artifact-pages.json")" -eq 1 ] || not_duplicate
+          prior_artifact="$(jq -c --arg name "$prior_artifact_name" '[.[] | .artifacts[] | select(.name == $name and .expired == false)][0]' "$RUNNER_TEMP/dedupe-artifact-pages.json")"
+          prior_artifact_id="$(jq -r '.id' <<<"$prior_artifact")"
+          prior_artifact_digest="$(jq -r '.digest // ""' <<<"$prior_artifact")"
+          jq -e \
+            --argjson run_id "$prior_run_id" \
+            --arg workflow_sha "$(jq -r '.head_sha' <<<"$prior_run")" '
+            .workflow_run.id == $run_id and .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$prior_artifact" >/dev/null || not_duplicate
+          prior_zip="$RUNNER_TEMP/dedupe-publisher.zip"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${prior_artifact_id}/zip" > "$prior_zip"
+          [ "$prior_artifact_digest" = "sha256:$(sha256sum "$prior_zip" | cut -d' ' -f1)" ] || not_duplicate
+          [ "$(unzip -Z1 "$prior_zip" | wc -l)" -eq 1 ] || not_duplicate
+          unzip -Z1 "$prior_zip" | grep -Fxq publisher.json || not_duplicate
+          unzip -p "$prior_zip" publisher.json > "$RUNNER_TEMP/dedupe-publisher.json"
+          prior_binding_id="$(jq -r '.dispatch_binding.artifact.id // ""' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_binding_digest="$(jq -r '.dispatch_binding.artifact.digest // ""' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_binding_attempt="$(jq -r '.dispatch_binding.run_attempt // ""' "$RUNNER_TEMP/dedupe-publisher.json")"
+          [[ "$prior_binding_id" =~ ^[1-9][0-9]*$ ]] || not_duplicate
+          [[ "$prior_binding_attempt" =~ ^[1-9][0-9]*$ ]] || not_duplicate
+          [ "$prior_binding_attempt" -le "$prior_attempt" ] || not_duplicate
+          [[ "$prior_binding_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || not_duplicate
+          prior_binding_name="qikvrt-exact-head-binding-${TARGET_PR}-${TARGET_SHA}-run-${prior_run_id}-attempt-${prior_binding_attempt}"
+          [ "$(jq --arg name "$prior_binding_name" --argjson id "$prior_binding_id" '[.[] | .artifacts[] | select(.name == $name and .id == $id and .expired == false)] | length' "$RUNNER_TEMP/dedupe-artifact-pages.json")" -eq 1 ] || not_duplicate
+          prior_binding="$(jq -c --arg name "$prior_binding_name" --argjson id "$prior_binding_id" '[.[] | .artifacts[] | select(.name == $name and .id == $id and .expired == false)][0]' "$RUNNER_TEMP/dedupe-artifact-pages.json")"
+          jq -e \
+            --arg digest "$prior_binding_digest" \
+            --argjson run_id "$prior_run_id" \
+            --arg workflow_sha "$(jq -r '.head_sha' <<<"$prior_run")" '
+            .digest == $digest and .workflow_run.id == $run_id and
+            .workflow_run.head_branch == "main" and .workflow_run.head_sha == $workflow_sha
+          ' <<<"$prior_binding" >/dev/null || not_duplicate
+          jq -e --argjson binding_attempt "$prior_binding_attempt" '
+            ([.[] | .jobs[] | select(
+              .name == "Bind exact trusted dispatch subject" and
+              .run_attempt == $binding_attempt and
+              .status == "completed" and .conclusion == "success"
+            )] | length) == 1
+          ' "$RUNNER_TEMP/dedupe-job-pages.json" >/dev/null || not_duplicate
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" \
+            --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$prior_run_id" \
+            --arg run_attempt "$prior_attempt" \
+            --arg workflow_ref "${GITHUB_REPOSITORY}/.github/workflows/qikvrt_autonomous_exact_head_verify.yml@refs/heads/main" \
+            --arg workflow_sha "$(jq -r '.head_sha' <<<"$prior_run")" \
+            --arg binding_artifact_id "$prior_binding_id" \
+            --arg binding_artifact_digest "$prior_binding_digest" \
+            --arg binding_run_attempt "$prior_binding_attempt" \
+            --arg prior_status_id "$(jq -r '.id' <<<"$prior_status")" '
+            .schema == "qikvrt.autonomous-candidate-self-check-publisher.v2" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $head_repository and .head_ref == $ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($run_id|tonumber) and
+            (.run_attempt | type) == "number" and .run_attempt > 0 and
+            .run_attempt <= ($run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .dispatch_binding.artifact.id == ($binding_artifact_id|tonumber) and
+            .dispatch_binding.artifact.digest == $binding_artifact_digest and
+            .dispatch_binding.run_attempt == ($binding_run_attempt|tonumber) and
+            .dispatch_binding.receipt_outcome == "success" and
+            .published_state == "success" and
+            .status_id == ($prior_status_id|tonumber) and
+            .status_context == "QIKVRT autonomous candidate self-check" and
+            .classification == "CANDIDATE_SELF_CHECK_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false and
+            .effect_ack == "NOT_REQUIRED" and
+            (.producer.run_id | type) == "number" and .producer.run_id > 0 and
+            (.producer.run_attempt | type) == "number" and .producer.run_attempt > 0 and
+            (.producer.workflow_id | type) == "number" and .producer.workflow_id > 0 and
+            .producer.workflow_path == ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml" and
+            (.producer.workflow_sha | test("^[0-9a-f]{40}$")) and
+            (.producer.continuation_artifact.id | type) == "number" and
+            .producer.continuation_artifact.id > 0 and
+            (.producer.continuation_artifact.digest | test("^sha256:[0-9a-f]{64}$"))
+          ' "$RUNNER_TEMP/dedupe-publisher.json" >/dev/null || not_duplicate
+
+          # Once the exact repository_dispatch was accepted, its immutable
+          # original producer attempt and pre-POST intent remain authoritative.
+          # A later producer rerun must neither revoke nor duplicate that effect.
+          prior_binding_zip="$RUNNER_TEMP/dedupe-binding.zip"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${prior_binding_id}/zip" \
+            > "$prior_binding_zip" || not_duplicate
+          [ "$prior_binding_digest" = "sha256:$(sha256sum "$prior_binding_zip" | cut -d' ' -f1)" ] || not_duplicate
+          [ "$(unzip -Z1 "$prior_binding_zip" | wc -l)" -eq 3 ] || not_duplicate
+          unzip -Z1 "$prior_binding_zip" | grep -Fxq binding.json || not_duplicate
+          unzip -Z1 "$prior_binding_zip" | grep -Fxq producer-request.json || not_duplicate
+          unzip -Z1 "$prior_binding_zip" | grep -Fxq producer-intent.json || not_duplicate
+          unzip -p "$prior_binding_zip" binding.json > "$RUNNER_TEMP/dedupe-binding.json"
+          unzip -p "$prior_binding_zip" producer-request.json > "$RUNNER_TEMP/dedupe-producer-request.json"
+          unzip -p "$prior_binding_zip" producer-intent.json > "$RUNNER_TEMP/dedupe-producer-intent.json"
+
+          prior_producer_id="$(jq -r '.producer.run_id' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_producer_attempt="$(jq -r '.producer.run_attempt' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_producer_workflow_id="$(jq -r '.producer.workflow_id' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_producer_workflow_sha="$(jq -r '.producer.workflow_sha' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_producer_artifact_id="$(jq -r '.producer.continuation_artifact.id' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_producer_artifact_digest="$(jq -r '.producer.continuation_artifact.digest' "$RUNNER_TEMP/dedupe-publisher.json")"
+          prior_causal_attempt="$(jq -r '.causal.attempt // empty' "$RUNNER_TEMP/dedupe-binding.json")"
+          test "$prior_causal_attempt" = 1 || not_duplicate
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg verifier_run_id "$prior_run_id" --arg verifier_run_attempt "$prior_attempt" \
+            --arg binding_run_attempt "$prior_binding_attempt" \
+            --arg workflow_ref "${GITHUB_REPOSITORY}/.github/workflows/qikvrt_autonomous_exact_head_verify.yml@refs/heads/main" \
+            --arg workflow_sha "$(jq -r '.head_sha' <<<"$prior_run")" \
+            --arg producer_run_id "$prior_producer_id" \
+            --arg producer_run_attempt "$prior_producer_attempt" \
+            --arg producer_workflow_id "$prior_producer_workflow_id" \
+            --arg producer_workflow_sha "$prior_producer_workflow_sha" \
+            --arg producer_artifact_id "$prior_producer_artifact_id" \
+            --arg producer_artifact_digest "$prior_producer_artifact_digest" \
+            --arg sealed_request_sha256 "$(sha256sum "$RUNNER_TEMP/dedupe-producer-request.json" | cut -d' ' -f1)" \
+            --arg sealed_intent_sha256 "$(sha256sum "$RUNNER_TEMP/dedupe-producer-intent.json" | cut -d' ' -f1)" \
+            --arg transport_intent "$TRANSPORT_INTENT_SHA256" --arg transport_sequence "$TRANSPORT_SEQUENCE" \
+            --arg transport_attempt "$TRANSPORT_ATTEMPT" '
+            .schema == "qikvrt.autonomous-exact-head-dispatch-binding.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $head_repository and .head_ref == $ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($verifier_run_id|tonumber) and
+            .run_attempt == ($binding_run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",workflow_sha:$producer_workflow_sha,continuation_artifact:{id:($producer_artifact_id|tonumber),digest:$producer_artifact_digest},sealed_transport:{request_file:"producer-request.json",request_sha256:$sealed_request_sha256,intent_file:"producer-intent.json",intent_sha256:$sealed_intent_sha256}} and
+            .causal.attempt == 1 and
+            (.causal | del(.attempt)) == {d0:2,state:"REOBSERVE",productive_effect:false} and
+            .transport == {intent_sha256:$transport_intent,sequence:($transport_sequence|tonumber),attempt:($transport_attempt|tonumber)} and
+            .classification == "TRUSTED_DISPATCH_BINDING_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$RUNNER_TEMP/dedupe-binding.json" >/dev/null || not_duplicate
+
+          prior_producer_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_pr_head_continuation.yml")" || not_duplicate
+          jq -e \
+            --argjson workflow_id "$prior_producer_workflow_id" '
+            .id == $workflow_id and
+            .path == ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml" and
+            .state == "active"
+          ' <<<"$prior_producer_workflow" >/dev/null || not_duplicate
+          prior_producer="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${prior_producer_id}/attempts/${prior_producer_attempt}")" || not_duplicate
+          jq -e \
+            --argjson run_id "$prior_producer_id" \
+            --argjson run_attempt "$prior_producer_attempt" \
+            --argjson workflow_id "$prior_producer_workflow_id" \
+            --arg workflow_sha "$prior_producer_workflow_sha" \
+            --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $run_attempt and
+            .workflow_id == $workflow_id and
+            (.path | split("@")[0]) == ".github/workflows/qikvrt_autonomous_pr_head_continuation.yml" and
+            .repository.full_name == $repository and
+            ((.event == "pull_request_target" and $workflow_sha == $base and
+              .head_sha == $base and .head_branch == $base_ref and
+              ([.pull_requests[]? | select(
+                .number == ($pr|tonumber) and
+                .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and
+                .base.ref == $base_ref and .base.sha == $base
+              )] | length) == 1) or
+             ((.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch") and
+              .head_branch == "main" and .head_sha == $workflow_sha))
+          ' <<<"$prior_producer" >/dev/null || not_duplicate
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${prior_producer_id}/attempts/${prior_producer_attempt}/jobs?filter=all&per_page=100" \
+            > "$RUNNER_TEMP/dedupe-producer-job-pages.json" || not_duplicate
+          jq -e \
+            --argjson run_id "$prior_producer_id" \
+            --argjson run_attempt "$prior_producer_attempt" '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .jobs[]] | length) == .[0].total_count and
+            ([.[] | .jobs[] | select(
+              .name == "Preserve exact-head transport intent before dispatch" and
+              .run_id == $run_id and .run_attempt == $run_attempt and
+              .status == "completed" and .conclusion == "success"
+            )] | length) == 1
+          ' "$RUNNER_TEMP/dedupe-producer-job-pages.json" >/dev/null || not_duplicate
+
+          # The binding seal, rather than the expiring producer artifact, is the
+          # durable transport proof after the repository_dispatch was accepted.
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$prior_producer_id" \
+            --arg producer_run_attempt "$prior_producer_attempt" \
+            --arg producer_workflow_id "$prior_producer_workflow_id" \
+            --arg producer_workflow_sha "$prior_producer_workflow_sha" \
+            --arg causal_attempt "$prior_causal_attempt" --arg transport_intent "$TRANSPORT_INTENT_SHA256" \
+            --arg transport_sequence "$TRANSPORT_SEQUENCE" --arg transport_attempt "$TRANSPORT_ATTEMPT" '
+            .event_type == "qikvrt_autonomous_exact_head_verify" and
+            .client_payload == {schema:"qikvrt_autonomous_exact_head_verify_dispatch_v1",repository:$repository,subject:{pull_request:($pr|tonumber),head_repository:$repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",workflow_sha:$producer_workflow_sha},causal:{attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false},transport:{intent_sha256:$transport_intent,sequence:($transport_sequence|tonumber),attempt:($transport_attempt|tonumber)}}
+          ' "$RUNNER_TEMP/dedupe-producer-request.json" >/dev/null || not_duplicate
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$prior_producer_id" \
+            --arg producer_run_attempt "$prior_producer_attempt" \
+            --arg producer_workflow_id "$prior_producer_workflow_id" \
+            --arg producer_workflow_sha "$prior_producer_workflow_sha" \
+            --arg causal_attempt "$prior_causal_attempt" \
+            --arg request_sha256 "$(sha256sum "$RUNNER_TEMP/dedupe-producer-request.json" | cut -d' ' -f1)" '
+            .schema == "qikvrt.autonomous-exact-head-transport-intent.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_pr_head_continuation.yml",workflow_sha:$producer_workflow_sha} and
+            .attempt == ($causal_attempt|tonumber) and .request_sha256 == $request_sha256 and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED"
+          ' "$RUNNER_TEMP/dedupe-producer-intent.json" >/dev/null || not_duplicate
+          prior_status_id="$(jq -r '.id' <<<"$prior_status")"
+          [[ "$prior_status_id" =~ ^[1-9][0-9]*$ ]] || not_duplicate
+          echo 'duplicate=true' >> "$GITHUB_OUTPUT"
+          echo "prior_status_id=$prior_status_id" >> "$GITHUB_OUTPUT"
+          echo "prior_publisher_artifact_id=$prior_artifact_id" >> "$GITHUB_OUTPUT"
+          echo "prior_publisher_artifact_digest=$prior_artifact_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Revalidate producer attempt and binding before status effect
+        id: pre_status_binding
+        if: >-
+          always() &&
+          needs.bind-dispatch.result == 'success' &&
+          steps.binding_artifact_identity.outcome == 'success' &&
+          steps.binding_download.outcome == 'success' &&
+          steps.binding_receipt.outcome == 'success' &&
+          steps.subject.outcome == 'success' &&
+          needs.validate-candidate-observation.result == 'success' &&
+          steps.dedupe.outcome == 'success' &&
+          steps.dedupe.outputs.duplicate != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          producer_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_pr_head_continuation.yml")"
+          jq -e \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" '
+            .id == $workflow_id and .path == $path and .state == "active"
+          ' <<<"$producer_workflow" >/dev/null
+
+          # The accepted dispatch binds the immutable original transport
+          # attempt.  A later rerun of that producer cannot revoke it.
+          producer="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}")"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson attempt "$PRODUCER_RUN_ATTEMPT" \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" \
+            --arg workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $attempt and
+            .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+            .repository.full_name == $repository and
+            ((.event == "pull_request_target" and $workflow_sha == $base and
+              .head_sha == $base and .head_branch == $base_ref and
+              ([.pull_requests[]? | select(
+                .number == ($pr|tonumber) and
+                .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and
+                .base.ref == $base_ref and .base.sha == $base
+              )] | length) == 1) or
+             ((.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch") and
+              .head_branch == "main" and .head_sha == $workflow_sha))
+          ' <<<"$producer" >/dev/null
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}/jobs?filter=all&per_page=100" \
+            > "$RUNNER_TEMP/pre-status-producer-job-pages.json"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson run_attempt "$PRODUCER_RUN_ATTEMPT" '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .jobs[]] | length) == .[0].total_count and
+            ([.[] | .jobs[] | select(
+              .name == "Preserve exact-head transport intent before dispatch" and
+              .run_id == $run_id and .run_attempt == $run_attempt and
+              .status == "completed" and .conclusion == "success"
+            )] | length) == 1
+          ' "$RUNNER_TEMP/pre-status-producer-job-pages.json" >/dev/null
+
+          # Use the verifier-owned immutable seal.  The original continuation
+          # artifact is provenance recorded by the binder, not a live dependency
+          # whose later expiry could revoke an accepted dispatch.
+          sealed_request="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-request.json"
+          sealed_intent="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-intent.json"
+          test -f "$sealed_request"
+          test -f "$sealed_intent"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" --arg transport_intent "$TRANSPORT_INTENT_SHA256" \
+            --arg transport_sequence "$TRANSPORT_SEQUENCE" --arg transport_attempt "$TRANSPORT_ATTEMPT" '
+            .event_type == "qikvrt_autonomous_exact_head_verify" and
+            .client_payload == {schema:"qikvrt_autonomous_exact_head_verify_dispatch_v1",repository:$repository,subject:{pull_request:($pr|tonumber),head_repository:$repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha},causal:{attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false},transport:{intent_sha256:$transport_intent,sequence:($transport_sequence|tonumber),attempt:($transport_attempt|tonumber)}}
+          ' "$sealed_request" >/dev/null
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" \
+            --arg request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" '
+            .schema == "qikvrt.autonomous-exact-head-transport-intent.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha} and
+            .attempt == ($causal_attempt|tonumber) and .request_sha256 == $request_sha256 and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED"
+          ' "$sealed_intent" >/dev/null
+
+          binding_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${BINDING_ARTIFACT_ID}")"
+          jq -e \
+            --argjson artifact_id "$BINDING_ARTIFACT_ID" \
+            --arg name "qikvrt-exact-head-binding-${TARGET_PR}-${TARGET_SHA}-run-${GITHUB_RUN_ID}-attempt-${BINDING_RUN_ATTEMPT}" \
+            --arg digest "sha256:${BINDING_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $artifact_id and .name == $name and .expired == false and
+            .digest == $digest and .workflow_run.id == $run_id and
+            .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$binding_artifact" >/dev/null
+          receipt="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/binding.json"
+          test -f "$receipt"
+          test ! -L "$receipt"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg producer_artifact_id "$BOUND_PRODUCER_ARTIFACT_ID" \
+            --arg producer_artifact_digest "$BOUND_PRODUCER_ARTIFACT_DIGEST" \
+            --arg sealed_request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" \
+            --arg sealed_intent_sha256 "$(sha256sum "$sealed_intent" | cut -d' ' -f1)" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" '
+            .schema == "qikvrt.autonomous-exact-head-dispatch-binding.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $head_repository and .head_ref == $head_ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($run_id|tonumber) and
+            (.run_attempt | type) == "number" and .run_attempt > 0 and
+            .run_attempt <= ($run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha,continuation_artifact:{id:($producer_artifact_id|tonumber),digest:$producer_artifact_digest},sealed_transport:{request_file:"producer-request.json",request_sha256:$sealed_request_sha256,intent_file:"producer-intent.json",intent_sha256:$sealed_intent_sha256}} and
+            .causal == {attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false} and
+            .classification == "TRUSTED_DISPATCH_BINDING_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$receipt" >/dev/null
+
+      - name: Seal fail-closed candidate self-check status plan
+        id: publish
+        if: >-
+          always() &&
+          needs.bind-dispatch.result == 'success' &&
+          steps.binding_artifact_identity.outcome == 'success' &&
+          steps.binding_download.outcome == 'success' &&
+          steps.binding_receipt.outcome == 'success' &&
+          steps.subject.outcome == 'success' &&
+          needs.validate-candidate-observation.result == 'success' &&
+          steps.dedupe.outcome == 'success' &&
+          (steps.dedupe.outputs.duplicate == 'true' ||
+           steps.pre_status_binding.outcome == 'success')
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=error
+          description='Candidate self-check incomplete or failed closed'
+          if [ "$CANDIDATE_VALIDATION_STATE" = success ]; then
+            state=success
+            description='Read-only candidate self-check succeeded; independent gates remain'
+          fi
+          {
+            echo "state=$state"
+            echo "description=$description"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Revalidate producer attempt and binding before review effect
+        id: pre_review_binding
+        if: >-
+          needs.bind-dispatch.result == 'success' &&
+          steps.binding_receipt.outcome == 'success' &&
+          steps.publish.outputs.state == 'success' &&
+          steps.dedupe.outputs.duplicate != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          producer_workflow="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_pr_head_continuation.yml")"
+          jq -e \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" '
+            .id == $workflow_id and .path == $path and .state == "active"
+          ' <<<"$producer_workflow" >/dev/null
+          producer="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}")"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson attempt "$PRODUCER_RUN_ATTEMPT" \
+            --argjson workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg path "$PRODUCER_WORKFLOW_PATH" \
+            --arg workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" '
+            .id == $run_id and .run_attempt == $attempt and
+            .workflow_id == $workflow_id and (.path | split("@")[0]) == $path and
+            .repository.full_name == $repository and
+            ((.event == "pull_request_target" and $workflow_sha == $base and
+              .head_sha == $base and .head_branch == $base_ref and
+              ([.pull_requests[]? | select(
+                .number == ($pr|tonumber) and
+                .head.repo.full_name == $repository and .head.ref == $ref and .head.sha == $head and
+                .base.ref == $base_ref and .base.sha == $base
+              )] | length) == 1) or
+             ((.event == "workflow_run" or .event == "schedule" or .event == "workflow_dispatch") and
+              .head_branch == "main" and .head_sha == $workflow_sha))
+          ' <<<"$producer" >/dev/null
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}/attempts/${PRODUCER_RUN_ATTEMPT}/jobs?filter=all&per_page=100" \
+            > "$RUNNER_TEMP/pre-review-producer-job-pages.json"
+          jq -e \
+            --argjson run_id "$PRODUCER_RUN_ID" \
+            --argjson run_attempt "$PRODUCER_RUN_ATTEMPT" '
+            length > 0 and
+            ([.[].total_count] | unique | length) == 1 and
+            (.[0].total_count | type == "number") and
+            ([.[] | .jobs[]] | length) == .[0].total_count and
+            ([.[] | .jobs[] | select(
+              .name == "Preserve exact-head transport intent before dispatch" and
+              .run_id == $run_id and .run_attempt == $run_attempt and
+              .status == "completed" and .conclusion == "success"
+            )] | length) == 1
+          ' "$RUNNER_TEMP/pre-review-producer-job-pages.json" >/dev/null
+
+          sealed_request="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-request.json"
+          sealed_intent="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/producer-intent.json"
+          test -f "$sealed_request"
+          test -f "$sealed_intent"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" --arg transport_intent "$TRANSPORT_INTENT_SHA256" \
+            --arg transport_sequence "$TRANSPORT_SEQUENCE" --arg transport_attempt "$TRANSPORT_ATTEMPT" '
+            .event_type == "qikvrt_autonomous_exact_head_verify" and
+            .client_payload == {schema:"qikvrt_autonomous_exact_head_verify_dispatch_v1",repository:$repository,subject:{pull_request:($pr|tonumber),head_repository:$repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha},causal:{attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false},transport:{intent_sha256:$transport_intent,sequence:($transport_sequence|tonumber),attempt:($transport_attempt|tonumber)}}
+          ' "$sealed_request" >/dev/null
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" --arg head "$TARGET_SHA" \
+            --arg tree "$TARGET_TREE_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" \
+            --arg request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" '
+            .schema == "qikvrt.autonomous-exact-head-transport-intent.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha} and
+            .attempt == ($causal_attempt|tonumber) and .request_sha256 == $request_sha256 and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED"
+          ' "$sealed_intent" >/dev/null
+          binding_artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${BINDING_ARTIFACT_ID}")"
+          jq -e \
+            --argjson artifact_id "$BINDING_ARTIFACT_ID" \
+            --arg name "qikvrt-exact-head-binding-${TARGET_PR}-${TARGET_SHA}-run-${GITHUB_RUN_ID}-attempt-${BINDING_RUN_ATTEMPT}" \
+            --arg digest "sha256:${BINDING_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $artifact_id and .name == $name and .expired == false and
+            .digest == $digest and .workflow_run.id == $run_id and
+            .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$binding_artifact" >/dev/null
+          receipt="$RUNNER_TEMP/qikvrt-exact-head-binding-downloaded/binding.json"
+          test -f "$receipt"
+          test ! -L "$receipt"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg producer_artifact_id "$BOUND_PRODUCER_ARTIFACT_ID" \
+            --arg producer_artifact_digest "$BOUND_PRODUCER_ARTIFACT_DIGEST" \
+            --arg sealed_request_sha256 "$(sha256sum "$sealed_request" | cut -d' ' -f1)" \
+            --arg sealed_intent_sha256 "$(sha256sum "$sealed_intent" | cut -d' ' -f1)" \
+            --arg causal_attempt "$CAUSAL_ATTEMPT" '
+            .schema == "qikvrt.autonomous-exact-head-dispatch-binding.v1" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $head_repository and .head_ref == $head_ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            .run_id == ($run_id|tonumber) and
+            (.run_attempt | type) == "number" and .run_attempt > 0 and
+            .run_attempt <= ($run_attempt|tonumber) and
+            .workflow_ref == $workflow_ref and .workflow_sha == $workflow_sha and
+            .producer == {run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha,continuation_artifact:{id:($producer_artifact_id|tonumber),digest:$producer_artifact_digest},sealed_transport:{request_file:"producer-request.json",request_sha256:$sealed_request_sha256,intent_file:"producer-intent.json",intent_sha256:$sealed_intent_sha256}} and
+            .causal == {attempt:($causal_attempt|tonumber),d0:2,state:"REOBSERVE",productive_effect:false} and
+            .classification == "TRUSTED_DISPATCH_BINDING_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$receipt" >/dev/null
+
+      - name: Materialize requested-review transport intent attempt 1
+        id: review_intent
+        if: >-
+          needs.bind-dispatch.result == 'success' &&
+          steps.binding_receipt.outcome == 'success' &&
+          steps.publish.outputs.state == 'success' &&
+          steps.pre_review_binding.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-head-review-transport-attempt-1"
+          mkdir -p "$root"
+          executor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml")"
+          executor_workflow_id="$(jq -r '.id // ""' <<<"$executor")"
+          [[ "$executor_workflow_id" =~ ^[1-9][0-9]*$ ]]
+          jq -e '
+            .path == ".github/workflows/qikvrt_requested_review_executor.yml" and .state == "active"
+          ' <<<"$executor" >/dev/null
+          evaluator_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$evaluator_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$evaluator_sha" = "$GITHUB_WORKFLOW_SHA"
+          executor_content="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/qikvrt_requested_review_executor.yml?ref=${evaluator_sha}")"
+          executor_blob_sha="$(jq -r '.sha // ""' <<<"$executor_content")"
+          [[ "$executor_blob_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '
+            .type == "file" and .path == ".github/workflows/qikvrt_requested_review_executor.yml"
+          ' <<<"$executor_content" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$evaluator_sha"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg source_run_id "$GITHUB_RUN_ID" --arg source_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg source_workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg executor_workflow_id "$executor_workflow_id" \
+            --arg executor_blob_sha "$executor_blob_sha" \
+            --arg evaluator_sha "$evaluator_sha" '
+            {schema:"qikvrt.requested-review-transport-request.v1",repository:$repository,subject:{pull_request:($pr|tonumber),head_repository:$head_repository,head_ref:$head_ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},source:{run_id:($source_run_id|tonumber),run_attempt:($source_run_attempt|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_exact_head_verify.yml",workflow_sha:$source_workflow_sha},producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha},attempt:1,target:{workflow_id:($executor_workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_requested_review_executor.yml",workflow_blob_sha:$executor_blob_sha,ref:"main",evaluator_sha:$evaluator_sha}}
+          ' > "$root/review-request.json"
+          jq -n \
+            --slurpfile request "$root/review-request.json" \
+            --arg request_sha256 "$(sha256sum "$root/review-request.json" | cut -d' ' -f1)" '
+            $request[0] + {
+              schema:"qikvrt.requested-review-transport-intent.v1",
+              request_sha256:$request_sha256,
+              productive_effect:false,
+              effect_ack:"NOT_REQUIRED"
+            }
+          ' > "$root/review-intent.json"
+
+      - name: Preserve requested-review transport intent attempt 1
+        id: review_intent_evidence
+        if: steps.review_intent.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-head-review-intent-${{ github.event.client_payload.subject.pull_request }}-${{ github.event.client_payload.subject.head_sha }}-source-${{ github.run_id }}-${{ github.run_attempt }}-attempt-1
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: |
+            ${{ runner.temp }}/qikvrt-exact-head-review-transport-attempt-1/review-request.json
+            ${{ runner.temp }}/qikvrt-exact-head-review-transport-attempt-1/review-intent.json
+
+      - name: Seal read-only publisher validation result
+        id: publisher_validation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=invalid
+          if [ "${{ steps.publish.outcome }}" = success ]; then
+            if [ "${{ steps.dedupe.outputs.duplicate }}" = true ]; then
+              test "${{ steps.publish.outputs.state }}" = success
+              state=duplicate
+            elif [ "${{ steps.publish.outputs.state }}" = error ]; then
+              state=ready
+            elif [ "${{ steps.publish.outputs.state }}" = success ] && \
+                 [ "${{ steps.review_intent_evidence.outcome }}" = success ]; then
+              state=ready
+            fi
+          fi
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          test "$state" != invalid
+
+  publish-status:
+    name: Publish exact candidate status only
+    needs: [bind-dispatch, validate-publisher-observation]
+    if: >-
+      always() && needs.bind-dispatch.result == 'success' &&
+      needs.validate-publisher-observation.result == 'success' &&
+      (needs.validate-publisher-observation.outputs.validation_state == 'ready' ||
+       needs.validate-publisher-observation.outputs.validation_state == 'duplicate')
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      state: ${{ steps.status.outputs.state }}
+      status_id: ${{ steps.status.outputs.status_id }}
+      effect: ${{ steps.status.outputs.effect }}
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PLANNED_STATE: ${{ needs.validate-publisher-observation.outputs.planned_state }}
+      DUPLICATE: ${{ needs.validate-publisher-observation.outputs.duplicate }}
+      PRIOR_STATUS_ID: ${{ needs.validate-publisher-observation.outputs.prior_status_id }}
+    steps:
+      - name: Reobserve exact subject and publish only the validated status
+        id: status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PLANNED_STATE" =~ ^(success|error)$ ]]
+          [[ "$TARGET_PR" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$TARGET_BASE_REF" = main
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+
+          effect=published
+          status_id=
+          if [ "$DUPLICATE" = true ]; then
+            test "$PLANNED_STATE" = success
+            [[ "$PRIOR_STATUS_ID" =~ ^[1-9][0-9]*$ ]]
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/statuses?per_page=100" \
+              > "$RUNNER_TEMP/pre-effect-status-pages.json"
+            latest="$(jq -c '
+              [.[] | .[] | select(.context == "QIKVRT autonomous candidate self-check")] |
+              sort_by(.id,.created_at) | last // empty
+            ' "$RUNNER_TEMP/pre-effect-status-pages.json")"
+            if [ -n "$latest" ] && \
+               [ "$(jq -r '.id' <<<"$latest")" = "$PRIOR_STATUS_ID" ] && \
+               [ "$(jq -r '.state' <<<"$latest")" = success ]; then
+              status_id="$PRIOR_STATUS_ID"
+              effect=duplicate
+            fi
+          fi
+
+          if [ "$effect" = published ]; then
+            description='Candidate self-check incomplete or failed closed'
+            if [ "$PLANNED_STATE" = success ]; then
+              description='Read-only candidate self-check succeeded; independent gates remain'
+            fi
+            # Fence trusted evaluator/main immediately before the sole write.
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+            response="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state="$PLANNED_STATE" \
+              -f context='QIKVRT autonomous candidate self-check' \
+              -f description="$description" \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+            status_id="$(jq -r '.id // empty' <<<"$response")"
+            [[ "$status_id" =~ ^[1-9][0-9]*$ ]]
+            jq -e --arg state "$PLANNED_STATE" \
+              --arg target "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" '
+              .state == $state and
+              .context == "QIKVRT autonomous candidate self-check" and
+              .target_url == $target
+            ' <<<"$response" >/dev/null
+          fi
+          {
+            echo "state=$PLANNED_STATE"
+            echo "status_id=$status_id"
+            echo "effect=$effect"
+          } >> "$GITHUB_OUTPUT"
+
+  publish-observation:
+    name: Seal trusted-main publisher receipt
+    needs:
+      - bind-dispatch
+      - verify-candidate
+      - validate-candidate-observation
+      - validate-publisher-observation
+      - publish-status
+    if: always()
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      publisher_artifact_id: ${{ steps.publisher_evidence.outputs.artifact-id }}
+      publisher_artifact_digest: ${{ steps.publisher_evidence.outputs.artifact-digest }}
+      published_state: ${{ steps.result.outputs.state }}
+      duplicate: ${{ steps.result.outputs.duplicate }}
+      prior_publisher_artifact_id: ${{ steps.result.outputs.prior_publisher_artifact_id }}
+      prior_publisher_artifact_digest: ${{ steps.result.outputs.prior_publisher_artifact_digest }}
+      review_intent_artifact_id: ${{ steps.result.outputs.review_intent_artifact_id }}
+      review_intent_artifact_digest: ${{ steps.result.outputs.review_intent_artifact_digest }}
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_HEAD_REPOSITORY: ${{ github.event.client_payload.subject.head_repository }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      PRODUCER_RUN_ID: ${{ github.event.client_payload.producer.run_id }}
+      PRODUCER_RUN_ATTEMPT: ${{ github.event.client_payload.producer.run_attempt }}
+      PRODUCER_WORKFLOW_ID: ${{ github.event.client_payload.producer.workflow_id }}
+      PRODUCER_WORKFLOW_PATH: ${{ github.event.client_payload.producer.workflow_path }}
+      PRODUCER_WORKFLOW_SHA: ${{ github.event.client_payload.producer.workflow_sha }}
+      BINDING_ARTIFACT_ID: ${{ needs.bind-dispatch.outputs.artifact_id }}
+      BINDING_ARTIFACT_DIGEST: ${{ needs.bind-dispatch.outputs.artifact_digest }}
+      BINDING_RUN_ATTEMPT: ${{ needs.bind-dispatch.outputs.binding_run_attempt }}
+      BOUND_PRODUCER_ARTIFACT_ID: ${{ needs.bind-dispatch.outputs.producer_artifact_id }}
+      BOUND_PRODUCER_ARTIFACT_DIGEST: ${{ needs.bind-dispatch.outputs.producer_artifact_digest }}
+      CANDIDATE_RESULT: ${{ needs.verify-candidate.result }}
+      ARTIFACT_ID: ${{ needs.validate-candidate-observation.outputs.artifact_id }}
+      ARTIFACT_DIGEST: ${{ needs.validate-candidate-observation.outputs.artifact_digest }}
+      ARTIFACT_IDENTITY_OUTCOME: ${{ needs.validate-candidate-observation.outputs.identity_outcome }}
+      DOWNLOAD_OUTCOME: ${{ needs.validate-candidate-observation.outputs.download_outcome }}
+      RECEIPT_OUTCOME: ${{ needs.validate-candidate-observation.outputs.receipt_outcome }}
+      VALIDATION_STATE: ${{ needs.validate-publisher-observation.outputs.validation_state }}
+      PUBLISHED_STATE: ${{ needs.publish-status.outputs.state }}
+      STATUS_ID: ${{ needs.publish-status.outputs.status_id }}
+      STATUS_EFFECT: ${{ needs.publish-status.outputs.effect }}
+      DUPLICATE: ${{ needs.validate-publisher-observation.outputs.duplicate }}
+      PRIOR_PUBLISHER_ARTIFACT_ID: ${{ needs.validate-publisher-observation.outputs.prior_publisher_artifact_id }}
+      PRIOR_PUBLISHER_ARTIFACT_DIGEST: ${{ needs.validate-publisher-observation.outputs.prior_publisher_artifact_digest }}
+      REVIEW_INTENT_ARTIFACT_ID: ${{ needs.validate-publisher-observation.outputs.review_intent_artifact_id }}
+      REVIEW_INTENT_ARTIFACT_DIGEST: ${{ needs.validate-publisher-observation.outputs.review_intent_artifact_digest }}
+    steps:
+      - name: Bind status effect and exact live subject without write authority
+        id: status_receipt
+        if: needs.publish-status.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PUBLISHED_STATE" =~ ^(success|error)$ ]]
+          [[ "$STATUS_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$STATUS_EFFECT" =~ ^(published|duplicate)$ ]]
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/statuses?per_page=100" \
+            > "$RUNNER_TEMP/publisher-status-pages.json"
+          status="$(jq -c --argjson id "$STATUS_ID" \
+            '[.[] | .[] | select(.id == $id)] | if length == 1 then .[0] else empty end' \
+            "$RUNNER_TEMP/publisher-status-pages.json")"
+          test -n "$status"
+          jq -e --arg state "$PUBLISHED_STATE" '
+            .state == $state and .context == "QIKVRT autonomous candidate self-check" and
+            (.target_url | startswith("https://github.com/"))
+          ' <<<"$status" >/dev/null
+          if [ "$STATUS_EFFECT" = published ]; then
+            test "$(jq -r '.target_url' <<<"$status")" = \
+              "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            test "$DUPLICATE" = true
+            test "$PUBLISHED_STATE" = success
+          fi
+
+      - name: Require exact requested-review intent artifact identity
+        id: review_intent_identity
+        if: >-
+          steps.status_receipt.outcome == 'success' &&
+          env.PUBLISHED_STATE == 'success' && env.DUPLICATE != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REVIEW_INTENT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REVIEW_INTENT_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$|^[0-9a-f]{64}$ ]]
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${REVIEW_INTENT_ARTIFACT_ID}")"
+          jq -e --argjson id "$REVIEW_INTENT_ARTIFACT_ID" \
+            --arg name "qikvrt-exact-head-review-intent-${TARGET_PR}-${TARGET_SHA}-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-attempt-1" \
+            --arg digest "sha256:${REVIEW_INTENT_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $id and .name == $name and .digest == $digest and .expired == false and
+            .workflow_run.id == $run_id and .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$artifact" >/dev/null
+
+      - name: Download exact requested-review intent without write authority
+        id: review_intent_download
+        if: steps.review_intent_identity.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.validate-publisher-observation.outputs.review_intent_artifact_id }}
+          path: ${{ runner.temp }}/qikvrt-exact-head-review-intent-readback
+
+      - name: Validate requested-review intent bytes without write authority
+        id: review_intent_receipt
+        if: steps.review_intent_download.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-head-review-intent-readback"
+          test "$(find "$root" -type f | wc -l)" -eq 2
+          test -f "$root/review-request.json"
+          test -f "$root/review-intent.json"
+          test ! -L "$root/review-request.json"
+          test ! -L "$root/review-intent.json"
+          jq -e --slurpfile request "$root/review-request.json" \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg evaluator "$GITHUB_WORKFLOW_SHA" \
+            --arg request_sha "$(sha256sum "$root/review-request.json" | cut -d' ' -f1)" '
+            .schema == "qikvrt.requested-review-transport-intent.v1" and
+            .repository == $repository and .subject.pull_request == ($pr|tonumber) and
+            .subject.head_sha == $head and .subject.head_tree_sha == $tree and
+            .subject.base_ref == $base_ref and .subject.base_sha == $base and
+            .target.workflow_path == ".github/workflows/qikvrt_requested_review_executor.yml" and
+            .target.ref == "main" and .target.evaluator_sha == $evaluator and
+            .attempt == 1 and .request_sha256 == $request_sha and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED" and
+            $request[0].schema == "qikvrt.requested-review-transport-request.v1" and
+            $request[0].repository == $repository and $request[0].subject == .subject and
+            $request[0].target == .target and $request[0].attempt == 1
+          ' "$root/review-intent.json" >/dev/null
+
+      - name: Materialize trusted publisher receipt
+        id: result
+        if: >-
+          steps.status_receipt.outcome == 'success' &&
+          (env.DUPLICATE == 'true' || env.PUBLISHED_STATE == 'error' ||
+           steps.review_intent_receipt.outcome == 'success')
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-head-publisher-receipt"
+          mkdir -p "$root"
+          {
+            echo "state=$PUBLISHED_STATE"
+            echo "duplicate=$DUPLICATE"
+            echo "prior_publisher_artifact_id=$PRIOR_PUBLISHER_ARTIFACT_ID"
+            echo "prior_publisher_artifact_digest=$PRIOR_PUBLISHER_ARTIFACT_DIGEST"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$DUPLICATE" = true ]; then
+            test "$PUBLISHED_STATE" = success
+            [[ "$PRIOR_PUBLISHER_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+            [[ "$PRIOR_PUBLISHER_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            exit 0
+          fi
+          review_intent_id=
+          review_intent_digest=
+          if [ "$PUBLISHED_STATE" = success ]; then
+            review_intent_id="$REVIEW_INTENT_ARTIFACT_ID"
+            review_intent_digest="sha256:${REVIEW_INTENT_ARTIFACT_DIGEST#sha256:}"
+            echo "review_intent_artifact_id=$review_intent_id" >> "$GITHUB_OUTPUT"
+            echo "review_intent_artifact_digest=$review_intent_digest" >> "$GITHUB_OUTPUT"
+          fi
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$TARGET_HEAD_REPOSITORY" --arg head_ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg candidate_result "$CANDIDATE_RESULT" --arg artifact_id "$ARTIFACT_ID" \
+            --arg artifact_digest "$ARTIFACT_DIGEST" \
+            --arg artifact_identity_outcome "$ARTIFACT_IDENTITY_OUTCOME" \
+            --arg download_outcome "$DOWNLOAD_OUTCOME" --arg receipt_outcome "$RECEIPT_OUTCOME" \
+            --arg review_intent_artifact_id "$review_intent_id" \
+            --arg review_intent_artifact_digest "$review_intent_digest" \
+            --arg published_state "$PUBLISHED_STATE" --arg status_id "$STATUS_ID" \
+            --arg producer_run_id "$PRODUCER_RUN_ID" \
+            --arg producer_run_attempt "$PRODUCER_RUN_ATTEMPT" \
+            --arg producer_workflow_id "$PRODUCER_WORKFLOW_ID" \
+            --arg producer_workflow_path "$PRODUCER_WORKFLOW_PATH" \
+            --arg producer_workflow_sha "$PRODUCER_WORKFLOW_SHA" \
+            --arg producer_artifact_id "$BOUND_PRODUCER_ARTIFACT_ID" \
+            --arg producer_artifact_digest "$BOUND_PRODUCER_ARTIFACT_DIGEST" \
+            --arg binding_artifact_id "$BINDING_ARTIFACT_ID" \
+            --arg binding_artifact_digest "sha256:${BINDING_ARTIFACT_DIGEST#sha256:}" \
+            --arg binding_run_attempt "$BINDING_RUN_ATTEMPT" \
+            '{schema:"qikvrt.autonomous-candidate-self-check-publisher.v2",repository:$repository,pull_request:($pr|tonumber),head_repository:$head_repository,head_ref:$head_ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base,run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,dispatch_binding:{artifact:{id:($binding_artifact_id|tonumber),digest:$binding_artifact_digest},run_attempt:($binding_run_attempt|tonumber),receipt_outcome:"success"},candidate_result:$candidate_result,candidate_artifact:{id:(if $artifact_id == "" then null else ($artifact_id|tonumber) end),digest:$artifact_digest,identity_outcome:$artifact_identity_outcome,download_outcome:$download_outcome,receipt_outcome:$receipt_outcome},published_state:$published_state,status_id:($status_id|tonumber),status_context:"QIKVRT autonomous candidate self-check",review_dispatch_outcome:(if $published_state == "success" then "pending" else "not_applicable" end),review_transport:(if $published_state == "success" then {attempt:1,outcome:"intent_persisted",intent_artifact:{id:($review_intent_artifact_id|tonumber),digest:$review_intent_artifact_digest}} else {attempt:null,outcome:"not_applicable",intent_artifact:null} end),producer:{run_id:($producer_run_id|tonumber),run_attempt:($producer_run_attempt|tonumber),workflow_id:($producer_workflow_id|tonumber),workflow_path:$producer_workflow_path,workflow_sha:$producer_workflow_sha,continuation_artifact:{id:($producer_artifact_id|tonumber),digest:$producer_artifact_digest}},classification:"CANDIDATE_SELF_CHECK_ONLY",trusted_terminal_verification:false,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+            > "$root/publisher.json"
+
+      - name: Preserve trusted publisher receipt
+        id: publisher_evidence
+        if: steps.result.outcome == 'success' && steps.result.outputs.duplicate != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-head-publisher-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: ${{ runner.temp }}/qikvrt-exact-head-publisher-receipt/publisher.json
+
+  persist-exact-review-outbox:
+    name: Persist exact requested-review intent in durable FIFO
+    needs: [bind-dispatch, publish-observation]
+    if: >-
+      needs.bind-dispatch.result == 'success' &&
+      needs.publish-observation.outputs.published_state == 'success' &&
+      needs.publish-observation.outputs.review_intent_artifact_id != ''
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-exact-review-dispatch
+      cancel-in-progress: false
+      queue: max
+    outputs:
+      sequence: ${{ steps.persist.outputs.sequence }}
+      fingerprint: ${{ steps.persist.outputs.fingerprint }}
+      transport_attempt: ${{ steps.persist.outputs.transport_attempt }}
+      new_transport: ${{ steps.persist.outputs.new_transport }}
+      transport_artifact_id: ${{ steps.transport_evidence.outputs.artifact-id }}
+      transport_artifact_digest: ${{ steps.transport_evidence.outputs.artifact-digest }}
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      REVIEW_INTENT_ARTIFACT_ID: ${{ needs.publish-observation.outputs.review_intent_artifact_id }}
+      REVIEW_INTENT_ARTIFACT_DIGEST: ${{ needs.publish-observation.outputs.review_intent_artifact_digest }}
+      VERIFIER_WORKFLOW_ID: ${{ needs.bind-dispatch.outputs.verifier_workflow_id }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-exact-review-dispatch
+    steps:
+      - name: Check out exact trusted verifier revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact review transport intent
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.publish-observation.outputs.review_intent_artifact_id }}
+          path: ${{ runner.temp }}/qikvrt-exact-review-outbox-input
+
+      - name: Validate and materialize exact review outbox payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-review-outbox-input"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+          [[ "$REVIEW_INTENT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REVIEW_INTENT_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$|^[0-9a-f]{64}$ ]]
+          [[ "$VERIFIER_WORKFLOW_ID" =~ ^[1-9][0-9]*$ ]]
+          test -f "$root/review-request.json"
+          test -f "$root/review-intent.json"
+          test "$(find "$root" -type f | wc -l)" -eq 2
+          artifact_name="qikvrt-exact-head-review-intent-${TARGET_PR}-${TARGET_SHA}-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-attempt-1"
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${REVIEW_INTENT_ARTIFACT_ID}")"
+          jq -e --argjson id "$REVIEW_INTENT_ARTIFACT_ID" --arg name "$artifact_name" \
+            --arg digest "sha256:${REVIEW_INTENT_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $id and .name == $name and .digest == $digest and .expired == false and
+            .workflow_run.id == $run_id and .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$artifact" >/dev/null
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg evaluator "$GITHUB_WORKFLOW_SHA" \
+            --arg request_sha "$(sha256sum "$root/review-request.json" | cut -d' ' -f1)" '
+            .schema == "qikvrt.requested-review-transport-intent.v1" and
+            .repository == $repository and .subject == {pull_request:($pr|tonumber),head_repository:$repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base} and
+            .target.workflow_path == ".github/workflows/qikvrt_requested_review_executor.yml" and
+            .target.ref == "main" and .target.evaluator_sha == $evaluator and
+            .attempt == 1 and .request_sha256 == $request_sha and
+            .productive_effect == false and .effect_ack == "NOT_REQUIRED"
+          ' "$root/review-intent.json" >/dev/null
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+          verifier="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_autonomous_exact_head_verify.yml")"
+          jq -e --argjson id "$VERIFIER_WORKFLOW_ID" '
+            .id == $id and .path == ".github/workflows/qikvrt_autonomous_exact_head_verify.yml" and .state == "active"
+          ' <<<"$verifier" >/dev/null
+          executor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml")"
+          executor_workflow_id="$(jq -r '.id' <<<"$executor")"
+          [[ "$executor_workflow_id" =~ ^[1-9][0-9]*$ ]]
+          jq -e '.path == ".github/workflows/qikvrt_requested_review_executor.yml" and .state == "active"' \
+            <<<"$executor" >/dev/null
+          executor_blob="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/qikvrt_requested_review_executor.yml?ref=${GITHUB_WORKFLOW_SHA}" --jq '.sha')"
+          test "$executor_blob" = "$(jq -r '.target.workflow_blob_sha' "$root/review-request.json")"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg main "$GITHUB_WORKFLOW_SHA" \
+            --arg verifier_workflow_id "$VERIFIER_WORKFLOW_ID" --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" --arg pr "$TARGET_PR" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" --arg base_ref "$TARGET_BASE_REF" \
+            --arg base "$TARGET_BASE_SHA" --arg executor_workflow_id "$executor_workflow_id" '
+            {schema:"qikvrt_ruleset_outbox_payload_v1",repository:$repository,lane:"exact-review-dispatch",main_head_sha:$main,producer:{workflow_path:".github/workflows/qikvrt_autonomous_exact_head_verify.yml",workflow_sha:$main,workflow_id:($verifier_workflow_id|tonumber),run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),event:"repository_dispatch"},subject:{pull_request:($pr|tonumber),head_repository:$repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},target:{workflow_id:($executor_workflow_id|tonumber),workflow_path:".github/workflows/qikvrt_requested_review_executor.yml",event:"workflow_dispatch"},request:{ref:"main",return_run_details:true,inputs:{pr:$pr,head:$head,fingerprint:("0"*64),evaluator_sha:$main,transport_intent_sha256:("0"*64),transport_attempt:"1"}},causal:{d0:2,state:"REQUESTED_REVIEW",productive_effect:false}}
+          ' > "$root/payload-draft.json"
+          python3 - "$root/payload-draft.json" "$root/payload.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          from tools.qikvrt_ruleset_outbox import seal_review_transport_payload
+
+          source, target = sys.argv[1:]
+          draft = json.loads(pathlib.Path(source).read_text(encoding="utf-8"))
+          payload = seal_review_transport_payload(draft, attempt=1)
+          pathlib.Path(target).write_text(
+              json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          printf '%s\n' "$artifact_name" > "$root/artifact-name.txt"
+
+      - name: Enqueue exact review intent CAS only
+        id: enqueue
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          writer_token="${LEDGER_WRITER_TOKEN-}"
+          writer_actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$writer_token"
+          [[ "$writer_actor" =~ ^[1-9][0-9]*$ ]]
+          root="$RUNNER_TEMP/qikvrt-exact-review-outbox-input"
+          artifact_name="$(cat "$root/artifact-name.txt")"
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$writer_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+            --repository "$GITHUB_REPOSITORY" --receipt "$root/enqueue.json" \
+            enqueue --lane exact-review-dispatch --payload "$root/payload.json" \
+            --artifact-id "$REVIEW_INTENT_ARTIFACT_ID" --artifact-name "$artifact_name" \
+            --artifact-digest "$REVIEW_INTENT_ARTIFACT_DIGEST" >/dev/null
+          sequence="$(jq -r '.sequence' "$root/enqueue.json")"
+          fingerprint="$(jq -r '.fingerprint' "$root/enqueue.json")"
+          [[ "$sequence" =~ ^[1-9][0-9]*$ ]]
+          [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+          echo "sequence=$sequence" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          unset writer_token
+
+      - name: Materialize exact review request from sealed enqueue receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-review-outbox-input"
+          python3 - "$root/enqueue.json" "$root/transport-request.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          from tools.qikvrt_ruleset_outbox import request_for_transport_attempt
+
+          source, target = sys.argv[1:]
+          intent = json.loads(pathlib.Path(source).read_text(encoding="utf-8"))
+          request = request_for_transport_attempt(intent, 1)
+          pathlib.Path(target).write_text(
+              json.dumps(request, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Prepare exact review transport CAS only
+        id: persist
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+          ENQUEUED_SEQUENCE: ${{ steps.enqueue.outputs.sequence }}
+          ENQUEUED_FINGERPRINT: ${{ steps.enqueue.outputs.fingerprint }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          writer_token="${LEDGER_WRITER_TOKEN-}"
+          writer_actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$writer_token"
+          [[ "$writer_actor" =~ ^[1-9][0-9]*$ ]]
+          root="$RUNNER_TEMP/qikvrt-exact-review-outbox-input"
+          sequence="$ENQUEUED_SEQUENCE"
+          fingerprint="$ENQUEUED_FINGERPRINT"
+          [[ "$sequence" =~ ^[1-9][0-9]*$ ]]
+          [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$writer_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+            --repository "$GITHUB_REPOSITORY" --receipt "$root/transport.json" \
+            prepare-transport --lane exact-review-dispatch --sequence "$sequence" --attempt 1 \
+            --request "$root/transport-request.json" --actor-run-id "$GITHUB_RUN_ID" \
+            --actor-run-attempt "$GITHUB_RUN_ATTEMPT" >/dev/null
+          jq -e '.cas.persisted == true and (.cas.appended | type) == "boolean"' \
+            "$root/transport.json" >/dev/null
+          echo "sequence=$sequence" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "transport_attempt=1" >> "$GITHUB_OUTPUT"
+          echo "new_transport=$(jq -r '.cas.appended' "$root/transport.json")" >> "$GITHUB_OUTPUT"
+          unset writer_token
+
+      - name: Preserve exact review pre-effect transport bytes
+        id: transport_evidence
+        if: steps.persist.outputs.new_transport == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-review-pre-effect-${{ steps.persist.outputs.sequence }}-${{ steps.persist.outputs.fingerprint }}-transport-1-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            ${{ runner.temp }}/qikvrt-exact-review-outbox-input/enqueue.json
+            ${{ runner.temp }}/qikvrt-exact-review-outbox-input/transport.json
+            ${{ runner.temp }}/qikvrt-exact-review-outbox-input/transport-request.json
+
+  dispatch-exact-review-transport:
+    name: Dispatch exact requested-review transport only
+    needs: [bind-dispatch, persist-exact-review-outbox]
+    if: needs.persist-exact-review-outbox.outputs.new_transport == 'true'
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      OUTBOX_SEQUENCE: ${{ needs.persist-exact-review-outbox.outputs.sequence }}
+      OUTBOX_FINGERPRINT: ${{ needs.persist-exact-review-outbox.outputs.fingerprint }}
+      TRANSPORT_ARTIFACT_ID: ${{ needs.persist-exact-review-outbox.outputs.transport_artifact_id }}
+      TRANSPORT_ARTIFACT_DIGEST: ${{ needs.persist-exact-review-outbox.outputs.transport_artifact_digest }}
+    outputs:
+      child_found: ${{ steps.dispatch.outputs.child_found }}
+    steps:
+      - name: Require exact pre-effect transport artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TRANSPORT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSPORT_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$|^[0-9a-f]{64}$ ]]
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${TRANSPORT_ARTIFACT_ID}")"
+          jq -e --argjson id "$TRANSPORT_ARTIFACT_ID" \
+            --arg name "qikvrt-exact-review-pre-effect-${OUTBOX_SEQUENCE}-${OUTBOX_FINGERPRINT}-transport-1-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}" \
+            --arg digest "sha256:${TRANSPORT_ARTIFACT_DIGEST#sha256:}" \
+            --argjson run_id "$GITHUB_RUN_ID" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '
+            .id == $id and .name == $name and .digest == $digest and .expired == false and
+            .workflow_run.id == $run_id and .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == $workflow_sha
+          ' <<<"$artifact" >/dev/null
+
+      - name: Download exact pre-effect transport bytes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.persist-exact-review-outbox.outputs.transport_artifact_id }}
+          path: ${{ runner.temp }}/qikvrt-exact-review-dispatch
+
+      - name: Reobserve sealed review request and dispatch once
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-review-dispatch"
+          test -f "$root/enqueue.json"
+          test -f "$root/transport.json"
+          test -f "$root/transport-request.json"
+          test "$(find "$root" -type f | wc -l)" -eq 3
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+          jq -e --argjson sequence "$OUTBOX_SEQUENCE" --arg fingerprint "$OUTBOX_FINGERPRINT" '
+            .lane == "exact-review-dispatch" and .sequence == $sequence and
+            .fingerprint == $fingerprint and .state == "SEALED"
+          ' "$root/enqueue.json" >/dev/null
+          jq -e --argjson sequence "$OUTBOX_SEQUENCE" --arg fingerprint "$OUTBOX_FINGERPRINT" \
+            --argjson actor "$GITHUB_RUN_ID" --argjson actor_attempt "$GITHUB_RUN_ATTEMPT" '
+            .schema == "qikvrt_ruleset_outbox_transport_v2" and
+            .lane == "exact-review-dispatch" and .sequence == $sequence and
+            .fingerprint == $fingerprint and .attempt == 1 and
+            .state == "PRE_EFFECT_REOBSERVED" and .productive_effect == false and
+            .actor_run_id == $actor and .actor_run_attempt == $actor_attempt and
+            .cas.persisted == true and .cas.appended == true
+          ' "$root/transport.json" >/dev/null
+          python3 - "$root/transport.json" "$root/transport-request.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          from tools.qikvrt_ruleset_outbox import digest
+
+          transport_path, request_path = map(pathlib.Path, sys.argv[1:])
+          transport = json.loads(transport_path.read_text(encoding="utf-8"))
+          request = json.loads(request_path.read_text(encoding="utf-8"))
+          if transport["request_sha256"] != digest(request):
+              raise SystemExit("sealed transport request digest mismatch")
+          PY
+          cp "$root/transport-request.json" "$root/request.json"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+          evaluator="$(jq -r '.inputs.evaluator_sha' "$root/request.json")"
+          intent_sha="$(jq -r '.inputs.transport_intent_sha256' "$root/request.json")"
+          transport_attempt="$(jq -r '.inputs.transport_attempt' "$root/request.json")"
+          evidence_fingerprint="$(jq -r '.inputs.fingerprint' "$root/request.json")"
+          test "$evaluator" = "$GITHUB_WORKFLOW_SHA"
+          test "$intent_sha" = "$OUTBOX_FINGERPRINT"
+          test "$transport_attempt" = 1
+          executor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml")"
+          executor_workflow_id="$(jq -r '.id' <<<"$executor")"
+          test "$executor_workflow_id" = "$(jq -r '.intent.payload.target.workflow_id' "$root/enqueue.json")"
+          jq -e '.path == ".github/workflows/qikvrt_requested_review_executor.yml" and .state == "active"' \
+            <<<"$executor" >/dev/null
+          expected_title="qikvrt-rr-v3 e=${evaluator} p=${TARGET_PR} h=${TARGET_SHA} f=${evidence_fingerprint} i=${intent_sha} a=1"
+          set +e
+          gh api --method POST -H 'X-GitHub-Api-Version: 2026-03-10' \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
-            -f ref=main \
-            -f "inputs[pr]=$TARGET_PR" \
-            -f "inputs[head]=$TARGET_SHA"
+            --input "$root/request.json" > "$root/response.json"
+          post_rc=$?
+          set -e
+          if [ "$post_rc" -ne 0 ]; then
+            rm -f "$root/response.json"
+            # A failed client response is transport-ambiguous: the server may
+            # already have admitted the child.  This effect job cannot observe
+            # its own terminal run and therefore cannot mint absence evidence.
+            # The scheduled Auditor resumes a durable, bounded scan only after
+            # this exact actor attempt is terminal.
+            exit "$post_rc"
+          fi
+          jq -e '
+            (keys | sort) == ["html_url","run_url","workflow_run_id"] and
+            (.workflow_run_id | type) == "number" and .workflow_run_id > 0 and
+            (.run_url | type) == "string" and (.run_url | length) > 0 and
+            (.html_url | type) == "string" and (.html_url | length) > 0
+          ' "$root/response.json" >/dev/null
+          child_run_id="$(jq -r '.workflow_run_id' "$root/response.json")"
+          child="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${child_run_id}")"
+          jq -e --argjson id "$child_run_id" --argjson workflow_id "$executor_workflow_id" \
+            --arg repository "$GITHUB_REPOSITORY" --arg evaluator "$evaluator" --arg title "$expected_title" '
+            .id == $id and .run_attempt == 1 and .workflow_id == $workflow_id and
+            (.path | split("@")[0]) == ".github/workflows/qikvrt_requested_review_executor.yml" and
+            .event == "workflow_dispatch" and .repository.full_name == $repository and
+            .head_branch == "main" and .head_sha == $evaluator and .display_title == $title and
+            (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")
+          ' <<<"$child" >/dev/null
+          jq -n --argjson run_id "$child_run_id" --argjson run_attempt "$(jq -r '.run_attempt' <<<"$child")" \
+            --argjson workflow_id "$executor_workflow_id" --arg repository "$GITHUB_REPOSITORY" \
+            --arg head_sha "$evaluator" --arg status "$(jq -r '.status' <<<"$child")" --arg title "$expected_title" '
+            {run_id:$run_id,run_attempt:$run_attempt,workflow_id:$workflow_id,workflow_path:".github/workflows/qikvrt_requested_review_executor.yml",event:"workflow_dispatch",repository:$repository,head_sha:$head_sha,status:$status,display_title:$title}
+          ' > "$root/child.json"
+          echo "child_found=true" >> "$GITHUB_OUTPUT"
 
-      - name: Publish exact-head failure status
-        if: failure()
+      - name: Preserve exact requested-review child locator
+        id: child_evidence
+        if: steps.dispatch.outputs.child_found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-review-child-${{ needs.persist-exact-review-outbox.outputs.sequence }}-${{ needs.persist-exact-review-outbox.outputs.fingerprint }}-attempt-1
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+          path: |
+            ${{ runner.temp }}/qikvrt-exact-review-dispatch/request.json
+            ${{ runner.temp }}/qikvrt-exact-review-dispatch/response.json
+            ${{ runner.temp }}/qikvrt-exact-review-dispatch/child.json
+
+  accept-exact-review-transport:
+    name: Persist exact requested-review child acceptance
+    needs: [persist-exact-review-outbox, dispatch-exact-review-transport]
+    if: >-
+      needs.dispatch-exact-review-transport.result == 'success' &&
+      needs.dispatch-exact-review-transport.outputs.child_found == 'true'
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: qikvrt-outbox-ledger-authority
+    concurrency:
+      group: qikvrt-outbox-ledger-v2-exact-review-dispatch
+      cancel-in-progress: false
+      queue: max
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      OUTBOX_SEQUENCE: ${{ needs.persist-exact-review-outbox.outputs.sequence }}
+      OUTBOX_FINGERPRINT: ${{ needs.persist-exact-review-outbox.outputs.fingerprint }}
+      QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-exact-review-dispatch
+    steps:
+      - name: Check out exact trusted verifier revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact requested-review child locator
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: qikvrt-exact-review-child-${{ needs.persist-exact-review-outbox.outputs.sequence }}-${{ needs.persist-exact-review-outbox.outputs.fingerprint }}-attempt-1
+          path: ${{ runner.temp }}/qikvrt-exact-review-child
+
+      - name: Rebind exact requested-review child without ledger credentials
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-            -f state=failure \
-            -f context='QIKVRT autonomous exact-head verification' \
-            -f description='Fail-closed exact-head verification found a blocker' \
-            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          root="$RUNNER_TEMP/qikvrt-exact-review-child"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_WORKFLOW_SHA"
+          test -f "$root/child.json"
+          test -f "$root/request.json"
+          test -f "$root/response.json"
+          test "$(find "$root" -type f | wc -l)" -eq 3
+          child_run_id="$(jq -r '.run_id' "$root/child.json")"
+          child="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${child_run_id}")"
+          jq -e --slurpfile sealed "$root/child.json" '
+            .id == $sealed[0].run_id and .run_attempt == $sealed[0].run_attempt and
+            .workflow_id == $sealed[0].workflow_id and (.path | split("@")[0]) == $sealed[0].workflow_path and
+            .event == $sealed[0].event and .repository.full_name == $sealed[0].repository and
+            .head_sha == $sealed[0].head_sha and .display_title == $sealed[0].display_title
+          ' <<<"$child" >/dev/null
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+
+      - name: Append exact requested-review acceptance CAS only
+        env:
+          LEDGER_WRITER_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN }}
+          LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          writer_token="${LEDGER_WRITER_TOKEN-}"
+          writer_actor="${LEDGER_WRITER_ACTOR_ID-}"
+          unset LEDGER_WRITER_TOKEN LEDGER_WRITER_ACTOR_ID
+          test -n "$writer_token"
+          [[ "$writer_actor" =~ ^[1-9][0-9]*$ ]]
+          root="$RUNNER_TEMP/qikvrt-exact-review-child"
+          test -f "$root/child.json"
+          QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN="$writer_token" \
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID="$writer_actor" \
+          QIKVRT_OUTBOX_WRITER_GROUP="$QIKVRT_OUTBOX_WRITER_GROUP" \
+            python3 -B tools/qikvrt_ruleset_outbox.py \
+            --repository "$GITHUB_REPOSITORY" --receipt "$root/acceptance.json" \
+            accept --lane exact-review-dispatch --sequence "$OUTBOX_SEQUENCE" \
+            --attempt 1 --child "$root/child.json" >/dev/null
+          unset writer_token
+
+  persist-exact-head-outbox-result:
+    name: Preserve immutable exact-head business result
+    needs: [bind-dispatch, accept-exact-head-outbox-transport, publish-observation]
+    if: >-
+      always() && needs.bind-dispatch.result == 'success' &&
+      needs.accept-exact-head-outbox-transport.result == 'success' &&
+      (needs.publish-observation.outputs.publisher_artifact_id != '' ||
+       needs.publish-observation.outputs.prior_publisher_artifact_id != '')
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TARGET_PR: ${{ github.event.client_payload.subject.pull_request }}
+      TARGET_REF: ${{ github.event.client_payload.subject.head_ref }}
+      TARGET_SHA: ${{ github.event.client_payload.subject.head_sha }}
+      TARGET_TREE_SHA: ${{ github.event.client_payload.subject.head_tree_sha }}
+      TARGET_BASE_REF: ${{ github.event.client_payload.subject.base_ref }}
+      TARGET_BASE_SHA: ${{ github.event.client_payload.subject.base_sha }}
+      OUTBOX_SEQUENCE: ${{ needs.bind-dispatch.outputs.outbox_sequence }}
+      OUTBOX_FINGERPRINT: ${{ needs.bind-dispatch.outputs.outbox_fingerprint }}
+      OUTBOX_TRANSPORT_ATTEMPT: ${{ needs.bind-dispatch.outputs.outbox_transport_attempt }}
+      PUBLISHER_ARTIFACT_ID: ${{ needs.publish-observation.outputs.publisher_artifact_id }}
+      PUBLISHER_ARTIFACT_DIGEST: ${{ needs.publish-observation.outputs.publisher_artifact_digest }}
+      PRIOR_PUBLISHER_ARTIFACT_ID: ${{ needs.publish-observation.outputs.prior_publisher_artifact_id }}
+      PRIOR_PUBLISHER_ARTIFACT_DIGEST: ${{ needs.publish-observation.outputs.prior_publisher_artifact_digest }}
+    steps:
+      - name: Check out exact trusted verifier revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publisher receipt and materialize immutable business result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-exact-head-outbox-result"
+          mkdir -p "$root"
+          [[ "$OUTBOX_SEQUENCE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$OUTBOX_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
+          test "$OUTBOX_TRANSPORT_ATTEMPT" = 1
+          artifact_id="$PUBLISHER_ARTIFACT_ID"
+          artifact_digest="$PUBLISHER_ARTIFACT_DIGEST"
+          if [ -z "$artifact_id" ]; then
+            artifact_id="$PRIOR_PUBLISHER_ARTIFACT_ID"
+            artifact_digest="$PRIOR_PUBLISHER_ARTIFACT_DIGEST"
+          fi
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$|^[0-9a-f]{64}$ ]]
+          artifact="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}")"
+          jq -e --argjson id "$artifact_id" --arg digest "sha256:${artifact_digest#sha256:}" '
+            .id == $id and .digest == $digest and .expired == false and
+            (.workflow_run.id | type) == "number" and .workflow_run.id > 0
+          ' <<<"$artifact" >/dev/null
+          zip="$root/publisher.zip"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$zip"
+          test "sha256:${artifact_digest#sha256:}" = "sha256:$(sha256sum "$zip" | cut -d' ' -f1)"
+          test "$(unzip -Z1 "$zip" | grep -Fxc publisher.json)" -eq 1
+          test "$(unzip -Z1 "$zip" | wc -l)" -eq 1
+          unzip -p "$zip" publisher.json > "$root/publisher.json"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg ref "$TARGET_REF" --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .schema == "qikvrt.autonomous-candidate-self-check-publisher.v2" and
+            .repository == $repository and .pull_request == ($pr|tonumber) and
+            .head_repository == $repository and .head_ref == $ref and
+            .head_sha == $head and .head_tree_sha == $tree and
+            .base_ref == $base_ref and .base_sha == $base and
+            (.published_state == "success" or .published_state == "error") and
+            .status_context == "QIKVRT autonomous candidate self-check" and
+            .classification == "CANDIDATE_SELF_CHECK_ONLY" and
+            .trusted_terminal_verification == false and .productive_effect == false
+          ' "$root/publisher.json" >/dev/null
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TARGET_PR}")"
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" '
+            .state == "open" and .head.repo.full_name == $repository and
+            .head.ref == $ref and .head.sha == $head and
+            .base.ref == $base_ref and .base.sha == $base
+          ' <<<"$current" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${TARGET_SHA}" --jq '.tree.sha')" = "$TARGET_TREE_SHA"
+          # This workflow cannot truthfully mark itself completed.  It only
+          # seals the exact result bytes here; the trusted workflow_run
+          # completion consumer records the completed child and advances the
+          # FIFO after GitHub has made the terminal run result observable.
+          jq -n --slurpfile publisher "$root/publisher.json" \
+            --arg repository "$GITHUB_REPOSITORY" --arg pr "$TARGET_PR" \
+            --arg head_repository "$GITHUB_REPOSITORY" --arg ref "$TARGET_REF" \
+            --arg head "$TARGET_SHA" --arg tree "$TARGET_TREE_SHA" \
+            --arg base_ref "$TARGET_BASE_REF" --arg base "$TARGET_BASE_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_sha "$GITHUB_WORKFLOW_SHA" \
+            --arg sequence "$OUTBOX_SEQUENCE" --arg fingerprint "$OUTBOX_FINGERPRINT" \
+            --arg transport_attempt "$OUTBOX_TRANSPORT_ATTEMPT" \
+            --arg publisher_artifact_id "$artifact_id" \
+            --arg publisher_artifact_digest "sha256:${artifact_digest#sha256:}" \
+            --arg publisher_payload_sha256 "$(sha256sum "$root/publisher.json" | cut -d' ' -f1)" '
+            {
+              schema:"qikvrt.exact-head-business-result.v1",
+              repository:$repository,
+              subject:{pull_request:($pr|tonumber),head_repository:$head_repository,head_ref:$ref,head_sha:$head,head_tree_sha:$tree,base_ref:$base_ref,base_sha:$base},
+              verifier:{run_id:($run_id|tonumber),run_attempt:($run_attempt|tonumber),workflow_path:".github/workflows/qikvrt_autonomous_exact_head_verify.yml",workflow_sha:$workflow_sha},
+              outbox:{lane:"exact-head-dispatch",sequence:($sequence|tonumber),fingerprint:$fingerprint,transport_attempt:($transport_attempt|tonumber)},
+              publisher:{artifact:{id:($publisher_artifact_id|tonumber),archive_sha256:$publisher_artifact_digest,payload_sha256:$publisher_payload_sha256},receipt:$publisher[0]},
+              state:"RESULT_BYTES_SEALED_AWAITING_WORKFLOW_COMPLETION",
+              productive_effect:false,
+              effect_ack:"NOT_REQUIRED"
+            }
+          ' > "$root/business-result.json"
+
+      - name: Preserve immutable exact-head business result
+        id: business_result_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-exact-head-business-result-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+          path: ${{ runner.temp }}/qikvrt-exact-head-outbox-result/business-result.json

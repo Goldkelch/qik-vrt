@@ -32,10 +32,13 @@
     "credential_kind": "SELF_IDENTIFYING_GITHUB_USER_CREDENTIAL",
     "accepted_platform_actor": "GitHub API /user exact login and type=User",
     "secret_names": {
-      "Goldkelch": "QIKVRT_GOLDKELCH_REVIEW_TOKEN",
-      "ingolf-lohmann": "QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN",
-      "activation": "QIKVRT_NATIVE_ACCOUNT_REVIEW_ACTIVATION"
+      "Goldkelch": "QIKVRT_ENV_GOLDKELCH_REVIEW_TOKEN",
+      "ingolf-lohmann": "QIKVRT_ENV_INGOLF_LOHMANN_REVIEW_TOKEN",
+      "activation": "QIKVRT_ENV_NATIVE_ACCOUNT_REVIEW_ACTIVATION"
     },
+    "github_environment": "qikvrt-native-review-authority",
+    "environment_scope_only": true,
+    "legacy_or_duplicate_repository_or_organization_secret_names_forbidden": true,
     "minimum_scope": [
       "Metadata: read",
       "Pull requests: write"
@@ -49,12 +52,12 @@
     "no_candidate_checkout_or_execution_with_account_credential",
     "exact_open_internal_main_based_pull_request",
     "exact_base_head_tree_and_evidence_fingerprint",
-    "approve_requires_exact_request_event_or_trusted_exact_followup_with_current_requested_counterpart",
-    "approve_requires_current_requested_counterpart_at_pre_effect_readback",
+    "technical_continue_comment_requires_exact_request_event_or_trusted_exact_followup_with_current_requested_counterpart",
+    "technical_continue_comment_requires_current_requested_counterpart_at_pre_effect_readback",
     "immutable_ledger_receipt_and_chunk_transport_reassembly",
     "fresh_reobservation_immediately_before_post",
-    "non_request_negative_projection_only_retracts_the_currently_decisive_marked_same_head_approval_from_one_artifact_bound_exact_event",
-    "platform_rule_requires_one_approval_code_owner_review_stale_dismissal_and_last_push_approval_before_APPROVE",
+    "historical_marked_approved_review_is_predecessor_only_and_never_gate_authority",
+    "platform_rule_requires_one_unmarked_human_non_author_code_owner_approval_with_stale_dismissal_and_last_push_approval_for_gate_success",
     "exact_account_user_and_collaborator_permission_readback",
     "manual_target_review_preserved",
     "post_effect_base_head_tree_reobservation"
@@ -63,7 +66,10 @@
     "delegated_native_account_automation_is_impersonation": false,
     "delegated_native_account_automation_is_independent_natural_person_review": false,
     "platform_signer_must_be_reported_exactly": true,
-    "platform_review_state_must_be_reported_exactly": true
+    "platform_review_state_must_be_reported_exactly": true,
+    "technical_continue_platform_event": "COMMENT",
+    "automation_marked_review_may_satisfy_required_gate": false,
+    "required_gate_success_requires_unmarked_human_approved_review": true
   },
   "not_authorized": [
     "merge",
@@ -79,7 +85,22 @@
     "account_credential_disclosure"
   ],
   "activation_boundary": {
+    "runtime_effect_state": "HARD_DISABLED_NO_SECRET_REFERENCE_NO_NATIVE_REVIEW_POST",
     "requires_platform_secret_provisioning": true,
+    "external_configuration_verified": false,
+    "external_configuration_hold": "AUTHORITY_SECRET_ENVIRONMENT_NOT_VERIFIED",
+    "external_readback_receipt": null,
+    "requires_environment_readback": [
+      "environment_exists_and_is_protected",
+      "selected_deployment_branch_is_main_only",
+      "three_environment_secret_names_are_present",
+      "repository_owner_login_id_and_type_are_read_back",
+      "legacy_and_new_secret_names_are_absent_at_repository_scope",
+      "organization_owner_requires_complete_organization_secret_inventory; user_owner_binds_NOT_APPLICABLE_USER_OWNER_without_claiming_an_organization_inventory"
+    ],
+    "repository_yaml_does_not_create_or_prove_the_environment": true,
+    "checked_in_receipt_does_not_replace_effect_local_settings_readback": true,
+    "reactivation_requires_dedicated_settings_reader": true,
     "requires_administrative_main_ruleset_configuration": true,
     "absence_or_mismatch": "HOLD_WITHOUT_REVIEW_MUTATION"
   },

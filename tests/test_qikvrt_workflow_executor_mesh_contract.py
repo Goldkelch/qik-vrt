@@ -15,6 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
 REVIEW_POLICY = ROOT / "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
 REVIEW_DOC = ROOT / "docs/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE.md"
+REVIEW_RECOVERY = ROOT / ".github/workflows/qikvrt_review_admission_recovery.yml"
+MESH_COMPLETION = ROOT / ".github/workflows/qikvrt_mesh_review_successor_completion.yml"
 SELF_HEALING_CONTRACT = ROOT / "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
 NODE_POLICY = ROOT / "registry/NODE_DISCOVERY_POLICY.json"
 EXECUTOR_WORKFLOW = ROOT / ".github/workflows/qikvrt_workflow_executor.yml"
@@ -111,6 +113,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertTrue(executor["selection"]["workflow_run_requires_role_local_url_and_matching_head"])
         self.assertTrue(executor["selection"]["manual_dispatch_requires_matching_exact_head"])
         self.assertEqual(
+            executor["selection"]["scheduled_recovery_only_locator"],
+            "SEPARATE_TRUSTED_MAIN_ADMISSION_RECOVERY_MAY_DISPATCH_ONLY_A_CONTENT_ADDRESSED_CURRENT_HEAD_HUMAN_REVIEW_FACT_OR_RERUN_ONE_EXACT_ZERO_JOB_SOURCE",
+        )
+        self.assertEqual(
             executor["selection"]["review_intake_priority_policy"],
             "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json#/review_intake_priority",
         )
@@ -119,6 +125,86 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             "NOT_AVAILABLE",
         )
         self.assertTrue(executor["selection"]["github_app_event_broker_required_for_cross_event_priority"])
+
+        recovery = plane["admission_recovery"]
+        self.assertEqual(recovery["mode"], "RECOVERY_ONLY")
+        self.assertEqual(
+            recovery["workflow_path"],
+            REVIEW_RECOVERY.relative_to(ROOT).as_posix(),
+        )
+        self.assertEqual(recovery["eventless_review_selection"], "FORBIDDEN")
+        self.assertEqual(recovery["human_review_body"], "EXCLUDED_UNTRUSTED")
+        self.assertEqual(recovery["human_review_fact_effect"], "WAKEUP_LOCATOR_ONLY")
+        self.assertFalse(recovery["native_review_authority"])
+        self.assertEqual(
+            recovery["terminal_boundary"],
+            "ATTEMPT_2_SUCCESS_CONTINUES_D0_2; ATTEMPT_2_ADVERSE_OR_EXHAUSTED_OR_SUBJECT_SUPERSEDED_D0_3; NO_ATTEMPT_3",
+        )
+        self.assertEqual(
+            recovery["attempt_1_action_required"], "D0_3_TERMINAL_NO_RERUN"
+        )
+        self.assertIn(
+            "WITHOUT_SECOND_REVIEW_POST",
+            recovery["delegated_signer_receipt_loss_recovery"],
+        )
+        self.assertIn(
+            "REQUIRED_GATE_SUCCESS_FORBIDDEN",
+            recovery["delegated_signer_recovery_authority"],
+        )
+        self.assertIn("CONSUMED_AT_MOST_ONCE", recovery["same_run_retry_effect"])
+        self.assertEqual(
+            recovery["attempt_2_absent_at_bounded_terminal_observation"],
+            "D0_3_NO_ATTEMPT_3",
+        )
+        self.assertIn(
+            "VOLATILE_STATUS_AND_CONCLUSION_MAY_ADVANCE",
+            recovery["child_locator_reobservation"],
+        )
+        secret_boundary = recovery["secret_boundary"]
+        self.assertEqual(secret_boundary["candidate_checkout"], "FORBIDDEN")
+        self.assertEqual(
+            secret_boundary["read_plan_and_transport_effect_jobs"],
+            "SECRET_FREE",
+        )
+        self.assertEqual(
+            secret_boundary["protected_ledger_cas_jobs"],
+            "ENVIRONMENT_SCOPED_OUTBOX_AUDITOR_OR_WRITER_TOKEN_ONLY",
+        )
+        self.assertEqual(
+            secret_boundary["ordinary_github_token_as_ledger_writer"],
+            "FORBIDDEN",
+        )
+
+        completion = plane["successor_completion"]
+        self.assertEqual(
+            completion["workflow_path"], MESH_COMPLETION.relative_to(ROOT).as_posix()
+        )
+        self.assertEqual(completion["mode"], "RECOVERY_ONLY_EXISTING_SHARED_CORE_INTENT")
+        self.assertEqual(completion["shared_core_lane"], "mesh-review-successor-dispatch")
+        self.assertEqual(completion["eventless_review_selection"], "FORBIDDEN")
+        self.assertEqual(completion["pull_request_enumeration"], "FORBIDDEN")
+        self.assertEqual(
+            completion["zero_job_same_run_retry_owner"],
+            "QIKVRT_REVIEW_ADMISSION_RECOVERY_ONLY",
+        )
+        self.assertEqual(
+            completion["parent_transport_attempts"],
+            "ONE_SHOT_ATTEMPT_1_ONLY_NO_TRANSPORT_ATTEMPT_2",
+        )
+        self.assertIn(
+            "SHARED_CORE_BOUNDED_MONOTONE",
+            completion["post_before_acceptance_recovery"],
+        )
+        self.assertIn(
+            "D0_3_TERMINAL_NO_REPOST",
+            completion["orphan_zero_ambiguity_or_query_bound"],
+        )
+        self.assertEqual(
+            completion["fifo_advance"],
+            "ONLY_AFTER_SHARED_CORE_COMPLETION_AND_TERMINAL_RECEIPT",
+        )
+        self.assertFalse(completion["native_review_authority"])
+        self.assertFalse(completion["independent_code_owner_authority"])
 
         binding = plane["exact_subject_binding"]
         self.assertEqual(
@@ -137,10 +223,14 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
                 "SCOPE_SHA256",
                 "DIFF_SHA256",
                 "DISCUSSION_ITEM_IDS_TIMESTAMPS_AND_BODY_SHA256",
-                "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_POSITIVE_JOB_COUNT",
-                "ACTIVE_WRITER_QUEUE_STATE",
-                "REVIEW_INTAKE_EVENT_PAYLOAD_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK",
+                "REQUIRED_GATE_WORKFLOW_ID_PATH_EVENT_AND_SEMANTIC_JOB_RESULT",
+                "ACTIVE_WRITER_SEMANTIC_QUEUE_STATE",
+                "REVIEW_INTAKE_ACTION_ACTOR_TARGET_REASON_LABEL_PRIORITY_CLASS_AND_RANK",
             ],
+        )
+        self.assertIn(
+            "PRODUCER_BOUND_REVIEW_TRANSPORT_JSON",
+            binding["review_transport_provenance"],
         )
         self.assertEqual(binding["review_fingerprint_algorithm"], "SHA256")
         self.assertEqual(binding["complete_diff_transport_packet_max_bytes"], 1048576)
@@ -150,7 +240,7 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         )
         self.assertEqual(
             binding["review_fingerprint_input"],
-            "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_CAUSAL_EVIDENCE_BINDING",
+            "CANONICAL_JSON_OF_EXACT_SUBJECT_AND_SEMANTIC_REPOSITORY_FACTS_EXCLUDING_DELIVERY_RUN_ATTEMPT_JOB_AND_TRANSPORT_LOCATORS",
         )
         self.assertEqual(binding["subject_drift_disposition"], "HOLD_UNVERIFIED")
         self.assertEqual(binding["predecessor_evidence_transfer"], "FORBIDDEN")
@@ -164,7 +254,24 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertTrue(ledger["append_only"])
         self.assertEqual(
             ledger["initialization"],
-            "ORPHAN_ROOT_COMMIT_WITH_FIRST_EXACT_RECEIPT",
+            "EXTERNAL_AUTHORITY_ORPHAN_ROOT_GENESIS_ONLY_RUNTIME_REINITIALIZATION_FORBIDDEN",
+        )
+        self.assertFalse(ledger["external_configuration_verified"])
+        self.assertEqual(
+            ledger["external_configuration_hold"],
+            "MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED",
+        )
+        self.assertEqual(
+            ledger["missing_ref_after_genesis"],
+            "HOLD_MESH_REVIEW_LEDGER_REF_MISSING_AFTER_VERIFIED_GENESIS",
+        )
+        self.assertEqual(
+            ledger["required_exact_ref_rule_types"],
+            ["deletion", "non_fast_forward", "update"],
+        )
+        self.assertEqual(
+            ledger["writer_identity"],
+            "SOLE_DEDICATED_GITHUB_APP_INTEGRATION_BYPASS",
         )
         self.assertEqual(ledger["ref"], "refs/heads/qikvrt/mesh-review-ledger-v1")
         self.assertEqual(
@@ -278,6 +385,61 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
             policy["review_executor"]["manual_executor_dispatch_handoff"],
             "TECHNICAL_REVIEW_ONLY_REQUIRED_CODE_OWNER_STATUS_REQUIRES_SEPARATE_EXACT_GATE_DISPATCH",
         )
+        recovery = policy["review_executor"]["admission_recovery"]
+        self.assertEqual(recovery["mode"], "RECOVERY_ONLY")
+        self.assertTrue(recovery["executor_and_required_gate_remain_unscheduled"])
+        self.assertEqual(
+            recovery["eventless_technical_review_or_native_review_authority"],
+            "FORBIDDEN",
+        )
+        self.assertEqual(recovery["candidate_checkout"], "FORBIDDEN")
+        self.assertEqual(
+            recovery["attempt_2_success"],
+            "D0_2_TECHNICAL_CONTINUATION_PENDING_EXACT_REOBSERVATION",
+        )
+        self.assertEqual(
+            recovery["attempt_2_adverse_exhausted_or_superseded_source"],
+            "D0_3_TERMINAL_NO_ATTEMPT_3",
+        )
+        self.assertEqual(
+            recovery["attempt_1_action_required"], "D0_3_TERMINAL_NO_RERUN"
+        )
+        self.assertIn(
+            "WITHOUT_A_SECOND_REVIEW_POST",
+            recovery["delegated_signer_receipt_loss_recovery"],
+        )
+        self.assertIn(
+            "NEVER_REQUIRED_GATE_SUCCESS_OR_NATIVE_APPROVAL",
+            recovery["delegated_signer_recovery_authority"],
+        )
+        self.assertIn("CONSUMED_AT_MOST_ONCE", recovery["same_run_retry_effect"])
+        self.assertEqual(
+            recovery["attempt_2_absent_at_bounded_terminal_observation"],
+            "D0_3_NO_ATTEMPT_3",
+        )
+        self.assertEqual(
+            recovery["read_plan_and_dispatch_or_rerun_effect_secret_use"],
+            "FORBIDDEN",
+        )
+        self.assertEqual(
+            recovery["ordinary_github_token_as_ledger_writer"], "FORBIDDEN"
+        )
+        completion = policy["review_executor"]["mesh_successor_completion"]
+        self.assertEqual(
+            completion["workflow"], MESH_COMPLETION.relative_to(ROOT).as_posix()
+        )
+        self.assertEqual(
+            completion["zero_job_same_run_retry_authority"],
+            "QIKVRT_REVIEW_ADMISSION_RECOVERY_ONLY",
+        )
+        self.assertEqual(
+            completion["parent_transport_attempts"],
+            "ONE_SHOT_ATTEMPT_1_ONLY_NO_TRANSPORT_ATTEMPT_2",
+        )
+        self.assertIn(
+            "SHARED_CORE_BOUNDED_MONOTONE", completion["orphan_adoption"]
+        )
+        self.assertFalse(completion["independent_code_owner_or_merge_authority"])
         self.assertEqual(
             policy["mesh_self_review_owner_delegation"],
             "state/authorization/delegations/OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json",
@@ -320,6 +482,10 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("exact native event or an\nexplicit exact-PR-and-head dispatch", documentation)
         self.assertIn("technical-review action only", documentation)
         self.assertIn("may submit only a\n`COMMENT` review event", documentation)
+        self.assertIn("`RECOVERY_ONLY` transport lane", documentation)
+        self.assertIn("`QIKVRT mesh review successor completion` schedule", documentation)
+        self.assertIn("never enumerates pull requests", documentation)
+        self.assertIn("Code-Owner observer is retired", documentation)
 
     def test_self_healing_and_node_policy_point_to_the_same_continuity_contract(self) -> None:
         self_healing = json.loads(SELF_HEALING_CONTRACT.read_text(encoding="utf-8"))
@@ -441,6 +607,8 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertNotIn("ietf", executor.casefold())
         self.assertIn("contents: read", watchdog)
         self.assertIn("tests.test_qikvrt_workflow_executor_mesh_contract", watchdog)
+        self.assertIn("if test -d qikvrt/runtime/onboarding; then", watchdog)
+        self.assertIn('mv qikvrt/runtime/onboarding "$fixture_root/onboarding"', watchdog)
         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)

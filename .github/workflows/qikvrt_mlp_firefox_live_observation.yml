@@ -1,0 +1,114 @@
+name: QIKVRT MLP Firefox live observation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_mlp_firefox_live_observation.yml"
+      - "tools/qikvrt_mlp_firefox_live_observation.py"
+      - "tests/test_qikvrt_mlp_firefox_live_observation.py"
+      - "docs/MLP_FIREFOX_LIVE_OBSERVATION.md"
+      - "policy/MLP_FIREFOX_LIVE_OBSERVATION_V1.json"
+      - "policy/CANONICAL_UPSTREAM_REMOTE_V1.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact predecessor content binding and exact MLP image
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$expected"
+          source_head='a71484ba02f6ebe9169af5a291244e99468caec3'
+          source_tree='b45556a6c4ea2d9946c73264c1ed47d4f3128a76'
+          mapfile -t canonical_source < <(
+            python3 -B - <<'PY'
+          import json
+          import pathlib
+          import re
+          import urllib.parse
+
+          policy = json.loads(pathlib.Path("policy/CANONICAL_UPSTREAM_REMOTE_V1.json").read_text(encoding="utf-8"))
+          if policy.get("schema") != "qikvrt_canonical_upstream_remote_v1":
+              raise SystemExit("canonical upstream policy schema is invalid")
+          canonical = policy.get("canonical_upstream")
+          if not isinstance(canonical, dict) or canonical.get("role") != "AUTHORITY":
+              raise SystemExit("canonical upstream Authority binding is unavailable")
+          repository = canonical.get("repository")
+          remote_name = canonical.get("canonical_remote_name")
+          url = canonical.get("canonical_https_url")
+          if not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+              raise SystemExit("canonical upstream repository is invalid")
+          if not isinstance(remote_name, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", remote_name):
+              raise SystemExit("canonical upstream remote name is invalid")
+          parsed = urllib.parse.urlsplit(url if isinstance(url, str) else "")
+          if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.path != f"/{repository}.git" or parsed.query or parsed.fragment:
+              raise SystemExit("canonical upstream HTTPS URL is not repository-bound")
+          print(repository)
+          print(remote_name)
+          print(url)
+          PY
+          )
+          test "${#canonical_source[@]}" -eq 3
+          authority_repository="${canonical_source[0]}"
+          authority_remote="${canonical_source[1]}"
+          authority_url="${canonical_source[2]}"
+          test "$authority_repository" = 'Goldkelch/qik-vrt'
+          source_ref="refs/remotes/$authority_remote/qikvrt-tcpip-proof"
+          git remote add "$authority_remote" "$authority_url"
+          git fetch --no-tags "$authority_remote" "refs/pull/745/head:$source_ref"
+          test "$(git rev-parse --verify "$source_ref^{commit}")" = "$source_head"
+          test "$(git rev-parse --verify "$source_head^{tree}")" = "$source_tree"
+          git diff --quiet "$source_head" HEAD -- MLP.TOS
+          echo '5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e  MLP.TOS/MLP.TOS' | sha256sum -c -
+
+      - name: Verify live-observation contract
+        run: python3 -B -m unittest -v tests.test_qikvrt_mlp_firefox_live_observation
+
+      - name: Observe real Firefox rendering and JavaScript execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v firefox
+          mkdir -p .qikvrt/live-proof
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          firefox_version="$(firefox --version 2>&1 | head -n1)"
+          python3 -B tools/qikvrt_mlp_firefox_live_observation.py serve --head "$head" --tree "$tree" --observation .qikvrt/live-proof/browser-observation.json &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:8772/ >/dev/null; then break; fi
+            sleep 0.1
+          done
+          firefox --headless --window-size 1280,800 --screenshot "$PWD/.qikvrt/live-proof/firefox-live.png" http://127.0.0.1:8772/
+          for i in $(seq 1 100); do
+            test -s .qikvrt/live-proof/browser-observation.json && break
+            sleep 0.1
+          done
+          test -s .qikvrt/live-proof/browser-observation.json
+          python3 -B tools/qikvrt_mlp_firefox_live_observation.py finalize --observation .qikvrt/live-proof/browser-observation.json --screenshot .qikvrt/live-proof/firefox-live.png --receipt .qikvrt/live-proof/receipt.json --firefox-version "$firefox_version"
+          cat .qikvrt/live-proof/receipt.json
+
+      - name: Preserve color screenshot and exact-head receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mlp-firefox-live-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/live-proof
+          if-no-files-found: warn
+          retention-days: 14

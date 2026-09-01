@@ -63,6 +63,7 @@ class NodeRecord:
     seed_repository: str
     request_url: str
     node_branch: str
+    node_state_ref: str
     heartbeat_ttl_minutes: int
     lifecycle_policy: str
     source_path: str
@@ -363,8 +364,8 @@ def load_nodes(root: Path, seed_repository: str) -> tuple[list[NodeRecord], dict
     seen: set[str] = set()
     for path in _registry_tsv_paths(root):
         relative_path = path.relative_to(root).as_posix()
-        for line_number, fields in _parse_tsv(path, 7):
-            guid, source, seed, request_url, branch, ttl_text, lifecycle = fields
+        for line_number, fields in _parse_tsv(path, 8):
+            guid, source, seed, request_url, branch, state_ref, ttl_text, lifecycle = fields
             _validate_guid(guid)
             _validate_repository(source, f"{path}:{line_number} source repository")
             _validate_repository(seed, f"{path}:{line_number} seed repository")
@@ -372,6 +373,7 @@ def load_nodes(root: Path, seed_repository: str) -> tuple[list[NodeRecord], dict
                 raise SeedError(f"{path}:{line_number}: seed repository is outside the configured allowlist")
             validate_raw_request_url(request_url, source)
             _validate_branch(branch)
+            _validate_branch(state_ref)
             try:
                 ttl = int(ttl_text, 10)
             except ValueError as exc:
@@ -397,6 +399,7 @@ def load_nodes(root: Path, seed_repository: str) -> tuple[list[NodeRecord], dict
                     seed_repository=seed,
                     request_url=request_url,
                     node_branch=branch,
+                    node_state_ref=state_ref,
                     heartbeat_ttl_minutes=ttl,
                     lifecycle_policy=lifecycle,
                     source_path=relative_path,
@@ -596,6 +599,7 @@ def run_acceptance(
             "repository": node.source_repository,
             "seed_repository": node.seed_repository,
             "node_branch": node.node_branch,
+            "node_state_ref": node.node_state_ref,
             "heartbeat_ttl_minutes": node.heartbeat_ttl_minutes,
             "node_request_url": node.request_url,
             "node_request_sha256": request_digest,
@@ -680,7 +684,7 @@ def run_acceptance(
 
 
 def _raw_node_url(node: NodeRecord, filename: str) -> str:
-    branch = urllib.parse.quote(node.node_branch, safe="/-._~")
+    branch = urllib.parse.quote(node.node_state_ref, safe="/-._~")
     return (
         f"https://raw.githubusercontent.com/{node.source_repository}/{branch}"
         f"/qikvrt/runtime/onboarding/{filename}"
@@ -694,6 +698,7 @@ def _validate_health(document: Mapping[str, Any], node: NodeRecord, now: dt.date
     _require_exact(document, "repository", node.source_repository, label)
     _require_exact(document, "seed_repository", node.seed_repository, label)
     _require_exact(document, "node_branch", node.node_branch, label)
+    _require_exact(document, "node_state_ref", node.node_state_ref, label)
     _require_exact(document, "status", "ACTIVE", label)
     boundaries = document.get("boundaries")
     if not isinstance(boundaries, dict):
@@ -721,6 +726,8 @@ def _validate_ack(document: Mapping[str, Any], node: NodeRecord) -> None:
     _require_exact(document, "guid", node.guid, label)
     _require_exact(document, "repository", node.source_repository, label)
     _require_exact(document, "seed_repository", node.seed_repository, label)
+    _require_exact(document, "node_branch", node.node_branch, label)
+    _require_exact(document, "node_state_ref", node.node_state_ref, label)
     _require_exact(document, "status", "ACCEPTED_BY_SEED", label)
 
 
@@ -736,6 +743,8 @@ def _validate_renewal(document: Mapping[str, Any], node: NodeRecord) -> None:
     if repository != node.source_repository:
         raise SeedError(f"{label}: repository does not match")
     _require_exact(document, "seed_repository", node.seed_repository, label)
+    _require_exact(document, "node_branch", node.node_branch, label)
+    _require_exact(document, "node_state_ref", node.node_state_ref, label)
 
 
 def _validated_registry_entry(root: Path, node: NodeRecord, policy: PolicyRecord) -> tuple[str, str | None]:
@@ -748,6 +757,7 @@ def _validated_registry_entry(root: Path, node: NodeRecord, policy: PolicyRecord
         _require_exact(entry, "repository", node.source_repository, str(path))
         _require_exact(entry, "seed_repository", node.seed_repository, str(path))
         _require_exact(entry, "node_branch", node.node_branch, str(path))
+        _require_exact(entry, "node_state_ref", node.node_state_ref, str(path))
         _require_exact(entry, "policy_status", policy.status, str(path))
         status = entry.get("status")
         expected = "ACCEPTED" if policy.status == "ACTIVE" else policy.status
@@ -831,6 +841,8 @@ def run_maintenance(
         common = {
             "guid": node.guid,
             "repository": node.source_repository,
+            "node_branch": node.node_branch,
+            "node_state_ref": node.node_state_ref,
             "registry_status": registry_status,
             "policy_status": policy.status,
             "effective_status": effective_status,
@@ -840,7 +852,6 @@ def run_maintenance(
         index_nodes.append(
             {
                 **common,
-                "node_branch": node.node_branch,
                 "registry_path": f"registry/nodes/{node.guid}.json",
                 "node_request_url": node.request_url,
                 "node_health_url": health_url,
@@ -967,7 +978,14 @@ def validate_aggregate_pair(root: Path, seed_repository: str = DEFAULT_SEED_REPO
     for guid in sorted(status_by_guid):
         left = index_by_guid[guid]
         right = status_by_guid[guid]
-        for key in ("repository", "registry_status", "policy_status", "effective_status"):
+        for key in (
+            "repository",
+            "node_branch",
+            "node_state_ref",
+            "registry_status",
+            "policy_status",
+            "effective_status",
+        ):
             if left.get(key) != right.get(key):
                 raise SeedError(f"mesh index/status mismatch for {guid}: {key}")
     actual_counts = {state.lower() + "_count": 0 for state in EFFECTIVE_STATES}

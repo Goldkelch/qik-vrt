@@ -1,6 +1,9 @@
 (() => {
   if (document.getElementById("qikvrt-ai-terminal-host")) return;
 
+  const repositoryMatch = location.pathname.match(/^\/(Goldkelch|ingolf-lohmann)\/qik-vrt(?:\/|$)/);
+  const repository = repositoryMatch ? `${repositoryMatch[1]}/qik-vrt` : "Goldkelch/qik-vrt";
+
   const host = document.createElement("section");
   host.id = "qikvrt-ai-terminal-host";
   host.setAttribute("aria-label", "QIKVRT AI Terminal");
@@ -69,11 +72,24 @@
     return browser.runtime.sendMessage({kind, payload});
   }
 
+  window.addEventListener("message", async event => {
+    const request = event.data;
+    if (location.origin !== "https://goldkelch.github.io" || location.pathname !== "/qik-vrt/atari-terminal/" || event.source !== window || event.origin !== location.origin || !request || typeof request.request_id !== "string" || request.request_id.length < 1 || request.request_id.length > 160) return;
+    const relay = {
+      "qikvrt.atari-terminal-boot.v1": ["ATARI_BOOT", "qikvrt.atari-terminal-boot-receipt.v1"],
+      "qikvrt.atari-terminal-status.v1": ["ATARI_STATUS", "qikvrt.atari-terminal-status-receipt.v1"]
+    }[request.schema];
+    if (!relay) return;
+    const result = await send(relay[0], request);
+    window.postMessage({schema: relay[1], request_id: request.request_id, result}, location.origin);
+  });
+
   async function observe() {
-    setState("OBSERVE", "reobserving main/head/tree");
-    const result = await send("OBSERVE_AUTHORITY");
+    const pr = location.pathname.match(/^\/(?:Goldkelch|ingolf-lohmann)\/qik-vrt\/pull\/(\d+)(?:\/|$)/);
+    setState("OBSERVE", pr ? `reobserving ${repository} PR #${pr[1]} head/tree` : `reobserving ${repository} main/head/tree`);
+    const result = await send(pr ? "OBSERVE_PR" : "OBSERVE_REPOSITORY", pr ? {repository, number: pr[1]} : repository);
     render(result);
-    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? "fresh repository frame" : result.reason);
+    setState(result.ok ? "OBSERVE" : "HOLD", result.ok ? (pr ? `fresh ${repository} PR #${pr[1]} frame` : `fresh ${repository} repository frame`) : result.reason);
   }
 
   async function blobPayload(blob, mediaType) {

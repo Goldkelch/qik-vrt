@@ -1,0 +1,64 @@
+name: QIKVRT MLP Firefox terminal
+
+on:
+  pull_request:
+    paths:
+      - 'policy/MLP_FIREFOX_TERMINAL_V1.json'
+      - 'tools/qikvrt_mlp_firefox_terminal.py'
+      - 'tests/test_qikvrt_mlp_firefox_terminal.py'
+      - 'docs/MLP_FIREFOX_TERMINAL.md'
+      - '.github/workflows/qikvrt_mlp_firefox_terminal.yml'
+      - 'browser/firefox/qikvrt-terminal/**'
+      - 'MLP.TOS/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terminal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact head and proven TCP/IP source binding
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python3 - <<'PY'
+          import json
+          p=json.load(open('policy/MLP_FIREFOX_TERMINAL_V1.json'))
+          assert p['source']['tcpip_head']=='a71484ba02f6ebe9169af5a291244e99468caec3'
+          assert p['source']['tcpip_tree']=='b45556a6c4ea2d9946c73264c1ed47d4f3128a76'
+          assert p['source']['guest_tcp_ip_roundtrip_observed'] is True
+          PY
+      - name: Run terminal contract tests
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 -B -m unittest -v tests.test_qikvrt_mlp_firefox_terminal
+      - name: Stage MLP.PRG on a guest-visible C drive
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/qikdrive/C
+          python3 -B tools/qikvrt_mlp_firefox_terminal.py stage --drive-c /tmp/qikdrive/C | tee /tmp/stage.json
+          test -f /tmp/qikdrive/C/MLP.PRG
+          cmp MLP.TOS/MLP.TOS /tmp/qikdrive/C/MLP.PRG
+      - name: Verify Firefox terminal extension and Effect-Ack implementation are present
+        run: |
+          set -euo pipefail
+          test -s browser/firefox/qikvrt-terminal/manifest.json
+          test -s browser/firefox/qikvrt-terminal/background.js
+          grep -F 'PREPARE_EFFECT' browser/firefox/qikvrt-terminal/background.js
+          grep -F 'COMMIT_EFFECT' browser/firefox/qikvrt-terminal/background.js
+          grep -F 'EFFECT_ACK_DONE' browser/firefox/qikvrt-terminal/background.js
+          test -s policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json
+      - name: Verify installed Firefox runtime without claiming terminal observation
+        run: |
+          set -euo pipefail
+          firefox --version || firefox-esr --version
+          echo 'HOLD boundary: Firefox executable availability is not browser-terminal effect observation.'
