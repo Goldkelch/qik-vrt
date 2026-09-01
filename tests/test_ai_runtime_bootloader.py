@@ -106,6 +106,8 @@ class AIRuntimeBootloaderContractTests(unittest.TestCase):
         self.assertIn("check_browser_profile", bootstrap)
         for token in ("firefox", "geckodriver", "hatari", "xvfb-run", "openssl"):
             self.assertIn(token, bootstrap)
+        self.assertIn("xvfb-run -a sh -c 'true'", bootstrap)
+        self.assertNotIn("xvfb-run --help", bootstrap)
 
     def test_ci_retains_full_history_as_authority_side_cross_check(self) -> None:
         workflow = (

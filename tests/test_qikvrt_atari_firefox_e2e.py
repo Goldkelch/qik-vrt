@@ -198,6 +198,8 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             self.assertIn(token, workflow)
         self.assertIn("actions/cache@caa296126883cff596d87d8935842f9db880ef25", workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
+        self.assertIn("xvfb-run -a sh -c 'true'", workflow)
+        self.assertNotIn("xvfb-run --help", workflow)
 
 
 if __name__ == "__main__":

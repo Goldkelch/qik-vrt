@@ -401,7 +401,7 @@ check_browser_profile() {
     else
         firefox --version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: Firefox did not report a version"
         openssl version 2>/dev/null | sed -n '1p' | grep . >/dev/null || fail "browser: OpenSSL did not report a version"
-        xvfb-run --help >/dev/null 2>&1 || fail "browser: xvfb-run did not execute"
+        xvfb-run -a sh -c 'true' >/dev/null 2>&1 || fail "browser: Xvfb null process did not execute"
         printf '%s\n' "PASS: browser Firefox + OpenSSL + Xvfb command contract"
     fi
 
