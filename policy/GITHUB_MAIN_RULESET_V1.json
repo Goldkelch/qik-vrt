@@ -57,14 +57,45 @@
     }
   ],
   "authority": {
-    "credential": "QIKVRT_RULESET_ADMIN_TOKEN",
+    "environment": "qikvrt-ruleset-authority",
+    "credential": "QIKVRT_ENV_RULESET_ADMIN_TOKEN",
+    "credential_scope": "ENVIRONMENT_ONLY",
     "minimum_permission": "Administration: write",
     "ordinary_github_token_is_sufficient": false,
+    "external_configuration_verified": false,
+    "external_configuration_hold": "AUTHORITY_SECRET_ENVIRONMENT_NOT_VERIFIED",
+    "required_external_readback": {
+      "repository_owner": {
+        "login": "Goldkelch",
+        "id": 293941403,
+        "type": "User"
+      },
+      "organization_scope_resolution": "OWNER_TYPE_AWARE",
+      "deployment_branch_policy": "SELECTED_BRANCHES_ONLY",
+      "selected_branch": "main",
+      "environment_protection_rules_required": true,
+      "environment_secret_present": "QIKVRT_ENV_RULESET_ADMIN_TOKEN",
+      "repository_scope_secret_names_absent": [
+        "QIKVRT_ENV_RULESET_ADMIN_TOKEN",
+        "QIKVRT_RULESET_ADMIN_TOKEN"
+      ],
+      "organization_scope_secret_names_absent": [
+        "QIKVRT_ENV_RULESET_ADMIN_TOKEN",
+        "QIKVRT_RULESET_ADMIN_TOKEN"
+      ]
+    },
     "missing_or_rejected_authority": "HOLD_RULESET_ADMIN_AUTHORITY"
   },
   "effect_contract": {
     "pre_state_digest_required": true,
-    "conditional_update_required": true,
+    "pre_effect_double_read_required": true,
+    "immediate_pre_effect_reobservation_required": true,
+    "conditional_update_supported": false,
+    "conditional_update_used": false,
+    "get_put_race_eliminated": false,
+    "final_get_to_put_boundary": "IRREDUCIBLE_NO_DOCUMENTED_CAS_LAST_WRITER_CONVERGENCE",
+    "write_concurrency_model": "LAST_WRITER_WINS",
+    "post_update_reconvergence_required_on_drift": true,
     "post_update_readback_required": true,
     "exact_post_state_required": true,
     "workflow_success_without_readback_is_effect": false

@@ -19,6 +19,9 @@ WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_requested_review_executor.ym
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_ci.yml"
 PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_expected_head_promotion.yml"
 OBSERVER_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_code_owner_review_observer.yml"
+LEGACY_FANOUT_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "qikvrt_authority_review_report_fanout.yml"
+)
 REQUIRED_REVIEW_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "qikvrt_required_review_gate.yml"
 SPEC = importlib.util.spec_from_file_location(
     "qikvrt_requested_review_executor",
@@ -130,6 +133,64 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         }
         value.update(overrides)
         return value
+
+    def mesh_ledger_delegation(self, **receipt_overrides):
+        writer_id = 4242
+        receipt = {
+            "schema": MODULE.MESH_LEDGER_PROTECTION_SCHEMA,
+            "repository": "example/qik-vrt",
+            "ledger_ref": MODULE.LEDGER_REF,
+            "ref_initialized": True,
+            "genesis_commit_sha": "9" * 40,
+            "ruleset_id": 19344903,
+            "ruleset_name": "QIKVRT Mesh review ledger writer",
+            "ruleset_enforcement": "active",
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "example/qik-vrt",
+            "ruleset_target": "branch",
+            "ref_name_include": [MODULE.LEDGER_REF],
+            "ref_name_exclude": [],
+            "required_rule_types": ["deletion", "non_fast_forward", "update"],
+            "writer_integration_id": writer_id,
+            "writer_app_slug": "qikvrt-outbox-ledger-authority",
+            "sole_bypass_actors": [
+                {
+                    "actor_id": writer_id,
+                    "actor_type": "Integration",
+                    "bypass_mode": "always",
+                }
+            ],
+            "writer_workflow_path": MODULE.TRUSTED_WORKFLOW_PATH,
+            "writer_environment": MODULE.MESH_LEDGER_AUTHORITY_ENVIRONMENT,
+            "writer_secret_name": MODULE.MESH_LEDGER_WRITER_SECRET,
+            "repository_scope_secret_names_absent": list(
+                MODULE.MESH_LEDGER_FORBIDDEN_BROAD_SECRET_NAMES
+            ),
+            "repository_owner": {
+                "login": "example",
+                "id": 1001,
+                "type": "User",
+            },
+            "organization_scope_secret_names_absent": [],
+            "organization_scope_readback": "NOT_APPLICABLE_USER_OWNER",
+            "settings_readback_complete": True,
+            "verified_at": "2026-09-01T10:00:00Z",
+            "verifier_login": "authority-admin",
+        }
+        receipt.update(receipt_overrides)
+        return {
+            "schema": MODULE.MESH_LEDGER_DELEGATION_SCHEMA,
+            "delegation_id": MODULE.MESH_LEDGER_DELEGATION_ID,
+            "state": "ACTIVE",
+            "repositories": ["example/qik-vrt"],
+            "ledger_authority_boundary": {
+                "environment": MODULE.MESH_LEDGER_AUTHORITY_ENVIRONMENT,
+                "credential": MODULE.MESH_LEDGER_WRITER_SECRET,
+                "credential_scope": "ENVIRONMENT_ONLY",
+                "external_configuration_verified": True,
+                "external_readback_receipts": [receipt],
+            },
+        }
 
     def review_intake(
         self,
@@ -322,11 +383,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn(HEAD_SHA, ledger_path)
         self.assertTrue(ledger_path.endswith(".json"))
 
-    def test_clean_exact_mesh_review_without_requested_reviewer_approves(self):
+    def test_clean_exact_mesh_review_without_requested_reviewer_continues(self):
         result = self.evaluate()
 
         self.assert_receipt_boundaries(result)
-        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertEqual(result["mesh_disposition"], "TECHNICAL_CONTINUE")
         self.assertIsNone(result["first_blocker"])
         self.assertIn("EXACT_DIFF_BOUND", self.finding_ids(result))
         self.assertIn("EXACT_HEAD_GATES_NON_ADVERSE", self.finding_ids(result))
@@ -397,7 +458,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 self.assertEqual(intake["priority_class"], priority_class)
                 self.assertEqual(intake["priority_rank"], rank)
                 result = self.evaluate(self.snapshot(review_intake=intake))
-                self.assertEqual(result["review_intake"], intake)
+                self.assertEqual(
+                    result["review_intake"], MODULE._semantic_review_intake(intake)
+                )
                 fingerprints.add(result["evidence_fingerprint"])
         self.assertEqual(len(fingerprints), len(cases))
 
@@ -429,7 +492,32 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(result["mesh_disposition"], "COMMENT_WITH_BLOCKER")
         self.assertEqual(result["first_blocker"], "INVALID_REVIEW_SNAPSHOT")
 
-    def test_event_payload_digest_is_fingerprint_bound(self):
+    def test_initial_transport_zero_sentinel_is_not_a_mesh_predecessor(self):
+        intake = MODULE._review_intake(
+            {
+                "source": "WORKFLOW_DISPATCH_PR",
+                "event_name": "workflow_dispatch",
+                "predecessor_successor_fingerprint": "0" * 64,
+                "transport_intent_sha256": "a" * 64,
+                "transport_attempt": 1,
+            },
+            [],
+        )
+        self.assertIsNone(intake["predecessor_successor_fingerprint"])
+        self.assertEqual(intake["transport_intent_sha256"], "a" * 64)
+        self.assertEqual(intake["transport_attempt"], 1)
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "transport locator is incomplete"
+        ):
+            MODULE._review_intake(
+                {
+                    "event_name": "workflow_dispatch",
+                    "transport_intent_sha256": "a" * 64,
+                },
+                [],
+            )
+
+    def test_event_payload_digest_is_transport_provenance_not_semantics(self):
         first = self.review_intake(
             action="review_requested",
             actor="ingolf-lohmann",
@@ -445,9 +533,13 @@ class RequestedReviewExecutorTests(unittest.TestCase):
 
         first_result = self.evaluate(self.snapshot(review_intake=first))
         second_result = self.evaluate(self.snapshot(review_intake=second))
-        self.assertNotEqual(
+        self.assertEqual(
             first_result["evidence_fingerprint"],
             second_result["evidence_fingerprint"],
+        )
+        self.assertNotEqual(
+            MODULE.build_review_transport_provenance(first)["provenance_payload_sha256"],
+            MODULE.build_review_transport_provenance(second)["provenance_payload_sha256"],
         )
 
     def test_removed_requested_target_is_a_fingerprint_bound_reobservation(self):
@@ -502,7 +594,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         result = self.evaluate(snapshot, diff)
 
         self.assertNotEqual(result["first_blocker"], "REVIEW_BYTES_UNAVAILABLE")
-        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertEqual(result["mesh_disposition"], "TECHNICAL_CONTINUE")
         self.assert_receipt_boundaries(result)
         self.assertEqual(result["diff_sha256"], sha256_bytes(diff))
         self.assertEqual(result["diff_bytes"], len(diff))
@@ -526,7 +618,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             None,
             None,
         )
-        self.assertEqual(plan["action"], "INITIALIZE_ORPHAN_ROOT")
+        self.assertEqual(plan["action"], "HOLD")
+        self.assertEqual(
+            plan["first_blocker"],
+            "MESH_REVIEW_LEDGER_EXTERNAL_GENESIS_REQUIRED",
+        )
         with mock.patch.object(
             MODULE,
             "observe_repository",
@@ -798,11 +894,11 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             for run in result["latest_workflows"]
             if run["name"] == "QIKVRT conditional probe"
         )
-        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertEqual(result["mesh_disposition"], "TECHNICAL_CONTINUE")
         self.assertEqual(probe["conclusion"], "skipped")
         self.assertEqual(probe["jobs"][0]["conclusion"], "skipped")
 
-    def test_job_id_status_and_conclusion_are_fingerprint_bound(self):
+    def test_job_result_is_semantic_but_job_id_is_provenance(self):
         baseline = self.snapshot()
         gate = next(
             run for run in baseline["workflow_runs"] if run["name"] == "QIKVRT CI"
@@ -829,17 +925,25 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 )
                 changed_gate["jobs"][1] = replacement
                 result = self.evaluate(changed)
-                self.assertEqual(result["mesh_disposition"], "APPROVE")
-                self.assertNotEqual(
-                    result["evidence_fingerprint"], first["evidence_fingerprint"]
-                )
+                self.assertEqual(result["mesh_disposition"], "TECHNICAL_CONTINUE")
+                assertion = self.assertEqual if label == "id" else self.assertNotEqual
+                assertion(result["evidence_fingerprint"], first["evidence_fingerprint"])
                 self.assertEqual(
                     next(
                         run
                         for run in result["latest_workflows"]
                         if run["name"] == "QIKVRT CI"
                     )["jobs"],
-                    sorted(changed_gate["jobs"], key=lambda job: job["id"]),
+                    sorted(
+                        [
+                            {
+                                "status": job["status"],
+                                "conclusion": job["conclusion"],
+                            }
+                            for job in changed_gate["jobs"]
+                        ],
+                        key=lambda job: (job["status"], str(job["conclusion"])),
+                    ),
                 )
 
     def test_workflow_projection_cannot_be_overwritten_by_display_name(self):
@@ -884,13 +988,13 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         changed_alias["jobs"][0]["id"] += 1
         second = self.evaluate(changed)
 
-        self.assertEqual(first["mesh_disposition"], "APPROVE")
-        self.assertEqual(second["mesh_disposition"], "APPROVE")
+        self.assertEqual(first["mesh_disposition"], "TECHNICAL_CONTINUE")
+        self.assertEqual(second["mesh_disposition"], "TECHNICAL_CONTINUE")
         self.assertEqual(len(first["latest_workflows"]), len(snap["workflow_runs"]))
-        self.assertNotEqual(
+        self.assertEqual(
             first["evidence_fingerprint"], second["evidence_fingerprint"]
         )
-        self.assertNotEqual(
+        self.assertEqual(
             first["receipt_payload_sha256"], second["receipt_payload_sha256"]
         )
 
@@ -922,6 +1026,73 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100",
             )
         )
+
+    def test_paginated_run_observation_binds_total_and_unique_ids(self):
+        pages = [
+            {"total_count": 2, "workflow_runs": [{"id": 22}]},
+            {"total_count": 2, "workflow_runs": [{"id": 11}]},
+        ]
+        with mock.patch.object(MODULE, "_run_json", return_value=pages) as run_json:
+            runs = MODULE._gh_runs(
+                "repos/example/qik-vrt/actions/runs?status=in_progress&per_page=100"
+            )
+        self.assertEqual([run["id"] for run in runs], [22, 11])
+        run_json.assert_called_once_with(
+            (
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                "repos/example/qik-vrt/actions/runs?status=in_progress&per_page=100",
+            )
+        )
+
+    def test_incomplete_or_shifted_run_pagination_fails_closed(self):
+        cases = (
+            (
+                [{"total_count": 2, "workflow_runs": [{"id": 11}]}],
+                "projection is incomplete",
+            ),
+            (
+                [
+                    {"total_count": 2, "workflow_runs": [{"id": 11}]},
+                    {"total_count": 2, "workflow_runs": [{"id": 11}]},
+                ],
+                "invalid or duplicate id",
+            ),
+            (
+                [
+                    {"total_count": 2, "workflow_runs": [{"id": 11}]},
+                    {"total_count": 3, "workflow_runs": [{"id": 12}]},
+                ],
+                "total_count changed",
+            ),
+        )
+        for pages, blocker in cases:
+            with self.subTest(blocker=blocker), mock.patch.object(
+                MODULE, "_run_json", return_value=pages
+            ), self.assertRaisesRegex(MODULE.ReviewObservationError, blocker):
+                MODULE._gh_runs(
+                    "repos/example/qik-vrt/actions/runs?status=in_progress&per_page=100"
+                )
+
+    def test_duplicate_job_id_from_page_shift_fails_closed(self):
+        pages = [
+            {
+                "total_count": 2,
+                "jobs": [{"id": 11, "status": "completed", "conclusion": "success"}],
+            },
+            {
+                "total_count": 2,
+                "jobs": [{"id": 11, "status": "completed", "conclusion": "success"}],
+            },
+        ]
+        with mock.patch.object(MODULE, "_run_json", return_value=pages), self.assertRaisesRegex(
+            MODULE.ReviewObservationError, "invalid or duplicate id"
+        ):
+            MODULE._gh_jobs(
+                "repos/example/qik-vrt/actions/runs/7/jobs?per_page=100"
+            )
 
     def test_incomplete_paginated_job_observation_fails_closed(self):
         pages = [
@@ -1119,7 +1290,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 self.assertEqual(result["first_blocker"], "COMPETING_WRITER_ACTIVE")
                 self.assertEqual(result["derived_action"]["d0"], 1)
 
-    def test_same_head_changed_gate_attempt_changes_evidence_fingerprint(self):
+    def test_same_head_identical_gate_rerun_does_not_change_semantics(self):
         first_snapshot = self.snapshot()
         second_snapshot = copy.deepcopy(first_snapshot)
         second_snapshot["workflow_runs"].append(
@@ -1134,9 +1305,9 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         first = self.evaluate(first_snapshot)
         second = self.evaluate(second_snapshot)
 
-        self.assertEqual(first["mesh_disposition"], "APPROVE")
-        self.assertEqual(second["mesh_disposition"], "APPROVE")
-        self.assertNotEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
+        self.assertEqual(first["mesh_disposition"], "TECHNICAL_CONTINUE")
+        self.assertEqual(second["mesh_disposition"], "TECHNICAL_CONTINUE")
+        self.assertEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
 
     def test_identical_snapshot_has_stable_evidence_fingerprint(self):
         snap = self.snapshot()
@@ -1147,6 +1318,61 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
         self.assertEqual(first["ledger_path"], second["ledger_path"])
         self.assertEqual(first["findings"], second["findings"])
+
+    def test_transport_only_intake_changes_do_not_create_a_successor(self):
+        def intake(intent: str, attempt: int, predecessor: str, payload: str):
+            return MODULE._review_intake(
+                {
+                    "source": "WORKFLOW_DISPATCH_PR",
+                    "event_name": "workflow_dispatch",
+                    "event_action": "",
+                    "event_payload_sha256": payload,
+                    "event_actor": "github-actions[bot]",
+                    "predecessor_successor_fingerprint": predecessor,
+                    "transport_intent_sha256": intent,
+                    "transport_attempt": attempt,
+                    "native_delivery_identity": "UNAVAILABLE_TO_GITHUB_ACTIONS",
+                },
+                [],
+            )
+
+        first_intake = intake("1" * 64, 1, "2" * 64, "3" * 64)
+        second_intake = intake("4" * 64, 1, "5" * 64, "6" * 64)
+        first = self.evaluate(self.snapshot(review_intake=first_intake))
+        second = self.evaluate(self.snapshot(review_intake=second_intake))
+        self.assertEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
+        self.assertEqual(first, second)
+        first_provenance = MODULE.build_review_transport_provenance(first_intake)
+        second_provenance = MODULE.build_review_transport_provenance(second_intake)
+        self.assertNotEqual(
+            first_provenance["provenance_payload_sha256"],
+            second_provenance["provenance_payload_sha256"],
+        )
+
+    def test_identical_gate_result_rerun_ids_are_provenance_not_semantics(self):
+        first_snapshot = self.snapshot()
+        second_snapshot = copy.deepcopy(first_snapshot)
+        replacement = self.workflow_run(
+            "QIKVRT CI",
+            identifier=9101,
+            run_number=99,
+            run_attempt=2,
+        )
+        second_snapshot["workflow_runs"][0] = replacement
+        first = self.evaluate(first_snapshot)
+        second = self.evaluate(second_snapshot)
+        self.assertEqual(first["evidence_fingerprint"], second["evidence_fingerprint"])
+        self.assertEqual(first, second)
+        first_provenance = MODULE.build_review_transport_provenance(
+            None, workflow_runs=first_snapshot["workflow_runs"]
+        )
+        second_provenance = MODULE.build_review_transport_provenance(
+            None, workflow_runs=second_snapshot["workflow_runs"]
+        )
+        self.assertNotEqual(
+            first_provenance["provenance_payload_sha256"],
+            second_provenance["provenance_payload_sha256"],
+        )
 
     def test_same_head_every_disposition_input_gets_a_distinct_ledger_path(self):
         baseline = self.evaluate(self.snapshot())
@@ -1531,12 +1757,15 @@ class RequestedReviewExecutorTests(unittest.TestCase):
 
     def test_status_dedup_considers_only_latest_context_projection(self):
         fingerprint = "a" * 64
-        approved = {
+        continued = {
             "id": 10,
             "context": "QIKVRT requested review execution",
             "state": "success",
             "created_at": "2026-08-22T10:00:00Z",
-            "description": f"Mesh APPROVE; D0=3; fp={fingerprint}",
+            "description": (
+                "Technical observation complete; independent approval required; "
+                f"fp={fingerprint}"
+            ),
         }
         waiting = {
             "id": 11,
@@ -1545,26 +1774,26 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "created_at": "2026-08-22T10:01:00Z",
             "description": f"Mesh WAIT; D0=1; fp={'b' * 64}",
         }
-        reapproved = {
-            **approved,
+        recontinued = {
+            **continued,
             "id": 12,
             "created_at": "2026-08-22T10:02:00Z",
         }
 
         self.assertTrue(
             MODULE.latest_status_matches_projection(
-                [approved], approved["context"], "success", fingerprint
+                [continued], continued["context"], "success", fingerprint
             )
         )
         self.assertFalse(
             MODULE.latest_status_matches_projection(
-                [approved, waiting], approved["context"], "success", fingerprint
+                [continued, waiting], continued["context"], "success", fingerprint
             )
         )
         self.assertTrue(
             MODULE.latest_status_matches_projection(
-                [approved, waiting, reapproved],
-                approved["context"],
+                [continued, waiting, recontinued],
+                continued["context"],
                 "success",
                 fingerprint,
             )
@@ -1620,9 +1849,12 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         diff = b"diff bytes"
         head = "1" * 40
 
-        initialized = MODULE.plan_ledger_update(receipt, diff, None, None, None)
-        self.assertEqual(initialized["action"], "INITIALIZE_ORPHAN_ROOT")
-        self.assertIsNone(initialized["parent"])
+        missing = MODULE.plan_ledger_update(receipt, diff, None, None, None)
+        self.assertEqual(missing["action"], "HOLD")
+        self.assertEqual(
+            missing["first_blocker"],
+            "MESH_REVIEW_LEDGER_EXTERNAL_GENESIS_REQUIRED",
+        )
 
         appended = MODULE.plan_ledger_update(receipt, diff, head, None, None)
         self.assertEqual(appended["action"], "APPEND_FAST_FORWARD")
@@ -1658,6 +1890,247 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                     )
                 )
 
+    def test_mesh_ledger_protection_requires_external_exact_ref_and_sole_app(self):
+        delegation = self.mesh_ledger_delegation()
+        observed = MODULE.validate_mesh_ledger_protection(
+            delegation, "example/qik-vrt"
+        )
+        self.assertEqual(observed["genesis_commit_sha"], "9" * 40)
+        self.assertEqual(observed["writer_integration_id"], 4242)
+        self.assertEqual(
+            observed["required_rule_types"],
+            ["deletion", "non_fast_forward", "update"],
+        )
+
+        cases = []
+        unverified = self.mesh_ledger_delegation()
+        unverified["ledger_authority_boundary"][
+            "external_configuration_verified"
+        ] = False
+        cases.append(unverified)
+        deleted_ref = self.mesh_ledger_delegation(ref_initialized=False)
+        cases.append(deleted_ref)
+        missing_update = self.mesh_ledger_delegation(
+            required_rule_types=["deletion", "non_fast_forward"]
+        )
+        cases.append(missing_update)
+        broad_secret = self.mesh_ledger_delegation(
+            repository_scope_secret_names_absent=[]
+        )
+        cases.append(broad_secret)
+        forged_bypass = self.mesh_ledger_delegation(
+            sole_bypass_actors=[
+                {
+                    "actor_id": 1,
+                    "actor_type": "RepositoryRole",
+                    "bypass_mode": "always",
+                }
+            ]
+        )
+        cases.append(forged_bypass)
+        for value in cases:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    MODULE.ReviewSnapshotError,
+                    "MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED",
+                ):
+                    MODULE.validate_mesh_ledger_protection(
+                        value, "example/qik-vrt"
+                    )
+
+        repository_delegation = json.loads(
+            (
+                ROOT
+                / "state"
+                / "authorization"
+                / "delegations"
+                / "OWNER_MESH_REPOSITORY_SELF_REVIEW_FEEDBACK_V1.json"
+            ).read_text(encoding="utf-8")
+        )
+        boundary = repository_delegation["ledger_authority_boundary"]
+        self.assertFalse(boundary["external_configuration_verified"])
+        self.assertEqual(boundary["external_readback_receipts"], [])
+        self.assertEqual(
+            boundary["external_configuration_hold"],
+            "MESH_REVIEW_LEDGER_PROTECTION_NOT_VERIFIED",
+        )
+
+    def test_mesh_ledger_write_requires_effect_local_environment_and_app_readback(self):
+        sealed = MODULE.validate_mesh_ledger_protection(
+            self.mesh_ledger_delegation(), "example/qik-vrt"
+        )
+        branch_rules = [
+            {"type": name, "ruleset_id": 19344903}
+            for name in ("deletion", "non_fast_forward", "update")
+        ]
+        ruleset = {
+            "id": 19344903,
+            "name": "QIKVRT Mesh review ledger writer",
+            "target": "branch",
+            "source_type": "Repository",
+            "source": "example/qik-vrt",
+            "enforcement": "active",
+            "bypass_actors": sealed["sole_bypass_actors"],
+            "conditions": {
+                "ref_name": {"include": [MODULE.LEDGER_REF], "exclude": []}
+            },
+            "rules": [{"type": name} for name in sealed["required_rule_types"]],
+        }
+        kwargs = {
+            "repository": "example/qik-vrt",
+            "installation": {"app_id": 4242},
+            "branch_rules": branch_rules,
+            "ruleset": ruleset,
+            "ref": {"object": {"sha": "8" * 40}},
+            "environment": {
+                "name": MODULE.MESH_LEDGER_AUTHORITY_ENVIRONMENT,
+                "deployment_branch_policy": {
+                    "protected_branches": False,
+                    "custom_branch_policies": True,
+                },
+                "protection_rules": [{"type": "branch_policy"}],
+            },
+            "repository_owner": {
+                "login": "example",
+                "id": 1001,
+                "type": "User",
+            },
+            "branch_policies": [{"name": "main", "type": "branch"}],
+            "environment_secret_names": [
+                MODULE.MESH_LEDGER_AUDITOR_SECRET,
+                MODULE.MESH_LEDGER_WRITER_SECRET,
+            ],
+            "repository_secret_names": [],
+            "organization_secret_names": [],
+            "organization_scope_readback": "NOT_APPLICABLE_USER_OWNER",
+        }
+        exact = MODULE.verify_live_mesh_ledger_authority(sealed, **kwargs)
+        self.assertTrue(exact["external_configuration_verified"])
+        self.assertEqual(
+            exact["organization_scope_readback"],
+            "NOT_APPLICABLE_USER_OWNER",
+        )
+
+        for mutation in ("fallback", "missing_env", "wrong_app", "fake_org"):
+            changed = copy.deepcopy(kwargs)
+            if mutation == "fallback":
+                changed["repository_secret_names"] = [
+                    MODULE.MESH_LEDGER_WRITER_SECRET
+                ]
+            elif mutation == "missing_env":
+                changed["environment_secret_names"] = [
+                    MODULE.MESH_LEDGER_WRITER_SECRET
+                ]
+            elif mutation == "wrong_app":
+                changed["installation"] = {"app_id": 7}
+            else:
+                changed["organization_secret_names"] = []
+                changed["organization_scope_readback"] = (
+                    "VERIFIED_ORGANIZATION_SECRET_INVENTORY"
+                )
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(
+                MODULE.ReviewSnapshotError,
+                "MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED",
+            ):
+                MODULE.verify_live_mesh_ledger_authority(sealed, **changed)
+
+    def test_missing_ref_after_record_never_reinitializes_ledger(self):
+        receipt = b'{"receipt":1}\n'
+        diff = b"diff bytes"
+        recorded_head = "1" * 40
+        recorded = MODULE.plan_ledger_update(
+            receipt, diff, recorded_head, None, None
+        )
+        self.assertEqual(recorded["action"], "APPEND_FAST_FORWARD")
+
+        after_external_delete = MODULE.plan_ledger_update(
+            receipt, diff, None, None, None
+        )
+        self.assertEqual(after_external_delete["action"], "HOLD")
+        self.assertEqual(
+            after_external_delete["first_blocker"],
+            "MESH_REVIEW_LEDGER_EXTERNAL_GENESIS_REQUIRED",
+        )
+        self.assertNotEqual(
+            after_external_delete["action"], "INITIALIZE_ORPHAN_ROOT"
+        )
+
+    def test_bounded_cas_replans_after_parallel_pr_ref_race(self):
+        initial = "1" * 40
+        rival = "2" * 40
+        state = {"head": initial, "trees": {initial: {}}, "raced": False}
+        target_path = "state/mesh/reviews/pr-935.json"
+        target_bytes = b"pr-935"
+
+        def read_head():
+            return state["head"]
+
+        def plan_at(parent):
+            existing = state["trees"][parent].get(target_path)
+            if existing is not None and existing != target_bytes:
+                raise MODULE.ReviewSnapshotError("APPEND_ONLY_LEDGER_PATH_COLLISION")
+            return existing is None
+
+        def build_commit(parent):
+            commit = "3" * 40 if parent == initial else "4" * 40
+            state["trees"][commit] = {
+                **state["trees"][parent],
+                target_path: target_bytes,
+            }
+            return commit
+
+        def update_ref(commit):
+            if not state["raced"]:
+                state["raced"] = True
+                state["trees"][rival] = {
+                    **state["trees"][initial],
+                    "state/mesh/reviews/pr-936.json": b"pr-936",
+                }
+                state["head"] = rival
+                raise RuntimeError("non-fast-forward")
+            state["head"] = commit
+
+        def verify_at(head):
+            return state["trees"][head].get(target_path) == target_bytes
+
+        result = MODULE.bounded_append_only_cas(
+            read_head=read_head,
+            plan_at=plan_at,
+            build_commit=build_commit,
+            update_ref=update_ref,
+            verify_at=verify_at,
+        )
+        self.assertTrue(result["persisted"])
+        self.assertTrue(result["appended"])
+        self.assertEqual(result["attempts"], 2)
+        final_tree = state["trees"][state["head"]]
+        self.assertEqual(final_tree[target_path], target_bytes)
+        self.assertEqual(final_tree["state/mesh/reviews/pr-936.json"], b"pr-936")
+
+    def test_bounded_cas_never_overwrites_existing_path(self):
+        initial = "1" * 40
+        path = "state/mesh/reviews/pr-935.json"
+        state = {"head": initial, "tree": {path: b"authority-bytes"}}
+        effects = []
+
+        def plan_at(_parent):
+            if state["tree"].get(path) != b"candidate-bytes":
+                raise MODULE.ReviewSnapshotError("APPEND_ONLY_LEDGER_PATH_COLLISION")
+            return False
+
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "APPEND_ONLY_LEDGER_PATH_COLLISION"
+        ):
+            MODULE.bounded_append_only_cas(
+                read_head=lambda: state["head"],
+                plan_at=plan_at,
+                build_commit=lambda _parent: effects.append("build") or "2" * 40,
+                update_ref=lambda _commit: effects.append("update"),
+                verify_at=lambda _head: False,
+            )
+        self.assertEqual(effects, [])
+        self.assertEqual(state["tree"][path], b"authority-bytes")
+
     def test_recursive_queue_intent_and_ack_are_content_addressed_and_immutable(self):
         receipt = self.evaluate(self.snapshot())
         predecessor = "a" * 64
@@ -1692,6 +2165,441 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assertEqual(ack["state"], "SUPERSEDED_BY_CAUSAL_REOBSERVATION")
         self.assertFalse(any(ack["completion_claims"].values()))
+
+    def test_mixed_legacy_and_current_ledger_receipts_skip_legacy(self):
+        current = self.evaluate(self.snapshot())
+        legacy = copy.deepcopy(current)
+        legacy["state"] = "APPROVE"
+        legacy["mesh_disposition"] = "APPROVE"
+
+        current_receipts = []
+        holds = []
+        for receipt in (legacy, current):
+            semantics = MODULE.mesh_receipt_semantics(receipt)
+            if semantics["current"]:
+                current_receipts.append(receipt)
+            else:
+                holds.append(semantics)
+
+        self.assertEqual(current_receipts, [current])
+        self.assertEqual(holds[0]["state"], "LEGACY_HOLD")
+        self.assertEqual(
+            holds[0]["first_blocker"],
+            "LEGACY_TECHNICAL_APPROVE_RECEIPT",
+        )
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError,
+            "LEGACY_TECHNICAL_APPROVE_RECEIPT",
+        ):
+            MODULE.review_queue_intent(legacy, "a" * 64)
+
+        _, intent = MODULE.review_queue_intent(current, "a" * 64)
+        self.assertEqual(
+            intent["successor_fingerprint"], current["evidence_fingerprint"]
+        )
+
+    def test_recursive_queue_dispatches_once_then_defers_to_admission_recovery(self):
+        receipt = self.evaluate(self.snapshot())
+        queue_path, intent = MODULE.review_queue_intent(receipt, "a" * 64)
+        pr = {
+            "number": 349,
+            "state": "open",
+            "head": {"sha": HEAD_SHA},
+            "base": {"sha": MAIN_SHA},
+        }
+        commit = {"sha": HEAD_SHA, "tree": {"sha": HEAD_TREE_SHA}}
+
+        first = MODULE.plan_review_queue_drain(
+            intent,
+            pr=pr,
+            commit=commit,
+            child_runs=[],
+            trusted_workflow_id=8100,
+            trusted_evaluator_sha=MAIN_SHA,
+        )
+        self.assertEqual(first["state"], "WORK_UNIT")
+        self.assertEqual(first["next_attempt"], 1)
+        self.assertTrue(first["dispatch_required"])
+
+        _, transport = MODULE.review_queue_dispatch_intent(
+            intent,
+            queue_path=queue_path,
+            evaluator_sha=MAIN_SHA,
+            workflow_id=8100,
+            dispatch_attempt=1,
+        )
+        title = transport["expected_title"]
+        cancelled = {
+            "id": 910,
+            "run_attempt": 1,
+            "status": "completed",
+            "conclusion": "cancelled",
+            "display_title": title,
+            "workflow_id": 8100,
+            "path": MODULE.TRUSTED_WORKFLOW_PATH,
+            "event": "workflow_dispatch",
+            "head_branch": "main",
+            "repository": {"full_name": "example/qik-vrt"},
+        }
+        second = MODULE.plan_review_queue_drain(
+            intent,
+            pr=pr,
+            commit=commit,
+            child_runs=[cancelled],
+            trusted_workflow_id=8100,
+            trusted_evaluator_sha=MAIN_SHA,
+        )
+        self.assertEqual(second["state"], "ADMISSION_RECOVERY_PENDING")
+        self.assertIsNone(second["next_attempt"])
+        self.assertFalse(second["dispatch_required"])
+        self.assertEqual(
+            second["first_blocker"],
+            "ADMISSION_RECOVERY_OWNS_ACCEPTED_CHILD",
+        )
+
+        exhausted_run = {**cancelled, "run_attempt": 2}
+        exhausted = MODULE.plan_review_queue_drain(
+            intent,
+            pr=pr,
+            commit=commit,
+            child_runs=[exhausted_run],
+            trusted_workflow_id=8100,
+            trusted_evaluator_sha=MAIN_SHA,
+        )
+        self.assertEqual(exhausted["state"], "ADMISSION_RECOVERY_PENDING")
+        self.assertEqual(exhausted["d0"], 2)
+        self.assertFalse(exhausted["dispatch_required"])
+        self.assertIsNone(exhausted["next_attempt"])
+        self.assertFalse(any(exhausted["completion_claims"].values()))
+
+    def test_v3_child_title_is_exact_and_bounded_at_ten_digit_pr(self):
+        title = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=9_999_999_999,
+            head_sha=HEAD_SHA,
+            fingerprint="a" * 64,
+            transport_intent_sha256="b" * 64,
+            transport_attempt=1,
+        )
+        self.assertEqual(len(title), 249)
+        self.assertLessEqual(len(title), 255)
+        self.assertEqual(
+            title,
+            f"qikvrt-rr-v3 e={MAIN_SHA} p=9999999999 h={HEAD_SHA} "
+            f"f={'a' * 64} i={'b' * 64} a=1",
+        )
+        self.assertEqual(
+            MODULE.parse_requested_review_run_title(title),
+            {
+                "schema": "qikvrt_requested_review_run_locator_v3",
+                "evaluator_sha": MAIN_SHA,
+                "pr_number": 9_999_999_999,
+                "head_sha": HEAD_SHA,
+                "fingerprint": "a" * 64,
+                "transport_intent_sha256": "b" * 64,
+                "transport_attempt": 1,
+            },
+        )
+        self.assertIsNone(MODULE.parse_requested_review_run_title(title + " suffix"))
+        self.assertIsNone(MODULE.parse_requested_review_run_title(title[:-1] + "2"))
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "one-shot attempt one"
+        ):
+            MODULE.requested_review_run_title(
+                evaluator_sha=MAIN_SHA,
+                pr_number=935,
+                head_sha=HEAD_SHA,
+                fingerprint="a" * 64,
+                transport_intent_sha256="b" * 64,
+                transport_attempt=2,
+            )
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "PR number is invalid"
+        ):
+            MODULE.requested_review_run_title(
+                evaluator_sha=MAIN_SHA,
+                pr_number=10_000_000_000,
+                head_sha=HEAD_SHA,
+                fingerprint="a" * 64,
+                transport_intent_sha256="b" * 64,
+                transport_attempt=1,
+            )
+
+    def test_returned_dispatch_child_binds_fast_terminal_conclusion(self):
+        title = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=935,
+            head_sha=HEAD_SHA,
+            fingerprint="e" * 64,
+            transport_intent_sha256="f" * 64,
+            transport_attempt=1,
+        )
+        raw = {
+            "id": 8123,
+            "run_attempt": 1,
+            "workflow_id": 99,
+            "path": f"{MODULE.TRUSTED_WORKFLOW_PATH}@main",
+            "event": "workflow_dispatch",
+            "repository": {"full_name": "example/qik-vrt"},
+            "head_branch": "main",
+            "head_sha": MAIN_SHA,
+            "display_title": title,
+            "status": "completed",
+            "conclusion": "success",
+        }
+        success = MODULE.requested_review_dispatch_child(
+            raw,
+            repository="example/qik-vrt",
+            workflow_id=99,
+            evaluator_sha=MAIN_SHA,
+            display_title=title,
+        )
+        self.assertEqual(success["conclusion"], "success")
+
+        cancelled = MODULE.requested_review_dispatch_child(
+            dict(raw, conclusion="cancelled"),
+            repository="example/qik-vrt",
+            workflow_id=99,
+            evaluator_sha=MAIN_SHA,
+            display_title=title,
+        )
+        self.assertEqual(cancelled["conclusion"], "cancelled")
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "returned dispatch child differs"
+        ):
+            MODULE.requested_review_dispatch_child(
+                dict(raw, conclusion=None),
+                repository="example/qik-vrt",
+                workflow_id=99,
+                evaluator_sha=MAIN_SHA,
+                display_title=title,
+            )
+
+    def test_terminal_completion_envelope_is_exact_and_non_authorizing(self):
+        title = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=935,
+            head_sha=HEAD_SHA,
+            fingerprint="e" * 64,
+            transport_intent_sha256="f" * 64,
+            transport_attempt=1,
+        )
+        results = {
+            name: ("failure" if name == "ledger-write" else "skipped")
+            for name in MODULE.REQUESTED_REVIEW_COMPLETION_JOB_RESULTS
+        }
+        envelope = MODULE.build_requested_review_completion_envelope(
+            repository="example/qik-vrt",
+            workflow_sha=MAIN_SHA,
+            workflow_ref=(
+                "example/qik-vrt/"
+                ".github/workflows/qikvrt_requested_review_executor.yml@refs/heads/main"
+            ),
+            run_id=8123,
+            run_attempt=1,
+            event="workflow_dispatch",
+            display_title=title,
+            subject={
+                "pr_number": 935,
+                "head_sha": HEAD_SHA,
+                "tree_sha": HEAD_TREE_SHA,
+                "base_sha": MAIN_SHA,
+                "semantic_fingerprint": "e" * 64,
+                "technical_disposition": "WAIT",
+            },
+            job_results=results,
+        )
+        self.assertEqual(
+            MODULE.validate_requested_review_completion_envelope(envelope),
+            envelope,
+        )
+        self.assertFalse(any(envelope["completion_claims"].values()))
+        self.assertNotIn("conclusion", envelope["run"])
+        self.assertNotIn("id", envelope["workflow"])
+        tampered = copy.deepcopy(envelope)
+        tampered["job_results"]["ledger-write"] = "success"
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "completion envelope bytes differ"
+        ):
+            MODULE.validate_requested_review_completion_envelope(tampered)
+
+    def test_failed_dispatch_planner_keeps_immutable_completion_subject(self):
+        intent = "f" * 64
+        fingerprint = "e" * 64
+        title = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=935,
+            head_sha=HEAD_SHA,
+            fingerprint=fingerprint,
+            transport_intent_sha256=intent,
+            transport_attempt=1,
+        )
+        blank_plan = {
+            "pr_number": None,
+            "head_sha": None,
+            "tree_sha": None,
+            "base_sha": None,
+            "semantic_fingerprint": None,
+            "technical_disposition": None,
+        }
+        dispatch_inputs = {
+            "pr": "935",
+            "head": HEAD_SHA,
+            "fingerprint": fingerprint,
+            "evaluator_sha": MAIN_SHA,
+            "transport_intent_sha256": intent,
+            "transport_attempt": "1",
+        }
+        binding = MODULE.resolve_requested_review_completion_binding(
+            event="workflow_dispatch",
+            workflow_sha=MAIN_SHA,
+            display_title=title,
+            plan_subject=blank_plan,
+            dispatch_inputs=dispatch_inputs,
+        )
+        subject = binding["subject"]
+        self.assertEqual(subject["pr_number"], 935)
+        self.assertEqual(subject["head_sha"], HEAD_SHA)
+        self.assertIsNone(subject["semantic_fingerprint"])
+        self.assertIsNone(subject["tree_sha"])
+        self.assertIsNone(subject["base_sha"])
+        self.assertEqual(binding["dispatch_locator"]["request_fingerprint"], fingerprint)
+        self.assertEqual(binding["dispatch_locator"]["transport_intent_sha256"], intent)
+
+        observed_plan = dict(blank_plan, semantic_fingerprint="a" * 64)
+        observed = MODULE.resolve_requested_review_completion_binding(
+            event="workflow_dispatch",
+            workflow_sha=MAIN_SHA,
+            display_title=title,
+            plan_subject=observed_plan,
+            dispatch_inputs=dispatch_inputs,
+        )
+        self.assertEqual(observed["subject"]["semantic_fingerprint"], "a" * 64)
+        self.assertEqual(
+            observed["dispatch_locator"]["request_fingerprint"], fingerprint
+        )
+
+        for field, value in (
+            ("head_sha", "a" * 40),
+        ):
+            changed = dict(blank_plan)
+            changed[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                MODULE.ReviewSnapshotError, "immutable dispatch input"
+            ):
+                MODULE.resolve_requested_review_completion_binding(
+                    event="workflow_dispatch",
+                    workflow_sha=MAIN_SHA,
+                    display_title=title,
+                    plan_subject=changed,
+                    dispatch_inputs=dispatch_inputs,
+                )
+
+        bad_inputs = dict(dispatch_inputs, transport_attempt="2")
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "dispatch inputs differ"
+        ):
+            MODULE.resolve_requested_review_completion_binding(
+                event="workflow_dispatch",
+                workflow_sha=MAIN_SHA,
+                display_title=title,
+                plan_subject=blank_plan,
+                dispatch_inputs=bad_inputs,
+            )
+
+    def test_recursive_queue_drain_waits_for_active_exact_child(self):
+        receipt = self.evaluate(self.snapshot())
+        queue_path, intent = MODULE.review_queue_intent(receipt, "a" * 64)
+        _, transport = MODULE.review_queue_dispatch_intent(
+            intent,
+            queue_path=queue_path,
+            evaluator_sha=MAIN_SHA,
+            workflow_id=8100,
+            dispatch_attempt=1,
+        )
+        title = transport["expected_title"]
+        active = {
+            "id": 911,
+            "run_attempt": 1,
+            "status": "queued",
+            "conclusion": None,
+            "display_title": title,
+            "workflow_id": 8100,
+            "path": f"{MODULE.TRUSTED_WORKFLOW_PATH}@refs/heads/main",
+            "event": "workflow_dispatch",
+            "head_branch": "main",
+            "repository": {"full_name": "example/qik-vrt"},
+        }
+        result = MODULE.plan_review_queue_drain(
+            intent,
+            pr={
+                "number": 349,
+                "state": "open",
+                "head": {"sha": HEAD_SHA},
+                "base": {"sha": MAIN_SHA},
+            },
+            commit={"sha": HEAD_SHA, "tree": {"sha": HEAD_TREE_SHA}},
+            child_runs=[active],
+            trusted_workflow_id=8100,
+            trusted_evaluator_sha=MAIN_SHA,
+        )
+        self.assertEqual(result["state"], "ADMISSION_RECOVERY_PENDING")
+        self.assertFalse(result["dispatch_required"])
+
+    def test_recursive_queue_drain_fails_closed_on_live_or_child_provenance_drift(self):
+        receipt = self.evaluate(self.snapshot())
+        queue_path, intent = MODULE.review_queue_intent(receipt, "a" * 64)
+        stale = MODULE.plan_review_queue_drain(
+            intent,
+            pr={
+                "number": 349,
+                "state": "open",
+                "head": {"sha": "e" * 40},
+                "base": {"sha": MAIN_SHA},
+            },
+            commit={"sha": HEAD_SHA, "tree": {"sha": HEAD_TREE_SHA}},
+            child_runs=[],
+            trusted_workflow_id=8100,
+            trusted_evaluator_sha=MAIN_SHA,
+        )
+        self.assertEqual(stale["state"], "STALE_SUBJECT_D0_3")
+        self.assertFalse(stale["dispatch_required"])
+
+        _, transport = MODULE.review_queue_dispatch_intent(
+            intent,
+            queue_path=queue_path,
+            evaluator_sha=MAIN_SHA,
+            workflow_id=8100,
+            dispatch_attempt=1,
+        )
+        title = transport["expected_title"]
+        with self.assertRaisesRegex(
+            MODULE.ReviewSnapshotError, "trusted provenance drifted"
+        ):
+            MODULE.plan_review_queue_drain(
+                intent,
+                pr={
+                    "number": 349,
+                    "state": "open",
+                    "head": {"sha": HEAD_SHA},
+                    "base": {"sha": MAIN_SHA},
+                },
+                commit={"sha": HEAD_SHA, "tree": {"sha": HEAD_TREE_SHA}},
+                child_runs=[{
+                    "id": 912,
+                    "run_attempt": 1,
+                    "status": "completed",
+                    "conclusion": "cancelled",
+                    "display_title": title,
+                    "workflow_id": 9999,
+                    "path": MODULE.TRUSTED_WORKFLOW_PATH,
+                    "event": "workflow_dispatch",
+                    "head_branch": "main",
+                    "repository": {"full_name": "example/qik-vrt"},
+                }],
+                trusted_workflow_id=8100,
+                trusted_evaluator_sha=MAIN_SHA,
+            )
 
     def test_conflict_marker_is_a_deterministic_review_finding(self):
         snap = self.snapshot(diff_payload=CONFLICT_DIFF_BYTES)
@@ -1762,6 +2670,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 999,
                 {writer_name},
                 {MAIN_SHA, HEAD_SHA},
+                8100,
             )
 
         self.assertEqual([item["id"] for item in observed], [902, 903])
@@ -1778,7 +2687,165 @@ class RequestedReviewExecutorTests(unittest.TestCase):
                 999,
                 {"QIK-VRT autonomous bounded self-heal"},
                 {"not-a-git-sha"},
+                8100,
             )
+
+    def test_dynamic_requested_review_run_name_is_still_an_active_writer(self):
+        dynamic_name = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=935,
+            head_sha=HEAD_SHA,
+            fingerprint="a" * 64,
+            transport_intent_sha256="b" * 64,
+            transport_attempt=1,
+        )
+        runs = [
+            {
+                "id": 910,
+                "name": dynamic_name,
+                "status": "in_progress",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 8100,
+                "path": MODULE.TRUSTED_WORKFLOW_PATH,
+                "event": "issue_comment",
+                "run_number": 7566,
+                "run_attempt": 1,
+            },
+            {
+                "id": 911,
+                "name": dynamic_name,
+                "status": "in_progress",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 8101,
+                "path": ".github/workflows/untrusted.yml",
+                "event": "issue_comment",
+                "run_number": 1,
+                "run_attempt": 1,
+            },
+        ]
+        with mock.patch.object(MODULE, "_gh_runs", return_value=runs):
+            observed = MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {MODULE.TRUSTED_WORKFLOW_NAME},
+                {MAIN_SHA, HEAD_SHA},
+                8100,
+            )
+
+        self.assertEqual([item["id"] for item in observed], [910])
+        self.assertEqual(observed[0]["name"], dynamic_name)
+        self.assertEqual(observed[0]["path"], MODULE.TRUSTED_WORKFLOW_PATH)
+
+    def test_dynamic_requested_review_writer_requires_stable_workflow_id(self):
+        run = {
+            "id": 910,
+            "name": MODULE.requested_review_run_title(
+                evaluator_sha=MAIN_SHA,
+                pr_number=935,
+                head_sha=HEAD_SHA,
+                fingerprint="a" * 64,
+                transport_intent_sha256="b" * 64,
+                transport_attempt=1,
+            ),
+            "status": "queued",
+            "head_sha": MAIN_SHA,
+            "workflow_id": None,
+            "path": MODULE.TRUSTED_WORKFLOW_PATH,
+            "event": "issue_comment",
+            "run_number": 7566,
+            "run_attempt": 1,
+        }
+        with mock.patch.object(MODULE, "_gh_runs", return_value=[run]):
+            with self.assertRaisesRegex(
+                MODULE.ReviewObservationError,
+                "active writer workflow id is invalid",
+            ):
+                MODULE._active_writer_observation(
+                    "example/qik-vrt",
+                    999,
+                    {MODULE.TRUSTED_WORKFLOW_NAME},
+                    {MAIN_SHA, HEAD_SHA},
+                    8100,
+                )
+
+    def test_serialized_requested_successor_does_not_self_block_current_intake(self):
+        dynamic_name = MODULE.requested_review_run_title(
+            evaluator_sha=MAIN_SHA,
+            pr_number=936,
+            head_sha=HEAD_SHA,
+            fingerprint="a" * 64,
+            transport_intent_sha256="b" * 64,
+            transport_attempt=1,
+        )
+        runs = [
+            {
+                "id": 999,
+                "name": MODULE.requested_review_run_title(
+                    evaluator_sha=MAIN_SHA,
+                    pr_number=935,
+                    head_sha=HEAD_SHA,
+                    fingerprint="a" * 64,
+                    transport_intent_sha256="b" * 64,
+                    transport_attempt=1,
+                ),
+                "status": "in_progress",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 8100,
+                "path": MODULE.TRUSTED_WORKFLOW_PATH,
+                "event": "workflow_dispatch",
+                "run_number": 7566,
+                "run_attempt": 1,
+            },
+            {
+                "id": 910,
+                "name": dynamic_name,
+                "status": "queued",
+                "head_sha": MAIN_SHA,
+                "workflow_id": 8100,
+                "path": MODULE.TRUSTED_WORKFLOW_PATH,
+                "event": "workflow_dispatch",
+                "run_number": 7567,
+                "run_attempt": 1,
+            },
+        ]
+        with mock.patch.object(MODULE, "_gh_runs", return_value=runs):
+            observed = MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {MODULE.TRUSTED_WORKFLOW_NAME},
+                {MAIN_SHA, HEAD_SHA},
+                8100,
+            )
+        self.assertEqual(observed, [])
+
+    def test_second_in_progress_requested_executor_remains_a_writer_blocker(self):
+        run = {
+            "id": 910,
+            "name": MODULE.requested_review_run_title(
+                evaluator_sha=MAIN_SHA,
+                pr_number=936,
+                head_sha=HEAD_SHA,
+                fingerprint="a" * 64,
+                transport_intent_sha256="b" * 64,
+                transport_attempt=1,
+            ),
+            "status": "in_progress",
+            "head_sha": MAIN_SHA,
+            "workflow_id": 8100,
+            "path": MODULE.TRUSTED_WORKFLOW_PATH,
+            "event": "workflow_dispatch",
+            "run_number": 7567,
+            "run_attempt": 1,
+        }
+        with mock.patch.object(MODULE, "_gh_runs", return_value=[run]):
+            observed = MODULE._active_writer_observation(
+                "example/qik-vrt",
+                999,
+                {MODULE.TRUSTED_WORKFLOW_NAME},
+                {MAIN_SHA, HEAD_SHA},
+                8100,
+            )
+        self.assertEqual([item["id"] for item in observed], [910])
 
     def test_workflow_is_trusted_main_diff_bound_append_only_and_comment_only(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -1791,15 +2858,45 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         )
         self.assertIn("issue_comment:", text)
         self.assertIn("pull_request_target:", text)
+        self.assertIn(
+            "run-name: qikvrt-rr-v3 e=${{ github.workflow_sha }} p=",
+            text,
+        )
+        for required_input in (
+            "fingerprint", "evaluator_sha", "transport_intent_sha256",
+            "transport_attempt",
+        ):
+            self.assertRegex(
+                text,
+                rf"(?s)      {required_input}:\n.*?        required: true",
+            )
         self.assertNotIn("\n  pull_request:\n", text)
         self.assertNotIn("\n  schedule:\n", text)
+        self.assertNotIn("Select one exact zero-job ingress recovery", text)
+        self.assertNotIn("\n  pull_request_review:\n", text)
+        self.assertIn("workflow_run:", text)
+        self.assertNotIn('"QIKVRT code-owner review observer"', text)
         self.assertNotIn("BOUNDED_SCHEDULE_ROTATION", text)
         self.assertNotIn("RUN_NUMBER", text)
         self.assertNotIn("_gh_pages", text)
         self.assertIn("select_review_subject", text)
         self.assertIn("qikvrt-mesh-review-selection-", text)
         self.assertIn("EVENT_NAME: ${{ github.event_name }}", text)
+        self.assertIn("EVENT_WORKFLOW_RUN_ID:", text)
+        self.assertIn("WORKFLOW_RUN_SOURCE_PROVENANCE_INVALID", text)
+        self.assertIn("source.get('workflow_id') != workflow.get('id')", text)
         self.assertIn("REQUESTED_HEAD: ${{ inputs.head || '' }}", text)
+        self.assertIn("evaluator_sha:", text)
+        self.assertIn("inputs.evaluator_sha == github.workflow_sha", text)
+        self.assertIn("inputs.evaluator_sha == github.sha", text)
+        self.assertIn("inputs.transport_attempt == '1'", text)
+        self.assertNotIn("inputs.transport_attempt == '2'", text)
+        self.assertNotIn("r'[12]'", text)
+        self.assertIn(
+            "group: qikvrt-requested-review-executor-${{ github.repository }}",
+            text,
+        )
+        self.assertIn("  queue: max", text)
         self.assertIn("GITHUB_EVENT_PATH", text)
         self.assertIn("event_payload_sha256", text)
         self.assertIn("qikvrt-review-event-context.json", text)
@@ -1807,9 +2904,127 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("EXPECTED_SELECTOR_HEAD", text)
         self.assertIn('--expected-head "$EXPECTED_SELECTOR_HEAD"', text)
         self.assertNotIn("if not people and not teams", text)
-        self.assertIn("if: github.ref == 'refs/heads/main'", text)
-        self.assertIn("ref: main", text)
+        self.assertIn("github.ref == 'refs/heads/main' &&", text)
+        self.assertIn("github.workflow_sha == github.sha", text)
+        self.assertEqual(text.count("ref: ${{ github.workflow_sha }}"), 9)
+        self.assertEqual(text.count("Bind exact evaluator checkout"), 9)
+        self.assertNotIn("          ref: main", text)
         self.assertIn("persist-credentials: false", text)
+        self.assertIn("  publish-run-completion-envelope:", text)
+        completion = text.split("  publish-run-completion-envelope:\n", 1)[1]
+        self.assertIn("if: always()", completion)
+        self.assertIn("permissions: {}", completion)
+        self.assertIn("build_requested_review_completion_envelope", completion)
+        self.assertIn("resolve_requested_review_completion_binding", completion)
+        self.assertIn("DISPATCH_TRANSPORT_INTENT_SHA256", completion)
+        self.assertIn(
+            "qikvrt-requested-review-completion-${{ github.run_id }}-attempt-${{ github.run_attempt }}",
+            completion,
+        )
+        self.assertNotIn("secrets.", completion)
+        self.assertIn("/tmp/qikvrt-mesh-review-producer/*", text)
+        self.assertIn("MESH_REVIEW_PRODUCER_STAGING_SET_INVALID", text)
+
+    def test_workflow_isolates_every_write_scope_in_one_effect_job(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        core = (ROOT / "tools/qikvrt_requested_review_executor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("permissions: {}", text)
+        names = (
+            "plan-review", "ledger-write", "project-comment",
+            "project-status", "plan-successor-outbox",
+            "enqueue-successor-outbox", "select-successor",
+            "prepare-successor-transport", "dispatch-successor",
+            "record-successor-acceptance", "publish-run-completion-envelope",
+        )
+        blocks = {}
+        for index, name in enumerate(names):
+            start = text.index(f"  {name}:\n")
+            end = (
+                text.index(f"  {names[index + 1]}:\n", start)
+                if index + 1 < len(names)
+                else len(text)
+            )
+            blocks[name] = text[start:end]
+        self.assertNotIn(": write", blocks["plan-review"])
+        self.assertNotIn(": write", blocks["plan-successor-outbox"])
+        self.assertNotIn(": write", blocks["select-successor"])
+        expected = {
+            "project-comment": "pull-requests: write",
+            "project-status": "statuses: write",
+            "dispatch-successor": "actions: write",
+        }
+        all_write_scopes = tuple(expected.values())
+        self.assertNotIn(": write", blocks["ledger-write"])
+        self.assertIn("contents: read", blocks["ledger-write"])
+        self.assertIn(
+            "environment: qikvrt-outbox-ledger-authority",
+            blocks["ledger-write"],
+        )
+        self.assertIn(
+            "secrets.QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN",
+            blocks["ledger-write"],
+        )
+        self.assertIn("writer_token=os.environ.pop", blocks["ledger-write"])
+        self.assertIn("verify_ledger_authority", blocks["ledger-write"])
+        self.assertIn("writer=True", blocks["ledger-write"])
+        for name in (
+            "enqueue-successor-outbox",
+            "prepare-successor-transport",
+            "record-successor-acceptance",
+        ):
+            with self.subTest(outbox_writer=name):
+                self.assertNotIn(": write", blocks[name])
+                self.assertIn("contents: read", blocks[name])
+                self.assertIn(
+                    "environment: qikvrt-outbox-ledger-authority", blocks[name]
+                )
+                self.assertIn(
+                    "group: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch",
+                    blocks[name],
+                )
+                self.assertIn(
+                    "QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN", blocks[name]
+                )
+                self.assertIn(
+                    "QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID", blocks[name]
+                )
+                self.assertIn(
+                    "QIKVRT_OUTBOX_WRITER_GROUP: qikvrt-outbox-ledger-v2-mesh-review-successor-dispatch",
+                    blocks[name],
+                )
+        self.assertIn(
+            "environment: qikvrt-outbox-ledger-authority",
+            blocks["select-successor"],
+        )
+        self.assertIn(
+            "QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN",
+            blocks["select-successor"],
+        )
+        self.assertNotIn(
+            "QIKVRT_ENV_OUTBOX_LEDGER_WRITER_TOKEN",
+            blocks["select-successor"],
+        )
+        for name, allowed in expected.items():
+            with self.subTest(job=name):
+                self.assertIn(allowed, blocks[name])
+                for scope in all_write_scopes:
+                    if scope != allowed:
+                        self.assertNotIn(scope, blocks[name])
+        self.assertNotIn("statuses: read", blocks["ledger-write"])
+        self.assertNotIn("statuses: read", blocks["project-comment"])
+        self.assertNotIn("statuses: read", blocks["dispatch-successor"])
+        self.assertNotIn("pull-requests: read", blocks["project-comment"])
+        self.assertNotIn("actions: read", blocks["dispatch-successor"])
+        self.assertIn("Preserve sealed read-only review plan", blocks["plan-review"])
+        self.assertIn("Download exact read-only review plan", blocks["ledger-write"])
+        self.assertIn("Download exact ledger-bound review", blocks["project-comment"])
+        self.assertIn("Download exact ledger-bound review", blocks["project-status"])
+        self.assertIn(
+            "Download exact pre-effect transport receipt",
+            blocks["dispatch-successor"],
+        )
         self.assertIn('"--no-ext-diff", "--no-textconv", "--no-renames"', core)
         self.assertIn('"diff", "--name-status", "-z", "--no-renames"', core)
         self.assertIn("REVIEW_INTAKE_SCHEMA", core)
@@ -1817,7 +3032,10 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("REQUIRED_GATE_PATHS_JSON", text)
         self.assertIn("refs/heads/qikvrt/mesh-review-ledger-v1", text)
         self.assertIn("'force':False", text)
-        self.assertIn("existing_diff=blob_at(diff_path,ledger_head)", text)
+        self.assertIn("bounded_append_only_cas", text)
+        self.assertIn("max_attempts=8", text)
+        self.assertIn("observed_after_error", core)
+        self.assertIn("existing_diff=blob_at(diff_path,parent_sha)", text)
         self.assertIn("prepare_diff_transport_ledger_entries", core)
         self.assertIn("prepare_diff_transport_ledger_entries", text)
         self.assertIn(
@@ -1825,28 +3043,56 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             "              reassemble_diff_transport,",
             text,
         )
-        self.assertIn("blob_at(diff_path,commit) != _pretty_json_bytes(transport)", text)
-        self.assertIn("'parents':[]", text)
+        self.assertIn("blob_at(diff_path,observed_head) == manifest_bytes", text)
+        self.assertNotIn("'parents':[]", text)
+        self.assertNotIn("INITIALIZE_ORPHAN_ROOT", text)
+        self.assertNotIn("INVALID_LEDGER_INITIALIZATION_PLAN", text)
+        self.assertIn(
+            "MESH_REVIEW_LEDGER_REF_MISSING_AFTER_VERIFIED_GENESIS", text
+        )
+        self.assertIn("verify_live_mesh_ledger_authority", text)
+        self.assertIn("MESH_REVIEW_LEDGER_LIVE_AUTHORITY_NOT_VERIFIED", core)
+        self.assertIn("MESH_REVIEW_LEDGER_WRITER_IDENTITY_NOT_VERIFIED", text)
         self.assertIn("pre-ledger-cas", text)
         self.assertIn("post-ledger-cas", text)
+        self.assertIn("LEDGER_EFFECT_EVALUATOR_SUPERSEDED", text)
+        self.assertIn("LEDGER_QUEUE_EFFECT_EVALUATOR_SUPERSEDED", text)
         self.assertIn("actions: write", text)
         self.assertIn("'--mode','ledger-history'", text)
         self.assertIn("projection_current", text)
-        self.assertIn("Dispatch exactly one exact-head progress successor", text)
-        self.assertIn("'gh','workflow','run','qikvrt_requested_review_executor.yml'", text)
-        self.assertIn("f'head={head}'", text)
-        self.assertIn("f'fingerprint={fingerprint}'", text)
-        self.assertIn("steps.queue.outputs.needed == 'true'", text)
+        self.assertIn("Dispatch exactly the sealed shared-outbox request", text)
+        self.assertIn("'X-GitHub-Api-Version: 2026-03-10'", text)
+        self.assertIn("return_run_details=true", text)
+        self.assertIn("envelope.get('workflow_run_id')", text)
+        self.assertIn("MESH_SUCCESSOR_RETURNED_RUN_DIFFERS", text)
+        self.assertIn('inputs[head]=$head', text)
+        self.assertIn('inputs[fingerprint]=$fingerprint', text)
+        self.assertIn('inputs[evaluator_sha]=$evaluator', text)
+        self.assertIn('inputs[transport_intent_sha256]=$intent_sha', text)
+        self.assertIn('inputs[transport_attempt]=$attempt', text)
+        self.assertIn("needs.select-successor.outputs.needed == 'true'", text)
         self.assertNotIn("steps.ledger.outputs.duplicate != 'true'", text)
-        self.assertIn("Select exactly one durable recursive review work unit", text)
+        self.assertIn("Read only the next exact sharded FIFO item", text)
         self.assertIn("review_queue_intent", text)
+        self.assertIn("mesh-review-successor-dispatch", text)
+        self.assertIn("prepare-transport", text)
+        self.assertIn("qikvrt_ruleset_outbox_transport_v2", text)
+        self.assertIn("value['cas'].get('appended')", text)
+        self.assertIn(
+            "prepared={'true' if value['cas']['appended'] else 'false'}", text
+        )
+        self.assertIn("prepared['cas'].get('appended') is not True", text)
+        self.assertNotIn("qikvrt_ruleset_outbox_transport_v1", text)
+        self.assertIn("ADMISSION_RECOVERY_OWNS_ACCEPTED_CHILD", core)
+        self.assertNotIn("EXPECTED_NEXT_ATTEMPT", text)
+        self.assertNotIn("PROGRESS_SUCCESSOR_ATTEMPT_PLAN_DRIFT", text)
         self.assertIn("review_queue_ack", text)
         self.assertIn("successor_evidence_persisted", text)
-        self.assertIn("RECURSIVE_QUEUE_EVIDENCE_MISSING", text)
+        self.assertIn("MESH_SUCCESSOR_OUTBOX_SOURCE_BINDING_INVALID", text)
         self.assertIn("SUPERSEDED_BY_CAUSAL_REOBSERVATION", core)
-        self.assertIn("PROGRESS_SUCCESSOR_TRANSPORT_ACK_NOT_OBSERVED", text)
-        self.assertIn("Reobserve successor transport and literal subject binding", text)
-        self.assertIn("PROGRESS_SUCCESSOR_REOBSERVATION_FAILED", text)
+        self.assertIn("MESH_SUCCESSOR_RETURNED_RUN_DIFFERS", text)
+        self.assertIn("Persist exact child acceptance in shared FIFO", text)
+        self.assertIn("TRANSPORT_ACCEPTED_LOCATOR", text)
         self.assertIn("_historical_receipt_binding", core)
         self.assertIn("REOBSERVATION_PROGRESS_FIELDS", core)
         self.assertIn("LIVE_STATUS_MARKER", core)
@@ -1860,9 +3106,27 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("if-no-files-found: error", text)
         self.assertIn("include-hidden-files: true", text)
         self.assertIn("latest_status_matches_projection", text)
-        self.assertIn("D0: ${{ steps.ledger.outputs.d0 }}", text)
+        self.assertIn("- Technical disposition:", text)
         self.assertIn(
-            "NEXT_ACTION: ${{ steps.ledger.outputs.next_action }}",
+            "Technical observation complete; independent approval required; fp=",
+            text,
+        )
+        self.assertIn(
+            "current_marker=\"<!-- ${REVIEW_MARKER} head=${EXPECTED_HEAD} "
+            "tree=${EXPECTED_TREE} fingerprint=${FINGERPRINT} "
+            "disposition=${DISPOSITION} -->\"",
+            text,
+        )
+        self.assertIn('startswith(\\"${current_marker}\\")', text)
+        self.assertNotIn(
+            'contains(\\"fingerprint=${FINGERPRINT}\\")',
+            text,
+        )
+        self.assertIn("mesh_receipt_semantics", core)
+        self.assertIn("LEGACY_TECHNICAL_APPROVE_RECEIPT", core)
+        self.assertIn("D0: ${{ needs.ledger-write.outputs.d0 }}", text)
+        self.assertIn(
+            "NEXT_ACTION: ${{ needs.ledger-write.outputs.next_action }}",
             text,
         )
         self.assertNotIn("D0: ${{ steps.decision.outputs.d0 }}", text)
@@ -1873,13 +3137,36 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertIn("HOLD_UNVERIFIED", text)
         self.assertIn("independent Code-Owner approval: **not implied**", text)
         observer = OBSERVER_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("PULL_REQUEST_BASE_NOT_MAIN", observer)
-        self.assertIn("INELIGIBLE_EVENT_TARGET", observer)
-        self.assertNotIn("BLOCK: pull request is not based on main", observer)
+        self.assertIn("on: {}", observer)
+        self.assertIn("if: false", observer)
+        self.assertIn("RETIRED_NO_UNTRUSTED_REVIEW_TRIGGER", observer)
+        self.assertNotIn("pull_request_review:", observer)
+        self.assertNotIn("pull_request:", observer)
+        legacy_fanout = LEGACY_FANOUT_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("on: {}", legacy_fanout)
+        self.assertIn("permissions: {}", legacy_fanout)
+        self.assertIn("if: false", legacy_fanout)
+        self.assertIn("RETIRED_NO_LEGACY_REVIEW_REPORT_FANOUT", legacy_fanout)
+        self.assertNotIn("workflow_run:", legacy_fanout)
+        self.assertNotIn("pull_request_review", legacy_fanout.split("on: {}", 1)[1])
+        self.assertNotIn("secrets.", legacy_fanout)
+        self.assertNotIn(": write", legacy_fanout)
         self.assertIn(
             "- qikvrt/mesh-review-ledger-v1",
             CI_WORKFLOW.read_text(encoding="utf-8"),
         )
+
+    def test_legacy_same_fingerprint_bot_comment_is_not_current_dedup(self):
+        fingerprint = "a" * 64
+        shared = (
+            f"{MODULE.REVIEW_MARKER} head={HEAD_SHA} tree={HEAD_TREE_SHA} "
+            f"fingerprint={fingerprint} disposition="
+        )
+        legacy_body = f"<!-- {shared}APPROVE -->\nlegacy technical review"
+        current_marker = f"{shared}{MODULE.TECHNICAL_CONTINUE} -->"
+
+        self.assertIn(f"fingerprint={fingerprint}", legacy_body)
+        self.assertNotIn(current_marker, legacy_body)
 
     def test_exact_event_selection_is_diagnostic_and_fail_closed(self):
         cases = {
@@ -2190,6 +3477,7 @@ class RequestedReviewExecutorTests(unittest.TestCase):
             WORKFLOW,
             PROMOTION_WORKFLOW,
             OBSERVER_WORKFLOW,
+            LEGACY_FANOUT_WORKFLOW,
             REQUIRED_REVIEW_GATE_WORKFLOW,
         ]
         for workflow in workflows:

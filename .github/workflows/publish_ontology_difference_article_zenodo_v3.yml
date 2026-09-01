@@ -1,84 +1,79 @@
-name: Publish ontology article to Zenodo v3 idempotent
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
 
+name: Publish ontology article to Zenodo v3 (Authority HOLD)
+
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
 on:
-  push:
-    branches: [publication/ontology-difference-reverse-engineering]
-    paths: [release/ontology-difference-zenodo-request-v3.json]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  publish:
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-      TITLE: Die Ontologie des Unterschieds als universaler Reverse-Engineering-Mechanismus
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
-      - name: Resolve existing record or publish exact package
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Materialize protected release Authority HOLD
         shell: bash
+        env:
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           python3 -B - <<'PY'
-          import hashlib, json, os, pathlib, subprocess, urllib.error, urllib.parse, urllib.request
-          marker_path=pathlib.Path('release/ontology-difference-zenodo-request-v3.json')
-          marker=json.loads(marker_path.read_text(encoding='utf-8'))
-          expected={'schema':'qikvrt_zenodo_publication_request_v3','action':'publish_or_reconcile','confirm':'PUBLISH_OR_RECONCILE_ONTOLOGY_DIFFERENCE_ARTICLE','authority_repository':'Goldkelch/qik-vrt','mirror_repository':'ingolf-lohmann/qik-vrt','status':'EFFECT_ACK_CONTINUE'}
-          for k,v in expected.items():
-              if marker.get(k)!=v: raise SystemExit('BLOCK: marker mismatch '+k)
-          parent=subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()
-          if marker.get('candidate_commit')!=parent: raise SystemExit('BLOCK: candidate commit mismatch')
-          changed=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD^','HEAD'],text=True).splitlines()
-          if changed!=[str(marker_path)]: raise SystemExit('BLOCK: authorization commit changed more than marker')
-          token=os.environ.get('ZENODO_ACCESS_TOKEN','')
-          if len(token)<20 or any(c.isspace() for c in token): raise SystemExit('BLOCK: ZENODO_ACCESS_TOKEN unavailable')
-          title=os.environ['TITLE']; api='https://zenodo.org/api'
-          headers={'Authorization':'Bearer '+token,'Accept':'application/json','User-Agent':'qik-vrt-publication/3'}
-          def call(method,url,payload=None,ctype='application/json'):
-              data=None if payload is None else (payload if isinstance(payload,bytes) else json.dumps(payload,ensure_ascii=False).encode())
-              h=dict(headers); h['Content-Type']=ctype
-              req=urllib.request.Request(url,data=data,method=method,headers=h)
-              try:
-                  with urllib.request.urlopen(req,timeout=90) as r:
-                      raw=r.read(); return json.loads(raw) if raw else {}
-              except urllib.error.HTTPError as e:
-                  raise SystemExit(f'BLOCK: Zenodo HTTP {e.code}: '+e.read(4096).decode('utf-8','replace')[:1200])
-          package=pathlib.Path('publications/ontology-des-unterschieds-reverse-engineering')
-          names=['ORIGINAL_ARTICLE.md','META_REVIEW.md','PUBLICATION.json','README.md']
-          manifest=[]
-          for name in names:
-              data=(package/name).read_bytes(); manifest.append({'name':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
-          query=urllib.parse.quote(f'title:"{title}"')
-          deposits=call('GET',api+'/deposit/depositions?q='+query+'&size=100')
-          if not isinstance(deposits,list): raise SystemExit('BLOCK: Zenodo deposit search was not a list')
-          exact=[d for d in deposits if isinstance(d,dict) and ((d.get('metadata') or {}).get('title')==title)]
-          exact.sort(key=lambda d:int(d.get('id',0)),reverse=True)
-          dep=exact[0] if exact else call('POST',api+'/deposit/depositions',{})
-          depid=dep.get('id')
-          if not isinstance(depid,int): raise SystemExit('BLOCK: deposition id missing')
-          metadata={'metadata':{'title':title,'upload_type':'publication','publication_type':'article','description':'Originalartikel von Ingolf Lohmann mit getrennt ausgewiesener wissenschaftlicher Meta-Betrachtung und fail-closed QIK-VRT-Verifikationsstatus.','creators':[{'name':'Lohmann, Ingolf'}],'contributors':[{'name':'OpenAI ChatGPT','type':'Other'}],'language':'deu','license':'cc-by-nc-nd-4.0','keywords':['QIK-VRT','Ontologie des Unterschieds','Reverse Engineering','Informationswirksamkeit','Evidenz','Verantwortung'],'related_identifiers':[{'identifier':'https://github.com/Goldkelch/qik-vrt','relation':'isSupplementTo','scheme':'url'},{'identifier':'https://github.com/ingolf-lohmann/qik-vrt','relation':'isSupplementTo','scheme':'url'}],'notes':'Kein FINAL_PASS und kein EFFECT_ACK_DONE; Claim-Inventar, Lean-Kernel-Receipts, Traceability und Authority-/Mirror-Synchronisation bleiben gesonderte Abschlusskriterien.'}}
-          submitted=bool(dep.get('submitted'))
-          if not submitted:
-              dep=call('PUT',api+f'/deposit/depositions/{depid}',metadata)
-              bucket=(dep.get('links') or {}).get('bucket')
-              if not isinstance(bucket,str) or not bucket.startswith('https://zenodo.org/api/files/'):
-                  raise SystemExit('BLOCK: unsafe Zenodo bucket')
-              for item in manifest:
-                  call('PUT',bucket+'/'+urllib.parse.quote(item['name']), (package/item['name']).read_bytes(),'application/octet-stream')
-              dep=call('POST',api+f'/deposit/depositions/{depid}/actions/publish')
-          doi=dep.get('doi') or (dep.get('metadata') or {}).get('doi') or (((dep.get('metadata') or {}).get('prereserve_doi') or {}).get('doi'))
-          record_url=(dep.get('links') or {}).get('record_html') or (dep.get('links') or {}).get('html')
-          if not isinstance(doi,str) or not doi.startswith('10.'): raise SystemExit('BLOCK: published DOI missing')
-          receipt={'schema':'qikvrt_zenodo_publication_receipt_v1','candidate_commit':parent,'deposition_id':depid,'doi':doi,'record_url':record_url,'files':manifest,'status':'PUBLISHED_NOT_KERNEL_FINAL'}
-          out=pathlib.Path('release/ontology-difference-zenodo-receipt.json')
-          out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
+              },
+          }
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
           PY
-          git config user.name 'qik-vrt-zenodo-publication[bot]'
-          git config user.email 'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
-          git add release/ontology-difference-zenodo-receipt.json
-          git commit -m 'zenodo: persist ontology article publication receipt'
-          git push origin HEAD:publication/ontology-difference-reverse-engineering
+
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
+          if-no-files-found: error
+          retention-days: 90

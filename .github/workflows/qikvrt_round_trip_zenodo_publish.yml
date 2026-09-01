@@ -1,464 +1,79 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: Reconcile canonical Round Trip Zenodo publication
+name: Reconcile canonical Round Trip Zenodo publication (Authority HOLD)
 
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
 on:
-  push:
-    branches:
-      - publication/round-trip-canonical-v1-8db8780b
-    paths:
-      - .github/workflows/qikvrt_round_trip_zenodo_publish.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: qikvrt-round-trip-canonical-zenodo-v1-8db8780b
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  reconcile:
-    if: github.repository == 'Goldkelch/qik-vrt'
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    env:
-      EXPECTED_BRANCH: publication/round-trip-canonical-v1-8db8780b
-      EXPECTED_MAIN: 7c3916888257c05e8066490b5f06f43eacad84cd
-      RECOVERY_PARENT: 100c55facc829c139ad51bac81dcc3a613c435ae
-      TARGET_EXECUTION_HEAD: ce44e23e74b08d51d489a0bd5c8eb6f2017fff83
-      MANIFEST_PATH: release/round-trip-canonical-publication-zenodo-authorization-v2/publish-request.json
-      EVIDENCE_PATH: release/round-trip-canonical-publication-zenodo-authorization-v2/zenodo-publication.json
-      EXPECTED_EVIDENCE_SHA256: 8d730ef92ee4ee2d7b01931298169318b65819c592c61cfb0fbc3472e2f063e3
-      EXPECTED_EVIDENCE_BLOB: bbb542cc2ef7f7c09d44bb9b12788d7b1e19254b
-      CONSUMPTION_REF: refs/tags/qikvrt-zenodo-auth/bfe0b0fd2135638b1bc67622d29114d94e9ef4485880e6444b69f7d3910eb762
-      EXPECTED_TAG_OBJECT: 9a94423109f8fc138d1914bec95ae61790cced27
-      SOURCE_FAILED_RUN: '31483721488'
-      SOURCE_RECOVERY_ARTIFACT: '9098323926'
-      ZENODO_API_BASE: https://zenodo.org/api
-      PYTHONDONTWRITEBYTECODE: '1'
-      PYTHONNOUSERSITE: '1'
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Check out exact reconciliation controller
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Verify exact reconciliation boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = "push"
-          test "$GITHUB_REPOSITORY" = "Goldkelch/qik-vrt"
-          test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH"
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
-          test "$(git show -s --format=%P HEAD)" = "$RECOVERY_PARENT"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          python3 -B - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-          if event.get("forced") is not False:
-              raise SystemExit("BLOCK: reconciliation branch push was forced")
-          if event.get("before") != os.environ["RECOVERY_PARENT"]:
-              raise SystemExit("BLOCK: reconciliation push before SHA differs")
-          if event.get("after") != os.environ["GITHUB_SHA"]:
-              raise SystemExit("BLOCK: reconciliation push after SHA differs")
-          if event.get("ref") != "refs/heads/" + os.environ["EXPECTED_BRANCH"]:
-              raise SystemExit("BLOCK: reconciliation push ref differs")
-          PY
-          expected_delta="$(
-            printf '%s\n' \
-              'M	.github/workflows/qikvrt_round_trip_zenodo_publish.yml' \
-              'M	REPOSITORY_FILE_MANIFEST.json' \
-              'M	REPOSITORY_FILE_MANIFEST.json.sha256' \
-              'M	SHA256SUMS.txt'
-          )"
-          observed_delta="$(
-            git diff \
-              --name-status \
-              --no-renames \
-              "$RECOVERY_PARENT" \
-              "$GITHUB_SHA" \
-              --
-          )"
-          test "$observed_delta" = "$expected_delta"
-          test "$(
-            git rev-parse --verify "$RECOVERY_PARENT:$EVIDENCE_PATH"
-          )" = "$EXPECTED_EVIDENCE_BLOB"
-          test "$(
-            git show "$RECOVERY_PARENT:$EVIDENCE_PATH" |
-              sha256sum |
-              awk '{ print $1 }'
-          )" = "$EXPECTED_EVIDENCE_SHA256"
-          remote_branch="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          remote_main="$(
-            git ls-remote --heads origin refs/heads/main |
-              awk 'NR == 1 { print $1 }'
-          )"
-          tag_object="$(
-            git ls-remote origin "$CONSUMPTION_REF" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          peeled_target="$(
-            git ls-remote origin "$CONSUMPTION_REF^{}" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_branch" = "$GITHUB_SHA"
-          test "$remote_main" = "$EXPECTED_MAIN"
-          test "$tag_object" = "$EXPECTED_TAG_OBJECT"
-          test "$peeled_target" = "$TARGET_EXECUTION_HEAD"
-          python3 -B tools/qikvrt_tool_cache.py verify
-          python3 -B tools/qikvrt_integrity.py verify
-          python3 -B - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          from tools import qikvrt_zenodo_publish as publish
-
-          root = Path.cwd().resolve()
-          manifest_path = root / os.environ["MANIFEST_PATH"]
-          manifest = publish.load_manifest(manifest_path, root)
-          raw = (root / os.environ["EVIDENCE_PATH"]).read_bytes()
-          if hashlib.sha256(raw).hexdigest() != os.environ[
-              "EXPECTED_EVIDENCE_SHA256"
-          ]:
-              raise SystemExit("BLOCK: checked-out recovery evidence digest differs")
-          value = json.loads(raw)
-          evidence = publish._validate_recovery_evidence(
-              value,
-              manifest_path,
-              root,
-              manifest,
-              os.environ["TARGET_EXECUTION_HEAD"],
-          )
-          if (
-              evidence["state"] != publish.CONSUMPTION_STATE
-              or evidence["phase"] != "create_requested"
-              or "record_id" in evidence
-              or "doi" in evidence
-              or evidence["remote_consumption"]["ref"]
-              != os.environ["CONSUMPTION_REF"]
-          ):
-              raise SystemExit("BLOCK: exact zero-create recovery state differs")
-          print(
-              "ROUND_TRIP_ZERO_CREATE_RECONCILIATION_PREFLIGHT=VALID "
-              f"source_run={os.environ['SOURCE_FAILED_RUN']} "
-              f"artifact={os.environ['SOURCE_RECOVERY_ARTIFACT']}"
-          )
-          PY
-
-      - name: Run complete repository gates before reconciliation
-        shell: bash
-        run: |
-          set -euo pipefail
-          make test
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Prepare exact original execution worktree
-        id: target
-        shell: bash
-        run: |
-          set -euo pipefail
-          target="$RUNNER_TEMP/qikvrt-round-trip-recovery-target"
-          git worktree add --detach "$target" "$TARGET_EXECUTION_HEAD"
-          mkdir -p "$target/$(dirname "$EVIDENCE_PATH")"
-          git show "$RECOVERY_PARENT:$EVIDENCE_PATH" > \
-            "$target/$EVIDENCE_PATH"
-          chmod 600 "$target/$EVIDENCE_PATH"
-          test "$(
-            sha256sum "$target/$EVIDENCE_PATH" |
-              awk '{ print $1 }'
-          )" = "$EXPECTED_EVIDENCE_SHA256"
-          test "$(git -C "$target" rev-parse HEAD)" = "$TARGET_EXECUTION_HEAD"
-          printf 'path=%s\n' "$target" >> "$GITHUB_OUTPUT"
-
-      - name: Recheck remote recovery boundary immediately before effect
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git show -s --format=%P HEAD)" = "$RECOVERY_PARENT"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          remote_branch="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          remote_main="$(
-            git ls-remote --heads origin refs/heads/main |
-              awk 'NR == 1 { print $1 }'
-          )"
-          tag_object="$(
-            git ls-remote origin "$CONSUMPTION_REF" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          peeled_target="$(
-            git ls-remote origin "$CONSUMPTION_REF^{}" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_branch" = "$GITHUB_SHA"
-          test "$remote_main" = "$EXPECTED_MAIN"
-          test "$tag_object" = "$EXPECTED_TAG_OBJECT"
-          test "$peeled_target" = "$TARGET_EXECUTION_HEAD"
-
-      - name: Reconcile zero-create intent and publish exact files
-        id: reconcile
-        continue-on-error: true
-        timeout-minutes: 60
+      - name: Materialize protected release Authority HOLD
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-          TARGET_WORKTREE: ${{ steps.target.outputs.path }}
-        run: |
-          set +e
-          cd "$TARGET_WORKTREE"
-          export GITHUB_SHA="$TARGET_EXECUTION_HEAD"
-          python3 -B - <<'PY'
-          import os
-          from pathlib import Path
-          from tools import qikvrt_zenodo_publish as publish
-
-          root = Path.cwd().resolve()
-          manifest_path = root / os.environ["MANIFEST_PATH"]
-          manifest = publish.load_manifest(manifest_path, root)
-          execution_head = publish._validate_repository_source_head(
-              root,
-              manifest_path,
-              manifest,
-          )
-          if execution_head != os.environ["TARGET_EXECUTION_HEAD"]:
-              raise SystemExit("BLOCK: recovery execution head differs")
-          publish._validate_origin_repository(root, manifest["repository"])
-          secrets = publish._validated_network_secrets()
-          evidence_path = root / os.environ["EVIDENCE_PATH"]
-          value, _raw = publish._load_evidence_without_secrets(
-              evidence_path,
-              secrets,
-          )
-          evidence = publish._validate_recovery_evidence(
-              value,
-              manifest_path,
-              root,
-              manifest,
-              execution_head,
-          )
-          if evidence["phase"] != "create_requested":
-              raise SystemExit("BLOCK: zero-create recovery phase differs")
-          publish._reject_owner_authorization_replay(
-              root,
-              manifest["owner_authorization"],
-              secrets,
-              current_evidence_path=evidence_path,
-          )
-          publish._verify_remote_consumption_lock(
-              evidence["remote_consumption"],
-              manifest,
-              execution_head,
-              secrets[publish.GITHUB_TOKEN_ENVIRONMENT_VARIABLE],
-          )
-          verified = publish.verify_files(
-              manifest,
-              root,
-              secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE],
-          )
-          publish._reject_tokens_in_publication_bytes(
-              manifest_path,
-              root,
-              manifest,
-              verified,
-              secrets,
-          )
-          client = publish.zenodo.ZenodoClient(
-              secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE],
-              publish.zenodo.validate_base_url(os.environ["ZENODO_API_BASE"]),
-          )
-          metadata = manifest["metadata"]
-          entries = publish._shared_entries(manifest["files"])
-          matches = publish._canonical_inventory_candidates(
-              client,
-              secrets[publish.zenodo.TOKEN_ENVIRONMENT_VARIABLE],
-              metadata,
-              entries,
-          )
-          if len(matches) > 1:
-              raise SystemExit(
-                  "BLOCK: zero-create reconciliation found multiple exact records"
-              )
-          if matches:
-              record_id, doi, already_public = matches[0]
-          else:
-              if os.environ.get("GITHUB_RUN_ATTEMPT") != "1":
-                  raise SystemExit(
-                      "BLOCK: zero-create is permitted only on reconciliation "
-                      "attempt 1; later zero-match attempts require observation"
-                  )
-              draft = client.create_paper(metadata)
-              record_id = publish.zenodo._record_id(
-                  draft,
-                  "zero-create reconciliation deposition",
-              )
-              doi = publish.zenodo._doi_from_deposition(
-                  draft,
-                  "zero-create reconciliation deposition",
-              )
-              already_public = None
-          record_created = publish._phase_evidence(
-              manifest_path,
-              root,
-              manifest,
-              execution_head,
-              evidence["remote_consumption"],
-              "record_created",
-              record_id=record_id,
-              doi=doi,
-          )
-          publish._atomic_recovery_evidence(
-              evidence_path,
-              record_created,
-              secrets,
-          )
-          final = publish._complete_exact_record(
-              evidence_path,
-              manifest_path,
-              root,
-              manifest,
-              execution_head,
-              evidence["remote_consumption"],
-              record_id,
-              doi,
-              client,
-              verified,
-              secrets,
-              already_public=already_public,
-          )
-          if final.get("state") != "published":
-              raise SystemExit("BLOCK: reconciliation did not reach published state")
-          print("ZENODO_PUBLICATION_STATE=published")
-          print(f"ZENODO_RECORD_ID={final['record_id']}")
-          print(f"ZENODO_DOI={final['doi']}")
-          PY
-          status=$?
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Persist reconciled publication or recovery evidence
-        id: persist
-        if: always()
-        shell: bash
-        env:
-          TARGET_WORKTREE: ${{ steps.target.outputs.path }}
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
-          target_evidence="$TARGET_WORKTREE/$EVIDENCE_PATH"
-          if test ! -f "$target_evidence"; then
-            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          target_sha="$(
-            sha256sum "$target_evidence" |
-              awk '{ print $1 }'
-          )"
-          if test "$target_sha" = "$EXPECTED_EVIDENCE_SHA256"; then
-            printf '%s\n' 'persisted=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          cp "$target_evidence" "$EVIDENCE_PATH"
-          chmod 600 "$EVIDENCE_PATH"
-          state="$(
-            python3 -B - <<'PY'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          value = json.loads(Path(os.environ["EVIDENCE_PATH"]).read_text())
-          state = value.get("state")
-          if state not in {
-              "published",
-              "EFFECT_RELEASED/AWAITING_REMOTE_RECONCILIATION",
-          }:
-              raise SystemExit("BLOCK: reconciled evidence state differs")
-          print(state)
-          PY
-          )"
-          python3 -B tools/qikvrt_integrity.py generate
-          python3 -B - <<'PY'
-          import os
-          import subprocess
-
-          expected = {
-              "REPOSITORY_FILE_MANIFEST.json",
-              "REPOSITORY_FILE_MANIFEST.json.sha256",
-              "SHA256SUMS.txt",
-              os.environ["EVIDENCE_PATH"],
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
+              },
           }
-          raw = subprocess.check_output(
-              [
-                  "git",
-                  "status",
-                  "--porcelain=v1",
-                  "-z",
-                  "--untracked-files=all",
-              ]
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
           )
-          observed = set()
-          for item in raw.split(b"\0"):
-              if not item:
-                  continue
-              observed.add(item[3:].decode("utf-8"))
-          if observed != expected:
-              raise SystemExit(
-                  "BLOCK: reconciled repository delta differs: "
-                  + ",".join(sorted(observed))
-              )
           PY
-          git config user.name 'qik-vrt-zenodo-publication[bot]'
-          git config user.email \
-            'qik-vrt-zenodo-publication[bot]@users.noreply.github.com'
-          git add -- \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt \
-            "$EVIDENCE_PATH"
-          git diff --cached --check
-          test -n "$(git diff --cached --name-only)"
-          if test "$state" = "published"; then
-            message='zenodo: persist reconciled canonical Round Trip publication'
-          else
-            message='zenodo: persist canonical Round Trip recovery phase'
-          fi
-          git commit -m "$message"
-          remote_branch="$(
-            git ls-remote --heads origin "refs/heads/$EXPECTED_BRANCH" |
-              awk 'NR == 1 { print $1 }'
-          )"
-          test "$remote_branch" = "$GITHUB_SHA"
-          git push origin "HEAD:refs/heads/$EXPECTED_BRANCH"
-          printf '%s\n' 'persisted=true' >> "$GITHUB_OUTPUT"
-          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
 
-      - name: Upload reconciliation recovery evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: round-trip-canonical-zenodo-reconciliation-${{ github.run_id }}-${{ github.run_attempt }}
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
+          if-no-files-found: error
           retention-days: 90
-          if-no-files-found: ignore
-          path: |
-            release/round-trip-canonical-publication-zenodo-authorization-v2/zenodo-publication.json
-
-      - name: Enforce reconciled publication and persistence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "${{ steps.reconcile.outputs.status }}" = "0"
-          test "${{ steps.persist.outputs.persisted }}" = "true"
-          test "${{ steps.persist.outputs.state }}" = "published"

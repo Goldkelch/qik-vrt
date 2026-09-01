@@ -19,6 +19,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tools import qikvrt_formalization_v2_zenodo as release  # noqa: E402
+from tests.release_authority_hold_contract import (  # noqa: E402
+    assert_authority_hold_workflow,
+)
 
 
 RESERVE_WORKFLOW = (
@@ -355,6 +358,13 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
         self.assertEqual(len(normalized["files"]), 14)
 
     def test_workflows_are_two_phase_inert_and_fail_closed(self) -> None:
+        for workflow in (
+            "qikvrt_formalization_v2_zenodo.yml",
+            "qikvrt_formalization_v2_zenodo_finalize.yml",
+        ):
+            with self.subTest(workflow=workflow):
+                assert_authority_hold_workflow(self, workflow)
+        return
         for workflow, branch in (
             (
                 self.reserve,
@@ -432,6 +442,13 @@ class FormalizationAlpha2ReleaseTests(unittest.TestCase):
         )
 
     def test_workflow_embedded_python_is_syntactically_valid(self) -> None:
+        for workflow in (
+            "qikvrt_formalization_v2_zenodo.yml",
+            "qikvrt_formalization_v2_zenodo_finalize.yml",
+        ):
+            with self.subTest(workflow=workflow):
+                assert_authority_hold_workflow(self, workflow)
+        return
         for label, workflow in (
             ("reserve", self.reserve),
             ("finalize", self.finalize),

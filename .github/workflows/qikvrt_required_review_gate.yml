@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 name: QIKVRT required code-owner review
+run-name: QIKVRT required code-owner review admission-v2 evaluator-${{ github.workflow_sha }} source=${{ github.event.workflow_run.id || inputs.pr || 'event' }}
 
 on:
   workflow_run:
     workflows:
-      - "QIKVRT code-owner review observer"
       - "QIKVRT requested review executor"
     types: [completed]
   workflow_dispatch:
@@ -15,21 +15,208 @@ on:
         required: true
         type: string
 
-permissions:
-  actions: read
-  contents: read
-  pull-requests: read
-  statuses: write
+permissions: {}
 
 concurrency:
   group: qikvrt-required-code-owner-review-${{ github.repository }}
   cancel-in-progress: false
+  queue: max
+
+env:
+  EXPECTED_EVALUATOR_SHA: ${{ github.workflow_sha }}
 
 jobs:
-  publish:
-    if: github.ref == 'refs/heads/main'
+  verify-upstream-dispatch-authority:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.workflow_sha == github.sha &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 8
+    environment: qikvrt-outbox-ledger-authority
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      admitted: ${{ steps.authority.outputs.admitted }}
+      blocker: ${{ steps.authority.outputs.blocker }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+      EXPECTED_EVALUATOR_SHA: ${{ github.workflow_sha }}
+    steps:
+      - name: Check out trusted main dispatch-authority verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
+
+      - name: Fetch exact upstream run and stable executor identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/qikvrt-upstream-dispatch-authority
+          mkdir -p "$root"
+          gh api "repos/${REPOSITORY}/commits/main" > "$root/main.json"
+          gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}" > "$root/run.json"
+          gh api "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml" \
+            > "$root/workflow.json"
+
+      - name: Revalidate independent protected dispatch authority
+        id: authority
+        shell: bash
+        env:
+          QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN: ${{ secrets.QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN }}
+          QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID: ${{ vars.QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID }}
+        run: |
+          set -euo pipefail
+          auditor_token="$QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN"
+          writer_actor_id="$QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID"
+          unset QIKVRT_ENV_OUTBOX_LEDGER_AUDITOR_TOKEN
+          unset QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID
+          test -n "$auditor_token" && test -n "$writer_actor_id"
+          AUDITOR_TOKEN="$auditor_token" WRITER_ACTOR_ID="$writer_actor_id" \
+            python3 -B - <<'PY'
+          import json, os, pathlib
+          from tools.qikvrt_required_review_gate import (
+              TRUSTED_DISPATCH_AUTHORITY_LANES,
+              TRUSTED_EXECUTOR_WORKFLOW_PATH,
+              verify_upstream_executor_dispatch_authority,
+          )
+          from tools.qikvrt_requested_review_executor import (
+              parse_requested_review_run_title,
+          )
+          from tools.qikvrt_ruleset_outbox import (
+              GitHubLedgerBackend,
+              OutboxBlock,
+              _read_intent_by_fingerprint,
+              ensure_initialized,
+              lookup,
+          )
+          root=pathlib.Path('/tmp/qikvrt-upstream-dispatch-authority')
+          repo=os.environ['REPOSITORY']
+          token=os.environ.pop('AUDITOR_TOKEN')
+          actor_id=int(os.environ.pop('WRITER_ACTOR_ID'))
+          os.environ['QIKVRT_OUTBOX_LEDGER_WRITER_ACTOR_ID']=str(actor_id)
+          run=json.loads((root/'run.json').read_text(encoding='utf-8'))
+          workflow=json.loads((root/'workflow.json').read_text(encoding='utf-8'))
+          main=json.loads((root/'main.json').read_text(encoding='utf-8'))
+          locator=parse_requested_review_run_title(run.get('display_title'))
+          core_lookups=[]
+          lookup_failures=[]
+          for lane in sorted(TRUSTED_DISPATCH_AUTHORITY_LANES):
+              try:
+                  backend=GitHubLedgerBackend(repo,token)
+                  head=backend.get_ledger_head(lane)
+                  if head is None:
+                      raise OutboxBlock('OUTBOX_LEDGER_NOT_INITIALIZED')
+                  ensure_initialized(backend,lane)
+                  intent=(
+                      _read_intent_by_fingerprint(
+                          backend,head,lane,locator['transport_intent_sha256']
+                      )
+                      if isinstance(locator,dict) else None
+                  )
+                  if intent is not None:
+                      core_lookups.append(lookup(
+                          backend,lane=lane,sequence=intent['sequence'],
+                          fingerprint=intent['fingerprint'],
+                      ))
+              except (KeyError,TypeError,ValueError,OutboxBlock):
+                  lookup_failures.append(lane)
+
+          workflow_path=str(workflow.get('path') or '').split('@',1)[0]
+          identity_complete=(
+              workflow_path == TRUSTED_EXECUTOR_WORKFLOW_PATH
+              and isinstance(workflow.get('id'),int)
+              and not isinstance(workflow.get('id'),bool)
+              and main.get('sha') == os.environ['EXPECTED_EVALUATOR_SHA']
+          )
+          result=verify_upstream_executor_dispatch_authority(
+              repository=repo,
+              evaluator_sha=os.environ['EXPECTED_EVALUATOR_SHA'],
+              executor_workflow_id=(workflow.get('id') if identity_complete else 0),
+              run=run,
+              core_lookups=core_lookups,
+              core_lookups_complete=(not lookup_failures and identity_complete),
+          ) if identity_complete else {
+              'schema':'qikvrt_required_gate_upstream_dispatch_authority_v1',
+              'state':'INELIGIBLE','admitted':False,
+              'first_blocker':'UPSTREAM_EXECUTOR_DISPATCH_IDENTITY_INVALID',
+              'source':None,
+          }
+          result['lookup_readback']={
+              'core_lanes_complete':not lookup_failures,
+              'core_lookup_count':len(core_lookups),
+              'custom_wakeup_transport_authority_used':False,
+              'secret_values_observed':False,
+          }
+          (root/'authority.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output:
+              print(f"admitted={'true' if result['admitted'] else 'false'}",file=output)
+              print(f"blocker={result.get('first_blocker') or ''}",file=output)
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+      - name: Preserve exact upstream dispatch-authority observation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-required-gate-dispatch-authority-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-upstream-dispatch-authority
+
+      - name: Enforce independent upstream dispatch authority
+        if: steps.authority.outputs.admitted != 'true'
+        shell: bash
+        run: exit 1
+
+  plan-required-gate:
+    needs: verify-upstream-dispatch-authority
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      github.workflow_sha == github.sha &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        (github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml' ||
+         startsWith(github.event.workflow_run.path, '.github/workflows/qikvrt_requested_review_executor.yml@')) &&
+        (github.event.workflow_run.event != 'workflow_dispatch' ||
+         needs.verify-upstream-dispatch-authority.outputs.admitted == 'true') &&
+        github.event.workflow_run.repository.full_name == github.repository))
+    concurrency:
+      group: >-
+        qikvrt-required-code-owner-status-${{ github.repository }}-${{
+          github.event_name == 'workflow_dispatch' && format('pr-{0}', inputs.pr) ||
+          github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number && format('pr-{0}', github.event.workflow_run.pull_requests[0].number) ||
+          format('source-run-{0}-attempt-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt)
+        }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      state: ${{ steps.select.outputs.state }}
+      pr: ${{ steps.select.outputs.pr }}
+      expected_head: ${{ steps.select.outputs.expected_head }}
+      status_plan_ready: ${{ steps.status-plan.outputs.ready }}
+      status_plan_sha256: ${{ steps.status-plan.outputs.plan_sha256 }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
@@ -38,14 +225,19 @@ jobs:
       REQUESTED_PR: ${{ inputs.pr || '' }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
       EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
+      EVENT_WORKFLOW_RUN_TITLE: ${{ github.event.workflow_run.display_title || '' }}
       EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
     steps:
       - name: Check out trusted main gate implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
 
       - name: Select one exact code-owner review subject
         id: select
@@ -62,6 +254,8 @@ jobs:
               workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip(),
               workflow_run_head=os.environ.get('EVENT_WORKFLOW_RUN_HEAD','').strip(),
               event_prs=json.loads(os.environ.get('EVENT_PRS') or '[]'),
+              workflow_run_display_title=os.environ.get('EVENT_WORKFLOW_RUN_TITLE','').strip(),
+              trusted_evaluator_sha=os.environ['EXPECTED_EVALUATOR_SHA'],
           )
           print(json.dumps(value,sort_keys=True))
           PY
@@ -79,7 +273,7 @@ jobs:
         if: always() && steps.select.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-required-code-owner-selection-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          name: qikvrt-required-code-owner-selection-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.select.outputs.state }}
           if-no-files-found: error
           retention-days: 90
           path: /tmp/qikvrt-required-review-selection.json
@@ -89,21 +283,22 @@ jobs:
         shell: bash
         run: cat /tmp/qikvrt-required-review-selection.json
 
-      - name: Reobserve native rules and exact-head reviews
+      - name: Seal read-only native rule, review, and status plan
         if: steps.select.outputs.state == 'CANDIDATE'
+        id: status-plan
         env:
           PR_NUMBER: ${{ steps.select.outputs.pr }}
           EXPECTED_HEAD: ${{ steps.select.outputs.expected_head }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 -B - <<'PY'
+          root=/tmp/qikvrt-required-status-plan
+          mkdir -p "$root"
+          python3 -B - <<'PY' > "$root/plan.json"
           import json, os, subprocess
           from tools.qikvrt_required_review_gate import (
-              STATUS_PUBLICATION_NOOP,
-              decide_status_publication,
-              evaluate_required_review,
-              status_description,
+              build_status_effect_plan,
+              observe_automated_signer_receipts,
           )
 
           repo = os.environ['REPOSITORY']
@@ -116,79 +311,375 @@ jobs:
 
           def gh_pages(path):
               pages=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path], text=True))
+              if not isinstance(pages,list) or not pages:
+                  raise SystemExit('REQUIRED_STATUS_PAGE_MALFORMED')
               out=[]
               for page in pages:
-                  out.extend(page if isinstance(page,list) else [page])
+                  if not isinstance(page,list) or len(page) > 100:
+                      raise SystemExit('REQUIRED_STATUS_PAGE_MALFORMED')
+                  out.extend(page)
+              if any(not isinstance(item,dict) for item in out):
+                  raise SystemExit('REQUIRED_STATUS_PAGE_AMBIGUOUS')
+              ids=[item.get('id') for item in out]
+              if (
+                  any(isinstance(value,bool) or not isinstance(value,int) or value < 1
+                      for value in ids)
+                  or len(ids) != len(set(ids))
+              ):
+                  raise SystemExit('REQUIRED_STATUS_PAGE_AMBIGUOUS')
               return out
 
-          pr=gh_json(f'repos/{repo}/pulls/{number}')
-          reasons=[]
-          if pr.get('state') != 'open':
-              reasons.append('PULL_REQUEST_NOT_OPEN')
-          if pr.get('base',{}).get('ref') != 'main':
-              reasons.append('PULL_REQUEST_BASE_NOT_MAIN')
-          if reasons:
-              print(json.dumps({
-                  'schema':'qikvrt_required_code_owner_review_selection_v1',
-                  'state':'INELIGIBLE_EVENT_TARGET',
-                  'first_blocker':reasons[0],
-                  'pr_number':number,
-                  'eligibility_reasons':reasons,
-                  'status_publication':'FORBIDDEN',
-              },sort_keys=True))
-              raise SystemExit(0)
+          def gh_object_pages(path):
+              return json.loads(subprocess.check_output(
+                  ['gh','api','--paginate','--slurp',path],text=True
+              ))
 
+          def gh_bytes(path):
+              return subprocess.check_output(['gh','api',path])
+
+          local=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          main=gh_json(f'repos/{repo}/commits/main')
+          if local != os.environ['EXPECTED_EVALUATOR_SHA'] or main.get('sha') != local:
+              raise SystemExit('REQUIRED_STATUS_EVALUATOR_SUPERSEDED')
+          pr=gh_json(f'repos/{repo}/pulls/{number}')
           head=pr['head']['sha']
           expected_head=os.environ.get('EXPECTED_HEAD','').strip()
           if expected_head and head != expected_head:
-              print(json.dumps({
-                  'schema':'qikvrt_required_code_owner_review_selection_v1',
-                  'state':'REOBSERVE_EXACT_EVENT_TARGET',
-                  'first_blocker':'EVENT_TARGET_HEAD_DRIFT',
-                  'pr_number':number,
-                  'expected_head':expected_head,
-                  'observed_head':head,
-                  'status_publication':'FORBIDDEN',
-              },sort_keys=True))
-              raise SystemExit(0)
-
+              raise SystemExit('REQUIRED_STATUS_EVENT_TARGET_HEAD_DRIFT')
+          commit=gh_json(f'repos/{repo}/git/commits/{head}')
           rules=gh_json(f'repos/{repo}/rules/branches/main')
           reviews=gh_pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
-          decision=evaluate_required_review(pr, rules, reviews, required_code_owners=owners)
-          state=decision['gate_state']
-          description=status_description(decision)
-
-          combined=gh_json(f'repos/{repo}/commits/{head}/status')
-          publication=decide_status_publication(
-              combined.get('statuses', []),
-              context=context,
-              state=state,
-              description=description,
+          statuses=gh_pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
+          verified_reviews,receipt_blockers=observe_automated_signer_receipts(
+              repository=repo,
+              evaluator_sha=local,
+              pr=pr,
+              reviews=reviews,
+              required_code_owners=owners,
+              api_json=gh_json,
+              api_pages=gh_object_pages,
+              api_bytes=gh_bytes,
           )
-          receipt={**decision, **publication}
-          if publication['status_publication'] == STATUS_PUBLICATION_NOOP:
-              print(json.dumps(receipt, sort_keys=True))
-              raise SystemExit(0)
-
-          subprocess.check_call([
-              'gh','api','--method','POST',f'repos/{repo}/statuses/{head}',
-              '-f',f'state={state}','-f',f'context={context}','-f',f'description={description}',
-              '-f',f'target_url={os.environ["GITHUB_SERVER_URL"]}/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
-          ])
-          print(json.dumps(receipt, sort_keys=True))
+          plan=build_status_effect_plan(
+              pr,commit,rules,reviews,statuses,
+              context=context,required_code_owners=owners,
+              verified_automated_reviews=verified_reviews,
+              automated_review_receipt_blockers=receipt_blockers,
+          )
+          print(json.dumps(plan,sort_keys=True,indent=2))
           PY
+          cat "$root/plan.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          value=json.load(open('/tmp/qikvrt-required-status-plan/plan.json',encoding='utf-8'))
+          print('ready=true')
+          print(f"plan_sha256={value['plan_sha256']}")
+          PY
+
+      - name: Preserve content-addressed read-only required-status plan
+        if: steps.status-plan.outputs.ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-required-status-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.status-plan.outputs.plan_sha256 }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-required-status-plan/plan.json
+
+  publish-required-status:
+    needs: plan-required-gate
+    if: needs.plan-required-gate.outputs.status_plan_ready == 'true'
+    concurrency:
+      group: qikvrt-required-code-owner-status-${{ github.repository }}-pr-${{ needs.plan-required-gate.outputs.pr }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      REQUIRED_CODE_OWNERS_JSON: '["Goldkelch","ingolf-lohmann"]'
+      STATUS_CONTEXT: QIKVRT required code-owner review
+      EXPECTED_PLAN_SHA256: ${{ needs.plan-required-gate.outputs.status_plan_sha256 }}
+    steps:
+      - name: Check out trusted main status effect implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
+
+      - name: Download exact read-only required-status plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: qikvrt-required-status-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.plan-required-gate.outputs.status_plan_sha256 }}
+          path: /tmp/qikvrt-required-status-plan
+
+      - name: Reobserve exact gate and publish only its sealed status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json, os, pathlib, subprocess
+          from tools.qikvrt_required_review_gate import (
+              STATUS_PUBLICATION_NOOP,
+              build_status_effect_plan,
+              observe_automated_signer_receipts,
+              status_post_effect_drift_blocker,
+              validate_status_effect_plan,
+          )
+
+          root=pathlib.Path('/tmp/qikvrt-required-status-plan')
+          sealed=validate_status_effect_plan(
+              json.loads((root/'plan.json').read_text(encoding='utf-8'))
+          )
+          if sealed['plan_sha256'] != os.environ['EXPECTED_PLAN_SHA256']:
+              raise SystemExit('REQUIRED_STATUS_PLAN_NAME_BINDING_DRIFT')
+          subject=sealed['subject']
+          repo=os.environ['REPOSITORY']
+          number=int(subject['pr_number'])
+          head=subject['head_sha']
+          owners=json.loads(os.environ['REQUIRED_CODE_OWNERS_JSON'])
+
+          def api(path):
+              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+
+          def pages(path):
+              raw=json.loads(subprocess.check_output(
+                  ['gh','api','--paginate','--slurp',path],text=True
+              ))
+              if not isinstance(raw,list) or not raw:
+                  raise SystemExit('REQUIRED_STATUS_PREEFFECT_PAGE_MALFORMED')
+              values=[]
+              for page in raw:
+                  if not isinstance(page,list) or len(page) > 100:
+                      raise SystemExit('REQUIRED_STATUS_PREEFFECT_PAGE_MALFORMED')
+                  values.extend(page)
+              if any(not isinstance(item,dict) for item in values):
+                  raise SystemExit('REQUIRED_STATUS_PREEFFECT_PAGE_AMBIGUOUS')
+              ids=[item.get('id') for item in values]
+              if (
+                  any(isinstance(value,bool) or not isinstance(value,int) or value < 1
+                      for value in ids)
+                  or len(ids) != len(set(ids))
+              ):
+                  raise SystemExit('REQUIRED_STATUS_PREEFFECT_PAGE_AMBIGUOUS')
+              return values
+
+          def object_pages(path):
+              return json.loads(subprocess.check_output(
+                  ['gh','api','--paginate','--slurp',path],text=True
+              ))
+
+          def api_bytes(path):
+              return subprocess.check_output(['gh','api',path])
+
+          # This complete reobservation is the final read fence.  If a write
+          # is required, the next network call is the one exact status POST.
+          pr=api(f'repos/{repo}/pulls/{number}')
+          commit=api(f'repos/{repo}/git/commits/{head}')
+          rules=api(f'repos/{repo}/rules/branches/main')
+          reviews=pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
+          statuses=pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
+          current_main=api(f'repos/{repo}/commits/main')
+          if current_main.get('sha') != os.environ['EXPECTED_EVALUATOR_SHA']:
+              raise SystemExit('REQUIRED_STATUS_EFFECT_EVALUATOR_SUPERSEDED')
+          verified_reviews,receipt_blockers=observe_automated_signer_receipts(
+              repository=repo,
+              evaluator_sha=os.environ['EXPECTED_EVALUATOR_SHA'],
+              pr=pr,
+              reviews=reviews,
+              required_code_owners=owners,
+              api_json=api,
+              api_pages=object_pages,
+              api_bytes=api_bytes,
+          )
+          # Signer-artifact proof is deliberately completed before the final
+          # live-state fence.  The reviews GET below is the last network call
+          # before the exact local rebuild and (when needed) status POST.
+          pr=api(f'repos/{repo}/pulls/{number}')
+          commit=api(f'repos/{repo}/git/commits/{head}')
+          rules=api(f'repos/{repo}/rules/branches/main')
+          statuses=pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
+          current_main=api(f'repos/{repo}/commits/main')
+          if current_main.get('sha') != os.environ['EXPECTED_EVALUATOR_SHA']:
+              raise SystemExit('REQUIRED_STATUS_EFFECT_EVALUATOR_SUPERSEDED')
+          reviews=pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
+          current=build_status_effect_plan(
+              pr,commit,rules,reviews,statuses,
+              context=os.environ['STATUS_CONTEXT'],
+              required_code_owners=owners,
+              verified_automated_reviews=verified_reviews,
+              automated_review_receipt_blockers=receipt_blockers,
+          )
+          if current != sealed:
+              raise SystemExit('REQUIRED_STATUS_PLAN_PREEFFECT_DRIFT')
+          publication=sealed['publication']
+          if publication['status_publication'] == STATUS_PUBLICATION_NOOP:
+              result={
+                  'schema':'qikvrt_required_code_owner_status_effect_v1',
+                  'plan_sha256':sealed['plan_sha256'],
+                  'status_effect':'NOOP',
+                  'status_id':publication.get('previous_status_id'),
+                  'effect_ack':'UNCHANGED_EXACT_PROJECTION',
+              }
+          else:
+              raw=subprocess.check_output([
+                  'gh','api','--method','POST',
+                  f'repos/{repo}/statuses/{head}',
+                  '-f',f"state={publication['status_state']}",
+                  '-f',f"context={publication['status_context']}",
+                  '-f',f"description={publication['status_description']}",
+                  '-f',(
+                      f"target_url={os.environ['GITHUB_SERVER_URL']}/{repo}/"
+                      f"actions/runs/{os.environ['GITHUB_RUN_ID']}"
+                  ),
+              ],text=True)
+              posted=json.loads(raw)
+              if (
+                  not isinstance(posted.get('id'),int)
+                  or posted.get('state') != publication['status_state']
+                  or posted.get('context') != publication['status_context']
+                  or posted.get('description') != publication['status_description']
+              ):
+                  raise SystemExit('REQUIRED_STATUS_POST_RESPONSE_DRIFT')
+              result={
+                  'schema':'qikvrt_required_code_owner_status_effect_v1',
+                  'plan_sha256':sealed['plan_sha256'],
+                  'status_effect':'WRITE',
+                  'status_id':posted['id'],
+                  'effect_ack':'PENDING_EXACT_READBACK',
+              }
+
+          # The platform cannot make the status POST conditional on all of the
+          # independently mutable Authority facts.  Re-fetch the complete
+          # subject/main/rules/review fence after the effect, then read the
+          # status projection.  Any drift gets a newer pending correction.
+          post_main=api(f'repos/{repo}/commits/main')
+          post_pr=api(f'repos/{repo}/pulls/{number}')
+          post_head=post_pr.get('head',{}).get('sha')
+          post_commit=(
+              api(f'repos/{repo}/git/commits/{post_head}')
+              if isinstance(post_head,str) and len(post_head) == 40
+              and all(character in '0123456789abcdef' for character in post_head)
+              else {}
+          )
+          post_rules=api(f'repos/{repo}/rules/branches/main')
+          post_reviews=pages(f'repos/{repo}/pulls/{number}/reviews?per_page=100')
+          observed=pages(f'repos/{repo}/commits/{head}/statuses?per_page=100')
+          drift_blocker=status_post_effect_drift_blocker(
+              sealed,
+              expected_main_sha=os.environ['EXPECTED_EVALUATOR_SHA'],
+              observed_main=post_main,
+              observed_pr=post_pr,
+              observed_commit=post_commit,
+              observed_rules=post_rules,
+              observed_reviews=post_reviews,
+          )
+          if drift_blocker is not None:
+              correction_description=f'pending: {drift_blocker}'
+              correction=json.loads(subprocess.check_output([
+                  'gh','api','--method','POST',f'repos/{repo}/statuses/{head}',
+                  '-f','state=pending',
+                  '-f',f"context={publication['status_context']}",
+                  '-f',f'description={correction_description}',
+                  '-f',(
+                      f"target_url={os.environ['GITHUB_SERVER_URL']}/{repo}/"
+                      f"actions/runs/{os.environ['GITHUB_RUN_ID']}"
+                  ),
+              ],text=True))
+              if (
+                  not isinstance(correction.get('id'),int)
+                  or correction.get('state') != 'pending'
+                  or correction.get('context') != publication['status_context']
+                  or correction.get('description') != correction_description
+              ):
+                  raise SystemExit('REQUIRED_STATUS_POST_EFFECT_CORRECTION_FAILED')
+              corrected_statuses=pages(
+                  f'repos/{repo}/commits/{head}/statuses?per_page=100'
+              )
+              latest_correction=max(
+                  (item for item in corrected_statuses if item.get('context') == publication['status_context']),
+                  key=lambda item:(item.get('updated_at') or item.get('created_at') or '',item.get('id',-1)),
+                  default=None,
+              )
+              if (
+                  not isinstance(latest_correction,dict)
+                  or latest_correction.get('id') != correction['id']
+                  or latest_correction.get('state') != 'pending'
+                  or latest_correction.get('description') != correction_description
+              ):
+                  raise SystemExit('REQUIRED_STATUS_POST_EFFECT_CORRECTION_READBACK_FAILED')
+              result={
+                  'schema':'qikvrt_required_code_owner_status_effect_v1',
+                  'plan_sha256':sealed['plan_sha256'],
+                  'status_effect':'CORRECT_TO_PENDING',
+                  'status_id':correction['id'],
+                  'effect_ack':f'{drift_blocker}_HELD',
+              }
+          elif result['status_effect'] == 'WRITE':
+              latest=max(
+                  (item for item in observed if item.get('context') == publication['status_context']),
+                  key=lambda item:(item.get('updated_at') or item.get('created_at') or '',item.get('id',-1)),
+                  default=None,
+              )
+              if (
+                  not isinstance(latest,dict)
+                  or latest.get('id') != result['status_id']
+                  or latest.get('state') != publication['status_state']
+                  or latest.get('description') != publication['status_description']
+              ):
+                  raise SystemExit('REQUIRED_STATUS_POST_READBACK_DRIFT')
+              result['effect_ack']='EXACT_STATUS_READBACK'
+          result['completion_claims']={
+              'PASS':False,'FINAL_PASS':False,
+              'EFFECT_ACK_DONE':False,'MERGE':False,
+          }
+          (root/'effect.json').write_text(
+              json.dumps(result,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+      - name: Preserve exact required-status effect readback
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-required-status-effect-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-required-status-plan
 
   plan-native-account-review:
     # A native-account projection starts only from the exact completed
     # trusted-main technical-review run.  It never evaluates candidate bytes
     # and it deliberately has no account credential.
+    needs: verify-upstream-dispatch-authority
     if: >-
+      always() &&
       github.ref == 'refs/heads/main' &&
+      github.workflow_sha == github.sha &&
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.name == 'QIKVRT requested review executor' &&
+      (github.event.workflow_run.path == '.github/workflows/qikvrt_requested_review_executor.yml' ||
+       startsWith(github.event.workflow_run.path, '.github/workflows/qikvrt_requested_review_executor.yml@')) &&
+      (github.event.workflow_run.event != 'workflow_dispatch' ||
+       needs.verify-upstream-dispatch-authority.outputs.admitted == 'true') &&
+      github.event.workflow_run.repository.full_name == github.repository &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
     outputs:
       effect: ${{ steps.plan.outputs.effect }}
       reviewer: ${{ steps.plan.outputs.reviewer }}
@@ -200,6 +691,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+      UPSTREAM_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       EVENT_WORKFLOW_EVENT: ${{ github.event.workflow_run.event || '' }}
       EVENT_WORKFLOW_RUN_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
       EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
@@ -213,9 +705,13 @@ jobs:
       - name: Check out trusted main planner implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -230,26 +726,33 @@ jobs:
           root=/tmp/qikvrt-native-account-review
           mkdir -p "$root"
           python3 -B - <<'PY' > "$root/selection.json"
-          import json, os, re, subprocess
+          import json, os, subprocess
+          from tools.qikvrt_native_account_review import (
+              NativeAccountReviewError,
+              select_trusted_executor_artifact,
+              trusted_executor_run_is_valid,
+          )
           from tools.qikvrt_required_review_gate import select_required_review_targets
 
           repo=os.environ['REPOSITORY']
-          run_id=os.environ['UPSTREAM_RUN_ID']
+          run_id=int(os.environ['UPSTREAM_RUN_ID'])
+          run_attempt=int(os.environ['UPSTREAM_RUN_ATTEMPT'])
           def gh(path):
               return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          def gh_pages(path):
+              return json.loads(subprocess.check_output(
+                  ['gh','api','--paginate','--slurp',path],text=True
+              ))
 
+          trusted_main_sha=subprocess.check_output(
+              ['git','rev-parse','HEAD'],text=True
+          ).strip()
+          if gh(f'repos/{repo}/commits/main').get('sha') != trusted_main_sha:
+              raise SystemExit('NATIVE_REVIEW_PLANNER_EVALUATOR_SUPERSEDED')
           run=gh(f'repos/{repo}/actions/runs/{run_id}')
-          trusted_path='.github/workflows/qikvrt_requested_review_executor.yml'
           workflow=gh(f'repos/{repo}/actions/workflows/qikvrt_requested_review_executor.yml')
-          allowed_events={'pull_request_target','issue_comment','workflow_run','workflow_dispatch'}
-          if (
-              run.get('name') != 'QIKVRT requested review executor'
-              or run.get('conclusion') != 'success'
-              or run.get('event') not in allowed_events
-              or run.get('workflow_id') != workflow.get('id')
-              or workflow.get('path') != trusted_path
-              or run.get('path') != trusted_path
-              or run.get('repository',{}).get('full_name') != repo
+          if not trusted_executor_run_is_valid(
+              run, workflow, repo, trusted_main_sha, run_id, run_attempt
           ):
               print(json.dumps({
                   'schema':'qikvrt_native_account_review_event_v1',
@@ -257,34 +760,31 @@ jobs:
                   'first_blocker':'UPSTREAM_EXECUTOR_PROVENANCE_INVALID',
               },sort_keys=True))
               raise SystemExit(0)
-          artifacts=gh(f'repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100')
-          pattern=re.compile(r'^qikvrt-mesh-review-pr-([1-9][0-9]*)-([0-9a-f]{40})-([0-9a-f]{64})$')
-          matches=[]
-          for artifact in artifacts.get('artifacts',[]):
-              if not isinstance(artifact,dict) or artifact.get('expired'):
-                  continue
-              name=artifact.get('name')
-              match=pattern.fullmatch(name) if isinstance(name,str) else None
-              if match:
-                  matches.append((artifact,match))
-          if len(matches) != 1:
+          artifact_pages=gh_pages(
+              f'repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100'
+          )
+          try:
+              artifact_binding=select_trusted_executor_artifact(
+                  run, artifact_pages
+              )
+          except NativeAccountReviewError as exc:
               print(json.dumps({
                   'schema':'qikvrt_native_account_review_event_v1',
                   'state':'INELIGIBLE_EVENT_TARGET',
-                  'first_blocker':'UPSTREAM_EXECUTOR_ARTIFACT_MISSING_OR_AMBIGUOUS',
+                  'first_blocker':str(exc),
               },sort_keys=True))
               raise SystemExit(0)
-          artifact,match=matches[0]
-          artifact_pr=int(match.group(1))
-          artifact_head=match.group(2)
-          artifact_fingerprint=match.group(3)
+          artifact_pr=artifact_binding['artifact_pr_number']
+          artifact_head=artifact_binding['artifact_head']
+          artifact_fingerprint=artifact_binding['artifact_fingerprint']
           common={
-              'artifact_name':artifact['name'],
+              **{key:value for key,value in artifact_binding.items() if key != 'artifact'},
               'artifact_pr_number':artifact_pr,
               'artifact_head':artifact_head,
               'artifact_fingerprint':artifact_fingerprint,
               'upstream_event':run['event'],
               'upstream_run_id':run_id,
+              'upstream_run_attempt':run_attempt,
           }
           if run['event'] == 'pull_request_target':
               value=select_required_review_targets(
@@ -293,6 +793,8 @@ jobs:
                   workflow_event=run['event'],
                   workflow_run_head=run.get('head_sha') or '',
                   event_prs=run.get('pull_requests') or [],
+                  workflow_run_display_title=run.get('display_title') or '',
+                  trusted_evaluator_sha=trusted_main_sha,
               )
               if value.get('state') == 'CANDIDATE' and (
                   value.get('pr_numbers') != [artifact_pr]
@@ -336,24 +838,40 @@ jobs:
         run: |
           set -euo pipefail
           root=/tmp/qikvrt-native-account-review
-          gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/artifacts?per_page=100" > "$root/artifacts.json"
+          gh api "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}" > "$root/upstream-run.json"
+          gh api --paginate --slurp \
+            "repos/${REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/artifacts?per_page=100" \
+            > "$root/artifact-pages.json"
           python3 -B - <<'PY'
           import json, pathlib
+          from tools.qikvrt_native_account_review import (
+              select_trusted_executor_artifact,
+          )
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           selection=json.loads((root/'selection.json').read_text(encoding='utf-8'))
-          artifact_name=selection.get('artifact_name')
-          if not isinstance(artifact_name,str):
-              raise SystemExit('BLOCK: exact executor artifact name is missing')
-          value=json.loads((root/'artifacts.json').read_text(encoding='utf-8'))
-          matches=[item for item in value.get('artifacts',[]) if isinstance(item,dict) and item.get('name') == artifact_name and not item.get('expired')]
-          if len(matches) != 1:
-              raise SystemExit('BLOCK: exact executor artifact is missing or ambiguous')
-          url=matches[0].get('archive_download_url')
+          run=json.loads((root/'upstream-run.json').read_text(encoding='utf-8'))
+          pages=json.loads((root/'artifact-pages.json').read_text(encoding='utf-8'))
+          binding=select_trusted_executor_artifact(run,pages)
+          bound_fields=(
+              'artifact_id','artifact_name','artifact_digest','artifact_pr_number','artifact_head',
+              'artifact_fingerprint','producer_run_id','producer_run_attempt',
+              'artifact_total_count',
+          )
+          if any(selection.get(field) != binding.get(field) for field in bound_fields):
+              raise SystemExit('BLOCK: exact executor artifact selection drifted')
+          if (
+              run.get('id') != selection.get('upstream_run_id')
+              or run.get('run_attempt') != selection.get('upstream_run_attempt')
+          ):
+              raise SystemExit('BLOCK: exact executor run attempt drifted')
+          url=binding['artifact'].get('archive_download_url')
           if not isinstance(url,str) or not url.startswith('https://api.github.com/repos/'):
               raise SystemExit('BLOCK: exact executor artifact URL is invalid')
           (root/'artifact-url.txt').write_text(url+'\n',encoding='utf-8')
           PY
           gh api "$(cat "$root/artifact-url.txt")" > "$root/evidence.zip"
+          expected_archive_digest="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/selection.json"))["artifact_digest"].removeprefix("sha256:"))')"
+          test "$(sha256sum "$root/evidence.zip" | cut -d' ' -f1)" = "$expected_archive_digest"
           mkdir "$root/artifact"
           unzip -q "$root/evidence.zip" -d "$root/artifact"
           # upload-artifact archives the contents of its one directory search
@@ -363,16 +881,27 @@ jobs:
           receipt="$root/artifact/review.json"
           diff="$root/artifact/review.diff"
           ledger="$root/artifact/ledger-write.json"
-          test -f "$receipt" && test -f "$diff" && test -f "$ledger"
+          transport="$root/artifact/review-transport.json"
+          producer_binding="$root/artifact/producer-binding.json"
+          test -f "$receipt" && test -f "$diff" && test -f "$ledger" \
+            && test -f "$transport" \
+            && test -f "$producer_binding"
           cp "$receipt" "$root/review.json"
           cp "$diff" "$root/review.diff"
           cp "$ledger" "$root/ledger-write.json"
+          cp "$transport" "$root/review-transport.json"
+          cp "$producer_binding" "$root/producer-binding.json"
           python3 -B - <<'PY'
           import base64, json, os, pathlib, subprocess, urllib.parse
           from tools.qikvrt_requested_review_executor import (
               _pretty_json_bytes,
+              _semantic_review_intake,
+              build_review_transport_provenance,
               prepare_diff_transport_ledger_entries,
               reassemble_diff_transport,
+          )
+          from tools.qikvrt_native_account_review import (
+              verify_trusted_executor_producer_binding,
           )
 
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
@@ -388,8 +917,37 @@ jobs:
               or receipt.get('evidence_fingerprint') != selection.get('artifact_fingerprint')
           ):
               raise SystemExit('BLOCK: executor artifact name and receipt binding differ')
-          intake=receipt.get('review_intake')
-          if not isinstance(intake,dict) or intake.get('event_name') != selection.get('upstream_event'):
+          producer_binding=json.loads(
+              (root/'producer-binding.json').read_text(encoding='utf-8')
+          )
+          verify_trusted_executor_producer_binding(
+              producer_binding,
+              repository=repo,
+              run_id=selection.get('producer_run_id'),
+              run_attempt=selection.get('producer_run_attempt'),
+              artifact_name=selection.get('artifact_name'),
+              pr_number=selection.get('artifact_pr_number'),
+              head_sha=selection.get('artifact_head'),
+              evidence_fingerprint=selection.get('artifact_fingerprint'),
+              files={
+                  name:(root/name).read_bytes()
+                  for name in ('review.json','review.diff','ledger-write.json','review-transport.json')
+              },
+          )
+          provenance=json.loads(
+              (root/'review-transport.json').read_text(encoding='utf-8')
+          )
+          full_intake=provenance.get('review_intake')
+          if (
+              build_review_transport_provenance(
+                  full_intake,
+                  workflow_runs=provenance.get('latest_workflows') or [],
+                  active_writers=provenance.get('active_writers') or [],
+              ) != provenance
+              or _semantic_review_intake(full_intake) != receipt.get('review_intake')
+              or not isinstance(full_intake,dict)
+              or full_intake.get('event_name') != selection.get('upstream_event')
+          ):
               raise SystemExit('BLOCK: executor receipt event provenance differs from the trusted run')
           ledger=json.loads((root/'ledger-write.json').read_text(encoding='utf-8'))
           commit=ledger.get('ledger_commit')
@@ -495,11 +1053,10 @@ jobs:
             gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" > "$root/review-pages.json"
             python3 -B - <<'PY'
           import json, pathlib
+          from tools.qikvrt_native_account_review import flatten_review_pages
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           pages=json.loads((root/'review-pages.json').read_text(encoding='utf-8'))
-          reviews=[]
-          for page in pages:
-              reviews.extend(page if isinstance(page,list) else [page])
+          reviews=flatten_review_pages(pages)
           (root/'reviews.json').write_text(json.dumps(reviews,sort_keys=True)+'\n',encoding='utf-8')
           PY
             gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/rules.json"
@@ -519,7 +1076,11 @@ jobs:
               --delegation state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json \
               --native-rule-enforced "$rule" \
               --ledger-transport-exact true \
-              --reobservation-exact true > "$root/plan.json"
+              --reobservation-exact true \
+              --signer-run-id "$GITHUB_RUN_ID" \
+              --signer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+              --signer-evaluator-sha "$EXPECTED_EVALUATOR_SHA" \
+              > "$root/plan.json"
           fi
           cat "$root/plan.json"
           python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
@@ -537,26 +1098,33 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-native-account-review-plan-${{ github.run_id }}
+          name: qikvrt-native-account-review-plan-${{ github.run_id }}-${{ steps.plan.outputs.plan_sha256 }}
           if-no-files-found: error
           retention-days: 90
           path: /tmp/qikvrt-native-account-review
 
   native-account-review-as-goldkelch:
+    name: native-account-review-as-Goldkelch
     needs: plan-native-account-review
-    if: >-
-      needs.plan-native-account-review.outputs.effect == 'true' &&
-      needs.plan-native-account-review.outputs.reviewer == 'Goldkelch'
+    # Repository-side code cannot prove that an absent Environment secret did
+    # not fall back to a same-named repository/organization secret.  Keep the
+    # dormant signer implementation unreachable until a dedicated settings
+    # reader supplies a fresh, effect-local scope inventory.  Until then the
+    # exact blocker is AUTHORITY_SECRET_ENVIRONMENT_NOT_VERIFIED.
+    if: false
+    concurrency:
+      group: qikvrt-native-account-review-${{ github.repository }}-pr-${{ needs.plan-native-account-review.outputs.pr }}-reviewer-Goldkelch
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
+    environment: qikvrt-native-review-authority
     timeout-minutes: 6
     permissions:
       actions: read
       contents: read
-      pull-requests: write
+      pull-requests: read
     env:
       TECHNICAL_TOKEN: ${{ github.token }}
-      ACCOUNT_TOKEN: ${{ secrets.QIKVRT_GOLDKELCH_REVIEW_TOKEN }}
-      AUTOMATION_ACTIVATION: ${{ secrets.QIKVRT_NATIVE_ACCOUNT_REVIEW_ACTIVATION }}
       EXPECTED_SIGNER: Goldkelch
       REPOSITORY: ${{ github.repository }}
       REQUIRED_GATES_JSON: >-
@@ -569,33 +1137,88 @@ jobs:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
       - name: Download no-secret exact plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: qikvrt-native-account-review-plan-${{ github.run_id }}
+          name: qikvrt-native-account-review-plan-${{ github.run_id }}-${{ needs.plan-native-account-review.outputs.plan_sha256 }}
           path: /tmp/qikvrt-native-account-review
       - name: Reobserve and submit only an exact Goldkelch account review
+        id: signer-effect
+        env:
+          ACCOUNT_TOKEN: ""
+          AUTOMATION_ACTIVATION: ""
         shell: bash
         run: |
           set -euo pipefail
           root=/tmp/qikvrt-native-account-review
           plan="$root/plan.json"
+          account_token="$ACCOUNT_TOKEN"
           if [ "$AUTOMATION_ACTIVATION" != 'enabled' ]; then
             echo 'HOLD: delegated native-account automation activation secret is absent or disabled.'
             exit 0
           fi
-          if [ -z "$ACCOUNT_TOKEN" ]; then
+          if [ -z "$account_token" ]; then
             echo 'HOLD: Goldkelch delegated review credential is absent.'
             exit 0
           fi
+          # Step-scoped secrets must not be inherited by any technical or
+          # parser subprocess. Keep the account credential as an unexported
+          # shell value and inject it only into the three exact account calls.
+          unset ACCOUNT_TOKEN AUTOMATION_ACTIVATION
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
+          upstream_run_id="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/selection.json"))["upstream_run_id"])')"
+          revalidate_upstream_attempt() {
+            phase="$1"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api \
+              "repos/${REPOSITORY}/actions/runs/${upstream_run_id}" \
+              > "$root/${phase}-upstream-run.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api \
+              "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml" \
+              > "$root/${phase}-upstream-workflow.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/commits/main" \
+              > "$root/${phase}-current-main.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp \
+              "repos/${REPOSITORY}/actions/runs/${upstream_run_id}/artifacts?per_page=100" \
+              > "$root/${phase}-artifact-pages.json"
+            PHASE="$phase" python3 -B - <<'PY' \
+              > "$root/${phase}-upstream-attempt-verification.json"
+          import json, os, pathlib, subprocess
+          from tools.qikvrt_native_account_review import (
+              verify_current_trusted_executor_attempt,
+          )
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          phase=os.environ['PHASE']
+          trusted_main_sha=subprocess.check_output(
+              ['git','rev-parse','HEAD'],text=True
+          ).strip()
+          result=verify_current_trusted_executor_attempt(
+              repository=os.environ['REPOSITORY'],
+              trusted_main_sha=trusted_main_sha,
+              current_main=json.loads((root/f'{phase}-current-main.json').read_text()),
+              run=json.loads((root/f'{phase}-upstream-run.json').read_text()),
+              workflow=json.loads((root/f'{phase}-upstream-workflow.json').read_text()),
+              selection=json.loads((root/'selection.json').read_text()),
+              artifact_pages=json.loads((root/f'{phase}-artifact-pages.json').read_text()),
+              producer_binding=json.loads((root/'producer-binding.json').read_text()),
+              files={
+                  name:(root/name).read_bytes()
+                  for name in ('review.json','review.diff','ledger-write.json','review-transport.json')
+              },
+          )
+          print(json.dumps(result,sort_keys=True))
+          PY
+            cat "$root/${phase}-upstream-attempt-verification.json"
+          }
+          revalidate_upstream_attempt pre-account-token
+          # Re-evaluate the sealed receipt before reading the signer identity.
+          # The final live PR/review fence below is deliberately later.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
@@ -603,11 +1226,18 @@ jobs:
             --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
             --receipt "$root/review.json" --expected-diff "$root/review.diff" \
             --output-dir "$root/pre-effect-reobserved"
+          GH_TOKEN="$account_token" gh api user > "$root/token-user.json"
+          permission="$(GH_TOKEN="$account_token" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
+          # Bind the exact current producer attempt before the final live-state
+          # fence.  After signer-preflight there are no network calls before
+          # the review POST; the irreducible final GET-to-POST race is handled
+          # fail-closed by the complete post-effect Authority fence below.
+          revalidate_upstream_attempt pre-review-post
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/current-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/current-commit.json"
-          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/current-rules.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/current-delegation-content.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
           python3 -B - <<'PY'
           import base64, json, pathlib
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
@@ -629,14 +1259,12 @@ jobs:
           print('true' if native_code_owner_rule_is_enforced(rules) else 'false')
           PY
           )"
-          GH_TOKEN="$ACCOUNT_TOKEN" gh api user > "$root/token-user.json"
-          permission="$(GH_TOKEN="$ACCOUNT_TOKEN" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
           python3 -B - <<'PY'
           import json, pathlib
+          from tools.qikvrt_native_account_review import flatten_review_pages
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           pages=json.loads((root/'current-review-pages.json').read_text(encoding='utf-8'))
-          out=[]
-          for page in pages: out.extend(page if isinstance(page,list) else [page])
+          out=flatten_review_pages(pages)
           (root/'current-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
           PY
           python3 -B tools/qikvrt_native_account_review.py signer-preflight \
@@ -645,10 +1273,14 @@ jobs:
             --reviews "$root/current-reviews.json" \
             --delegation "$root/current-delegation.json" \
             --token-user "$root/token-user.json" --collaborator-permission "$permission" \
-            --native-rule-enforced "$rule" --reobservation-exact true > "$root/preflight.json"
+            --native-rule-enforced "$rule" --reobservation-exact true \
+            --current-signer-run-id "$GITHUB_RUN_ID" \
+            --current-signer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --current-signer-evaluator-sha "$EXPECTED_EVALUATOR_SHA" \
+            > "$root/preflight.json"
           action="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/preflight.json"))["action"])')"
-          if [ "$action" != POST ]; then cat "$root/preflight.json"; exit 0; fi
-          python3 -B - <<'PY'
+          if [ "$action" = POST ]; then
+            python3 -B - <<'PY'
           import json, pathlib
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           value=json.load(open(root/'preflight.json',encoding='utf-8'))
@@ -656,13 +1288,97 @@ jobs:
               'commit_id':value['commit_id'],'event':value['event'],'body':value['body'],
           },sort_keys=True),encoding='utf-8')
           PY
-          GH_TOKEN="$ACCOUNT_TOKEN" gh api --method POST "repos/${REPOSITORY}/pulls/${pr}/reviews" --input "$root/review-request.json" > "$root/submitted-review.json"
-          python3 -B tools/qikvrt_native_account_review.py verify-readback \
-            --plan "$plan" --review "$root/submitted-review.json" \
-            --expected-signer "$EXPECTED_SIGNER" > "$root/readback.json"
-          test "$(python3 -B -c 'import json; print(str(json.load(open("/tmp/qikvrt-native-account-review/readback.json"))["exact"]).lower())')" = true
+            GH_TOKEN="$account_token" gh api --method POST "repos/${REPOSITORY}/pulls/${pr}/reviews" --input "$root/review-request.json" > "$root/submitted-review.json"
+          elif [ "$action" = ADOPT_UNRECEIPTED ]; then
+            python3 -B - <<'PY'
+          import json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          value=json.load(open(root/'preflight.json',encoding='utf-8'))
+          (root/'submitted-review.json').write_text(
+              json.dumps(value['review'],sort_keys=True)+'\n',encoding='utf-8'
+          )
+          PY
+          else
+            cat "$root/preflight.json"
+            exit 0
+          fi
+          unset account_token
+          # A successful review POST is not an Authority receipt.  Repeat the
+          # complete upstream/main/rules/delegation/subject fence first, then
+          # fetch reviews as the final network read.  Any drift withholds the
+          # receipt so the Required Gate keeps the marked review pending.
+          revalidate_upstream_attempt post-review-effect
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/commits/main" > "$root/post-main.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/post-rules.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/post-delegation-content.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/post-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/post-commit.json"
+          python3 -B - <<'PY'
+          import base64, json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          value=json.loads((root/'post-delegation-content.json').read_text(encoding='utf-8'))
+          content=value.get('content')
+          if value.get('encoding') != 'base64' or not isinstance(content,str):
+              raise SystemExit('BLOCK: post-effect owner delegation content is unreadable')
+          try:
+              data=base64.b64decode(''.join(content.split()),validate=True)
+              json.loads(data.decode('utf-8'))
+          except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+              raise SystemExit(f'BLOCK: post-effect owner delegation is invalid: {exc}') from exc
+          (root/'post-delegation.json').write_bytes(data)
+          PY
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/post-review-pages.json"
+          python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_native_account_review import flatten_review_pages
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          pages=json.loads((root/'post-review-pages.json').read_text(encoding='utf-8'))
+          out=flatten_review_pages(pages)
+          (root/'post-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_native_account_review import (
+              build_signer_post_effect_authority_fence,
+          )
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          fence=build_signer_post_effect_authority_fence(
+              plan=json.loads((root/'plan.json').read_text(encoding='utf-8')),
+              evaluator_sha=json.loads(
+                  (root/'post-main.json').read_text(encoding='utf-8')
+              ).get('sha'),
+              current_main=json.loads((root/'post-main.json').read_text(encoding='utf-8')),
+              upstream_before=json.loads((root/'pre-review-post-upstream-attempt-verification.json').read_text(encoding='utf-8')),
+              upstream_after=json.loads((root/'post-review-effect-upstream-attempt-verification.json').read_text(encoding='utf-8')),
+              rules_before=json.loads((root/'current-rules.json').read_text(encoding='utf-8')),
+              rules_after=json.loads((root/'post-rules.json').read_text(encoding='utf-8')),
+              delegation_before=(root/'current-delegation.json').read_bytes(),
+              delegation_after=(root/'post-delegation.json').read_bytes(),
+              final_pr=json.loads((root/'post-pr.json').read_text(encoding='utf-8')),
+              final_commit=json.loads((root/'post-commit.json').read_text(encoding='utf-8')),
+          )
+          (root/'post-effect-authority-fence.json').write_text(
+              json.dumps(fence,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          PY
+          if [ "$action" = ADOPT_UNRECEIPTED ]; then
+            python3 -B tools/qikvrt_native_account_review.py verify-adoption-readback \
+              --plan "$plan" --review "$root/submitted-review.json" \
+              --expected-signer "$EXPECTED_SIGNER" \
+              --reviews-before "$root/current-reviews.json" \
+              --reviews-after "$root/post-reviews.json" \
+              --current-signer-run-id "$GITHUB_RUN_ID" \
+              --current-signer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+              > "$root/readback.json"
+          else
+            python3 -B tools/qikvrt_native_account_review.py verify-readback \
+              --plan "$plan" --review "$root/submitted-review.json" \
+              --expected-signer "$EXPECTED_SIGNER" \
+              --reviews-before "$root/current-reviews.json" \
+              --reviews-after "$root/post-reviews.json" > "$root/readback.json"
+          fi
+          cat "$root/readback.json"
+          test "$(python3 -B -c 'import json; print(str(json.load(open("/tmp/qikvrt-native-account-review/readback.json"))["exact"]).lower())')" = true
           python3 -B - <<'PY'
           import json
           root='/tmp/qikvrt-native-account-review/'
@@ -674,22 +1390,52 @@ jobs:
           assert pr.get('head',{}).get('sha') == plan['head_sha']
           assert commit.get('tree',{}).get('sha') == plan['tree_sha']
           PY
+          mkdir -p /tmp/qikvrt-native-signer-receipt
+          python3 -B tools/qikvrt_native_account_review.py seal-signer-receipt \
+            --plan "$plan" --review "$root/submitted-review.json" \
+            --expected-signer "$EXPECTED_SIGNER" \
+            --reviews-before "$root/current-reviews.json" \
+            --reviews-after "$root/post-reviews.json" \
+            --readback "$root/readback.json" \
+            --final-pr "$root/post-pr.json" \
+            --final-commit "$root/post-commit.json" \
+            --authority-fence "$root/post-effect-authority-fence.json" \
+            --repository "$REPOSITORY" \
+            --evaluator-sha "$EXPECTED_EVALUATOR_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            > /tmp/qikvrt-native-signer-receipt/signer-receipt.json
+          echo 'receipt_ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Preserve successful exact Goldkelch signer receipt
+        if: steps.signer-effect.outputs.receipt_ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-native-review-signer-receipt-Goldkelch-pr-${{ needs.plan-native-account-review.outputs.pr }}-head-${{ needs.plan-native-account-review.outputs.head }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-native-signer-receipt/signer-receipt.json
 
   native-account-review-as-ingolf-lohmann:
+    name: native-account-review-as-ingolf-lohmann
     needs: plan-native-account-review
-    if: >-
-      needs.plan-native-account-review.outputs.effect == 'true' &&
-      needs.plan-native-account-review.outputs.reviewer == 'ingolf-lohmann'
+    # See the Goldkelch lane: without live secret-scope inventory, neither
+    # account credential may be read or used by repository automation:
+    # AUTHORITY_SECRET_ENVIRONMENT_NOT_VERIFIED.
+    if: false
+    concurrency:
+      group: qikvrt-native-account-review-${{ github.repository }}-pr-${{ needs.plan-native-account-review.outputs.pr }}-reviewer-ingolf-lohmann
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
+    environment: qikvrt-native-review-authority
     timeout-minutes: 6
     permissions:
       actions: read
       contents: read
-      pull-requests: write
+      pull-requests: read
     env:
       TECHNICAL_TOKEN: ${{ github.token }}
-      ACCOUNT_TOKEN: ${{ secrets.QIKVRT_INGOLF_LOHMANN_REVIEW_TOKEN }}
-      AUTOMATION_ACTIVATION: ${{ secrets.QIKVRT_NATIVE_ACCOUNT_REVIEW_ACTIVATION }}
       EXPECTED_SIGNER: ingolf-lohmann
       REPOSITORY: ${{ github.repository }}
       REQUIRED_GATES_JSON: >-
@@ -702,33 +1448,88 @@ jobs:
       - name: Check out trusted main signer implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Bind exact evaluator checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_EVALUATOR_SHA"
       - name: Download no-secret exact plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: qikvrt-native-account-review-plan-${{ github.run_id }}
+          name: qikvrt-native-account-review-plan-${{ github.run_id }}-${{ needs.plan-native-account-review.outputs.plan_sha256 }}
           path: /tmp/qikvrt-native-account-review
       - name: Reobserve and submit only an exact ingolf-lohmann account review
+        id: signer-effect
+        env:
+          ACCOUNT_TOKEN: ""
+          AUTOMATION_ACTIVATION: ""
         shell: bash
         run: |
           set -euo pipefail
           root=/tmp/qikvrt-native-account-review
           plan="$root/plan.json"
+          account_token="$ACCOUNT_TOKEN"
           if [ "$AUTOMATION_ACTIVATION" != 'enabled' ]; then
             echo 'HOLD: delegated native-account automation activation secret is absent or disabled.'
             exit 0
           fi
-          if [ -z "$ACCOUNT_TOKEN" ]; then
+          if [ -z "$account_token" ]; then
             echo 'HOLD: ingolf-lohmann delegated review credential is absent.'
             exit 0
           fi
+          # Step-scoped secrets must not be inherited by any technical or
+          # parser subprocess. Keep the account credential as an unexported
+          # shell value and inject it only into the three exact account calls.
+          unset ACCOUNT_TOKEN AUTOMATION_ACTIVATION
           pr="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["pr_number"])')"
           head="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/plan.json"))["head_sha"])')"
-          # Re-evaluate the sealed receipt from trusted main immediately before
-          # reading the signer identity. This catches changed gates, requested
-          # reviewer removal, discussion, fingerprint, base/head/tree or diff.
+          upstream_run_id="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/selection.json"))["upstream_run_id"])')"
+          revalidate_upstream_attempt() {
+            phase="$1"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api \
+              "repos/${REPOSITORY}/actions/runs/${upstream_run_id}" \
+              > "$root/${phase}-upstream-run.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api \
+              "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml" \
+              > "$root/${phase}-upstream-workflow.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/commits/main" \
+              > "$root/${phase}-current-main.json"
+            GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp \
+              "repos/${REPOSITORY}/actions/runs/${upstream_run_id}/artifacts?per_page=100" \
+              > "$root/${phase}-artifact-pages.json"
+            PHASE="$phase" python3 -B - <<'PY' \
+              > "$root/${phase}-upstream-attempt-verification.json"
+          import json, os, pathlib, subprocess
+          from tools.qikvrt_native_account_review import (
+              verify_current_trusted_executor_attempt,
+          )
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          phase=os.environ['PHASE']
+          trusted_main_sha=subprocess.check_output(
+              ['git','rev-parse','HEAD'],text=True
+          ).strip()
+          result=verify_current_trusted_executor_attempt(
+              repository=os.environ['REPOSITORY'],
+              trusted_main_sha=trusted_main_sha,
+              current_main=json.loads((root/f'{phase}-current-main.json').read_text()),
+              run=json.loads((root/f'{phase}-upstream-run.json').read_text()),
+              workflow=json.loads((root/f'{phase}-upstream-workflow.json').read_text()),
+              selection=json.loads((root/'selection.json').read_text()),
+              artifact_pages=json.loads((root/f'{phase}-artifact-pages.json').read_text()),
+              producer_binding=json.loads((root/'producer-binding.json').read_text()),
+              files={
+                  name:(root/name).read_bytes()
+                  for name in ('review.json','review.diff','ledger-write.json','review-transport.json')
+              },
+          )
+          print(json.dumps(result,sort_keys=True))
+          PY
+            cat "$root/${phase}-upstream-attempt-verification.json"
+          }
+          revalidate_upstream_attempt pre-account-token
+          # Re-evaluate the sealed receipt before reading the signer identity.
+          # The final live PR/review fence below is deliberately later.
           GH_TOKEN="$TECHNICAL_TOKEN" python3 -B tools/qikvrt_requested_review_executor.py verify \
             --repository "$REPOSITORY" --pr-number "$pr" --current-run-id "$GITHUB_RUN_ID" \
             --required-gates-json "$REQUIRED_GATES_JSON" \
@@ -736,11 +1537,18 @@ jobs:
             --writer-workflows-json "$WRITER_WORKFLOWS_JSON" \
             --receipt "$root/review.json" --expected-diff "$root/review.diff" \
             --output-dir "$root/pre-effect-reobserved"
+          GH_TOKEN="$account_token" gh api user > "$root/token-user.json"
+          permission="$(GH_TOKEN="$account_token" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
+          # Bind the exact current producer attempt before the final live-state
+          # fence.  After signer-preflight there are no network calls before
+          # the review POST; the irreducible final GET-to-POST race is handled
+          # fail-closed by the complete post-effect Authority fence below.
+          revalidate_upstream_attempt pre-review-post
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/current-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/current-commit.json"
-          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/current-rules.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/current-delegation-content.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/current-review-pages.json"
           python3 -B - <<'PY'
           import base64, json, pathlib
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
@@ -762,14 +1570,12 @@ jobs:
           print('true' if native_code_owner_rule_is_enforced(rules) else 'false')
           PY
           )"
-          GH_TOKEN="$ACCOUNT_TOKEN" gh api user > "$root/token-user.json"
-          permission="$(GH_TOKEN="$ACCOUNT_TOKEN" gh api "repos/${REPOSITORY}/collaborators/${EXPECTED_SIGNER}/permission" --jq .permission)"
           python3 -B - <<'PY'
           import json, pathlib
+          from tools.qikvrt_native_account_review import flatten_review_pages
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           pages=json.loads((root/'current-review-pages.json').read_text(encoding='utf-8'))
-          out=[]
-          for page in pages: out.extend(page if isinstance(page,list) else [page])
+          out=flatten_review_pages(pages)
           (root/'current-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
           PY
           python3 -B tools/qikvrt_native_account_review.py signer-preflight \
@@ -778,10 +1584,14 @@ jobs:
             --reviews "$root/current-reviews.json" \
             --delegation "$root/current-delegation.json" \
             --token-user "$root/token-user.json" --collaborator-permission "$permission" \
-            --native-rule-enforced "$rule" --reobservation-exact true > "$root/preflight.json"
+            --native-rule-enforced "$rule" --reobservation-exact true \
+            --current-signer-run-id "$GITHUB_RUN_ID" \
+            --current-signer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --current-signer-evaluator-sha "$EXPECTED_EVALUATOR_SHA" \
+            > "$root/preflight.json"
           action="$(python3 -B -c 'import json; print(json.load(open("/tmp/qikvrt-native-account-review/preflight.json"))["action"])')"
-          if [ "$action" != POST ]; then cat "$root/preflight.json"; exit 0; fi
-          python3 -B - <<'PY'
+          if [ "$action" = POST ]; then
+            python3 -B - <<'PY'
           import json, pathlib
           root=pathlib.Path('/tmp/qikvrt-native-account-review')
           value=json.load(open(root/'preflight.json',encoding='utf-8'))
@@ -789,13 +1599,97 @@ jobs:
               'commit_id':value['commit_id'],'event':value['event'],'body':value['body'],
           },sort_keys=True),encoding='utf-8')
           PY
-          GH_TOKEN="$ACCOUNT_TOKEN" gh api --method POST "repos/${REPOSITORY}/pulls/${pr}/reviews" --input "$root/review-request.json" > "$root/submitted-review.json"
-          python3 -B tools/qikvrt_native_account_review.py verify-readback \
-            --plan "$plan" --review "$root/submitted-review.json" \
-            --expected-signer "$EXPECTED_SIGNER" > "$root/readback.json"
-          test "$(python3 -B -c 'import json; print(str(json.load(open("/tmp/qikvrt-native-account-review/readback.json"))["exact"]).lower())')" = true
+            GH_TOKEN="$account_token" gh api --method POST "repos/${REPOSITORY}/pulls/${pr}/reviews" --input "$root/review-request.json" > "$root/submitted-review.json"
+          elif [ "$action" = ADOPT_UNRECEIPTED ]; then
+            python3 -B - <<'PY'
+          import json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          value=json.load(open(root/'preflight.json',encoding='utf-8'))
+          (root/'submitted-review.json').write_text(
+              json.dumps(value['review'],sort_keys=True)+'\n',encoding='utf-8'
+          )
+          PY
+          else
+            cat "$root/preflight.json"
+            exit 0
+          fi
+          unset account_token
+          # A successful review POST is not an Authority receipt.  Repeat the
+          # complete upstream/main/rules/delegation/subject fence first, then
+          # fetch reviews as the final network read.  Any drift withholds the
+          # receipt so the Required Gate keeps the marked review pending.
+          revalidate_upstream_attempt post-review-effect
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/commits/main" > "$root/post-main.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/rules/branches/main" > "$root/post-rules.json"
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/contents/state/authorization/delegations/OWNER_NATIVE_ACCOUNT_REVIEW_AUTOMATION_V1.json?ref=main" > "$root/post-delegation-content.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/pulls/${pr}" > "$root/post-pr.json"
           GH_TOKEN="$TECHNICAL_TOKEN" gh api "repos/${REPOSITORY}/git/commits/${head}" > "$root/post-commit.json"
+          python3 -B - <<'PY'
+          import base64, json, pathlib
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          value=json.loads((root/'post-delegation-content.json').read_text(encoding='utf-8'))
+          content=value.get('content')
+          if value.get('encoding') != 'base64' or not isinstance(content,str):
+              raise SystemExit('BLOCK: post-effect owner delegation content is unreadable')
+          try:
+              data=base64.b64decode(''.join(content.split()),validate=True)
+              json.loads(data.decode('utf-8'))
+          except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+              raise SystemExit(f'BLOCK: post-effect owner delegation is invalid: {exc}') from exc
+          (root/'post-delegation.json').write_bytes(data)
+          PY
+          GH_TOKEN="$TECHNICAL_TOKEN" gh api --paginate --slurp "repos/${REPOSITORY}/pulls/${pr}/reviews?per_page=100" > "$root/post-review-pages.json"
+          python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_native_account_review import flatten_review_pages
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          pages=json.loads((root/'post-review-pages.json').read_text(encoding='utf-8'))
+          out=flatten_review_pages(pages)
+          (root/'post-reviews.json').write_text(json.dumps(out,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          python3 -B - <<'PY'
+          import json, pathlib
+          from tools.qikvrt_native_account_review import (
+              build_signer_post_effect_authority_fence,
+          )
+          root=pathlib.Path('/tmp/qikvrt-native-account-review')
+          fence=build_signer_post_effect_authority_fence(
+              plan=json.loads((root/'plan.json').read_text(encoding='utf-8')),
+              evaluator_sha=json.loads(
+                  (root/'post-main.json').read_text(encoding='utf-8')
+              ).get('sha'),
+              current_main=json.loads((root/'post-main.json').read_text(encoding='utf-8')),
+              upstream_before=json.loads((root/'pre-review-post-upstream-attempt-verification.json').read_text(encoding='utf-8')),
+              upstream_after=json.loads((root/'post-review-effect-upstream-attempt-verification.json').read_text(encoding='utf-8')),
+              rules_before=json.loads((root/'current-rules.json').read_text(encoding='utf-8')),
+              rules_after=json.loads((root/'post-rules.json').read_text(encoding='utf-8')),
+              delegation_before=(root/'current-delegation.json').read_bytes(),
+              delegation_after=(root/'post-delegation.json').read_bytes(),
+              final_pr=json.loads((root/'post-pr.json').read_text(encoding='utf-8')),
+              final_commit=json.loads((root/'post-commit.json').read_text(encoding='utf-8')),
+          )
+          (root/'post-effect-authority-fence.json').write_text(
+              json.dumps(fence,sort_keys=True,indent=2)+'\n',encoding='utf-8'
+          )
+          PY
+          if [ "$action" = ADOPT_UNRECEIPTED ]; then
+            python3 -B tools/qikvrt_native_account_review.py verify-adoption-readback \
+              --plan "$plan" --review "$root/submitted-review.json" \
+              --expected-signer "$EXPECTED_SIGNER" \
+              --reviews-before "$root/current-reviews.json" \
+              --reviews-after "$root/post-reviews.json" \
+              --current-signer-run-id "$GITHUB_RUN_ID" \
+              --current-signer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+              > "$root/readback.json"
+          else
+            python3 -B tools/qikvrt_native_account_review.py verify-readback \
+              --plan "$plan" --review "$root/submitted-review.json" \
+              --expected-signer "$EXPECTED_SIGNER" \
+              --reviews-before "$root/current-reviews.json" \
+              --reviews-after "$root/post-reviews.json" > "$root/readback.json"
+          fi
+          cat "$root/readback.json"
+          test "$(python3 -B -c 'import json; print(str(json.load(open("/tmp/qikvrt-native-account-review/readback.json"))["exact"]).lower())')" = true
           python3 -B - <<'PY'
           import json
           root='/tmp/qikvrt-native-account-review/'
@@ -807,3 +1701,28 @@ jobs:
           assert pr.get('head',{}).get('sha') == plan['head_sha']
           assert commit.get('tree',{}).get('sha') == plan['tree_sha']
           PY
+          mkdir -p /tmp/qikvrt-native-signer-receipt
+          python3 -B tools/qikvrt_native_account_review.py seal-signer-receipt \
+            --plan "$plan" --review "$root/submitted-review.json" \
+            --expected-signer "$EXPECTED_SIGNER" \
+            --reviews-before "$root/current-reviews.json" \
+            --reviews-after "$root/post-reviews.json" \
+            --readback "$root/readback.json" \
+            --final-pr "$root/post-pr.json" \
+            --final-commit "$root/post-commit.json" \
+            --authority-fence "$root/post-effect-authority-fence.json" \
+            --repository "$REPOSITORY" \
+            --evaluator-sha "$EXPECTED_EVALUATOR_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            > /tmp/qikvrt-native-signer-receipt/signer-receipt.json
+          echo 'receipt_ready=true' >> "$GITHUB_OUTPUT"
+
+      - name: Preserve successful exact ingolf-lohmann signer receipt
+        if: steps.signer-effect.outputs.receipt_ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-native-review-signer-receipt-ingolf-lohmann-pr-${{ needs.plan-native-account-review.outputs.pr }}-head-${{ needs.plan-native-account-review.outputs.head }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: /tmp/qikvrt-native-signer-receipt/signer-receipt.json

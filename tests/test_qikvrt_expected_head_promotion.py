@@ -29,6 +29,18 @@ REVIEW_SPEC.loader.exec_module(REVIEW_MODULE)
 
 
 class ExpectedHeadPromotionTests(unittest.TestCase):
+    def test_workflow_pins_the_trusted_evaluator_and_fences_live_main(self):
+        workflow = (ROOT / ".github/workflows/qikvrt_expected_head_promotion.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ref: ${{ github.workflow_sha }}", workflow)
+        self.assertNotIn("ref: main", workflow)
+        self.assertIn('TRUSTED_EVALUATOR_SHA: ${{ github.workflow_sha }}', workflow)
+        self.assertIn(
+            'git/ref/heads/main" --jq \'.object.sha\')" = "$TRUSTED_EVALUATOR_SHA"',
+            workflow,
+        )
+
     def promotion_pr(self, **overrides):
         value = {
             "number": 459,
@@ -229,7 +241,10 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
             "context": MODULE.REVIEW_GATE,
             "state": "success",
             "created_at": "2026-08-22T10:00:00Z",
-            "description": f"Mesh APPROVE; D0=3; fp={'a' * 64}",
+            "description": (
+                "Technical observation complete; independent approval required; "
+                f"fp={'a' * 64}"
+            ),
         }
         pending = {
             "id": 42,
@@ -318,7 +333,7 @@ class ExpectedHeadPromotionTests(unittest.TestCase):
         self.assertIn("tools/qikvrt_requested_review_executor.py','verify'", workflow)
         self.assertIn("'--expected-diff',str(diff_path)", workflow)
         self.assertIn("status and ledger fingerprints differ", workflow)
-        self.assertIn("fresh Mesh receipt is not technically favorable", workflow)
+        self.assertIn("fresh Mesh receipt is not TECHNICAL_CONTINUE", workflow)
         self.assertIn("require_unchanged_mesh_review_status", workflow)
         self.assertIn("require_unchanged_promotion_marker", workflow)
         self.assertNotIn("marked = any(marker in", workflow)

@@ -1,249 +1,79 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
 
-name: QIK-VRT formalization v2 alpha.3 publication
+name: QIK-VRT formalization v2 alpha.3 publication (Authority HOLD)
 
-"on":
-  push:
-    branches:
-      - automation/formalization-v2-alpha3-publish-20260724
-    paths:
-      - release/formalization-v2-alpha3-publication-request.json
+# Candidate-controlled workflow bytes cannot authorize repository-write or
+# publication credentials. This trusted-main-only entry point preserves an
+# explicit HOLD until a protected release Authority is externally verified.
+on:
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: qikvrt-formalization-v2-alpha3-publication
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  publish:
+  authority-hold:
+    if: github.ref == 'refs/heads/main' && github.workflow_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Checkout exact authorized candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted main without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Validate one-shot publication authorization
+      - name: Materialize protected release Authority HOLD
         shell: bash
+        env:
+          RECEIPT: ${{ runner.temp }}/qikvrt-release-authority-hold.json
         run: |
           set -euo pipefail
-          python -I -S -B - <<'PY'
+          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_WORKFLOW_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 -B - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          marker = json.loads(Path('release/formalization-v2-alpha3-publication-request.json').read_text(encoding='utf-8'))
-          expected = {
-              'schema': 'qikvrt_formalization_v2_alpha3_publication_request_v1',
-              'action': 'publish',
-              'confirm': 'PUBLISH_ZENODO_FORMALIZATION_V2_ALPHA_3_AFTER_ALL_GATES_PASS',
-              'source_record_id': 21518464,
-              'source_doi': '10.5281/zenodo.21518464',
-              'target_version': '2.0.0-alpha.3',
-              'authority_completion_commit': '3d640b05e815ff8644fe7640ddd7dcf89d4094c4',
-              'authority_tree': '6056f024cc0376f6820eca948205c30ac75d7d41',
-              'repository_content_tree_sha256': '964801915be7eb1f33bfad52326c33bf47582fa77bd44dd572a46fc21ad79dcb',
-              'effect_authorization': 'EFFECT_ACK_DONE',
+          receipt = {
+              "schema": "qikvrt_release_authority_hold_v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evaluator_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "d0": 3,
+              "state": "REQUEST_AUTHORITY",
+              "reason": "PROTECTED_RELEASE_AUTHORITY_NOT_EXTERNALLY_VERIFIED",
+              "productive_effect": False,
+              "completion_claims": {
+                  "physical_atari_boot": False,
+                  "physical_atari_execution": False,
+                  "merge": False,
+                  "approval": False,
+                  "pass": False,
+                  "final_pass": False,
+                  "publication": False,
+                  "release": False,
+                  "deployment": False,
+                  "authority_mirror_synchronization": False,
+                  "effect_ack_done": False,
+              },
           }
-          if marker != expected:
-              raise SystemExit('BLOCK: Alpha 3 publication authorization differs')
-          if os.environ.get('GITHUB_REF_NAME') != 'automation/formalization-v2-alpha3-publish-20260724':
-              raise SystemExit('BLOCK: publication ref differs')
-          PY
-          git checkout -B "$GITHUB_REF_NAME" "$GITHUB_SHA"
-
-      - name: Build deterministic archive, checksum index and manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -I -S -B -m py_compile \
-            tools/qikvrt_formalization_v2_alpha3_package.py \
-            tools/qikvrt_formalization_v2_alpha3_zenodo.py \
-            tools/qikvrt_verify_zenodo_public_manifest.py
-          python -I -S -B tools/qikvrt_formalization_v2_alpha3_package.py \
-            --repository-root . \
-            --archive release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip \
-            --archive-checksum release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip.sha256 \
-            --zenodo-checksums release/formalization-v2/ZENODO_SHA256SUMS-alpha.3 \
-            --manifest release/formalization-v2-alpha3-zenodo.json
-
-      - name: Verify and persist deterministic release inputs before Zenodo mutation
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -I -S -B tools/qikvrt_integrity.py generate
-          python -I -S -B tools/qikvrt_integrity.py verify
-          make test
-          python -I -S -B tools/qikvrt_integrity.py verify
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip \
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip.sha256 \
-            release/formalization-v2/ZENODO_SHA256SUMS-alpha.3 \
-            release/formalization-v2-alpha3-zenodo.json \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "Persist Alpha 3 deterministic release inputs"
-            git push origin HEAD:"$GITHUB_REF_NAME"
-          fi
-
-      - name: Reserve one new Alpha 3 draft from public Alpha 2
-        shell: bash
-        env:
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          umask 077
-          test -n "$ZENODO_ACCESS_TOKEN" || { echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable' >&2; exit 1; }
-          mkdir -p .qikvrt/release/formalization-v2-alpha3
-          python -I -S -B tools/qikvrt_formalization_v2_alpha3_zenodo.py reserve \
-            --repository-root . \
-            --manifest release/formalization-v2-alpha3-zenodo.json \
-            --source-evidence release/formalization-v2-alpha2-public-source-evidence.json \
-            --reservation .qikvrt/release/formalization-v2-alpha3/zenodo-reservation.json \
-            --base-url https://zenodo.org/api
-
-      - name: Persist reservation before publication
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release/formalization-v2-alpha3
-          cp .qikvrt/release/formalization-v2-alpha3/zenodo-reservation.json \
-            release/formalization-v2-alpha3/zenodo-reservation.json
-          python -I -S -B tools/qikvrt_integrity.py generate
-          python -I -S -B tools/qikvrt_integrity.py verify
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            release/formalization-v2-alpha3/zenodo-reservation.json \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "Persist Alpha 3 Zenodo reservation"
-            git push origin HEAD:"$GITHUB_REF_NAME"
-          fi
-
-      - name: Recheck repository gates after reservation persistence
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -I -S -B tools/qikvrt_integrity.py verify
-          make test
-          python -I -S -B tools/qikvrt_integrity.py verify
-
-      - name: Publish and verify Alpha 3 through the constrained client
-        shell: bash
-        env:
-          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          umask 077
-          test -n "$ZENODO_ACCESS_TOKEN" || { echo 'BLOCK: ZENODO_ACCESS_TOKEN is unavailable' >&2; exit 1; }
-          python -I -S -B tools/qikvrt_formalization_v2_alpha3_zenodo.py finalize \
-            --repository-root . \
-            --manifest release/formalization-v2-alpha3-zenodo.json \
-            --source-evidence release/formalization-v2-alpha2-public-source-evidence.json \
-            --reservation .qikvrt/release/formalization-v2-alpha3/zenodo-reservation.json \
-            --result .qikvrt/release/formalization-v2-alpha3/zenodo-publication.json \
-            --base-url https://zenodo.org/api
-
-      - name: Independently download and hash every public Alpha 3 file
-        shell: bash
-        run: |
-          set -euo pipefail
-          readarray -t values < <(python -I -S -B - <<'PY'
-          import json
-          value = json.load(open('.qikvrt/release/formalization-v2-alpha3/zenodo-publication.json', encoding='utf-8'))
-          print(value['published_record_id'])
-          print(value['doi'])
-          PY
-          )
-          test "${#values[@]}" -eq 2
-          python -I -S -B tools/qikvrt_verify_zenodo_public_manifest.py \
-            --repository-root . \
-            --manifest release/formalization-v2-alpha3-zenodo.json \
-            --record-id "${values[0]}" \
-            --doi "${values[1]}" \
-            --result .qikvrt/release/formalization-v2-alpha3/zenodo-public-verification.json
-
-      - name: Persist publication, public verification and provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release/formalization-v2-alpha3
-          cp .qikvrt/release/formalization-v2-alpha3/zenodo-publication.json \
-            release/formalization-v2-alpha3/zenodo-publication.json
-          cp .qikvrt/release/formalization-v2-alpha3/zenodo-public-verification.json \
-            release/formalization-v2-alpha3/zenodo-public-verification.json
-          python -I -S -B - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          def sha(path):
-              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-          publication = json.loads(Path('release/formalization-v2-alpha3/zenodo-publication.json').read_text(encoding='utf-8'))
-          verification = json.loads(Path('release/formalization-v2-alpha3/zenodo-public-verification.json').read_text(encoding='utf-8'))
-          if publication.get('public_record_verified') is not True or verification.get('status') != 'PASS':
-              raise SystemExit('BLOCK: publication or independent public verification is incomplete')
-          evidence = {
-              'schema': 'qikvrt_formalization_v2_alpha3_publication_provenance_v1',
-              'state': 'published_and_independently_verified',
-              'authority_completion_commit': '3d640b05e815ff8644fe7640ddd7dcf89d4094c4',
-              'authority_tree': '6056f024cc0376f6820eca948205c30ac75d7d41',
-              'repository_content_tree_sha256': '964801915be7eb1f33bfad52326c33bf47582fa77bd44dd572a46fc21ad79dcb',
-              'source_record_id': 21518464,
-              'source_doi': '10.5281/zenodo.21518464',
-              'target_record_id': publication['published_record_id'],
-              'target_doi': publication['doi'],
-              'target_version': '2.0.0-alpha.3',
-              'manifest_sha256': sha('release/formalization-v2-alpha3-zenodo.json'),
-              'archive_sha256': sha('release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip'),
-              'reservation_sha256': sha('release/formalization-v2-alpha3/zenodo-reservation.json'),
-              'publication_sha256': sha('release/formalization-v2-alpha3/zenodo-publication.json'),
-              'public_verification_sha256': sha('release/formalization-v2-alpha3/zenodo-public-verification.json'),
-              'github_run_id': os.environ.get('GITHUB_RUN_ID'),
-              'github_sha': os.environ.get('GITHUB_SHA'),
-              'effect_status': 'EFFECT_ACK_DONE',
-          }
-          Path('release/formalization-v2-alpha3/publication-provenance.json').write_text(
-              json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          Path(os.environ["RECEIPT"]).write_text(
+              json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
           )
           PY
-          python -I -S -B tools/qikvrt_integrity.py generate
-          python -I -S -B tools/qikvrt_integrity.py verify
-          git add \
-            release/formalization-v2-alpha3/zenodo-publication.json \
-            release/formalization-v2-alpha3/zenodo-public-verification.json \
-            release/formalization-v2-alpha3/publication-provenance.json \
-            REPOSITORY_FILE_MANIFEST.json \
-            REPOSITORY_FILE_MANIFEST.json.sha256 \
-            SHA256SUMS.txt
-          git commit -m "Persist published and independently verified Alpha 3 DOI"
-          git push origin HEAD:"$GITHUB_REF_NAME"
 
-      - name: Upload complete publication evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Preserve release Authority HOLD
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-formalization-v2-alpha3-publication-evidence
+          name: qikvrt-release-authority-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-release-authority-hold.json
+          if-no-files-found: error
           retention-days: 90
-          include-hidden-files: true
-          path: |
-            .qikvrt/release/formalization-v2-alpha3/**
-            release/formalization-v2-alpha3/**
-            release/formalization-v2-alpha3-zenodo.json
-            release/formalization-v2/QIKVRT_Formalization_v2.0-alpha.3.zip.sha256
-            release/formalization-v2/ZENODO_SHA256SUMS-alpha.3
-          if-no-files-found: warn

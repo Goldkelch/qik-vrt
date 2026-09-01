@@ -34,8 +34,26 @@
     "required_effect_ack": "DONE",
     "expression": "D0 == 0 && EFFECT_ACK == DONE"
   },
+  "continuation_contract": {
+    "schema": "qikvrt.causal-continuation.v1",
+    "required_fields": [
+      "mode",
+      "owner",
+      "next_action",
+      "resume_events",
+      "persistence_run_terminal",
+      "client_return_allowed"
+    ],
+    "hold_is_terminal": false,
+    "reobserve_is_terminal": false,
+    "hold_requires_next_action_or_resume_event": true,
+    "client_return_requires_terminal_persistence_run": true
+  },
   "invariants": [
     "TRANSPORT_ACK != EFFECT_ACK",
+    "HOLD is nonterminal and binds an executable next action or a future exact observation edge",
+    "A nonterminal persistence run does not permit client return",
+    "Client return at D0 == 0 requires trusted exact-head success and independently bound terminal review and ruleset gates",
     "REOBSERVE is observation-only and does not imply productive effect",
     "REQUEST_AUTHORITY does not imply authority granted",
     "No productive effect is released unless D0 == 0 and EFFECT_ACK == DONE"

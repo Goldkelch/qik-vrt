@@ -1,4 +1,4 @@
-name: Issue agent auto-finish
+name: Issue agent auto-finish hold
 
 on:
   schedule:
@@ -6,154 +6,118 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: Optional single issue number
+        description: Optional single issue number to include in the HOLD evidence
         required: false
         type: string
 
+# This workflow is an observer only. Issue-agent STATUS.json bytes and an
+# aggregate check rollup are not promotion Authority and can never authorize a
+# merge, cross-repository synchronization, tag, release, or issue closure.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  actions: read
   checks: read
+  contents: read
+  issues: read
+  pull-requests: read
 
 concurrency:
-  group: issue-agent-autofinish
+  group: issue-agent-autofinish-hold
   cancel-in-progress: false
 
 jobs:
-  finish:
-    runs-on: ubuntu-latest
-    env:
-      AUTHORITY_REPOSITORY: Goldkelch/qik-vrt
-      MIRROR_REPOSITORY: ingolf-lohmann/qik-vrt
-      MESH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
-      REQUESTED_ISSUE: ${{ inputs.issue_number }}
-      GH_TOKEN: ${{ github.token }}
+  hold:
+    name: Preserve the fail-closed issue-agent release boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Resume all eligible issue-agent transactions
+      - name: Materialize read-only HOLD evidence plan
+        env:
+          REQUESTED_ISSUE: ${{ inputs.issue_number || '' }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          issue_numbers=""
-          if [ -n "${REQUESTED_ISSUE:-}" ]; then
-            issue_numbers="$REQUESTED_ISSUE"
-          else
-            issue_numbers="$(gh issue list --repo "$AUTHORITY_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')"
-          fi
+          root="$RUNNER_TEMP/qikvrt-issue-agent-autofinish-hold"
+          mkdir -p "$root"
+          jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg requested_issue "$REQUESTED_ISSUE" '
+            {
+              schema:"qikvrt_issue_agent_autofinish_hold_v1",
+              state:"HOLD",
+              d0:3,
+              first_blocker:"ISSUE_AGENT_RELEASE_EFFECT_DISABLED",
+              repository:$repository,
+              requested_issue:(if $requested_issue == "" then null else $requested_issue end),
+              authority_requirements:{
+                empty_status_check_rollup_is_authority:false,
+                exact_head_named_results:{required:true,state:"UNOBSERVED"},
+                exact_ruleset_authority:{required:true,state:"UNOBSERVED"},
+                unmarked_human_review:{required:true,state:"UNOBSERVED"},
+                authority_mirror_binding:{
+                  exact_heads_required:true,
+                  exact_trees_required:true,
+                  divergent_binding_is_authority:false,
+                  state:"UNOBSERVED"
+                },
+                reciprocal_receipt:{required:true,state:"ABSENT"},
+                tag_contract:{
+                  annotated_required:true,
+                  direct_or_lightweight_tag_allowed:false,
+                  state:"NOT_CREATED"
+                },
+                marker_authorizations:{
+                  separate_per_repository:true,
+                  marker_only:true,
+                  state:"ABSENT"
+                }
+              },
+              continuation:{
+                mode:"REQUEST_AUTHORITY",
+                owner:"AUTHORITY_ADMIN",
+                next_action:"USE_A_SEPARATE_EXACT_SUBJECT_MARKER_ONLY_RELEASE_TRANSACTION"
+              },
+              repository_or_release_effect:"NONE",
+              transport_effect:"ACTIONS_ARTIFACT_UPLOAD",
+              completion_claims:{
+                merge:false,
+                authority_mirror_synchronization:false,
+                reciprocal_receipt_verified:false,
+                tag_created:false,
+                release:false,
+                publication:false,
+                deployment:false,
+                pass:false,
+                final_pass:false,
+                effect_ack_done:false
+              },
+              productive_effect:false
+            }' > "$root/hold-plan.json"
+          jq -e '
+            .state == "HOLD" and .d0 == 3 and
+            .first_blocker == "ISSUE_AGENT_RELEASE_EFFECT_DISABLED" and
+            .repository_or_release_effect == "NONE" and
+            .transport_effect == "ACTIONS_ARTIFACT_UPLOAD" and
+            .productive_effect == false and
+            ([.completion_claims[]] | all(. == false)) and
+            .authority_requirements.empty_status_check_rollup_is_authority == false and
+            .authority_requirements.authority_mirror_binding.divergent_binding_is_authority == false and
+            .authority_requirements.reciprocal_receipt.state == "ABSENT" and
+            .authority_requirements.tag_contract.direct_or_lightweight_tag_allowed == false and
+            .authority_requirements.marker_authorizations.state == "ABSENT"
+          ' "$root/hold-plan.json" >/dev/null
+          {
+            echo '## Issue-agent auto-finish boundary'
+            echo
+            echo '```json'
+            cat "$root/hold-plan.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          publish_receipt() {
-            local issue="$1"
-            local receipt_file
-            receipt_file="$(mktemp)"
-            cat > "$receipt_file"
-
-            local existing_comment
-            existing_comment="$(gh api --paginate "repos/${AUTHORITY_REPOSITORY}/issues/$issue/comments?per_page=100" \
-              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- qikvrt-issue-agent-autofinish-status:v1 -->")) | .id' \
-              | tail -n 1)"
-            if [ -z "$existing_comment" ]; then
-              gh issue comment "$issue" --repo "$AUTHORITY_REPOSITORY" --body-file "$receipt_file"
-              return
-            fi
-            current_body="$(gh api "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" --jq '.body')"
-            desired_body="$(cat "$receipt_file")"
-            if [ "$current_body" != "$desired_body" ]; then
-              gh api --method PATCH "repos/${AUTHORITY_REPOSITORY}/issues/comments/$existing_comment" \
-                --raw-field "body=$desired_body" >/dev/null
-            fi
-          }
-
-          for issue in $issue_numbers; do
-            branch="issue-agent/$issue"
-            authority_pr="$(gh pr list --repo "$AUTHORITY_REPOSITORY" --state all --head "$branch" --limit 1 --json number --jq '.[0].number // empty')"
-            [ -n "$authority_pr" ] || continue
-            authority_state="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json state --jq '.state')"
-            authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-
-            if [ "$authority_state" = "OPEN" ]; then
-              status_json="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$AUTHORITY_REPOSITORY/contents/evidence/issues/$issue/STATUS.json?ref=$branch")"
-              status="$(printf '%s' "$status_json" | jq -r '.status')"
-              if [ "$status" != "DONE" ]; then
-                publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed.
-EOF
-                continue
-              fi
-              checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
-              failed="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$failed" -gt 0 ]; then
-                publish_receipt "$issue" <<'EOF'
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **BLOCK**. At least one authority check failed.
-EOF
-                continue
-              fi
-              [ "$pending" -eq 0 ] || continue
-              gh pr merge "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --squash --delete-branch
-              authority_merged="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$authority_merged" ] || continue
-            if [ -z "${MESH_TOKEN:-}" ]; then
-              publish_receipt "$issue" <<'EOF'
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created.
-EOF
-              continue
-            fi
-
-            authority_sha="$(gh api "repos/$AUTHORITY_REPOSITORY/commits/main" --jq '.sha')"
-            sync_branch="issue-sync/$issue-$authority_sha"
-            git remote remove mirror 2>/dev/null || true
-            git remote add mirror "https://x-access-token:${MESH_TOKEN}@github.com/${MIRROR_REPOSITORY}.git"
-            git fetch origin main
-            git fetch mirror main
-            git checkout -B "$sync_branch" origin/main
-            git push --force-with-lease mirror "$sync_branch"
-
-            mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state all --head "$sync_branch" --limit 1 --json number --jq '.[0].number // empty')"
-            if [ -z "$mirror_pr" ]; then
-              GH_TOKEN="$MESH_TOKEN" gh pr create --repo "$MIRROR_REPOSITORY" --base main --head "$sync_branch" --title "Synchronize completed issue #$issue" --body "Byte-content synchronization from authority after autonomous completion of Goldkelch/qik-vrt#$issue."
-              mirror_pr="$(GH_TOKEN="$MESH_TOKEN" gh pr list --repo "$MIRROR_REPOSITORY" --state open --head "$sync_branch" --limit 1 --json number --jq '.[0].number')"
-            fi
-
-            mirror_state="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json state --jq '.state')"
-            mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            if [ "$mirror_state" = "OPEN" ]; then
-              mirror_checks="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json statusCheckRollup)"
-              mirror_failed="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.conclusion // "") != "" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length')"
-              mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
-              if [ "$mirror_failed" -gt 0 ]; then
-                publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks.
-EOF
-                continue
-              fi
-              [ "$mirror_pending" -eq 0 ] || continue
-              GH_TOKEN="$MESH_TOKEN" gh pr merge "$mirror_pr" --repo "$MIRROR_REPOSITORY" --squash --delete-branch
-              mirror_merged="$(GH_TOKEN="$MESH_TOKEN" gh pr view "$mirror_pr" --repo "$MIRROR_REPOSITORY" --json mergedAt --jq '.mergedAt // empty')"
-            fi
-
-            [ -n "$mirror_merged" ] || continue
-            tag="qikvrt-issue-$issue"
-            mirror_sha="$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/commits/main" --jq '.sha')"
-            gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
-            GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
-            publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **EFFECT_ACK_DONE**
-
-- authority PR #$authority_pr merged
-- mirror PR #$mirror_pr merged
-- common tag \`$tag\` created in both repositories
-- issue closed automatically
-EOF
-            gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
-          done
+      - name: Preserve read-only HOLD evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-issue-agent-autofinish-hold-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qikvrt-issue-agent-autofinish-hold/hold-plan.json
+          if-no-files-found: error
+          retention-days: 90

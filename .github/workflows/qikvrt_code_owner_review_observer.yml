@@ -1,60 +1,20 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
-name: QIKVRT code-owner review observer
+name: QIKVRT code-owner review observer (retired)
 
-on:
-  pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, review_requested, review_request_removed]
-  pull_request_review:
-    types: [submitted, edited, dismissed]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
+# Retired deliberately: pull_request_review evaluates candidate-associated
+# workflow bytes and is not a trusted ingress for any privileged continuation.
+# Trusted-main scheduled review wake-up recovery re-fetches live review facts.
+on: {}
 
 permissions: {}
 
 jobs:
-  signal:
+  retired:
+    if: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    permissions: {}
     steps:
-      - name: Classify pull-request event selector without repository access
-        shell: bash
+      - shell: bash
         run: |
-          set -euo pipefail
-          python3 -B - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-          pr = event.get("pull_request") or {}
-          number = pr.get("number")
-          if not isinstance(number, int) or number <= 0:
-              print(json.dumps({
-                  "schema": "qikvrt_code_owner_review_event_selector_v1",
-                  "state": "REOBSERVE_EXACT_EVENT_TARGET",
-                  "first_blocker": "PULL_REQUEST_NUMBER_UNAVAILABLE",
-                  "review_observation_started": False,
-                  "external_effect": "NONE",
-              }, sort_keys=True))
-              raise SystemExit(0)
-          if pr.get("base", {}).get("ref") != "main":
-              print(json.dumps({
-                  "schema": "qikvrt_code_owner_review_event_selector_v1",
-                  "state": "INELIGIBLE_EVENT_TARGET",
-                  "first_blocker": "PULL_REQUEST_BASE_NOT_MAIN",
-                  "pr_number": number,
-                  "base_ref": pr.get("base", {}).get("ref"),
-                  "review_observation_started": False,
-                  "external_effect": "NONE",
-              }, sort_keys=True))
-              raise SystemExit(0)
-          print(json.dumps({
-              "schema": "qikvrt_code_owner_review_event_selector_v1",
-              "state": "CANDIDATE",
-              "pr_number": number,
-              "base_ref": "main",
-              "review_observation_started": False,
-              "external_effect": "NONE",
-          }, sort_keys=True))
-          PY
+          echo 'RETIRED_NO_UNTRUSTED_REVIEW_TRIGGER'
