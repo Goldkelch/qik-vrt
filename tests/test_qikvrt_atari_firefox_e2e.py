@@ -199,7 +199,8 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "xvfb-runtime.json",
             "--firefox-x11",
             "Firefox did not retain the authenticated X11 display contract",
-            "xvfb.get(key) != value",
+            "actual = xvfb.get(key)",
+            "type(actual) is not type(value) or actual != value",
             "Firefox-visible MLP.OPEN digest mismatch",
             "Firefox-visible HATARI.LOG digest mismatch",
             "candidate-local TLS boundary drift",
@@ -212,6 +213,7 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "final_pass': False",
         ):
             self.assertIn(token, workflow)
+        self.assertNotIn("xvfb.get(key) is not value", workflow)
         self.assertIn("actions/cache@caa296126883cff596d87d8935842f9db880ef25", workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
         self.assertNotIn("xvfb-run --help", workflow)
