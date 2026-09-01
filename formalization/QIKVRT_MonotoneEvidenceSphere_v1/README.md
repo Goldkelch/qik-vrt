@@ -16,7 +16,7 @@ aktualisiert, nie durch einen kleineren Ersatzwert. Die deklarierte
 Übergangsrelation hat nur vier Klassen: Relation anhängen, halten,
 reobservieren und Autorität anfordern.
 
-`QIKVRTMonotoneEvidenceSphere.lean` beweist elf Sätze:
+`QIKVRTMonotoneEvidenceSphere.lean` beweist zwölf Sätze:
 
 1. Ein Anhängen entfernt keinen akzeptierten Eintrag.
 2. Ein Anhängen erweitert die versiegelte Historie nur um einen Suffix.
