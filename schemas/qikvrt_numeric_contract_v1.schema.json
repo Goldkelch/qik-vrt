@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Goldkelch/qik-vrt/schemas/qikvrt_numeric_contract_v1.schema.json",
+  "title": "QIK-VRT numeric contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "domain", "operations", "absolute_error_limit", "rounding",
+    "overflow", "scale_plan", "accumulation_plan", "metric",
+    "measurement_binding", "claim_boundary", "numeric_contract_digest"
+  ],
+  "properties": {
+    "schema": {"const": "qikvrt.numeric-contract.v1"},
+    "domain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["signed", "operand_width_bits", "minimum_integer", "maximum_integer"],
+      "properties": {
+        "signed": {"const": true},
+        "operand_width_bits": {"type": "integer", "minimum": 2, "maximum": 32},
+        "minimum_integer": {"type": "integer"},
+        "maximum_integer": {"type": "integer"}
+      }
+    },
+    "operations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["multiply", "accumulate"]}},
+    "absolute_error_limit": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"},
+    "rounding": {"enum": ["nearest_even", "toward_zero"]},
+    "overflow": {"enum": ["trap"]},
+    "scale_plan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operand_fraction_bits", "accumulator_fraction_bits"],
+      "properties": {
+        "operand_fraction_bits": {"type": "integer", "minimum": 0, "maximum": 31},
+        "accumulator_fraction_bits": {"type": "integer", "minimum": 0, "maximum": 62}
+      }
+    },
+    "accumulation_plan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["accumulator_width_bits", "maximum_terms", "round_once"],
+      "properties": {
+        "accumulator_width_bits": {"type": "integer", "minimum": 4, "maximum": 256},
+        "maximum_terms": {"type": "integer", "minimum": 1},
+        "round_once": {"const": true}
+      }
+    },
+    "metric": {"enum": ["results_per_joule", "results_per_second"]},
+    "measurement_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reference_model_digest", "rtl_or_kernel_digest", "toolchain_and_flags", "target_device", "clock", "test_vector_digest", "raw_measurement_digest"],
+      "properties": {
+        "reference_model_digest": {"type": ["string", "null"]},
+        "rtl_or_kernel_digest": {"type": ["string", "null"]},
+        "toolchain_and_flags": {"type": ["string", "null"]},
+        "target_device": {"type": ["string", "null"]},
+        "clock": {"type": ["string", "null"]},
+        "test_vector_digest": {"type": ["string", "null"]},
+        "raw_measurement_digest": {"type": ["string", "null"]}
+      }
+    },
+    "claim_boundary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["simulation_observed", "synthesis_observed", "physical_hardware_execution_observed", "performance_superiority_observed"],
+      "properties": {
+        "simulation_observed": {"type": "boolean"},
+        "synthesis_observed": {"const": false},
+        "physical_hardware_execution_observed": {"const": false},
+        "performance_superiority_observed": {"const": false}
+      }
+    },
+    "numeric_contract_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}
