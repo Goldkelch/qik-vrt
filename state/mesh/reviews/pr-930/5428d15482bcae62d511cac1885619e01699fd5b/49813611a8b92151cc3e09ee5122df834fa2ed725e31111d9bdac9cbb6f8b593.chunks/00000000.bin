@@ -1,0 +1,47 @@
+diff --git a/runtime/m68000/qikvrt_terminal_d0_abi.hex b/runtime/m68000/qikvrt_terminal_d0_abi.hex
+new file mode 100644
+index 0000000000000000000000000000000000000000..db8c41faf51090e5ff4d193b9748f80e4d6b6d3f
+--- /dev/null
++++ b/runtime/m68000/qikvrt_terminal_d0_abi.hex
+@@ -0,0 +1 @@
++70004e7570014e7570024e7570034e75
+diff --git a/src/m68000/qikvrt_terminal_d0_abi.s b/src/m68000/qikvrt_terminal_d0_abi.s
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d3f6e9ece6aa9b3d1410da70b7dc77b0e52d33c
+--- /dev/null
++++ b/src/m68000/qikvrt_terminal_d0_abi.s
+@@ -0,0 +1,12 @@
++; QIK-VRT event-terminal ABI — Motorola 68000
++; D0: 0 NOOP, 1 HOLD, 2 REOBSERVE, 3 REQUEST_AUTHORITY.
++; D3 remains the stable witness.
++
++qikvrt_d0_noop:              moveq   #0,d0
++                            rts
++qikvrt_d0_hold:              moveq   #1,d0
++                            rts
++qikvrt_d0_reobserve:         moveq   #2,d0
++                            rts
++qikvrt_d0_request_authority: moveq   #3,d0
++                            rts
+diff --git a/tests/test_qikvrt_terminal_d0_m68000_abi.py b/tests/test_qikvrt_terminal_d0_m68000_abi.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a30908d9cabe2cef3f5c206a5513154f642d42f
+--- /dev/null
++++ b/tests/test_qikvrt_terminal_d0_m68000_abi.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++
++class TerminalD0M68000AbiTests(unittest.TestCase):
++    def test_four_fixed_68000_terminal_entries_are_byte_exact(self):
++        data = (ROOT / 'runtime/m68000/qikvrt_terminal_d0_abi.hex').read_text().strip()
++        self.assertEqual(data, '70004e7570014e7570024e7570034e75')
++        self.assertEqual(len(bytes.fromhex(data)), 16)
++        text = (ROOT / 'src/m68000/qikvrt_terminal_d0_abi.s').read_text()
++        self.assertEqual(text.count('rts'), 4)
++        self.assertIn('D3 remains the stable witness', text)
++
++if __name__ == '__main__':
++    unittest.main()
