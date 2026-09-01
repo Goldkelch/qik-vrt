@@ -484,7 +484,7 @@ jobs:
               'pass': False,
               'final_pass': False,
           }.items():
-              if xvfb.get(key) is not value:
+              if xvfb.get(key) != value:
                   raise SystemExit(f'HOLD: Xvfb runtime boundary drift: {key}')
           boot_dirs = sorted((evidence / 'tmp').glob('qikvrt-atari-boot-*'))
           if len(boot_dirs) != 1:

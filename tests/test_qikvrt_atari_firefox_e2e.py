@@ -199,6 +199,7 @@ class AtariFirefoxE2ETests(unittest.TestCase):
             "xvfb-runtime.json",
             "--firefox-x11",
             "Firefox did not retain the authenticated X11 display contract",
+            "xvfb.get(key) != value",
             "Firefox-visible MLP.OPEN digest mismatch",
             "Firefox-visible HATARI.LOG digest mismatch",
             "candidate-local TLS boundary drift",
