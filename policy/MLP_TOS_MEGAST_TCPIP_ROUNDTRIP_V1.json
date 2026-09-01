@@ -1,0 +1,42 @@
+{
+  "schema": "qikvrt_mlp_tos_megast_tcpip_roundtrip_v1",
+  "status": "PRODUCT_OWNER_AUTHORIZED_PROOF_CANDIDATE",
+  "source": {
+    "pr": 744,
+    "head": "8141a304c1f25f548b0094c0bc4b61f6ae5c2989",
+    "tree": "2caca35947cd4824834dd646e1c3a76b96d00c89",
+    "mlp_tos_sha256": "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e"
+  },
+  "claim": "guest_tcp_ip_connectivity",
+  "required_observation_chain": [
+    "exact MLP.TOS/Mega-ST source binding",
+    "guest-side TCP/IP stack or guest-visible network adapter initialized",
+    "guest obtains or is assigned an IP address",
+    "guest initiates TCP connection to a controlled endpoint",
+    "controlled endpoint observes connection and exact nonce-bearing payload",
+    "endpoint returns an exact response bound to the nonce",
+    "guest observes the returned response",
+    "receipt binds guest, endpoint, payload, response, head, tree and trace digests"
+  ],
+  "insufficient_evidence": [
+    "GitHub runner has network access",
+    "Hatari host process has network access",
+    "host-side curl or socket succeeds",
+    "emulator starts",
+    "MLP.TOS executes without guest network traffic",
+    "transport acknowledgement without guest-side response observation"
+  ],
+  "result_states": {
+    "missing_guest_network_capability": "HOLD",
+    "target_or_binding_drift": "REOBSERVE",
+    "tcp_connect_without_response": "TRANSPORT_ACK_ONLY",
+    "nonce_response_observed_by_guest": "GUEST_TCP_IP_ROUNDTRIP_OBSERVED"
+  },
+  "boundaries": {
+    "effect_ack_done": false,
+    "physical_megast_execution": false,
+    "internet_reachability_required": false,
+    "controlled_local_tcp_endpoint_is_sufficient": true,
+    "host_network_is_not_guest_network": true
+  }
+}

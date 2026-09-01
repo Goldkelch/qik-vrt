@@ -1,0 +1,53 @@
+{
+  "schema": "qikvrt_mlp_firefox_terminal_v1",
+  "status": "PRODUCT_OWNER_AUTHORIZED_IMPLEMENTATION_CANDIDATE",
+  "source": {
+    "tcpip_pr": 745,
+    "tcpip_head": "a71484ba02f6ebe9169af5a291244e99468caec3",
+    "tcpip_tree": "b45556a6c4ea2d9946c73264c1ed47d4f3128a76",
+    "tcpip_proof_run": 32370359979,
+    "guest_tcp_ip_roundtrip_observed": true,
+    "mlp_source_pr": 744,
+    "mlp_tos_sha256": "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e"
+  },
+  "terminal": {
+    "browser_runtime": "Mozilla Firefox",
+    "browser_engine_reimplemented": false,
+    "uses_stock_firefox_capabilities": true,
+    "qikvrt_extension": "browser/firefox/qikvrt-terminal",
+    "backend": "http://127.0.0.1:8771",
+    "mode": "INTERACTIVE_TERMINAL",
+    "monitor_only": false,
+    "protected_effects_require_effect_ack": true
+  },
+  "launch_chain": [
+    "Mega-ST desktop exposes C:\\MLP.PRG from the exact MLP executable bytes",
+    "user starts MLP.PRG",
+    "MLP publishes canonical C:\\MLP.OPEN only after its register/write/rename checks",
+    "host terminal bridge validates exact MLP.OPEN and source binding",
+    "bridge launches an isolated Firefox terminal instance",
+    "Firefox extension discovers the local Effect-Ack backend",
+    "protected action uses prepare then explicit commit",
+    "post-effect observation remains distinct from acknowledgement"
+  ],
+  "effect_ack": {
+    "spec": "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json",
+    "requested_ne_executed_ne_observed_ne_acknowledged": true,
+    "transport_ack_ne_effect_ack": true,
+    "prepare_executes_protected_effect": false,
+    "commit_requires_bound_single_use_token": true,
+    "ordinary_release_requires_valid_effect_ack_done": true
+  },
+  "os_portability": {
+    "claim": "adapter-oriented portability",
+    "all_historical_and_future_operating_systems_guaranteed": false,
+    "rule": "Any OS may participate when a compatible MLP/bridge/Firefox adapter exists; unsupported OSes fail closed rather than being declared compatible."
+  },
+  "nonclaims": [
+    "Firefox executes natively on the Atari 68000 guest",
+    "every historical or future OS is already executable on this Mega-ST instance",
+    "Internet reachability follows from the controlled guest TCP/IP proof",
+    "EFFECT_ACK_DONE without post-effect evidence",
+    "physical original Mega-ST execution"
+  ]
+}

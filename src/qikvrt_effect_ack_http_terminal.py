@@ -16,6 +16,7 @@ import hmac
 import json
 import re
 import secrets
+import shutil
 import subprocess
 import threading
 import time
@@ -27,6 +28,7 @@ MAX_BODY = 2 * 1024 * 1024
 TOKEN_TTL_SECONDS = 120
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
+MLP_TOS_SHA256 = "5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e"
 SF_KEY = re.compile(r"^[a-z*][a-z0-9_.*-]*$")
 
 
@@ -249,6 +251,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            if self.path == "/qikvrt/atari/boot":
+                self._atari_boot(self._read_body())
+                return
             request_binding = parse_effect_ack_request(self.headers.get("Effect-Ack-Request"))
             body = self._read_body()
             if self.path == "/terminal/prepare":
@@ -264,6 +269,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"state": "HOLD", "reason": "not found"})
         except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
             self._json(400, {"state": "HOLD", "ordinary_release": False, "reason": str(exc)})
+
+    def _atari_boot(self, body: dict[str, Any]) -> None:
+        if body.get("schema") != "qikvrt.atari-terminal-boot.v1" or body.get("mlp_sha256") != MLP_TOS_SHA256:
+            self._json(422, {"state": "HOLD", "reason": "EXACT_MLP_BINDING_REQUIRED"})
+            return
+        hatari = shutil.which("hatari")
+        if not hatari:
+            self._json(503, {"state": "HOLD", "reason": "HATARI_UNAVAILABLE", "effect_ack_done": False})
+            return
+        self._json(501, {"state": "HOLD", "reason": "HATARI_BOOT_ADAPTER_NOT_CONFIGURED", "effect_ack_done": False})
 
     def _prepare(self, body: dict[str, Any]) -> None:
         if body.get("schema") != "qikvrt_terminal_input_v1":

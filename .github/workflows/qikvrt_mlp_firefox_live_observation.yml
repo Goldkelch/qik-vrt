@@ -1,0 +1,73 @@
+name: QIKVRT MLP Firefox live observation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/qikvrt_mlp_firefox_live_observation.yml"
+      - "tools/qikvrt_mlp_firefox_live_observation.py"
+      - "tests/test_qikvrt_mlp_firefox_live_observation.py"
+      - "docs/MLP_FIREFOX_LIVE_OBSERVATION.md"
+      - "policy/MLP_FIREFOX_LIVE_OBSERVATION_V1.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify proven predecessor and exact MLP image
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor a71484ba02f6ebe9169af5a291244e99468caec3 HEAD
+          echo '5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e  MLP.TOS/MLP.TOS' | sha256sum -c -
+
+      - name: Verify live-observation contract
+        run: python3 -B -m unittest -v tests.test_qikvrt_mlp_firefox_live_observation
+
+      - name: Observe real Firefox rendering and JavaScript execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v firefox
+          mkdir -p .qikvrt/live-proof
+          head="$(git rev-parse --verify HEAD^{commit})"
+          tree="$(git rev-parse --verify HEAD^{tree})"
+          firefox_version="$(firefox --version 2>&1 | head -n1)"
+          python3 -B tools/qikvrt_mlp_firefox_live_observation.py serve --head "$head" --tree "$tree" --observation .qikvrt/live-proof/browser-observation.json &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:8772/ >/dev/null; then break; fi
+            sleep 0.1
+          done
+          firefox --headless --window-size 1280,800 --screenshot "$PWD/.qikvrt/live-proof/firefox-live.png" http://127.0.0.1:8772/
+          for i in $(seq 1 100); do
+            test -s .qikvrt/live-proof/browser-observation.json && break
+            sleep 0.1
+          done
+          test -s .qikvrt/live-proof/browser-observation.json
+          python3 -B tools/qikvrt_mlp_firefox_live_observation.py finalize --observation .qikvrt/live-proof/browser-observation.json --screenshot .qikvrt/live-proof/firefox-live.png --receipt .qikvrt/live-proof/receipt.json --firefox-version "$firefox_version"
+          cat .qikvrt/live-proof/receipt.json
+
+      - name: Preserve color screenshot and exact-head receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-mlp-firefox-live-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: .qikvrt/live-proof
+          if-no-files-found: error
+          retention-days: 14

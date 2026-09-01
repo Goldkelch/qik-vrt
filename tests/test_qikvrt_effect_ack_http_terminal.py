@@ -220,6 +220,35 @@ class LoopbackTerminalE2ETests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(body["ordinary_release"])
 
+    def test_atari_boot_requires_the_exact_materialized_mlp_digest(self) -> None:
+        status, _, body = self.request(
+            "/qikvrt/atari/boot",
+            method="POST",
+            body={"schema": "qikvrt.atari-terminal-boot.v1", "mlp_sha256": "00" * 32},
+        )
+        self.assertEqual(status, 422)
+        self.assertEqual(body["state"], "HOLD")
+        self.assertEqual(body["reason"], "EXACT_MLP_BINDING_REQUIRED")
+
+    def test_atari_boot_fails_closed_when_no_local_hatari_adapter_exists(self) -> None:
+        original = terminal.shutil.which
+        terminal.shutil.which = lambda name: None
+        try:
+            status, _, body = self.request(
+                "/qikvrt/atari/boot",
+                method="POST",
+                body={
+                    "schema": "qikvrt.atari-terminal-boot.v1",
+                    "mlp_sha256": terminal.MLP_TOS_SHA256,
+                },
+            )
+        finally:
+            terminal.shutil.which = original
+        self.assertEqual(status, 503)
+        self.assertEqual(body["state"], "HOLD")
+        self.assertEqual(body["reason"], "HATARI_UNAVAILABLE")
+        self.assertFalse(body["effect_ack_done"])
+
 
 if __name__ == "__main__":
     unittest.main()

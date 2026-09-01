@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QIK-VRT Atari-Terminal</title>
+<style>body{margin:0;background:#071108;color:#9cff9c;font:16px ui-monospace,monospace}main{max-width:900px;margin:3rem auto;padding:2rem;border:1px solid #2d7}.frame{white-space:pre-wrap;background:#000;padding:1rem;min-height:18rem}button{background:#173;color:#dff;padding:.8rem;border:1px solid #8f8;font:inherit}</style>
+<main><h1>QIK-VRT · Atari Terminal</h1><p>Statischer Mesh-Einstieg → lokaler MLP/Firefox-Bridge-Prozess.</p><button id="boot">Einschalten</button><pre id="screen" class="frame" aria-live="polite">POWER=OFF
+</pre><p>Die Seite startet keine Software selbst. Sie fordert ausschließlich die lokal installierte Bridge an <code>127.0.0.1:8771</code> an; ohne diese bleibt der Zustand fail-closed.</p></main>
+<script>
+const s=document.querySelector('#screen');
+document.querySelector('#boot').onclick=async()=>{s.textContent='POWER=ON\nTOS: Boot-Anforderung an lokale Bridge …\n';try{const r=await fetch('http://127.0.0.1:8771/qikvrt/atari/boot',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({schema:'qikvrt.atari-terminal-boot.v1',mlp_sha256:'5a74c9645d6cdcb2d92770517e31eb7697e180b2ccc4b7fb777c9b558b84ae7e'})});const v=await r.json();s.textContent+='BRIDGE='+JSON.stringify(v,null,2)}catch(e){s.textContent+='HOLD: LOCAL_BRIDGE_UNAVAILABLE\n'+e.message}};
+</script></html>
