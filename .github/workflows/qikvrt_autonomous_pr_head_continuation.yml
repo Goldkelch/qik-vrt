@@ -76,19 +76,31 @@ jobs:
           root=.qikvrt/autonomous-pr-head-continuation
           mkdir -p "$root"
           : > "$root/decisions.jsonl"
+          rate_limit_marker="$root/rate-limit-exhausted.json"
+          rm -f "$rate_limit_marker"
 
-          # Reuse the repository's bounded installation-rate-limit contract:
-          # retry only the exact GitHub installation quota response, after the
-          # same two backoff intervals used by the read-only observer.  A
-          # different API failure remains fail-closed; this cannot turn an
-          # authorization or malformed-request error into a blind retry loop.
+          emit_rate_limit_hold() {
+            echo "selected=false" >> "$GITHUB_OUTPUT"
+            jq -n \
+              --arg event "$GITHUB_EVENT_NAME" \
+              '{d0:1,state:"HOLD",event:$event,productive_effect:false,effect_ack:"NOT_REQUIRED",reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",first_causal_blocker:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",next_action:"REOBSERVE_ON_NEXT_REPOSITORY_INTERRUPT"}' \
+              > "$root/decision-receipt.json"
+            echo "HOLD/D0=1: bounded GitHub installation rate-limit backoff exhausted"
+          }
+
+          # Retry only the exact GitHub installation quota response after the
+          # repository's bounded 15 s / 45 s backoff. If the quota is still
+          # exhausted, persist a marker and return a type-safe fail-closed
+          # placeholder so `set -e` does not erase the HOLD receipt. All other
+          # API failures remain hard failures.
           gh_read() {
-            local output error delay
+            local output error delay endpoint
+            endpoint="$1"
             output="$(mktemp)"
             error="$(mktemp)"
             for delay in 0 15 45; do
               if [ "$delay" -gt 0 ]; then
-                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay"
+                echo "QIKVRT_GITHUB_INSTALLATION_RATE_LIMIT_BACKOFF_SECONDS=$delay" >&2
                 sleep "$delay"
               fi
               if gh api "$@" >"$output" 2>"$error"; then
@@ -103,8 +115,19 @@ jobs:
               fi
             done
             cat "$error" >&2
+            jq -n \
+              --arg endpoint "$endpoint" \
+              '{state:"HOLD",d0:1,reason:"GITHUB_INSTALLATION_RATE_LIMIT_EXHAUSTED",endpoint:$endpoint,productive_effect:false,effect_ack:"NOT_REQUIRED"}' \
+              > "$rate_limit_marker"
+            case "$endpoint" in
+              *"/pulls?"*) printf '[]\n' ;;
+              *"/actions/runs?"*) printf '{"workflow_runs":[]}\n' ;;
+              *"/jobs?"*) printf '0\n' ;;
+              *"/status") printf 'missing\n' ;;
+              *) printf '{}\n' ;;
+            esac
             rm -f "$output" "$error"
-            return 1
+            return 0
           }
 
           selected_pr=""
@@ -115,6 +138,11 @@ jobs:
           # Bounded discovery: newest 30 open PRs only, one REOBSERVE edge per run.
           gh_read "repos/${GITHUB_REPOSITORY}/pulls?state=open&sort=updated&direction=desc&per_page=30" \
             > "$root/open-prs.json"
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_hold
+            exit 0
+          fi
+
           while IFS=$'\t' read -r pr ref head base head_repo; do
             test -n "$pr" || continue
             if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
@@ -134,8 +162,12 @@ jobs:
 
             gh_read "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&per_page=100" \
               > "$root/runs-${pr}.json"
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
             : > "$root/observations-${pr}.jsonl"
-            # Read one JSON object per line.  A tab-separated projection loses
+            # Read one JSON object per line. A tab-separated projection loses
             # an empty `conclusion` because Bash treats tab as IFS whitespace,
             # shifting `created_at` into the wrong field.
             while IFS= read -r run; do
@@ -150,6 +182,9 @@ jobs:
               case "$conclusion" in
                 action_required|cancelled|failure|startup_failure|timed_out)
                   jobs_total="$(gh_read "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=1" --jq '.total_count')"
+                  if [ -f "$rate_limit_marker" ]; then
+                    break
+                  fi
                   ;;
                 success)
                   # A completed success is executed evidence; the classifier only
@@ -170,12 +205,20 @@ jobs:
               jq -c '.workflow_runs[] | select(.id != null) | {id,name,status,conclusion:(.conclusion // ""),created_at:(.created_at // "")}' \
                 "$root/runs-${pr}.json"
             )
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
             jq -s '.' "$root/observations-${pr}.jsonl" > "$root/observations-${pr}.json"
 
             exact_head_status="$(
               gh_read "repos/${GITHUB_REPOSITORY}/commits/${head}/status" \
                 --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"'
             )"
+            if [ -f "$rate_limit_marker" ]; then
+              break
+            fi
+
             python3 -B tools/qikvrt_pr_head_recovery.py classify \
               --input "$root/observations-${pr}.json" \
               --output "$root/decision-${pr}.json" \
@@ -201,6 +244,11 @@ jobs:
             jq -r '.[] | [.number,.head.ref,.head.sha,.base.sha,.head.repo.full_name] | @tsv' \
               "$root/open-prs.json"
           )
+
+          if [ -f "$rate_limit_marker" ]; then
+            emit_rate_limit_hold
+            exit 0
+          fi
 
           if [ -z "$selected_pr" ]; then
             echo "selected=false" >> "$GITHUB_OUTPUT"
@@ -311,7 +359,7 @@ jobs:
               >> "$root/dispatched-workflows.jsonl"
           done
 
-          # Requested review has no autonomous dispatch route.  The review
+          # Requested review has no autonomous dispatch route. The review
           # executor accepts only an exact native event or a human-supplied
           # explicit dispatch subject; this global continuation classifier must
           # not launder its selected PR into that interface.
