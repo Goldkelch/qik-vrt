@@ -1,0 +1,52 @@
+name: Zenodo read-only recovery inventory PR df1e74b
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - tools/qikvrt_zenodo_readonly_recovery_inventory_df1e74b.py
+      - .github/workflows/zenodo-readonly-recovery-inventory-pr-df1e74b.yml
+
+permissions:
+  contents: read
+
+env:
+  EXECUTION_HEAD: 0cc8e5fe667a85bf4c0f112868dc43f47a4829dc
+
+jobs:
+  inventory:
+    if: github.head_ref == 'recovery/zenodo-readonly-inventory-df1e74b-v1'
+    runs-on: ubuntu-latest
+    environment: zenodo-production
+    timeout-minutes: 15
+    env:
+      ZENODO_API_BASE: https://zenodo.org/api
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+    steps:
+      - name: Checkout diagnostic carrier without credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: diagnostic
+
+      - name: Checkout exact immutable publication execution head
+        uses: actions/checkout@v4
+        with:
+          ref: 0cc8e5fe667a85bf4c0f112868dc43f47a4829dc
+          persist-credentials: false
+          fetch-depth: 1
+          path: source
+
+      - name: Assert exact execution binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$EXECUTION_HEAD"
+          test "$(git -C source status --porcelain --untracked-files=no)" = ""
+
+      - name: Run GET-only consumed-lock Zenodo recovery inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python diagnostic/tools/qikvrt_zenodo_readonly_recovery_inventory_df1e74b.py source
