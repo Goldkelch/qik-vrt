@@ -32,11 +32,12 @@ jobs:
           import json
           from pathlib import Path
 
+          expression = '$' + '{{ github.repository }}'
           workflow = Path('.github/workflows/qikvrt_requested_review_executor.yml')
           text = workflow.read_text(encoding='utf-8')
           old = (
               'concurrency:\n'
-              '  group: qikvrt-requested-review-executor-${{ github.repository }}\n'
+              f'  group: qikvrt-requested-review-executor-{expression}\n'
               '  cancel-in-progress: false\n'
           )
           new = old + '  queue: max\n'
@@ -49,21 +50,27 @@ jobs:
           test.write_text(
               '''# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0\n'''
               '''# Copyright 2026 Ingolf Lohmann.\n'''
+              '''import unittest\n'''
               '''from pathlib import Path\n\n\n'''
               '''WORKFLOW = Path(".github/workflows/qikvrt_requested_review_executor.yml")\n\n\n'''
-              '''def test_requested_review_executor_preserves_pending_exact_head_runs():\n'''
-              '''    text = WORKFLOW.read_text(encoding="utf-8")\n'''
-              '''    block = (\n'''
-              '''        "concurrency:\\n"\n'''
-              '''        "  group: qikvrt-requested-review-executor-${{ github.repository }}\\n"\n'''
-              '''        "  cancel-in-progress: false\\n"\n'''
-              '''        "  queue: max\\n"\n'''
-              '''    )\n'''
-              '''    assert text.count(block) == 1\n'''
-              '''    assert (\n'''
-              '''        "group: qikvrt-requested-review-executor-${{ github.repository }}\\n"\n'''
-              '''        "  cancel-in-progress: false\\n\\n"\n'''
-              '''    ) not in text\n''',
+              '''class RequestedReviewPendingQueueTests(unittest.TestCase):\n'''
+              '''    def test_preserves_pending_exact_head_runs(self):\n'''
+              '''        text = WORKFLOW.read_text(encoding="utf-8")\n'''
+              '''        expression = "$" + "{{ github.repository }}"\n'''
+              '''        block = (\n'''
+              '''            "concurrency:\\n"\n'''
+              '''            f"  group: qikvrt-requested-review-executor-{expression}\\n"\n'''
+              '''            "  cancel-in-progress: false\\n"\n'''
+              '''            "  queue: max\\n"\n'''
+              '''        )\n'''
+              '''        self.assertEqual(text.count(block), 1)\n'''
+              '''        obsolete = (\n'''
+              '''            f"group: qikvrt-requested-review-executor-{expression}\\n"\n'''
+              '''            "  cancel-in-progress: false\\n\\n"\n'''
+              '''        )\n'''
+              '''        self.assertNotIn(obsolete, text)\n\n\n'''
+              '''if __name__ == "__main__":\n'''
+              '''    unittest.main()\n''',
               encoding='utf-8',
           )
 
