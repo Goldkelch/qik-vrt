@@ -99,55 +99,113 @@ def main() -> int:
     metadata = manifest["metadata"]
     entries = publish._shared_entries(manifest["files"])
 
-    try:
-        matches = publish._canonical_inventory_candidates(
-            client, token, metadata, entries
-        )
-        count = len(matches)
-        disposition = "CREATE_ALLOWED" if count == 0 else "RECOVER" if count == 1 else "HOLD"
-        result = {
-            "schema": "qikvrt_zenodo_readonly_recovery_inventory_v1",
-            "repository": manifest["repository"],
-            "execution_head": EXECUTION_HEAD,
-            "source_head": manifest["source_head"],
-            "manifest_sha256": manifest["manifest_sha256"],
-            "authorization_id": AUTHORIZATION_ID,
-            "publication_id": PUBLICATION_ID,
-            "remote_consumption_ref": ref,
-            "remote_consumption_tag_object": tag_object,
-            "zenodo_api_base": base_url,
-            "network_policy": "GET_ONLY",
-            "stable_inventory_passes": 2,
-            "canonical_match_count": count,
-            "canonical_matches": [
-                {"record_id": record_id, "doi": doi, "public": public is not None}
-                for record_id, doi, public in matches
-            ],
-            "disposition": disposition,
-        }
-        print("QIKVRT_READONLY_RECOVERY_INVENTORY=" + json.dumps(result, sort_keys=True, separators=(",", ":")))
-        if disposition == "HOLD":
-            raise SystemExit("HOLD: multiple canonically matching owned Zenodo depositions")
-        return 0
-    except Exception as exc:
-        message = str(exc).replace(token, "<redacted>") if token else str(exc)
-        result = {
-            "schema": "qikvrt_zenodo_readonly_recovery_inventory_v1",
-            "repository": manifest["repository"],
-            "execution_head": EXECUTION_HEAD,
-            "manifest_sha256": manifest["manifest_sha256"],
-            "authorization_id": AUTHORIZATION_ID,
-            "publication_id": PUBLICATION_ID,
-            "remote_consumption_ref": ref,
-            "remote_consumption_tag_object": tag_object,
-            "zenodo_api_base": base_url,
-            "network_policy": "GET_ONLY",
-            "disposition": "HOLD",
-            "error_type": type(exc).__name__,
-            "error": message,
-        }
-        print("QIKVRT_READONLY_RECOVERY_INVENTORY=" + json.dumps(result, sort_keys=True, separators=(",", ":")))
-        raise
+    inventory = publish._list_all_owned_depositions(client, token)
+    identity_candidates = []
+    canonical_matches = []
+    divergent_candidates = []
+
+    for item in inventory:
+        if not publish._inventory_publication_identity_candidate(item, metadata):
+            continue
+        record_id = publish.zenodo._record_id(item, "read-only recovery inventory")
+        state, current = client.get_deposition_or_record(record_id)
+        doi = publish.zenodo._doi_from_deposition(current, "read-only recovery record")
+        identity_candidates.append({"record_id": record_id, "doi": doi, "state": state})
+        try:
+            if state == "published":
+                if not publish.zenodo._published_metadata_matches(current.get("metadata"), metadata):
+                    raise publish.zenodo.ZenodoError(
+                        "publication-identity candidate has divergent public metadata"
+                    )
+                public = client.wait_for_gated_record(
+                    record_id,
+                    metadata,
+                    entries,
+                    doi,
+                    published=True,
+                    initial=current,
+                )
+                canonical_matches.append(
+                    {"record_id": record_id, "doi": doi, "public": True}
+                )
+            else:
+                expected_metadata = dict(metadata)
+                expected_metadata.pop("prereserve_doi", None)
+                if not publish.zenodo._metadata_matches(
+                    current.get("metadata"), expected_metadata
+                ):
+                    raise publish.zenodo.ZenodoError(
+                        "publication-identity candidate has divergent draft metadata"
+                    )
+                server_files = client._server_files(current)
+                if server_files:
+                    client.gate_record(
+                        current,
+                        record_id,
+                        metadata,
+                        entries,
+                        doi,
+                        published=False,
+                    )
+                canonical_matches.append(
+                    {"record_id": record_id, "doi": doi, "public": False}
+                )
+        except Exception as exc:
+            message = str(exc).replace(token, "<redacted>") if token else str(exc)
+            divergent_candidates.append(
+                {
+                    "record_id": record_id,
+                    "doi": doi,
+                    "state": state,
+                    "reason_type": type(exc).__name__,
+                    "reason": message,
+                }
+            )
+
+    count = len(canonical_matches)
+    if divergent_candidates:
+        disposition = "HOLD"
+        disposition_reason = "DIVERGENT_PUBLICATION_IDENTITY_CANDIDATE"
+    elif count == 0:
+        disposition = "CREATE_ALLOWED"
+        disposition_reason = "ZERO_CANONICAL_MATCHES"
+    elif count == 1:
+        disposition = "RECOVER"
+        disposition_reason = "EXACTLY_ONE_CANONICAL_MATCH"
+    else:
+        disposition = "HOLD"
+        disposition_reason = "MULTIPLE_CANONICAL_MATCHES"
+
+    result = {
+        "schema": "qikvrt_zenodo_readonly_recovery_inventory_v2",
+        "repository": manifest["repository"],
+        "execution_head": EXECUTION_HEAD,
+        "source_head": manifest["source_head"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "authorization_id": AUTHORIZATION_ID,
+        "publication_id": PUBLICATION_ID,
+        "remote_consumption_ref": ref,
+        "remote_consumption_tag_object": tag_object,
+        "zenodo_api_base": base_url,
+        "network_policy": "GET_ONLY",
+        "stable_inventory_passes": 2,
+        "owned_inventory_count": len(inventory),
+        "publication_identity_candidate_count": len(identity_candidates),
+        "publication_identity_candidates": identity_candidates,
+        "canonical_match_count": count,
+        "canonical_matches": canonical_matches,
+        "divergent_identity_candidate_count": len(divergent_candidates),
+        "divergent_identity_candidates": divergent_candidates,
+        "disposition": disposition,
+        "disposition_reason": disposition_reason,
+    }
+    print(
+        "QIKVRT_READONLY_RECOVERY_INVENTORY="
+        + json.dumps(result, sort_keys=True, separators=(",", ":"))
+    )
+    if disposition == "HOLD":
+        raise SystemExit("HOLD: read-only recovery inventory is not uniquely actionable")
+    return 0
 
 
 if __name__ == "__main__":
