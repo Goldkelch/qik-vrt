@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT stale requested-review work-unit reaper
+
+on:
+  pull_request_target:
+    types: [synchronize, closed]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: qikvrt-stale-requested-review-reaper-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  reap-stale-pending-work-units:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      LIVE_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_ACTION: ${{ github.event.action }}
+    steps:
+      - name: Cancel only stale not-started requested-review children
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-stale-requested-review-reaper"
+          mkdir -p "$root"
+          : > "$root/reaped.jsonl"
+
+          workflow="$(gh api "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml")"
+          workflow_id="$(jq -r '.id' <<<"$workflow")"
+          test "$workflow_id" != null
+
+          gh api "repos/${REPOSITORY}/actions/workflows/${workflow_id}/runs?event=workflow_dispatch&per_page=100" \
+            > "$root/runs.json"
+
+          while IFS= read -r run; do
+            test -n "$run" || continue
+            run_id="$(jq -r '.id' <<<"$run")"
+            status="$(jq -r '.status' <<<"$run")"
+            title="$(jq -r '.display_title // ""' <<<"$run")"
+            head_branch="$(jq -r '.head_branch // ""' <<<"$run")"
+            run_event="$(jq -r '.event // ""' <<<"$run")"
+
+            case "$status" in
+              queued|pending|waiting|requested) ;;
+              *) continue ;;
+            esac
+            test "$run_event" = workflow_dispatch || continue
+            test "$head_branch" = main || continue
+
+            prefix="QIKVRT requested review pr=${PR_NUMBER} head="
+            case "$title" in
+              "$prefix"*) ;;
+              *) continue ;;
+            esac
+            bound="${title#${prefix}}"
+            bound_head="${bound%% fp=*}"
+            test -n "$bound_head" || continue
+
+            stale=false
+            if test "$PR_ACTION" = closed; then
+              stale=true
+            elif test "$bound_head" != "$LIVE_HEAD"; then
+              stale=true
+            fi
+            test "$stale" = true || continue
+
+            gh api --method POST "repos/${REPOSITORY}/actions/runs/${run_id}/cancel"
+            jq -nc \
+              --argjson run_id "$run_id" \
+              --arg status "$status" \
+              --arg pr "$PR_NUMBER" \
+              --arg bound_head "$bound_head" \
+              --arg live_head "$LIVE_HEAD" \
+              --arg action "$PR_ACTION" \
+              '{run_id:$run_id,prior_status:$status,pull_request:($pr|tonumber),bound_head:$bound_head,live_head:$live_head,event_action:$action,disposition:"STALE_NOT_STARTED_WORK_UNIT_CANCEL_REQUESTED",in_progress_cancelled:false}' \
+              >> "$root/reaped.jsonl"
+          done < <(jq -c '.workflow_runs[]' "$root/runs.json")
+
+          jq -s \
+            --arg repository "$REPOSITORY" \
+            --arg pr "$PR_NUMBER" \
+            --arg live_head "$LIVE_HEAD" \
+            --arg action "$PR_ACTION" \
+            '{schema:"qikvrt_stale_requested_review_reaper_v1",repository:$repository,pull_request:($pr|tonumber),live_head:$live_head,event_action:$action,reaped:.,completion_claims:{PASS:false,FINAL_PASS:false,EFFECT_ACK_DONE:false,MERGE:false}}' \
+            "$root/reaped.jsonl" > "$root/receipt.json"
+          cat "$root/receipt.json"
+
+      - name: Preserve bounded reaper receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-stale-requested-review-reaper-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: ${{ runner.temp }}/qikvrt-stale-requested-review-reaper
