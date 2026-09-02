@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT requested-review pending wakeup
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows:
+      - "QIKVRT requested review executor"
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-requested-review-pending-wakeup-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  wake-one:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      EXECUTOR_WORKFLOW_ID: "335830906"
+      STATUS_CONTEXT: QIKVRT requested-review pending wakeup
+    steps:
+      - name: Check out trusted main wakeup implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Select at most one orphaned exact pending work unit
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/qikvrt-requested-review-pending-wakeup"
+          mkdir -p "$root"
+          python3 -B - <<'PY' > "$root/selection.json"
+          import json, os, subprocess
+          from datetime import datetime, timezone
+          from tools.qikvrt_requested_review_pending_wakeup import classify_pending_wakeup
+
+          repo=os.environ['REPOSITORY']
+          workflow=os.environ['EXECUTOR_WORKFLOW_ID']
+
+          def gh(path):
+              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+
+          pending=gh(f'repos/{repo}/actions/workflows/{workflow}/runs?status=pending&per_page=100').get('workflow_runs') or []
+          active=[]
+          for status in ('in_progress','queued','requested','waiting'):
+              active.extend(gh(f'repos/{repo}/actions/workflows/{workflow}/runs?status={status}&per_page=100').get('workflow_runs') or [])
+
+          pr_numbers=set()
+          import re
+          exact=re.compile(r'^QIKVRT requested review pr=([0-9]+) head=([0-9a-f]{40}) fp=\S+$')
+          for run in pending:
+              match=exact.fullmatch(str(run.get('display_title') or run.get('name') or ''))
+              if match:
+                  pr_numbers.add(int(match.group(1)))
+          prs={}
+          for number in sorted(pr_numbers):
+              prs[number]=gh(f'repos/{repo}/pulls/{number}')
+
+          decision=classify_pending_wakeup(
+              pending_runs=pending,
+              active_runs=active,
+              pull_requests=prs,
+              now=datetime.now(timezone.utc),
+              grace_seconds=120,
+          )
+          print(json.dumps(decision,sort_keys=True))
+          PY
+          cat "$root/selection.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          p=os.path.join(os.environ['RUNNER_TEMP'],'qikvrt-requested-review-pending-wakeup','selection.json')
+          v=json.load(open(p,encoding='utf-8'))
+          print(f"state={v['state']}")
+          print(f"run_id={v.get('run_id') or ''}")
+          print(f"pr={v.get('pr_number') or ''}")
+          print(f"head={v.get('head_sha') or ''}")
+          print(f"fingerprint={v.get('fingerprint') or ''}")
+          PY
+
+      - name: Preserve wakeup selection receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-requested-review-pending-wakeup-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          path: ${{ runner.temp }}/qikvrt-requested-review-pending-wakeup/selection.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Rebind exact subject immediately before wakeup
+        if: steps.select.outputs.state == 'WAKEUP_REQUIRED'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$observed" = "$EXPECTED_HEAD"
+
+      - name: Cancel orphaned pending transport and require readback
+        if: steps.select.outputs.state == 'WAKEUP_REQUIRED'
+        env:
+          RUN_ID: ${{ steps.select.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${REPOSITORY}/actions/runs/${RUN_ID}/cancel"
+          state=''
+          for delay in 0 2 5 10; do
+            if test "$delay" -gt 0; then sleep "$delay"; fi
+            state="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}" --jq .status)"
+            if test "$state" != pending; then break; fi
+          done
+          test "$state" != pending
+          echo "cancelled_transport_status=$state"
+
+      - name: Dispatch exactly one identically bound replacement
+        if: steps.select.outputs.state == 'WAKEUP_REQUIRED'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_SHA: ${{ steps.select.outputs.head }}
+          FINGERPRINT: ${{ steps.select.outputs.fingerprint }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$observed" = "$HEAD_SHA"
+          jq -n --arg pr "$PR_NUMBER" --arg head "$HEAD_SHA" --arg fp "$FINGERPRINT" \
+            '{ref:"main",inputs:{pr:$pr,head:$head,fingerprint:(if $fp == "event" then "" else $fp end)}}' \
+            | gh api --method POST \
+                "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+                --input -
+          gh api --method POST "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context="$STATUS_CONTEXT" \
+            -f description='orphan pending transport replaced with one exact-bound dispatch' \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
