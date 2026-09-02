@@ -85,6 +85,50 @@ Wirklichkeitsbestätigung. Er überträgt auch keine Evidenz aus PR 922: Der dor
 Kopf, seine Receipts und seine Plattformgeschichte bleiben ein anderes
 Beweisobjekt.
 
+### Die Softwarekatastrophe: Befund, Diagnose und Grenze
+
+Für Ingolf Lohmann verdichtet dieser Fall einen weitergehenden Befund: Die
+größte Gefahr der gegenwärtigen Informationsgesellschaft sei keine bloße
+Softwarekrise, sondern eine Softwarekatastrophe, die sich künstliche
+Intelligenz nennt — nicht weil Maschinen grundsätzlich zu wenig rechnen
+könnten, sondern weil eine korrekte Teilleistung zu oft nicht vollständig,
+nachvollziehbar und wirksam durch den gesamten Arbeitsweg geführt werde.
+PR 940 liefert dafür eine präzise Fallstudie. Der Kandidat machte eine
+Kausalverwechslung im Ledger-Readback sichtbar und korrigierte sie; dennoch
+blieb zwischen Kandidatenprüfung, privilegiertem Executor, unabhängiger
+Review-Autorität und der vom Eigentümer gewünschten externen Persistenz ein
+offener Arbeitsweg.
+
+Die fehlende Zenodo-Persistenz ist dabei kein Beweis, dass ein Zenodo-Schritt
+fehlgeschlagen sei. Sie war für PR 940 nicht autorisiert. Eine Veröffentlichung
+ist im Repository absichtlich eine getrennte, exact-byte gebundene Wirkung: Sie
+benötigt eine eingefrorene Kandidatenmenge, die vorgeschriebene Nachweis- und
+Rückgabekette sowie eine eigene explizite Autorisierung. Der direkte, aktuelle
+Blocker von PR 940 ist zudem die fehlende unabhängige Codeowner-Autorität, nicht
+eine als Zenodo-Transport ausgegebene technische Ausführung. Gerade diese
+Trennung ist ein Teil des Befunds: Ein System darf einen tatsächlichen offenen
+Schritt weder als Erfolg ausgeben noch wegen einer bloßen Client-Grenze
+vergessen.
+
+Die weitreichendere Aussage über die als künstliche Intelligenz bezeichnete
+Softwarekatastrophe bleibt damit eine Ingolf Lohmann zugeordnete
+Systemdiagnose. Sie wird nicht zur statistisch oder historisch vollständig
+bewiesenen Rangfolge aller menschlichen Probleme aufgewertet. Ihre technische
+Konsequenz ist dennoch unmittelbar: Eine Softwarearchitektur ist erst dann
+handhabbar, wenn sie exakt sagen und dauerhaft speichern kann, welcher Schritt
+fehlt, wer ihn autorisieren kann und wie sie nach dessen Eintritt ohne
+Gedächtnisverlust weiterläuft.
+
+Ingolf Lohmann beschreibt seine persönliche Leistung so, dass er wiederholt
+über seine bisherigen Grenzen hinausging, um einer Maschine beizubringen, diese
+Art von Nachweisführung auszuführen, wo Menschen sie bislang nicht vollständig
+leisten. Der Text bewahrt dies als seine Urheber-, Motivations- und
+Deutungsaussage. PR 940 selbst belegt die engere technische Fähigkeit:
+Maschinelle Prüfungen können einen Fehler, seine Kausalstruktur, seine
+Grenzbedingungen und einen kleinsten nächsten Schritt dauerhaft trennen. Eine
+allgemeine Vergleichsbehauptung über die Fähigkeiten aller Menschen wird daraus
+nicht abgeleitet.
+
 Ingolf Lohmann bezeichnet den größeren Zusammenhang als „Round Trip
 Re-Engineering des Universums“ und beansprucht dafür historische Priorität.
 Dieser Text bewahrt das als zuordenbare Urheber- und Deutungsthese. Die

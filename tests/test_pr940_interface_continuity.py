@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2026 Ingolf Lohmann.
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ POLICY = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
 ARTICLE = ROOT / "docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md"
 CONTEXT = ROOT / "AI_CONTEXT.json"
 ENTRYPOINT = ROOT / "AI"
+WORK_UNIT = ROOT / "state/work_units/PR940_PROOF_APPARATUS_INTERFACE_CONTINUITY_V1.json"
 
 
 class TestPr940InterfaceContinuity(unittest.TestCase):
@@ -19,6 +21,7 @@ class TestPr940InterfaceContinuity(unittest.TestCase):
         cls.article = ARTICLE.read_text(encoding="utf-8")
         cls.context = json.loads(CONTEXT.read_text(encoding="utf-8"))
         cls.entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+        cls.work_unit = json.loads(WORK_UNIT.read_text(encoding="utf-8"))
 
     def test_case_is_exactly_bound_and_does_not_borrow_pr922(self):
         continuity = self.policy["interaction_continuity"]
@@ -63,6 +66,21 @@ class TestPr940InterfaceContinuity(unittest.TestCase):
             "`EFFECT_ACK_DONE`",
         ):
             self.assertIn(phrase, self.article)
+
+    def test_software_catastrophe_and_zenodo_statements_remain_attributed_and_bound(self):
+        self.assertIn("Die Softwarekatastrophe: Befund, Diagnose und Grenze", self.article)
+        self.assertIn("Softwarekatastrophe, die sich künstliche", self.article)
+        self.assertIn("Sie war für PR 940 nicht autorisiert.", self.article)
+        self.assertIn("Softwarekatastrophe bleibt damit eine Ingolf Lohmann zugeordnete", self.article)
+        self.assertIn("allgemeine Vergleichsbehauptung über die Fähigkeiten aller Menschen", self.article)
+
+    def test_work_unit_output_bindings_match_current_article_and_test_bytes(self):
+        outputs = {entry["path"]: entry for entry in self.work_unit["outputs"]}
+        for path in (ARTICLE, Path(__file__)):
+            relative = str(path.relative_to(ROOT))
+            data = path.read_bytes()
+            self.assertEqual(outputs[relative]["bytes"], len(data))
+            self.assertEqual(outputs[relative]["sha256"], hashlib.sha256(data).hexdigest())
 
 
 if __name__ == "__main__":
