@@ -79,9 +79,9 @@ jobs:
               status="$(printf '%s' "$status_json" | jq -r '.status')"
               if [ "$status" != "DONE" ]; then
                 publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed.
-EOF
+          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
+          Repository auto-finish: **BLOCK**. Evidence status is \`$status\`; no merge, close, sync, or tag was performed.
+          EOF
                 continue
               fi
               checks="$(gh pr view "$authority_pr" --repo "$AUTHORITY_REPOSITORY" --json statusCheckRollup)"
@@ -89,9 +89,9 @@ EOF
               pending="$(printf '%s' "$checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$failed" -gt 0 ]; then
                 publish_receipt "$issue" <<'EOF'
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **BLOCK**. At least one authority check failed.
-EOF
+          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
+          Repository auto-finish: **BLOCK**. At least one authority check failed.
+          EOF
                 continue
               fi
               [ "$pending" -eq 0 ] || continue
@@ -102,9 +102,9 @@ EOF
             [ -n "$authority_merged" ] || continue
             if [ -z "${MESH_TOKEN:-}" ]; then
               publish_receipt "$issue" <<'EOF'
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created.
-EOF
+          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
+          Repository auto-finish: authority merge completed, but mirror synchronization is **BLOCKED** because secret \`QIKVRT_MESH_TOKEN\` is unavailable. Issue remains open; no tag was created.
+          EOF
               continue
             fi
 
@@ -131,9 +131,9 @@ EOF
               mirror_pending="$(printf '%s' "$mirror_checks" | jq '[.statusCheckRollup[]? | select((.status // "") != "COMPLETED")] | length')"
               if [ "$mirror_failed" -gt 0 ]; then
                 publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks.
-EOF
+          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
+          Repository auto-finish: mirror synchronization PR #$mirror_pr is **BLOCKED** by failed checks.
+          EOF
                 continue
               fi
               [ "$mirror_pending" -eq 0 ] || continue
@@ -147,13 +147,13 @@ EOF
             gh api --method POST "repos/$AUTHORITY_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$authority_sha" 2>/dev/null || test "$(gh api "repos/$AUTHORITY_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$authority_sha"
             GH_TOKEN="$MESH_TOKEN" gh api --method POST "repos/$MIRROR_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$mirror_sha" 2>/dev/null || test "$(GH_TOKEN="$MESH_TOKEN" gh api "repos/$MIRROR_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$mirror_sha"
             publish_receipt "$issue" <<EOF
-<!-- qikvrt-issue-agent-autofinish-status:v1 -->
-Repository auto-finish: **EFFECT_ACK_DONE**
+          <!-- qikvrt-issue-agent-autofinish-status:v1 -->
+          Repository auto-finish: **EFFECT_ACK_DONE**
 
-- authority PR #$authority_pr merged
-- mirror PR #$mirror_pr merged
-- common tag \`$tag\` created in both repositories
-- issue closed automatically
-EOF
+          - authority PR #$authority_pr merged
+          - mirror PR #$mirror_pr merged
+          - common tag \`$tag\` created in both repositories
+          - issue closed automatically
+          EOF
             gh issue close "$issue" --repo "$AUTHORITY_REPOSITORY" --reason completed
           done
