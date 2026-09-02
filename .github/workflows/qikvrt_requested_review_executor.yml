@@ -255,9 +255,9 @@ jobs:
           python3 -B - <<'PY'
           import base64, hashlib, json, os, pathlib, subprocess, sys, urllib.parse
           from tools.qikvrt_requested_review_executor import (
-              _pretty_json_bytes, plan_ledger_update,
+              _pretty_json_bytes, exact_ref_sha, plan_ledger_update,
               prepare_diff_transport_ledger_entries,
-              reassemble_diff_transport,
+              reassemble_diff_transport, reconcile_ref_readback,
               review_queue_ack, review_queue_intent,
           )
 
@@ -421,8 +421,40 @@ jobs:
               'successor_needed':False,
               'successor_queue_path':None,
               'successor_evidence_persisted':False,
+              'ref_reconciliations':[],
               'completion_claims':{'PASS':False,'FINAL_PASS':False,'EFFECT_ACK_DONE':False,'MERGE':False},
           }
+
+          def reconcile_after_mutation(
+              expected_old,attempted_commit,mutation_response,blocker,
+          ):
+              observation={
+                  'expected_old_sha':expected_old,
+                  'attempted_commit':attempted_commit,
+                  'mutation_response_sha':None,
+                  'readback':None,
+              }
+              report['ref_reconciliations'].append(observation)
+              try:
+                  response_sha=exact_ref_sha(mutation_response,full_ref)
+              except Exception as exc:
+                  observation['mutation_response_error']=str(exc)[:300]
+                  raise LedgerHold(
+                      f'{blocker}_MUTATION_RESPONSE_MALFORMED'
+                  ) from exc
+              observation['mutation_response_sha']=response_sha
+              if response_sha != attempted_commit:
+                  raise LedgerHold(f'{blocker}_MUTATION_RESPONSE_MISMATCH')
+              readback=reconcile_ref_readback(
+                  lambda: gh('GET',ref_path,allow_404=True),
+                  full_ref,expected_old,attempted_commit,
+              )
+              observation['readback']=readback
+              if readback.get('exact') is not True:
+                  raise LedgerHold(
+                      f"{blocker}: {readback.get('first_blocker')}"
+                  )
+
           try:
               if not receipt_path or not diff_path or not receipt.get('evidence_fingerprint'):
                   raise LedgerHold('review receipt lacks a persistable exact evidence fingerprint')
@@ -453,15 +485,18 @@ jobs:
                       and report['projection_current']
                   )
                   try:
-                      gh('POST',f'repos/{repo}/git/refs',{'ref':full_ref,'sha':commit})
+                      mutation=gh(
+                          'POST',f'repos/{repo}/git/refs',
+                          {'ref':full_ref,'sha':commit},
+                      )
                   except LedgerHold as initialization_error:
                       ref=gh('GET',ref_path,allow_404=True)
                       if ref is None:
                           raise initialization_error
                   else:
-                      ref=gh('GET',ref_path)
-                      if ref['object']['sha'] != commit:
-                          raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
+                      reconcile_after_mutation(
+                          None,commit,mutation,'LEDGER_REF_READBACK_MISMATCH',
+                      )
                       if (
                           blob_at(receipt_path,commit) != receipt_bytes
                           or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
@@ -518,10 +553,14 @@ jobs:
                           verify('pre-ledger-cas').get('exact') is True
                           and report['projection_current']
                       )
-                      gh('PATCH',f'repos/{repo}/git/refs/heads/{short_ref}',{'sha':commit,'force':False})
-                      updated=gh('GET',ref_path)['object']['sha']
-                      if updated != commit:
-                          raise LedgerHold('LEDGER_REF_READBACK_MISMATCH')
+                      mutation=gh(
+                          'PATCH',f'repos/{repo}/git/refs/heads/{short_ref}',
+                          {'sha':commit,'force':False},
+                      )
+                      reconcile_after_mutation(
+                          ledger_head,commit,mutation,
+                          'LEDGER_REF_READBACK_MISMATCH',
+                      )
                       if (
                           blob_at(receipt_path,commit) != receipt_bytes
                           or blob_at(diff_path,commit) != _pretty_json_bytes(transport)
@@ -571,11 +610,13 @@ jobs:
                       commit=gh('POST',f'repos/{repo}/git/commits',{
                           'message':message,'tree':tree,'parents':[ledger_head],
                       })['sha']
-                      gh('PATCH',f'repos/{repo}/git/refs/heads/{short_ref}',{
+                      mutation=gh('PATCH',f'repos/{repo}/git/refs/heads/{short_ref}',{
                           'sha':commit,'force':False,
                       })
-                      if gh('GET',ref_path)['object']['sha'] != commit:
-                          raise LedgerHold('LEDGER_QUEUE_REF_READBACK_MISMATCH')
+                      reconcile_after_mutation(
+                          ledger_head,commit,mutation,
+                          'LEDGER_QUEUE_REF_READBACK_MISMATCH',
+                      )
                       for path,payload in entries.items():
                           if blob_at(path,commit) != payload:
                               raise LedgerHold(
