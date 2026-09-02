@@ -1,0 +1,230 @@
+diff --git a/.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml b/.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..1956e85d01a6e091cf570c09e0073fb2fecefe46
+--- /dev/null
++++ b/.github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml
+@@ -0,0 +1,168 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++name: QIKVRT autonomous ruleset effect loop
++
++on:
++  workflow_run:
++    workflows:
++      - "QIKVRT required code-owner review"
++    types: [completed]
++
++permissions:
++  actions: write
++  contents: read
++  pull-requests: read
++  statuses: write
++
++concurrency:
++  group: qikvrt-autonomous-ruleset-effect-loop-${{ github.repository }}
++  cancel-in-progress: false
++
++jobs:
++  reconcile-and-reobserve:
++    if: >-
++      github.ref == 'refs/heads/main' &&
++      github.event.workflow_run.conclusion == 'success'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    env:
++      GH_TOKEN: ${{ github.token }}
++      REPOSITORY: ${{ github.repository }}
++      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
++      UPSTREAM_HEAD: ${{ github.event.workflow_run.head_sha || '' }}
++      STATUS_CONTEXT: QIKVRT required code-owner review
++      EFFECT_CONTEXT: QIKVRT autonomous ruleset repair
++    steps:
++      - name: Check out trusted main effect-loop implementation
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
++        with:
++          ref: main
++          fetch-depth: 1
++          persist-credentials: false
++
++      - name: Select exact ruleset-repair subject
++        id: select
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 -B - <<'PY' > /tmp/qikvrt-ruleset-effect-selection.json
++          import json, os, subprocess
++
++          repo=os.environ['REPOSITORY']
++          run_id=os.environ['UPSTREAM_RUN_ID']
++          context=os.environ['STATUS_CONTEXT']
++
++          def gh(path):
++              return json.loads(subprocess.check_output(['gh','api',path],text=True))
++          def pages(path):
++              values=json.loads(subprocess.check_output(['gh','api','--paginate','--slurp',path],text=True))
++              out=[]
++              for page in values:
++                  out.extend(page if isinstance(page,list) else [page])
++              return out
++
++          run=gh(f'repos/{repo}/actions/runs/{run_id}')
++          prs=run.get('pull_requests') or []
++          if run.get('name') != 'QIKVRT required code-owner review' or run.get('conclusion') != 'success' or len(prs) != 1:
++              print(json.dumps({'state':'NOOP','first_blocker':'INELIGIBLE_UPSTREAM_RUN'},sort_keys=True))
++              raise SystemExit(0)
++
++          number=int(prs[0]['number'])
++          pr=gh(f'repos/{repo}/pulls/{number}')
++          expected_head=(prs[0].get('head') or {}).get('sha') or ''
++          if pr.get('state') != 'open' or pr.get('base',{}).get('ref') != 'main' or not expected_head or pr.get('head',{}).get('sha') != expected_head:
++              print(json.dumps({'state':'NOOP','first_blocker':'EXACT_SUBJECT_DRIFT','pr_number':number,'expected_head':expected_head,'observed_head':pr.get('head',{}).get('sha')},sort_keys=True))
++              raise SystemExit(0)
++
++          statuses=pages(f'repos/{repo}/commits/{expected_head}/statuses?per_page=100')
++          target=f'https://github.com/{repo}/actions/runs/{run_id}'
++          exact=[s for s in statuses if s.get('context') == context and s.get('target_url') == target]
++          exact.sort(key=lambda s:(s.get('updated_at') or s.get('created_at') or '',int(s.get('id') or 0)))
++          status=exact[-1] if exact else None
++          if not status or status.get('state') != 'failure' or status.get('description') != 'failure: CODE_OWNER_RULE_NOT_ENFORCED':
++              print(json.dumps({'state':'NOOP','first_blocker':'RULESET_REPAIR_NOT_REQUIRED','pr_number':number,'head_sha':expected_head},sort_keys=True))
++              raise SystemExit(0)
++
++          print(json.dumps({'state':'CANDIDATE','first_blocker':'CODE_OWNER_RULE_NOT_ENFORCED','pr_number':number,'head_sha':expected_head,'upstream_run_id':int(run_id)},sort_keys=True))
++          PY
++          cat /tmp/qikvrt-ruleset-effect-selection.json
++          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
++          import json
++          v=json.load(open('/tmp/qikvrt-ruleset-effect-selection.json',encoding='utf-8'))
++          print(f"state={v['state']}")
++          print(f"pr={v.get('pr_number') or ''}")
++          print(f"head={v.get('head_sha') or ''}")
++          print(f"blocker={v.get('first_blocker') or ''}")
++          PY
++
++      - name: Reconcile exact ruleset and require post-effect readback
++        if: steps.select.outputs.state == 'CANDIDATE'
++        id: reconcile
++        env:
++          QIKVRT_RULESET_ADMIN_TOKEN: ${{ secrets.QIKVRT_RULESET_ADMIN_TOKEN }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          set +e
++          python3 -B tools/qikvrt_ruleset_reconcile.py \
++            --apply \
++            --receipt /tmp/qikvrt-autonomous-ruleset-receipt.json
++          rc=$?
++          set -e
++          cat /tmp/qikvrt-autonomous-ruleset-receipt.json
++          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
++          import json
++          v=json.load(open('/tmp/qikvrt-autonomous-ruleset-receipt.json',encoding='utf-8'))
++          print(f"state={v.get('state') or ''}")
++          print(f"blocker={v.get('first_blocker') or ''}")
++          print(f"mutation={v.get('mutation') or ''}")
++          print(f"effect_observed={'true' if v.get('effect_observed') else 'false'}")
++          PY
++          if test "$rc" -ne 0; then
++            test "$(python3 -c 'import json; print(json.load(open("/tmp/qikvrt-autonomous-ruleset-receipt.json"))["state"])')" = HOLD
++          fi
++
++      - name: Preserve autonomous ruleset effect receipt
++        if: always() && steps.select.outputs.state == 'CANDIDATE'
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
++        with:
++          name: qikvrt-autonomous-ruleset-effect-${{ github.run_id }}-${{ steps.select.outputs.pr }}-${{ steps.select.outputs.head }}
++          path: /tmp/qikvrt-autonomous-ruleset-receipt.json
++          if-no-files-found: error
++          retention-days: 90
++
++      - name: Publish authority HOLD when administrator capability is unavailable
++        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'HOLD'
++        env:
++          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
++          BLOCKER: ${{ steps.reconcile.outputs.blocker }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          current_head="$(gh api "repos/${REPOSITORY}/pulls/${{ steps.select.outputs.pr }}" --jq .head.sha)"
++          test "$current_head" = "$EXPECTED_HEAD"
++          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
++            -f state=pending \
++            -f context="$EFFECT_CONTEXT" \
++            -f description="REQUEST_AUTHORITY: ${BLOCKER:0:100}" \
++            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
++
++      - name: Dispatch exactly one fresh same-head gate reobservation
++        if: steps.select.outputs.state == 'CANDIDATE' && steps.reconcile.outputs.state == 'CURRENT'
++        env:
++          PR_NUMBER: ${{ steps.select.outputs.pr }}
++          EXPECTED_HEAD: ${{ steps.select.outputs.head }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
++          test "$current_head" = "$EXPECTED_HEAD"
++          jq -n --arg pr "$PR_NUMBER" '{ref:"main",inputs:{pr:$pr}}' \
++            | gh api --method POST \
++                "repos/${REPOSITORY}/actions/workflows/qikvrt_required_review_gate.yml/dispatches" \
++                --input -
++          gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD}" \
++            -f state=success \
++            -f context="$EFFECT_CONTEXT" \
++            -f description="ruleset reconciled; exact-head gate reobservation dispatched" \
++            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+diff --git a/tests/test_qikvrt_autonomous_ruleset_effect_loop.py b/tests/test_qikvrt_autonomous_ruleset_effect_loop.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36e9e36ca8befb140de1248e9f4720d6d2ec00fb
+--- /dev/null
++++ b/tests/test_qikvrt_autonomous_ruleset_effect_loop.py
+@@ -0,0 +1,50 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++from pathlib import Path
++import unittest
++
++
++ROOT = Path(__file__).resolve().parents[1]
++WORKFLOW = ROOT / ".github/workflows/qikvrt_autonomous_ruleset_effect_loop.yml"
++
++
++class AutonomousRulesetEffectLoopContractTest(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.text = WORKFLOW.read_text(encoding="utf-8")
++
++    def test_is_event_driven_and_not_polled(self):
++        self.assertIn('workflows:\n      - "QIKVRT required code-owner review"', self.text)
++        self.assertIn("types: [completed]", self.text)
++        self.assertNotIn("schedule:", self.text)
++
++    def test_routes_only_exact_ruleset_blocker(self):
++        self.assertIn("CODE_OWNER_RULE_NOT_ENFORCED", self.text)
++        self.assertIn("RULESET_REPAIR_NOT_REQUIRED", self.text)
++        self.assertIn("EXACT_SUBJECT_DRIFT", self.text)
++
++    def test_reuses_existing_reconciler_and_readback_contract(self):
++        self.assertIn("tools/qikvrt_ruleset_reconcile.py", self.text)
++        self.assertIn("--apply", self.text)
++        self.assertIn("--receipt /tmp/qikvrt-autonomous-ruleset-receipt.json", self.text)
++        self.assertIn("QIKVRT_RULESET_ADMIN_TOKEN", self.text)
++
++    def test_closes_loop_with_one_fresh_gate_dispatch(self):
++        self.assertIn("qikvrt_required_review_gate.yml/dispatches", self.text)
++        self.assertIn("Dispatch exactly one fresh same-head gate reobservation", self.text)
++        self.assertIn('test "$current_head" = "$EXPECTED_HEAD"', self.text)
++
++    def test_authority_boundary_is_explicit(self):
++        self.assertIn("Publish authority HOLD when administrator capability is unavailable", self.text)
++        self.assertIn("REQUEST_AUTHORITY:", self.text)
++        self.assertIn("state=pending", self.text)
++
++    def test_effect_and_reobservation_are_separate(self):
++        self.assertIn("QIKVRT autonomous ruleset repair", self.text)
++        self.assertIn("ruleset reconciled; exact-head gate reobservation dispatched", self.text)
++        self.assertNotIn("gh pr merge", self.text)
++        self.assertNotIn("event=APPROVE", self.text)
++
++
++if __name__ == "__main__":
++    unittest.main()
