@@ -49,6 +49,7 @@ permissions:
 concurrency:
   group: qikvrt-requested-review-executor-${{ github.repository }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   review-one:
@@ -111,7 +112,9 @@ jobs:
           python3 -B - <<'PY' > /tmp/qikvrt-review-selection.json
           import hashlib, json, os, pathlib
           from tools.qikvrt_requested_review_executor import (
+              ReviewObservationError,
               _gh_one,
+              event_payload_pull_request,
               select_review_subject,
           )
 
@@ -123,9 +126,27 @@ jobs:
           expected_head=os.environ.get('EVENT_EXPECTED_HEAD','').strip()
           workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()
           workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')
+          payload={}
+          event_payload_sha256=None
+          event_path=os.environ.get('GITHUB_EVENT_PATH','')
+          if event_path:
+              try:
+                  event_payload=pathlib.Path(event_path).read_bytes()
+                  payload=json.loads(event_payload.decode('utf-8'))
+                  event_payload_sha256=hashlib.sha256(event_payload).hexdigest()
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                  payload={}
 
           def one(number):
-              return _gh_one(f'repos/{repo}/pulls/{number}')
+              try:
+                  return _gh_one(f'repos/{repo}/pulls/{number}')
+              except ReviewObservationError:
+                  fallback=event_payload_pull_request(
+                      payload,repo,number,expected_head,event_name
+                  )
+                  if fallback is None:
+                      raise
+                  return fallback
 
           value=select_review_subject(
               repository=repo,
@@ -138,16 +159,6 @@ jobs:
               fetch_pull_request=one,
           )
           print(json.dumps(value,sort_keys=True))
-          payload={}
-          event_payload_sha256=None
-          event_path=os.environ.get('GITHUB_EVENT_PATH','')
-          if event_path:
-              try:
-                  event_payload=pathlib.Path(event_path).read_bytes()
-                  payload=json.loads(event_payload.decode('utf-8'))
-                  event_payload_sha256=hashlib.sha256(event_payload).hexdigest()
-              except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                  payload={}
 
           def nested(mapping, *fields):
               current=mapping

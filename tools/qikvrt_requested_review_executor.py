@@ -2138,6 +2138,42 @@ def _eligible_review_subject(
     return subject, reasons
 
 
+def event_payload_pull_request(
+    payload: Any,
+    repository: str,
+    expected_number: int,
+    expected_head: str,
+    event_name: str,
+) -> Mapping[str, Any] | None:
+    """Return one exact native PR-event subject, otherwise ``None``.
+
+    This is a read-only fallback for an unavailable live PR GET. It
+    accepts only GitHub-native pull-request events whose embedded
+    object already binds the exact repository, PR number, open state,
+    main base and expected head. Other event classes, malformed
+    objects and any drift fail closed.
+    """
+    if event_name not in {"pull_request_target", "pull_request_review"}:
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    if _positive_integer(expected_number) is None:
+        return None
+    if _git_sha1(expected_head) is None:
+        return None
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        return None
+    subject, reasons = _eligible_review_subject(
+        pull_request,
+        repository,
+        expected_number,
+    )
+    if reasons or subject["head_sha"] != expected_head:
+        return None
+    return pull_request
+
+
 def _workflow_run_pr_number(
     item: Mapping[str, Any], repository: str
 ) -> tuple[int | None, str | None]:
