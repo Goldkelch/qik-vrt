@@ -30,51 +30,55 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           import json
+          import textwrap
           from pathlib import Path
 
           tool = Path('tools/qikvrt_requested_review_executor.py')
           tool_text = tool.read_text(encoding='utf-8')
           anchor = '\n\ndef _workflow_run_pr_number(\n'
-          helper = r'''
+          helper = textwrap.dedent(r'''
 
+          def event_payload_pull_request(
+              payload: Any,
+              repository: str,
+              expected_number: int,
+              expected_head: str,
+              event_name: str,
+          ) -> Mapping[str, Any] | None:
+              """Return one exact native PR-event subject, otherwise ``None``.
 
-def event_payload_pull_request(
-    payload: Any,
-    repository: str,
-    expected_number: int,
-    expected_head: str,
-    event_name: str,
-) -> Mapping[str, Any] | None:
-    """Return one exact native PR-event subject, otherwise ``None``.
-
-    This is a read-only fallback for an unavailable live PR GET.  It accepts
-    only GitHub-native pull-request events whose embedded object already binds
-    the exact repository, PR number, open state, main base and expected head.
-    Other event classes, malformed objects and any drift fail closed.
-    """
-    if event_name not in {"pull_request_target", "pull_request_review"}:
-        return None
-    if not isinstance(payload, Mapping):
-        return None
-    if _positive_integer(expected_number) is None:
-        return None
-    if _git_sha1(expected_head) is None:
-        return None
-    pull_request = payload.get("pull_request")
-    if not isinstance(pull_request, Mapping):
-        return None
-    subject, reasons = _eligible_review_subject(
-        pull_request,
-        repository,
-        expected_number,
-    )
-    if reasons or subject["head_sha"] != expected_head:
-        return None
-    return pull_request
-'''
+              This is a read-only fallback for an unavailable live PR GET. It
+              accepts only GitHub-native pull-request events whose embedded
+              object already binds the exact repository, PR number, open state,
+              main base and expected head. Other event classes, malformed
+              objects and any drift fail closed.
+              """
+              if event_name not in {"pull_request_target", "pull_request_review"}:
+                  return None
+              if not isinstance(payload, Mapping):
+                  return None
+              if _positive_integer(expected_number) is None:
+                  return None
+              if _git_sha1(expected_head) is None:
+                  return None
+              pull_request = payload.get("pull_request")
+              if not isinstance(pull_request, Mapping):
+                  return None
+              subject, reasons = _eligible_review_subject(
+                  pull_request,
+                  repository,
+                  expected_number,
+              )
+              if reasons or subject["head_sha"] != expected_head:
+                  return None
+              return pull_request
+          ''')
           if tool_text.count(anchor) != 1:
               raise SystemExit('EVENT_PAYLOAD_HELPER_ANCHOR_NOT_EXACT')
-          tool.write_text(tool_text.replace(anchor, helper + anchor, 1), encoding='utf-8')
+          tool.write_text(
+              tool_text.replace(anchor, helper + anchor, 1),
+              encoding='utf-8',
+          )
 
           workflow = Path('.github/workflows/qikvrt_requested_review_executor.yml')
           workflow_text = workflow.read_text(encoding='utf-8')
@@ -95,7 +99,11 @@ def event_payload_pull_request(
           if workflow_text.count(duplicate_payload) != 1:
               raise SystemExit('WORKFLOW_DUPLICATE_PAYLOAD_BLOCK_NOT_EXACT')
           workflow.write_text(
-              workflow_text.replace(duplicate_payload, deduplicated_payload, 1),
+              workflow_text.replace(
+                  duplicate_payload,
+                  deduplicated_payload,
+                  1,
+              ),
               encoding='utf-8',
           )
 
@@ -205,7 +213,10 @@ def event_payload_pull_request(
                   'EFFECT_ACK_DONE': False,
               },
           }
-          Path('state/work_units/QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json').write_text(
+          Path(
+              'state/work_units/'
+              'QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json'
+          ).write_text(
               json.dumps(record, sort_keys=True, indent=2) + '\n',
               encoding='utf-8',
           )
@@ -235,8 +246,14 @@ def event_payload_pull_request(
           import subprocess
 
           repo = os.environ['GITHUB_REPOSITORY']
-          base = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          base = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD'],
+              text=True,
+          ).strip()
+          base_tree = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD^{tree}'],
+              text=True,
+          ).strip()
 
           def gh(method, path, payload):
               completed = subprocess.run(
@@ -264,14 +281,21 @@ def event_payload_pull_request(
               '.github/workflows/qikvrt_requested_review_executor.yml',
               'tools/qikvrt_requested_review_executor.py',
               'tests/test_qikvrt_requested_review_event_payload_fallback.py',
-              'state/work_units/QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json',
+              'state/work_units/'
+              'QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json',
           )
           entries = [
-              {'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob(path)}
+              {
+                  'path': path,
+                  'mode': '100644',
+                  'type': 'blob',
+                  'sha': blob(path),
+              }
               for path in paths
           ]
           entries.append({
-              'path': '.github/workflows/qikvrt_requested_review_event_payload_fallback_bootstrap.yml',
+              'path': '.github/workflows/'
+              'qikvrt_requested_review_event_payload_fallback_bootstrap.yml',
               'mode': '100644',
               'type': 'blob',
               'sha': None,
@@ -281,7 +305,10 @@ def event_payload_pull_request(
               'tree': entries,
           })['sha']
           created = gh('POST', f'repos/{repo}/git/commits', {
-              'message': 'fix(review): use exact native event payload on live-read exhaustion',
+              'message': (
+                  'fix(review): use exact native event payload on '
+                  'live-read exhaustion'
+              ),
               'tree': tree,
               'parents': [base],
           })
