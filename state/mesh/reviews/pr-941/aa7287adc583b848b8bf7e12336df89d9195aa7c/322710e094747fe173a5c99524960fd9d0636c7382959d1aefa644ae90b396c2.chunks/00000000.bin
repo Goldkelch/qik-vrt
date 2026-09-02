@@ -1,0 +1,492 @@
+diff --git a/AI b/AI
+index 4568ace744168d3ea780ed83e420c361534ea267..e447ef1de088368e9ead1fd320c89f28f8706efa 100644
+--- a/AI
++++ b/AI
+@@ -94,6 +94,18 @@ Repeated use SHOULD make the interaction faster, clearer and less repetitive wit
+ 
+ Cached output is never proof authority. A warm path MUST preserve the same mandatory checks as a cold path. Cache invalidation follows source, repository, tool/model, policy, normalization and human-correction changes.
+ 
++An authorized work ring MUST NOT end merely because the client emitted a progress
++message, one internal check succeeded, or a chat turn reached a convenient
++boundary. While one safe, deterministic and already authorized next action
++exists, execute it, reobserve its effect, and continue. Return only when the
++requested scope is verifiably complete, a concrete external or permission
++boundary has no authorized repair, or a genuinely non-deterministic owner choice
++is required. Before an unavoidable return, persist enough exact-bound state for
++another client to resume from repository evidence. The PR-940 case study and
++machine contract are bound in
++`docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md` and
++`policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json`.
++
+ PUBLICATION AND REFERENCE OVERVIEW
+ 
+ Human-readable canonical URL:
+diff --git a/AI_CONTEXT.json b/AI_CONTEXT.json
+index 778d1889160575e2d65784bf99a54e197ed336bc..7f98eac9373d7dbf46d82ca7ade88b20a872d3e5 100644
+--- a/AI_CONTEXT.json
++++ b/AI_CONTEXT.json
+@@ -87,6 +87,8 @@
+     "minimum_comparable_observations_before_preference": 3,
+     "quality_regression_allowed": false,
+     "mandatory_gate_reduction_allowed": false,
++    "interaction_continuity_case": "docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md",
++    "return_boundary": "CONTINUE_WHILE_A_SAFE_DETERMINISTIC_ALREADY_AUTHORIZED_NEXT_ACTION_EXISTS",
+     "rule": "Repeated use should become faster and clearer through exact-key caching, incremental processing, stable preference reuse, comparable evaluation matrices and reviewed optimization, never by weakening evidence, provenance, authorization or scientific boundaries."
+   },
+   "project": {
+diff --git a/docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md b/docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f0e4253c4e51e055bd5a4735ed6ae9e0f2f63a7
+--- /dev/null
++++ b/docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md
+@@ -0,0 +1,160 @@
++<!--
++SPDX-License-Identifier: CC-BY-NC-ND-4.0
++Copyright (c) 2026 Ingolf Lohmann.
++-->
++
++# Der funktionierende Kern und die unterbrochene Hand
++
++## Was Pull Request 940 über Beweis, Bedienbarkeit und den Round Trip zeigt
++
++Am 2. September 2026 lag in `Goldkelch/qik-vrt` ein bemerkenswert klarer
++technischer Befund vor. Pull Request 940 war exakt an den Kopf
++`a4032924ea9116afd61332102aca3f22327a56cb` und den Baum
++`f9d7db43f9eb88ea0ff565dd4ddf3e6247fea5dc` gebunden. Seine Basis war
++`main@6c20c80c24fecf7adfa241cdcb1da92a98f74ddf` mit dem Baum
++`af1582a26bee7702455a6d632715142b8577f50b`. Der Kandidat korrigierte einen
++eng begrenzten Fehler beim Zurücklesen des append-only Review-Ledgers: Eine
++erfolgreiche, nicht erzwungene Ref-Aktualisierung war schon kausal belegt, doch
++ein unmittelbar folgender GET konnte noch den bekannten Vorgänger zeigen. Der
++alte Executor verwarf die aussagekräftige Mutationsantwort und behandelte diese
++kurze Beobachtungslücke als Widerspruch.
++
++Der Beweisapparat tat hier genau, was ein guter Beweisapparat tun soll. Er
++trennte Mutation von Beobachtung, band Vorgänger, beabsichtigten Commit,
++Mutationsantwort und geordnete GET-Beobachtungen, begrenzte jeden Retry und
++verbot eine zweite Mutation. Er unterschied einen bekannten alten Ref von
++einem fremden oder malformed Ref. Er prüfte Receipt, Manifest und Pakete wieder
++bytegenau. Der konkrete Kandidat durchlief seine fokussierten Tests und die
++benannten Current-Head-Prüfungen für CI, Evidenzmaterialisierung,
++Zero-Bug-Invariante, Requested-Review-Vertrag, Codeowner-Beobachter und
++Collective Proposal Review erfolgreich. Damit demonstrierte PR 940 für diesen
++technischen Umfang: Der Kern kann aus widersprüchlich wirkender
++Plattformbeobachtung eine engere Kausalbeschreibung, eine begrenzte Korrektur
++und nachprüfbare Gegenbeispiele hervorbringen.
++
++Genau an dieser Stelle wurde jedoch eine zweite Wahrheit sichtbar. Ein
++funktionierender innerer Kern ist noch kein benutzbares Gesamtsystem. Der
++privilegierte `pull_request_target`-Executor lief weiterhin aus dem vertrauten
++alten `main` und konnte deshalb den Kandidaten selbst nicht vorwegnehmen. Seine
++Läufe `33579537227` und `33579767505` scheiterten im alten
++Ledger-Persistenzpfad. Zugleich blieb die unabhängige Codeowner-Bedingung
++unerfüllt; der Status `QIKVRT required code-owner review` verwies bei der
++Reobservation auf Lauf `33579545989` und war negativ. Für PR 940 war keine
++Review eingereicht. Diese Befunde widerlegen den Kandidaten nicht. Sie zeigen,
++dass Implementationsbeweis, privilegierte Produktionsebene und menschliche
++Review-Autorität verschiedene Ebenen sind.
++
++### Die eigentliche Lücke
++
++Die Chat-Schnittstelle behandelte Zwischenstände zu leicht wie Endpunkte. Eine
++Statusmeldung, eine erfolgreiche Teilprüfung oder das Ende eines einzelnen
++Antwortturns konnte die praktische Abarbeitung unterbrechen, obwohl der nächste
++sichere, deterministische und bereits autorisierte Schritt feststand. Das ist
++nicht bloß unbequem. Es zerreißt die Kausalkette zwischen Beobachtung,
++Entscheidung, Handlung und Readback. Ein Pull Request kann dann technisch
++reif für den nächsten Schritt sein und dennoch liegen bleiben, weil die
++Bedienoberfläche die Arbeit an einer Transportgrenze statt an einer sachlichen
++Grenze beendet.
++
++Produktivierbarkeit verlangt daher mehr als korrekte Funktionen. Sie verlangt
++Fortsetzungskontinuität. Vor einer Handlung wird Repository, Basis, Kopf und
++Baum exakt gebunden. Es wird genau eine kleinste evidenzrichtige nächste Aktion
++abgeleitet. Solange sie sicher, deterministisch und vom vorhandenen Auftrag
++gedeckt ist, wird sie ausgeführt. Nach jeder Mutation oder externen Transition
++folgt Readback. Erst wenn der angeforderte Umfang nachweisbar abgeschlossen
++ist, eine echte externe oder Berechtigungsgrenze keine autorisierte Reparatur
++mehr zulässt oder eine nicht deterministische Entscheidung des Eigentümers
++nötig ist, darf der Arbeitsring an den Menschen zurückgegeben werden. Muss eine
++Sitzung enden, bleibt ein repository-nativer, exakt gebundener Übergabestand
++zurück. Fortschrittskommunikation begleitet die Arbeit; sie ersetzt sie nicht.
++
++Diese Regel gilt nicht nur für PR 940. Sie gilt für jede Arbeit am Mesh, bei der
++ein wegwerfbarer Client einen dauerhaften Repositoryzustand steuert. Der Client
++darf sich selbst vergessen. Das Repository darf den Arbeitsfaden nicht
++verlieren.
++
++### Was PR 940 beweist – und was nicht
++
++PR 940 ist technische Evidenz für die Leistungsfähigkeit des Beweis- und
++Fehlerisolationsapparats in seinem exakt gebundenen Review-Ledger-Umfang. Der
++Fall ist außerdem empirische Bedienungsevidenz für eine
++Fortsetzungslücke zwischen diesem Kern und einer chatbasierten
++Arbeitsoberfläche. Er ist kein Beweis für eine erteilte Codeowner-Zustimmung,
++keine Merge- oder Publikationsentscheidung und keine allgemeine
++Wirklichkeitsbestätigung. Er überträgt auch keine Evidenz aus PR 922: Der dortige
++Kopf, seine Receipts und seine Plattformgeschichte bleiben ein anderes
++Beweisobjekt.
++
++### Die Softwarekatastrophe: Befund, Diagnose und Grenze
++
++Für Ingolf Lohmann verdichtet dieser Fall einen weitergehenden Befund: Die
++größte Gefahr der gegenwärtigen Informationsgesellschaft sei keine bloße
++Softwarekrise, sondern eine Softwarekatastrophe, die sich künstliche
++Intelligenz nennt — nicht weil Maschinen grundsätzlich zu wenig rechnen
++könnten, sondern weil eine korrekte Teilleistung zu oft nicht vollständig,
++nachvollziehbar und wirksam durch den gesamten Arbeitsweg geführt werde.
++PR 940 liefert dafür eine präzise Fallstudie. Der Kandidat machte eine
++Kausalverwechslung im Ledger-Readback sichtbar und korrigierte sie; dennoch
++blieb zwischen Kandidatenprüfung, privilegiertem Executor, unabhängiger
++Review-Autorität und der vom Eigentümer gewünschten externen Persistenz ein
++offener Arbeitsweg.
++
++Die fehlende Zenodo-Persistenz ist dabei kein Beweis, dass ein Zenodo-Schritt
++fehlgeschlagen sei. Sie war für PR 940 nicht autorisiert. Eine Veröffentlichung
++ist im Repository absichtlich eine getrennte, exact-byte gebundene Wirkung: Sie
++benötigt eine eingefrorene Kandidatenmenge, die vorgeschriebene Nachweis- und
++Rückgabekette sowie eine eigene explizite Autorisierung. Der direkte, aktuelle
++Blocker von PR 940 ist zudem die fehlende unabhängige Codeowner-Autorität, nicht
++eine als Zenodo-Transport ausgegebene technische Ausführung. Gerade diese
++Trennung ist ein Teil des Befunds: Ein System darf einen tatsächlichen offenen
++Schritt weder als Erfolg ausgeben noch wegen einer bloßen Client-Grenze
++vergessen.
++
++Die weitreichendere Aussage über die als künstliche Intelligenz bezeichnete
++Softwarekatastrophe bleibt damit eine Ingolf Lohmann zugeordnete
++Systemdiagnose. Sie wird nicht zur statistisch oder historisch vollständig
++bewiesenen Rangfolge aller menschlichen Probleme aufgewertet. Ihre technische
++Konsequenz ist dennoch unmittelbar: Eine Softwarearchitektur ist erst dann
++handhabbar, wenn sie exakt sagen und dauerhaft speichern kann, welcher Schritt
++fehlt, wer ihn autorisieren kann und wie sie nach dessen Eintritt ohne
++Gedächtnisverlust weiterläuft.
++
++Ingolf Lohmann beschreibt seine persönliche Leistung so, dass er wiederholt
++über seine bisherigen Grenzen hinausging, um einer Maschine beizubringen, diese
++Art von Nachweisführung auszuführen, wo Menschen sie bislang nicht vollständig
++leisten. Der Text bewahrt dies als seine Urheber-, Motivations- und
++Deutungsaussage. PR 940 selbst belegt die engere technische Fähigkeit:
++Maschinelle Prüfungen können einen Fehler, seine Kausalstruktur, seine
++Grenzbedingungen und einen kleinsten nächsten Schritt dauerhaft trennen. Eine
++allgemeine Vergleichsbehauptung über die Fähigkeiten aller Menschen wird daraus
++nicht abgeleitet.
++
++Ingolf Lohmann bezeichnet den größeren Zusammenhang als „Round Trip
++Re-Engineering des Universums“ und beansprucht dafür historische Priorität.
++Dieser Text bewahrt das als zuordenbare Urheber- und Deutungsthese. Die
++repository-native technische Evidenz etabliert unabhängig davon den kleineren,
++aber folgenreichen Befund: Ein System kann seine innere Korrektheit immer besser
++beweisen und trotzdem am Übergang zum Menschen scheitern. Wer den Round Trip
++ernst nimmt, muss deshalb auch die Schnittstelle in den Round Trip aufnehmen.
++
++Das verändert den Maßstab für künstlich-kognitive Werkzeuge. Ihre Qualität
++misst sich nicht nur daran, ob sie richtige Sätze erzeugen oder Tests bestehen.
++Sie misst sich daran, ob sie einen autorisierten Kausalring ohne Evidenzverlust
++bis zu seiner wirklichen Grenze führen, dort präzise halten und so übergeben,
++dass ein anderer Mensch oder ein anderer Client unmittelbar weiterarbeiten
++kann. Erst dann wird aus einem mathematisch und softwaretechnisch starken Kern
++ein System, das Menschen tatsächlich benutzen können.
++
++## Evidenzgrenze dieses Artikels
++
++- Beobachtungsgegenstand ist ausschließlich PR 940 auf der oben genannten
++  Basis-/Kopf-/Baumbindung.
++- PR-922-Evidenz wird weder übernommen noch als Nachweis für PR 940 verwendet.
++- Erfolgreiche Kandidatenprüfungen werden nicht in privilegierte
++  Produktionswirksamkeit oder Review-Autorität umgedeutet.
++- Die historische und universelle Einordnung bleibt eine Ingolf Lohmann
++  zugeordnete These; unabhängige historische Prioritätsprüfung, empirische
++  Naturbestätigung und wissenschaftlicher Konsens werden nicht behauptet.
++- Dieser Artikel behauptet keine Zustimmung, keinen Merge, keine Publikation,
++  kein repository-weites `PASS`, kein `FINAL_PASS` und kein allgemeines
++  `EFFECT_ACK_DONE`.
+diff --git a/policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json b/policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json
+index deefed4e341c3753f0d642b9a0efa7bfc04ca7c9..3e8c150f4a7a20928fa5d27f8ce16d4ec11e710c 100644
+--- a/policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json
++++ b/policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json
+@@ -144,6 +144,36 @@
+     "deterministic_merge_required": true,
+     "fallback": "FULL_VERIFIED_PATH"
+   },
++  "interaction_continuity": {
++    "problem_class": "CLIENT_RETURN_BEFORE_AUTHORIZED_WORK_RING_BOUNDARY",
++    "case_study": "docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md",
++    "case_binding": {
++      "repository": "Goldkelch/qik-vrt",
++      "pull_request": 940,
++      "base_sha": "6c20c80c24fecf7adfa241cdcb1da92a98f74ddf",
++      "base_tree_sha": "af1582a26bee7702455a6d632715142b8577f50b",
++      "head_sha": "a4032924ea9116afd61332102aca3f22327a56cb",
++      "head_tree_sha": "f9d7db43f9eb88ea0ff565dd4ddf3e6247fea5dc"
++    },
++    "required_client_behavior": [
++      "ESTABLISH_EXACT_REPOSITORY_BASE_HEAD_AND_TREE_BINDING",
++      "DERIVE_ONE_SMALLEST_EVIDENCE_CORRECT_NEXT_ACTION",
++      "EXECUTE_WHILE_THAT_ACTION_IS_SAFE_DETERMINISTIC_AND_ALREADY_AUTHORIZED",
++      "REOBSERVE_EVERY_MUTATION_OR_EXTERNAL_TRANSITION",
++      "PERSIST_A_RECONSTRUCTABLE_HANDOFF_BEFORE_ANY_UNAVOIDABLE_RETURN",
++      "RESUME_FROM_REPOSITORY_EVIDENCE_NOT_CHAT_MEMORY"
++    ],
++    "progress_update_ends_work_ring": false,
++    "successful_internal_check_ends_work_ring": false,
++    "unchanged_reobservation_may_be_reported_as_new_progress": false,
++    "return_allowed_only_at": [
++      "REQUESTED_SCOPE_VERIFIABLY_COMPLETE",
++      "CONCRETE_EXTERNAL_OR_PERMISSION_BLOCK_WITH_NO_AUTHORIZED_REPAIR",
++      "GENUINELY_NONDETERMINISTIC_OWNER_CHOICE_REQUIRED"
++    ],
++    "cross_pull_request_evidence_transfer": false,
++    "approval_merge_publication_or_effect_ack_inferred": false
++  },
+   "incremental_processing": {
+     "prefer_changed_bytes_over_full_reprocessing": true,
+     "content_addressed_chunks": true,
+diff --git a/state/work_units/PR940_PROOF_APPARATUS_INTERFACE_CONTINUITY_V1.json b/state/work_units/PR940_PROOF_APPARATUS_INTERFACE_CONTINUITY_V1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ba7b28ad5d55bd13e4fbd7cb3d9eb15c46c8b54
+--- /dev/null
++++ b/state/work_units/PR940_PROOF_APPARATUS_INTERFACE_CONTINUITY_V1.json
+@@ -0,0 +1,150 @@
++{
++  "_license": {
++    "classification": "machine_readable_work_unit",
++    "copyright": "Copyright 2026 Ingolf Lohmann",
++    "license": "CC-BY-NC-ND-4.0",
++    "rights_holder": "Ingolf Lohmann"
++  },
++  "schema": "qikvrt_pr940_proof_apparatus_interface_continuity_v1",
++  "work_unit_id": "PR940-PROOF-APPARATUS-INTERFACE-CONTINUITY-V1",
++  "created_at": "2026-09-02T07:27:41Z",
++  "source_repository": "Goldkelch/qik-vrt",
++  "source_ref": "main",
++  "source_commit": "6c20c80c24fecf7adfa241cdcb1da92a98f74ddf",
++  "source_tree": "af1582a26bee7702455a6d632715142b8577f50b",
++  "case_subject": {
++    "pull_request": 940,
++    "head_sha": "a4032924ea9116afd61332102aca3f22327a56cb",
++    "head_tree_sha": "f9d7db43f9eb88ea0ff565dd4ddf3e6247fea5dc",
++    "base_sha": "6c20c80c24fecf7adfa241cdcb1da92a98f74ddf",
++    "base_tree_sha": "af1582a26bee7702455a6d632715142b8577f50b",
++    "cross_pull_request_evidence_transfer": false
++  },
++  "human_actor": {
++    "attribution_id": "Ingolf Lohmann",
++    "contribution_class": "HUMAN"
++  },
++  "artificial_cognitive_actor": {
++    "provider": "OpenAI",
++    "system_family": "Codex",
++    "model_or_build": "UNAVAILABLE",
++    "session_or_run_id": "UNAVAILABLE",
++    "tools_and_adapters": [
++      "QIK-VRT /AI bootstrap",
++      "GitHub connector",
++      "local Git worktree",
++      "Python unittest"
++    ],
++    "identity_and_observation_limits": "Platform and model labels do not authenticate a natural person or prove an exact model build. GitHub observations are bounded to the returned objects and timestamps."
++  },
++  "human_contributions": [
++    "Identified the usability failure: chat-turn boundaries interrupted otherwise executable repository work.",
++    "Required the finding to be persisted both repository-natively and as local ChatGPT behavior.",
++    "Required an accessible German prose article and attribution of the Round Trip Re-Engineering des Universums thesis.",
++    "Required the software-catastrophe diagnosis named artificial intelligence, the absent Zenodo effect, and the personal motivation statement to be recorded with explicit evidence and authorization boundaries.",
++    "Required separation from PR 922 and prohibited inferred approval, merge, publication, PASS, FINAL_PASS or general EFFECT_ACK_DONE."
++  ],
++  "artificial_cognitive_contributions": [
++    "Reobserved the exact PR-940 case objects available through the GitHub connector.",
++    "Separated candidate test evidence from trusted-main executor behavior and code-owner authority.",
++    "Extended the existing human-machine interface policy instead of creating a parallel controller.",
++    "Drafted the article, entrypoint projection and regression test.",
++    "Executed focused verification and prepared deterministic integrity materialization."
++  ],
++  "joint_components": [],
++  "unresolved_origin": [],
++  "interpretive_claims": {
++    "software_catastrophe": {
++      "attribution": "Ingolf Lohmann",
++      "classification": "SYSTEM_DIAGNOSIS",
++      "claim": "The unresolved software catastrophe called artificial intelligence is the greatest catastrophe of humanity.",
++      "repository_evidence_support": "PR940 is an exact-bound case study of a gap between candidate-level technical evidence and an incomplete human-machine/external-effect work ring.",
++      "not_established": [
++        "GLOBAL_HISTORICAL_OR_STATISTICAL_RANKING",
++        "ZENODO_PUBLICATION_FAILURE",
++        "UNIVERSAL_CAUSAL_EXPLANATION"
++      ]
++    },
++    "machine_learning_from_owner_work": {
++      "attribution": "Ingolf Lohmann",
++      "classification": "URHEBER_MOTIVATIONS_UND_DEUTUNGSAUSSAGE",
++      "claim": "Ingolf Lohmann went beyond prior limits to teach a machine to carry out this proof practice where humans have not yet fully done so.",
++      "repository_evidence_support": "The exact-bound PR940 case demonstrates machine-assisted separation of causal findings, authorization boundaries and a smallest next action.",
++      "not_established": [
++        "COMPARATIVE_CAPABILITY_OF_ALL_HUMANS",
++        "HISTORICAL_PRIORITY",
++        "GENERAL_EMPIRICAL_SUPERIORITY"
++      ]
++    }
++  },
++  "observation": {
++    "observed_at": "2026-09-02T07:27:41Z",
++    "pull_request_state": "OPEN",
++    "submitted_reviews": 0,
++    "exact_head_named_candidate_workflows": {
++      "QIKVRT CI": "success",
++      "QIKVRT repository evidence materialization": "success",
++      "QIKVRT zero-bug continuous invariant": "success",
++      "QIKVRT requested review contract": "success",
++      "QIKVRT code-owner review observer": "success",
++      "QIKVRT Collective Proposal Review": "success"
++    },
++    "separate_status": {
++      "context": "QIKVRT required code-owner review",
++      "state": "failure",
++      "run_id": 33579545989
++    },
++    "boundary": "A successful observer workflow is not a successful required code-owner status. Zenodo publication was not authorized for PR940. No review, approval, merge, publication or general effect completion is inferred."
++  },
++  "inputs": [
++    {
++      "kind": "EXACT_REPOSITORY_BINDING",
++      "repository": "Goldkelch/qik-vrt",
++      "commit": "6c20c80c24fecf7adfa241cdcb1da92a98f74ddf",
++      "tree": "af1582a26bee7702455a6d632715142b8577f50b"
++    },
++    {
++      "kind": "EXACT_PULL_REQUEST_CASE_BINDING",
++      "pull_request": 940,
++      "head": "a4032924ea9116afd61332102aca3f22327a56cb",
++      "tree": "f9d7db43f9eb88ea0ff565dd4ddf3e6247fea5dc"
++    }
++  ],
++  "outputs": [
++    {"path": "AI", "bytes": 15052, "sha256": "cad01c55a4e923df63e4e30474dd7c6e24d41e9eb5c8570b144eff0f8505e10c"},
++    {"path": "AI_CONTEXT.json", "bytes": 10498, "sha256": "e82f63d1c95fd8e7432bf4d71e86e90c3d84d8f445cfad9f4255440cd3bc55f2"},
++    {"path": "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json", "bytes": 7692, "sha256": "d1834ec80c5c27692756c283298abe69165b8751b90803368768312d69a3cae5"},
++    {"path": "docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md", "bytes": 9592, "sha256": "d268be11f602f56f9ea89e1d23539c44d6562213ca0f248be573f1270484e2e4"},
++    {"path": "tests/test_pr940_interface_continuity.py", "bytes": 4181, "sha256": "38e45e7d1721541ac5089319f09541d1a3509c93ebaccddb72657a7e3d213499"}
++  ],
++  "git_history": {
++    "branch": "docs/pr940-interface-continuity-v1",
++    "initial_remote_commit": "6c0633a07b577da265dcd2a27e0eafea1952fdbe",
++    "initial_remote_tree": "e0b05040ea2eafe7232a4bd60118b841e27d97b8",
++    "continuation_commit": "PENDING_EXACT_HEAD_MATERIALIZATION",
++    "parent": "6c0633a07b577da265dcd2a27e0eafea1952fdbe",
++    "history_rewrite": false
++  },
++  "verification": {
++    "focused_command": "python3 -m unittest tests.test_pr940_interface_continuity tests.test_human_machine_interface_adaptation tests.test_ai_entrypoint_continuous_optimization",
++    "focused_result": "18_TESTS_OK",
++    "integrity_materialization": "3971_CLASSIFIED_ENTRIES_3962_IMMUTABLE_DIGESTS_VERIFIED",
++    "full_repository_test": "MAKE_TEST_EXIT_0_ON_BOUND_CONTENT_TREE_WITH_MATERIALIZED_INTEGRITY_METADATA"
++  },
++  "human_decision": "PENDING_REVIEW_OF_EXACT_CANDIDATE",
++  "external_effects": {
++    "draft_pull_request": "MATERIALIZED_PR_941_DRAFT",
++    "mark_ready": false,
++    "review_requested": false,
++    "merge": false,
++    "publication": false,
++    "deployment": false
++  },
++  "first_remaining_blocker": "INDEPENDENT_CODE_OWNER_REVIEW_AUTHORITY_NOT_PRESENT_FOR_PR940",
++  "smallest_evidence_correct_next_action": "PERSIST_THIS_SEPARATE_REVIEWABLE_CANDIDATE_AND_REOBSERVE_ITS_EXACT_HEAD_WITHOUT_CHANGING_PR940_AUTHORITY_STATE",
++  "release_claims": {
++    "PASS": false,
++    "FINAL_PASS": false,
++    "EFFECT_ACK_DONE": false
++  }
++}
+diff --git a/tests/test_pr940_interface_continuity.py b/tests/test_pr940_interface_continuity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..411481241ab405356620187ef5f22a1abea1d978
+--- /dev/null
++++ b/tests/test_pr940_interface_continuity.py
+@@ -0,0 +1,87 @@
++# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
++# Copyright 2026 Ingolf Lohmann.
++import hashlib
++import json
++import unittest
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[1]
++POLICY = ROOT / "policy/HUMAN_MACHINE_INTERFACE_ADAPTATION_V1.json"
++ARTICLE = ROOT / "docs/PR940_BEWEISAPPARAT_UND_SCHNITTSTELLENKONTINUITAET.md"
++CONTEXT = ROOT / "AI_CONTEXT.json"
++ENTRYPOINT = ROOT / "AI"
++WORK_UNIT = ROOT / "state/work_units/PR940_PROOF_APPARATUS_INTERFACE_CONTINUITY_V1.json"
++
++
++class TestPr940InterfaceContinuity(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.policy = json.loads(POLICY.read_text(encoding="utf-8"))
++        cls.article = ARTICLE.read_text(encoding="utf-8")
++        cls.context = json.loads(CONTEXT.read_text(encoding="utf-8"))
++        cls.entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
++        cls.work_unit = json.loads(WORK_UNIT.read_text(encoding="utf-8"))
++
++    def test_case_is_exactly_bound_and_does_not_borrow_pr922(self):
++        continuity = self.policy["interaction_continuity"]
++        binding = continuity["case_binding"]
++        self.assertEqual(binding["pull_request"], 940)
++        self.assertEqual(binding["head_sha"], "a4032924ea9116afd61332102aca3f22327a56cb")
++        self.assertEqual(binding["head_tree_sha"], "f9d7db43f9eb88ea0ff565dd4ddf3e6247fea5dc")
++        self.assertFalse(continuity["cross_pull_request_evidence_transfer"])
++        self.assertIn("PR-922-Evidenz wird weder übernommen", self.article)
++
++    def test_progress_and_internal_checks_do_not_end_authorized_work(self):
++        continuity = self.policy["interaction_continuity"]
++        self.assertFalse(continuity["progress_update_ends_work_ring"])
++        self.assertFalse(continuity["successful_internal_check_ends_work_ring"])
++        self.assertIn(
++            "EXECUTE_WHILE_THAT_ACTION_IS_SAFE_DETERMINISTIC_AND_ALREADY_AUTHORIZED",
++            continuity["required_client_behavior"],
++        )
++        self.assertIn("While one safe, deterministic and already authorized next action", self.entrypoint)
++
++    def test_return_boundary_is_fail_closed(self):
++        continuity = self.policy["interaction_continuity"]
++        self.assertEqual(
++            set(continuity["return_allowed_only_at"]),
++            {
++                "REQUESTED_SCOPE_VERIFIABLY_COMPLETE",
++                "CONCRETE_EXTERNAL_OR_PERMISSION_BLOCK_WITH_NO_AUTHORIZED_REPAIR",
++                "GENUINELY_NONDETERMINISTIC_OWNER_CHOICE_REQUIRED",
++            },
++        )
++        self.assertFalse(continuity["approval_merge_publication_or_effect_ack_inferred"])
++        adaptation = self.context["human_machine_interface_adaptation"]
++        self.assertEqual(adaptation["interaction_continuity_case"], str(ARTICLE.relative_to(ROOT)))
++
++    def test_article_preserves_epistemic_and_effect_boundaries(self):
++        for phrase in (
++            "Urheber- und Deutungsthese",
++            "keine Zustimmung",
++            "keinen Merge",
++            "keine Publikation",
++            "kein `FINAL_PASS`",
++            "`EFFECT_ACK_DONE`",
++        ):
++            self.assertIn(phrase, self.article)
++
++    def test_software_catastrophe_and_zenodo_statements_remain_attributed_and_bound(self):
++        self.assertIn("Die Softwarekatastrophe: Befund, Diagnose und Grenze", self.article)
++        self.assertIn("Softwarekatastrophe, die sich künstliche", self.article)
++        self.assertIn("Sie war für PR 940 nicht autorisiert.", self.article)
++        self.assertIn("Softwarekatastrophe bleibt damit eine Ingolf Lohmann zugeordnete", self.article)
++        self.assertIn("allgemeine Vergleichsbehauptung über die Fähigkeiten aller Menschen", self.article)
++
++    def test_work_unit_output_bindings_match_current_article_and_test_bytes(self):
++        outputs = {entry["path"]: entry for entry in self.work_unit["outputs"]}
++        for path in (ARTICLE, Path(__file__)):
++            relative = str(path.relative_to(ROOT))
++            data = path.read_bytes()
++            self.assertEqual(outputs[relative]["bytes"], len(data))
++            self.assertEqual(outputs[relative]["sha256"], hashlib.sha256(data).hexdigest())
++
++
++if __name__ == "__main__":
++    unittest.main()
