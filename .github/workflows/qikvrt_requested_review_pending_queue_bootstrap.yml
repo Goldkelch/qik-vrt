@@ -113,9 +113,13 @@ jobs:
       - name: Materialize exact repair commit without moving a ref
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
         run: |
           set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'QIKVRT_MESH_TOKEN_UNAVAILABLE'
+            exit 1
+          }
           python3 -B - <<'PY'
           import base64
           import json
@@ -127,16 +131,15 @@ jobs:
           base = subprocess.check_output(
               ['git', 'rev-parse', 'HEAD'], text=True
           ).strip()
+          base_tree = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD^{tree}'], text=True
+          ).strip()
 
-          def gh(method, path, payload=None):
-              command = ['gh', 'api', '--method', method, path]
-              encoded = None
-              if payload is not None:
-                  command.extend(['--input', '-'])
-                  encoded = json.dumps(payload, separators=(',', ':'))
+          def gh(method, path, payload):
+              command = ['gh', 'api', '--method', method, path, '--input', '-']
               completed = subprocess.run(
                   command,
-                  input=encoded,
+                  input=json.dumps(payload, separators=(',', ':')),
                   text=True,
                   capture_output=True,
                   check=False,
@@ -146,7 +149,7 @@ jobs:
                       f'GitHub API {method} {path} failed: '
                       f'{completed.stderr.strip()[:500]}'
                   )
-              return json.loads(completed.stdout) if completed.stdout.strip() else {}
+              return json.loads(completed.stdout)
 
           def create_blob(path):
               payload = Path(path).read_bytes()
@@ -155,7 +158,6 @@ jobs:
                   'encoding': 'base64',
               })['sha']
 
-          base_commit = gh('GET', f'repos/{repo}/git/commits/{base}')
           entries = []
           for path in (
               '.github/workflows/qikvrt_requested_review_executor.yml',
@@ -174,21 +176,23 @@ jobs:
               'type': 'blob',
               'sha': None,
           })
-          tree = gh('POST', f'repos/{repo}/git/trees', {
-              'base_tree': base_commit['tree']['sha'],
+          tree_response = gh('POST', f'repos/{repo}/git/trees', {
+              'base_tree': base_tree,
               'tree': entries,
-          })['sha']
-          commit = gh('POST', f'repos/{repo}/git/commits', {
+          })
+          tree = tree_response['sha']
+          created = gh('POST', f'repos/{repo}/git/commits', {
               'message': 'fix(review): preserve queued exact-head observations',
               'tree': tree,
               'parents': [base],
-          })['sha']
-          readback = gh('GET', f'repos/{repo}/git/commits/{commit}')
-          if readback.get('tree', {}).get('sha') != tree:
-              raise SystemExit('REPAIR_COMMIT_TREE_READBACK_MISMATCH')
+          })
+          commit = created['sha']
+          if created.get('tree', {}).get('sha') != tree:
+              raise SystemExit('REPAIR_COMMIT_MUTATION_RESPONSE_TREE_MISMATCH')
           print(json.dumps({
               'schema': 'qikvrt_requested_review_pending_queue_git_object_v1',
               'base_commit': base,
+              'base_tree': base_tree,
               'repair_commit': commit,
               'repair_tree': tree,
               'ref_updated': False,
