@@ -46,8 +46,7 @@ jobs:
               raise SystemExit(f'EXPECTED_EXACT_CONCURRENCY_BLOCK_ONCE_GOT_{count}')
           workflow.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          test = Path('tests/test_qikvrt_requested_review_pending_queue.py')
-          test.write_text(
+          Path('tests/test_qikvrt_requested_review_pending_queue.py').write_text(
               '''# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0\n'''
               '''# Copyright 2026 Ingolf Lohmann.\n'''
               '''import unittest\n'''
@@ -111,12 +110,95 @@ jobs:
           git diff --check
           python3 -B -m unittest -v tests.test_qikvrt_requested_review_pending_queue
 
-      - name: Persist exact repair successor
+      - name: Materialize exact repair commit without moving a ref
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'fix(review): preserve queued exact-head observations'
-          git push origin HEAD:repair/requested-review-pending-queue-v1
+          python3 -B - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          base = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD'], text=True
+          ).strip()
+
+          def gh(method, path, payload=None):
+              command = ['gh', 'api', '--method', method, path]
+              encoded = None
+              if payload is not None:
+                  command.extend(['--input', '-'])
+                  encoded = json.dumps(payload, separators=(',', ':'))
+              completed = subprocess.run(
+                  command,
+                  input=encoded,
+                  text=True,
+                  capture_output=True,
+                  check=False,
+              )
+              if completed.returncode:
+                  raise SystemExit(
+                      f'GitHub API {method} {path} failed: '
+                      f'{completed.stderr.strip()[:500]}'
+                  )
+              return json.loads(completed.stdout) if completed.stdout.strip() else {}
+
+          def create_blob(path):
+              payload = Path(path).read_bytes()
+              return gh('POST', f'repos/{repo}/git/blobs', {
+                  'content': base64.b64encode(payload).decode('ascii'),
+                  'encoding': 'base64',
+              })['sha']
+
+          base_commit = gh('GET', f'repos/{repo}/git/commits/{base}')
+          entries = []
+          for path in (
+              '.github/workflows/qikvrt_requested_review_executor.yml',
+              'state/work_units/QIKVRT_REQUESTED_REVIEW_PENDING_QUEUE_REPAIR_V1.json',
+              'tests/test_qikvrt_requested_review_pending_queue.py',
+          ):
+              entries.append({
+                  'path': path,
+                  'mode': '100644',
+                  'type': 'blob',
+                  'sha': create_blob(path),
+              })
+          entries.append({
+              'path': '.github/workflows/qikvrt_requested_review_pending_queue_bootstrap.yml',
+              'mode': '100644',
+              'type': 'blob',
+              'sha': None,
+          })
+          tree = gh('POST', f'repos/{repo}/git/trees', {
+              'base_tree': base_commit['tree']['sha'],
+              'tree': entries,
+          })['sha']
+          commit = gh('POST', f'repos/{repo}/git/commits', {
+              'message': 'fix(review): preserve queued exact-head observations',
+              'tree': tree,
+              'parents': [base],
+          })['sha']
+          readback = gh('GET', f'repos/{repo}/git/commits/{commit}')
+          if readback.get('tree', {}).get('sha') != tree:
+              raise SystemExit('REPAIR_COMMIT_TREE_READBACK_MISMATCH')
+          print(json.dumps({
+              'schema': 'qikvrt_requested_review_pending_queue_git_object_v1',
+              'base_commit': base,
+              'repair_commit': commit,
+              'repair_tree': tree,
+              'ref_updated': False,
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+              },
+          }, sort_keys=True))
+          print(f'QIKVRT_REPAIR_COMMIT={commit}')
+          print(f'QIKVRT_REPAIR_TREE={tree}')
+          PY
