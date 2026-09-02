@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT autonomous requested-review receiver
+
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT requested review contract"
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-autonomous-requested-review-receiver-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  receive-and-dispatch:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+      EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+      EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests || fromJSON('[]')) }}
+      STATUS_CONTEXT: QIKVRT autonomous requested-review receiver
+    steps:
+      - name: Select exact requested-review receiver subject
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/qikvrt-requested-review-receiver
+          mkdir -p "$root"
+          python3 -B - <<'PY' > "$root/selection.json"
+          import json, os, subprocess
+
+          repo=os.environ['REPOSITORY']
+          expected_head=os.environ.get('EXPECTED_HEAD','').strip()
+          prs=json.loads(os.environ.get('EVENT_PRS') or '[]')
+
+          def gh(path):
+              return json.loads(subprocess.check_output(['gh','api',path],text=True))
+
+          if len(prs) != 1:
+              print(json.dumps({'state':'NOOP','first_blocker':'UPSTREAM_PR_BINDING_MISSING_OR_AMBIGUOUS'},sort_keys=True))
+              raise SystemExit(0)
+          number=int(prs[0]['number'])
+          pr=gh(f'repos/{repo}/pulls/{number}')
+          live_head=pr.get('head',{}).get('sha') or ''
+          event_head=prs[0].get('head',{}).get('sha') or ''
+          if (
+              pr.get('state') != 'open'
+              or pr.get('base',{}).get('ref') != 'main'
+              or not expected_head
+              or expected_head != event_head
+              or live_head != expected_head
+          ):
+              print(json.dumps({
+                  'state':'NOOP','first_blocker':'EXACT_SUBJECT_DRIFT',
+                  'pr_number':number,'expected_head':expected_head,
+                  'event_head':event_head,'observed_head':live_head,
+              },sort_keys=True))
+              raise SystemExit(0)
+
+          requested=[]
+          for reviewer in pr.get('requested_reviewers') or []:
+              login=reviewer.get('login') if isinstance(reviewer,dict) else None
+              if isinstance(login,str) and login:
+                  requested.append(login)
+          if not requested:
+              print(json.dumps({
+                  'state':'NOOP','first_blocker':'NO_ACTIVE_REQUESTED_REVIEWER',
+                  'pr_number':number,'head_sha':live_head,
+              },sort_keys=True))
+              raise SystemExit(0)
+
+          print(json.dumps({
+              'state':'CANDIDATE','first_blocker':None,
+              'pr_number':number,'head_sha':live_head,
+              'requested_reviewers':sorted(requested),
+              'upstream_run_id':int(os.environ['UPSTREAM_RUN_ID']),
+          },sort_keys=True))
+          PY
+          cat "$root/selection.json"
+          python3 -B - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          v=json.load(open('/tmp/qikvrt-requested-review-receiver/selection.json',encoding='utf-8'))
+          print(f"state={v['state']}")
+          print(f"pr={v.get('pr_number') or ''}")
+          print(f"head={v.get('head_sha') or ''}")
+          print(f"blocker={v.get('first_blocker') or ''}")
+          PY
+
+      - name: Preserve exact receiver selection
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-requested-review-receiver-${{ github.run_id }}-${{ steps.select.outputs.state }}
+          path: /tmp/qikvrt-requested-review-receiver/selection.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Dispatch exactly one requested-review executor observation
+        if: steps.select.outputs.state == 'CANDIDATE'
+        env:
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          HEAD_SHA: ${{ steps.select.outputs.head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_head="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          test "$current_head" = "$HEAD_SHA"
+          jq -n --arg pr "$PR_NUMBER" --arg head "$HEAD_SHA" \
+            '{ref:"main",inputs:{pr:$pr,head:$head}}' \
+            | gh api --method POST \
+                "repos/${REPOSITORY}/actions/workflows/qikvrt_requested_review_executor.yml/dispatches" \
+                --input -
+          gh api --method POST "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context="$STATUS_CONTEXT" \
+            -f description='Exact-head requested-review observation dispatched' \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
