@@ -1,0 +1,306 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT requested-review event-payload fallback bootstrap
+
+on:
+  push:
+    branches:
+      - repair/requested-review-pending-queue-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-requested-review-event-payload-fallback-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: repair/requested-review-pending-queue-v1
+          fetch-depth: 0
+
+      - name: Apply exact event-payload fallback and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+
+          tool = Path('tools/qikvrt_requested_review_executor.py')
+          tool_text = tool.read_text(encoding='utf-8')
+          anchor = '\n\ndef _workflow_run_pr_number(\n'
+          helper = r'''
+
+
+def event_payload_pull_request(
+    payload: Any,
+    repository: str,
+    expected_number: int,
+    expected_head: str,
+    event_name: str,
+) -> Mapping[str, Any] | None:
+    """Return one exact native PR-event subject, otherwise ``None``.
+
+    This is a read-only fallback for an unavailable live PR GET.  It accepts
+    only GitHub-native pull-request events whose embedded object already binds
+    the exact repository, PR number, open state, main base and expected head.
+    Other event classes, malformed objects and any drift fail closed.
+    """
+    if event_name not in {"pull_request_target", "pull_request_review"}:
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    if _positive_integer(expected_number) is None:
+        return None
+    if _git_sha1(expected_head) is None:
+        return None
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        return None
+    subject, reasons = _eligible_review_subject(
+        pull_request,
+        repository,
+        expected_number,
+    )
+    if reasons or subject["head_sha"] != expected_head:
+        return None
+    return pull_request
+'''
+          if tool_text.count(anchor) != 1:
+              raise SystemExit('EVENT_PAYLOAD_HELPER_ANCHOR_NOT_EXACT')
+          tool.write_text(tool_text.replace(anchor, helper + anchor, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/qikvrt_requested_review_executor.yml')
+          workflow_text = workflow.read_text(encoding='utf-8')
+          old_import = '''          from tools.qikvrt_requested_review_executor import (\n              _gh_one,\n              select_review_subject,\n          )\n'''
+          new_import = '''          from tools.qikvrt_requested_review_executor import (\n              ReviewObservationError,\n              _gh_one,\n              event_payload_pull_request,\n              select_review_subject,\n          )\n'''
+          if workflow_text.count(old_import) != 1:
+              raise SystemExit('WORKFLOW_IMPORT_BLOCK_NOT_EXACT')
+          workflow_text = workflow_text.replace(old_import, new_import, 1)
+
+          old_selector = '''          workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()\n          workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')\n\n          def one(number):\n              return _gh_one(f'repos/{repo}/pulls/{number}')\n'''
+          new_selector = '''          workflow_event=os.environ.get('EVENT_WORKFLOW_EVENT','').strip()\n          workflow_prs=json.loads(os.environ.get('EVENT_WORKFLOW_PRS') or '[]')\n          payload={}\n          event_payload_sha256=None\n          event_path=os.environ.get('GITHUB_EVENT_PATH','')\n          if event_path:\n              try:\n                  event_payload=pathlib.Path(event_path).read_bytes()\n                  payload=json.loads(event_payload.decode('utf-8'))\n                  event_payload_sha256=hashlib.sha256(event_payload).hexdigest()\n              except (OSError, UnicodeDecodeError, json.JSONDecodeError):\n                  payload={}\n\n          def one(number):\n              try:\n                  return _gh_one(f'repos/{repo}/pulls/{number}')\n              except ReviewObservationError:\n                  fallback=event_payload_pull_request(\n                      payload,repo,number,expected_head,event_name\n                  )\n                  if fallback is None:\n                      raise\n                  return fallback\n'''
+          if workflow_text.count(old_selector) != 1:
+              raise SystemExit('WORKFLOW_SELECTOR_BLOCK_NOT_EXACT')
+          workflow_text = workflow_text.replace(old_selector, new_selector, 1)
+
+          duplicate_payload = '''          print(json.dumps(value,sort_keys=True))\n          payload={}\n          event_payload_sha256=None\n          event_path=os.environ.get('GITHUB_EVENT_PATH','')\n          if event_path:\n              try:\n                  event_payload=pathlib.Path(event_path).read_bytes()\n                  payload=json.loads(event_payload.decode('utf-8'))\n                  event_payload_sha256=hashlib.sha256(event_payload).hexdigest()\n              except (OSError, UnicodeDecodeError, json.JSONDecodeError):\n                  payload={}\n\n          def nested(mapping, *fields):\n'''
+          deduplicated_payload = '''          print(json.dumps(value,sort_keys=True))\n\n          def nested(mapping, *fields):\n'''
+          if workflow_text.count(duplicate_payload) != 1:
+              raise SystemExit('WORKFLOW_DUPLICATE_PAYLOAD_BLOCK_NOT_EXACT')
+          workflow.write_text(
+              workflow_text.replace(duplicate_payload, deduplicated_payload, 1),
+              encoding='utf-8',
+          )
+
+          Path('tests/test_qikvrt_requested_review_event_payload_fallback.py').write_text(
+              '''# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0\n'''
+              '''# Copyright 2026 Ingolf Lohmann.\n'''
+              '''import unittest\n'''
+              '''from pathlib import Path\n\n'''
+              '''from tools.qikvrt_requested_review_executor import event_payload_pull_request\n\n\n'''
+              '''REPOSITORY = "Goldkelch/qik-vrt"\n'''
+              '''HEAD = "b" * 40\n\n\n'''
+              '''def pull_request(number=943, head=HEAD, repository=REPOSITORY, state="open", base="main"):\n'''
+              '''    return {\n'''
+              '''        "number": number,\n'''
+              '''        "state": state,\n'''
+              '''        "base": {"ref": base},\n'''
+              '''        "head": {"sha": head, "repo": {"full_name": repository}},\n'''
+              '''    }\n\n\n'''
+              '''class RequestedReviewEventPayloadFallbackTests(unittest.TestCase):\n'''
+              '''    def test_accepts_exact_native_pull_request_target_payload(self):\n'''
+              '''        subject = pull_request()\n'''
+              '''        self.assertIs(\n'''
+              '''            event_payload_pull_request(\n'''
+              '''                {"pull_request": subject}, REPOSITORY, 943, HEAD,\n'''
+              '''                "pull_request_target",\n'''
+              '''            ),\n'''
+              '''            subject,\n'''
+              '''        )\n\n'''
+              '''    def test_accepts_exact_native_pull_request_review_payload(self):\n'''
+              '''        subject = pull_request()\n'''
+              '''        self.assertIs(\n'''
+              '''            event_payload_pull_request(\n'''
+              '''                {"pull_request": subject}, REPOSITORY, 943, HEAD,\n'''
+              '''                "pull_request_review",\n'''
+              '''            ),\n'''
+              '''            subject,\n'''
+              '''        )\n\n'''
+              '''    def test_rejects_non_native_event_class(self):\n'''
+              '''        self.assertIsNone(\n'''
+              '''            event_payload_pull_request(\n'''
+              '''                {"pull_request": pull_request()}, REPOSITORY, 943, HEAD,\n'''
+              '''                "issue_comment",\n'''
+              '''            )\n'''
+              '''        )\n\n'''
+              '''    def test_rejects_every_exact_binding_drift(self):\n'''
+              '''        variants = [\n'''
+              '''            pull_request(number=944),\n'''
+              '''            pull_request(head="c" * 40),\n'''
+              '''            pull_request(repository="ingolf-lohmann/qik-vrt"),\n'''
+              '''            pull_request(state="closed"),\n'''
+              '''            pull_request(base="other"),\n'''
+              '''        ]\n'''
+              '''        for subject in variants:\n'''
+              '''            with self.subTest(subject=subject):\n'''
+              '''                self.assertIsNone(\n'''
+              '''                    event_payload_pull_request(\n'''
+              '''                        {"pull_request": subject}, REPOSITORY, 943, HEAD,\n'''
+              '''                        "pull_request_target",\n'''
+              '''                    )\n'''
+              '''                )\n\n'''
+              '''    def test_workflow_prefers_live_get_and_uses_fallback_only_on_read_error(self):\n'''
+              '''        text = Path(\n'''
+              '''            ".github/workflows/qikvrt_requested_review_executor.yml"\n'''
+              '''        ).read_text(encoding="utf-8")\n'''
+              '''        self.assertIn("try:\\n                  return _gh_one", text)\n'''
+              '''        self.assertIn("except ReviewObservationError:", text)\n'''
+              '''        self.assertIn("fallback=event_payload_pull_request(", text)\n'''
+              '''        self.assertIn("if fallback is None:\\n                      raise", text)\n\n\n'''
+              '''if __name__ == "__main__":\n'''
+              '''    unittest.main()\n''',
+              encoding='utf-8',
+          )
+
+          record = {
+              'schema': 'qikvrt_requested_review_event_payload_fallback_v1',
+              'repository': 'Goldkelch/qik-vrt',
+              'trusted_main_sha_at_observation': '4ad95275d30dbefffba6691fae1ebf6901267296',
+              'trusted_main_tree_at_observation': 'b1e34c7fc5faa9f2a4559fcf672eac091cb8300a',
+              'observed_pr': 943,
+              'observed_head_sha': 'bce691ab26bf3ca9dc5a07c8f20f1731ef8b81c6',
+              'observed_tree_sha': '66776c8ad101a5079b49b8fff144dfbf643b4ef5',
+              'observed_run_id': 33614846180,
+              'first_blocker': 'PULL_REQUEST_OBSERVATION_UNAVAILABLE',
+              'cause': 'GITHUB_INSTALLATION_RATE_LIMIT_EXCEEDED_DURING_LIVE_PR_GET',
+              'correction': {
+                  'live_get_remains_primary': True,
+                  'fallback_event_classes': [
+                      'pull_request_review',
+                      'pull_request_target',
+                  ],
+                  'required_exact_bindings': [
+                      'base_ref_main',
+                      'expected_head_sha',
+                      'open_state',
+                      'pr_number',
+                      'role_local_repository',
+                  ],
+                  'fallback_is_read_only': True,
+                  'fallback_on_live_get_success': False,
+              },
+              'boundaries': {
+                  'approval': False,
+                  'merge': False,
+                  'publication': False,
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+              },
+          }
+          Path('state/work_units/QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json').write_text(
+              json.dumps(record, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+          rm .github/workflows/qikvrt_requested_review_event_payload_fallback_bootstrap.yml
+          git diff --check
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_requested_review_executor \
+            tests.test_qikvrt_requested_review_pending_queue \
+            tests.test_qikvrt_requested_review_event_payload_fallback
+
+      - name: Materialize exact repair commit without moving a ref
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.QIKVRT_MESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'QIKVRT_MESH_TOKEN_UNAVAILABLE'
+            exit 1
+          }
+          python3 -B - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          base = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+
+          def gh(method, path, payload):
+              completed = subprocess.run(
+                  ['gh', 'api', '--method', method, path, '--input', '-'],
+                  input=json.dumps(payload, separators=(',', ':')),
+                  text=True,
+                  capture_output=True,
+                  check=False,
+              )
+              if completed.returncode:
+                  raise SystemExit(
+                      f'GitHub API {method} {path} failed: '
+                      f'{completed.stderr.strip()[:500]}'
+                  )
+              return json.loads(completed.stdout)
+
+          def blob(path):
+              payload = Path(path).read_bytes()
+              return gh('POST', f'repos/{repo}/git/blobs', {
+                  'content': base64.b64encode(payload).decode('ascii'),
+                  'encoding': 'base64',
+              })['sha']
+
+          paths = (
+              '.github/workflows/qikvrt_requested_review_executor.yml',
+              'tools/qikvrt_requested_review_executor.py',
+              'tests/test_qikvrt_requested_review_event_payload_fallback.py',
+              'state/work_units/QIKVRT_REQUESTED_REVIEW_EVENT_PAYLOAD_FALLBACK_V1.json',
+          )
+          entries = [
+              {'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob(path)}
+              for path in paths
+          ]
+          entries.append({
+              'path': '.github/workflows/qikvrt_requested_review_event_payload_fallback_bootstrap.yml',
+              'mode': '100644',
+              'type': 'blob',
+              'sha': None,
+          })
+          tree = gh('POST', f'repos/{repo}/git/trees', {
+              'base_tree': base_tree,
+              'tree': entries,
+          })['sha']
+          created = gh('POST', f'repos/{repo}/git/commits', {
+              'message': 'fix(review): use exact native event payload on live-read exhaustion',
+              'tree': tree,
+              'parents': [base],
+          })
+          if created.get('tree', {}).get('sha') != tree:
+              raise SystemExit('EVENT_PAYLOAD_REPAIR_TREE_READBACK_MISMATCH')
+          print(json.dumps({
+              'schema': 'qikvrt_requested_review_event_payload_git_object_v1',
+              'base_commit': base,
+              'base_tree': base_tree,
+              'repair_commit': created['sha'],
+              'repair_tree': tree,
+              'ref_updated': False,
+              'completion_claims': {
+                  'PASS': False,
+                  'FINAL_PASS': False,
+                  'EFFECT_ACK_DONE': False,
+                  'MERGE': False,
+              },
+          }, sort_keys=True))
+          print(f"QIKVRT_REPAIR_COMMIT={created['sha']}")
+          print(f"QIKVRT_REPAIR_TREE={tree}")
+          PY
