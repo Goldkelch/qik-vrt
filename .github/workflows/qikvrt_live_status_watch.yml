@@ -2,26 +2,26 @@ name: QIKVRT live status watch
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/qikvrt_live_status_watch.yml"
-      - ".github/workflows/qikvrt_workflow_executor.yml"
-      - ".github/workflows/qikvrt_workflow_executor_watchdog.yml"
-      - "state/autonomy/WORKFLOW_EXECUTOR_MESH_CONTRACT_V1.json"
-      - "state/autonomy/AUTONOMOUS_SELF_HEALING_CONTRACT_V1.json"
-      - "tools/qikvrt_workflow_executor.py"
-      - "tools/qikvrt_seed_common.py"
-      - "tests/test_qikvrt_workflow_executor_mesh_contract.py"
-      - "tests/test_seed_workflows.py"
-      - "acceptance/WORKFLOW_EXECUTOR_MESH_NODE_CONTINUITY_ACCEPTANCE_TEST.md"
-      - "registry/NODE_DISCOVERY_POLICY.json"
-      - "AI"
-      - "Makefile"
+    types: [opened, reopened, synchronize, ready_for_review, review_requested, review_request_removed]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
   issue_comment:
-    types: [created]
+    types: [created, edited]
+  workflow_run:
+    workflows:
+      - "QIKVRT CI"
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT Collective Proposal Review"
+      - "QIKVRT requested review executor"
+      - "QIKVRT required code-owner review"
+      - "QIKVRT reciprocal Mesh review"
+      - "QIKVRT universal terminal materialization"
+      - "QIKVRT reflexive repository watchdog"
+    types: [requested, in_progress, completed]
   workflow_dispatch:
     inputs:
       pr:
-        description: "Pull request number to observe"
+        description: "Pull request number to project"
         required: true
         type: string
 
@@ -29,129 +29,121 @@ permissions:
   actions: read
   contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
-  group: qikvrt-live-status-${{ github.repository }}-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: true
+  group: qikvrt-live-terminal-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
-  watch:
-    if: >-
-      github.event_name == 'pull_request' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/qikvrt-status-watch'))
+  project:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
-      - name: Observe repository workflow, job, and step transitions serially
+      - name: Project one causal event into the persistent terminal surface
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          EVENT_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number || github.event.issue.number }}
-          WATCH_WORKFLOW: QIKVRT live status watch
-          MARKER: '<!-- qikvrt-live-status-watch -->'
-          MAX_CYCLES: "12"
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR: ${{ inputs.pr }}
+          MARKER: '<!-- qikvrt-universal-terminal-live-surface-v1 -->'
+        shell: bash
         run: |
           set -euo pipefail
-          pr="$EVENT_PR"
+
+          event="$GITHUB_EVENT_PATH"
+          pr=''
+          verb='OBSERVE'
+          subject=''
+          detail=''
+          source_id="$GITHUB_RUN_ID"
+
+          case "$EVENT_NAME" in
+            pull_request)
+              pr="$(jq -r '.pull_request.number' "$event")"
+              head="$(jq -r '.pull_request.head.sha' "$event")"
+              action="$(jq -r '.action' "$event")"
+              subject="PR #$pr @ $head"
+              detail="pull_request:$action"
+              ;;
+            pull_request_review)
+              pr="$(jq -r '.pull_request.number' "$event")"
+              head="$(jq -r '.pull_request.head.sha' "$event")"
+              state="$(jq -r '.review.state' "$event")"
+              actor="$(jq -r '.review.user.login' "$event")"
+              subject="PR #$pr @ $head"
+              verb='READBACK'
+              detail="review:$state by $actor"
+              ;;
+            issue_comment)
+              if [ "$(jq -r '.issue.pull_request != null' "$event")" != true ]; then exit 0; fi
+              pr="$(jq -r '.issue.number' "$event")"
+              body="$(jq -r '.comment.body' "$event")"
+              if [[ "$body" == *"$MARKER"* ]]; then exit 0; fi
+              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
+              subject="PR #$pr @ $head"
+              detail="issue_comment by $(jq -r '.comment.user.login' "$event")"
+              ;;
+            workflow_run)
+              pr="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$event")"
+              if [ -z "$pr" ]; then exit 0; fi
+              head="$(jq -r '.workflow_run.head_sha' "$event")"
+              name="$(jq -r '.workflow_run.name' "$event")"
+              state="$(jq -r '.workflow_run.conclusion // .workflow_run.status' "$event")"
+              run_url="$(jq -r '.workflow_run.html_url' "$event")"
+              source_id="$(jq -r '.workflow_run.id' "$event")"
+              subject="PR #$pr @ $head"
+              case "$state" in
+                success) verb='EFFECT' ;;
+                failure|cancelled|action_required|timed_out) verb='HOLD' ;;
+                *) verb='OBSERVE' ;;
+              esac
+              detail="$name → $state ($run_url)"
+              ;;
+            workflow_dispatch)
+              pr="$DISPATCH_PR"
+              head="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.sha')"
+              subject="PR #$pr @ $head"
+              detail='manual surface bind'
+              ;;
+            *) exit 0 ;;
+          esac
+
           test -n "$pr"
-          branch="$(gh api "repos/$REPOSITORY/pulls/$pr" --jq '.head.ref')"
+          now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          event_id="${EVENT_NAME}:${source_id}:${GITHUB_RUN_ATTEMPT}"
+          line="- \`$now\` **$verb** · \`$subject\` · $detail · event \`$event_id\`"
 
-          update_status() {
-            body="$1"
-            comment_id="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100" |
-              jq -r --arg marker "$MARKER" \
-                '.[] | select(.body | contains($marker)) | .id' |
-              tail -n 1)"
-            if [ -n "$comment_id" ]; then
-              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$MARKER
+          comments="$(gh api "repos/$REPOSITORY/issues/$pr/comments?per_page=100")"
+          comment_id="$(printf '%s' "$comments" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | tail -n 1)"
 
-          $body" >/dev/null
-            else
-              gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$MARKER
+          if [ -n "$comment_id" ]; then
+            old="$(printf '%s' "$comments" | jq -r --argjson id "$comment_id" '.[] | select(.id == $id) | .body')"
+            # append-only bounded projection; retain the most recent 120 event lines
+            journal="$(printf '%s\n' "$old" | awk '/^## Live event journal/{f=1;next} f && /^- `/{print}' | tail -n 119)"
+          else
+            journal=''
+          fi
 
-          $body" >/dev/null
-            fi
-          }
+          body="$MARKER
 
-          state_signature=""
-          cycle=0
-          while :; do
-            cycle=$((cycle + 1))
-            runs="$(gh api "repos/$REPOSITORY/actions/runs?branch=$branch&per_page=100")"
-            active="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self and (.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "requested" or .status == "pending"))]')"
-            latest="$(printf '%s' "$runs" | jq --arg self "$WATCH_WORKFLOW" '[.workflow_runs[] | select(.name != $self)][0:20]')"
-            active_count="$(printf '%s' "$active" | jq 'length')"
+          ## QIKVRT Universal Terminal — live mirror surface
 
-            workflow_lines="$(printf '%s' "$latest" | jq -r 'if length == 0 then "| none | PENDING | - | - |" else .[] | "| " + .name + " | " + (.conclusion // .status) + " | [" + (.run_number|tostring) + "](" + .html_url + ") | `" + (.id|tostring) + "` |" end')"
-            step_rows=''
-            total_steps=0
-            completed_steps=0
-            while IFS= read -r run_id; do
-              [ -n "$run_id" ] || continue
-              jobs="$(gh api "repos/$REPOSITORY/actions/runs/$run_id/jobs?per_page=100")"
-              rows="$(printf '%s' "$jobs" | jq -r '.jobs[] as $job | $job.steps[]? | [$job.name, .name, .status, (.conclusion // "")] | @tsv')"
-              while IFS=$'\t' read -r job step status conclusion; do
-                [ -n "$step" ] || continue
-                total_steps=$((total_steps + 1))
-                marker='⟳'
-                effective="$status"
-                if [ "$status" = completed ]; then
-                  completed_steps=$((completed_steps + 1))
-                  effective="$conclusion"
-                  if [ "$conclusion" = success ] || [ "$conclusion" = skipped ]; then marker='✓'; else marker='✗'; fi
-                elif [ "$status" = queued ] || [ "$status" = pending ]; then
-                  marker='□'
-                fi
-                step_rows="$step_rows
-          | $marker | $job | $step | $effective |"
-              done <<< "$rows"
-            done < <(printf '%s' "$latest" | jq -r '.[].id')
+          This comment is an **event-driven projection**. It does not poll. Each eligible repository event performs one bounded update and exits.
 
-            if [ "$total_steps" -eq 0 ]; then
-              percent=0
-              step_rows='| □ | none | awaiting workflow jobs | PENDING |'
-            else
-              percent=$((completed_steps * 100 / total_steps))
-            fi
-            filled=$((percent / 5))
-            empty=$((20 - filled))
-            bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')"
-            now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            signature="$(printf '%s\n%s\n%s\n%s' "$active_count" "$completed_steps" "$total_steps" "$step_rows" | sha256sum | awk '{print $1}')"
+          **Current exact subject:** \`$subject\`
+          **Last event:** \`$event_id\`
+          **Last transition:** **$verb**
+          **Observed at:** \`$now\`
 
-            if [ "$signature" != "$state_signature" ]; then
-              update_status "## QIKVRT bounded repository runtime observation
+          ## Live event journal
+          $journal
+          $line
 
-          **Progress:** \`[$bar] $percent% ($completed_steps/$total_steps observed steps completed)\`
+          _Causality is derived from exact-subject/event receipts; timestamps are display metadata only. TRANSPORT_ACK != EFFECT_ACK._"
 
-          - Repository: \`$REPOSITORY\`
-          - Branch: \`$branch\`
-          - Observation cycle: \`$cycle/$MAX_CYCLES\`
-          - Observed at: \`$now\`
-          - Active external runs: \`$active_count\`
-
-          ### Workflows
-
-          | Workflow | State | Run | Run ID |
-          |---|---|---:|---:|
-          $workflow_lines
-
-          ### Jobs and steps
-
-          | | Job | Step | State |
-          |---|---|---|---|
-          $step_rows
-
-          Observation is opt-in and bounded so the watcher cannot monopolize a runner while the observed jobs wait behind it. A new explicit invocation supersedes any older invocation for the same pull request."
-              state_signature="$signature"
-            fi
-
-            if [ "$active_count" -eq 0 ] || [ "$cycle" -ge "$MAX_CYCLES" ]; then
-              break
-            fi
-            sleep 5
-          done
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body" >/dev/null
+          else
+            gh api --method POST "repos/$REPOSITORY/issues/$pr/comments" -f body="$body" >/dev/null
+          fi
