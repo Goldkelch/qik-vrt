@@ -802,6 +802,48 @@ class RequestedReviewExecutorTests(unittest.TestCase):
         self.assertEqual(probe["conclusion"], "skipped")
         self.assertEqual(probe["jobs"][0]["conclusion"], "skipped")
 
+    def test_live_status_observer_failure_is_metadata_not_candidate_gate(self):
+        snap = self.snapshot()
+        snap["workflow_runs"].append(
+            self.workflow_run(
+                "QIKVRT live status watch",
+                identifier=601,
+                run_number=1,
+                path=".github/workflows/qikvrt_live_status_watch.yml",
+                conclusion="failure",
+            )
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "APPROVE")
+        self.assertIsNone(result["first_blocker"])
+        self.assertIn("NON_GATE_OBSERVER_CLASSIFIED", self.finding_ids(result))
+        observer = next(
+            run
+            for run in result["latest_workflows"]
+            if run["name"] == "QIKVRT live status watch"
+        )
+        self.assertEqual(observer["conclusion"], "failure")
+
+    def test_live_status_observer_name_on_wrong_path_fails_closed(self):
+        snap = self.snapshot()
+        snap["workflow_runs"].append(
+            self.workflow_run(
+                "QIKVRT live status watch",
+                identifier=602,
+                run_number=1,
+                path=".github/workflows/candidate_name_collision.yml",
+                conclusion="failure",
+            )
+        )
+
+        result = self.evaluate(snap)
+
+        self.assertEqual(result["mesh_disposition"], "WAIT")
+        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")
+        self.assertIn("non-gate observer identity is untrusted", result["detail"])
+
     def test_job_id_status_and_conclusion_are_fingerprint_bound(self):
         baseline = self.snapshot()
         gate = next(

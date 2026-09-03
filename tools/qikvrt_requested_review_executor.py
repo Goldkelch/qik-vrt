@@ -32,6 +32,9 @@ REVIEW_DIFF_TRANSPORT_SCHEMA = "qikvrt_mesh_review_diff_transport_v1"
 REVIEW_DIFF_TRANSPORT_DELIVERY = "SEQUENTIAL_EXACT_PACKET_ORDER"
 SUCCESS = {"success"}
 NON_ADVERSE = {"success", "skipped"}
+NON_GATE_OBSERVER_PATHS = {
+    "QIKVRT live status watch": ".github/workflows/qikvrt_live_status_watch.yml",
+}
 LEDGER_REF = "refs/heads/qikvrt/mesh-review-ledger-v1"
 LEDGER_ROOT = "state/mesh/reviews"
 REVIEW_QUEUE_ROOT = "state/mesh/review-queue"
@@ -1961,6 +1964,30 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
         if identity in required_identities:
             continue
         name = identity[3]
+        observer_path = NON_GATE_OBSERVER_PATHS.get(name)
+        if observer_path is not None:
+            if run.get("path") != observer_path:
+                detail = (
+                    f"non-gate observer identity is untrusted: {name}; "
+                    f"path={run.get(chr(39) + 'path' + chr(39))!r}"
+                )
+                return _result(
+                    snapshot,
+                    "WAIT",
+                    "UNTRUSTED_GATE_BINDING",
+                    detail,
+                    findings=findings
+                    + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", detail)],
+                    **common,
+                )
+            detail = (
+                "exact-subject non-gate observer retained as metadata only: "
+                f"{name}={run.get(chr(39) + 'conclusion' + chr(39)) or run.get(chr(39) + 'status' + chr(39))}"
+            )
+            findings.append(
+                _finding("NON_GATE_OBSERVER_CLASSIFIED", "INFO", detail)
+            )
+            continue
         if run.get("status") != "completed":
             detail=f"applicable exact-head gate is not terminal: {name}"
             return _result(snapshot, "WAIT", "APPLICABLE_GATE_NOT_TERMINAL", detail, findings=findings + [_finding("APPLICABLE_GATE_NOT_TERMINAL", "HOLD", detail)], **common)
