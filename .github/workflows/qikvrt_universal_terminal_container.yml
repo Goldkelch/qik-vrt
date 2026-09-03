@@ -7,6 +7,7 @@ on:
       - "browser/firefox/qikvrt-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+      - "tests/test_qikvrt_universal_terminal_network_boundary.py"
       - ".github/workflows/qikvrt_universal_terminal_container.yml"
   workflow_dispatch:
 
@@ -29,13 +30,16 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
-      - name: Validate durable compose contract
+      - name: Validate immutable loopback-only compose contract
         run: |
           set -euo pipefail
-          docker compose -f deploy/universal-terminal/compose.yaml config >/tmp/qikvrt-compose.yaml
+          python3 -B -m unittest -v tests.test_qikvrt_universal_terminal_network_boundary
+          QIKVRT_BIND_ADDRESS=0.0.0.0 docker compose -f deploy/universal-terminal/compose.yaml config >/tmp/qikvrt-compose.yaml
           grep -q 'restart: unless-stopped' /tmp/qikvrt-compose.yaml
           grep -q '/var/lib/qikvrt/profile' /tmp/qikvrt-compose.yaml
           grep -q '/var/lib/qikvrt/state' /tmp/qikvrt-compose.yaml
+          grep -Eq '127\.0\.0\.1:.*6080' /tmp/qikvrt-compose.yaml
+          ! grep -Eq '0\.0\.0\.0:.*6080|\[::\]:.*6080' /tmp/qikvrt-compose.yaml
       - name: Build OCI image
         run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${EXACT_SUBJECT_SHA} .
       - name: Start exact durable image
