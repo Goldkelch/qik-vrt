@@ -3,14 +3,37 @@
   "repository": "Goldkelch/qik-vrt",
   "components": {
     "browser": "browser/firefox/qikvrt-terminal",
+    "authenticated_web_adapter": "browser/firefox/qikvrt-terminal/authenticated_delivery.js",
     "effect_ack_http_daemon": "src/qikvrt_effect_ack_http_terminal.py",
     "container": "deploy/universal-terminal/Dockerfile",
-    "compose": "deploy/universal-terminal/compose.yaml"
+    "compose": "deploy/universal-terminal/compose.yaml",
+    "entrypoint": "deploy/universal-terminal/entrypoint.sh",
+    "runtime_health": "deploy/universal-terminal/runtime-health.sh"
+  },
+  "runtime_transport": {
+    "class": "DURABLE_ADDRESSABLE_FIREFOX_TERMINAL",
+    "restart_policy": "UNLESS_STOPPED",
+    "persistent_profile": "/var/lib/qikvrt/profile",
+    "persistent_runtime_state": "/var/lib/qikvrt/state",
+    "session_owner": "FIREFOX_AND_DESTINATION_PLATFORM",
+    "extension_bootstrap": "COPY_ON_FIRST_PROFILE_INITIALIZATION",
+    "human_surface": "NOVNC",
+    "default_start_surface": "https://arxiv.org/",
+    "runtime_state_schema": "qikvrt_universal_terminal_runtime_state_v1",
+    "health_command": "/usr/local/bin/qikvrt-runtime-health"
   },
   "network_boundary": {
     "effect_ack_http_daemon": "LOOPBACK_ONLY_INSIDE_TERMINAL_NAMESPACE",
     "human_view": "NOVNC_LOOPBACK_BY_DEFAULT",
+    "vnc_password_supported": true,
+    "non_loopback_exposure_requires_password_and_explicit_operator_network_policy": true,
     "external_exposure_requires_explicit_operator_network_policy": true
+  },
+  "credential_boundary": {
+    "browser_profile_may_persist_platform_session": true,
+    "repository_must_not_persist_passwords_tokens_otp_totp_or_captcha_values": true,
+    "authenticated_delivery_receipts_exclude_secret_values": true,
+    "profile_volume_is_operator_protected_state": true
   },
   "required_semantics": [
     "DISCOVER_CAPABILITY",
@@ -18,7 +41,9 @@
     "EXACT_BOUND_SINGLE_USE_COMMIT",
     "POST_EFFECT_REOBSERVATION",
     "TRANSPORT_ACK_NOT_EQUAL_EFFECT_ACK",
-    "FAIL_CLOSED_ON_STALE_OR_MISMATCHED_BINDING"
+    "FAIL_CLOSED_ON_STALE_OR_MISMATCHED_BINDING",
+    "PERSIST_AUTHENTICATED_BROWSER_SESSION_ACROSS_RUNTIME_RESTART",
+    "REOBSERVE_RUNTIME_HEALTH_AFTER_RESTART"
   ],
   "portability_claim": {
     "class": "IMPLEMENTATION_PROFILE",
@@ -28,6 +53,8 @@
       "native equivalence on every ISA or operating system",
       "universal network reachability",
       "empirical proof that all information systems implement the profile",
+      "arXiv submission without an authenticated platform session and authoritative readback",
+      "Wikipedia edit without an authenticated platform session and authoritative readback",
       "PASS",
       "FINAL_PASS",
       "EFFECT_ACK_DONE for any external deployment"
@@ -38,6 +65,9 @@
     "effect_ack_health_readback": "REQUIRED",
     "firefox_process_readback": "REQUIRED",
     "browser_visible_terminal_readback": "REQUIRED",
+    "persistent_profile_restart_readback": "REQUIRED",
+    "runtime_state_readback": "REQUIRED",
+    "extension_bootstrap_readback": "REQUIRED",
     "exact_subject_binding": "REQUIRED"
   }
 }
