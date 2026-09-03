@@ -444,6 +444,11 @@ class WorkflowExecutorMeshContractTests(unittest.TestCase):
         self.assertIn("qikvrt-workflow-executor-watchdog-", watchdog)
         self.assertNotIn("/dispatches", watchdog)
         self.assertIn("github.event_name == 'pull_request'", live_watch)
+        self.assertIn("issues: write", live_watch)
+        self.assertIn("pull-requests: write", live_watch)
+        self.assertNotIn("pull-requests: read", live_watch)
+        self.assertIn("repos/$REPOSITORY/issues/$pr/comments", live_watch)
+        self.assertNotIn("pull_request_target:", live_watch)
 
     def test_watchdog_binds_the_literal_pull_request_head(self) -> None:
         watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
