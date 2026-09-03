@@ -1,7 +1,7 @@
 {
   "schema": "qikvrt_effect_ack_http_terminal_v1",
-  "version": "1.0",
-  "status": "PRODUCT_OWNER_AUTHORIZED_CANDIDATE",
+  "version": "1.1",
+  "status": "PRODUCT_OWNER_AUTHORIZED_EXTERNAL_DELIVERY",
   "authority_repository": "Goldkelch/qik-vrt",
   "base_commit": "88dde0ba2394e941f11b8e848fcd4899bbc5d29c",
   "core_specification": "external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml",
@@ -17,10 +17,13 @@
     "video_capture_requires_explicit_user_gesture": true,
     "media_not_transmitted_until_explicit_submit": true,
     "personalization_is_local_by_default": true,
-    "proxy_must_preserve_source_and_hash_bindings": true
+    "proxy_must_preserve_source_and_hash_bindings": true,
+    "external_delivery_must_bind_exact_trusted_main": true,
+    "external_delivery_requires_authoritative_readback": true,
+    "predecessor_effect_receipts_never_transfer": true
   },
   "terminal": {
-    "mode": "INTERACTIVE_TERMINAL",
+    "mode": "INTERACTIVE_AND_AUTHORIZED_DELIVERY_TERMINAL",
     "reference_client": "FIREFOX_WEBEXTENSION_MV3",
     "entrypoint_match": "https://github.com/Goldkelch/qik-vrt/blob/main/AI*",
     "text": true,
@@ -28,16 +31,27 @@
     "video": "EXPLICIT_PREVIEW_SNAPSHOT_AND_SUBMIT",
     "personalization": ["accent", "font_scale", "density", "panel_position"],
     "counterpart": "QIKVRT_REPOSITORY_BACKEND_ADAPTER",
-    "default_external_effect": "NONE"
+    "default_external_effect": "NONE_UNLESS_BOUND_DELIVERY_REQUEST",
+    "delivery_ledger": "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json",
+    "delivery_policy": "policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json",
+    "authorized_output_adapters": [
+      "zenodo",
+      "arxiv",
+      "wikipedia",
+      "ietf",
+      "ieee",
+      "generic_authenticated_web"
+    ]
   },
   "proxy_pattern": {
     "name": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
-    "purpose": "Normalize repository, backend and other client observations into one source-bound terminal frame and gate protected writes through EFFECT_ACK prepare/commit.",
-    "input_adapters": ["github_public_read", "http_backend", "local_qikvrt_api_shim", "mcp_agent", "other_client_snapshot"],
+    "purpose": "Normalize repository, backend and other client observations into one source-bound terminal frame and gate protected writes through EFFECT_ACK prepare/commit. Bound delivery requests may execute authorized external web effects and must persist authoritative readback before completion.",
+    "input_adapters": ["github_public_read", "http_backend", "local_qikvrt_api_shim", "mcp_agent", "other_client_snapshot", "delivery_ledger"],
     "output_schema": "qikvrt_terminal_frame_v1",
     "may_render_non_done": true,
     "may_release_non_done": false,
-    "may_claim_effect_from_http_success_only": false
+    "may_claim_effect_from_http_success_only": false,
+    "may_execute_external_delivery_only_from_bound_request": true
   },
   "http": {
     "request_field": "Effect-Ack-Request",
