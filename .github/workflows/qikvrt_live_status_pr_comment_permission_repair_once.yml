@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT one-shot live-status PR-comment permission repair
+
+on:
+  push:
+    branches:
+      - 'fix/live-status-pr-comment-permission-ff925'
+    paths:
+      - '.github/workflows/qikvrt_live_status_pr_comment_permission_repair_once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-live-status-pr-comment-permission-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_MAIN_HEAD: ff925b5d8278cac3f2a93de28efc2160838964ee
+      TARGET_BRANCH: fix/live-status-pr-comment-permission-ff925
+      WORKFLOW_PATH: .github/workflows/qikvrt_live_status_watch.yml
+      TEST_PATH: tests/test_qikvrt_workflow_executor_mesh_contract.py
+      SELF_PATH: .github/workflows/qikvrt_live_status_pr_comment_permission_repair_once.yml
+    steps:
+      - name: Check out exact repair carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind direct current-main successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_MAIN_HEAD"
+          test -z "$(git status --porcelain)"
+
+      - name: Repair exact permission and freeze regression assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/qikvrt_live_status_watch.yml')
+          test_path = Path('tests/test_qikvrt_workflow_executor_mesh_contract.py')
+
+          workflow = workflow_path.read_text(encoding='utf-8')
+          old_permission = '  pull-requests: read\n'
+          new_permission = '  pull-requests: write\n'
+          if workflow.count(old_permission) != 1:
+              raise SystemExit('LIVE_STATUS_PULL_REQUEST_PERMISSION_SOURCE_MISMATCH')
+          if new_permission in workflow:
+              raise SystemExit('LIVE_STATUS_PULL_REQUEST_WRITE_ALREADY_PRESENT')
+          workflow = workflow.replace(old_permission, new_permission, 1)
+          workflow_path.write_text(workflow, encoding='utf-8')
+
+          tests = test_path.read_text(encoding='utf-8')
+          anchor = '        self.assertIn("github.event_name == \'pull_request\'", live_watch)\n'
+          replacement = (
+              anchor
+              + '        self.assertIn("issues: write", live_watch)\n'
+              + '        self.assertIn("pull-requests: write", live_watch)\n'
+              + '        self.assertNotIn("pull-requests: read", live_watch)\n'
+              + '        self.assertIn("repos/$REPOSITORY/issues/$pr/comments", live_watch)\n'
+              + '        self.assertNotIn("pull_request_target:", live_watch)\n'
+          )
+          if tests.count(anchor) != 1:
+              raise SystemExit('LIVE_STATUS_REGRESSION_TEST_ANCHOR_MISMATCH')
+          tests = tests.replace(anchor, replacement, 1)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+          grep -F 'pull-requests: write' "$WORKFLOW_PATH"
+          ! grep -F 'pull-requests: read' "$WORKFLOW_PATH"
+
+      - name: Run focused workflow contract regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_workflow_executor_mesh_contract
+
+      - name: Regenerate and verify repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist exact repair and remove one-shot carrier
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git rm "$SELF_PATH"
+          git add -A
+          git diff --cached --check
+          git config user.name 'qik-vrt-live-status-repair[bot]'
+          git config user.email 'qik-vrt-live-status-repair[bot]@users.noreply.github.com'
+          git commit -m 'fix(review): grant live status PR-comment capability'
+          remote_head="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
