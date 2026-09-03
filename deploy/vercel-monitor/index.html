@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>QIK-VRT Goldkelch Monitor</title>
+<style>
+:root{color-scheme:dark;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#090d12;color:#d7e3ef}body{margin:0;padding:24px}.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.pill{padding:6px 10px;border:1px solid #39536b;border-radius:999px}.ok{color:#74e39a}.hold{color:#ffd166}.bad{color:#ff6b6b}.muted{color:#8fa6ba}.panel{margin-top:16px;padding:16px;border:1px solid #263a4d;border-radius:12px;background:#0e151d}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid #1d2a36}code{word-break:break-all}button{background:#152434;color:#d7e3ef;border:1px solid #39536b;border-radius:8px;padding:8px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="top"><h1>QIK-VRT Goldkelch Universal Terminal Monitor</h1><span class="pill">MONITOR ONLY</span><button id="refresh">Read exact state</button></div>
+<div class="panel"><div>Authority: <strong>Goldkelch/qik-vrt</strong></div><div>Subject: PR #966</div><div>Exact head: <code id="head">—</code></div><div>Base: <code id="base">—</code></div><div>Observed: <span id="time">—</span></div><div id="state" class="muted">Waiting for exact readback.</div></div>
+<div class="panel"><h2>Exact-head workflows</h2><table><thead><tr><th>Workflow</th><th>Status</th><th>Conclusion</th><th>Updated</th></tr></thead><tbody id="runs"></tbody></table></div>
+<div class="panel"><strong>Mesh rule</strong><p>Any non-Goldkelch node may use this page only as a change indicator. A detected change is not an Effect Acknowledgement. The node must ask Goldkelch for the exact change, reobserve the exact authority subject and receipt, integrate only that bound evidence locally, and emit its own receipt or HOLD.</p></div>
+<script>
+async function load(){
+ const state=document.getElementById('state'); state.textContent='Reading Goldkelch exact state…'; state.className='muted';
+ try{
+  const r=await fetch('/api/state',{cache:'no-store'}); const v=await r.json();
+  if(!r.ok) throw new Error(v.reason||'readback failed');
+  document.getElementById('head').textContent=v.subject.head_sha||'UNBOUND';
+  document.getElementById('base').textContent=v.subject.base_sha||'UNBOUND';
+  document.getElementById('time').textContent=v.observed_at;
+  const body=document.getElementById('runs'); body.innerHTML='';
+  for(const x of v.workflows){const tr=document.createElement('tr');tr.innerHTML=`<td>${x.name}</td><td>${x.status}</td><td>${x.conclusion??'—'}</td><td>${x.updated_at}</td>`;body.appendChild(tr)}
+  state.textContent='Exact authority projection read successfully. No write or terminal capability is exposed here.'; state.className='ok';
+ }catch(e){state.textContent='HOLD_UNVERIFIED: '+e.message;state.className='hold'}
+}
+document.getElementById('refresh').onclick=load; load();
+</script>
+</body>
+</html>
