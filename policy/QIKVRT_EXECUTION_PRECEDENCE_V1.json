@@ -1,0 +1,112 @@
+{
+  "schema": "qikvrt_execution_precedence_v1",
+  "version": "1.0",
+  "authority": {
+    "product_owner": "Ingolf Lohmann",
+    "repository": "Goldkelch/qik-vrt",
+    "directive": "Abarbeitung erfolgt nur entlang expliziter Kausal- und Evidenzvoraussetzungen. Unbestimmte Reihenfolge ist HOLD_UNVERIFIED und darf nicht durch Heuristik ersetzt werden."
+  },
+  "semantics": {
+    "relation_type": "strict_partial_order",
+    "why_not_total_order": "Independent successor edges may execute concurrently only after their common barrier is satisfied.",
+    "edge_meaning": "A -> B means B is inadmissible until A is exact-bound and satisfied on the same current subject required by B.",
+    "unspecified_relation": "HOLD_UNVERIFIED",
+    "predecessor_evidence_transfer": false,
+    "subject_mutation_invalidates_downstream_binding": true
+  },
+  "canonical_spine": [
+    "P0_MANIFEST_LATEST_KNOWLEDGE",
+    "P1_BUILD_ONE_INTEGRATION_HEAD",
+    "P2_VALIDATE_EXACT_INTEGRATION_HEAD",
+    "P3_REVIEW_EXACT_INTEGRATION_HEAD",
+    "P4_REOBSERVE_POST_REVIEW_EXACT_HEAD",
+    "P5_LEGITIMATE_PROMOTION_TO_TRUSTED_MAIN",
+    "P6_REOBSERVE_EXACT_TRUSTED_MAIN_HEAD",
+    "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"
+  ],
+  "phases": {
+    "P0_MANIFEST_LATEST_KNOWLEDGE": {
+      "requires": [],
+      "satisfied_when": "All currently accepted scientific/formal integration material is persisted on the candidate carrier before validation or publication continuation."
+    },
+    "P1_BUILD_ONE_INTEGRATION_HEAD": {
+      "requires": ["P0_MANIFEST_LATEST_KNOWLEDGE"],
+      "satisfied_when": "Exactly one candidate head contains the intended #964 proof-status material, corrected #962 scientific/publication material, #965 delivery contracts, and the current evidence-spiral/fixed-point integration."
+    },
+    "P2_VALIDATE_EXACT_INTEGRATION_HEAD": {
+      "requires": ["P1_BUILD_ONE_INTEGRATION_HEAD"],
+      "satisfied_when": "Candidate-local deterministic validation is fresh on the exact current head; stale/predecessor validation is inadmissible."
+    },
+    "P3_REVIEW_EXACT_INTEGRATION_HEAD": {
+      "requires": ["P2_VALIDATE_EXACT_INTEGRATION_HEAD"],
+      "satisfied_when": "Required review is submitted against the exact validated head. Review on a predecessor head is inadmissible."
+    },
+    "P4_REOBSERVE_POST_REVIEW_EXACT_HEAD": {
+      "requires": ["P3_REVIEW_EXACT_INTEGRATION_HEAD"],
+      "satisfied_when": "The same exact reviewed head is freshly reobserved after review, with no intervening mutation."
+    },
+    "P5_LEGITIMATE_PROMOTION_TO_TRUSTED_MAIN": {
+      "requires": ["P4_REOBSERVE_POST_REVIEW_EXACT_HEAD"],
+      "satisfied_when": "Promotion/merge occurs legitimately from that exact reviewed and reobserved head; merge alone is not delivery."
+    },
+    "P6_REOBSERVE_EXACT_TRUSTED_MAIN_HEAD": {
+      "requires": ["P5_LEGITIMATE_PROMOTION_TO_TRUSTED_MAIN"],
+      "satisfied_when": "The resulting exact Trusted Main SHA is freshly observed and bound."
+    },
+    "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS": {
+      "requires": ["P6_REOBSERVE_EXACT_TRUSTED_MAIN_HEAD"],
+      "satisfied_when": "All applicable external requests are regenerated or verified as bound to the exact reobserved Trusted Main SHA."
+    }
+  },
+  "external_fanout": {
+    "barrier": "P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS",
+    "edges": {
+      "E1_WIKIPEDIA": {
+        "requires": ["P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"],
+        "steps": ["EXECUTE_TRANSPARENT_REQUEST", "AUTHORITATIVE_READBACK"]
+      },
+      "E2_ZENODO": {
+        "requires": ["P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"],
+        "steps": ["PUBLISH_BOUND_FILESET", "READBACK_PUBLIC_RECORD_DOI_FILE_HASHES"]
+      },
+      "E3_ARXIV": {
+        "requires": ["P7_DERIVE_BOUND_EXTERNAL_OBLIGATIONS"],
+        "steps": ["AUTHENTICATED_SUBMIT", "READBACK_SUBMISSION_ID_STATUS", "LATER_READBACK_PUBLIC_ID_VERSION"]
+      }
+    },
+    "cross_edge_order": "NONE_AFTER_COMMON_BARRIER",
+    "meaning": "Wikipedia, Zenodo and arXiv are independent branches after exact Trusted Main reobservation; no artificial order is inferred between them."
+  },
+  "scheduler_rule": {
+    "eligible": "A node is eligible iff every direct predecessor is SATISFIED on the exact subject binding required by that node.",
+    "selection": "Execute all eligible independent nodes; never execute a node with an UNSATISFIED, FAILED, STALE, UNKNOWN or UNBOUND predecessor.",
+    "unknown_precedence": "HOLD_UNVERIFIED",
+    "new_knowledge_event": "If newly accepted knowledge changes material intended for any not-yet-promoted integration head, return to P0 and invalidate P1-P7 evidence for the superseded head.",
+    "post_promotion_new_knowledge": "After promotion, new knowledge starts a successor spiral stage; it does not rewrite predecessor evidence and does not transfer predecessor validation to the successor."
+  },
+  "forbidden_shortcuts": [
+    "VALIDATE_BEFORE_LATEST_KNOWLEDGE_IS_MATERIALIZED",
+    "REVIEW_BEFORE_EXACT_HEAD_VALIDATION",
+    "PROMOTE_BEFORE_POST_REVIEW_REOBSERVATION",
+    "DELIVER_BEFORE_EXACT_TRUSTED_MAIN_REOBSERVATION",
+    "INFER_ORDER_FROM_FILE_LIST_ORDER",
+    "INFER_ORDER_FROM_TIMESTAMP_ONLY",
+    "INFER_ORDER_FROM_PR_NUMBER_ONLY",
+    "TRANSFER_PREDECESSOR_EVIDENCE",
+    "TREAT_UNSPECIFIED_RELATION_AS_PARALLEL_OR_COMPLETE"
+  ],
+  "current_publication_binding": {
+    "integration_pr": 966,
+    "predecessor_material": [964, 962, 965],
+    "external_obligations": [
+      "LEAN_LAKE_PROOF_STATUS_TO_WIKIPEDIA_V1",
+      "PLANCK_TICK_GAP_LAW_TO_ZENODO_V1",
+      "PLANCK_TICK_GAP_LAW_TO_ARXIV_V1"
+    ]
+  },
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
