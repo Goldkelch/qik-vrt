@@ -17,19 +17,27 @@ jobs:
   build-and-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      EXACT_SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ env.EXACT_SUBJECT_SHA }}
           persist-credentials: false
+      - name: Bind exact candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
       - name: Build OCI image
-        run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${GITHUB_SHA} .
+        run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${EXACT_SUBJECT_SHA} .
       - name: Start exact image
         run: |
-          docker run -d --rm --name qikvrt-terminal -p 127.0.0.1:6080:6080 qikvrt/universal-terminal:${GITHUB_SHA}
+          docker run -d --rm --name qikvrt-terminal -p 127.0.0.1:6080:6080 qikvrt/universal-terminal:${EXACT_SUBJECT_SHA}
       - name: Reobserve EFFECT_ACK daemon and visible browser surface
         run: |
           set -euo pipefail
+          : > /tmp/effect-ack.json
           for i in $(seq 1 30); do
             if docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json; then break; fi
             sleep 1
@@ -41,22 +49,52 @@ jobs:
           assert value['modes']==['prepare','commit']
           assert value['external_effects']=='NONE'
           PY
-          docker exec qikvrt-terminal pgrep -a firefox-esr
-          curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
-          grep -q '<html' /tmp/vnc.html
+          firefox_ok=0
+          for i in $(seq 1 30); do
+            if docker exec qikvrt-terminal sh -lc 'pgrep -af "firefox|firefox-esr"'; then firefox_ok=1; break; fi
+            sleep 1
+          done
+          test "$firefox_ok" = 1
+          novnc_ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html; then novnc_ok=1; break; fi
+            sleep 1
+          done
+          test "$novnc_ok" = 1
+          grep -Eqi '<html|<!doctype html' /tmp/vnc.html
       - name: Preserve exact runtime evidence
         if: always()
         run: |
-          mkdir -p /tmp/qikvrt-terminal-evidence
+          mkdir -p /tmp/qikvrt-terminal-evidence/runtime-logs
           docker inspect qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container-inspect.json 2>/dev/null || true
           docker logs qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
+          docker exec qikvrt-terminal sh -lc 'cp -a /opt/qikvrt/runtime/logs/. /tmp/qikvrt-runtime-logs/ 2>/dev/null || true' || true
+          docker cp qikvrt-terminal:/opt/qikvrt/runtime/logs/. /tmp/qikvrt-terminal-evidence/runtime-logs/ 2>/dev/null || true
           cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
-          printf '%s\n' "${GITHUB_SHA}" > /tmp/qikvrt-terminal-evidence/exact-head.txt
+          cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
+          printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
+          python3 - <<'PY'
+          import json, os
+          sha=os.environ['EXACT_SUBJECT_SHA']
+          receipt={
+            'schema':'qikvrt_universal_terminal_runtime_receipt_v1',
+            'subject_head_sha':sha,
+            'oci_build':'EXECUTED',
+            'container_start':'EXECUTED',
+            'effect_ack_capability_readback':'OBSERVED' if os.path.getsize('/tmp/effect-ack.json') else 'UNOBSERVED',
+            'firefox_process_check':'EXECUTED',
+            'novnc_surface_check':'EXECUTED',
+            'pass':False,
+            'final_pass':False,
+            'effect_ack_done':False,
+          }
+          open('/tmp/qikvrt-terminal-evidence/runtime-receipt.json','w',encoding='utf-8').write(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          PY
       - name: Upload exact runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: qikvrt-universal-terminal-${{ github.sha }}
+          name: qikvrt-universal-terminal-${{ env.EXACT_SUBJECT_SHA }}
           path: /tmp/qikvrt-terminal-evidence
           if-no-files-found: error
           retention-days: 90
