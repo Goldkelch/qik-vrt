@@ -24,10 +24,12 @@
   },
   "network_boundary": {
     "effect_ack_http_daemon": "LOOPBACK_ONLY_INSIDE_TERMINAL_NAMESPACE",
-    "human_view": "NOVNC_LOOPBACK_BY_DEFAULT",
+    "human_view": "NOVNC_LOOPBACK_ONLY",
+    "host_bind_address": "127.0.0.1",
+    "host_bind_address_configurable": false,
     "vnc_password_supported": true,
-    "non_loopback_exposure_requires_password_and_explicit_operator_network_policy": true,
-    "external_exposure_requires_explicit_operator_network_policy": true
+    "non_loopback_exposure_permitted": false,
+    "external_exposure_permitted": false
   },
   "credential_boundary": {
     "browser_profile_may_persist_platform_session": true,
@@ -43,7 +45,9 @@
     "TRANSPORT_ACK_NOT_EQUAL_EFFECT_ACK",
     "FAIL_CLOSED_ON_STALE_OR_MISMATCHED_BINDING",
     "PERSIST_AUTHENTICATED_BROWSER_SESSION_ACROSS_RUNTIME_RESTART",
-    "REOBSERVE_RUNTIME_HEALTH_AFTER_RESTART"
+    "REOBSERVE_RUNTIME_HEALTH_AFTER_RESTART",
+    "HOST_NOVNC_BIND_MUST_REMAIN_IPV4_LOOPBACK_ONLY",
+    "NON_LOOPBACK_NOVNC_EXPOSURE_FORBIDDEN"
   ],
   "portability_claim": {
     "class": "IMPLEMENTATION_PROFILE",
@@ -68,6 +72,7 @@
     "persistent_profile_restart_readback": "REQUIRED",
     "runtime_state_readback": "REQUIRED",
     "extension_bootstrap_readback": "REQUIRED",
-    "exact_subject_binding": "REQUIRED"
+    "exact_subject_binding": "REQUIRED",
+    "loopback_only_host_bind_regression": "REQUIRED"
   }
 }
