@@ -37,6 +37,12 @@ concurrency:
 
 jobs:
   project:
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'pull_request_review' ||
+      github.event_name == 'issue_comment' ||
+      github.event_name == 'workflow_run' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
