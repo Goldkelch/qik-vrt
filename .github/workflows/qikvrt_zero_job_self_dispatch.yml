@@ -47,6 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_PRS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,18 +58,33 @@ jobs:
             exit 0
           fi
 
-          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:" --paginate 2>/dev/null || true)"
-          pr="$(jq -r --arg head "$HEAD_SHA" '[.[] | select(.head.sha == $head and .head.repo.full_name == env.GITHUB_REPOSITORY)][0].number // empty' <<<"$pr_json")"
-          if [ -z "$pr" ]; then
-            echo "NOOP: exact head is no longer an open internal PR subject"
-            exit 0
+          # Bind the causal subject from the workflow_run event itself. Do not
+          # rediscover the repository-wide PR set: that was both ambiguous and
+          # previously malformed by an empty head-ref filter.
+          pr_count="$(jq 'length' <<<"$EVENT_PRS")"
+          if [ "$pr_count" -ne 1 ]; then
+            echo "HOLD_UNVERIFIED: expected exactly one event-bound PR subject, observed ${pr_count}" >&2
+            exit 2
           fi
+          pr="$(jq -r '.[0].number' <<<"$EVENT_PRS")"
+          event_head="$(jq -r '.[0].head.sha // empty' <<<"$EVENT_PRS")"
+          test -n "$pr"
+          test "$event_head" = "$HEAD_SHA" || {
+            echo "HOLD_UNVERIFIED: workflow_run PR binding does not match exact run head" >&2
+            exit 2
+          }
 
           live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
+          live_state="$(jq -r '.state' <<<"$live")"
+          live_repo="$(jq -r '.head.repo.full_name // empty' <<<"$live")"
           live_head="$(jq -r '.head.sha' <<<"$live")"
           head_ref="$(jq -r '.head.ref' <<<"$live")"
+          base_ref="$(jq -r '.base.ref' <<<"$live")"
           base_sha="$(jq -r '.base.sha' <<<"$live")"
-          test "$live_head" = "$HEAD_SHA"
+          test "$live_state" = open || { echo "NOOP: event-bound PR is no longer open"; exit 0; }
+          test "$live_repo" = "$GITHUB_REPOSITORY" || { echo "HOLD_UNVERIFIED: cross-repository subject" >&2; exit 2; }
+          test "$base_ref" = main || { echo "HOLD_UNVERIFIED: non-main target" >&2; exit 2; }
+          test "$live_head" = "$HEAD_SHA" || { echo "HOLD_UNVERIFIED: PR head drifted" >&2; exit 2; }
 
           # Deduplicate by exact-head status. pending means another trusted
           # invocation already exposed this REOBSERVE edge.
@@ -84,8 +100,6 @@ jobs:
             -f description='Repository-native zero-job D0=2 REOBSERVE dispatched' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          # Contents:write is the documented authority used by this repository
-          # for repository_dispatch. The payload binds the exact live subject.
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg pr "$pr" \
