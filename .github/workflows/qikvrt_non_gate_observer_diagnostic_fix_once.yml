@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT one-shot non-gate observer diagnostic correction
+
+on:
+  push:
+    branches:
+      - 'fix/live-status-pr-comment-permission-ff925'
+    paths:
+      - '.github/workflows/qikvrt_non_gate_observer_diagnostic_fix_once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-non-gate-observer-diagnostic-correction
+  cancel-in-progress: false
+
+jobs:
+  correct:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_PARENT: 98df18198f485b1bffa4661653aafed5e8e15f5d
+      TARGET_BRANCH: fix/live-status-pr-comment-permission-ff925
+      CORE_PATH: tools/qikvrt_requested_review_executor.py
+    steps:
+      - name: Check out exact materialized classifier head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind exact successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -z "$(git status --porcelain)"
+
+      - name: Correct two diagnostic dictionary-key accesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
+          from pathlib import Path
+
+          path = Path('tools/qikvrt_requested_review_executor.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              "run.get(chr(39) + 'path' + chr(39))": "run.get('path')",
+              "run.get(chr(39) + 'conclusion' + chr(39)) or run.get(chr(39) + 'status' + chr(39))": "run.get('conclusion') or run.get('status')",
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'DIAGNOSTIC_SOURCE_MISMATCH:{old}')
+              text = text.replace(old, new, 1)
+          if 'run.get(chr(39)' in text:
+              raise SystemExit('DYNAMIC_QUOTE_WORKAROUND_REMAINS')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Run exact review-core regressions and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_requested_review_executor
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m py_compile \
+            tools/qikvrt_requested_review_executor.py \
+            tests/test_qikvrt_requested_review_executor.py
+
+      - name: Regenerate and verify repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist only non-workflow correction bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add "$CORE_PATH" LICENSE_CLASSIFICATION.json REPOSITORY_FILE_MANIFEST.json REPOSITORY_FILE_MANIFEST.json.sha256
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if git diff --cached --name-only | grep -q '^\.github/workflows/'; then
+            echo 'WORKFLOW_PATH_UNEXPECTEDLY_STAGED' >&2
+            exit 1
+          fi
+          git config user.name 'qik-vrt-review-diagnostic-correction[bot]'
+          git config user.email 'qik-vrt-review-diagnostic-correction[bot]@users.noreply.github.com'
+          git commit -m 'fix(review): correct non-gate observer diagnostics'
+          remote_head="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
