@@ -1,0 +1,56 @@
+name: QIKVRT Siemens executable reference integration
+
+on:
+  pull_request:
+    paths:
+      - "src/qikvrt_siemens_reference_integration.py"
+      - "deploy/siemens-horizon/**"
+      - "tests/test_qikvrt_siemens_reference_integration.py"
+      - ".github/workflows/qikvrt_siemens_reference_integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind exact repository subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || {
+            echo "HOLD_UNVERIFIED: checkout/head mismatch" >&2
+            exit 2
+          }
+      - name: Run focused contract tests
+        run: python3 -B -m unittest -v tests.test_qikvrt_siemens_reference_integration
+      - name: Execute reference AD/DA roundtrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .qikvrt/siemens-reference
+          python3 -B src/qikvrt_siemens_reference_integration.py \
+            --input deploy/siemens-horizon/reference-twin-state.json \
+            --target-velocity 12.5 \
+            --journal .qikvrt/siemens-reference/receipts.jsonl \
+            | tee .qikvrt/siemens-reference/latest.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('.qikvrt/siemens-reference/latest.json').read_text())
+          assert r['receipt']['effect_ack'] is True
+          assert r['receipt']['physical_effect_ack'] is False
+          assert r['boundary'] == 'REFERENCE_SIMULATION_NOT_SIEMENS_TENANT_OR_PHYSICAL_ACTUATION'
+          print('REFERENCE_EFFECT_ACK=verified')
+          print('PHYSICAL_EFFECT_ACK=false')
+          PY
+      - name: Preserve exact-head receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: qikvrt-siemens-reference-${{ github.sha }}
+          path: .qikvrt/siemens-reference/
+          if-no-files-found: error
