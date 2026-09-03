@@ -1,0 +1,65 @@
+name: QIKVRT universal terminal container
+
+on:
+  pull_request:
+    paths:
+      - "deploy/universal-terminal/**"
+      - "browser/firefox/qikvrt-terminal/**"
+      - "src/qikvrt_effect_ack_http_terminal.py"
+      - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+      - ".github/workflows/qikvrt_universal_terminal_container.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build OCI image
+        run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${GITHUB_SHA} .
+      - name: Start exact image
+        run: |
+          docker run -d --rm --name qikvrt-terminal -p 127.0.0.1:6080:6080 qikvrt/universal-terminal:${GITHUB_SHA}
+      - name: Reobserve EFFECT_ACK daemon and visible browser surface
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if docker exec qikvrt-terminal curl -fsS http://127.0.0.1:8771/.well-known/effect-ack > /tmp/effect-ack.json; then break; fi
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json
+          value=json.load(open('/tmp/effect-ack.json',encoding='utf-8'))
+          assert value['schema']=='qikvrt_effect_ack_http_capability_v1'
+          assert value['modes']==['prepare','commit']
+          assert value['external_effects']=='NONE'
+          PY
+          docker exec qikvrt-terminal pgrep -a firefox-esr
+          curl -fsS http://127.0.0.1:6080/vnc.html >/tmp/vnc.html
+          grep -q '<html' /tmp/vnc.html
+      - name: Preserve exact runtime evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/qikvrt-terminal-evidence
+          docker inspect qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container-inspect.json 2>/dev/null || true
+          docker logs qikvrt-terminal > /tmp/qikvrt-terminal-evidence/container.log 2>&1 || true
+          cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
+          printf '%s\n' "${GITHUB_SHA}" > /tmp/qikvrt-terminal-evidence/exact-head.txt
+      - name: Upload exact runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0
+        with:
+          name: qikvrt-universal-terminal-${{ github.sha }}
+          path: /tmp/qikvrt-terminal-evidence
+          if-no-files-found: error
+          retention-days: 90
+      - name: Stop container
+        if: always()
+        run: docker rm -f qikvrt-terminal 2>/dev/null || true
