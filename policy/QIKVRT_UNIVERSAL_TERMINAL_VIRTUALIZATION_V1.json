@@ -1,0 +1,43 @@
+{
+  "schema": "qikvrt_universal_terminal_virtualization_v1",
+  "repository": "Goldkelch/qik-vrt",
+  "components": {
+    "browser": "browser/firefox/qikvrt-terminal",
+    "effect_ack_http_daemon": "src/qikvrt_effect_ack_http_terminal.py",
+    "container": "deploy/universal-terminal/Dockerfile",
+    "compose": "deploy/universal-terminal/compose.yaml"
+  },
+  "network_boundary": {
+    "effect_ack_http_daemon": "LOOPBACK_ONLY_INSIDE_TERMINAL_NAMESPACE",
+    "human_view": "NOVNC_LOOPBACK_BY_DEFAULT",
+    "external_exposure_requires_explicit_operator_network_policy": true
+  },
+  "required_semantics": [
+    "DISCOVER_CAPABILITY",
+    "PREPARE_WITHOUT_PROTECTED_EFFECT",
+    "EXACT_BOUND_SINGLE_USE_COMMIT",
+    "POST_EFFECT_REOBSERVATION",
+    "TRANSPORT_ACK_NOT_EQUAL_EFFECT_ACK",
+    "FAIL_CLOSED_ON_STALE_OR_MISMATCHED_BINDING"
+  ],
+  "portability_claim": {
+    "class": "IMPLEMENTATION_PROFILE",
+    "statement": "The terminal pair is packaged as an OCI-compatible Linux userspace image and therefore targets environments capable of running an OCI/container-compatible Linux userspace or an equivalent virtualization layer.",
+    "not_claimed": [
+      "execution on every physical device",
+      "native equivalence on every ISA or operating system",
+      "universal network reachability",
+      "empirical proof that all information systems implement the profile",
+      "PASS",
+      "FINAL_PASS",
+      "EFFECT_ACK_DONE for any external deployment"
+    ]
+  },
+  "definition_of_done": {
+    "container_build": "REQUIRED",
+    "effect_ack_health_readback": "REQUIRED",
+    "firefox_process_readback": "REQUIRED",
+    "browser_visible_terminal_readback": "REQUIRED",
+    "exact_subject_binding": "REQUIRED"
+  }
+}
