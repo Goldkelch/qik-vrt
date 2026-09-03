@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TERMINAL = ROOT / "browser" / "firefox" / "qikvrt-terminal"
 MANIFEST = TERMINAL / "manifest.json"
 ADAPTER = TERMINAL / "authenticated_delivery.js"
+LEDGER = ROOT / "state" / "delivery" / "ACTIVE_DELIVERY_OBLIGATIONS_V1.json"
 ARXIV_REQUEST = ROOT / "state" / "delivery" / "requests" / "ARXIV_PLANCK_TICK_GAP_LAW_V1.json"
 WIKIPEDIA_REQUEST = ROOT / "state" / "delivery" / "requests" / "WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json"
 
@@ -30,12 +31,12 @@ class AuthenticatedWebDeliveryProxyTests(unittest.TestCase):
         self.assertIn("https://arxiv.org/*", matches)
         self.assertIn("https://*.wikipedia.org/*", matches)
 
-    def test_delivery_requests_bind_the_same_proxy(self) -> None:
+    def test_delivery_requests_and_ledger_bind_the_same_proxy(self) -> None:
         arxiv = json.loads(ARXIV_REQUEST.read_text(encoding="utf-8"))
         wikipedia = json.loads(WIKIPEDIA_REQUEST.read_text(encoding="utf-8"))
-        for request in (arxiv, wikipedia):
+        request_by_platform = {"arxiv": arxiv, "wikipedia": wikipedia}
+        for request in request_by_platform.values():
             self.assertEqual(request["schema"], "qikvrt_external_delivery_request_v1")
-            self.assertEqual(request["operation"]["adapter"], "QIKVRT_FIREFOX_TERMINAL_PROXY_V1")
             self.assertTrue(request["preconditions"]["exact_main_reobservation_required"])
             self.assertFalse(request["preconditions"]["predecessor_evidence_transfer"])
             self.assertTrue(request["effect_ack"]["required"])
@@ -44,11 +45,31 @@ class AuthenticatedWebDeliveryProxyTests(unittest.TestCase):
             self.assertFalse(request["completion_claims"]["FINAL_PASS"])
             self.assertFalse(request["completion_claims"]["EFFECT_ACK_DONE"])
 
+        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+        bound = {
+            item["delivery"]["platform"]: item
+            for item in ledger["obligations"]
+            if item.get("delivery", {}).get("platform") in request_by_platform
+        }
+        self.assertEqual(set(bound), {"arxiv", "wikipedia"})
+        for platform, obligation in bound.items():
+            self.assertEqual(obligation["delivery"]["adapter"], "QIKVRT_FIREFOX_TERMINAL_PROXY_V1")
+            self.assertTrue(obligation["delivery"]["effect_ack_required"])
+            self.assertEqual(obligation["main_reobservation"]["binding"], "EXACT_MAIN_HEAD")
+            self.assertEqual(
+                obligation["delivery"]["request"],
+                f"state/delivery/requests/{request_by_platform[platform]['id']}.json",
+            )
+
     def test_adapter_is_fail_closed_and_credential_isolating(self) -> None:
         source = ADAPTER.read_text(encoding="utf-8")
         required = (
             'const ADAPTER = "QIKVRT_FIREFOX_TERMINAL_PROXY_V1"',
+            'const DELIVERY_LEDGER = "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json"',
             'AUTHORIZED_EXTERNAL_PUBLICATION_EFFECT',
+            'AUTHORIZED_EXTERNAL_WEB_EFFECT',
+            'bound delivery obligation unavailable',
+            'delivery obligation exact-main binding missing',
             'exact-main reobservation not required by request',
             'predecessor evidence boundary missing',
             'trusted main drift; reprepare required',
