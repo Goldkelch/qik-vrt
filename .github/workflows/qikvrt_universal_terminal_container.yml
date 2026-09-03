@@ -7,6 +7,7 @@ on:
       - "browser/firefox/qikvrt-terminal/**"
       - "src/qikvrt_effect_ack_http_terminal.py"
       - "policy/QIKVRT_UNIVERSAL_TERMINAL_VIRTUALIZATION_V1.json"
+      - "tests/test_qikvrt_universal_terminal_network_boundary.py"
       - ".github/workflows/qikvrt_universal_terminal_container.yml"
   workflow_dispatch:
 
@@ -29,13 +30,27 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXACT_SUBJECT_SHA"
-      - name: Validate durable compose contract
+      - name: Validate immutable loopback-only compose contract
         run: |
           set -euo pipefail
-          docker compose -f deploy/universal-terminal/compose.yaml config >/tmp/qikvrt-compose.yaml
-          grep -q 'restart: unless-stopped' /tmp/qikvrt-compose.yaml
-          grep -q '/var/lib/qikvrt/profile' /tmp/qikvrt-compose.yaml
-          grep -q '/var/lib/qikvrt/state' /tmp/qikvrt-compose.yaml
+          python3 -B -m unittest -v tests.test_qikvrt_universal_terminal_network_boundary
+          QIKVRT_BIND_ADDRESS=0.0.0.0 docker compose -f deploy/universal-terminal/compose.yaml config --format json >/tmp/qikvrt-compose.json
+          python3 - <<'PY'
+          import json
+          value=json.load(open('/tmp/qikvrt-compose.json',encoding='utf-8'))
+          service=value['services']['qikvrt-universal-terminal']
+          assert service['restart']=='unless-stopped'
+          mounts={item['target'] for item in service['volumes']}
+          assert '/var/lib/qikvrt/profile' in mounts
+          assert '/var/lib/qikvrt/state' in mounts
+          ports=service['ports']
+          matches=[item for item in ports if int(item['target'])==6080]
+          assert len(matches)==1, matches
+          port=matches[0]
+          assert port.get('host_ip')=='127.0.0.1', port
+          assert str(port.get('published'))=='6080', port
+          assert port.get('host_ip') not in {'0.0.0.0','::','[::]'}, port
+          PY
       - name: Build OCI image
         run: docker build -f deploy/universal-terminal/Dockerfile -t qikvrt/universal-terminal:${EXACT_SUBJECT_SHA} .
       - name: Start exact durable image
@@ -110,22 +125,24 @@ jobs:
           cp /tmp/runtime-after.json /tmp/qikvrt-terminal-evidence/runtime-after.json 2>/dev/null || true
           cp /tmp/effect-ack.json /tmp/qikvrt-terminal-evidence/effect-ack-capability.json 2>/dev/null || true
           cp /tmp/vnc.html /tmp/qikvrt-terminal-evidence/vnc.html 2>/dev/null || true
-          cp /tmp/qikvrt-compose.yaml /tmp/qikvrt-terminal-evidence/compose-rendered.yaml 2>/dev/null || true
+          cp /tmp/qikvrt-compose.json /tmp/qikvrt-terminal-evidence/compose-rendered.json 2>/dev/null || true
           printf '%s\n' "$EXACT_SUBJECT_SHA" > /tmp/qikvrt-terminal-evidence/exact-head.txt
           python3 - <<'PY'
           import json, os
           sha=os.environ['EXACT_SUBJECT_SHA']
+          effect_ack_observed=os.path.exists('/tmp/effect-ack.json') and os.path.getsize('/tmp/effect-ack.json') > 0
+          runtime_observed=os.path.exists('/tmp/runtime-after.json')
           receipt={
             'schema':'qikvrt_universal_terminal_runtime_receipt_v2',
             'subject_head_sha':sha,
-            'oci_build':'EXECUTED',
-            'container_start':'EXECUTED',
-            'durable_restart':'EXECUTED',
-            'persistent_profile_readback':'OBSERVED' if os.path.exists('/tmp/runtime-after.json') else 'UNOBSERVED',
-            'runtime_health_readback':'OBSERVED' if os.path.exists('/tmp/runtime-after.json') else 'UNOBSERVED',
-            'effect_ack_capability_readback':'OBSERVED' if os.path.getsize('/tmp/effect-ack.json') else 'UNOBSERVED',
-            'firefox_process_check':'EXECUTED',
-            'novnc_surface_check':'EXECUTED',
+            'oci_build':'EXECUTED' if runtime_observed else 'UNOBSERVED',
+            'container_start':'EXECUTED' if runtime_observed else 'UNOBSERVED',
+            'durable_restart':'EXECUTED' if runtime_observed else 'UNOBSERVED',
+            'persistent_profile_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
+            'runtime_health_readback':'OBSERVED' if runtime_observed else 'UNOBSERVED',
+            'effect_ack_capability_readback':'OBSERVED' if effect_ack_observed else 'UNOBSERVED',
+            'firefox_process_check':'EXECUTED' if runtime_observed else 'UNOBSERVED',
+            'novnc_surface_check':'EXECUTED' if os.path.exists('/tmp/vnc.html') else 'UNOBSERVED',
             'external_arxiv_submission':'NOT_EXECUTED',
             'external_wikipedia_edit':'NOT_EXECUTED',
             'pass':False,
