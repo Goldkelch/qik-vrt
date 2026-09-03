@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCI = ROOT / "docs/science"
 LIVE = ROOT / "state/live/QIKVRT_LIVE_EVENTS.jsonl"
+PUBLIC_LIVE = SCI / "live-events.jsonl"
 
 
 def utcnow():
@@ -108,7 +109,7 @@ def main():
       'boundary':'Formal proof status is scoped to declared models; empirical and ontological claims remain separate.'
     }
     index={'schema':'qikvrt_science_index_v1','exact_subject':head,'categories':claims,'lean_sources':lean,
-           'urls':{'status':'status.json','terminals':'terminals.json','live_events':'../../state/live/QIKVRT_LIVE_EVENTS.jsonl'}}
+           'urls':{'status':'status.json','terminals':'terminals.json','live_events':'live-events.jsonl'}}
     (SCI/'status.json').write_text(json.dumps(status,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (SCI/'index.json').write_text(json.dumps(index,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (SCI/'terminals.json').write_text(json.dumps(terminals,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
@@ -121,5 +122,6 @@ def main():
     existing=LIVE.read_text(encoding='utf-8') if LIVE.exists() else ''
     if eid not in existing:
         with LIVE.open('a',encoding='utf-8') as f: f.write(json.dumps(envelope,separators=(',',':'),ensure_ascii=False)+'\n')
+    PUBLIC_LIVE.write_text(LIVE.read_text(encoding='utf-8'),encoding='utf-8')
 
 if __name__=='__main__': main()
