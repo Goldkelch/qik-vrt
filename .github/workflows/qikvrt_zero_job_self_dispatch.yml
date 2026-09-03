@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT zero-job self-dispatch
+
+# Repository-native wakeup edge for PR workflows that GitHub records as
+# completed/action_required with zero jobs. The workflow_run event is emitted
+# independently of the candidate PR workflow's job admission, so recovery does
+# not depend on a human or an external observer re-triggering the candidate.
+on:
+  workflow_run:
+    workflows:
+      - "QIKVRT repository evidence materialization"
+      - "QIKVRT adaptive stacked successor integrity materialization"
+      - "QIKVRT CI"
+      - "QIKVRT Collective Proposal Review"
+      - "QIK-VRT global claim completion"
+      - "QIKVRT code-owner review observer"
+      - "QIKVRT zero-bug continuous invariant"
+      - "QIKVRT Spark branch work-unit core"
+      - "QIKVRT perfect optimum recursive self-application"
+      - "QIKVRT real multi-pair Mesh runtime"
+      - "QIKVRT EFFECT_ACK HTTP Firefox terminal"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: qikvrt-zero-job-self-dispatch-${{ github.repository }}-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  classify-and-dispatch:
+    # This trusted-main workflow only handles pull-request runs and never treats
+    # action_required alone as a defect. Zero jobs is the recovery predicate.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'action_required'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Classify exact zero-job subject and dispatch D0=2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jobs_total="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=1" --jq '.total_count')"
+          if [ "$jobs_total" -ne 0 ]; then
+            echo "NOOP: adverse run has jobs; zero-job recovery does not apply"
+            exit 0
+          fi
+
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:" --paginate 2>/dev/null || true)"
+          pr="$(jq -r --arg head "$HEAD_SHA" '[.[] | select(.head.sha == $head and .head.repo.full_name == env.GITHUB_REPOSITORY)][0].number // empty' <<<"$pr_json")"
+          if [ -z "$pr" ]; then
+            echo "NOOP: exact head is no longer an open internal PR subject"
+            exit 0
+          fi
+
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
+          live_head="$(jq -r '.head.sha' <<<"$live")"
+          head_ref="$(jq -r '.head.ref' <<<"$live")"
+          base_sha="$(jq -r '.base.sha' <<<"$live")"
+          test "$live_head" = "$HEAD_SHA"
+
+          # Deduplicate by exact-head status. pending means another trusted
+          # invocation already exposed this REOBSERVE edge.
+          state="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/status" --jq '[.statuses[] | select(.context == "QIKVRT autonomous exact-head verification")][0].state // "missing"')"
+          if [ "$state" = pending ]; then
+            echo "HOLD: exact-head verifier already pending"
+            exit 0
+          fi
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context='QIKVRT autonomous exact-head verification' \
+            -f description='Repository-native zero-job D0=2 REOBSERVE dispatched' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          # Contents:write is the documented authority used by this repository
+          # for repository_dispatch. The payload binds the exact live subject.
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg pr "$pr" \
+            --arg ref "$head_ref" \
+            --arg head "$HEAD_SHA" \
+            --arg base "$base_sha" \
+            --arg source_run "$RUN_ID" \
+            '{event_type:"qikvrt_autonomous_exact_head_verify",client_payload:{repository:$repository,pull_request:($pr|tonumber),head_ref:$ref,head_sha:$head,base_sha:$base,d0:2,causal_state:"REOBSERVE",source_run_id:($source_run|tonumber),reason:"ZERO_JOB_ACTION_REQUIRED"}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+          echo "REOBSERVE/D0=2 dispatched for PR #${pr} exact head ${HEAD_SHA}"

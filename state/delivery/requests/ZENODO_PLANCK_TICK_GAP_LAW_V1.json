@@ -1,0 +1,38 @@
+{
+  "schema": "qikvrt_external_delivery_request_v1",
+  "id": "ZENODO_PLANCK_TICK_GAP_LAW_V1",
+  "platform": "zenodo",
+  "authority": {
+    "product_owner": "Ingolf Lohmann",
+    "authorization": "AUTHORIZED_EXTERNAL_PUBLICATION_EFFECT"
+  },
+  "preconditions": {
+    "required_main_paths": [
+      "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+      "physics/planck_tick_gap_law_v1.json",
+      "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json",
+      "release/planck-tick-gap-law-zenodo-v1/OWNER_ZENODO_AUTHORIZATION.json"
+    ],
+    "exact_main_reobservation_required": true,
+    "predecessor_evidence_transfer": false
+  },
+  "operation": {
+    "type": "PUBLISH_NEW_ZENODO_RECORD",
+    "preferred_adapter": ".github/workflows/qikvrt_planck_tick_gap_law_zenodo_publish.yml",
+    "fallback_adapter": "QIKVRT_FIREFOX_TERMINAL_PROXY_V1",
+    "metadata_path": "release/planck-tick-gap-law-zenodo-v1/ZENODO_METADATA.json",
+    "source_path": "docs/research/2026-09-03-planck-tick-gap-law/QIKVRT_Planck_Tick_Gap_Law_2026-09-03.tex",
+    "claim_boundaries": {
+      "empirical_correspondence": false,
+      "independent_reproduction": false,
+      "PASS": false,
+      "FINAL_PASS": false
+    }
+  },
+  "effect_ack": {
+    "required": true,
+    "readback_required": true,
+    "fields": ["record_id", "doi", "published_file_sha256", "published_at"]
+  },
+  "completion_claims": {"PASS": false, "FINAL_PASS": false, "EFFECT_ACK_DONE": false}
+}

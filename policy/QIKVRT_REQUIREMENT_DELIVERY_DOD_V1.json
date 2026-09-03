@@ -1,0 +1,57 @@
+{
+  "schema": "qikvrt_requirement_delivery_dod_v1",
+  "version": "1.1",
+  "authority": {
+    "product_owner": "Ingolf Lohmann",
+    "repository": "Goldkelch/qik-vrt",
+    "directive": "Jegliches Requirement ist erst erledigt, wenn sein kanonisches Deliverable auf Trusted Main liegt, der exakte Main-Head frisch reobserviert wurde und jede daraus folgende Lieferpflicht ohne erneute menschliche Interaktion mit Effect-Readback erfüllt wurde."
+  },
+  "terminal_states": {
+    "DONE": {
+      "requires_all": [
+        "DELIVERABLE_ON_TRUSTED_MAIN",
+        "EXACT_MAIN_HEAD_REOBSERVED",
+        "ALL_DELIVERY_OBLIGATIONS_EFFECT_ACK_DONE"
+      ]
+    },
+    "NOOP": {
+      "meaning": "No currently applicable delivery obligation exists."
+    },
+    "REQUEST_AUTHORITY": {
+      "meaning": "Only a genuinely external authority decision may stop one affected edge; independent machine-owned obligations continue."
+    }
+  },
+  "forbidden_completion_shortcuts": [
+    "PR_CREATED",
+    "CHECKS_STARTED",
+    "CHECKS_SUCCESSFUL_ON_PREDECESSOR",
+    "REVIEW_REQUESTED",
+    "REVIEW_SUBMITTED",
+    "MERGED",
+    "TRANSPORT_ACK",
+    "HTTP_SUCCESS",
+    "UPLOAD_ACCEPTED",
+    "SUBMISSION_FORM_ACCEPTED_WITHOUT_READBACK",
+    "UNSPECIFIED_EXECUTION_ORDER"
+  ],
+  "invariants": {
+    "predecessor_evidence_never_transfers": true,
+    "merge_is_not_delivery": true,
+    "transport_ack_is_not_effect_ack": true,
+    "external_delivery_requires_authoritative_readback": true,
+    "main_mutation_invalidates_previous_main_reobservation": true,
+    "independent_machine_owned_work_continues_while_one_edge_requests_authority": true,
+    "publication_does_not_imply_empirical_confirmation": true,
+    "publication_does_not_imply_pass_or_final_pass": true,
+    "execution_precedence_is_explicit_and_fail_closed": true,
+    "unspecified_precedence_is_hold_unverified": true
+  },
+  "execution_precedence": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
+  "delivery_ledger": "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json",
+  "effect_ack_contract": "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json",
+  "completion_claims": {
+    "PASS": false,
+    "FINAL_PASS": false,
+    "EFFECT_ACK_DONE": false
+  }
+}
