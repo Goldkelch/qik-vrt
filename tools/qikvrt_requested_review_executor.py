@@ -1969,7 +1969,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
             if run.get("path") != observer_path:
                 detail = (
                     f"non-gate observer identity is untrusted: {name}; "
-                    f"path={run.get(chr(39) + 'path' + chr(39))!r}"
+                    f"path={run.get('path')!r}"
                 )
                 return _result(
                     snapshot,
@@ -1982,7 +1982,7 @@ def evaluate(snapshot: Mapping[str, Any], diff: bytes | None = None) -> dict[str
                 )
             detail = (
                 "exact-subject non-gate observer retained as metadata only: "
-                f"{name}={run.get(chr(39) + 'conclusion' + chr(39)) or run.get(chr(39) + 'status' + chr(39))}"
+                f"{name}={run.get('conclusion') or run.get('status')}"
             )
             findings.append(
                 _finding("NON_GATE_OBSERVER_CLASSIFIED", "INFO", detail)
