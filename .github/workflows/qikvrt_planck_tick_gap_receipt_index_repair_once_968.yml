@@ -1,0 +1,178 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT one-shot Planck-tick receipt index repair
+
+on:
+  push:
+    branches:
+      - 'receipt/planck-tick-gap-law-zenodo-33770987607'
+    paths:
+      - '.github/workflows/qikvrt_planck_tick_gap_receipt_index_repair_once_968.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qikvrt-planck-tick-receipt-index-repair-968
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.repository == 'Goldkelch/qik-vrt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_RECEIPT_HEAD: 740e0792abf4200467223bf6ed9d5383b2988ff0
+      EXPECTED_MAIN_HEAD: ff925b5d8278cac3f2a93de28efc2160838964ee
+      EXPECTED_DOI: 10.5281/zenodo.22283396
+      EXPECTED_CONCEPT_DOI: 10.5281/zenodo.22283395
+      EXPECTED_MANIFEST_SHA256: 79a56d70a28c5e009cb87865c0f9f16ac20a2440747b6055ebd91a73cd3a3441
+      RECEIPT_PATH: release/planck-tick-gap-law-zenodo-v1/zenodo-publication.json
+      INDEX_JSON: docs/publications/index.json
+      INDEX_HTML: docs/publications/index.html
+      SELF_PATH: .github/workflows/qikvrt_planck_tick_gap_receipt_index_repair_once_968.yml
+    steps:
+      - name: Check out exact one-shot successor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind direct receipt successor and clean worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'receipt/planck-tick-gap-law-zenodo-33770987607'
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_RECEIPT_HEAD"
+          test "$(git rev-parse HEAD^{tree})" != "$(git rev-parse HEAD^^{tree})"
+          test -z "$(git status --porcelain)"
+
+      - name: Add exact receipt manifest and both disclosure indexes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt_path = Path(os.environ['RECEIPT_PATH'])
+          index_json_path = Path(os.environ['INDEX_JSON'])
+          index_html_path = Path(os.environ['INDEX_HTML'])
+          expected_doi = os.environ['EXPECTED_DOI']
+          expected_concept = os.environ['EXPECTED_CONCEPT_DOI']
+          expected_manifest = os.environ['EXPECTED_MANIFEST_SHA256']
+          expected_main = os.environ['EXPECTED_MAIN_HEAD']
+
+          receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+          if receipt.get('state') != 'published':
+              raise SystemExit('RECEIPT_NOT_PUBLISHED')
+          if receipt.get('doi') != expected_doi:
+              raise SystemExit('RECEIPT_DOI_MISMATCH')
+          if receipt.get('conceptdoi') != expected_concept:
+              raise SystemExit('RECEIPT_CONCEPT_DOI_MISMATCH')
+          if receipt.get('repository_head') != expected_main:
+              raise SystemExit('RECEIPT_REPOSITORY_HEAD_MISMATCH')
+          files = receipt.get('files')
+          if not isinstance(files, list) or len(files) != 6:
+              raise SystemExit('RECEIPT_FILESET_MISMATCH')
+          manifests = [item for item in files if item.get('name') == 'SHA256SUMS.txt']
+          if len(manifests) != 1 or manifests[0].get('sha256') != expected_manifest:
+              raise SystemExit('RECEIPT_MANIFEST_MISMATCH')
+          existing_manifest = receipt.get('manifest_sha256')
+          if existing_manifest not in (None, expected_manifest):
+              raise SystemExit('EXISTING_MANIFEST_FIELD_MISMATCH')
+          receipt['manifest_sha256'] = expected_manifest
+          receipt_path.write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+
+          overview = json.loads(index_json_path.read_text(encoding='utf-8'))
+          if overview.get('schema') != 'qikvrt_publication_overview_v1':
+              raise SystemExit('PUBLICATION_INDEX_SCHEMA_MISMATCH')
+          records = overview.get('zenodo_records')
+          if not isinstance(records, list):
+              raise SystemExit('ZENODO_RECORDS_NOT_LIST')
+          entry = {
+              'id': 'planck-tick-gap-law-v1',
+              'title': 'From Exact Causal Binding to a Falsifiable Planck-Tick Gap Law',
+              'record_id': 22283396,
+              'doi': expected_doi,
+              'doi_url': f'https://doi.org/{expected_doi}',
+              'concept_doi': expected_concept,
+              'receipt_path': os.environ['RECEIPT_PATH'],
+              'manifest_sha256': expected_manifest,
+              'repository_commit': expected_main,
+              'file_count': 6,
+              'state': 'published_receipt',
+              'boundary': (
+                  'Published working-paper bytes and frozen falsifiable hypothesis; '
+                  'not empirical confirmation, independent reproduction, PASS, '
+                  'FINAL_PASS or general EFFECT_ACK_DONE.'
+              ),
+          }
+          matches = [item for item in records if item.get('receipt_path') == entry['receipt_path']]
+          if len(matches) > 1:
+              raise SystemExit('DUPLICATE_RECEIPT_INDEX_ENTRIES')
+          if matches:
+              if matches[0] != entry:
+                  raise SystemExit('EXISTING_RECEIPT_INDEX_ENTRY_DIFFERS')
+          else:
+              if any(item.get('doi') == expected_doi for item in records):
+                  raise SystemExit('DOI_ALREADY_INDEXED_UNDER_DIFFERENT_RECEIPT')
+              records.append(entry)
+          index_json_path.write_text(
+              json.dumps(overview, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+
+          html = index_html_path.read_text(encoding='utf-8')
+          doi_url = f'https://doi.org/{expected_doi}'
+          card = (
+              '        <a class="record-card featured-record" '
+              f'href="{doi_url}"><span class="record-type">Working Paper · '
+              'falsifizierbare Hypothese</span><strong>From Exact Causal Binding '
+              'to a Falsifiable Planck-Tick Gap Law</strong><code>'
+              f'{expected_doi}</code></a>'
+          )
+          if doi_url not in html:
+              section = html.index('<section class="section" id="zenodo">')
+              grid = html.index('<div class="record-grid">', section)
+              close = html.index('\n      </div>', grid)
+              html = html[:close] + '\n' + card + html[close:]
+              index_html_path.write_text(html, encoding='utf-8')
+          elif card not in html:
+              raise SystemExit('DOI_PRESENT_WITH_NONCANONICAL_HTML_CARD')
+          PY
+
+      - name: Verify focused disclosure contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 \
+            python3 -B -m unittest -v tests.test_qikvrt_self_disclosure
+
+      - name: Regenerate and verify repository integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py generate
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/qikvrt_integrity.py verify
+
+      - name: Persist atomic disclosure successor and remove one-shot carrier
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git rm "$SELF_PATH"
+          test -n "$(git status --porcelain)"
+          git add -A
+          git diff --cached --check
+          git config user.name 'qik-vrt-receipt-index-repair[bot]'
+          git config user.email 'qik-vrt-receipt-index-repair[bot]@users.noreply.github.com'
+          git commit -m 'zenodo: index Planck-tick publication receipt'
+          remote_head="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
