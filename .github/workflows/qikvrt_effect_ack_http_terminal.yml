@@ -2,10 +2,25 @@
 name: QIKVRT EFFECT_ACK HTTP Firefox terminal
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json"
+      - "policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json"
+      - "state/delivery/**"
+      - "tools/qikvrt_requirement_delivery_gate.py"
+      - "tests/test_qikvrt_requirement_delivery_gate.py"
+      - "browser/firefox/qikvrt-terminal/**"
+      - "src/qikvrt_effect_ack_http_terminal.py"
+      - ".github/workflows/qikvrt_effect_ack_http_terminal.yml"
   pull_request:
     paths:
       - "external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml"
       - "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json"
+      - "policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json"
+      - "state/delivery/**"
+      - "tools/qikvrt_requirement_delivery_gate.py"
+      - "tests/test_qikvrt_requirement_delivery_gate.py"
       - "browser/firefox/qikvrt-terminal/**"
       - "docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json"
       - "docs/terminal/FIREFOX_EFFECT_ACK_TERMINAL_PROXY_V1.md"
@@ -22,7 +37,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out exact candidate head
+      - name: Check out exact candidate or main head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -34,15 +49,32 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Parse machine-readable contracts and RFCXML
+      - name: Parse machine-readable contracts, delivery ledger and RFCXML
         shell: bash
         run: |
           set -euo pipefail
           python3 -m json.tool policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json >/dev/null
+          python3 -m json.tool policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json >/dev/null
+          python3 -m json.tool state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json >/dev/null
+          for request in state/delivery/requests/*.json; do
+            python3 -m json.tool "$request" >/dev/null
+          done
           python3 -m json.tool browser/firefox/qikvrt-terminal/manifest.json >/dev/null
           python3 -m json.tool docs/terminal/QIKVRT_TERMINAL_FRAME_V1.schema.json >/dev/null
           python3 - <<'PY'
+          import json
+          import pathlib
           import xml.etree.ElementTree as ET
+
+          policy = json.loads(pathlib.Path('policy/QIKVRT_REQUIREMENT_DELIVERY_DOD_V1.json').read_text())
+          ledger = json.loads(pathlib.Path('state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json').read_text())
+          assert policy['delivery_ledger'] == 'state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json'
+          requests = {p.as_posix() for p in pathlib.Path('state/delivery/requests').glob('*.json')}
+          for obligation in ledger['obligations']:
+              request = obligation['delivery']['request']
+              assert request in requests, request
+              assert obligation['delivery']['effect_ack_required'] is True
+              assert obligation['main_reobservation']['required'] is True
           ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-03.xml')
           ET.parse('external/ietf/draft-lohmann-qikvrt-effect-ack-http-00.xml')
           PY
@@ -68,7 +100,11 @@ jobs:
 
       - name: Check Python syntax
         run: |
-          python3 -m py_compile src/qikvrt_effect_ack_http_terminal.py tests/test_qikvrt_effect_ack_http_terminal.py
+          python3 -m py_compile \
+            src/qikvrt_effect_ack_http_terminal.py \
+            tools/qikvrt_requirement_delivery_gate.py \
+            tests/test_qikvrt_effect_ack_http_terminal.py \
+            tests/test_qikvrt_requirement_delivery_gate.py
 
       - name: Check Firefox JavaScript syntax
         run: |
@@ -76,11 +112,14 @@ jobs:
           node --check browser/firefox/qikvrt-terminal/content.js
           node --check browser/firefox/qikvrt-terminal/options.js
 
-      - name: Run HTTP terminal contract and E2E tests
+      - name: Run HTTP terminal and requirement-delivery contracts
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONNOUSERSITE: "1"
-        run: python3 -B -m unittest -v tests.test_qikvrt_effect_ack_http_terminal
+        run: |
+          python3 -B -m unittest -v \
+            tests.test_qikvrt_effect_ack_http_terminal \
+            tests.test_qikvrt_requirement_delivery_gate
 
       - name: Package verified Firefox reference client
         shell: bash
