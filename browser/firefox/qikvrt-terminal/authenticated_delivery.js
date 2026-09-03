@@ -3,17 +3,20 @@
 
   const AUTHORITY = "Goldkelch/qik-vrt";
   const ADAPTER = "QIKVRT_FIREFOX_TERMINAL_PROXY_V1";
+  const DELIVERY_LEDGER = "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json";
+  const AUTHORIZED_EFFECTS = new Set([
+    "AUTHORIZED_EXTERNAL_PUBLICATION_EFFECT",
+    "AUTHORIZED_EXTERNAL_WEB_EFFECT"
+  ]);
   const REQUESTS = Object.freeze({
     arxiv: {
       id: "ARXIV_PLANCK_TICK_GAP_LAW_V1",
       path: "state/delivery/requests/ARXIV_PLANCK_TICK_GAP_LAW_V1.json",
-      hosts: ["arxiv.org"],
       operation: "AUTHENTICATED_ARXIV_WEB_SUBMISSION"
     },
     wikipedia: {
       id: "WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1",
       path: "state/delivery/requests/WIKIPEDIA_LEAN_LAKE_PROOF_STATUS_V1.json",
-      hosts: ["wikipedia.org", "wikimedia.org"],
       operation: "TRANSPARENT_COI_EDIT_REQUEST"
     }
   });
@@ -65,19 +68,38 @@
     return new TextDecoder().decode(bytes);
   }
 
+  async function fetchJsonAtExactHead(path, authority) {
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    const file = await github(`/contents/${encodedPath}?ref=${authority.head}`);
+    if (!file || file.type !== "file" || file.encoding !== "base64") throw new Error(`bound file unavailable: ${path}`);
+    return JSON.parse(decodeBase64Utf8(file.content));
+  }
+
   async function fetchBoundRequest(platform, authority) {
     const spec = REQUESTS[platform];
     if (!spec) throw new Error("unsupported delivery platform");
-    const encodedPath = spec.path.split("/").map(encodeURIComponent).join("/");
-    const file = await github(`/contents/${encodedPath}?ref=${authority.head}`);
-    if (!file || file.type !== "file" || file.encoding !== "base64") throw new Error("delivery request unavailable");
-    const request = JSON.parse(decodeBase64Utf8(file.content));
+    const request = await fetchJsonAtExactHead(spec.path, authority);
     if (request.schema !== "qikvrt_external_delivery_request_v1") throw new Error("delivery schema mismatch");
     if (request.id !== spec.id || request.platform !== platform) throw new Error("delivery subject mismatch");
-    if (!request.authority || request.authority.authorization !== "AUTHORIZED_EXTERNAL_PUBLICATION_EFFECT") throw new Error("external effect not authorized");
-    if (!request.operation || request.operation.adapter !== ADAPTER || request.operation.type !== spec.operation) throw new Error("adapter or operation mismatch");
+    if (!request.authority || !AUTHORIZED_EFFECTS.has(request.authority.authorization)) throw new Error("external effect not authorized");
+    if (!request.operation || request.operation.type !== spec.operation) throw new Error("operation mismatch");
+    if (request.operation.adapter && request.operation.adapter !== ADAPTER) throw new Error("request adapter mismatch");
     if (!request.preconditions || request.preconditions.exact_main_reobservation_required !== true) throw new Error("exact-main reobservation not required by request");
     if (request.preconditions.predecessor_evidence_transfer !== false) throw new Error("predecessor evidence boundary missing");
+    if (!request.effect_ack || request.effect_ack.required !== true || request.effect_ack.readback_required !== true) throw new Error("authoritative readback contract missing");
+
+    const ledger = await fetchJsonAtExactHead(DELIVERY_LEDGER, authority);
+    if (ledger.schema !== "qikvrt_active_delivery_obligations_v1" || ledger.repository !== AUTHORITY) throw new Error("delivery ledger mismatch");
+    const obligations = Array.isArray(ledger.obligations) ? ledger.obligations : [];
+    const obligation = obligations.find(item =>
+      item && item.delivery &&
+      item.delivery.platform === platform &&
+      item.delivery.request === spec.path &&
+      item.delivery.adapter === ADAPTER
+    );
+    if (!obligation) throw new Error("bound delivery obligation unavailable");
+    if (!obligation.main_reobservation || obligation.main_reobservation.required !== true || obligation.main_reobservation.binding !== "EXACT_MAIN_HEAD") throw new Error("delivery obligation exact-main binding missing");
+    if (obligation.delivery.effect_ack_required !== true) throw new Error("delivery obligation EFFECT_ACK missing");
     return request;
   }
 
@@ -125,12 +147,13 @@
       }
       fields.push(descriptor);
     }
+    const action = new URL(form.action || location.href, location.href);
     return {
       page_origin: location.origin,
       page_path: location.pathname,
       method: String(form.method || "get").toUpperCase(),
-      action_origin: new URL(form.action || location.href, location.href).origin,
-      action_path: new URL(form.action || location.href, location.href).pathname,
+      action_origin: action.origin,
+      action_path: action.pathname,
       fields,
       secret_fields_present: secretFieldsPresent
     };
@@ -221,8 +244,7 @@
   }
 
   function extractArxivReadback(text) {
-    const url = location.href;
-    const urlMatch = url.match(/\/submit\/(\d+)/i);
+    const urlMatch = location.href.match(/\/submit\/(\d+)/i);
     const textMatch = text.match(/(?:submission\s*(?:id|identifier)|identifier)\s*[:#]?\s*([0-9]{5,})/i);
     const statusMatch = text.match(/\b(submitted|processing|incomplete|on hold|scheduled|announced|deleted|expired)\b/i);
     return {
@@ -250,6 +272,7 @@
     if (!pending || pending.schema !== "qikvrt_authenticated_web_pending_readback_v1" || pending.platform !== platform) return null;
     const authority = await observeAuthority();
     if (authority.head !== pending.authority.head || authority.tree !== pending.authority.tree) return fail("trusted main changed before post-effect readback");
+    await fetchBoundRequest(platform, authority);
     const text = String(document.body?.innerText || "").slice(0, 200000);
     const observed = platform === "arxiv" ? extractArxivReadback(text) : extractWikipediaReadback(text);
     const receipt = {
