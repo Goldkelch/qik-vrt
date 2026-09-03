@@ -7,6 +7,7 @@ on:
       - 'docs/science/index.json'
       - 'docs/science/status.json'
       - 'docs/science/terminals.json'
+      - 'docs/science/live-events.jsonl'
       - 'state/live/QIKVRT_LIVE_EVENTS.jsonl'
   workflow_run:
     workflows:
@@ -105,6 +106,7 @@ jobs:
             os.environ['LAKE_STATE']=='VERIFIED',
             Path('docs/science/index.json').exists(),
             Path('docs/science/terminals.json').exists(),
+            Path('docs/science/live-events.jsonl').exists(),
             Path('state/live/QIKVRT_LIVE_EVENTS.jsonl').exists()
           ]
           d['dod']='DONE_WITHIN_DECLARED_MODEL_SCOPE' if all(required) else 'HOLD_UNVERIFIED'
@@ -115,7 +117,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add docs/science/index.json docs/science/status.json docs/science/terminals.json state/live/QIKVRT_LIVE_EVENTS.jsonl
+          git add docs/science/index.json docs/science/status.json docs/science/terminals.json docs/science/live-events.jsonl state/live/QIKVRT_LIVE_EVENTS.jsonl
           if git diff --cached --quiet; then
             echo 'NOOP: terminal projection already current'
             exit 0
