@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      EXPECTED_PARENT: cb77ebad4563219a7dc42abe1b7e0bb091bfd161
+      EXPECTED_PARENT: 59151f518a3c4e4fc817133a2ea3c7bcf7edb94e
       TARGET_BRANCH: fix/live-status-pr-comment-permission-ff925
       CORE_PATH: tools/qikvrt_requested_review_executor.py
       TEST_PATH: tests/test_qikvrt_requested_review_executor.py
@@ -64,98 +64,103 @@ jobs:
               raise SystemExit('NON_GATE_OBSERVER_CONSTANT_ALREADY_PRESENT')
           core = core.replace(constants_anchor, constants_replacement, 1)
 
-          loop_anchor = '''    for identity, run in sorted(latest.items()):
-        if identity in required_identities:
-            continue
-        name = identity[3]
-        if run.get("status") != "completed":
-'''
-          loop_replacement = '''    for identity, run in sorted(latest.items()):
-        if identity in required_identities:
-            continue
-        name = identity[3]
-        observer_path = NON_GATE_OBSERVER_PATHS.get(name)
-        if observer_path is not None:
-            if run.get("path") != observer_path:
-                detail = (
-                    f"non-gate observer identity is untrusted: {name}; "
-                    f"path={run.get('path')!r}"
-                )
-                return _result(
-                    snapshot,
-                    "WAIT",
-                    "UNTRUSTED_GATE_BINDING",
-                    detail,
-                    findings=findings
-                    + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", detail)],
-                    **common,
-                )
-            detail = (
-                f"exact-subject non-gate observer retained as metadata only: "
-                f"{name}={run.get('conclusion') or run.get('status')}"
-            )
-            findings.append(
-                _finding("NON_GATE_OBSERVER_CLASSIFIED", "INFO", detail)
-            )
-            continue
-        if run.get("status") != "completed":
-'''
+          loop_anchor = '\n'.join([
+              '    for identity, run in sorted(latest.items()):',
+              '        if identity in required_identities:',
+              '            continue',
+              '        name = identity[3]',
+              '        if run.get("status") != "completed":',
+              '',
+          ])
+          loop_replacement = '\n'.join([
+              '    for identity, run in sorted(latest.items()):',
+              '        if identity in required_identities:',
+              '            continue',
+              '        name = identity[3]',
+              '        observer_path = NON_GATE_OBSERVER_PATHS.get(name)',
+              '        if observer_path is not None:',
+              '            if run.get("path") != observer_path:',
+              '                detail = (',
+              '                    f"non-gate observer identity is untrusted: {name}; "',
+              '                    f"path={run.get(chr(39) + \'path\' + chr(39))!r}"',
+              '                )',
+              '                return _result(',
+              '                    snapshot,',
+              '                    "WAIT",',
+              '                    "UNTRUSTED_GATE_BINDING",',
+              '                    detail,',
+              '                    findings=findings',
+              '                    + [_finding("UNTRUSTED_GATE_BINDING", "HOLD", detail)],',
+              '                    **common,',
+              '                )',
+              '            detail = (',
+              '                "exact-subject non-gate observer retained as metadata only: "',
+              '                f"{name}={run.get(chr(39) + \'conclusion\' + chr(39)) or run.get(chr(39) + \'status\' + chr(39))}"',
+              '            )',
+              '            findings.append(',
+              '                _finding("NON_GATE_OBSERVER_CLASSIFIED", "INFO", detail)',
+              '            )',
+              '            continue',
+              '        if run.get("status") != "completed":',
+              '',
+          ])
           if core.count(loop_anchor) != 1:
               raise SystemExit('NON_GATE_OBSERVER_LOOP_ANCHOR_MISMATCH')
           core = core.replace(loop_anchor, loop_replacement, 1)
           core_path.write_text(core, encoding='utf-8')
 
           tests = test_path.read_text(encoding='utf-8')
-          test_anchor = '''    def test_job_id_status_and_conclusion_are_fingerprint_bound(self):
-'''
-          test_insertion = '''    def test_live_status_observer_failure_is_metadata_not_candidate_gate(self):
-        snap = self.snapshot()
-        snap["workflow_runs"].append(
-            self.workflow_run(
-                "QIKVRT live status watch",
-                identifier=601,
-                run_number=1,
-                path=".github/workflows/qikvrt_live_status_watch.yml",
-                conclusion="failure",
-            )
-        )
-
-        result = self.evaluate(snap)
-
-        self.assertEqual(result["mesh_disposition"], "APPROVE")
-        self.assertIsNone(result["first_blocker"])
-        self.assertIn("NON_GATE_OBSERVER_CLASSIFIED", self.finding_ids(result))
-        observer = next(
-            run
-            for run in result["latest_workflows"]
-            if run["name"] == "QIKVRT live status watch"
-        )
-        self.assertEqual(observer["conclusion"], "failure")
-
-    def test_live_status_observer_name_on_wrong_path_fails_closed(self):
-        snap = self.snapshot()
-        snap["workflow_runs"].append(
-            self.workflow_run(
-                "QIKVRT live status watch",
-                identifier=602,
-                run_number=1,
-                path=".github/workflows/candidate_name_collision.yml",
-                conclusion="failure",
-            )
-        )
-
-        result = self.evaluate(snap)
-
-        self.assertEqual(result["mesh_disposition"], "WAIT")
-        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")
-        self.assertIn("non-gate observer identity is untrusted", result["detail"])
-
-''' + test_anchor
+          test_anchor = '    def test_job_id_status_and_conclusion_are_fingerprint_bound(self):\n'
+          new_tests = '\n'.join([
+              '    def test_live_status_observer_failure_is_metadata_not_candidate_gate(self):',
+              '        snap = self.snapshot()',
+              '        snap["workflow_runs"].append(',
+              '            self.workflow_run(',
+              '                "QIKVRT live status watch",',
+              '                identifier=601,',
+              '                run_number=1,',
+              '                path=".github/workflows/qikvrt_live_status_watch.yml",',
+              '                conclusion="failure",',
+              '            )',
+              '        )',
+              '',
+              '        result = self.evaluate(snap)',
+              '',
+              '        self.assertEqual(result["mesh_disposition"], "APPROVE")',
+              '        self.assertIsNone(result["first_blocker"])',
+              '        self.assertIn("NON_GATE_OBSERVER_CLASSIFIED", self.finding_ids(result))',
+              '        observer = next(',
+              '            run',
+              '            for run in result["latest_workflows"]',
+              '            if run["name"] == "QIKVRT live status watch"',
+              '        )',
+              '        self.assertEqual(observer["conclusion"], "failure")',
+              '',
+              '    def test_live_status_observer_name_on_wrong_path_fails_closed(self):',
+              '        snap = self.snapshot()',
+              '        snap["workflow_runs"].append(',
+              '            self.workflow_run(',
+              '                "QIKVRT live status watch",',
+              '                identifier=602,',
+              '                run_number=1,',
+              '                path=".github/workflows/candidate_name_collision.yml",',
+              '                conclusion="failure",',
+              '            )',
+              '        )',
+              '',
+              '        result = self.evaluate(snap)',
+              '',
+              '        self.assertEqual(result["mesh_disposition"], "WAIT")',
+              '        self.assertEqual(result["first_blocker"], "UNTRUSTED_GATE_BINDING")',
+              '        self.assertIn("non-gate observer identity is untrusted", result["detail"])',
+              '',
+              '',
+          ]) + test_anchor
           if tests.count(test_anchor) != 1:
               raise SystemExit('NON_GATE_OBSERVER_TEST_ANCHOR_MISMATCH')
           if 'test_live_status_observer_failure_is_metadata_not_candidate_gate' in tests:
               raise SystemExit('NON_GATE_OBSERVER_TEST_ALREADY_PRESENT')
-          tests = tests.replace(test_anchor, test_insertion, 1)
+          tests = tests.replace(test_anchor, new_tests, 1)
           test_path.write_text(tests, encoding='utf-8')
           PY
 
