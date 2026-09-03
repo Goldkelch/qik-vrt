@@ -25,6 +25,7 @@ from tools.qikvrt_seed_common import (
     run_dashboard,
     run_maintenance,
     run_revalidation,
+    _result_exit_code,
     validate_raw_request_url,
 )
 
@@ -318,6 +319,10 @@ class SeedWorkflowTests(unittest.TestCase):
         self.assertEqual(1, result["error_count"])
         revalidation = run_revalidation(self.root, "revalidate-blocked", now=NOW)
         self.assertEqual("CONTINUE", revalidation["status"])
+        self.assertEqual(0, _result_exit_code(revalidation))
+
+    def test_block_result_remains_a_process_failure(self) -> None:
+        self.assertEqual(10, _result_exit_code({"status": "BLOCK"}))
 
     def test_revalidation_detects_counter_tampering(self) -> None:
         self.accept()
