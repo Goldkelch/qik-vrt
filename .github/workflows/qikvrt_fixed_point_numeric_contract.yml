@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT fixed-point numeric contract
+
+on:
+  pull_request:
+    paths:
+      - "MESH_FIXED_POINT_CORE.md"
+      - "schemas/qikvrt_numeric_contract_v1.schema.json"
+      - "examples/numeric_contract_int8_mac_v1.json"
+      - "tools/qikvrt_numeric_contract.py"
+      - "tests/test_qikvrt_numeric_contract.py"
+      - "hardware/vhdl/qikvrt_fixed_point_mac.vhd"
+      - "hardware/vhdl/tb_qikvrt_fixed_point_mac.vhd"
+      - ".github/workflows/qikvrt_fixed_point_numeric_contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-reference-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      EVIDENCE_ROOT: /tmp/qikvrt-fixed-point
+    steps:
+      - name: Check out literal carrier head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXACT_HEAD }}
+          persist-credentials: false
+      - name: Bind exact head and tree
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_HEAD"
+          printf 'head=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+      - name: Validate numeric contract and reference model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          python3 -B tools/qikvrt_numeric_contract.py validate | tee "$EVIDENCE_ROOT/contract-validation.json"
+          python3 -B -m unittest -v tests.test_qikvrt_numeric_contract 2>&1 | tee "$EVIDENCE_ROOT/python-tests.txt"
+      - name: Provision and bind VHDL analyzer
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          candidate="$(apt-cache policy ghdl | awk '/Candidate:/ {print $2}')"
+          test -n "$candidate" && test "$candidate" != '(none)'
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "ghdl=$candidate"
+          ghdl --version | tee "$EVIDENCE_ROOT/ghdl-version.txt"
+      - name: Analyze elaborate and simulate reference MAC
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/qikvrt-fixed-point-ghdl"
+          mkdir -p "$work"
+          cd "$work"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/qikvrt_fixed_point_mac.vhd"
+          ghdl -a --std=08 "$GITHUB_WORKSPACE/hardware/vhdl/tb_qikvrt_fixed_point_mac.vhd"
+          ghdl -e --std=08 tb_qikvrt_fixed_point_mac
+          ghdl -r --std=08 tb_qikvrt_fixed_point_mac | tee "$EVIDENCE_ROOT/vhdl-simulation.txt"
+      - name: Write bounded receipt and reobserve exact head
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$EVIDENCE_ROOT"
+          cat > "$EVIDENCE_ROOT/claim-boundary.json" <<'JSON'
+          {"performance_superiority_observed":false,"physical_hardware_execution_observed":false,"place_and_route_observed":false,"schema":"qikvrt.fixed-point-ci-claim-boundary.v1","synthesis_observed":false}
+          JSON
+          test "$(git rev-parse HEAD)" = '${{ steps.bind.outputs.head }}'
+          test "$(git rev-parse HEAD^{tree})" = '${{ steps.bind.outputs.tree }}'
+      - name: Preserve exact-head evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-fixed-point-${{ steps.bind.outputs.head || env.EXACT_HEAD }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          retention-days: 30
+          if-no-files-found: error

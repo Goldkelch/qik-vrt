@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright 2026 Ingolf Lohmann.
+name: QIKVRT monotone evidence sphere Lean core
+
+on:
+  pull_request:
+    paths:
+      - "formalization/QIKVRT_MonotoneEvidenceSphere_v1/**"
+      - ".github/workflows/qikvrt_monotone_evidence_sphere.yml"
+      - "REPOSITORY_FILE_MANIFEST.json"
+      - "REPOSITORY_FILE_MANIFEST.json.sha256"
+      - "SHA256SUMS.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-lean-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      PACKAGE: formalization/QIKVRT_MonotoneEvidenceSphere_v1
+      EVIDENCE_ROOT: /tmp/qikvrt-monotone-evidence-sphere
+    steps:
+      - name: Check out literal candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and tree
+        id: binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$head" = "$EXACT_HEAD"
+          test "${#head}" -eq 40
+          test "${#tree}" -eq 40
+          printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Provision pinned Lean toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formalization/QIKVRT_MonotoneEvidenceSphere_v1
+          test: false
+
+      - name: Check source inventory before execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B "$PACKAGE/verify.py" --source-only
+
+      - name: Compile model and execute complete axiom audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          pushd "$PACKAGE" >/dev/null
+          lake env lean -E hasSorry -o "$RUNNER_TEMP/QIKVRTMonotoneEvidenceSphere.olean" \
+            QIKVRTMonotoneEvidenceSphere.lean
+          lake env lean -E hasSorry QIKVRTMonotoneEvidenceSphereAxiomAudit.lean \
+            | tee "$EVIDENCE_ROOT/axiom-output.txt"
+          popd >/dev/null
+
+      - name: Validate the audit and emit exact-head receipt
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.binding.outputs.head }}
+          TREE_SHA: ${{ steps.binding.outputs.tree }}
+        run: |
+          set -euo pipefail
+          python3 -B "$PACKAGE/verify.py" \
+            --axiom-output "$EVIDENCE_ROOT/axiom-output.txt" \
+            --write-receipt "$EVIDENCE_ROOT/lean-receipt.json" \
+            --head "$HEAD_SHA" \
+            --tree "$TREE_SHA" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$TREE_SHA"
+
+      - name: Preserve exact-head Lean evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qikvrt-monotone-evidence-sphere-${{ steps.binding.outputs.head }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          retention-days: 30
+          if-no-files-found: error
