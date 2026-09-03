@@ -1,6 +1,6 @@
 {
   "schema": "qikvrt_requirement_delivery_dod_v1",
-  "version": "1.0",
+  "version": "1.1",
   "authority": {
     "product_owner": "Ingolf Lohmann",
     "repository": "Goldkelch/qik-vrt",
@@ -31,7 +31,8 @@
     "TRANSPORT_ACK",
     "HTTP_SUCCESS",
     "UPLOAD_ACCEPTED",
-    "SUBMISSION_FORM_ACCEPTED_WITHOUT_READBACK"
+    "SUBMISSION_FORM_ACCEPTED_WITHOUT_READBACK",
+    "UNSPECIFIED_EXECUTION_ORDER"
   ],
   "invariants": {
     "predecessor_evidence_never_transfers": true,
@@ -41,8 +42,11 @@
     "main_mutation_invalidates_previous_main_reobservation": true,
     "independent_machine_owned_work_continues_while_one_edge_requests_authority": true,
     "publication_does_not_imply_empirical_confirmation": true,
-    "publication_does_not_imply_pass_or_final_pass": true
+    "publication_does_not_imply_pass_or_final_pass": true,
+    "execution_precedence_is_explicit_and_fail_closed": true,
+    "unspecified_precedence_is_hold_unverified": true
   },
+  "execution_precedence": "policy/QIKVRT_EXECUTION_PRECEDENCE_V1.json",
   "delivery_ledger": "state/delivery/ACTIVE_DELIVERY_OBLIGATIONS_V1.json",
   "effect_ack_contract": "policy/QIKVRT_EFFECT_ACK_HTTP_TERMINAL_V1.json",
   "completion_claims": {
