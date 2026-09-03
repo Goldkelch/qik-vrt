@@ -22,6 +22,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
@@ -48,6 +49,7 @@ REVIEW_SELECTION_SCHEMA = "qikvrt_requested_review_selection_v1"
 REVIEW_INTAKE_SCHEMA = "qikvrt_review_intake_v1"
 REVIEW_PRIORITY_POLICY_PATH = "policy/REQUESTED_REVIEW_AND_ISSUE_LIFECYCLE_V1.json"
 REVIEW_PRIORITY_POLICY_SCHEMA = "qikvrt_requested_review_and_issue_lifecycle_policy_v1"
+REF_RECONCILIATION_DELAYS_SECONDS = (0.25, 1.0, 2.0, 4.0, 8.0)
 VALID_FILE_STATES = {
     "added",
     "changed",
@@ -473,6 +475,92 @@ def plan_ledger_update(
             "MERGE": False,
         },
     }
+
+
+def exact_ref_sha(value: Mapping[str, Any] | None, expected_ref: str) -> str | None:
+    """Return one exact Git commit ref target, preserving 404 as ``None``."""
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ReviewSnapshotError("Git ref readback is not an object")
+    if value.get("ref") != expected_ref:
+        raise ReviewSnapshotError("Git ref readback identity differs")
+    target = value.get("object")
+    if not isinstance(target, Mapping) or target.get("type") != "commit":
+        raise ReviewSnapshotError("Git ref readback target is not a commit")
+    return _sha(target.get("sha"), "Git ref readback target")
+
+
+def reconcile_ref_readback(
+    fetch_ref: Callable[[], Mapping[str, Any] | None],
+    expected_ref: str,
+    expected_old_sha: str | None,
+    attempted_commit: str,
+    *,
+    delays: Sequence[float] = REF_RECONCILIATION_DELAYS_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """Reobserve one mutation by GET only, retrying only its known-old state.
+
+    The caller performs at most one POST/PATCH.  An exact target is accepted;
+    404 during create or the exact expected-old SHA during fast-forward may be
+    transient and is reobserved within the fixed bound.  Any other visible
+    target or malformed response fails closed immediately.
+    """
+    if not isinstance(expected_ref, str) or not expected_ref.startswith("refs/"):
+        raise ReviewSnapshotError("expected Git ref identity is invalid")
+    old_sha = _sha(expected_old_sha, "expected_old_sha", nullable=True)
+    commit_sha = _sha(attempted_commit, "attempted_commit")
+    if not isinstance(delays, Sequence) or isinstance(delays, (str, bytes)):
+        raise ReviewSnapshotError("ref reconciliation delays are invalid")
+    normalized_delays: list[float] = []
+    for delay in delays:
+        if isinstance(delay, bool) or not isinstance(delay, (int, float)) or delay < 0:
+            raise ReviewSnapshotError("ref reconciliation delay is invalid")
+        normalized_delays.append(float(delay))
+
+    result = {
+        "schema": "qikvrt_git_ref_reconciliation_v1",
+        "state": "HOLD_UNVERIFIED",
+        "exact": False,
+        "expected_ref": expected_ref,
+        "expected_old_sha": old_sha,
+        "attempted_commit": commit_sha,
+        "observed_shas": [],
+        "first_blocker": None,
+        "completion_claims": {
+            "PASS": False,
+            "FINAL_PASS": False,
+            "EFFECT_ACK_DONE": False,
+            "MERGE": False,
+        },
+    }
+    for attempt in range(len(normalized_delays) + 1):
+        try:
+            observed = exact_ref_sha(fetch_ref(), expected_ref)
+        except ReviewSnapshotError as exc:
+            result.update(
+                state="HOLD_MALFORMED_READBACK",
+                first_blocker=f"GIT_REF_READBACK_MALFORMED: {exc}",
+            )
+            return result
+        result["observed_shas"].append(observed)
+        if observed == commit_sha:
+            result.update(state="EXACT", exact=True)
+            return result
+        if observed != old_sha:
+            result.update(
+                state="HOLD_DIVERGED_READBACK",
+                first_blocker="GIT_REF_READBACK_DIVERGED",
+            )
+            return result
+        if attempt < len(normalized_delays):
+            sleeper(normalized_delays[attempt])
+    result.update(
+        state="HOLD_STALE_READBACK",
+        first_blocker="GIT_REF_READBACK_STALE",
+    )
+    return result
 
 
 def _run_key(run: Mapping[str, Any]) -> tuple[int, int, int]:
@@ -2048,6 +2136,42 @@ def _eligible_review_subject(
     if _git_sha1(subject["head_sha"]) is None:
         reasons.append("PULL_REQUEST_HEAD_SHA_INVALID")
     return subject, reasons
+
+
+def event_payload_pull_request(
+    payload: Any,
+    repository: str,
+    expected_number: int,
+    expected_head: str,
+    event_name: str,
+) -> Mapping[str, Any] | None:
+    """Return one exact native PR-event subject, otherwise ``None``.
+
+    This is a read-only fallback for an unavailable live PR GET. It
+    accepts only GitHub-native pull-request events whose embedded
+    object already binds the exact repository, PR number, open state,
+    main base and expected head. Other event classes, malformed
+    objects and any drift fail closed.
+    """
+    if event_name not in {"pull_request_target", "pull_request_review"}:
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    if _positive_integer(expected_number) is None:
+        return None
+    if _git_sha1(expected_head) is None:
+        return None
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        return None
+    subject, reasons = _eligible_review_subject(
+        pull_request,
+        repository,
+        expected_number,
+    )
+    if reasons or subject["head_sha"] != expected_head:
+        return None
+    return pull_request
 
 
 def _workflow_run_pr_number(
