@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
   actions: read
 
 concurrency:
@@ -113,16 +114,131 @@ jobs:
           p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
           PY
 
-      - name: Commit only productive materialized delta
+      - name: Classify productive materialized delta
+        id: delta
         shell: bash
         run: |
           set -euo pipefail
           git add docs/science/index.json docs/science/status.json docs/science/terminals.json docs/science/live-events.jsonl state/live/QIKVRT_LIVE_EVENTS.jsonl
           if git diff --cached --quiet; then
             echo 'NOOP: terminal projection already current'
+            echo 'productive=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo 'productive=true' >> "$GITHUB_OUTPUT"
+
+      - name: Commit and persist productive candidate branch
+        id: candidate
+        if: steps.delta.outputs.productive == 'true'
+        env:
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci: materialize universal terminal live proof state'
-          git push origin HEAD:main
+
+          candidate_sha="$(git rev-parse HEAD)"
+          candidate_tree="$(git rev-parse HEAD^{tree})"
+          branch="automation/qikvrt-materialize-${SUBJECT_SHA:0:12}"
+          digest="$({
+            sha256sum docs/science/index.json
+            sha256sum docs/science/status.json
+            sha256sum docs/science/terminals.json
+            sha256sum docs/science/live-events.jsonl
+            sha256sum state/live/QIKVRT_LIVE_EVENTS.jsonl
+          } | sha256sum | awk '{print $1}')"
+
+          git fetch origin main
+          current_main="$(git rev-parse origin/main)"
+          if [ "$current_main" != "$SUBJECT_SHA" ]; then
+            echo "HOLD_UNVERIFIED stale-before-persist subject=$SUBJECT_SHA current_main=$current_main"
+            echo 'persisted=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          remote_before="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          if [ -n "$remote_before" ]; then
+            git push --force-with-lease="refs/heads/$branch:$remote_before" origin "HEAD:refs/heads/$branch"
+          else
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+
+          remote_after="$(git ls-remote --heads origin "refs/heads/$branch" | awk '{print $1}')"
+          if [ "$remote_after" != "$candidate_sha" ]; then
+            echo "ERROR: candidate remote readback mismatch local=$candidate_sha remote=$remote_after" >&2
+            exit 1
+          fi
+
+          echo "persisted=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "tree=$candidate_tree" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update exact-subject materialization draft PR
+        if: steps.candidate.outputs.persisted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
+          SOURCE_EVENT: ${{ steps.subject.outputs.source }}
+          LAKE_STATE: ${{ steps.lake.outputs.state }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          CANDIDATE_TREE: ${{ steps.candidate.outputs.tree }}
+          MATERIALIZED_DIGEST: ${{ steps.candidate.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status_dod="$(python3 - <<'PY'
+          import json
+          print(json.load(open('docs/science/status.json')).get('dod','HOLD_UNVERIFIED'))
+          PY
+          )"
+
+          body="$(cat <<EOF
+          ## Exact-subject materialization candidate
+
+          This PR is the durable repository carrier for a productive materialization delta. It does not establish canonical persisted evidence on main, PASS, FINAL_PASS, or EFFECT_ACK_DONE.
+
+          - exact subject: $SUBJECT_SHA
+          - source event: $SOURCE_EVENT
+          - candidate branch: $CANDIDATE_BRANCH
+          - candidate commit: $CANDIDATE_SHA
+          - candidate tree: $CANDIDATE_TREE
+          - materialized content digest: $MATERIALIZED_DIGEST
+          - Lean/Lake execution: $LAKE_STATE
+          - materialized DoD: $status_dod
+
+          Canonical persistence is admissible only after the repository PR path completes and a subsequent exact-current-main readback binds the resulting state. No predecessor or candidate status transfers across that boundary.
+          EOF
+          )"
+
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$CANDIDATE_BRANCH" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" \
+              --title "Materialize terminal evidence for ${SUBJECT_SHA:0:12}" \
+              --body "$body"
+            pr_number="$existing"
+          else
+            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$CANDIDATE_BRANCH" \
+              --draft \
+              --title "Materialize terminal evidence for ${SUBJECT_SHA:0:12}" \
+              --body "$body")"
+            pr_number="${pr_url##*/}"
+          fi
+
+          readback_head="$(gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
+          if [ "$readback_head" != "$CANDIDATE_SHA" ]; then
+            echo "ERROR: PR head readback mismatch candidate=$CANDIDATE_SHA pr_head=$readback_head" >&2
+            exit 1
+          fi
+
+          echo "REMOTE_CANDIDATE=true pr=$pr_number head=$readback_head"
+          echo "CANONICAL_ON_MAIN=false"
+          echo "PASS=false FINAL_PASS=false EFFECT_ACK_DONE=false"
